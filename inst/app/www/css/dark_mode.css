@@ -1,0 +1,124 @@
+/* Data table */
+.dataTable td {
+  vertical-align: middle;
+}
+
+/*
+https://stackoverflow.com/a/20880419
+https://www.w3docs.com/snippets/html/how-to-rotate-the-div-element-by-90-degrees.html
+*/
+.vertical {
+  text-align: right;
+  -webkit-transform: rotate(-90deg);
+  -moz-transform: rotate(-90deg);
+  -o-transform: rotate(-90deg);
+  transform: rotate(-90deg);
+}
+
+/* Shiny */
+.btn {
+  font-size: 0.8em;
+}
+
+.form-control {
+  font-size: 0.9em;
+}
+
+.selectize-control {
+  font-size: 0.9em;
+}
+
+.btn-icon {
+ font-size: 1.5em;
+}
+
+.box-header {
+  background: #ff053f;
+}
+
+/*
+.shiny-output-error-validation {
+  color: #ff048e;
+}*/
+
+/* CCIA */
+.ccia-form-error {
+  color: #ff053f;
+  font-weight: bold;
+}
+
+.ccia-form-success {
+  color: #03c9b2;
+  font-weight: bold;
+}
+
+.ccia-form-input-error {
+  color: #f3f3f3;
+  background-color: #ff053f;
+  font-weight: bold;
+}
+
+.ccia-btn-important {
+  color: #f3f3f3;
+  background-color: #ff053f;
+  font-weight: bold;
+}
+
+.ccia-label-important {
+  color: #ff053f;
+  font-weight: bold;
+}
+
+.ccia-btn-queued {
+  color: #f3f3f3;
+  background-color: #ff053f;
+  font-weight: bold;
+}
+
+.ccia-btn-running {
+  color: #f3f3f3;
+  background-color: #ffb804;
+  font-weight: bold;
+}
+
+.ccia-btn-success {
+  color: #f3f3f3;
+  background-color: #03c9b2;
+  font-weight: bold;
+}
+
+.ccia-btn-warning {
+  color: #f3f3f3;
+  background-color: #ffb804;
+  font-weight: bold;
+}
+
+
+.ccia-btn-selected {
+  background-color: #ff048e;
+}
+
+/* Dashboard */
+.main-header .logo {
+  height: 50px;
+  background-color: #222;
+}
+
+/* Text formatting */
+.txt-medium-centred {
+  font-size: 1.2em;
+  text-align: center;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  padding-left: 0.5em;
+  width: 100%;
+}
+
+.txt-default-centred {
+  font-size: 1.0em;
+  text-align: center;
+  padding-top: 0.5em;
+  padding-bottom: 0.5em;
+  padding-left: 0.5em;
+  width: 100%;
+}

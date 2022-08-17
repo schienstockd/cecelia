@@ -1,0 +1,80 @@
+{
+  "fun": {
+    "cellClusters": {
+      "category": "Module functions",
+      "label": "Cell Clusters",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "clustDiameter": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 15
+        }
+      },
+      "clustBorderPoints": {
+        "type:boolean": {
+          "default": true
+        }
+      },
+      "clustMinPts": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 4
+        }
+      },
+      "popsToCluster": {
+        "type:list": {}
+      },
+			"combinePops": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "clustDiameter": {
+        "index": 0,
+        "label": "Cluster diameter",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+      "clustMinPts": {
+        "index": 1,
+        "label": "Minimum cells",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "clustBorderPoints": {
+        "index": 2,
+        "label": "Border points",
+        "widget:checkbox": {
+        }
+      },
+      "popsToCluster": {
+        "index": 3,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      },
+			"combinePops": {
+				"index": 4,
+				"label": "Combine populations",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

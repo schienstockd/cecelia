@@ -1,0 +1,246 @@
+{
+  "fun": {
+    "mesmer": {
+      "category": "Module functions",
+      "label": "Mesmer workflow",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "nucleiChannels": {
+        "type:list": {}
+      },
+      "cytoChannels": {
+        "type:list": {}
+      },
+  		"normalisePercentile": {
+				"type:double": {
+					"min": 50,
+					"max": 100,
+					"default": 99.9
+				}
+			},
+			"minCellSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 100,
+					"default": 10
+				}
+			},
+			"labelErosion": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 0
+				}
+			},
+			"haloSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 0
+				}
+			},
+			"haloWholeCell": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"blockSize": {
+				"type:integer": {
+					"min": -1,
+					"max": 2048,
+					"default": 512
+				}
+			},
+			"overlap": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 64
+				}
+			},
+			"blockSizeZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 100
+				}
+			},
+			"overlapZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 64,
+					"default": 10
+				}
+			},
+			"context": {
+				"type:integer": {
+					"min": 1,
+					"max": 128,
+					"default": 52
+				}
+			},
+			"clearDepth": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"clearTouchingBorder": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"segment": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"updateMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"saveMeshes": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"extendedMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "nucleiChannels": {
+        "index": 0,
+        "label": "Nuclei",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+      "cytoChannels": {
+        "index": 1,
+        "label": "Cytoplasm",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+  		"normalisePercentile": {
+				"index": 2,
+				"label": "Normalise",
+				"widget:slider": {
+					"step": 0.1
+				}
+			},
+			"minCellSize": {
+				"index": 3,
+				"label": "Minimum cell size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"labelErosion": {
+				"index": 4,
+				"label": "Cell erosion",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloSize": {
+				"index": 5,
+				"label": "Halo size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloWholeCell": {
+				"index": 11,
+				"label": "Halo whole cell",
+				"widget:checkbox": {
+				}
+			},
+			"blockSize": {
+				"index": 6,
+				"label": "Block size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlap": {
+				"index": 7,
+				"label": "Overlap",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"blockSizeZ": {
+				"index": 8,
+				"label": "Block size Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlapZ": {
+				"index": 9,
+				"label": "Overlap Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"context": {
+				"index": 10,
+				"label": "Context",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"clearDepth": {
+				"index": 11,
+				"label": "Clear depth",
+				"widget:checkbox": {
+				}
+			},
+			"clearTouchingBorder": {
+				"index": 12,
+				"label": "Clear borders",
+				"widget:checkbox": {
+				}
+			},
+			"segment": {
+				"index": 13,
+				"label": "Segment image",
+				"widget:checkbox": {
+				}
+			},
+			"updateMeasures": {
+				"index": 14,
+				"label": "Update properties",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 15,
+				"label": "Save Meshes",
+				"widget:checkbox": {
+				}
+			},
+			"extendedMeasures": {
+				"index": 16,
+				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

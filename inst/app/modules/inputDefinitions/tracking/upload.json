@@ -1,0 +1,48 @@
+{
+  "fun": {
+    "upload": {
+      "category": "Synchronise data",
+      "label": "Upload label properties",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteEnv": {
+        "type:character": {
+          "default": "hpc"
+        }
+      },
+      "valueNames": {
+				"type:list": {
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteEnv": {
+        "index": 0,
+        "label": "Remote environment",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "valueNames": {
+				"index": 1,
+				"label": "Label properties",
+				"widget:valueNameSelection": {
+					"size": 5,
+					"multiple": true,
+					"field": "imLabelPropsFilepath"
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

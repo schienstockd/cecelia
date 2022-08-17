@@ -1,0 +1,104 @@
+{
+  "fun": {
+    "applyClassifier": {
+      "category": "Module functions",
+      "label": "Apply pixel classifier",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "clMapping": {
+        "type:group": {
+          "clChannels": {
+            "type:list": {
+            }
+          }
+        }
+      },
+			"normaliseImage": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"normPercentile": {
+				"type:double": {
+					"min": 80,
+					"max": 100,
+					"default": 99.98
+				}
+			},
+			"minObjectSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 300,
+					"default": 10
+				}
+			},
+			"saveMeshes": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"extendedMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "clMapping": {
+				"index": 0,
+				"label": "Classifiers",
+				"widget:clSelectionGroup": {
+				  "type": "pix",
+          "clChannels": {
+            "index": 0,
+            "label": "Channels for classification",
+            "widget:channelSelection": {
+              "size": 1,
+              "multiple": true,
+    					"useNames": true
+            }
+          }
+        }
+			},
+			"normaliseImage": {
+				"index": 2,
+				"label": "Normalise image",
+				"widget:checkbox": {
+				}
+			},
+			"normPercentile": {
+				"index": 3,
+				"label": "Normalisation percentile",
+				"widget:slider": {
+					"step": 0.01
+				}
+			},
+			"minObjectSize": {
+				"index": 4,
+				"label": "Minimum object size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"saveMeshes": {
+				"index": 5,
+				"label": "Save meshes",
+				"widget:checkbox": {
+				}
+			},
+			"extendedMeasures": {
+				"index": 6,
+				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

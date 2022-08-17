@@ -1,0 +1,19 @@
+{
+  "fun": {
+    "fcsRaw": {
+      "category": "Module functions",
+      "label": "FCS Raw",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+    },
+    "outputs": {}
+  }
+}

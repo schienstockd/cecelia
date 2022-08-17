@@ -1,0 +1,51 @@
+{
+  "fun": {
+    "transferFrom": {
+      "category": "Synchronise data",
+      "label": "Transfer from server",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteFrom": {
+        "type:character": {
+          "default": "smb"
+        }
+      },
+      "remoteTo": {
+        "type:character": {
+          "default": "hpc"
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteFrom": {
+        "index": 0,
+        "label": "From",
+        "widget:selection": {
+          "items": {
+            "Lab server": "smb"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "remoteTo": {
+        "index": 0,
+        "label": "To",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

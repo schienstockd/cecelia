@@ -1,0 +1,70 @@
+{
+  "fun": {
+    "retrieve": {
+      "category": "Synchronise data",
+      "label": "Retrieve segmentation",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteEnv": {
+        "type:character": {
+          "default": "hpc"
+        }
+      },
+      "valueNames": {
+				"type:list": {
+				}
+			},
+      "retrieveMeshes": {
+				"type:boolean": {
+				  "default": false
+				}
+			},
+			"retrieveMeshesOnly": {
+				"type:boolean": {
+				  "default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteEnv": {
+        "index": 0,
+        "label": "Remote environment",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "valueNames": {
+				"index": 1,
+				"label": "Segmentations",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": true,
+					"field": "imLabelsFilepath"
+				}
+			},
+			"retrieveMeshes": {
+				"index": 2,
+				"label": "Retrieve Meshes",
+				"widget:checkbox": {
+				}
+			},
+			"retrieveMeshesOnly": {
+				"index": 3,
+				"label": "Retrieve only Meshes",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

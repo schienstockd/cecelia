@@ -1,0 +1,19 @@
+{
+  "fun": {
+    "testPreview": {
+      "category": "Preview functions",
+      "label": "Test",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+    },
+    "outputs": {}
+  }
+}

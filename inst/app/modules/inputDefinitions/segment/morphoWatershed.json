@@ -1,0 +1,192 @@
+{
+  "fun": {
+    "morphoWatershed": {
+      "category": "Module functions",
+      "label": "Morphological Watershed",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:string": {
+					"default": "default"
+				}
+			},
+      "seedChannel": {
+        "type:list": {
+        }
+      },
+      "seedThresholdRel": {
+        "type:double": {
+          "min": 0,
+          "max": 1,
+          "default": 0
+        }
+      },
+      "seedThresholdAbs": {
+        "type:integer": {
+          "default": 0
+        }
+      },
+      "cellRadius": {
+        "type:double": {
+          "min": 0,
+          "max": 20,
+          "default": 4
+        }
+      },
+      "zSpread": {
+        "type:double": {
+          "min": 1,
+          "max": 10,
+          "default": 1
+        }
+      },
+      "cellMinDistance": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 1
+        }
+      },
+			"cellSizeMax": {
+				"type:double": {
+					"min": 0,
+					"max": 2000,
+					"default": 2000
+				}
+			},
+			"gaussianFilter": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 1
+				}
+			},
+			"maximumFilter": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 1
+				}
+			},
+			"medianFilter": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 1
+				}
+			},
+			"minimumFilter": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 1
+				}
+			},
+			"timepoints": {
+				"type:integer": {
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+        "index": 0,
+        "label": "Name",
+        "widget:textInput": {
+        }
+      },
+      "seedChannel": {
+        "index": 1,
+        "label": "Seed channel",
+        "widget:channelSelection": {
+          "size": 5,
+          "multiple": false
+        }
+      },
+      "seedThresholdRel": {
+        "index": 2,
+        "label": "Relative Threshold",
+        "widget:slider": {
+          "step": 0.01
+        }
+      },
+      "seedThresholdAbs": {
+        "index": 3,
+        "label": "Absolute Threshold",
+        "widget:sliderImageIntensity": {
+          "step": 1
+        }
+      },
+      "cellRadius": {
+        "index": 4,
+        "label": "Cell radius",
+        "widget:slider": {
+          "step": 0.1
+        }
+      },
+      "zSpread": {
+        "index": 5,
+        "label": "Estimated Z spread",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "cellMinDistance": {
+        "index": 6,
+        "label": "Minimum cell distance",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"cellSizeMax": {
+				"index": 7,
+				"label": "Maximum cell volume",
+				"widget:slider": {
+					"step": 10
+				}
+			},
+			"gaussianFilter": {
+				"index": 8,
+				"label": "Gaussian Filter",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"maximumFilter": {
+				"index": 9,
+				"label": "Maximum Filter",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"medianFilter": {
+				"index": 10,
+				"label": "Median Filter",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"minimumFilter": {
+				"index": 11,
+				"label": "Minimum Filter",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"timepoints": {
+				"index": 12,
+				"label": "Timepoints",
+				"widget:sliderTimepoints": {
+					"step": 1,
+					"range": true
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

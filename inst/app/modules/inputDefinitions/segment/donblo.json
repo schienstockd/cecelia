@@ -1,0 +1,344 @@
+{
+  "fun": {
+    "donblo": {
+      "category": "Module functions",
+      "label": "Donblo workflow",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "cellRadius": {
+        "type:double": {
+          "min": 1,
+          "max": 8,
+          "default": 3
+        }
+      },
+      "detectionThreshAdj": {
+        "type:double": {
+          "min": 0,
+          "max": 1,
+          "default": 0.1
+        }
+      },
+      "rollingRadius": {
+        "type:integer": {
+          "min": 0,
+          "max": 100,
+          "default": 10
+        }
+      },
+      "gaussianFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 1
+        }
+      },
+      "maximumFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 1
+        }
+      },
+      "minimumFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 1
+        }
+      },
+      "medianFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 1
+        }
+      },
+      "labelExpansion": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 0
+        }
+      },
+			"labelErosion": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 0
+				}
+			},
+      "donutChannels": {
+        "type:list": {}
+      },
+      "blobChannels": {
+        "type:list": {}
+      },
+			"minCellSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 100,
+					"default": 10
+				}
+			},
+			"haloSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 0
+				}
+			},
+			"haloWholeCell": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"blockSize": {
+				"type:integer": {
+					"min": -1,
+					"max": 2048,
+					"default": 512
+				}
+			},
+			"overlap": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 64
+				}
+			},
+			"blockSizeZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 100
+				}
+			},
+			"overlapZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 64,
+					"default": 10
+				}
+			},
+			"context": {
+				"type:integer": {
+					"min": 1,
+					"max": 128,
+					"default": 52
+				}
+			},
+			"clearDepth": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"clearTouchingBorder": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"segment": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"updateMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"saveMeshes": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"extendedMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "cellRadius": {
+        "index": 0,
+        "label": "Cell Radius",
+        "widget:slider": {
+          "step": 0.1
+        }
+      },
+      "detectionThreshAdj": {
+        "index": 1,
+        "label": "Adjust Threshold",
+        "widget:slider": {
+          "step": 0.05
+        }
+      },
+      "rollingRadius": {
+        "index": 2,
+        "label": "Rolling Ball",
+        "widget:slider": {
+          "step": 5
+        }
+      },
+      "gaussianFilter": {
+        "index": 3,
+        "label": "Gaussian Filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "maximumFilter": {
+        "index": 4,
+        "label": "Maximum Filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "minimumFilter": {
+        "index": 5,
+        "label": "Minimum Filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "medianFilter": {
+        "index": 6,
+        "label": "Median Filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "labelExpansion": {
+        "index": 7,
+        "label": "Cell expansion",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"labelErosion": {
+				"index": 8,
+				"label": "Cell erosion",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+      "donutChannels": {
+        "index": 9,
+        "label": "Donut-like",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+      "blobChannels": {
+        "index": 10,
+        "label": "Blob-like",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+			"minCellSize": {
+				"index": 11,
+				"label": "Minimum cell size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloSize": {
+				"index": 12,
+				"label": "Halo size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloWholeCell": {
+				"index": 11,
+				"label": "Halo whole cell",
+				"widget:checkbox": {
+				}
+			},
+			"blockSize": {
+				"index": 13,
+				"label": "Block size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlap": {
+				"index": 14,
+				"label": "Overlap",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"blockSizeZ": {
+				"index": 15,
+				"label": "Block size Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlapZ": {
+				"index": 16,
+				"label": "Overlap Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"context": {
+				"index": 17,
+				"label": "Context",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"clearDepth": {
+				"index": 18,
+				"label": "Clear depth",
+				"widget:checkbox": {
+				}
+			},
+			"clearTouchingBorder": {
+				"index": 19,
+				"label": "Clear borders",
+				"widget:checkbox": {
+				}
+			},
+			"segment": {
+				"index": 20,
+				"label": "Segment image",
+				"widget:checkbox": {
+				}
+			},
+			"updateMeasures": {
+				"index": 21,
+				"label": "Update properties",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 22,
+				"label": "Save Meshes",
+				"widget:checkbox": {
+				}
+			},
+			"extendedMeasures": {
+				"index": 23,
+				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

@@ -1,0 +1,77 @@
+{
+  "fun": {
+    "cellRegions": {
+      "category": "Module functions",
+      "label": "Cell Regions",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "regionRadius": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 16
+        }
+      },
+      "addSelf": {
+        "type:boolean": {
+          "default": true
+        }
+      },
+			"perTimepoint": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+      "pops": {
+        "type:list": {}
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+      "regionRadius": {
+        "index": 1,
+        "label": "Region Radius",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+			"addSelf": {
+				"index": 2,
+				"label": "Add self",
+				"widget:checkbox": {
+				}
+			},
+			"perTimepoint": {
+				"index": 3,
+				"label": "Per Timepoint",
+				"widget:checkbox": {
+				}
+			},
+      "pops": {
+        "index": 4,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 5,
+          "multiple": true
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

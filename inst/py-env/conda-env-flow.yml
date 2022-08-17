@@ -1,0 +1,19 @@
+name: cecelia-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - pytz
+  - python-dateutil
+  - h5py
+  - fsspec
+  - urllib3
+  - numpy
+  - requests
+  - scanpy[leiden]
+  - zarr
+  - dask
+  - ruamel.yaml
+  - rtree
+  - pyopencl
+  - pandas

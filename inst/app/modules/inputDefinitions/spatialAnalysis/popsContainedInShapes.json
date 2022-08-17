@@ -1,0 +1,41 @@
+{
+  "fun": {
+    "popsContainedInShapes": {
+      "category": "Module functions",
+      "label": "Populations in shapes",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "pops": {
+        "type:list": {}
+      },
+      "shapes": {
+        "type:list": {}
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"pops": {
+				"index": 1,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"shapes": {
+				"index": 2,
+				"label": "Shapes",
+				"widget:shapesSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "fun": {
+    "retrieve": {
+      "category": "Synchronise data",
+      "label": "Retrieve corrected image",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteEnv": {
+        "type:character": {
+          "default": "hpc"
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteEnv": {
+        "index": 0,
+        "label": "Remote environment",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

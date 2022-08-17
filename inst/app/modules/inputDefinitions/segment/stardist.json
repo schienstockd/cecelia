@@ -1,0 +1,234 @@
+{
+  "fun": {
+    "stardist": {
+      "category": "Module functions",
+      "label": "Stardist workflow",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "labelExpansion": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 5
+        }
+      },
+      "nucleiChannels": {
+        "type:list": {}
+      },
+			"minCellSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 100,
+					"default": 10
+				}
+			},
+			"labelErosion": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 0
+				}
+			},
+			"haloSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 0
+				}
+			},
+			"haloWholeCell": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"blockSize": {
+				"type:integer": {
+					"min": -1,
+					"max": 2048,
+					"default": 512
+				}
+			},
+			"overlap": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 64
+				}
+			},
+			"blockSizeZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 100
+				}
+			},
+			"overlapZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 64,
+					"default": 10
+				}
+			},
+			"context": {
+				"type:integer": {
+					"min": 1,
+					"max": 128,
+					"default": 52
+				}
+			},
+			"clearDepth": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"clearTouchingBorder": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"segment": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"updateMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"saveMeshes": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"extendedMeasures": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "labelExpansion": {
+        "index": 0,
+        "label": "Cell expansion",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "nucleiChannels": {
+        "index": 1,
+        "label": "Nuclei",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": false,
+					"useNames": true
+        }
+      },
+			"minCellSize": {
+				"index": 2,
+				"label": "Minimum cell size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"labelErosion": {
+				"index": 3,
+				"label": "Cell erosion",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloSize": {
+				"index": 4,
+				"label": "Halo size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"haloWholeCell": {
+				"index": 11,
+				"label": "Halo whole cell",
+				"widget:checkbox": {
+				}
+			},
+			"blockSize": {
+				"index": 5,
+				"label": "Block size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlap": {
+				"index": 6,
+				"label": "Overlap",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"blockSizeZ": {
+				"index": 7,
+				"label": "Block size Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlapZ": {
+				"index": 8,
+				"label": "Overlap Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"context": {
+				"index": 9,
+				"label": "Context",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"clearDepth": {
+				"index": 10,
+				"label": "Clear depth",
+				"widget:checkbox": {
+				}
+			},
+			"clearTouchingBorder": {
+				"index": 11,
+				"label": "Clear borders",
+				"widget:checkbox": {
+				}
+			},
+			"segment": {
+				"index": 12,
+				"label": "Segment image",
+				"widget:checkbox": {
+				}
+			},
+			"updateMeasures": {
+				"index": 13,
+				"label": "Update properties",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 14,
+				"label": "Save Meshes",
+				"widget:checkbox": {
+				}
+			},
+			"extendedMeasures": {
+				"index": 15,
+				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

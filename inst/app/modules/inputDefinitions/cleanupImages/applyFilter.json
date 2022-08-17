@@ -1,0 +1,48 @@
+{
+  "fun": {
+    "applyFilter": {
+      "category": "Module functions",
+      "label": "Filter",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"filterFun": {
+				"type:list": {
+				}
+			},
+      "filterValue": {
+        "type:integer": {
+          "min": 1,
+          "max": 100,
+          "default": 1
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "filterFun": {
+        "index": 0,
+        "label": "Filtering method",
+        "widget:selection": {
+          "size": 1,
+          "multiple": false,
+					"items": {
+						"Gaussian": "gaussian"
+					}
+        }
+      },
+			"filterValue": {
+				"index": 0,
+				"label": "Filtering value",
+				"widget:slider": {
+					"step": 1
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

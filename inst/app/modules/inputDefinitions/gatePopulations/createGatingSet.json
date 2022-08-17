@@ -1,0 +1,93 @@
+{
+  "fun": {
+    "createGatingSet": {
+      "category": "Module functions",
+      "label": "Create Gating Set",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "compensateZ": {
+        "type:boolean": {
+          "default": false
+        }
+      },
+      "polyDegree": {
+        "type:integer": {
+          "min": 1,
+          "max": 10,
+          "default": 4
+        }
+      },
+      "applyReversedLog": {
+        "type:boolean": {
+          "default": false
+        }
+      },
+      "reversedLogBase": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 0
+        }
+      },
+      "transformation": {
+        "type:string": {
+          "default": "none"
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "compensateZ": {
+        "index": 0,
+        "label": "Compensate Depth",
+        "widget:checkbox": {
+        }
+      },
+      "polyDegree": {
+        "index": 1,
+        "label": "Poly Degree",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "applyReversedLog": {
+        "index": 2,
+        "label": "Reversed log",
+        "widget:checkbox": {
+        }
+      },
+      "reversedLogBase": {
+        "index": 3,
+        "label": "Log base",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "transformation": {
+        "index": 4,
+        "label": "Transform",
+        "widget:selection": {
+          "items": {
+            "No transformation": "none",
+            "Biexponential": "biexponential",
+            "Logarithm": "log",
+            "Natural logarithm": "ln",
+            "linear": "linear",
+            "Quadratic": "quadratic",
+            "scale": "scale",
+            "Split Scale": "splitScale",
+            "Truncate": "truncate"
+          },
+          "size": 1,
+          "multiple": false
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

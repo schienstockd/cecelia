@@ -1,0 +1,105 @@
+{
+  "fun": {
+    "hmmStates": {
+      "category": "Module functions",
+      "label": "HMM States",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"pops": {
+				"type:list": {}
+			},
+			"colName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"modelMeasurements": {
+				"type:list": {}
+			},
+			"numStates": {
+        "type:integer": {
+          "min": 2,
+          "max": 10,
+          "default": 2
+        }
+      },
+      "noiseFilterMeasurements": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 5
+        }
+      },
+			"skipTimesteps": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 0
+				}
+			},
+			"subtrackOverlap": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"pops": {
+				"index": 0,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"colName": {
+				"index": 1,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"modelMeasurements": {
+				"index": 2,
+				"label": "Properties",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"numStates": {
+				"index": 3,
+				"label": "Number of States",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+      "noiseFilterMeasurements": {
+        "index": 4,
+        "label": "Noise filtering",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"skipTimesteps": {
+				"index": 5,
+				"label": "Skip timesteps",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"subtrackOverlap": {
+				"index": 6,
+				"label": "Subtrack Overlap",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

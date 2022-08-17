@@ -1,0 +1,99 @@
+{
+  "fun": {
+    "cellNeighbours": {
+      "category": "Module functions",
+      "label": "Cell Neighbours",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "pops": {
+        "type:list": {}
+      },
+			"neighbourMethod": {
+				"type:character": {}
+			},
+			"neighbourRadius": {
+				"type:double": {
+					"min": 0,
+					"max": 50,
+					"default": 30
+				}
+			},
+			"nRings": {
+				"type:integer": {
+					"min": 0,
+					"max": 5,
+					"default": 1
+				}
+			},
+			"savePops": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Segmentation",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelPropsFilepath"
+				}
+			},
+			"pops": {
+				"index": 1,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"neighbourMethod": {
+				"index": 2,
+				"label": "Method",
+				"widget:selection": {
+					"size": 1,
+					"multiple": false,
+					"items": {
+						"Delaunay": "delaunay",
+						"Radius": "radius",
+						"Grid": "grid"
+					}
+				}
+			},
+      "neighbourRadius": {
+        "index": 3,
+        "label": "Neighbour Radius",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+			"nRings": {
+				"index": 4,
+				"label": "Number of rings",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"savePops": {
+				"index": 5,
+				"label": "Save pops",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

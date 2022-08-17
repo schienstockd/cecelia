@@ -1,0 +1,53 @@
+{
+  "fun": {
+    "retrieve": {
+      "category": "Synchronise data",
+      "label": "Retrieve converted images",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteEnv": {
+        "type:character": {
+          "default": "hpc"
+        }
+      },
+      "syncExt": {
+        "type:character": {
+          "default": ".ome.zarr"
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteEnv": {
+        "index": 0,
+        "label": "Remote environment",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "syncFile": {
+        "index": 1,
+        "label": "Sync file",
+        "widget:selection": {
+          "items": {
+            "OME ZARR": "omezarr",
+            "OME TIFF": "ometiff",
+						"cell2location": "cell2location"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

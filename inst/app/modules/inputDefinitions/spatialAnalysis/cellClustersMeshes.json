@@ -1,0 +1,72 @@
+{
+  "fun": {
+    "cellClustersMeshes": {
+      "category": "Module functions",
+      "label": "Cell Clusters (Meshes)",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "maxClusterDist": {
+        "type:double": {
+          "min": 0,
+          "max": 40,
+          "default": 5
+        }
+      },
+      "minCellNum": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 3
+        }
+      },
+			"noiseFilter": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 5
+				}
+			},
+      "popsToCluster": {
+        "type:list": {}
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "maxClusterDist": {
+        "index": 0,
+        "label": "Contact distance",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+      "minCellNum": {
+        "index": 1,
+        "label": "Minimum cells",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"noiseFilter": {
+				"index": 2,
+				"label": "Noise filter",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+      "popsToCluster": {
+        "index": 3,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

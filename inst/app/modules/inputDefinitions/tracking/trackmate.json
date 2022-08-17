@@ -1,0 +1,19 @@
+{
+  "fun": {
+    "trackmate": {
+      "category": "Module functions",
+      "label": "TrackMate",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+    },
+    "outputs": {}
+  }
+}

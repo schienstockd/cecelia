@@ -1,0 +1,100 @@
+{
+  "fun": {
+    "splitIntoCores": {
+      "category": "Preparation functions",
+      "label": "Split image into Cores",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"normaliseImage": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"medianFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 5
+        }
+      },
+			"otsuAdjust": {
+        "type:double": {
+          "min": 0,
+          "max": 3,
+          "default": 1
+        }
+      },
+			"closingFilter": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 5
+        }
+      },
+			"smallObjectsSize": {
+        "type:integer": {
+          "min": 0,
+          "max": 3000,
+          "default": 1000
+        }
+      },
+			"labelExpansion": {
+        "type:integer": {
+          "min": 0,
+          "max": 30,
+          "default": 5
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"normaliseImage": {
+				"index": 0,
+				"label": "Normalise image",
+				"widget:checkbox": {
+				}
+			},
+			"medianFilter": {
+        "index": 1,
+        "label": "Median filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"otsuAdjust": {
+        "index": 2,
+        "label": "Adjust threshold",
+        "widget:slider": {
+          "step": 0.1
+        }
+      },
+			"closingFilter": {
+        "index": 3,
+        "label": "Closing filter",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"smallObjectsSize": {
+        "index": 4,
+        "label": "Small objects size",
+        "widget:slider": {
+          "step": 50
+        }
+      },
+			"labelExpansion": {
+        "index": 5,
+        "label": "Label expansion",
+        "widget:slider": {
+          "step": 1
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

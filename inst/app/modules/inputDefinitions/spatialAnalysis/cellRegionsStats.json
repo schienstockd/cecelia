@@ -1,0 +1,58 @@
+{
+  "fun": {
+    "cellRegionsStats": {
+      "category": "Module functions",
+      "label": "Cell Regions Stats",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+				}
+			},
+			"regionValueName": {
+				"type:character": {
+				}
+			},
+			"neighbourValueNames": {
+				"type:list": {
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Region dataset",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imRegionsFilepath"
+				}
+			},
+			"regionValueName": {
+				"index": 1,
+				"label": "Save values to",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imRegionsFilepath"
+				}
+			},
+			"neighbourValueNames": {
+				"index": 2,
+				"label": "Neighbour datasets",
+				"widget:valueNameSelection": {
+					"size": 5,
+					"multiple": true,
+					"field": "imLabelPropsFilepath"
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

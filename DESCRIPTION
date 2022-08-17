@@ -1,0 +1,19 @@
+Package: cecelia
+Type: Package
+Title: Core functions to process and analyse object from ceceliaApp
+Version: 0.01
+Date: 2022-07-13
+Author: Dominik Schienstock
+Maintainer: Dominik Schienstock <schienstockd@student.unimelb.edu.au>
+Description: Set of core functions that are used to produce a shiny app for immunological image analysis.
+License: GPL (>= 3)
+Imports: Rcpp (>= 1.0.8)
+LinkingTo: Rcpp
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.2.1
+Encoding: UTF-8
+URL: https://github.com/schienstockd/cecelia
+BugReports: https://github.com/schienstockd/cecelia/issues
+Suggests: 
+    testthat (>= 3.0.0)
+Config/testthat/edition: 3

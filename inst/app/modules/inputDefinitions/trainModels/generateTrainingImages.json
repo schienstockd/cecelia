@@ -1,0 +1,133 @@
+{
+  "fun": {
+    "generateTrainingImages": {
+      "category": "Module functions",
+      "label": "Generate training images",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "trainingSetID": {
+        "type:list": {
+        }
+      },
+      "numTrainingImages": {
+        "type:integer": {
+          "min": 0,
+          "max": 100,
+          "default": 10
+        }
+      },
+      "maximumProjection": {
+        "type:boolean": {
+          "default": true
+        }
+      },
+			"removePrevious": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+      "imSource": {
+        "type:list": {
+        }
+      },
+      "channels": {
+        "type:list": {
+        }
+      },
+      "crop": {
+        "type:group": {
+          "X": {
+						"type:boolean": {
+	            "min": 0,
+	            "max": 2000,
+	            "default": 200
+						}
+          },
+          "Y": {
+						"type:boolean": {
+	            "min": 0,
+	            "max": 2000,
+	            "default": 200
+						}
+          },
+          "Z": {
+						"type:boolean": {
+	            "min": 0,
+	            "max": 100,
+	            "default": 0
+						}
+          },
+          "T": {
+						"type:boolean": {
+	            "min": 0,
+	            "max": 40,
+	            "default": 10
+						}
+          }
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "trainingSetID": {
+        "index": 0,
+        "label": "Image set",
+        "widget:imageSetSelection": {
+          "size": 1,
+          "multiple": false
+        }
+      },
+      "numTrainingImages": {
+        "index": 1,
+        "label": "Number of images",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "maximumProjection": {
+        "index": 2,
+        "label": "MIP",
+        "widget:checkbox": {
+        }
+      },
+			"removePrevious": {
+				"index": 3,
+				"label": "Remove previous Images",
+				"widget:checkbox": {
+				}
+			},
+      "imSource": {
+        "index": 4,
+        "label": "Source image",
+        "widget:imageSourceSelection": {
+          "size": 1,
+          "multiple": false
+        }
+      },
+      "channels": {
+        "index": 5,
+        "label": "Channels",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      },
+      "crop": {
+        "index": 6,
+        "label": "Crop",
+        "widget:sliderGroup": {
+          "X": {"label": "X", "step": 25},
+          "Y": {"label": "Y", "step": 25},
+          "Z": {"label": "Z", "step": 1},
+          "T": {"label": "T", "step": 1}
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

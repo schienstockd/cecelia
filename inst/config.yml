@@ -1,0 +1,322 @@
+default:
+  wwwDirs:
+    pathToMedia: "media"
+    pathToCss: "css"
+    pathToJS: "www/JS"
+  dirs:
+    analysis: "ANALYSIS"
+    bftools: "/path/to/BFTools"
+    bioformats2raw: "/path/to/bioformats2raw"
+    blosc: ""
+    database: "db/"
+    projects: "/path/to/projects/"
+    debug: "log"
+    tasks:
+      populations: "populations"
+      data: "data"
+      log: "log"
+      labels: "labels"
+      labelProps: "labelProps"
+      tasks: "tasks"
+      stats: "stats"
+      mesh: "mesh"
+      shapes: "shapes"
+      classifications: "cl"
+    classifications:
+      pix: "pix"
+      obj: "obj"
+  files:
+    labelProps: "labelProps.h5ad"
+    labels: "labels.zarr"
+    labelPropsChannels: "mean_intensity_"
+    anndata: "adata.h5ad"
+    fsdata: "ccid.fcs"
+    gsdata: "ccid.gs"
+    exportTypes:
+      - "zip"
+    debug: "debug.log"
+    ext:
+      labelProps: ".h5ad"
+      anndata: ".h5ad"
+      labels: ".zarr"
+      mesh: ".stl"
+      flowFrame: ".fcs"
+      gatingSet: ".gs"
+      shapes: ".csv"
+  fcs:
+    propsToAdd:
+      - "label"
+      - "centroid_z"
+      - "centroid_x"
+      - "centroid_y"
+      - "centroid_0"
+      - "centroid_1"
+      - "centroid_2"
+      - "surface_area"
+      - "volume"
+      - "bbox_area"
+      - "bbox_volume"
+      - "convex_hull_area"
+      - "convex_hull_volume"
+      - "euler_number"
+      - "extent"
+      - "solidity"
+      - "integral_mean_curvature"
+      - "feret_diameter_max"
+      - "equivalent_diameter"
+      - "major_axis_length"
+      - "minor_axis_length"
+      - "interm_axis_length"
+      - "ellipticity_oblate"
+      - "ellipticity_prolate"
+      - "ellipticity_interm_oblate"
+      - "ellipticity_interm_prolate"
+      - "surface_to_volume"
+      - "sphericity"
+      - "compactness"
+      # not 3D
+      # - "eccentricity"
+      # - "perimeter"
+      # 2D
+      - "perimeter"
+      - "area"
+      - "eccentricity"
+      - "orientation"
+      - "convex_area"
+      - "major_axis_length"
+      - "minor_axis_length"
+      - "prolate"
+      - "oblate"
+      - "perimeter_to_area"
+      # mesmer
+      - "nuc_area"
+      - "nc_ratio"
+      - "aspect_ratio"
+      - "fill"
+      - "asymmetry"
+    gating:
+      highlight:
+        colour: "magenta"
+      default:
+        markerSize: 5
+        colour: "#444"
+      screenshot:
+        format: "png"
+        width: 1000
+        height: 1000
+      plotTypes:
+        pseudocolour: "Pseudocolour"
+        contour: "Contour"
+      defaultPlotType: "contour"
+      contour:
+        levels: [0.95, 0.90, 0.75, 0.5]
+        resolution: 25
+  volumes:
+    home: "~/"
+    computer: "/"
+  images:
+    lenUID: 6
+    normalise:
+      percentile: 99.98
+    splitFileFormats:
+      - "oir"
+  tasks:
+    results:
+      poll: 500
+    tasksLimit: 25
+    log:
+      poll: 1000
+    sources: "modules/tasks/sources/"
+    inputDefinitions: "modules/tasks/inputDefinitions/"
+    segment:
+      optionalParams:
+        - "blockSize"
+        - "overlap"
+        - "blockSizeZ"
+        - "overlapZ"
+        - "context"
+        - "clearDepth"
+        - "rankLabels"
+  colours:
+    darkgrey: "#2d2c2c"
+    highlight: "magenta"
+    nDistinct: 12
+    predefined:
+      # https://mokole.com/palette.html
+      # - "#2f4f4f"
+      # - "#2e8b57"
+      # - "#8b0000"
+      # - "#808000"
+      # - "#7f007f"
+      - "#ff0000"
+      - "#ff8c00"
+      - "#ffd700"
+      - "#0000cd"
+      - "#00ff00"
+      - "#00fa9a"
+      - "#4169e1"
+      - "#e9967a"
+      - "#00ffff"
+      - "#00bfff"
+      - "#d8bfd8"
+      - "#ff00ff"
+      - "#f0e68c"
+      - "#ff1493"
+      - "#ee82ee"
+  random:
+    names:
+      animals:
+      - "Nala"
+      - "Maxine"
+      - "Harvey"
+      - "Darcy"
+      - "Mimi"
+      - "Tootsie"
+      - "Booster"
+      - "Kipper"
+      - "Rico"
+      - "Pooky"
+      - "Mariah"
+      - "Pixie"
+  populations:
+    multifile: ['live', 'clsf']
+  parameters:
+    channelSelectionSize: 5
+    popTypes:
+      flow: "Histocytometry"
+      live: "Live tracking"
+      clust: "Clustered"
+      clsf: "Classifications"
+    filterFuns:
+      eq: "Any of"
+      neq: "None of"
+      gt: "Greater than"
+      lt: "Less than"
+      gte: "Greater than or equal to"
+      lte: "Less than or equal to"
+    shapeDescriptors:
+      - "surface_area"
+      - "volume"
+      - "bbox_area"
+      - "bbox_volume"
+      - "convex_hull_area"
+      - "convex_hull_volume"
+      - "extent"
+      - "solidity"
+      - "integral_mean_curvature"
+      - "feret_diameter_max"
+      - "equivalent_diameter"
+      - "major_axis_length"
+      - "minor_axis_length"
+      - "interm_axis_length"
+      - "ellipticity_oblate"
+      - "ellipticity_prolate"
+      - "ellipticity_interm_oblate"
+      - "ellipticity_interm_prolate"
+      - "surface_to_volume"
+      - "compactness"
+      - "sphericity"
+    labelStats:
+      area: "numeric"
+      surface_area: "numeric"
+      volume: "numeric"
+      bbox_area: "numeric"
+      bbox_volume: "numeric"
+      convex_hull_area: "numeric"
+      convex_hull_volume: "numeric"
+      euler_number: "numeric"
+      extent: "numeric"
+      solidity: "numeric"
+      integral_mean_curvature: "numeric"
+      feret_diameter_max: "numeric"
+      equivalent_diameter: "numeric"
+      major_axis_length: "numeric"
+      minor_axis_length: "numeric"
+      interm_axis_length: "numeric"
+      ellipticity_oblate: "numeric"
+      ellipticity_prolate: "numeric"
+      ellipticity_interm_oblate: "numeric"
+      ellipticity_interm_prolate: "numeric"
+      surface_to_volume: "numeric"
+      sphericity: "numeric"
+      compactness: "numeric"
+      pop: "categorical"
+      live.cell.speed: "numeric"
+      live.cell.angle: "numeric"
+      live.cell.is.clust: "logical"
+      live.cell.clust.id: "categorical"
+      live.cell.state: "categorical"
+      live.cell.hmm.state: "categorical"
+      live.cell.hmm.transitions: "categorical"
+      live.cell.hmm.hybrid: "categorical"
+      live.cell.peak.ratio: "numeric"
+      live.cell.peak.norm: "numeric"
+      live.cell.peak.acc: "numeric"
+      live.cell.has.peak: "logical"
+      live.cell.contact: "logical"
+      live.cell.min_distance: "numeric"
+      live.region.is.clust: "numeric"
+      live.region.clust.id: "numeric"
+      live.region.state: "numeric"
+      live.region.speed: "numeric"
+      live.region.angle: "numeric"
+      clust.region.contained.in: "logical"
+      clust.cell.cl.value: "numeric"
+      clust.cell.cl.bool: "logical"
+      clust.cell.min_distance: "numeric"
+      clust.cell.is.clust: "logical"
+  python:
+    viewer:
+      viewerPath: "viewer/"
+      outputDelay: 500
+      inputDelay: 500
+      outputFile: "output.json"
+      inputFile: "input.json"
+      connectionFile: "connectionFile.debug.json"
+      populationPrefix: "(P)"
+    conda:
+      env: "napari-env"
+      dir: "~/opt/anaconda3/"
+      source:
+        env: "napari-env"
+    stardist:
+      model2D:
+        name: "python_2D_versatile_fluo"
+        dir: "utils/python/stardistModels/"
+    mesmer:
+      models: ["whole-cell", "nuclear"]
+      modelsDir: "utils/python/mesmerModels/MultiplexSegmentation"
+    cellpose:
+      models: ["cyto","nuclei","bact","cyto2","bact_omni","cyto2_omni"]
+      modelsDir: "utils/python/cellposeModels/"
+    btrack:
+      default:
+        name: "cell_config.json"
+        dir: "utils/python/btrackModels/"
+  docker:
+    useDocker: FALSE
+  imagej:
+    path: "/path/to/ImageJ-exec"
+    scripts: "ImageJ/Jython/"
+  hpc:
+    useHPC: TRUE
+    connectTimeout: 5
+    address: "spartan.hpc.unimelb.edu.au"
+    partitions:
+      cpu: "physical"
+      gpu: "shortgpgpu,gpgpu"
+    projects:
+      cpu: 1124
+      gpu: 1031
+    dirs:
+      base: "/data/scratch/projects/punim1124/cecelia/"
+      users: "USERS/"
+      cecelia: "/data/cephfs/punim1124/cecelia"
+      scripts: "/data/cephfs/punim1124/cecelia/scripts/"
+      tools: "/data/cephfs/punim1124/cecelia/tools/"
+      projectPrefix: "punim"
+      analysis: "ANALYSIS/"
+    scripts:
+      watchJobCompletion: "slurm/watchJobCompletion.sh"
+
+# production:

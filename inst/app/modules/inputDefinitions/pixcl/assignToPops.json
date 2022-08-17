@@ -1,0 +1,102 @@
+{
+  "fun": {
+    "assignToPops": {
+      "category": "Module functions",
+      "label": "Assign classifications to populations",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "pops": {
+        "type:list": {
+        }
+      },
+			"clsfPops": {
+				"type:list": {
+				}
+			},
+			"valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"minClsfArea": {
+				"type:integer": {
+					"min": 0,
+					"max": 250,
+					"default": 10
+				}
+			},
+			"assignMethod": {
+				"type:character": {
+					"default": "fraction"
+				}
+			},
+			"createPops": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Segmentation",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelsFilepath",
+					"valueType": "nonClsf"
+				}
+			},
+			"pops": {
+				"index": 1,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"clsfPops": {
+				"index": 2,
+				"label": "Classifications",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true,
+					"popType": "clsf"
+				}
+			},
+			"minClsfArea": {
+				"index": 3,
+				"label": "Minimum area",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"assignMethod": {
+				"index": 4,
+				"label": "Method for assignment",
+				"widget:selection": {
+					"size": 1,
+					"multiple": false,
+					"items": {
+					  "Area": "area",
+					  "Centroid": "centroid",
+					  "Fraction": "fraction"
+					}
+				}
+			},
+			"createPops": {
+				"index": 5,
+				"label": "Create Populations",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

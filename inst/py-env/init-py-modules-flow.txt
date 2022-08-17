@@ -1,0 +1,5 @@
+anndata
+python-fcl
+cpython
+leidenalg
+squidpy

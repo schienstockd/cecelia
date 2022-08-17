@@ -1,0 +1,185 @@
+{
+  "fun": {
+    "clusterTracks": {
+      "category": "Module functions",
+      "label": "Cluster tracks",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"popType": {
+				"type:character": {}
+			},
+			"valueName": {
+				"type:character": {
+					"default": "tracks.clusters.celltype.default"
+				}
+			},
+			"clusterColName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"resolution": {
+				"type:double": {
+					"min": 0,
+					"max": 5,
+					"default": 1
+				}
+			},
+			"percentile": {
+				"type:double": {
+					"min": 50,
+					"max": 100,
+					"default": 99.5
+				}
+			},
+			"popsToCluster": {
+				"type:list": {}
+			},
+			"trackMeasures": {
+				"type:list": {}
+			},
+			"objectMeasures": {
+				"type:list": {}
+			},
+			"nMeasures": {
+				"type:list": {}
+			},
+			"sumMeasures": {
+				"type:list": {}
+			},
+			"addPops": {
+				"type:list": {}
+			},
+			"calcLabelProps": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"minTracklength": {
+				"type:integer": {
+					"min": 1,
+					"max": 30,
+					"default": 5
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"popType": {
+				"index": 0,
+				"label": "Population type",
+				"widget:popTypeSelection": {
+					"size": 1,
+					"multiple": false
+				}
+			},
+			"valueName": {
+				"index": 1,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"clusterColName": {
+				"index": 2,
+				"label": "Cluster column name",
+				"widget:textInput": {
+				}
+			},
+			"resolution": {
+				"index": 3,
+				"label": "Resolution",
+				"widget:slider": {
+					"step": 0.01
+				}
+			},
+			"percentile": {
+				"index": 4,
+				"label": "Percentile",
+				"widget:slider": {
+					"step": 0.01
+				}
+			},
+			"popsToCluster": {
+				"index": 5,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"trackMeasures": {
+				"index": 6,
+				"label": "Track measurements",
+				"widget:selection": {
+					"size": 1,
+					"multiple": true,
+					"items": [
+						"speed",
+						"duration",
+						"trackLength",
+						"meanTurningAngle",
+						"displacement",
+						"straightness",
+						"displacementRatio",
+						"outreachRatio",
+						"asphericity",
+						"overallAngle"
+					]
+				}
+			},
+			"objectMeasures": {
+				"index": 7,
+				"label": "Object measurements",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true,
+					"addChoices": ["pop"]
+				}
+			},
+			"nMeasures": {
+				"index": 8,
+				"label": "Absolute count measurements",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"sumMeasures": {
+				"index": 8,
+				"label": "Sum measurements",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"addPops": {
+				"index": 9,
+				"label": "Add population frequencies",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": false,
+					"addZeroChoice": true
+				}
+			},
+			"calcLabelProps": {
+				"index": 10,
+				"label": "Calculate label props",
+				"widget:checkbox": {
+				}
+			},
+			"minTracklength": {
+				"index": 11,
+				"label": "Minimum track length",
+				"widget:slider": {
+					"step": 1
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

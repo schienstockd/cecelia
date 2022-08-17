@@ -1,0 +1,368 @@
+{
+  "fun": {
+    "bayesianTracking": {
+      "category": "Module functions",
+      "label": "Bayesian Tracking",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:list": {
+				}
+			},
+			"maxSearchRadius": {
+				"type:integer": {
+					"min": 1,
+					"max": 200,
+					"default": 20
+				}
+			},
+			"maxLost": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 3
+				}
+			},
+			"minTimepoints": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 5
+				}
+			},
+			"minDisplacement": {
+				"type:integer": {
+					"min": 0,
+					"max": 100,
+					"default": 0
+				}
+			},
+			"maxMeanTurningAngle": {
+				"type:integer": {
+					"min": 0,
+					"max": 180,
+					"default": 0
+				}
+			},
+			"accuracy": {
+				"type:double": {
+					"min": 0.01,
+					"max": 1,
+					"default": 0.8
+				}
+			},
+			"probToAssign": {
+				"type:double": {
+					"min": 0.01,
+					"max": 1.00,
+					"default": 0.8
+				}
+			},
+			"noiseInital": {
+				"type:integer": {
+					"min": 1,
+					"max": 500,
+					"default": 300
+				}
+			},
+			"noiseProcessing": {
+				"type:integer": {
+					"min": 1,
+					"max": 200,
+					"default": 100
+				}
+			},
+			"noiseMeasurements": {
+				"type:integer": {
+					"min": 1,
+					"max": 200,
+					"default": 100
+				}
+			},
+			"calcTrackingStats": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"distThresh": {
+				"type:double": {
+					"min": 1,
+					"max": 50,
+					"default": 10
+				}
+			},
+			"timeThresh": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 5
+				}
+			},
+			"segmentationMissRate": {
+				"type:double": {
+					"min": 0.001,
+					"max": 0.2,
+					"default": 0.1
+				}
+			},
+			"lambdaLink": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 5
+				}
+			},
+			"lambdaTime": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 5
+				}
+			},
+			"lambdaDist": {
+				"type:double": {
+					"min": 1,
+					"max": 50,
+					"default": 5
+				}
+			},
+			"thetaTime": {
+				"type:integer": {
+					"min": 1,
+					"max": 20,
+					"default": 5
+				}
+			},
+			"thetaDist": {
+				"type:double": {
+					"min": 1,
+					"max": 50,
+					"default": 5
+				}
+			},
+			"filters": {
+				"type:group": {
+					"measure": {
+						"type:character": {
+							"default": ""
+						}
+					},
+					"type": {
+						"type:character": {
+							"default": ""
+						}
+					},
+					"values": {
+						"type:character": {
+							"default": "0"
+						}
+					},
+					"fun": {
+						"type:character": {
+							"default": "eq"
+						}
+					}
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Segmentation",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelsFilepath"
+				}
+			},
+			"maxSearchRadius": {
+				"index": 1,
+				"label": "Max Search Radius",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"maxLost": {
+				"index": 2,
+				"label": "Allowed gaps",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"minTimepoints": {
+				"index": 3,
+				"label": "Minimum timepoints",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"minDisplacement": {
+				"index": 4,
+				"label": "Minimum displacement",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"maxMeanTurningAngle": {
+				"index": 5,
+				"label": "Maximum mean turning angle",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"accuracy": {
+				"index": 6,
+				"label": "Accuracy",
+				"widget:slider": {
+					"step": 0.01
+				}
+			},
+			"probToAssign": {
+				"index": 7,
+				"label": "Prob. to assign track",
+				"widget:slider": {
+					"step": 0.01
+				}
+			},
+			"noiseInital": {
+				"index": 8,
+				"label": "Initial noise",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"noiseProcessing": {
+				"index": 9,
+				"label": "Processing noise",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"noiseMeasurements": {
+				"index": 10,
+				"label": "Measurement noise",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"calcTrackingStats": {
+				"index": 11,
+				"label": "Tracking stats",
+				"widget:checkbox": {
+				}
+			},
+			"distThresh": {
+				"index": 12,
+				"label": "Distance Threshold",
+				"widget:slider": {
+					"step": 0.2
+				}
+			},
+			"timeThresh": {
+				"index": 13,
+				"label": "Time threshold",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"segmentationMissRate": {
+				"index": 14,
+				"label": "Segmentation miss rate",
+				"widget:slider": {
+					"step": 0.001
+				}
+			},
+			"lambdaLink": {
+				"index": 15,
+				"label": "Lambda link",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"lambdaTime": {
+				"index": 16,
+				"label": "Lambda time",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"lambdaDist": {
+				"index": 17,
+				"label": "Lambda dist",
+				"widget:slider": {
+					"step": 0.2
+				}
+			},
+			"thetaTime": {
+				"index": 18,
+				"label": "Theta time",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"thetaDist": {
+				"index": 19,
+				"label": "Theta dist",
+				"widget:slider": {
+					"step": 0.2
+				}
+			},
+			"filters": {
+				"index": 20,
+				"label": "Filters",
+				"widget:group": {
+					"numItems": 4,
+					"measure": {
+						"index": 1,
+						"label": "Measures",
+						"widget:labelPropsColsSelection": {
+							"size": 1,
+							"multiple": true
+						}
+					},
+					"fun": {
+						"index": 2,
+						"label": "Function",
+						"widget:selection": {
+							"size": 1,
+							"multiple": false,
+							"items": {
+								"Equal": "eq",
+								"Not equal": "neq",
+								"Greater than": "gt",
+								"Less than": "lt",
+								"Greater than or equal to": "gte",
+								"Less than or equal to": "lte"
+							}
+						}
+					},
+					"type": {
+						"index": 3,
+						"label": "Type",
+						"widget:selection": {
+							"size": 1,
+							"multiple": false,
+							"items": {
+								"Absolute": "abs",
+								"Percentile": "perc"
+							}
+						}
+					},
+					"values": {
+						"index": 4,
+						"label": "Values",
+						"widget:textInput": {
+						}
+					}
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

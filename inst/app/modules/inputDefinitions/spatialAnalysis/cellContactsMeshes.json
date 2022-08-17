@@ -1,0 +1,57 @@
+{
+  "fun": {
+    "cellContactsMeshes": {
+      "category": "Module functions",
+      "label": "Cell Contacts (Meshes)",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "maxContactDist": {
+        "type:integer": {
+          "min": 0,
+          "max": 50,
+          "default": 5
+        }
+      },
+      "popsA": {
+        "type:list": {}
+      },
+			"popsB": {
+				"type:list": {}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "maxContactDist": {
+        "index": 0,
+        "label": "Max contact distance",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "popsA": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true,
+					"showAll": true
+        }
+      },
+			"popsB": {
+				"index": 2,
+				"label": "In contact with",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true,
+					"showAll": true
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

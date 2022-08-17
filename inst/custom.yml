@@ -1,0 +1,21 @@
+default:
+  fcs:
+    gating:
+      defaultPlotType: "contour"
+  dirs:
+    bftools: "/Applications/BFTools"
+    bioformats2raw: "/Applications/glencoe/bioformats2raw-0.3.0"
+    projects: "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+  volumes:
+    SSD: "/Volumes/Analysis_SSD/Dominik/cecelia/"
+    USER: "/Volumes/USER_data/Dominik/"
+    home: "~/"
+    computer: "/"
+  python:
+    conda:
+      env: "cecelia-env"
+      dir: "~/opt/anaconda3/"
+      source:
+        env: "cecelia-env"
+  imagej:
+    path: "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"

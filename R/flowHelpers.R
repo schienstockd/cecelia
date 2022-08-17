@@ -1,0 +1,611 @@
+#' @description Correct channel names
+#' @param channelNames list of character for channel names
+#' @examples
+#' TODO
+.flowCorrectChannelNames <- function(channelNames) {
+  channelNames <- gsub(" |\\(|\\)|\\-", ".", channelNames)
+  channelNames <- gsub("\\.+", ".", channelNames)
+  channelNames <- gsub("\\.$", "", channelNames)
+  
+  channelNames
+}
+
+#' @description Generate colours for flow plots
+#' @param x list of numeric for 'X'-values
+#' @param y list of numeric for 'Y'-values
+#' @examples
+#' TODO
+#' @export
+flowColours <- function(x, y, nbin = 128) {
+  retVal <- NULL
+  
+  if (all(length(x) > 0, length(y) > 0)) {
+    retVal <- densCols(
+      x, y, nbin = nbin,
+      colramp = flowViz::flowViz.par.get("argcolramp"))
+  }
+  
+  retVal
+}
+
+#' @description Generate contour lines
+#' @param DT data.table for population
+#' @param xCol character for 'X'-column
+#' @param yCol character for 'Y'-column
+#' @param n integer for number of bins
+#' @param n integer for bandwith of bins
+#' @seealso MASS::kde2d
+#' @param confidenceLevels list of numeric for confidence intervals
+#' @param extendLimits numeric to extend limits and avoid "cutting off" contours
+#' @examples
+#' TODO
+#' @export
+flowContourLines <- function(
+    DT, xCol, yCol, n = 25, confidenceLevels = c(0.98, 0.95, 0.90, 0.75, 0.5),
+    extendLimits = 0.5) {
+  # get contour lines
+  dens <- MASS::kde2d(
+    DT[[xCol]], DT[[yCol]], n = n,
+    lims = c(
+      range(DT[[xCol]]) * c(1 - extendLimits, 1 + extendLimits),
+      range(DT[[yCol]]) * c(1 - extendLimits, 1 + extendLimits)
+      ))
+  
+  # get z range
+  zRange <- c(min(dens$z), max(dens$z))
+  
+  # normalise z
+  dens$z <- (dens$z - zRange[[1]]) / (zRange[[2]] - zRange[[1]])
+  
+  # create contour levels
+  contourLevels <- 1 - confidenceLevels
+  confidenceLines <- contourLines(dens, levels = contourLevels)
+  
+  # create dataframe for lines
+  confidenceDT <- data.table::rbindlist(
+    mapply(function(x, i) {
+      as.data.table(
+        list(
+          level = x$level,
+          seq = i,
+          x = x$x,
+          y = x$y
+        ))
+    }, confidenceLines, seq(length(confidenceLines)),
+    SIMPLIFY = FALSE)
+  )
+  
+  # determine points in contour
+  # get larges contour
+  DT[, in_contour := 0]
+  
+  # go through contours
+  for (i in seq(length(confidenceLines))) {
+    x <- confidenceDT[seq == i,]
+    
+    DT[in_contour == 0,
+       in_contour := sp::point.in.polygon(
+         DT[in_contour == 0, get(xCol)],
+         DT[in_contour == 0, get(yCol)],
+         x$x, x$y
+         )]
+  }
+  
+  confidenceDT %>%
+    dplyr::group_by(seq)
+}
+
+#' @description Prepare flowFrame
+#' @param x data.table or data.frame for population
+#' @param channelNames list of character for channel names
+#' @param attrNames list of character for attribute names
+#' @param channelPattern character for channel pattern to extract
+#' @param addRownames boolean to add rownames
+#' @param flowNames boolean to use corrected "flow-names"
+#' @examples
+#' TODO
+.prepareFlowFrame <- function(
+    x, channelNames, attrNames = NULL,
+    channelPattern = "mean_intensity", addRownames = FALSE,
+    flowNames = TRUE) {
+  channelDF <- NULL
+  # only use channels
+  if (!is.null(channelPattern)) {
+    channelDF <- x %>%
+      select(contains(channelPattern))
+    
+    # correct channel names before selecting
+    if (flowNames == TRUE) {
+      # correct channel names
+      channelNames <- .flowCorrectChannelNames(channelNames)
+    }
+    
+    # if channel DF is empty, the channels might have
+    # already been renamed
+    if (ncol(channelDF) == 0) {
+      # make sure all channel names are in DF
+      channelNames <- unlist(channelNames)
+      channelNames <- channelNames[channelNames %in% colnames(x)]
+      
+      channelDF <- x %>%
+        select(all_of(channelNames))
+    }
+    
+    # rename channels
+    colnames(channelDF) <- .flowCorrectChannelNames(channelNames)
+  }
+  
+  attrDF <- NULL
+  # get attributes
+  if (!is.null(attrNames)) {
+    attrDF <- x %>%
+      select(all_of(attrNames[attrNames %in% colnames(x)]))
+  }
+  
+  # combine and replace Nan
+  x <- cbind(channelDF, attrDF)
+  
+  # replace NaN values
+  x[is.na(x >= 0)] <- 0
+  
+  # add rownames
+  if (addRownames == TRUE) {
+    x <- x %>%
+      rownames_to_column() %>%
+      mutate(across(where(is.character), as.numeric))
+  }
+  
+  # # add metadata
+  # metadata <- list(
+  #   name = dimnames(x)[[2]],
+  #   desc = paste(dimnames(x)[[2]]))
+  # 
+  # # Create FCS file metadata - ranges, min, and max settings
+  # metadata$minRange <- apply(x, 2, min)
+  # metadata$maxRange <- apply(x, 2, max)
+  # 
+  # # create flowframe
+  # x.ff <- new(
+  #   "flowFrame",
+  #   exprs = as.matrix(x),
+  #   description = metadata
+  #   )
+  # 
+  # # save FCS
+  # write.FCS(x.ff, fcsOut, what = "double")
+  
+  # https://github.com/RGLab/cytolib/issues/54#issuecomment-1175529424
+  flowFrame(as.matrix(x))
+}
+
+#' @description Create gating set
+#' @param ffs list of FlowFrames to use 
+#' @param channelNames list of character for channel names
+#' @param ffNames list of character for FlowFrame names
+#' @param transformation character for data transformation. Any of c("none", "biexponential", "log", "ln", "linear", "quadratic", "scale", "splitScale", "truncate")
+#' @param flowNames boolean to use "flow-names"
+#' @examples
+#' TODO
+.flowCreateGatingSet <- function(ffs, channelNames, ffNames = NULL,
+                                transformation = NULL, flowNames = TRUE) {
+  # fs <- read.ncdfFlowSet(fcsFiles, alter.names = TRUE)
+  # fs <- read.FCS(fcsFiles)
+  # fs <- read.flowSet(fcsFiles, alter.names = TRUE)
+  # cs <- load_cytoset_from_fcs(fcsFiles, alter.names = TRUE)
+  
+  # get cyto set
+  # https://github.com/RGLab/cytolib/issues/54#issuecomment-1175529424
+  if (!is.list(ffs))
+    ffs <- list(ffs)
+  if (!is.null(ffNames))
+    names(ffs) <- ffNames
+  
+  # transform flowFrame
+  fsTrans <- .flowTransformFlowSet(
+    as(ffs, "flowSet"), channelNames, transformation = transformation,
+    flowNames = flowNames)
+  
+  # create gating set
+  GatingSet(fsTrans)
+}
+
+#' @description Transform flow set
+#' @param fs FlowSet
+#' @param channelNames list of character for channel names
+#' @param transformation character for data transformation. Any of c("none", "biexponential", "log", "ln", "linear", "quadratic", "scale", "splitScale", "truncate")
+#' @param flowNames boolean to use "flow-names"
+#' @examples
+#' TODO
+.flowTransformFlowSet <- function(fs, channelNames, transformation = NULL,
+                                 flowNames = TRUE) {
+  fsTrans <- fs
+  
+  # run transformation
+  if (!is.null(transformation) && transformation != "none") {
+    if (transformation == "biexponential") transFun <- biexponentialTransform()
+    else if (transformation == "log") transFun <- logTransform()
+    else if (transformation == "ln") transFun <- lnTransform()
+    else if (transformation == "linear") transFun <- linearTransform()
+    else if (transformation == "quadratic") transFun <- quadraticTransform()
+    else if (transformation == "scale") transFun <- scaleTransform()
+    else if (transformation == "splitScale") transFun <- splitScaleTransform()
+    else if (transformation == "truncate") transFun <- truncateTransform()
+    
+    # correct channel names
+    if (flowNames == TRUE) {
+      channelNames <- .flowCorrectChannelNames(channelNames)
+    }
+    
+    transList <- transformList(channelNames, transFun)
+    
+    fsTrans <- transform(fs, transList)
+  }
+  
+  fsTrans
+}
+
+#' @description Fortify gating set
+#' @importFrom ggplot2 fortify
+#' @import ggcyto
+#' 
+#' @param gs GatingSet
+#' @param subset character of population subset
+#' @examples
+#' TODO
+.flowFortifyGs <- function(gs, subset = "root") {
+  retVal <- NULL
+  
+  tryCatch(
+    expr = {
+      # fortify gating set
+      attr(gs, "subset") <- subset
+      retVal <- fortify(gs)
+    },
+    error = function(e){ 
+      retVal <<- NULL
+    },
+    warning = function(w){
+      retVal <<- NULL
+    }
+  )
+  
+  retVal
+}
+
+# # auto gate on all channels
+# flowAutoGate <- function(gs, channelNames) {
+#   # create a flow set
+#   fs <- read.ncdfFlowSet(file.path(taskDir, "labelIntensities.fcs"), alter.names = TRUE)
+#   chnlNames <- names(intensities)[names(intensities) != "rowname"]
+#   
+#   # TODO .. how should that work?
+# }
+
+#' @description Compensate with linear model
+#' @param df data.frame to compensate
+#' @param channelNames list of character for channel names
+#' @param refAxis character for reference axis
+#' @param polyDegree integer for plynomial degress
+#' @param suffix character for column suffix
+#' @param replaceValues boolean to replace previous values
+#' @param flowNames boolean to use "flow-names"
+#' @examples
+#' TODO
+#' @export
+flowCompensatePoly <- function(df, channelNames, refAxis,
+                               polyDegree = 4, suffix = ".corr",
+                               replaceValues = FALSE, flowNames = TRUE) {
+  # correct channel names before selecting
+  if (flowNames == TRUE) {
+    # correct channel names
+    channelNames <- .flowCorrectChannelNames(channelNames)
+  }
+  
+  # correct all channels
+  for (x in channelNames) {
+    # fit model
+    # https://stackoverflow.com/a/3822706/13766165
+    polyEstimate <- lm(get(x) ~ poly(get(refAxis), polyDegree, raw = FALSE),
+                       data = df)
+    
+    # predict values
+    polyPredict <- predict(
+      polyEstimate,
+      newdata = data.frame(x = df[[refAxis]]) %>%
+        rename_with(.cols = 1, ~refAxis))
+    
+    # correct values to mean
+    meanIntensity <- mean(df[[x]])
+    polyCorrected <- polyPredict / meanIntensity
+    
+    # set name for correction
+    corrName <- if (replaceValues)
+      x
+    else
+      paste0(x, suffix)
+    
+    # correct values
+    df[[corrName]] <- df[[x]] / polyCorrected
+  }
+  
+  df
+}
+
+#' @description Get gate for pop
+#' @param gs GatingSet
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowGateForPop <- function(gs, pop){
+  # there will only be one gate returned
+  curGate <- gs_pop_get_gate(gs, pop)[[1]]
+
+  curGate
+}
+
+#' @description Get channels for pop
+#' @param gs GatingSet
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowChannelsForPop <- function(gs, pop){
+  gates <- .flowGateForPop(gs, pop)
+  names(gates@parameters)
+}
+
+#' @description Get leaves from population
+#' @param gs GatingSet
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowLeavesForPop <- function(gs, pop = "/") {
+  pops <- gs_get_pop_paths(gs, order = 'bfs')
+  
+  # return parent leaves
+  .popsGetParentLeaves(pops = pops, pop = pop)
+}
+
+#' @description Is population root?
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowPopIsRoot <- function(pop) {
+  if (all(pop %in% c("", "/", "root"))) TRUE else FALSE
+}
+
+#' @description Normalise root population
+#' @param pop character for population
+#' @param defaultVal character for population default
+#' @param popSuffix character for population suffix
+#' @param addSuffix boolean to add population suffix
+#' @examples
+#' TODO
+.flowNormRootPath <- function(pop, defaultVal = "/", popSuffix = "/", addSuffix = FALSE) {
+  attr(pop, "suffix") <- popSuffix
+  
+  # is population root?
+  if (.flowPopIsRoot(pop) == TRUE) {
+    pop <- defaultVal
+    attr(pop, "suffix") <- ""
+  }
+  
+  # add suffix?
+  if (addSuffix == TRUE)
+    pop <- paste0(pop, attr(pop, "suffix"))
+  
+  pop
+}
+
+#' @description Direct leaves for population
+#' @param gs GatingSet
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowDirectLeavesForPop <- function(gs, pop = "/") {
+  # get all leaves
+  allLeaves <- .flowLeavesForPop(gs, pop = pop)
+  
+  # filter for direct leaves
+  if (!.flowPopIsRoot(pop)) {
+    # directLeaves <- unlist(as.list(str_match(allLeaves, sprintf("^%s/[^/]+$", pop))))
+    # get only leaves with length of pop + 1
+    popLength <- length(unlist(str_split(pop, "/")))
+    leaveLengths <- unlist(lapply(str_split(allLeaves, "/"), length))
+    directLeaves <- allLeaves[leaveLengths == popLength + 1]
+  } else {
+    directLeaves <- if (length(allLeaves) > 0)
+      unlist(as.list(str_match(allLeaves, sprintf("^/[^/]+$"))))
+    else
+      list()
+  }
+  
+  directLeaves[!is.na(directLeaves)]
+}
+
+#' @description Trim path
+#' @param path character for population path
+#' @param pathLevels integer for path levels
+#' @examples
+#' TODO
+.flowTrimPath <- function(path, pathLevels = 1) {
+  # split path
+  splitPath <- unlist(str_split(path, "/"))
+  splitPath <- splitPath[splitPath != ""]
+  
+  # adjust levels
+  if (pathLevels > length(splitPath)) {
+    pathLevels <- length(splitPath) - 1
+  }
+  
+  # return levels
+  trimmedPath <- splitPath[(length(splitPath) - pathLevels):length(splitPath)]
+  
+  paste(trimmedPath, collapse = "/")
+}
+
+#' @description Parent from population
+#' @param path character for population path
+#' @param root character for root population
+#' @examples
+#' TODO
+.flowPopParent <- function(pop, root = "") {
+  # replace last population with empty string
+  # popParent <- stri_replace_last(pop, "", regex = "/.+$")
+  if (!.flowPopIsRoot(pop)) {
+    popSplit <- str_split(pop, "/")[[1]]
+    popParent <- paste(popSplit[1:length(popSplit) - 1], collapse = "/")
+  } else {
+    popParent <- root
+  }
+  
+  # is root parent?
+  if (popParent == "")
+    popParent <- root
+  
+  popParent
+}
+
+#' @description Path names for population
+#' @param pop character for population path
+#' @examples
+#' TODO
+.flowNamesForPops <- function(pop){
+  popName <- substring(str_match(pop, "/[:alnum:]+$"), first = 2) %>%
+    replace_na("root")
+
+  popName
+}
+
+#' @description All direct leaves which have been gated on a specific axis combination
+#' @param gs GatingSet
+#' @param pop character for population path
+#' @param gateParams list of character for gating axis (2)
+#' @examples
+#' TODO
+.flowDirectLeavesForPopWithAxis <- function(gs, pop, gateParams){
+  # get direct leaves
+  directLeaves <- .flowDirectLeavesForPop(gs, pop)
+  
+  matchedPops <- c()
+  # go through leaves and check whether they match the axis
+  for (curLeave in directLeaves){
+    if (.flowMatchGatingParamsForPop(gs, curLeave, gateParams)){
+      matchedPops <- c(matchedPops, curLeave)
+    }
+  }
+
+  matchedPops
+}
+
+#' @description replace parent pop
+#' @param popPath character for population path
+#' @param popToMatch character for population path to match
+#' @param popToReplace character for population path to replace
+#' @param checkEqual boolean to check whether match and replace are equal
+#' @examples
+#' TODO
+.flowPopReplaceParent <- function(popPath, popToMatch, popToReplace, checkEqual = FALSE) {
+  popPath <- .flowNormRootPath(popPath)
+  popToMatch <- .flowNormRootPath(popToMatch)
+  
+  # match pop
+  popMatch <- .flowPopIsParent(popPath, popToMatch, checkEqual = checkEqual)
+  
+  # replace pop path
+  if (popMatch == TRUE) {
+    if (attr(popMatch, "equal") == TRUE) {
+      popPath <- popToReplace
+    } else {
+      popPath <- str_replace(
+        popPath,
+        sprintf("^%s/", popToMatch),
+        paste0(popToReplace, attr(popToMatch, "suffix"))
+        )
+    }
+  }
+  
+  popPath
+}
+
+#' @description Check if population is parent
+#' @param popPath character for population path
+#' @param popToMatch character for population path to match
+#' @param checkEqual boolean to check whether match and replace are equal
+#' @examples
+#' TODO
+.flowPopIsParent <- function(popPath, popToMatch, checkEqual = FALSE) {
+  popPath <- .flowNormRootPath(popPath)
+  popToMatch <- .flowNormRootPath(popToMatch)
+  
+  popsMatch <- startsWith(popPath, paste0(popToMatch, attr(popToMatch, "suffix")))
+  attr(popsMatch, "equal") <- FALSE
+  
+  # check if they are equal
+  if (checkEqual == TRUE && popsMatch == FALSE) {
+    popsMatch <- popPath == popToMatch
+    attr(popsMatch, "equal") <- TRUE
+  }
+  
+  popsMatch
+}
+
+#' @description Get pop path for name and parent
+#' @param popName character for population
+#' @param popParent character for parent population
+#' @examples
+#' TODO
+.flowPopPath <- function(popName, popParent) {
+  if (popParent == "root") popParent <- "/"
+  if (popParent == "/") popParent <- ""
+  
+  paste(popParent, popName, sep = "/")
+}
+
+#' @description Rename parent name
+#' @param popPath character for population
+#' @param popParent character for parent population
+#' @examples
+#' TODO
+.flowChangeParentName <- function(popPath, parentPath) {
+  a <- str_split(popPath, "/")[[1]]
+  b <- str_split(parentPath, "/")[[1]]
+  
+  # replace in x
+  for (j in seq(length(b))) {
+    a[[j]] <- b[[j]]
+  }
+  
+  # put back together
+  paste(a, collapse = "/")
+}
+
+#' @description Get gating axis for pop
+#' @param gs GatingSet
+#' @param pop character for population
+#' @examples
+#' TODO
+.flowGatingAxisForPop <- function(gs, pop){
+  .flowGateForPop(gs, pop)@parameters
+}
+
+#' @description Are the selected gating params used for population gating?
+#' @param gs GatingSet
+#' @param pop character for population
+#' @param gateParams list of character for gating axis (2)
+#' @examples
+#' TODO
+.flowMatchGatingParamsForPop <- function(gs, pop, gateParams){
+  curGateParams <- .flowGatingAxisForPop(gs, pop)
+
+  matchAxis <- TRUE
+
+  # go through parameters and check
+  # if one axis does not match
+  for (curParam in curGateParams) {
+    if (!(curParam@parameters) %in% gateParams){
+      matchAxis <- FALSE
+    }
+  }
+
+  matchAxis
+}

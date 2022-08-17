@@ -1,0 +1,99 @@
+{
+  "fun": {
+    "afCorrectPreview": {
+      "category": "Preview functions",
+      "label": "Autofluorescence Correction",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "afCombinations": {
+        "type:group": {
+					"divisionChannels": {
+						"type:list": {}
+					},
+					"channelPercentile": {
+						"type:double": {
+							"min": 0,
+							"max": 100,
+							"default": 60
+						}
+					},
+					"correctionPercentile": {
+						"type:double": {
+							"min": 0,
+							"max": 100,
+							"default": 95
+						}
+					},
+					"correctionMode": {
+						"type:character": {
+							"default": "divide"
+						}
+					},
+					"medianFilter": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 0
+						}
+					}
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"afCombinations": {
+				"index": 1,
+				"label": "Channel combinations",
+				"widget:channelGroup": {
+					"divisionChannels": {
+						"index": 0,
+						"label": "Channels",
+						"widget:channelSelection": {
+							"size": 1,
+							"multiple": true
+						}
+					},
+					"channelPercentile": {
+		        "index": 1,
+		        "label": "Channel Percentile",
+		        "widget:slider": {
+		          "step": 0.5
+		        }
+		      },
+					"correctionPercentile": {
+						"index": 2,
+						"label": "Correction Percentile",
+						"widget:slider": {
+							"step": 0.5
+						}
+					},
+					"correctionMode": {
+						"index": 3,
+						"label": "Correction mode",
+						"widget:selection": {
+							"size": 1,
+							"multiple": false,
+							"items": [
+								"divide",
+								"none"
+							]
+						}
+					},
+					"medianFilter": {
+						"index": 4,
+						"label": "Median Filter",
+						"widget:slider": {
+							"step": 1
+						}
+					}
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

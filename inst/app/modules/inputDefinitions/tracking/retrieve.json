@@ -1,0 +1,60 @@
+{
+  "fun": {
+    "retrieve": {
+      "category": "Synchronise data",
+      "label": "Retrieve tracking",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "remoteEnv": {
+        "type:character": {
+          "default": "hpc"
+        }
+      },
+      "valueNames": {
+				"type:list": {
+				}
+			},
+			"callingFun": {
+				"type:character": {
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "remoteEnv": {
+        "index": 0,
+        "label": "Remote environment",
+        "widget:selection": {
+          "items": {
+            "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "valueNames": {
+				"index": 1,
+				"label": "Label properties",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": true,
+					"field": "imLabelPropsFilepath"
+				}
+			},
+			"callingFun": {
+				"index": 2,
+				"label": "Function",
+				"widget:moduleFunSelection": {
+					"size": 1,
+					"multiple": false
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

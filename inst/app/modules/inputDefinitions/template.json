@@ -1,0 +1,61 @@
+# https://github.com/napari/magicgui/issues/232
+# https://docs.apeer.com/tutorials/jupyter-notebook-ome-tiff-example
+
+{
+    "spec": {
+        "inputs": {
+            "input_image": {
+                "type:file": {}
+            },
+            "red": {
+                "type:number": {
+                    "lower_inclusive": 0.0,
+                    "upper_inclusive": 1.0
+                }
+            },
+            "green": {
+                "type:number": {
+                    "lower_inclusive": 0.0,
+                    "upper_inclusive": 1.0
+                }
+            },
+            "blue": {
+                "type:number": {
+                    "lower_inclusive": 0.0,
+                    "upper_inclusive": 1.0
+                }
+            }
+        },
+        "outputs": {
+            "tinted_image": {
+                "type:file": {}
+            }
+        }
+    },
+    "ui": {
+        "inputs": {
+            "red": {
+                "index": 51,
+                "label": "Red channel",
+                "widget:slider": {
+                    "step": 0.1
+                }
+            },
+            "green": {
+                "index": 52,
+                "label": "Green channel",
+                "widget:slider": {
+                    "step": 0.1
+                }
+            },
+            "blue": {
+                "index": 53,
+                "label": "Blue channel",
+                "widget:slider": {
+                    "step": 0.1
+                }
+            }
+        },
+        "outputs": {}
+    }
+}

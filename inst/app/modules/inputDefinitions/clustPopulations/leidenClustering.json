@@ -1,0 +1,205 @@
+{
+  "fun": {
+    "leidenClustering": {
+      "category": "Module functions",
+      "label": "Leiden clustering",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"popsToCluster": {
+				"type:list": {}
+			},
+			"savePops": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"keepPops": {
+				"type:boolean": {
+				  "default": false
+				}
+			},
+      "resolution": {
+        "type:double": {
+          "min": 0,
+          "max": 5,
+          "default": 1
+        }
+      },
+      "normaliseAxis": {
+        "type:character": {
+          "default": "channels"
+        }
+      },
+      "normaliseToMedian": {
+        "type:boolean": {
+          "default": false
+        }
+      },
+      "maxFraction": {
+        "type:double": {
+          "min": 0,
+          "max": 1,
+          "default": 0
+        }
+      },
+      "normalisePercentile": {
+        "type:double": {
+          "min": 50,
+          "max": 100,
+          "default": 99.8
+        }
+      },
+      "normalisePercentileBottom": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 0
+        }
+      },
+      "normaliseIndividually": {
+        "type:boolean": {
+          "default": false
+        }
+      },
+      "transformation": {
+        "type:character": {
+          "default": "NONE"
+        }
+      },
+      "logBase": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 0
+        }
+      },
+      "clusterChannels": {
+        "type:group": {
+          "channels": {
+            "type:list": {}
+          }
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"popsToCluster": {
+				"index": 0,
+				"label": "Root Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"savePops": {
+				"index": 1,
+				"label": "Save pops",
+				"widget:checkbox": {
+				}
+			},
+			"keepPops": {
+				"index": 2,
+				"label": "Keep other populations",
+				"widget:checkbox": {
+				}
+			},
+      "resolution": {
+        "index": 3,
+        "label": "Resolution",
+        "widget:slider": {
+          "step": 0.05
+        }
+      },
+      "normaliseAxis": {
+        "index": 4,
+        "label": "Normalisation Axis",
+        "widget:radioButtons": {
+          "items": {
+            "Channels": "channels",
+            "Cells": "cells",
+            "No normalisation": "NONE"
+          }
+        }
+      },
+      "normaliseToMedian": {
+        "index": 5,
+        "label": "Normalise to median",
+        "widget:checkbox": {
+        }
+      },
+      "maxFraction": {
+        "index": 6,
+        "label": "Maximum fraction",
+        "widget:slider": {
+          "step": 0.01
+        }
+      },
+      "normalisePercentile": {
+        "index": 7,
+        "label": "Normalisation Top",
+        "widget:slider": {
+          "step": 0.1
+        }
+      },
+      "normalisePercentileBottom": {
+        "index": 8,
+        "label": "Normalisation Bottom",
+        "widget:slider": {
+          "step": 0.1
+        }
+      },
+      "normaliseIndividually": {
+        "index": 9,
+        "label": "Individual normalisation",
+        "widget:checkbox": {
+        }
+      },
+      "transformation": {
+        "index": 10,
+        "label": "Transform data",
+        "widget:selection": {
+          "items": {
+            "No Transformation": "NONE",
+            "Log": "log",
+            "Revered Log": "reversedLog"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "logBase": {
+        "index": 11,
+        "label": "Log base",
+        "widget:selection": {
+          "items": {
+            "Ln": 0,
+            "Log 10": 10,
+            "Log 2": 2
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "clusterChannels": {
+				"index": 12,
+				"label": "Use for clusterings",
+				"widget:channelSelectionTypeGroup": {
+          "channels": {
+            "index": 0,
+            "label": "Channels",
+            "widget:channelSelection": {
+              "size": 1,
+              "multiple": true
+            }
+          }
+  			}
+      }
+    },
+    "outputs": {}
+  }
+}

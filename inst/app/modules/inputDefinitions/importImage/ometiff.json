@@ -1,0 +1,44 @@
+{
+  "fun": {
+    "ometiff": {
+      "category": "Module functions",
+      "label": "OME-TIFF",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "pyramidScale": {
+        "type:integer": {
+          "min": 1,
+          "max": 10,
+          "default": 4
+        }
+      },
+			"createMIP": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "pyramidScale": {
+        "index": 0,
+        "label": "Pyramid scale",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"createMIP": {
+				"index": 1,
+				"label": "Create MIP",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}
