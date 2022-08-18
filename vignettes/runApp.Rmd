@@ -1,0 +1,32 @@
+---
+title: "Run app"
+output: html_document
+date: '2022-08-17'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Run app
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+```
+
+```{r}
+devtools::load_all("../")
+
+cciaCreateApp()
+
+cciaUpdateApp()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+cciaRunApp(port = 6860)
+```
+

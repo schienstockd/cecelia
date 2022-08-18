@@ -4,16 +4,16 @@
 #' TODO
 ui <- function(request) {
   # --- sidebar ---
-  sidebar <- shinydashboard::dashboardSidebar(
-    shinydashboard::sidebarMenu(id = "sidebar",
+  sidebar <- dashboardSidebar(
+    sidebarMenu(id = "sidebar",
       
       htmlOutput("projectName") %>%
         tagAppendAttributes(class = 'txt-medium-centred'),
-      shinydashboard::menuItemOutput("menuCreateProject"),
-      shinydashboard::menuItemOutput("menuStaticAnalysis"),
-      shinydashboard::menuItemOutput("menuLiveAnalysis"),
-      shinydashboard::menuItemOutput("menuFlowAnalysis"),
-      shinydashboard::menuItemOutput("menuSettings"),
+      menuItemOutput("menuCreateProject"),
+      menuItemOutput("menuStaticAnalysis"),
+      menuItemOutput("menuLiveAnalysis"),
+      menuItemOutput("menuFlowAnalysis"),
+      menuItemOutput("menuSettings"),
       
       # --- Viewer settings ---
       tags$hr(),
@@ -65,8 +65,8 @@ ui <- function(request) {
                actionButton("importProject", "Import")
                ),
         column(3,
-               shinyjs::disabled(actionButton("saveProject", "Save")),
-               shinyjs::disabled(actionButton("exportProject", "Export")),
+               disabled(actionButton("saveProject", "Save")),
+               disabled(actionButton("exportProject", "Export")),
                )
       ),
       fluidRow(
@@ -74,10 +74,10 @@ ui <- function(request) {
                tags$div("Version", class = 'txt-default-centred')
                ),
         column(3,
-               shinyjs::disabled(actionButton("loadVersion", "Load"))
+               disabled(actionButton("loadVersion", "Load"))
                ),
         column(3,
-               shinyjs::disabled(actionButton("createVersion", "Create"))
+               disabled(actionButton("createVersion", "Create"))
                )
       ),
       tags$hr(),
@@ -92,9 +92,9 @@ ui <- function(request) {
   
   
   # --- main body ---
-  body <- shinydashboard::dashboardBody(
-    shinyjs::useShinyjs(),
-    shinyjs::extendShinyjs(
+  body <- dashboardBody(
+    useShinyjs(),
+    extendShinyjs(
       file.path("JS", "shinyjsExtended.js"),
       functions = c("collapseBox")),
     
@@ -102,81 +102,81 @@ ui <- function(request) {
     # https://stackoverflow.com/questions/32465177/how-to-manually-expand-a-submenu-in-a-shiny-dashboard-side-bar
     
     # change theme
-    dashboardthemes::shinyDashboardThemes(
+    shinyDashboardThemes(
       theme = "grey_dark"
     ),
     
-    shinydashboard::tabItems(
+    tabItems(
       # create project
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "createProject",
         .createProjectUI("init")
       ),
       
       # general analysis
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "importImages",
-        .importImagesUI("import")
+        .importImagesUI("importImages")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "importFlow",
         .importFlowUI("importFlow")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "manageMetadata",
         .manageMetadataUI("metadata")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "segmentImages",
         .segmentImagesUI("segment")
       ),
       
       # specific to static images?
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "gatePopulations",
         .gatePopulationsUI("gatePopulations")
       ),
       
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "clustPopulations",
         .clustPopulationsUI("clustPopulations")
       ),
       
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "spatialAnalysis",
         .spatialAnalysisUI("spatialAnalysis")
       ),
       
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "pixelClassification",
         .pixelClassificationUI("pixcl")
       ),
       
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "signalAnalysis",
         .signalAnalysisUI("signalAnalysis")
       ),
       
       # specific to live images?
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "cleanupImages",
         .cleanupImagesUI("cleanupImages")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "trainModels",
         .trainModelsUI("trainModels")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "trackingImages",
         .trackingImagesUI("tracking")
       ),
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "behaviourAnalysis",
         .behaviourAnalysisUI("behaviourAnalysis")
       ),
       
       # settings
-      shinydashboard::tabItem(
+      tabItem(
         tabName = "projectSettings",
         .projectSettingsUI("global")
       )
@@ -199,7 +199,7 @@ ui <- function(request) {
     title = "Cecelia",
     dashboardHeader(
       # change logo
-      title = shinydashboard::shinyDashboardLogo(
+      title = shinyDashboardLogo(
         theme = "grey_dark",
         boldText = "Cecelia",
         mainText = "App",

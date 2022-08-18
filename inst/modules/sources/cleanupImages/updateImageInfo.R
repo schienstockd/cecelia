@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "segment.R")
-)
-
 UpdateImageInfo <- R6::R6Class(
   "UpdateImageInfo",
   inherit = Segment,

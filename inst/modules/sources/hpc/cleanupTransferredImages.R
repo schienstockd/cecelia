@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 CleanupTransferredImages <- R6::R6Class(
   "CleanupTransferredImages",
   inherit = Hpc,

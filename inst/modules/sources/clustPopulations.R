@@ -21,8 +21,8 @@ ClustPopulations <- R6::R6Class(
       # # unlink datafiles
       # unlink(file.path(
       #   self$envParams()$dirs$task,
-      #   cfg$dirs$tasks$data,
-      #   cfg$files$anndata))
+      #   cciaConf()$dirs$tasks$data,
+      #   cciaConf()$files$anndata))
       # 
       # # reset values
       # cciaObj$setImAnndataFilepath(NULL)
@@ -43,7 +43,7 @@ ClustPopulations <- R6::R6Class(
       cciaObj <- self$cciaTaskObject()
       
       # create path
-      clustPath <- paste0(self$funParams()$valueName, ".clust", cfg$files$ext$anndata)
+      clustPath <- paste0(self$funParams()$valueName, ".clust", cciaConf()$files$ext$anndata)
       
       # update anndata path
       if ("cciaObjects" %in% names(cciaObj)) {

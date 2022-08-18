@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "clustPopulations.R")
-)
-
 Upload <- R6::R6Class(
   "Upload",
   inherit = ClustPopulations,

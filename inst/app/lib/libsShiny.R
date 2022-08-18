@@ -1,0 +1,12 @@
+library(shinydashboard)
+library(dashboardthemes)
+library(shinyjs)
+library(plotly)
+library(shinyFiles)
+
+library(httpuv)
+library(tools)
+library(keys)
+library(xfun)
+library(heatmaply)
+library(dendextend)

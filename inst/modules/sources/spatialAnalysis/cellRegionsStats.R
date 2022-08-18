@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 CellRegionsStats <- R6::R6Class(
   "CellRegionsStats",
   inherit = SpatialAnalysis,
@@ -54,14 +50,14 @@ CellRegionsStats <- R6::R6Class(
       
       # get columns for type
       typeCols <- labelPropsCols[
-        !is.na(str_match(labelPropsCols, sprintf(
+        !is.na(stringr::str_match(labelPropsCols, sprintf(
           "%s\\.[^regions]", self$funParams()$popType)))
       ]
       
       # TODO hard code the parameters to quantify
       # ideally, this would be done in a nicer interface
       # not sure where and how
-      labelStats = cfg$parameters$labelStats
+      labelStats = cciaConf()$parameters$labelStats
       
       # check that all label stats are in the data
       labelStats <- labelStats[names(labelStats) %in% colnames(regionProps)]
@@ -89,7 +85,7 @@ CellRegionsStats <- R6::R6Class(
           obsColNames <- sapply(obsColNames, function(x) sprintf(
             "%s.%s",
             # replace 'cell' with 'region'
-            str_replace(i,
+            stringr::str_replace(i,
                         sprintf("%s.cell", self$funParams()$popType),
                         sprintf("%s.region", self$funParams()$popType)
                         ), x
@@ -111,7 +107,7 @@ CellRegionsStats <- R6::R6Class(
           DT <- regionProps[, .(freq = mean(get(i))), by = .(value_name, label)]
           
           # replace 'cell' with 'region'
-          obsColNames <- str_replace(
+          obsColNames <- stringr::str_replace(
             i,
             sprintf("%s.cell", self$funParams()$popType),
             sprintf("%s.region", self$funParams()$popType)
@@ -159,7 +155,7 @@ CellRegionsStats <- R6::R6Class(
       
       # create a column and add to label props
       cciaObj$labelProps(valueName = self$funParams()$valueName)$add_obs(
-        r_to_py(
+        reticulate::r_to_py(
           as.list(labelProps[, ..obsCols])
         )
       )$save()

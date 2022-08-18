@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "clustPopulations.R")
-)
-
 LeidenClustering <- R6::R6Class(
   "LeidenClustering",
   inherit = ClustPopulations,

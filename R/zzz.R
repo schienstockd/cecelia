@@ -7,7 +7,7 @@ pkg.env <- new.env()
 .onLoad <- function(libname, pkgname) {
   # prepare paths
   pkg.env$cfg <- config::get(
-    file = system.file("config.yml", package = "ceceliaCore"))
+    file = system.file("config.yml", package = "cecelia"))
 }
 
 #' @description Expose config
@@ -36,7 +36,7 @@ cciaSetup <- function(path) {
   
   # copy in custom.yml to be modified
   file.copy(
-    system.file("custom.yml", package = "ceceliaCore"),
+    system.file("custom.yml", package = "cecelia"),
     file.path(path)
   )
 }
@@ -47,19 +47,19 @@ cciaSetup <- function(path) {
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image") {
   envFile <- system.file(
     file.path("py-env", "conda-env-image.yml"),
-    package = "ceceliaCore")
+    package = "cecelia")
   pyModulesFile <- system.file(
     file.path("py-env", "init-py-modules-image.txt"),
-    package = "ceceliaCore")
+    package = "cecelia")
   
   # use environment.yml for type
   if (envType == "flow") {
     envFile <- system.file(
       file.path("py-env", "conda-env-flow.yml"),
-      package = "ceceliaCore")
+      package = "cecelia")
     pyModulesFile <- system.file(
       file.path("py-env", "init-py-modules-flow.txt"),
-      package = "ceceliaCore")
+      package = "cecelia")
   }
   
   # create conda environment
@@ -179,11 +179,11 @@ cciaUse <- function(path, initConda = TRUE) {
   
   # set working working directory
   os <- reticulate::import("os")
-  os$chdir(system.file(".", package = "ceceliaCore"))
+  os$chdir(system.file(".", package = "cecelia"))
   
   # source python files
   reticulate::source_python(
-    system.file(file.path("py", "label_props_utils.py"), package = "ceceliaCore"),
+    system.file(file.path("py", "label_props_utils.py"), package = "cecelia"),
     envir = pkg.env
   )
 }
@@ -195,6 +195,6 @@ cciaCreateApp <- function() {
 }
 
 # run app with port
-cciaRunApp <- function() {
-  shiny::runApp(system.file("app", package = "ceceliaApp"))
+cciaRunApp <- function(...) {
+  shiny::runApp(system.file("app", package = "cecelia"), ...)
 }

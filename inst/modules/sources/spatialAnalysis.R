@@ -16,7 +16,7 @@ SpatialAnalysis <- R6::R6Class(
       paste0(
         "regions_",
         self$funParams()$valueName,
-        cfg$files$ext$labelProps)
+        cciaConf()$files$ext$labelProps)
     },
     
     # reset image information
@@ -111,7 +111,7 @@ SpatialAnalysis <- R6::R6Class(
           )
           
           # set names
-          names(pops) <- sprintf("contact.%s", str_replace(self$funParams()$popsB, "/", "__"))
+          names(pops) <- sprintf("contact.%s", stringr::str_replace(self$funParams()$popsB, "/", "__"))
           
           # remove populations
           cciaObj$delPopsByPath(

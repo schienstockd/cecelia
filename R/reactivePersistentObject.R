@@ -169,7 +169,7 @@ ReactivePersistentObject <- R6::R6Class(
       
       # save values
       for (i in getterFunctions) {
-        curFunctionName <- str_replace(i, "get", "")
+        curFunctionName <- stringr::str_replace(i, "get", "")
         
         # call getter function
         savedValues[[curFunctionName]] <- self[[i]]()
@@ -308,7 +308,7 @@ ReactivePersistentObject <- R6::R6Class(
     
     #' @description Current version
     version = function() {
-      as.numeric(str_extract(
+      as.numeric(stringr::str_extract(
         self$persistentObjectDirectory(root = TRUE), "[0-9]+$"
       ))
     },

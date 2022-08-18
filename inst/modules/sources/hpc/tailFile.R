@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 TailFile <- R6::R6Class(
   "TailFile",
   inherit = Hpc,

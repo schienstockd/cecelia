@@ -1,7 +1,7 @@
 import math
 import numpy as np
 
-import helpers.math_helpers as math_helpers
+import py.math_helpers as math_helpers
 import py.ome_xml_utils as ome_xml_utils
 
 class DimUtils:

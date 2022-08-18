@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "launchpad.R")
-)
-
 RunCciaObj <- R6::R6Class(
   "RunCciaObj",
   inherit = Launchpad,

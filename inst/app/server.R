@@ -237,7 +237,7 @@ server <- function(input, output, session) {
       
       # save manager in state
       for (i in managerFunctions) {
-        curFunctionName <- str_replace(i, "get", "")
+        curFunctionName <- stringr::str_replace(i, "get", "")
         
         # call manager function
         state$values[[curManagerName]][[curFunctionName]] <- curManager[[i]]()
@@ -298,7 +298,7 @@ server <- function(input, output, session) {
     req(globalManagers$projectManager()$getProjectPath())
     
     # extract state id
-    stateID <- str_match(url, "(?<=_state_id_\\=).*")
+    stateID <- stringr::str_match(url, "(?<=_state_id_\\=).*")
     
     # save in settings
     globalManagers$projectManager()$setProjectVersionStateID(stateID)
@@ -508,10 +508,10 @@ server <- function(input, output, session) {
   observeEvent(globalManagers$projectManager()$getProjectName(), {
     req(globalManagers$projectManager()$getProjectName())
     
-    shinyjs::enable("saveProject")
-    shinyjs::enable("exportProject")
-    shinyjs::enable("loadVersion")
-    shinyjs::enable("createVersion")
+    enable("saveProject")
+    enable("exportProject")
+    enable("loadVersion")
+    enable("createVersion")
   })
   
   # save project
@@ -553,7 +553,7 @@ server <- function(input, output, session) {
   
   # delete selected version
   observeEvent(input$deleteSelectedProject, {
-    progress <- shiny::Progress$new()
+    progress <- Progress$new()
     
     if (globalManagers$projectManager()$useHPC() == TRUE) {
       progress$set(message = "Delete HPC files ... ", value = 0)
@@ -598,7 +598,7 @@ server <- function(input, output, session) {
       # refresh modal
       showModal(showLoadVersion(failedInputs))
     } else {
-      progress <- shiny::Progress$new()
+      progress <- Progress$new()
       
       if (globalManagers$projectManager()$useHPC() == TRUE) {
         progress$set(message = "Delete HPC files ... ", value = 0)
@@ -635,7 +635,7 @@ server <- function(input, output, session) {
     } else {
       newProjectVersion <- globalManagers$projectManager()$createProjectVersion()
       
-      progress <- shiny::Progress$new()
+      progress <- Progress$new()
       progress$set(message = "Copy local files ... ", value = 0)
       
       # copy data from current to new version
@@ -689,7 +689,7 @@ server <- function(input, output, session) {
     if (length(failedInputs) > 0) {
       showModal(showExportProject(failedInputs))
     } else {
-      progress <- shiny::Progress$new()
+      progress <- Progress$new()
       progress$set(message = "Export project ... ", value = 0)
       
       globalManagers$projectManager()$exportProject(exportPath)
@@ -721,7 +721,7 @@ server <- function(input, output, session) {
     if (length(failedInputs) > 0) {
       showModal(showImportProject(failedInputs))
     } else {
-      progress <- shiny::Progress$new()
+      progress <- Progress$new()
       progress$set(message = "Import project ... ", value = 0)
       
       globalManagers$projectManager()$importProject(importPath)
@@ -948,7 +948,7 @@ server <- function(input, output, session) {
   .createProjectServer("init", session, globalManagers)
   
   # general analysis
-  .importImagesServer("import", session, globalManagers)
+  .importImagesServer("importImages", session, globalManagers)
   .importFlowServer("importFlow", session, globalManagers)
   .manageMetadataServer("metadata", session, globalManagers)
   .segmentImagesServer("segment", session, globalManagers)

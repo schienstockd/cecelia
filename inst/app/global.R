@@ -1,23 +1,34 @@
 options(shiny.fullstacktrace = TRUE)
 
+# source all files from subdirectories
+# TODO is there a better way of doing this?
+appSources <- c(
+  "constantsCore.R",
+  # TODO should the libraries be added to 'depends' in DESCRIPTION
+  # rather than here to load into global workspace?
+  list.files("lib", pattern = ".R$", recursive = TRUE, full.names = TRUE),
+  list.files("helpers", pattern = ".R$", recursive = TRUE, full.names = TRUE),
+  list.files("utils", pattern = ".R$", recursive = TRUE, full.names = TRUE),
+  list.files("modules", pattern = ".R$", recursive = TRUE, full.names = TRUE)
+)
+
+for (x in appSources) {
+  source(x)
+}
+
 # DEBUG
 DEBUG_FILE <- file.path(cciaConf()$dirs$debug, cciaConf()$files$debug)
 DEBUG_SHOW_VIEWER <- TRUE
-DEBUG_NO_VIEWER_SHUTDOWN <- TRUE
+DEBUG_NO_VIEWER_SHUTDOWN <- FALSE
 DEBUG_SHOW_TASK_RESULT <- FALSE
 DEBUG_SHOW_TASK_EXPRESSION <- TRUE
 
 # shiny options ?
-shiny::enableBookmarking("server")
+enableBookmarking("server")
 
 # encryption
 # CCIA_SESSION_KEY <- PKI.genRSAkey(cciaConf()$encryption$keySize)
 CCIA_SESSION_KEY <- PKI::PKI.genRSAkey(2048)
-
-# DOCKER
-# get this somehow dynamically from the compose file or other
-USE_DOCKER <- cciaConf()$docker$useDocker
-DOCKER_DATA_PATH_MAPPING <- cciaConf()$docker$pathMapping
 
 # define analysis module pages
 SHINY_ANALYSIS_MODULES <- c(

@@ -99,8 +99,8 @@ createForkedTask <- function(tasks, poll = 500) {
       }
       
       # hpc process?
-      if (length(str_match(res[[1]], "slurm\\.fail")) > 0) {
-        if (!any(is.na(str_match(res[[1]], "slurm\\.fail")))) {
+      if (length(stringr::str_match(res[[1]], "slurm\\.fail")) > 0) {
+        if (!any(is.na(stringr::str_match(res[[1]], "slurm\\.fail")))) {
           retVal <- 1
         }
       }
@@ -171,7 +171,7 @@ createForkedTask <- function(tasks, poll = 500) {
       if (fullID == TRUE) {
         taskID
       } else {
-        str_extract(taskID, "(?<=\\.)[:alnum:]+$")
+        stringr::str_extract(taskID, "(?<=\\.)[:alnum:]+$")
       }
     },
     taskFunction = function(x) {

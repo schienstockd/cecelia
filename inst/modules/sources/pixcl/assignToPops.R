@@ -88,8 +88,8 @@ AssignToPops <- R6::R6Class(
           }
           
           # set names
-          # names(pops) <- sprintf("%s.%s", c("pos", "neg"), str_replace(j, "/", "__"))
-          names(pops) <- sprintf("%s.%s", c("pos"), str_replace(self$funParams()$clsfPops, "/", "__"))
+          # names(pops) <- sprintf("%s.%s", c("pos", "neg"), stringr::str_replace(j, "/", "__"))
+          names(pops) <- sprintf("%s.%s", c("pos"), stringr::str_replace(self$funParams()$clsfPops, "/", "__"))
           
           # remove populations
           cciaObj$delPopsByPath(

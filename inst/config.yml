@@ -126,8 +126,8 @@ default:
     tasksLimit: 25
     log:
       poll: 1000
-    sources: "modules/tasks/sources/"
-    inputDefinitions: "modules/tasks/inputDefinitions/"
+    sources: "modules/sources/"
+    inputDefinitions: "modules/inputDefinitions/"
     segment:
       optionalParams:
         - "blockSize"

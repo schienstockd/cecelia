@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "objcl.R")
-)
-
 ApplyClassifier <- R6::R6Class(
   "ApplyClassifier",
   inherit = Objcl,
@@ -46,8 +42,8 @@ ApplyClassifier <- R6::R6Class(
             x$clPath <- file.path(
               cciaObj$persistentObjectDirectory(root = TRUE),
               CCID_IMAGE_COLLECTION,
-              cfg$dirs$tasks$classifications,
-              cfg$dirs$classifications$pix,
+              cciaConf()$dirs$tasks$classifications,
+              cciaConf()$dirs$classifications$pix,
               paste0(i, ".cl")
             )
             x
@@ -90,14 +86,14 @@ ApplyClassifier <- R6::R6Class(
         
         # add labels to image
         cciaObj$setImLabelsFilepath(
-          paste0(valueName, cfg$files$ext$labels),
+          paste0(valueName, cciaConf()$files$ext$labels),
           valueName = valueName,
           setDefault = FALSE
         )
         
         # add properties
         cciaObj$setImLabelPropsFilepath(
-          paste0(valueName, cfg$files$ext$labelProps),
+          paste0(valueName, cciaConf()$files$ext$labelProps),
           valueName = valueName,
           setDefault = FALSE
         )

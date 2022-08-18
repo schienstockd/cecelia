@@ -77,7 +77,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 .cciaStatsType <- function(x) {
   # is there a "#" in the name?
   if (grepl("#", x) == TRUE) {
-    x <- str_split(x, "#")[[1]][[1]]
+    x <- stringr::str_split(x, "#")[[1]][[1]]
   }
   
   # return type
@@ -100,7 +100,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 .cciaStatsName <- function(x) {
   # is there a "#" in the name?
   if (grepl("#", x) == TRUE) {
-    x <- str_split(x, "#")[[1]][[1]]
+    x <- stringr::str_split(x, "#")[[1]][[1]]
   }
   
   # return type
@@ -347,8 +347,8 @@ cciaDecrypt <- function(x, fromInteger = TRUE) {
   xTrimmed <- x
   
   # check if there is something to trim
-  if (!any(is.na(str_match(xTrimmed, paste0("\\", CCID_CLASS_SEP))))) {
-    xTrimmed <- str_split(xTrimmed, paste0("\\", CCID_CLASS_SEP))[[1]]
+  if (!any(is.na(stringr::str_match(xTrimmed, paste0("\\", CCID_CLASS_SEP))))) {
+    xTrimmed <- stringr::str_split(xTrimmed, paste0("\\", CCID_CLASS_SEP))[[1]]
     
     # get last element
     xTrimmed <- xTrimmed[[length(xTrimmed)]]
@@ -464,13 +464,13 @@ createTaskVars <- function(uID, projectManager, taskEnv,
 #' TODO
 .prepForBash <- function(x, quotingStyle = "single") {
   # add extra backslashes
-  x <- str_replace_all(x, fixed("\\"), r"(\\\\)")
+  x <- stringr::str_replace_all(x, fixed("\\"), r"(\\\\)")
   
   # beware of quotes
   if (quotingStyle == "single")
-    x <- str_replace_all(x, fixed("'"), r"(\')")
+    x <- stringr::str_replace_all(x, fixed("'"), r"(\')")
   else
-    x <- str_replace_all(x, fixed("'"), r"(\")")
+    x <- stringr::str_replace_all(x, fixed("'"), r"(\")")
   
   x
 }
@@ -557,7 +557,7 @@ readLogFile <- function(logFile, previousContent = NULL, mergeContent = TRUE) {
 #   }
 #   
 #   # rename all channels matching the pattern
-#   names(df)[c(!is.na(str_match(names(df), channelPattern)))] <- channelNames
+#   names(df)[c(!is.na(stringr::str_match(names(df), channelPattern)))] <- channelNames
 #   
 #   df
 # }
@@ -624,7 +624,7 @@ renameChannelColumns <- function(channelList, channelNames, channelPattern = "me
   }
 
   # rename all channels matching the pattern
-  channelList[c(!is.na(str_match(channelList, channelPattern)))] <- channelNames
+  channelList[c(!is.na(stringr::str_match(channelList, channelPattern)))] <- channelNames
 
   channelList
 }
@@ -751,7 +751,7 @@ taskDirFiles <- function(taskDir, valueNames, isDir = FALSE) {
 #' @export
 popTypesFromPops <- function(pops, popSplit = "\\.") {
   unique(sapply(
-    pops, function(x) unlist(str_split(x, popSplit, n = 2))[[1]]
+    pops, function(x) unlist(stringr::str_split(x, popSplit, n = 2))[[1]]
   ))
 }
 
@@ -763,7 +763,7 @@ popTypesFromPops <- function(pops, popSplit = "\\.") {
 #' @export
 popPathsFromPops <- function(pops, popSplit = "\\.") {
   unique(sapply(
-    pops, function(x) unlist(str_split(x, popSplit, n = 2))[[2]]
+    pops, function(x) unlist(stringr::str_split(x, popSplit, n = 2))[[2]]
   ))
 }
 
@@ -776,14 +776,23 @@ popPathsFromPops <- function(pops, popSplit = "\\.") {
   # get all leaves
   if (!.flowPopIsRoot(pop)) {
     # https://stackoverflow.com/a/27721009/13766165
-    # allLeaves <- unlist(as.list(str_match(pops, sprintf("^[%s/.+$", pop))))
+    # allLeaves <- unlist(as.list(stringr::str_match(pops, sprintf("^[%s/.+$", pop))))
     allLeaves <- pops[startsWith(unlist(pops), .flowNormRootPath(pop, addSuffix = TRUE))]
     allLeaves <- allLeaves[allLeaves != pop]
   } else {
-    allLeaves <- pops[!is.na(str_match(pops, "^/.+$"))]
+    allLeaves <- pops[!is.na(stringr::str_match(pops, "^/.+$"))]
   }
   
   allLeaves[!is.na(allLeaves)]
+}
+
+#' @description capitalise first letter
+#' @param x character to modify
+firstToupper <- function(x) {
+  paste0(
+    toupper(substr(x, 1, 1)),
+    substring(x, 2)
+  )
 }
 
 #' @description Apply filter to population
@@ -861,7 +870,7 @@ adataMatFromPopDT <- function(popDT) {
     ], by = clusters]
   
   # replace names with readable channel names
-  colnames(adataSummary) <- str_replace(colnames(adataSummary), ".mean", "")
+  colnames(adataSummary) <- stringr::str_replace(colnames(adataSummary), ".mean", "")
   
   # remove clusters and transform matrix
   anndataMat <- t(as.matrix(
@@ -914,7 +923,7 @@ prepFilelistToSync <- function(oldFilename, newFilename) {
       addedFiles <- addedFiles[!is.na(addedFiles)]
       
       # remove non 5 numeric values
-      addedFiles <- addedFiles[!is.na(str_match(
+      addedFiles <- addedFiles[!is.na(stringr::str_match(
         str_sub(
           addedFiles,
           start = stri_locate_last_fixed(addedFiles, "_")[,1] + 1),
@@ -922,7 +931,7 @@ prepFilelistToSync <- function(oldFilename, newFilename) {
       ))]
       
       # add names
-      # addedNames <- c(paste0(newFilename, str_replace(addedFiles, filename, "")))
+      # addedNames <- c(paste0(newFilename, stringr::str_replace(addedFiles, filename, "")))
       addedNames <- c(
         paste0(newFilename, str_sub(addedFiles, str_length(filename) + 1))
         )

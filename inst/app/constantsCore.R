@@ -1,4 +1,5 @@
 CCIAVERSION <- 0.01
+CCIPDB <- "ccip.db"
 
 # Messages
 msgSELECT_EMPTY_DIR <- c(
@@ -78,11 +79,9 @@ dbTABLE_PROJECTS <- "projects"
 dbTABLE_PROJECT_VERSIONS <- "projectVersions"
 
 # Task manager
-taskMANAGER_SOURCE_HELPERS <- "utils/ccia/cciaSourceUtils.R"
-
-taskMANAGER_HPC_SLURM_CPU_TPL <- "managers/tasks/hpcCPU.slurm.tpl"
-taskMANAGER_HPC_SLURM_GPU_TPL <- "managers/tasks/hpcGPU.slurm.tpl"
-taskMANAGER_HPC_SLURM_OUT_TPL <- "managers/tasks/hpcWatchJob.tpl"
+taskMANAGER_HPC_SLURM_CPU_TPL <- "templates/hpc/slurm/hpcCPU.slurm.tpl"
+taskMANAGER_HPC_SLURM_GPU_TPL <- "templates/hpc/slurm/hpcGPU.slurm.tpl"
+taskMANAGER_HPC_SLURM_OUT_TPL <- "templates/hpc/slurm/hpcWatchJob.tpl"
 
 # File conventions
 fileIMAGE_CONVERTED <- "ccidImage"

@@ -16,11 +16,25 @@ NapariUtils <- R6::R6Class(
     #' @param viewerOutputFile character for output file path
     #' @param viewerInputFile character for input file path
     #' @param execInteractive boolean to execute interactive
-    initNapari = function(viewerOutputFile, viewerInputFile, execInteractive = TRUE) {
+    initNapari = function(viewerOutputFile = NULL, viewerInputFile = NULL, execInteractive = TRUE) {
+      # check files
+      if (is.null(viewerOutputFile))
+        viewerOutputFile <- system.file(
+          file.path("app",
+                    cciaConf()$python$viewer$viewerPath,
+                    cciaConf()$python$viewer$outputFile),
+          package = "cecelia")
+      if (is.null(viewerInputFile))
+        viewerInputFile <-           system.file(
+          file.path("app",
+                    cciaConf()$python$viewer$viewerPath,
+                    cciaConf()$python$viewer$inputFile),
+          package = "cecelia")
+      
       # import napari
       self$execute(paste(
         sprintf(
-          "from %s import NapariUtils", "utils.python.napari_utils"
+          "from %s import NapariUtils", "py.napari_utils"
           ),
         "init_napari = True",
         "try:",
@@ -117,7 +131,7 @@ NapariUtils <- R6::R6Class(
       napariModule = NULL, asDask = TRUE, show3D = FALSE, multiscales = NULL,
       execInteractive = TRUE, layersVisible = TRUE) {
       # map path
-      imPath <- dockerMapPathToHost(imPath)
+      imPath <- .dockerMapPathToHost(imPath)
       
       # clear and open image
       self$clearViewerInput()
@@ -142,16 +156,16 @@ NapariUtils <- R6::R6Class(
             ")"
           ),
           imPath,
-          r_to_py(useChannelAxis),
+          reticulate::r_to_py(useChannelAxis),
           # unlist - otherwise the names of the channels will be used 
           # List (16 items) will be used if there are many names ..
-          # r_to_py(forceAsFlatList(imChannelNames)), 
+          # reticulate::r_to_py(forceAsFlatList(imChannelNames)), 
           sprintf("['%s']", paste(c(unname(imChannelNames)), collapse = "', '")),
-          r_to_py(channelColormaps),
-          r_to_py(multiscales),
-          r_to_py(asDask),
-          r_to_py(show3D),
-          r_to_py(layersVisible)
+          reticulate::r_to_py(channelColormaps),
+          reticulate::r_to_py(multiscales),
+          reticulate::r_to_py(asDask),
+          reticulate::r_to_py(show3D),
+          reticulate::r_to_py(layersVisible)
           ), execInteractive = execInteractive
         )
       
@@ -177,7 +191,7 @@ NapariUtils <- R6::R6Class(
             sprintf("layers_startswith = %s,", if (!is.null(layersStartswith)) "'%s'" else "%s"),
             ")"
           ),
-          r_to_py(layersStartswith)
+          reticulate::r_to_py(layersStartswith)
         ), execInteractive = execInteractive
       )
       
@@ -203,8 +217,8 @@ NapariUtils <- R6::R6Class(
             sprintf("notify_module_id = %s,", if (!is.null(notifyModuleID)) "'%s'" else "%s"),
             ")"
           ),
-          r_to_py(pathToFile), r_to_py(layerName),
-          r_to_py(excludeNames), r_to_py(notifyModuleID)
+          reticulate::r_to_py(pathToFile), reticulate::r_to_py(layerName),
+          reticulate::r_to_py(excludeNames), reticulate::r_to_py(notifyModuleID)
         ), execInteractive = execInteractive
       )
     },
@@ -236,12 +250,12 @@ NapariUtils <- R6::R6Class(
               "label_suffixes = %s",
               ")"
             ),
-            r_to_py(valueNames),
-            r_to_py(showLabels),
-            r_to_py(showPoints),
-            r_to_py(showTracks),
-            r_to_py(asNpArray),
-            r_to_py(labelSuffixes)
+            reticulate::r_to_py(valueNames),
+            reticulate::r_to_py(showLabels),
+            reticulate::r_to_py(showPoints),
+            reticulate::r_to_py(showTracks),
+            reticulate::r_to_py(asNpArray),
+            reticulate::r_to_py(labelSuffixes)
           ), execInteractive = execInteractive
         )
       }
@@ -275,12 +289,12 @@ NapariUtils <- R6::R6Class(
             "label_suffixes = %s",
             ")"
           ),
-          r_to_py(showLabels),
-          r_to_py(showPoints),
-          r_to_py(showTracks),
-          r_to_py(valueName),
-          r_to_py(asNpArray),
-          r_to_py(labelSuffixes)
+          reticulate::r_to_py(showLabels),
+          reticulate::r_to_py(showPoints),
+          reticulate::r_to_py(showTracks),
+          reticulate::r_to_py(valueName),
+          reticulate::r_to_py(asNpArray),
+          reticulate::r_to_py(labelSuffixes)
         ), execInteractive = execInteractive
       )
     },
@@ -367,8 +381,8 @@ NapariUtils <- R6::R6Class(
             "point_size = %s",
             ")"
           ),
-          r_to_py(popType),
-          r_to_py(pointSize)
+          reticulate::r_to_py(popType),
+          reticulate::r_to_py(pointSize)
         ), execInteractive = execInteractive
       )
     },
@@ -390,14 +404,14 @@ NapariUtils <- R6::R6Class(
         paste(
           sprintf("napari_utils.show_pop_mapping('%s',", popType),
           if (is.null(valueName))
-            sprintf("value_name = %s,", r_to_py(valueName))
+            sprintf("value_name = %s,", reticulate::r_to_py(valueName))
           else
-            sprintf("value_name = '%s',", r_to_py(valueName)),
+            sprintf("value_name = '%s',", reticulate::r_to_py(valueName)),
           sprintf("remove_previous = %s,",
-                  r_to_py(removePrevious)),
+                  reticulate::r_to_py(removePrevious)),
           sprintf("filtered_from_value_name = %s,",
-                  r_to_py(filteredFromValueName)),
-          sprintf("points_size = %s", r_to_py(pointsSize)),
+                  reticulate::r_to_py(filteredFromValueName)),
+          sprintf("points_size = %s", reticulate::r_to_py(pointsSize)),
           ")",
           sep = "\n"),
         execInteractive = execInteractive
@@ -417,11 +431,11 @@ NapariUtils <- R6::R6Class(
         paste(
           sprintf("napari_utils.show_cell_neighbours('%s',", popType),
           if (is.null(valueName))
-            sprintf("value_name = %s,", r_to_py(valueName))
+            sprintf("value_name = %s,", reticulate::r_to_py(valueName))
           else
-            sprintf("value_name = '%s',", r_to_py(valueName)),
+            sprintf("value_name = '%s',", reticulate::r_to_py(valueName)),
           sprintf("remove_previous = %s,",
-                  r_to_py(removePrevious)),
+                  reticulate::r_to_py(removePrevious)),
           ")",
           sep = "\n"),
         execInteractive = execInteractive
@@ -438,8 +452,8 @@ NapariUtils <- R6::R6Class(
         # save shapes
         paste(
           "napari_utils.save_shapes(",
-          sprintf("shape_type = '%s',", r_to_py(shapeType)),
-          sprintf("value_name = '%s'", r_to_py(valueName)),
+          sprintf("shape_type = '%s',", reticulate::r_to_py(shapeType)),
+          sprintf("value_name = '%s'", reticulate::r_to_py(valueName)),
           ")",
           sep = "\n"),
         execInteractive = execInteractive
@@ -459,9 +473,9 @@ NapariUtils <- R6::R6Class(
         # show shapes
         paste(
           "napari_utils.show_shapes(",
-          sprintf("shape_type = '%s',", r_to_py(shapeType)),
-          sprintf("value_name = '%s',", r_to_py(valueName)),
-          sprintf("remove_previous = %s", r_to_py(removePrevious)),
+          sprintf("shape_type = '%s',", reticulate::r_to_py(shapeType)),
+          sprintf("value_name = '%s',", reticulate::r_to_py(valueName)),
+          sprintf("remove_previous = %s", reticulate::r_to_py(removePrevious)),
           ")",
           sep = "\n"),
         execInteractive = execInteractive
@@ -494,14 +508,14 @@ NapariUtils <- R6::R6Class(
         paste(
           sprintf("napari_utils.show_preview(%s, ", imageArray),
           if (is.list(channelNames))
-            sprintf("channel_names = %s,", r_to_py(channelNames))
+            sprintf("channel_names = %s,", reticulate::r_to_py(channelNames))
           else
-            sprintf("channel_names = \"%s\",", r_to_py(channelNames)),
-          sprintf("as_points = %s,", r_to_py(asPoints)),
-          sprintf("as_labels = %s,", r_to_py(asLabels)),
-          sprintf("multiscale = %s,", r_to_py(multiscale)),
-          sprintf("use_scale = %s,", r_to_py(useScale)),
-          sprintf("use_channel_axis = %s,", r_to_py(useChannelAxis)),
+            sprintf("channel_names = \"%s\",", reticulate::r_to_py(channelNames)),
+          sprintf("as_points = %s,", reticulate::r_to_py(asPoints)),
+          sprintf("as_labels = %s,", reticulate::r_to_py(asLabels)),
+          sprintf("multiscale = %s,", reticulate::r_to_py(multiscale)),
+          sprintf("use_scale = %s,", reticulate::r_to_py(useScale)),
+          sprintf("use_channel_axis = %s,", reticulate::r_to_py(useChannelAxis)),
           if (asPoints == TRUE)
             sprintf("size = %d", size),
           ")",
@@ -514,7 +528,7 @@ NapariUtils <- R6::R6Class(
     # setters
     setTaskDir = function(x, execInteractive = TRUE) {
       # map path
-      x <- dockerMapPathToHost(x)
+      x <- .dockerMapPathToHost(x)
       
       self$execute(
         sprintf("napari_utils.task_dir = '%s'", x),

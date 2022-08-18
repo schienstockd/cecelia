@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "objcl.R")
-)
-
 CreateCombinedImage <- R6::R6Class(
   "CreateCombinedImage",
   inherit = Objcl,
@@ -36,7 +32,7 @@ CreateCombinedImage <- R6::R6Class(
       taskRootDir <- cciaObj$persistentObjectDirectory(root = TRUE, zero = FALSE)
       
       # create new image
-      newUID <- genUID(cfg$images$lenUID)
+      newUID <- genUID(cciaConf()$images$lenUID)
       
       imParams <- list(
         Name = paste("Combo Image", self$funParams()$imName),

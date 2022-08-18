@@ -14,16 +14,19 @@ JupyterKernelUtils <- R6::R6Class(
     #' @description Init
     #' @param condaEnv character for conda environment
     #' @param connectionFile character for connection file path
-    initialize = function(condaEnv = NULL, connectionFile = NULL) {
-      # init conda environment
-      if (!is.null(condaEnv)) {
-        reticulate::use_condaenv(condaEnv, required = TRUE)
-      }
+    initialize = function(connectionFile = NULL, useConnectionFile = FALSE) {
+      # check config
+      if (is.null(connectionFile) && useConnectionFile == TRUE)
+        connectionFile <- file.path(
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$connectionFile)
       
       jupyterClient <- reticulate::import("jupyter_client")
       
       # use connection file
       if (!is.null(connectionFile)) {
+        message(paste(">> Use connection file", connectionFile))
+        
         km <- jupyterClient$BlockingKernelClient(
           connection_file = connectionFile)
         km$load_connection_file()
@@ -33,16 +36,25 @@ JupyterKernelUtils <- R6::R6Class(
         private$setKernelConnectionFile(connectionFile)
         
       } else {
+        message(">> Start new Jupyter kernel")
+        
         # otherwise start kernel
         jupyterKernel <- jupyterClient$manager$start_new_kernel()
         
-        # private$setKernelManager(jupyterKernel[[1]])
+        private$setKernelManager(jupyterKernel[[1]])
         private$setKernelClient(jupyterKernel[[2]])
         
         # set connection_file
         private$setKernelConnectionFile(
           self$kernelClient()$connection_file)
       }
+      
+      # set working directory to be safe
+      self$execute(paste(
+        "import os",
+        sprintf("os.chdir('%s')", system.file(".", package = "cecelia")),
+        sep = "\n"
+      ))
       
       print(">> Jupyter kernel started")
       print(self$printConsoleConn())
@@ -59,10 +71,12 @@ JupyterKernelUtils <- R6::R6Class(
     #' @description quit kernel
     quitKernel = function() {
       # send quit
+      # TODO why does this not work on its own?
       self$execute("quit()")
       
       # shutdown
-      # private$kernelManager()$shutdown_kernel()
+      if (!is.null(private$getKernelManager()))
+        private$getKernelManager()$shutdown_kernel()
     },
     
     #' @description return kernel client
@@ -91,7 +105,7 @@ JupyterKernelUtils <- R6::R6Class(
   private = list(
     condaEnv = NULL,
     kernelConnectionFile = NULL,
-    # handleKernelManager = NULL,
+    handleKernelManager = NULL,
     handleKernelClient = NULL,
     
     # # return kernel manager
@@ -108,9 +122,9 @@ JupyterKernelUtils <- R6::R6Class(
       private$kernelConnectionFile <- x
     },
     
-    # setKernelManager = function(x) {
-    #   private$handleKernelManager <- x
-    # },
+    setKernelManager = function(x) {
+      private$handleKernelManager <- x
+    },
     
     setKernelClient = function(x) {
       private$handleKernelClient <- x
@@ -121,9 +135,9 @@ JupyterKernelUtils <- R6::R6Class(
       private$condaEnv
     },
     
-    # getKernelManager = function() {
-    #   private$handleKernelManager
-    # },
+    getKernelManager = function() {
+      private$handleKernelManager
+    },
     
     getKernelClient = function() {
       private$handleKernelClient

@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "clustPopulations.R")
-)
-
 Retrieve <- R6::R6Class(
   "Retrieve",
   inherit = ClustPopulations,

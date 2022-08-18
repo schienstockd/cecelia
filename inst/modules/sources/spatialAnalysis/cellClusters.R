@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 CellClusters <- R6::R6Class(
   "CellClusters",
   inherit = SpatialAnalysis,

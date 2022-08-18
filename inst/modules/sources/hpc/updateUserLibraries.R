@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 UpdateUserLibraries <- R6::R6Class(
   "UpdateUserLibraries",
   inherit = Hpc,
@@ -24,7 +20,7 @@ UpdateUserLibraries <- R6::R6Class(
       # update libraries
       self$sshConnection()$sshExecute(
         paste(
-          sprintf("cd %s", cfg$hpc$dirs$cecelia),
+          sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
           "sh ./hpc-setup/init-HPC-packages.sh",
           sep = ";"
           # TODO this should output on console

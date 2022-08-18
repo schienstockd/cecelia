@@ -37,17 +37,24 @@ TaskLauncher <- R6::R6Class(
     #' @description Run local task
     runLocalTask = function() {
       # convert function name to directory
-      funPath <- self$getTaskFunction()
-      funPath <- str_replace(
-        funPath, paste0("\\", CCID_CLASS_SEP), .Platform$file.sep)
+      funPath <- stringr::str_split(
+        self$getTaskFunction(), paste0("\\", CCID_CLASS_SEP))[[1]]
+        
+      parentClassPath <- funPath[[1]]
+      moduleClassPath <- paste(funPath, collapse = .Platform$file.sep)
       
       # get source file
+      parentSourceFile <- file.path(
+        system.file(cciaConf()$tasks$sources, package = "cecelia"),
+        paste(parentClassPath, "R", sep = "."))
       moduleSourceFile <- file.path(
-        cciaConf()$tasks$sources, paste(funPath, "R", sep = ".")
-      )
+        system.file(cciaConf()$tasks$sources, package = "cecelia"),
+        paste(moduleClassPath, "R", sep = "."))
       
       cmd <- sprintf(paste(
+        "parentSourceFile <- \"%s\"",
         "moduleSourceFile <- \"%s\"",
+        "source(parentSourceFile, local = TRUE)",
         "source(moduleSourceFile, local = TRUE)",
         # init object
         "taskProcess <- %s$new()",
@@ -62,6 +69,7 @@ TaskLauncher <- R6::R6Class(
         # "sink()",
         sep = "\n"
         ),
+        parentSourceFile,
         moduleSourceFile,
         private$getTaskFunctionClass(),
         self$taskInputFile()
@@ -122,6 +130,13 @@ TaskLauncher <- R6::R6Class(
             # change into cecelia directory
             sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
             # run task launcher
+            # TODO you will need to load the library
+            # Then call R -e "paste(cmds, collapse = ';')"
+            # call 'cciaUse(cciaConf()$hpc$dirs$cecelia)
+            # taskLauncher <- TaskLauncher$new()
+            # taskLauncher$initTask(
+            #   self$getTaskFunction(), taskConfFile = self$taskInputFile(), inplace = TRUE)
+            # taskLauncher$run()
             sprintf(
               "Rscript %s/managers/tasks/taskLauncher.R --inplace --fun \"%s\" --conf \"%s\"",
               cciaConf()$hpc$dirs$cecelia,
@@ -331,8 +346,8 @@ TaskLauncher <- R6::R6Class(
     setTaskConfFile = function(x) {
       # private$taskConfFile <- x
       # get task ID from config file
-      taskID <- basename(str_replace(x, ".input.json", ""))
-      taskID <- str_split(taskID, "\\.")
+      taskID <- basename(stringr::str_replace(x, ".input.json", ""))
+      taskID <- stringr::str_split(taskID, "\\.")
       taskID <- taskID[[1]][length(taskID[[1]])]
       
       # set id
@@ -392,7 +407,7 @@ TaskLauncher <- R6::R6Class(
       # load config from file
       if (!is.null(taskConfFile)) {
         private$setTaskConfFile(taskConfFile)
-        taskConf <- fromJSON(readLines(taskConfFile))
+        taskConf <- jsonlite::fromJSON(readLines(taskConfFile))
       } else {
         if (is.null(taskID)) {
           taskID <- sample(1:10, 1)
@@ -522,7 +537,7 @@ TaskLauncher <- R6::R6Class(
       taskConf$env$global$taskID <- self$getTaskID()
       
       # save as combined JSON
-      exportJSON <- toJSON(taskConf)
+      exportJSON <- jsonlite::toJSON(taskConf)
       
       # save in task directory
       write(
@@ -588,7 +603,7 @@ TaskLauncher <- R6::R6Class(
         # TODO does that still work..?
         pidTree <- .execSystem(
           sprintf("pstree -s -p %s", private$getTaskHandle()$pid))
-        pids <- as.numeric(str_match(pidTree, "(?<= )[0-9]+(?= )"))
+        pids <- as.numeric(stringr::str_match(pidTree, "(?<= )[0-9]+(?= )"))
         
         # go through all processes and cancel
         for (curPID in pids) {

@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 RetrieveCciaObj <- R6::R6Class(
   "RetrieveCciaObj",
   inherit = Hpc,

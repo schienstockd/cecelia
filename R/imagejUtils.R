@@ -101,7 +101,7 @@ ImagejUtils <- R6::R6Class(
         }
       }
       
-      scriptParams <- lapply(lapply(scriptParams, r_to_py), py_str)
+      scriptParams <- lapply(lapply(scriptParams, reticulate::r_to_py), py_str)
       
       # https://imagej.github.io/scripting/headless
       scriptParamsString <- paste0(

@@ -1,5 +1,3 @@
-source(file.path(cfg$tasks$sources, "importFlow.R"))
-
 FcsRaw <- R6::R6Class(
   "FcsRaw",
   inherit = ImportFlow,
@@ -52,7 +50,7 @@ FcsRaw <- R6::R6Class(
       colnames(DT) <- paste0("mean_intensity_", seq(length(colnames(DT))) - 1)
       
       # save props
-      labelsName <- paste0(self$funParams()$valueName, cfg$files$ext$labelProps)
+      labelsName <- paste0(self$funParams()$valueName, cciaConf()$files$ext$labelProps)
       labelsPath <- file.path("labelProps", labelsName)
       
       # add label as running id
@@ -65,7 +63,7 @@ FcsRaw <- R6::R6Class(
         )
       
       cciaObj$setImLabelPropsFilepath(
-        paste0(self$funParams()$valueName, cfg$files$ext$labelProps),
+        paste0(self$funParams()$valueName, cciaConf()$files$ext$labelProps),
         valueName = self$funParams()$valueName
       )
       

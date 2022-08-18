@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "cleanupImages.R")
-)
-
 ResetImageInfo <- R6::R6Class(
   "ResetImageInfo",
   inherit = CleanupImages,

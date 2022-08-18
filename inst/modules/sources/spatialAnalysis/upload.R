@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 Upload <- R6::R6Class(
   "Upload",
   inherit = SpatialAnalysis,
@@ -37,11 +33,11 @@ Upload <- R6::R6Class(
       remoteDir <- self$envParams("hpc")$dirs$task
       
       localFiles <- c(
-        file.path(cfg$dirs$tasks$labelProps, sapply(
+        file.path(cciaConf()$dirs$tasks$labelProps, sapply(
           self$funParams()$valueNames,
           function(x) basename(cciaObj$imLabelPropsFilepath(x))
           )),
-        file.path(cfg$dirs$tasks$labelProps, sapply(
+        file.path(cciaConf()$dirs$tasks$labelProps, sapply(
           self$funParams()$adataNames,
           function(x) basename(cciaObj$imAnndataFilepath(x))
           ))
@@ -51,7 +47,7 @@ Upload <- R6::R6Class(
       if (self$funParams()$popType == "flow") {
         localFiles <- c(
           localFiles,
-          file.path(cfg$dirs$tasks$data, sapply(
+          file.path(cciaConf()$dirs$tasks$data, sapply(
             self$funParams()$valueNames,
             function(x) basename(cciaObj$imGatingSetFilepath(x))
           ))

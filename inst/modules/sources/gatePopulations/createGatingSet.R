@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "gatePopulations.R")
-)
-
 CreateGatingSet <- R6::R6Class(
   "CreateGatingSet",
   inherit = GatePopulations,
@@ -84,7 +80,7 @@ CreateGatingSet <- R6::R6Class(
       # save gs
       gsPath <- file.path(
         self$envParams()$dirs$task,
-        taskDirFiles("data", paste0(valueName, cfg$files$ext$gatingSet))
+        taskDirFiles("data", paste0(valueName, cciaConf()$files$ext$gatingSet))
       )
       
       # remove gating set before saving

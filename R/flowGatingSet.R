@@ -330,11 +330,11 @@ FlowGatingSet <- R6::R6Class(
           popPath <- "/"
         
         # get names
-        splitNames <- unlist(str_split(retVal, popPath))
+        splitNames <- unlist(stringr::str_split(retVal, popPath))
         splitNames <- splitNames[splitNames != ""]
         
         # remote leading '/'
-        retVal <- str_replace(splitNames, "/", "")
+        retVal <- stringr::str_replace(splitNames, "/", "")
       }
       
       retVal

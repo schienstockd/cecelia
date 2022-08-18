@@ -10,7 +10,7 @@ Napari utils
 TODO
 }
 \section{Super class}{
-\code{ceceliaCore::JupyterKernelUtils} -> \code{NapariUtils}
+\code{\link[cecelia:JupyterKernelUtils]{cecelia::JupyterKernelUtils}} -> \code{NapariUtils}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -47,12 +47,12 @@ TODO
 \if{html}{\out{
 <details><summary>Inherited methods</summary>
 <ul>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="execute"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-execute'><code>ceceliaCore::JupyterKernelUtils$execute()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="getKernelConnectionFile"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-getKernelConnectionFile'><code>ceceliaCore::JupyterKernelUtils$getKernelConnectionFile()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="initialize"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-initialize'><code>ceceliaCore::JupyterKernelUtils$initialize()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="kernelClient"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-kernelClient'><code>ceceliaCore::JupyterKernelUtils$kernelClient()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="printConsoleConn"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-printConsoleConn'><code>ceceliaCore::JupyterKernelUtils$printConsoleConn()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="JupyterKernelUtils" data-id="quitKernel"><a href='../../ceceliaCore/html/JupyterKernelUtils.html#method-JupyterKernelUtils-quitKernel'><code>ceceliaCore::JupyterKernelUtils$quitKernel()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="execute"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-execute'><code>cecelia::JupyterKernelUtils$execute()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="getKernelConnectionFile"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-getKernelConnectionFile'><code>cecelia::JupyterKernelUtils$getKernelConnectionFile()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="initialize"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-initialize'><code>cecelia::JupyterKernelUtils$initialize()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="kernelClient"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-kernelClient'><code>cecelia::JupyterKernelUtils$kernelClient()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="printConsoleConn"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-printConsoleConn'><code>cecelia::JupyterKernelUtils$printConsoleConn()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="JupyterKernelUtils" data-id="quitKernel"><a href='../../cecelia/html/JupyterKernelUtils.html#method-JupyterKernelUtils-quitKernel'><code>cecelia::JupyterKernelUtils$quitKernel()</code></a></span></li>
 </ul>
 </details>
 }}

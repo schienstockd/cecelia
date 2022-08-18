@@ -17,7 +17,7 @@ TaskCore <- R6::R6Class(
     #' @param funName character of functions name
     parentModule = function(moduleName, funName = NULL) {
       # get parent
-      moduleName <- str_split(moduleName, "\\.")[[1]][[1]]
+      moduleName <- stringr::str_split(moduleName, "\\.")[[1]][[1]]
       
       # add function?
       if (!is.null(funName)) {

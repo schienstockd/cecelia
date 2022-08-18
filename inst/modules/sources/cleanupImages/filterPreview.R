@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "cleanupImages.R")
-)
-
 FilterPreview <- R6::R6Class(
   "FilterPreview",
   inherit = CleanupImages,
@@ -32,18 +28,13 @@ FilterPreview <- R6::R6Class(
       
       # call napari and show AF correction
       # connect to existing napari instance
-      viewer <- NapariUtils$new(
-        cfg$python$conda$env,
-        file.path(
-          cfg$python$viewer$viewerPath,
-          cfg$python$viewer$connectionFile)
-      )
+      viewer <- NapariUtils$new(useConnectionFile = TRUE)
       
       # run AF correction
       viewer$execute(
         paste(
-          "import utils.python.zarr_utils as zarr_utils",
-          "import utils.python.correction_utils as correction_utils",
+          "import py.zarr_utils as zarr_utils",
+          "import py.correction_utils as correction_utils",
           
           # get computing array
           "input_image = zarr_utils.get_dask_copy(napari_utils.im_data[0])",

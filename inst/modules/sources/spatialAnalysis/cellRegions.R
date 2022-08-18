@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 CellRegions <- R6::R6Class(
   "CellRegions",
   inherit = SpatialAnalysis,
@@ -43,10 +39,10 @@ CellRegions <- R6::R6Class(
           
           if (numCellsInRegion > 1) {
             # get value name and label for main
-            mainIdSplit <- str_split(i, "\\#")[[1]]
+            mainIdSplit <- stringr::str_split(i, "\\#")[[1]]
             
             # get value name and label for neighbour
-            neighbourIdSplit <- str_split(rownames(x)[regions$id[[i]]], "\\#")
+            neighbourIdSplit <- stringr::str_split(rownames(x)[regions$id[[i]]], "\\#")
             
             # create table
             # https://stackoverflow.com/a/28630369/13766165
@@ -152,12 +148,12 @@ CellRegions <- R6::R6Class(
       cciaEnv()$LabelPropsUtils(
         self$envParams()$dirs$task,
         file.path(
-          cfg$dirs$tasks$labelProps, self$regionsFilename()
+          cciaConf()$dirs$tasks$labelProps, self$regionsFilename()
         )
         )$label_props(
-          r_to_py(regionNN),
-          save = r_to_py(TRUE),
-          obs_cols = r_to_py(list(
+          reticulate::r_to_py(regionNN),
+          save = reticulate::r_to_py(TRUE),
+          obs_cols = reticulate::r_to_py(list(
             "value_name", "label",
             "neighbour_value_name",
             "neighbour_label",

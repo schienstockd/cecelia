@@ -97,7 +97,7 @@ ClusterTracks <- R6::R6Class(
           # TODO this is very simplistic
           calcMeasures <- sapply(
             self$funParams()$calcMeasures,
-            function(x) str_extract_all(x, "live\\.*([:alnum:]|\\.)+"))
+            function(x) stringr::str_extract_all(x, "live\\.*([:alnum:]|\\.)+"))
           
           # get base names for measures
           calcCols <- lapply(

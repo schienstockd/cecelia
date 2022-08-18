@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "objcl.R")
-)
-
 Upload <- R6::R6Class(
   "Upload",
   inherit = Objcl,
@@ -41,8 +37,8 @@ Upload <- R6::R6Class(
       # get local classification files
       localFiles <- list.files(file.path(
         localDir,
-        cfg$dirs$tasks$classifications,
-        cfg$dirs$classifications$pix
+        cciaConf()$dirs$tasks$classifications,
+        cciaConf()$dirs$classifications$pix
       ), full.names = TRUE)
       
       # upload classification files

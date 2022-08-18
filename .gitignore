@@ -1,5 +1,10 @@
-.Rproj.user
+inst/app/db/*
+inst/app/shiny_bookmarks
+inst/app/viewer/*
 .Rhistory
-.Rdata
-.httr-oauth
-.DS_Store
+.RData
+.RdataTmp
+**.pyc
+update_hpc.sh
+update_mac_workstation.sh
+.Rproj.user

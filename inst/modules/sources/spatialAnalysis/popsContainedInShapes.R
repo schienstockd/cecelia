@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 PopsContainedInShapes <- R6::R6Class(
   "PopsContainedInShapes",
   inherit = SpatialAnalysis,

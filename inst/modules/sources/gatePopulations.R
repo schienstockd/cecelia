@@ -49,7 +49,7 @@ GatePopulations <- R6::R6Class(
           # TODO is that a good idea .. ?
           for (x in cciaObj$cciaObjects(uIDs = self$funParams()$uIDs)) {
             # set location UID
-            gsPath <- paste0(gatingSet, cfg$files$ext$gatingSet)
+            gsPath <- paste0(gatingSet, cciaConf()$files$ext$gatingSet)
             attr(gsPath, "locUID") <- cciaObj$getUID()
             
             x$setImGatingSetFilepath(
@@ -62,8 +62,8 @@ GatePopulations <- R6::R6Class(
           }
         } else {
           cciaObj$setImGatingSetFilepath(
-            # taskDirFiles("data", paste0(gatingSet, cfg$files$ext$gatingSet)),
-            paste0(gatingSet, cfg$files$ext$gatingSet),
+            # taskDirFiles("data", paste0(gatingSet, cciaConf()$files$ext$gatingSet)),
+            paste0(gatingSet, cciaConf()$files$ext$gatingSet),
             valueName = gatingSet
           )
         }

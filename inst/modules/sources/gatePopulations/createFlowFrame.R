@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "gatePopulations.R")
-)
-
 CreateFlowFrame <- R6::R6Class(
   "CreateFlowFrame",
   inherit = GatePopulations,
@@ -80,7 +76,7 @@ CreateFlowFrame <- R6::R6Class(
       # create attributes to add
       propsToAdd <- c(
         extraChannelColumns,
-        cfg$fcs$propsToAdd
+        cciaConf()$fcs$propsToAdd
       )
       
       self$writeLog("> Channels")
@@ -98,11 +94,11 @@ CreateFlowFrame <- R6::R6Class(
         labelProps,
         file.path(
           self$envParams()$dirs$task,
-          taskDirFiles("data", paste0(valueName, cfg$files$ext$flowFrame))
+          taskDirFiles("data", paste0(valueName, cciaConf()$files$ext$flowFrame))
           ),
         cciaObj$imChannelNames(includeTypes = TRUE),
         attrNames = propsToAdd,
-        channelPattern = cfg$files$labelPropsChannels,
+        channelPattern = cciaConf()$files$labelPropsChannels,
         addRownames = TRUE)
       
       # DONE

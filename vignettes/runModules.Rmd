@@ -51,22 +51,16 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = "pEdOoZ", uID = "tPl6da", versionID = 2,
-  initReactivity = FALSE
+  pID = "pEdOoZ", uID = "tPl6da", versionID = 2, initReactivity = FALSE
 )
 
-DT <- cciaObj$popDT("flow")
-
-# I need to check everything else but the basics are ok
+cciaObj$runTask(
+  funName = "gatePopulations.createGatingSet",
+  funParams = list(
+    compensateZ = FALSE,
+    applyReversedLog = FALSE,
+    transformation = "biexponential"
+  ),
+  runInplace = TRUE
+)
 ```
-
-```{r}
-devtools::load_all("../../ceceliaApp")
-
-cciaCreateApp()
-
-cciaUpdateApp()
-
-cciarunApp()
-```
-

@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 
 from pathlib import Path
 
-import helpers.math_helpers as math_helpers
-import helpers.type_helpers as type_helpers
+import py.math_helpers as math_helpers
+import py.type_helpers as type_helpers
 
 # segmentation functions
 from py.dim_utils import DimUtils

@@ -71,7 +71,7 @@ TaskProcess <- R6::R6Class(
     #' @param confFile character for path to config file
     prepRun = function(confFile) {
       # read parameters
-      conf <- fromJSON(readLines(confFile))
+      conf <- jsonlite::fromJSON(readLines(confFile))
       
       # remove config file
       unlink(confFile)
@@ -80,22 +80,22 @@ TaskProcess <- R6::R6Class(
       # to make it easier to access
       # go through functions and find '_%d$'
       inputLists <- names(conf$fun)[!is.na(
-        str_match(names(conf$fun), ".*_[:alnum:]+$")
+        stringr::str_match(names(conf$fun), ".*_[:alnum:]+$")
         )]
       
       # get input names
-      inputNames <- unique(str_extract(inputLists, ".*(?=_)"))
+      inputNames <- unique(stringr::str_extract(inputLists, ".*(?=_)"))
       names(inputNames) <- inputNames
       
       # convert to named list
       inputValueLists <- lapply(inputNames, function(x) {
-        y <- inputLists[!is.na(str_match(inputLists, sprintf("%s_[:alnum:]+", x)))]
+        y <- inputLists[!is.na(stringr::str_match(inputLists, sprintf("%s_[:alnum:]+", x)))]
         
         # get values
         inputValues <- lapply(conf$fun[y], as.character)
         
         # set names
-        names(inputValues) <- str_extract(y, "(?<=_)[:alnum:]+$")
+        names(inputValues) <- stringr::str_extract(y, "(?<=_)[:alnum:]+$")
         
         inputValues
       })
@@ -198,23 +198,10 @@ TaskProcess <- R6::R6Class(
     
     #' @description Get napari viewer
     napariViewer = function() {
-      # get input output
-      viewerOutputFile <- file.path(
-        cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$outputFile)
-      viewerInputFile <- file.path(
-        cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$inputFile)
-      
       # init napari
-      viewer <- NapariUtils$new(
-        cciaConf()$python$conda$env,
-        file.path(
-          cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile)
-      )
+      viewer <- NapariUtils$new(useConnectionFile = TRUE)
       
-      viewer$initNapari(viewerOutputFile, viewerInputFile)
+      viewer$initNapari()
       
       viewer
     },
@@ -369,7 +356,7 @@ TaskProcess <- R6::R6Class(
       }
       
       # save as combined JSON
-      exportJSON <- toJSON(paramsList)
+      exportJSON <- jsonlite::toJSON(paramsList)
       
       # generate params file
       paramsFile <- file.path(

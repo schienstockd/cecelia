@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 RmFiles <- R6::R6Class(
   "RmFiles",
   inherit = Hpc,

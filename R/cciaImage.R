@@ -243,7 +243,7 @@ CciaImage <- R6::R6Class(
     #' @param x character of path
     omeXMLPath = function(x) {
       if (startsWith(xml_path(self$omeXML()), "/ome:") == TRUE) {
-        return(str_replace_all(x, "//", "//ome:"))
+        return(stringr::str_replace_all(x, "//", "//ome:"))
       } else {
         return(x)
       }
@@ -307,18 +307,18 @@ CciaImage <- R6::R6Class(
               self$omeXML(), self$omeXMLPath("//StructuredAnnotations//Value")))
             
             # get timelapse axis information
-            timelapseAxisNodes <- valueChildren[!is.na(str_match(valueChildren, "TIMELAPSE"))]
+            timelapseAxisNodes <- valueChildren[!is.na(stringr::str_match(valueChildren, "TIMELAPSE"))]
             axisNum <- as.numeric(
-              str_extract(xml_contents(xml_contents(timelapseAxisNodes)), "(?<=axis #)[0-9]$")
+              stringr::str_extract(xml_contents(xml_contents(timelapseAxisNodes)), "(?<=axis #)[0-9]$")
             )
             axisNum <- axisNum[!is.na(axisNum)]
             
             # get interval
-            axisValue <- valueChildren[!is.na(str_match(valueChildren, sprintf("step #%s", axisNum)))]
+            axisValue <- valueChildren[!is.na(stringr::str_match(valueChildren, sprintf("step #%s", axisNum)))]
             
             # put information into list
             tInfo <- list(
-              interval = as.numeric(str_extract(xml_contents(xml_contents(axisValue)[2]), "[0-9]+\\.[0-9]+")) / 60
+              interval = as.numeric(stringr::str_extract(xml_contents(xml_contents(axisValue)[2]), "[0-9]+\\.[0-9]+")) / 60
             )
           })
         } else if (endsWith(basenameOriFilepath, ".lsm")) {
@@ -393,7 +393,7 @@ CciaImage <- R6::R6Class(
         # # For OPAL
         # if (any(startsWith(names(imGlobalMetadata), "Name #"))) {
         #   channelNames <- imGlobalMetadata[startsWith(names(imGlobalMetadata), "Name #")]
-        #   names(channelNames) <- paste0("Chn", str_match(names(channelNames), "[0-9]+"))
+        #   names(channelNames) <- paste0("Chn", stringr::str_match(names(channelNames), "[0-9]+"))
         #   channelNames <- channelNames[sort(names(channelNames))]
         # }
         
@@ -1396,7 +1396,7 @@ CciaImage <- R6::R6Class(
             # sort names by number of division paths
             filteredPopNames <- names(filteredDTs)
             names(filteredPopNames) <- filteredPopNames
-            filteredPopNames <- sort(sapply(filteredPopNames, function(x) lengths(str_split(x, "/"))))
+            filteredPopNames <- sort(sapply(filteredPopNames, function(x) lengths(stringr::str_split(x, "/"))))
             filteredPopNames <- names(filteredPopNames)
             filteredPopNames <- unname(filteredPopNames)
             
@@ -1812,7 +1812,7 @@ CciaImage <- R6::R6Class(
             private$handleClsfPopUtils <- MultifileLabelPopUtils$new(
               self$persistentObjectDirectory(),
               # only classification labels
-              valueNames[!is.na(str_match(valueNames, "\\.cl$"))],
+              valueNames[!is.na(stringr::str_match(valueNames, "\\.cl$"))],
               self$imChannelNames(includeTypes = TRUE)
             )
             
@@ -1886,7 +1886,7 @@ CciaImage <- R6::R6Class(
       popMap <- self$imPopMap(popType, includeFiltered = includeFiltered)
       
       # save as json
-      exportJSON <- toJSON(popMap)
+      exportJSON <- jsonlite::toJSON(popMap)
       
       # create pop dir
       popDir <- file.path(
@@ -2188,7 +2188,7 @@ CciaImage <- R6::R6Class(
           )]
       } else if (compareFun == "regexp") {
         retVal <- names(popValues)[unlist(
-          lapply(popValues, function(x) str_match(x, popAttrValue))
+          lapply(popValues, function(x) stringr::str_match(x, popAttrValue))
           )]
       }
       
@@ -2427,9 +2427,9 @@ CciaImage <- R6::R6Class(
       # only return a specific value type?
       if (!is.null(valueType)) {
         if (valueType == "clsf")
-          retVal <- retVal[!is.na(str_match(retVal, "\\.cl$"))]
+          retVal <- retVal[!is.na(stringr::str_match(retVal, "\\.cl$"))]
         else
-          retVal <- retVal[is.na(str_match(retVal, "\\.cl$"))]
+          retVal <- retVal[is.na(stringr::str_match(retVal, "\\.cl$"))]
       }
       
       # return only default?

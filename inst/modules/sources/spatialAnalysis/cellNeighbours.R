@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 CellNeighbours <- R6::R6Class(
   "CellNeighbours",
   inherit = SpatialAnalysis,
@@ -53,7 +49,7 @@ CellNeighbours <- R6::R6Class(
       
       # update datapath
       cciaObj$setImNeighboursFilepath(
-        paste0(self$funParams()$valueName, ".sq", cfg$files$ext$anndata),
+        paste0(self$funParams()$valueName, ".sq", cciaConf()$files$ext$anndata),
         valueName = self$funParams()$valueName
       )
       

@@ -112,7 +112,7 @@ flowContourLines <- function(
   # only use channels
   if (!is.null(channelPattern)) {
     channelDF <- x %>%
-      select(contains(channelPattern))
+      dplyr::select(contains(channelPattern))
     
     # correct channel names before selecting
     if (flowNames == TRUE) {
@@ -128,7 +128,7 @@ flowContourLines <- function(
       channelNames <- channelNames[channelNames %in% colnames(x)]
       
       channelDF <- x %>%
-        select(all_of(channelNames))
+        dplyr::select(all_of(channelNames))
     }
     
     # rename channels
@@ -139,7 +139,7 @@ flowContourLines <- function(
   # get attributes
   if (!is.null(attrNames)) {
     attrDF <- x %>%
-      select(all_of(attrNames[attrNames %in% colnames(x)]))
+      dplyr::select(all_of(attrNames[attrNames %in% colnames(x)]))
   }
   
   # combine and replace Nan
@@ -151,8 +151,8 @@ flowContourLines <- function(
   # add rownames
   if (addRownames == TRUE) {
     x <- x %>%
-      rownames_to_column() %>%
-      mutate(across(where(is.character), as.numeric))
+      tibble::rownames_to_column() %>%
+      dplyr::mutate(across(where(is.character), as.numeric))
   }
   
   # # add metadata
@@ -175,7 +175,7 @@ flowContourLines <- function(
   # write.FCS(x.ff, fcsOut, what = "double")
   
   # https://github.com/RGLab/cytolib/issues/54#issuecomment-1175529424
-  flowFrame(as.matrix(x))
+  flowCore::flowFrame(as.matrix(x))
 }
 
 #' @description Create gating set
@@ -222,23 +222,23 @@ flowContourLines <- function(
   
   # run transformation
   if (!is.null(transformation) && transformation != "none") {
-    if (transformation == "biexponential") transFun <- biexponentialTransform()
-    else if (transformation == "log") transFun <- logTransform()
-    else if (transformation == "ln") transFun <- lnTransform()
-    else if (transformation == "linear") transFun <- linearTransform()
-    else if (transformation == "quadratic") transFun <- quadraticTransform()
-    else if (transformation == "scale") transFun <- scaleTransform()
-    else if (transformation == "splitScale") transFun <- splitScaleTransform()
-    else if (transformation == "truncate") transFun <- truncateTransform()
+    if (transformation == "biexponential") transFun <- flowCore::biexponentialTransform()
+    else if (transformation == "log") transFun <- flowCore::logTransform()
+    else if (transformation == "ln") transFun <- flowCore::lnTransform()
+    else if (transformation == "linear") transFun <- flowCore::linearTransform()
+    else if (transformation == "quadratic") transFun <- flowCore::quadraticTransform()
+    else if (transformation == "scale") transFun <- flowCore::scaleTransform()
+    else if (transformation == "splitScale") transFun <- flowCore::splitScaleTransform()
+    else if (transformation == "truncate") transFun <- flowCore::truncateTransform()
     
     # correct channel names
     if (flowNames == TRUE) {
       channelNames <- .flowCorrectChannelNames(channelNames)
     }
     
-    transList <- transformList(channelNames, transFun)
+    transList <- flowCore::transformList(channelNames, transFun)
     
-    fsTrans <- transform(fs, transList)
+    fsTrans <- flowCore::transform(fs, transList)
   }
   
   fsTrans
@@ -407,14 +407,14 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
   
   # filter for direct leaves
   if (!.flowPopIsRoot(pop)) {
-    # directLeaves <- unlist(as.list(str_match(allLeaves, sprintf("^%s/[^/]+$", pop))))
+    # directLeaves <- unlist(as.list(stringr::str_match(allLeaves, sprintf("^%s/[^/]+$", pop))))
     # get only leaves with length of pop + 1
-    popLength <- length(unlist(str_split(pop, "/")))
-    leaveLengths <- unlist(lapply(str_split(allLeaves, "/"), length))
+    popLength <- length(unlist(stringr::str_split(pop, "/")))
+    leaveLengths <- unlist(lapply(stringr::str_split(allLeaves, "/"), length))
     directLeaves <- allLeaves[leaveLengths == popLength + 1]
   } else {
     directLeaves <- if (length(allLeaves) > 0)
-      unlist(as.list(str_match(allLeaves, sprintf("^/[^/]+$"))))
+      unlist(as.list(stringr::str_match(allLeaves, sprintf("^/[^/]+$"))))
     else
       list()
   }
@@ -429,7 +429,7 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
 #' TODO
 .flowTrimPath <- function(path, pathLevels = 1) {
   # split path
-  splitPath <- unlist(str_split(path, "/"))
+  splitPath <- unlist(stringr::str_split(path, "/"))
   splitPath <- splitPath[splitPath != ""]
   
   # adjust levels
@@ -452,7 +452,7 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
   # replace last population with empty string
   # popParent <- stri_replace_last(pop, "", regex = "/.+$")
   if (!.flowPopIsRoot(pop)) {
-    popSplit <- str_split(pop, "/")[[1]]
+    popSplit <- stringr::str_split(pop, "/")[[1]]
     popParent <- paste(popSplit[1:length(popSplit) - 1], collapse = "/")
   } else {
     popParent <- root
@@ -470,7 +470,7 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
 #' @examples
 #' TODO
 .flowNamesForPops <- function(pop){
-  popName <- substring(str_match(pop, "/[:alnum:]+$"), first = 2) %>%
+  popName <- substring(stringr::str_match(pop, "/[:alnum:]+$"), first = 2) %>%
     replace_na("root")
 
   popName
@@ -516,7 +516,7 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
     if (attr(popMatch, "equal") == TRUE) {
       popPath <- popToReplace
     } else {
-      popPath <- str_replace(
+      popPath <- stringr::str_replace(
         popPath,
         sprintf("^%s/", popToMatch),
         paste0(popToReplace, attr(popToMatch, "suffix"))
@@ -567,8 +567,8 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
 #' @examples
 #' TODO
 .flowChangeParentName <- function(popPath, parentPath) {
-  a <- str_split(popPath, "/")[[1]]
-  b <- str_split(parentPath, "/")[[1]]
+  a <- stringr::str_split(popPath, "/")[[1]]
+  b <- stringr::str_split(parentPath, "/")[[1]]
   
   # replace in x
   for (j in seq(length(b))) {

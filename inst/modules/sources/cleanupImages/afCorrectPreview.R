@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "cleanupImages.R")
-)
-
 AfCorrectPreview <- R6::R6Class(
   "AfCorrectPreview",
   inherit = CleanupImages,
@@ -46,14 +42,14 @@ AfCorrectPreview <- R6::R6Class(
       # run AF correction
       viewer$execute(
         paste(
-          "import utils.python.zarr_utils as zarr_utils",
-          "import utils.python.correction_utils as correction_utils",
+          "import py.zarr_utils as zarr_utils",
+          "import py.correction_utils as correction_utils",
           
           # get computing array
           "input_image = zarr_utils.get_dask_copy(napari_utils.im_data[0])",
           
           # convert names to integer
-          sprintf("af_combinations = %s", r_to_py(afCombinations)),
+          sprintf("af_combinations = %s", reticulate::r_to_py(afCombinations)),
           
           # correct af channels
           "corrected_image = correction_utils.af_correct_image(",

@@ -10,7 +10,7 @@ Populations represented in GatingSet
 TODO
 }
 \section{Super classes}{
-\code{\link[ceceliaCore:ReactiveObject]{ceceliaCore::ReactiveObject}} -> \code{\link[ceceliaCore:PopulationUtils]{ceceliaCore::PopulationUtils}} -> \code{FlowGatingSet}
+\code{\link[cecelia:ReactiveObject]{cecelia::ReactiveObject}} -> \code{\link[cecelia:PopulationUtils]{cecelia::PopulationUtils}} -> \code{FlowGatingSet}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -46,15 +46,15 @@ TODO
 \if{html}{\out{
 <details><summary>Inherited methods</summary>
 <ul>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="ReactiveObject" data-id="reactive"><a href='../../ceceliaCore/html/ReactiveObject.html#method-ReactiveObject-reactive'><code>ceceliaCore::ReactiveObject$reactive()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="ReactiveObject" data-id="update"><a href='../../ceceliaCore/html/ReactiveObject.html#method-ReactiveObject-update'><code>ceceliaCore::ReactiveObject$update()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="getImChannelLimits"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-getImChannelLimits'><code>ceceliaCore::PopulationUtils$getImChannelLimits()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="getImChannels"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-getImChannels'><code>ceceliaCore::PopulationUtils$getImChannels()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="getPopObj"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-getPopObj'><code>ceceliaCore::PopulationUtils$getPopObj()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="getPopObjFilepath"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-getPopObjFilepath'><code>ceceliaCore::PopulationUtils$getPopObjFilepath()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="getValueNames"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-getValueNames'><code>ceceliaCore::PopulationUtils$getValueNames()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="savePops"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-savePops'><code>ceceliaCore::PopulationUtils$savePops()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="PopulationUtils" data-id="unlinkPops"><a href='../../ceceliaCore/html/PopulationUtils.html#method-PopulationUtils-unlinkPops'><code>ceceliaCore::PopulationUtils$unlinkPops()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactiveObject" data-id="reactive"><a href='../../cecelia/html/ReactiveObject.html#method-ReactiveObject-reactive'><code>cecelia::ReactiveObject$reactive()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactiveObject" data-id="update"><a href='../../cecelia/html/ReactiveObject.html#method-ReactiveObject-update'><code>cecelia::ReactiveObject$update()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="getImChannelLimits"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-getImChannelLimits'><code>cecelia::PopulationUtils$getImChannelLimits()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="getImChannels"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-getImChannels'><code>cecelia::PopulationUtils$getImChannels()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="getPopObj"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-getPopObj'><code>cecelia::PopulationUtils$getPopObj()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="getPopObjFilepath"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-getPopObjFilepath'><code>cecelia::PopulationUtils$getPopObjFilepath()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="getValueNames"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-getValueNames'><code>cecelia::PopulationUtils$getValueNames()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="savePops"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-savePops'><code>cecelia::PopulationUtils$savePops()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="PopulationUtils" data-id="unlinkPops"><a href='../../cecelia/html/PopulationUtils.html#method-PopulationUtils-unlinkPops'><code>cecelia::PopulationUtils$unlinkPops()</code></a></span></li>
 </ul>
 </details>
 }}

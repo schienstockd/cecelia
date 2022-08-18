@@ -153,7 +153,7 @@ SshUtils <- R6::R6Class(
       }
       
       # go through files and get the base directories
-      toDirs <- dirname(str_match(
+      toDirs <- dirname(stringr::str_match(
         filesToCopy,
         sprintf(
           "(?<=%s).*", fromDir
@@ -203,7 +203,7 @@ SshUtils <- R6::R6Class(
       if (useArchive == TRUE) {
         # remove wildcard for archive names
         archiveNames <- filesToCopy
-        archiveNamesWildcard <- !is.na(str_match(filesToCopy, "\\*"))
+        archiveNamesWildcard <- !is.na(stringr::str_match(filesToCopy, "\\*"))
         archiveNames[archiveNamesWildcard] <- dirname(archiveNames[archiveNamesWildcard])
         
         # get files to archive
@@ -226,7 +226,7 @@ SshUtils <- R6::R6Class(
           # prepare tar files
           sshCmd <- mapply(
             function(k, x, i) {
-              if (all(is.na(str_match(i, "\\*")))) {
+              if (all(is.na(stringr::str_match(i, "\\*")))) {
                 sprintf("cd \"%s\"; tar -cf \"%s\" \"%s\"", k, x, i)
               } else {
                 sprintf("cd \"%s\"; tar -cf \"%s\" %s", k, x, i)
@@ -256,7 +256,7 @@ SshUtils <- R6::R6Class(
       # allow wildcard expansion
       copyCmd <- mapply(
         function(x, i) {
-          if (all(is.na(str_match(x, "\\*")))) {
+          if (all(is.na(stringr::str_match(x, "\\*")))) {
             sprintf("%s \"%s\" \"%s\"", sftpCmd, x, i)
           } else {
             sprintf("%s %s \"%s\"", sftpCmd, x, i)

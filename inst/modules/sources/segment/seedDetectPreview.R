@@ -28,17 +28,12 @@ SeedDetectPreview <- R6::R6Class(
       
       # call napari and show seed detection
       # connect to existing napari instance
-      viewer <- NapariUtils$new(
-        cciaConf()$python$conda$env,
-        file.path(
-          cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile)
-      )
+      viewer <- NapariUtils$new(useConnectionFile = TRUE)
       
       # run AF correction
       viewer$execute(
         paste(
-          "from utils.python.local_peak_seeds_utils import LocalPeakSeedsUtils",
+          "from py.local_peak_seeds_utils import LocalPeakSeedsUtils",
           
           # define params
           "params = {",
@@ -49,7 +44,7 @@ SeedDetectPreview <- R6::R6Class(
           "'task_dir': napari_utils.task_dir,",
           sprintf("'im_path': \"%s\",", cciaObj$imFilepath()),
           "'dim_utils': napari_utils.dim_utils,",
-          sprintf("'seed_channel': %s,", r_to_py(self$funParams()$seedChannel)),
+          sprintf("'seed_channel': %s,", reticulate::r_to_py(self$funParams()$seedChannel)),
           sprintf("'seed_threshold_rel': %0.2f,", self$funParams()$seedThresholdRel),
           sprintf("'seed_threshold_abs': %d,", self$funParams()$seedThresholdAbs),
           sprintf("'z_spread': %d,", self$funParams()$zSpread),

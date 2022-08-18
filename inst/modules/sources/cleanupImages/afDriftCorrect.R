@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "cleanupImages.R")
-)
-
 AfDriftCorrect <- R6::R6Class(
   "AfDriftCorrect",
   inherit = CleanupImages,

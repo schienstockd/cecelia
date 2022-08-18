@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "objcl.R")
-)
-
 AssignToPops <- R6::R6Class(
   "AssignToPops",
   inherit = Objcl,
@@ -92,8 +88,8 @@ AssignToPops <- R6::R6Class(
           }
           
           # set names
-          # names(pops) <- sprintf("%s.%s", c("pos", "neg"), str_replace(j, "/", "__"))
-          names(pops) <- sprintf("%s.%s", c("pos"), str_replace(j, "/", "__"))
+          # names(pops) <- sprintf("%s.%s", c("pos", "neg"), stringr::str_replace(j, "/", "__"))
+          names(pops) <- sprintf("%s.%s", c("pos"), stringr::str_replace(j, "/", "__"))
           
           # remove populations
           cciaObj$delPopsByPath(

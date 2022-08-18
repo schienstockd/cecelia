@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 UploadCciaObj <- R6::R6Class(
   "UploadCciaObj",
   inherit = Hpc,

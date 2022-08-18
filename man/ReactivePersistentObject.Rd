@@ -10,7 +10,7 @@ Persistent version of reactive object
 TODO
 }
 \section{Super class}{
-\code{\link[ceceliaCore:ReactiveObject]{ceceliaCore::ReactiveObject}} -> \code{ReactivePersistentObject}
+\code{\link[cecelia:ReactiveObject]{cecelia::ReactiveObject}} -> \code{ReactivePersistentObject}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -56,8 +56,8 @@ TODO
 \if{html}{\out{
 <details open><summary>Inherited methods</summary>
 <ul>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="ReactiveObject" data-id="reactive"><a href='../../ceceliaCore/html/ReactiveObject.html#method-ReactiveObject-reactive'><code>ceceliaCore::ReactiveObject$reactive()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="ReactiveObject" data-id="update"><a href='../../ceceliaCore/html/ReactiveObject.html#method-ReactiveObject-update'><code>ceceliaCore::ReactiveObject$update()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactiveObject" data-id="reactive"><a href='../../cecelia/html/ReactiveObject.html#method-ReactiveObject-reactive'><code>cecelia::ReactiveObject$reactive()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactiveObject" data-id="update"><a href='../../cecelia/html/ReactiveObject.html#method-ReactiveObject-update'><code>cecelia::ReactiveObject$update()</code></a></span></li>
 </ul>
 </details>
 }}

@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "hpc.R")
-)
-
 TestConnection <- R6::R6Class(
   "TestConnection",
   inherit = Hpc,

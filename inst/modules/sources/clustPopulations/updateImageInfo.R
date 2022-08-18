@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "clustPopulations.R")
-)
-
 UpdateImageInfo <- R6::R6Class(
   "UpdateImageInfo",
   inherit = ClustPopulations,

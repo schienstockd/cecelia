@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "spatialAnalysis.R")
-)
-
 CellContactsMeshes <- R6::R6Class(
   "CellContactsMeshes",
   inherit = SpatialAnalysis,

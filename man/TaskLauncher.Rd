@@ -11,7 +11,7 @@ https://github.com/mschubert/clustermq
 TODO
 }
 \section{Super class}{
-\code{\link[ceceliaCore:TaskCore]{ceceliaCore::TaskCore}} -> \code{TaskLauncher}
+\code{\link[cecelia:TaskCore]{cecelia::TaskCore}} -> \code{TaskLauncher}
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -39,14 +39,14 @@ TODO
 \if{html}{\out{
 <details><summary>Inherited methods</summary>
 <ul>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="callingEnv"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-callingEnv'><code>ceceliaCore::TaskCore$callingEnv()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="envParams"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-envParams'><code>ceceliaCore::TaskCore$envParams()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="funParams"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-funParams'><code>ceceliaCore::TaskCore$funParams()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="globalParams"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-globalParams'><code>ceceliaCore::TaskCore$globalParams()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="runTasks"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-runTasks'><code>ceceliaCore::TaskCore$runTasks()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="setFunParams"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-setFunParams'><code>ceceliaCore::TaskCore$setFunParams()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="taskEnv"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-taskEnv'><code>ceceliaCore::TaskCore$taskEnv()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="ceceliaCore" data-topic="TaskCore" data-id="utilsParams"><a href='../../ceceliaCore/html/TaskCore.html#method-TaskCore-utilsParams'><code>ceceliaCore::TaskCore$utilsParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="callingEnv"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-callingEnv'><code>cecelia::TaskCore$callingEnv()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="envParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-envParams'><code>cecelia::TaskCore$envParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="funParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-funParams'><code>cecelia::TaskCore$funParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="globalParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-globalParams'><code>cecelia::TaskCore$globalParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="runTasks"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-runTasks'><code>cecelia::TaskCore$runTasks()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="setFunParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-setFunParams'><code>cecelia::TaskCore$setFunParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="taskEnv"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-taskEnv'><code>cecelia::TaskCore$taskEnv()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="utilsParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-utilsParams'><code>cecelia::TaskCore$utilsParams()</code></a></span></li>
 </ul>
 </details>
 }}

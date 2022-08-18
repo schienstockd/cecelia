@@ -1,7 +1,3 @@
-source(file.path(
-  cfg$tasks$sources, "cleanupImages.R")
-)
-
 ApplyFilter <- R6::R6Class(
   "ApplyFilter",
   inherit = CleanupImages,

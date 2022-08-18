@@ -1,11 +1,15 @@
 Package: cecelia
 Type: Package
-Title: Core functions to process and analyse object from ceceliaApp
+Title: Framework for image and flow cytometry analysis
 Version: 0.01
 Date: 2022-07-13
+Authors@R: c(
+  person(
+    "Dominik", "Schienstock", email = schienstockd@student.unimelb.edu.au,
+    role = c("cre", "aut"), comment = c(ORCID = "0000-0001-8440-0009")))
 Author: Dominik Schienstock
 Maintainer: Dominik Schienstock <schienstockd@student.unimelb.edu.au>
-Description: Set of core functions that are used to produce a shiny app for immunological image analysis.
+Description: Set of core functions that are used to produce a shiny app for immunological image and flow cytometry analysis.
 License: GPL (>= 3)
 Imports: Rcpp (>= 1.0.8)
 LinkingTo: Rcpp

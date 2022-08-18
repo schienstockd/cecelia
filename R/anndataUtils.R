@@ -32,10 +32,10 @@ AnndataUtils <- R6::R6Class(
       super$initialize(objFilepath, imChannels)
       
       # get task dir and labels file from filepath
-      labelsFile <- str_extract(objFilepath, file.path(
+      labelsFile <- stringr::str_extract(objFilepath, file.path(
         cciaConf()$dirs$tasks$labelProps, paste0(".*", cciaConf()$files$ext$labelProps)
         ))
-      taskDir <- str_replace(objFilepath, labelsFile, "")
+      taskDir <- stringr::str_replace(objFilepath, labelsFile, "")
       
       # load label props
       labelsView <- cciaEnv()$LabelPropsUtils(
@@ -53,20 +53,20 @@ AnndataUtils <- R6::R6Class(
       
       # get channels
       usedChannels <- names(labelsDT)[
-        !is.na(c(str_match(names(labelsDT), "mean_intensity")))
+        !is.na(c(stringr::str_match(names(labelsDT), "mean_intensity")))
       ]
       
       # go through and rename
       for (x in usedChannels) {
         # is there a prefix?
-        columnPrefix <- as.character(str_match(x, ".+(?=_mean_intensity)"))
+        columnPrefix <- as.character(stringr::str_match(x, ".+(?=_mean_intensity)"))
         
         if (is.na(columnPrefix))
           setnames(labelsDT, x,
-                   self$getImChannels()[[as.numeric(str_match(x, "[0-9]+")) + 1]])
+                   self$getImChannels()[[as.numeric(stringr::str_match(x, "[0-9]+")) + 1]])
         else
           setnames(labelsDT, x,
-                   paste(columnPrefix, self$getImChannels()[[as.numeric(str_match(x, "[0-9]+")) + 1]], sep = "_"))
+                   paste(columnPrefix, self$getImChannels()[[as.numeric(stringr::str_match(x, "[0-9]+")) + 1]], sep = "_"))
       }
       
       # add root as population
