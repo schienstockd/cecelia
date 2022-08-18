@@ -76,21 +76,19 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
-    
+  
     # install packages not in conda environment
     # TODO some of these did not work when included in the environment.yml
     pyModules <- readLines(pyModulesFile)
     pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
     
     reticulate::conda_install(envname = envName, packages = pyModules,
-                              pip = TRUE, pip_options = c("--user"))
+                              pip = TRUE, pip_options = c("--user", "-U"))
     
     # install OME bioformats
     if (envType %in% c("image", "image-nogui")) {
       reticulate::conda_install(
-        envname = envName, packages = c("bioformats2raw"), channel = "ome",
-        pip = TRUE, pip_options = c("--user")
-        )
+        envname = envName, packages = c("bioformats2raw"), channel = "ome")
     }
   }
 }
@@ -195,7 +193,7 @@ cciaUse <- function(path, initConda = TRUE) {
   if (initConda == TRUE && !purrr::is_empty(pkg.env$cfg$python$conda$env)) {
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
-    reticulate::use_miniconda(pkg.env$cfg$python$conda$env, required = TRUE)
+    reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
   }
   
   message("[CCIA] >> Source python files")
