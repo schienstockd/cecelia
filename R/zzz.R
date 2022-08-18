@@ -82,7 +82,8 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     pyModules <- readLines(pyModulesFile)
     pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
     
-    reticulate::conda_install(envname = envName, packages = pyModules, pip = TRUE)
+    reticulate::conda_install(envname = envName, packages = pyModules,
+                              pip = TRUE, pip_options = "--user")
     
     # install OME bioformats
     if (envType %in% c("image", "image-nogui")) {
