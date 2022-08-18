@@ -5,6 +5,10 @@ CCID_STATE_FILE <- "ccid.rds"
 CCID_CLASS_FILE <- "ccid.type"
 CCID_CLASS_SEP <- "."
 
+# File conventions
+fileIMAGE_CONVERTED <- "ccidImage"
+fileIMAGE_TO_IMPORT <- "ImageToImport"
+
 #' @description Init ccia object
 #' @param cciaObjDir character of object directory
 #' @param initReactivity boolean to init reactivity

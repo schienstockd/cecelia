@@ -82,7 +82,3 @@ dbTABLE_PROJECT_VERSIONS <- "projectVersions"
 taskMANAGER_HPC_SLURM_CPU_TPL <- "templates/hpc/slurm/hpcCPU.slurm.tpl"
 taskMANAGER_HPC_SLURM_GPU_TPL <- "templates/hpc/slurm/hpcGPU.slurm.tpl"
 taskMANAGER_HPC_SLURM_OUT_TPL <- "templates/hpc/slurm/hpcWatchJob.tpl"
-
-# File conventions
-fileIMAGE_CONVERTED <- "ccidImage"
-fileIMAGE_TO_IMPORT <- "ImageToImport"
