@@ -27,15 +27,15 @@ TODO
 \subsection{Method \code{new()}}{
 Init
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(condaEnv = NULL, connectionFile = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(connectionFile = NULL, useConnectionFile = FALSE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{condaEnv}}{character for conda environment}
-
 \item{\code{connectionFile}}{character for connection file path}
+
+\item{\code{condaEnv}}{character for conda environment}
 }
 \if{html}{\out{</div>}}
 }

@@ -63,8 +63,8 @@ TODO
 Init napari
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{NapariUtils$initNapari(
-  viewerOutputFile,
-  viewerInputFile,
+  viewerOutputFile = NULL,
+  viewerInputFile = NULL,
   execInteractive = TRUE
 )}\if{html}{\out{</div>}}
 }
