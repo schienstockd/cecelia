@@ -151,6 +151,9 @@ cciaModels <- function(dlModels = c(
 #' @param path character to define working directory of cecelia
 #' @export
 cciaUse <- function(path, initConda = TRUE) {
+  # set path in environment
+  pkg.env$path <- path
+  
   # check if there is a custom config
   customConf <- file.path(path, "custom.yml")
   
@@ -213,11 +216,56 @@ cciaUse <- function(path, initConda = TRUE) {
 #' @export
 cciaCreateApp <- function() {
   # copy all files to project directory
-  browser()
+  copyPrevious <- FALSE
+  
+  # copy previous app
+  if (file.exists(file.path(cciaPath(), "app"))) {
+    copyPrevious <- TRUE
+    
+    # remove previous bak
+    if (file.exists(file.path(cciaPath(), "app.bak"))) {
+      unlink(file.path(cciaPath(), "app.bak"), recursive = TRUE)
+    }
+    
+    # copy to bak
+    file.rename(
+      file.path(cciaPath(), "app"), file.path(cciaPath(), "app.bak")
+    )
+    
+    # remove app
+    unlink(file.path(cciaPath(), "app"), recursive = TRUE)
+  }
+  
+  # copy new app
+  file.copy(
+    system.file("app", package = "cecelia"), file.path(cciaPath()),
+    recursive = TRUE
+  )
+  
+  # copy config, db and shiny_bookmarks
+  if (copyPrevious == TRUE) {
+    file.copy(
+      file.path(cciaPath(), "app.bak", "custom.yml"),
+      file.path(cciaPath(), "app", "custom.yml")
+    )
+    file.copy(
+      file.path(cciaPath(), "app.bak", "db"),
+      file.path(cciaPath(), "app"),
+      recursive = TRUE
+    )
+    file.copy(
+      file.path(cciaPath(), "app.bak", "shiny_bookmarks"),
+      file.path(cciaPath(), "app"),
+      recursive = TRUE
+    )
+  }
 }
 
 #' @description Run app with port
 #' @export
-cciaRunApp <- function(...) {
-  shiny::runApp(system.file("app", package = "cecelia"), ...)
+cciaRunApp <- function(localPath = TRUE, ...) {
+  if (localPath == TRUE)
+    shiny::runApp(file.path(cciaPath(), "app"), ...)
+  else
+    shiny::runApp(system.file("app", package = "cecelia"), ...)
 }

@@ -92,7 +92,9 @@ cciaObj <- initCciaObject(
 
 funParams <- list(
   pyramidScale = 4,
-  dimOrder = ""
+  dimOrder = "",
+  createMIP = FALSE,
+  rescaleImage = FALSE
 )
 
 cciaObj$runTask(
