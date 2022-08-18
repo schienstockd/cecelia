@@ -52,7 +52,7 @@ cciaSetup <- function(path) {
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
                             rebuild = FALSE) {
   envFile <- system.file(
-    file.path("py-env", "conda-env-image.yml"),
+    file.path("py-env", "conda-env.yml"),
     package = "cecelia")
   pyModulesFile <- system.file(
     file.path("py-env", "init-py-modules-image.txt"),
@@ -60,15 +60,12 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   
   # use environment.yml for type
   if (envType == "flow") {
-    envFile <- system.file(
-      file.path("py-env", "conda-env-flow.yml"),
-      package = "cecelia")
     pyModulesFile <- system.file(
       file.path("py-env", "init-py-modules-flow.txt"),
       package = "cecelia")
   } else if (envType == "image-nogui") {
-    envFile <- system.file(
-      file.path("py-env", "conda-env-image-nogui.yml"),
+    pyModulesFile <- system.file(
+      file.path("py-env", "init-py-modules-image-nogui.txt"),
       package = "cecelia")
   }
   

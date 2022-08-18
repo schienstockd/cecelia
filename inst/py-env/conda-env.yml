@@ -1,0 +1,5 @@
+name: r-cecelia-env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
