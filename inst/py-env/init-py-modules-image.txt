@@ -1,3 +1,4 @@
+cellpose
 anndata
 python-bioformats
 torch

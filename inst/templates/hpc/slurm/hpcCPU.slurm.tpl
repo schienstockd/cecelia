@@ -38,8 +38,6 @@ if [ "x$SLURM_JOB_ID" == "x" ]; then
 fi
 
 # Run the job from the directory where it was launched (default)
-module load harfbuzz/2.6.4
-module load fribidi/1.0.10
 module load foss/2021b
 module load openblas/0.3.18
 module load python/3.9.6

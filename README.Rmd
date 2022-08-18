@@ -33,7 +33,7 @@ For first time users, you will need to define base directory where
 configuration files, models and the shiny app will be stored. 'Cecelia' depends
 on a python environment which needs to be created.
 
-```{r}
+```r
 library(cecelia)
 
 # setup cecelia directory
@@ -41,12 +41,14 @@ cciaSetup("~/path/to/cecelia")
 
 # create conda environment
 cciaCondaCreate()
+# cciaCondaCreate(envType = "image-nogui") # to use without gui
 # cciaCondaCreate(envType = "flow") # for flow based only
 
-# download models
+# download models for deep-learning
 cciaModels()
 ```
 
+(!) Adjust the '~/path/to/cecelia/custom.yml' to your system.
 
 ## Example
 

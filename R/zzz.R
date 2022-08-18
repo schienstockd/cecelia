@@ -49,7 +49,8 @@ cciaSetup <- function(path) {
 #' @param envName character for environment name
 #' @param envType character for environment type. Any of c("image", "flow")
 #' @export
-cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image") {
+cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
+                            rebuild = FALSE) {
   envFile <- system.file(
     file.path("py-env", "conda-env-image.yml"),
     package = "cecelia")
@@ -65,18 +66,34 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image") {
     pyModulesFile <- system.file(
       file.path("py-env", "init-py-modules-flow.txt"),
       package = "cecelia")
+  } else if (envType == "image-nogui") {
+    envFile <- system.file(
+      file.path("py-env", "conda-env-image-nogui.yml"),
+      package = "cecelia")
   }
   
   # create conda environment
-  # reticulate::install_miniconda()
-  reticulate::conda_create(envName, environment = envFile)
+  envPresent <- envName %in% reticulate::conda_list()$name
   
-  # install packages not in conda environment
-  # TODO some of these did not work when included in the environment.yml
-  pyModules <- readLines(pyModulesFile)
-  pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
-  
-  reticulate::conda_install(envname = envName, packages = pyModules, pip = TRUE)
+  if (envPresent == FALSE || rebuild == TRUE) {
+    # reticulate::install_miniconda()
+    reticulate::conda_remove(envName)
+    reticulate::conda_create(envName, environment = envFile)
+    
+    # install packages not in conda environment
+    # TODO some of these did not work when included in the environment.yml
+    pyModules <- readLines(pyModulesFile)
+    pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
+    
+    reticulate::conda_install(envname = envName, packages = pyModules, pip = TRUE)
+    
+    # install OME bioformats
+    if (envType %in% c("image", "image-nogui")) {
+      reticulate::conda_install(
+        envname = envName, packages = c("bioformats2raw"), channel = "ome"
+        )
+    }
+  }
 }
 
 #' @description Retrieve DL models

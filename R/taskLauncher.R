@@ -128,21 +128,23 @@ TaskLauncher <- R6::R6Class(
             # change into working directory
             # sprintf("cd %s", self$envParams()$dirs$task),
             # change into cecelia directory
-            sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
+            # sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
             # run task launcher
-            # TODO you will need to load the library
-            # Then call R -e "paste(cmds, collapse = ';')"
-            # call 'cciaUse(cciaConf()$hpc$dirs$cecelia)
-            # taskLauncher <- TaskLauncher$new()
-            # taskLauncher$initTask(
-            #   self$getTaskFunction(), taskConfFile = self$taskInputFile(), inplace = TRUE)
-            # taskLauncher$run()
-            sprintf(
-              "Rscript %s/managers/tasks/taskLauncher.R --inplace --fun \"%s\" --conf \"%s\"",
-              cciaConf()$hpc$dirs$cecelia,
-              self$getTaskFunction(),
-              self$taskInputFile()
-              ),
+            #   "Rscript %s/managers/tasks/taskLauncher.R --inplace --fun \"%s\" --conf \"%s\"",
+            #   cciaConf()$hpc$dirs$cecelia,
+            #   self$getTaskFunction(),
+            #   self$taskInputFile()
+            paste0("Rscript -e '", paste(
+              "library(cecelia)",
+              paste0("cciaUse(\"", cciaConf()$hpc$dirs$cecelia, "\")"),
+              "taskLauncher <- TaskLauncher$new()",
+              paste0(
+                "taskLauncher$initTask(\"", self$getTaskFunction(),
+                "\", taskConfFile = \"", self$taskInputFile(), "\", inplace = TRUE)"
+                ),
+              "taskLauncher$run()",
+              sep = ";"
+              ), "'"),
             private$hpcCompletionPostfix(
               self$getHPCConf("hpcSlurmFile")
             ),

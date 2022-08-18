@@ -9,11 +9,19 @@ dependencies:
   - fsspec
   - urllib3
   - numpy
+  - scikit-image
   - requests
   - scanpy[leiden]
   - zarr
   - dask
   - ruamel.yaml
+  - tifffile
+  - btrack
+  - ome-types
+  - threadpoolctl
+  - trimesh
+  - gmsh
   - rtree
+  - shapely
   - pyopencl
   - pandas

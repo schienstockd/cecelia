@@ -1,11 +1,10 @@
-name: cecelia-env
+name: r-cecelia-env
 channels:
   - conda-forge
 dependencies:
   - python=3.9
   - jupyter
   - napari[all]
-  - cellpose
   - pytz
   - python-dateutil
   - h5py
