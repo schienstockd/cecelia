@@ -13,8 +13,9 @@ The goal of cecelia is to …
 You can install the development version of cecelia like so:
 
 ``` r
-if (!require("devtools", quietly = TRUE))
-  install.packages("devtools")
+if (!require("remotes", quietly = TRUE))
+  install.packages("remotes")
+remotes::install_github("schienstockd/cecelia")
 ```
 
 ## Example

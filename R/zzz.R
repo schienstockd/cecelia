@@ -11,22 +11,26 @@ pkg.env <- new.env()
 }
 
 #' @description Expose config
+#' @export
 cciaConf <- function() {
   pkg.env$cfg
 }
 
 #' @description Expose path
+#' @export
 cciaPath <- function() {
   pkg.env$path
 }
 
 #' @description Expose environment, eg/ for python classes
+#' @export
 cciaEnv <- function() {
   pkg.env
 }
 
 #' @description Setup cecelia working directory
 #' @param path character to define working directory of cecelia
+#' @export
 cciaSetup <- function(path) {
   # set path in environment
   pkg.env$path <- path
@@ -44,6 +48,7 @@ cciaSetup <- function(path) {
 #' @description Create conda environment for cecelia
 #' @param envName character for environment name
 #' @param envType character for environment type. Any of c("image", "flow")
+#' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image") {
   envFile <- system.file(
     file.path("py-env", "conda-env-image.yml"),
@@ -77,6 +82,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image") {
 #' @description Retrieve DL models
 #' @param dlModels list of character for models. Defaults to
 #' c("btrack", "mesmer.multiplex", "stardist.versatile2D", "ccia.fluo")
+#' @export
 cciaModels <- function(dlModels = c(
   "btrack", "mesmer.multiplex", "stardist.versatile2D", "ccia.fluo"
   )) {
@@ -129,6 +135,7 @@ cciaModels <- function(dlModels = c(
 
 #' @description Use cecelia working directory
 #' @param path character to define working directory of cecelia
+#' @export
 cciaUse <- function(path, initConda = TRUE) {
   # check if there is a custom config
   customConf <- file.path(path, "custom.yml")
@@ -189,12 +196,14 @@ cciaUse <- function(path, initConda = TRUE) {
 }
 
 #' @description Create app
+#' @export
 cciaCreateApp <- function() {
   # copy all files to project directory
   browser()
 }
 
-# run app with port
+#' @description Run app with port
+#' @export
 cciaRunApp <- function(...) {
   shiny::runApp(system.file("app", package = "cecelia"), ...)
 }

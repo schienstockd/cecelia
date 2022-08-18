@@ -23,12 +23,30 @@ The goal of cecelia is to ...
 ## Installation
 
 You can install the development version of cecelia like so:
-
-``` r
-if (!require("devtools", quietly = TRUE))
-  install.packages("devtools")
-
+```{r}
+if (!require("remotes", quietly = TRUE))
+  install.packages("remotes")
+remotes::install_github("schienstockd/cecelia")
 ```
+
+For first time users, you will need to define base directory where
+configuration files, models and the shiny app will be stored. 'Cecelia' depends
+on a python environment which needs to be created.
+
+```{r}
+library(cecelia)
+
+# setup cecelia directory
+cciaSetup("~/path/to/cecelia")
+
+# create conda environment
+cciaCondaCreate()
+# cciaCondaCreate(envType = "flow") # for flow based only
+
+# download models
+cciaModels()
+```
+
 
 ## Example
 
