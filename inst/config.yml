@@ -110,7 +110,7 @@ default:
       defaultPlotType: "contour"
       contour:
         levels: [0.95, 0.90, 0.75, 0.5]
-        resolution: 25
+        resolution: 20
   volumes:
     home: "~/"
     computer: "/"

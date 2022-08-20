@@ -18,6 +18,7 @@ ViewerManager <- R6::R6Class(
     handleViewerOutput = NULL,
     handleViewerInput = NULL,
     shownUID = "",
+    ignoreCalls = FALSE,
     
     # viewer settings
     useChannelAxis = TRUE,
@@ -77,7 +78,7 @@ ViewerManager <- R6::R6Class(
         cciaConf()$python$viewer$inputFile)
       ) {
       
-      if (is.null(private$getViewer())) {
+      if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE) {
         # init viewer
         viewer <- NapariUtils$new()
         viewer$initNapari()
@@ -90,12 +91,14 @@ ViewerManager <- R6::R6Class(
     
     # add pixel classification pane
     addPixclPane = function() {
-      self$viewer()$addPixclPane()
+      if (!is.null(self$viewer()))
+        self$viewer()$addPixclPane()
     },
     
     # add animation pane
     addAnimationPane = function() {
-      self$viewer()$addAnimationPane()
+      if (!is.null(self$viewer()))
+        self$viewer()$addAnimationPane()
     },
     
     # open image
@@ -127,8 +130,9 @@ ViewerManager <- R6::R6Class(
         }
         
         # show image in napari if not already shown
-        if (is.null(self$shownImage()) ||
-            private$getShownUID() != imObj()$getUID()) {
+        if (!is.null(self$viewer()) && (
+          is.null(self$shownImage()) || private$getShownUID() != imObj()$getUID()
+        )) {
           self$viewer()$openImage(
             imFilepath,
             useChannelAxis = self$getUseChannelAxis(),
@@ -156,7 +160,7 @@ ViewerManager <- R6::R6Class(
         )
         labelSuffixes <- labelSuffixes[lengths(labelSuffixes) > 0]
         
-        if (length(valueNames) > 0) {
+        if (length(valueNames) > 0 && !is.null(self$viewer())) {
           # call viewer
           self$viewer()$showLabelsAll(
             valueNames = valueNames,
@@ -199,7 +203,8 @@ ViewerManager <- R6::R6Class(
       self$updateOutput(NULL)
       
       # clear viewer
-      self$viewer()$clearViewerOutput()
+      if (!is.null(self$viewer()))
+        self$viewer()$clearViewerOutput()
     },
     
     # clear viewer input
@@ -207,7 +212,8 @@ ViewerManager <- R6::R6Class(
       self$updateInput(NULL)
       
       # clear viewer
-      self$viewer()$clearViewerInput()
+      if (!is.null(self$viewer()))
+        self$viewer()$clearViewerInput()
     },
     
     # update output from file
@@ -313,6 +319,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setIgnoreCalls = function(x, invalidate = TRUE) {
+      private$ignoreCalls <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     # getters
     getLazyLoading = function() {
       private$lazyLoading
@@ -368,6 +379,10 @@ ViewerManager <- R6::R6Class(
     
     getMultiscales = function() {
       private$multiscales
+    },
+    
+    getIgnoreCalls = function() {
+      private$ignoreCalls
     }
   )
 )

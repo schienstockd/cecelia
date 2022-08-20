@@ -127,7 +127,7 @@
           # compute
           cciaObj()$flowGatingSet()$recompute()
           
-          popPath <- flowPopPath(popID, flowPlot()$getPlotPopPath())
+          popPath <- .flowPopPath(popID, flowPlot()$getPlotPopPath())
           names(popPath) <- popID
           
           # set gate ID for new population
@@ -153,7 +153,7 @@
             xIDs <- x()$getBoxIDs()
             
             # update subpopulations
-            if (flowPopIsParent(flowPlot()$getPlotPopPath(), x()$getPlotPopPath(), checkEqual = TRUE)) {
+            if (.flowPopIsParent(flowPlot()$getPlotPopPath(), x()$getPlotPopPath(), checkEqual = TRUE)) {
               # get leaves
               updateSelectInput(
                 session, xIDs$popLeaves,
@@ -883,7 +883,7 @@
             }
             
             # update select
-            if (flowPopIsParent(x$path, y()$getPlotPopPath())) { 
+            if (.flowPopIsParent(x$path, y()$getPlotPopPath())) { 
               updateSelectInput(
                 session, boxIDs$popLeaves,
                 # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),
@@ -959,7 +959,7 @@
               }
               
               # replace pop path
-              newPlotPath <- flowPopReplaceParent(
+              newPlotPath <- .flowPopReplaceParent(
                 y()$getPlotPopPath(), x$path, newPath, checkEqual = TRUE)
               
               # set new path in selection
@@ -983,7 +983,7 @@
               }
               
               # update leaves if population is a child
-              if (flowPopIsParent(newPath, y()$getPlotPopPath(), checkEqual = TRUE)) { 
+              if (.flowPopIsParent(newPath, y()$getPlotPopPath(), checkEqual = TRUE)) { 
                 updateSelectInput(
                   session, boxIDs$popLeaves,
                   # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),

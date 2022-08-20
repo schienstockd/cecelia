@@ -63,6 +63,7 @@ CreateGatingSet <- R6::R6Class(
           self$funParams()$transformation
         )
       } else {
+        self$writeLog("A")
         gs <- .flowCreateGatingSet(
           cciaObj$flowFrame(
             valueName = valueName,
@@ -75,6 +76,7 @@ CreateGatingSet <- R6::R6Class(
           self$funParams()$transformation,
           ffNames = cciaObj$getUID()
         )
+        self$writeLog("B")
       }
       
       # save gs
@@ -86,7 +88,7 @@ CreateGatingSet <- R6::R6Class(
       # remove gating set before saving
       unlink(gsPath, recursive = TRUE)
       
-      save_gs(gs, gsPath, overwrite = TRUE)
+      flowWorkspace::save_gs(gs, gsPath, overwrite = TRUE)
       
       # DONE
       self$writeLog("Done")

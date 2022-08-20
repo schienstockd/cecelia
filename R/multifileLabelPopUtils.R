@@ -42,7 +42,7 @@ MultifileLabelPopUtils <- R6::R6Class(
       private$setPopObj(lpu, invalidate = FALSE)
       
       # init channel limits
-      private$initImChannelLimits()
+      # private$initImChannelLimits()
     },
     
     #' @description default pops

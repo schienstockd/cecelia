@@ -172,8 +172,8 @@ UIManager <- R6::R6Class(
       flowY <- y
 
       if (flowNames == TRUE) {
-        flowX <- flowCorrectChannelNames(flowX)
-        flowY <- flowCorrectChannelNames(flowY)
+        flowX <- .flowCorrectChannelNames(flowX)
+        flowY <- .flowCorrectChannelNames(flowY)
       }
 
       # get colours
@@ -209,14 +209,19 @@ UIManager <- R6::R6Class(
               size = markerSize,
               opacity = markerOpacity
             ),
-            type = "scattergl", mode = "markers"
+            hoverinfo = "skip",
+            type = "scattergl",
+            mode = "markers"
           )
 
           # add contour
           if (plotType == "contour") {
             # get contour lines
             contourDT <- flowContourLines(
-              curDT, flowX, flowY, confidenceLevels = cciaConf()$fcs$gating$contour$levels)
+              curDT, flowX, flowY,
+              n = cciaConf()$fcs$gating$contour$resolution,
+              confidenceLevels = cciaConf()$fcs$gating$contour$levels
+              )
 
             # TODO outliers will not be shown
             traces[[paste(x, "contour", sep = "_")]] <- list(
@@ -224,6 +229,7 @@ UIManager <- R6::R6Class(
                 data = contourDT,
                 x = ~x,
                 y = ~y,
+                hoverinfo = "skip",
                 type = "scattergl",
                 mode = "lines",
                 line = list(
@@ -279,7 +285,9 @@ UIManager <- R6::R6Class(
             size = markerSize,
             opacity = markerOpacity
           ),
-          type = "scattergl", mode = "markers"
+          hoverinfo = "skip",
+          type = "scattergl",
+          mode = "markers"
         ))
 
         # add contour
@@ -287,7 +295,10 @@ UIManager <- R6::R6Class(
           # get contour lines
           # TODO could you use data.table grouping?
           contourDT <- flowContourLines(
-            dt, flowX, flowY, confidenceLevels = cciaConf()$fcs$gating$contour$levels)
+            dt, flowX, flowY,
+            n = cciaConf()$fcs$gating$contour$resolution,
+            confidenceLevels = cciaConf()$fcs$gating$contour$levels
+            )
 
           traces <- append(
             traces,
@@ -295,6 +306,7 @@ UIManager <- R6::R6Class(
               data = contourDT,
               x = ~x,
               y = ~y,
+              hoverinfo = "skip",
               type = "scattergl",
               mode = "lines",
               line = list(

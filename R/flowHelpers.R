@@ -206,7 +206,7 @@ flowContourLines <- function(
     flowNames = flowNames)
   
   # create gating set
-  GatingSet(fsTrans)
+  flowWorkspace::GatingSet(fsTrans)
 }
 
 #' @description Transform flow set
@@ -252,13 +252,15 @@ flowContourLines <- function(
 #' @param subset character of population subset
 #' @examples
 #' TODO
-.flowFortifyGs <- function(gs, subset = "root") {
+.flowFortifyGs <- function(gs, subset = "root", cols) {
   retVal <- NULL
   
   tryCatch(
     expr = {
       # fortify gating set
       attr(gs, "subset") <- subset
+      if (!is.null(cols))
+        attr(gs, "dims") <- data.table(name = cols)
       retVal <- fortify(gs)
     },
     error = function(e){ 

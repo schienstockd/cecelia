@@ -1502,8 +1502,11 @@ CciaImage <- R6::R6Class(
         }
       }
       
+      # TODO to get a population - get only one column for faster retrieval
+      cols <- c(self$imChannelNames()[1], "label")
+      
       # get population DT
-      popDT <- self$popDT(popType = popType, pops = pops,
+      popDT <- self$popDT(popType = popType, pops = pops, cols = cols,
                           includeFiltered = includeFiltered,
                           uniqueLabels = FALSE, flushCache = flushCache,
                           completeDT = completeDT)

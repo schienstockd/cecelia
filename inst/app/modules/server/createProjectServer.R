@@ -82,6 +82,9 @@
           globalManagers$projectManager()$setProjectType(projectType())
           # globalManagers$projectManager()$setProjectPath(projectPath())
           
+          # check whether to use viewer
+          globalManagers$viewerManager()$setIgnoreCalls(projectType() == "flow")
+          
           # create project entry
           globalManagers$projectManager()$createProject()
           

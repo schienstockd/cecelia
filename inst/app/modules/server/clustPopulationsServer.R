@@ -84,6 +84,8 @@
       
       # get adata DT
       getAdataDT <- function(flushCache = FALSE) {
+        browser()
+        
         if (!is.null(clusteringPartOf())) {
           # get objects from selected set
           moduleManagers()$imageSetManager$selectedSet()$popDT(
@@ -499,6 +501,7 @@
         req(cciaObj())
         eventSelected <- event_data("plotly_selected", source = "channelsPlot")
         req(eventSelected)
+        req(globalManagers$viewerManager()$viewer())
         
         # select cells on image
         globalManagers$viewerManager()$viewer()$highlightLabels(
@@ -509,6 +512,7 @@
       # show channel intensities on image
       observeEvent(input$viewerShowChannelIntensity, {
         req(input$viewerShowChannelIntensity)
+        req(globalManagers$viewerManager()$viewer())
         
         globalManagers$viewerManager()$viewer()$showChannelIntensity(
           which(channelSelection() == input$viewerShowChannelIntensity)[[1]]

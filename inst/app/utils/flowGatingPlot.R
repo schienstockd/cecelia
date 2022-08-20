@@ -150,7 +150,7 @@ FlowGatingPlot <- R6::R6Class(
       retVal <- private$plotXchannel
       
       if (flowName == TRUE)
-        retVal <- flowCorrectChannelNames(retVal)
+        retVal <- .flowCorrectChannelNames(retVal)
       
       retVal
     },
@@ -159,7 +159,7 @@ FlowGatingPlot <- R6::R6Class(
       retVal <- private$plotYchannel
       
       if (flowName == TRUE)
-        retVal <- flowCorrectChannelNames(retVal)
+        retVal <- .flowCorrectChannelNames(retVal)
       
       retVal
     },

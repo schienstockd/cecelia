@@ -114,7 +114,6 @@ createFlowPlotManager <- function(
     # highlighted cells?
     # otherwise the plot will be reloaded after changing traces
     isolate({
-      channelLimits <- flowChannelLimits(flowGatingPlot)
       boxIDs <- flowGatingPlot()$getBoxIDs()
 
       # define populations to plot
@@ -127,6 +126,9 @@ createFlowPlotManager <- function(
       popsPrep <- flowGatingPlotPrepPops(
         popsToPlot, flowGatingPlot,
         greyPops = flowGatingPlot()$getPlotPopPath())
+      
+      # get limits
+      channelLimits <- flowChannelLimits(flowGatingPlot, popsPrep)
 
       # if centroid X and Y - use fixed aspect ratio
       axisScale <- NULL
@@ -135,7 +137,7 @@ createFlowPlotManager <- function(
           y = list(anchor = "x", ratio = 1)
         )
       }
-
+      
       # create plotly plot
       p1 <- moduleManagers()$uiManager$flowPlot_ly(
         boxIDs$plot,
@@ -163,7 +165,7 @@ createFlowPlotManager <- function(
         if (all(xOK, yOK)) {
           p1 <- p1 %>% moduleManagers()$uiManager$flowPlot_lyTraces(
             pop$dt, x, y, colours = pop$colours$colours,
-            customdata = paste(pop$dt$value_name, pop$dt$label, sep = "#"),
+            # customdata = paste(pop$dt$value_name, pop$dt$label, sep = "#"),
             coloursOrder = pop$colours$order,
             useFlowColours = if (flowGatingPlot()$getPlotType() != "contour") flowUseFlowColours() else FALSE,
             markerOpacity = if (flowUseFlowColours() == TRUE) 1 else flowMarkerOpacity(),
@@ -193,13 +195,21 @@ createFlowPlotManager <- function(
   }
 
   # return channel limits
-  flowChannelLimits <- function(flowGatingPlot) {
+  flowChannelLimits <- function(flowGatingPlot, popsPrep) {
     flowX <- flowGatingPlot()$getPlotXchannel(flowName = TRUE)
     flowY <- flowGatingPlot()$getPlotYchannel(flowName = TRUE)
-
+    flowDT <- rbindlist(lapply(popsPrep, function(x) x$dt))
+      
     # get channel limits
-    channelLimits <- cciaObj()$popUtils(popType())$getImChannelLimits()
-
+    # channelLimits <- cciaObj()$popUtils(popType())$getImChannelLimits()
+    channelLimits <- list()
+    for (x in c(flowX, flowY)) {
+      channelLimits[[x]] <- list(
+        min = min(flowDT[,get(x)]),
+        max = max(flowDT[,get(x)])
+      )
+    }
+    
     xlim <- c(0, 1)
     ylim <- c(0, 1)
 
@@ -224,8 +234,10 @@ createFlowPlotManager <- function(
   # create channel selection
   createGatingBoxChannelSelect <- function(id, label, selected, ignoreInput = FALSE) {
     # add properties
-    chnlNames <- names(cciaObj()$popUtils(popType())$getImChannelLimits())
-
+    # chnlNames <- names(cciaObj()$popUtils(popType())$getImChannelLimits())
+    chnlNames <- c(unname(cciaObj()$imChannelNames()),
+                   cciaConf()$fcs$propsToAdd)
+    
     selectInput(
       session$ns(id), label, chnlNames,
       selected = shinyInputValue(id, input, selected, ignoreInput = ignoreInput)
@@ -415,12 +427,13 @@ createFlowPlotManager <- function(
       moduleManagers()$uiManager$flowPlot_lyRemoveTraces(boxIDs$plot, n = removeTraceNum)
     }
 
-    # get channel limits
-    channelLimits <- flowChannelLimits(flowGatingPlot)
-
     # get pop data tables and colours
-    popsPrep <- flowGatingPlotPrepPops(popsToPlot, flowGatingPlot,
-                                       greyPops = flowGatingPlot()$getPlotPopPath())
+    popsPrep <- flowGatingPlotPrepPops(
+      popsToPlot, flowGatingPlot,
+      greyPops = flowGatingPlot()$getPlotPopPath())
+    
+    # get channel limits
+    channelLimits <- flowChannelLimits(flowGatingPlot, popsPrep)
 
     progress <- Progress$new()
 
@@ -437,7 +450,7 @@ createFlowPlotManager <- function(
         yScale = flowGatingPlot()$getPlotYchannelScale(),
         xlim = channelLimits$x,
         ylim = channelLimits$y,
-        customdata = paste(x$dt$value_name, x$dt$label, sep = "#"),
+        # customdata = paste(x$dt$value_name, x$dt$label, sep = "#"),
         colours = x$colours$colours,
         coloursOrder = x$colours$order,
         removeTraces = FALSE,
@@ -467,8 +480,13 @@ createFlowPlotManager <- function(
       popType(), popIDs = names(popsToPlot))
     
     # get population DT
+    # TODO you should only get the channels that you need
     DT <- cciaObj()$popDT(
-      popType(), pops = popsToPlot, includeFiltered = TRUE, completeDT = FALSE)
+      popType(), pops = popsToPlot, includeFiltered = TRUE,
+      completeDT = FALSE, cols = c(
+        flowGatingPlot()$getPlotXchannel(),
+        flowGatingPlot()$getPlotYchannel()
+      ))
 
     # go through pops and create list of datatable and colours
     for (x in names(popsToPlot)) {
@@ -476,7 +494,7 @@ createFlowPlotManager <- function(
       popInfo <- popsInfo[[x]]
 
       # filter on population in DT
-      if (flowPopIsRoot(x)) {
+      if (.flowPopIsRoot(x)) {
         popDT <- DT[]
       } else {
         # is the population defined?
@@ -1419,6 +1437,7 @@ createFlowPlotManager <- function(
   # show selected cells on image
   observeEvent(flowGatingPlotsSelected(), {
     req(length(flowGatingPlotsSelected()) > 0)
+    req(globalManagers$viewerManager()$viewer())
 
     # get selected labels
     # TODO does this work for multiple plots .. ?

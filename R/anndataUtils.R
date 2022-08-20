@@ -76,7 +76,7 @@ AnndataUtils <- R6::R6Class(
       private$setAdataDT(labelsDT, invalidate = FALSE)
       
       # init channel limits
-      private$initImChannelLimits()
+      # private$initImChannelLimits()
       
       # set value name
       # TODO this assumes default
@@ -95,6 +95,8 @@ AnndataUtils <- R6::R6Class(
       # so, just return the same DT every time
       # populations will be filtered?
       DT <- self$getAdataDT()
+      
+      browser()
       
       # filter on cols
       if (!is.null(cols)) {

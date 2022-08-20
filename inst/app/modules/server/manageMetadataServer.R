@@ -183,9 +183,8 @@
         
         # set channel names for selected images
         for (x in moduleManagers()$imageSetManager$selectedSet()$cciaObjectsByUIDs(setUIDs())) {
-          if (length(channelNames) == length(x()$imChannelNames())) {
-            x()$setImChannelNames(channelNames)
-          }
+          x()$setImChannelNames(
+            channelNames, checkLength = globalManagers$projectManager()$getProjectType() != "flow")
         }
       })
       

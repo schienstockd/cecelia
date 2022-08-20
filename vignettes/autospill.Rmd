@@ -1,0 +1,188 @@
+---
+title: "Autospill"
+output: html_document
+date: '2022-08-19'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Calculate spillover
+
+```{r}
+# set test variables
+pID <- "Yl5tkH"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+```
+
+
+```{r}
+# rcjHiw # comp
+# etxWEx # samples
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "rcjHiw", versionID = 1, initReactivity = FALSE
+)
+```
+
+```{r}
+# https://github.com/carlosproca/autospill/blob/master/inst/batch/calculate_compensation_website.r
+library(autospill)
+
+# set parameters
+asp <- get.autospill.param("website")
+
+# write marker definitions
+marker.file <- cciaObj$persistentObjectDirectoryFile(file.path("data", "autospill", "controls.csv"))
+marker.controls <- cciaObj$persistentObjectDirectoryFile(file.path("data", "autospill", "controls"))
+dir.create(marker.controls, recursive = TRUE, showWarnings = FALSE)
+
+# copy all single stain controls into one directory
+for (x in cciaObj$cciaObjects()) {
+  file.copy(x$oriFilepath(), marker.controls)
+}
+
+# create a csv with filenames for compensation
+# TODO this seems a bit odd just to pass filenames to read.marker
+# consider making your own version of this
+fcs.names <- as.data.frame(unname(
+  sapply(cciaObj$cciaObjects(), function(x) basename(x$oriFilepath()))
+))
+colnames(fcs.names) <- c("file.name")
+fcs.names$filename <- fcs.names$file.name
+
+# extract parameters from compensation files
+# TODO this might have to be modified for custom compensation or Aurora
+fcs.names$dye <- paste0(
+  stringr::str_extract(fcs.names$filename, "(?<=Controls_).*(?= Stained)"), "-A"
+)
+fcs.names$antigen <- "bead"
+fcs.names$wavelength <- ""
+
+write.csv(fcs.names, marker.file)
+```
+
+
+```{r}
+# calculate controls
+flow.control <- read.flow.control(marker.controls, marker.file, asp)
+```
+
+```{r}
+# gate events before calculating spillover
+# TODO this takes a bit of time and might be good on the HPC
+flow.gate <- gate.flow.data(flow.control, asp)
+
+# Did not work
+```
+
+```{r}
+str( flow.gate )
+
+
+# get initial spillover matrices from untransformed and transformed data
+
+marker.spillover.unco.untr <- get.marker.spillover( TRUE, flow.gate,
+    flow.control, asp )
+marker.spillover.unco.tran <- get.marker.spillover( FALSE, flow.gate,
+    flow.control, asp )
+
+str( marker.spillover.unco.untr$inte )
+str( marker.spillover.unco.untr$coef )
+
+str( marker.spillover.unco.tran$inte )
+str( marker.spillover.unco.tran$coef )
+
+
+# refine spillover matrix iteratively
+
+refine.spillover.result <- refine.spillover( marker.spillover.unco.untr,
+    marker.spillover.unco.tran, flow.gate, flow.control, asp )
+
+str( refine.spillover.result )
+
+```
+
+
+
+```{r}
+# read flow controls
+control.dir <- "./samples/"
+control.def.file <- "./fcs_control.csv"
+
+
+
+names( flow.control )
+
+flow.control$antigen
+flow.control$autof.marker.idx
+str( flow.control$event )
+flow.control$event.n
+flow.control$event.number.width
+table( flow.control$event.sample )
+flow.control$expr.data.max
+flow.control$expr.data.max.ceil
+flow.control$expr.data.min
+str( flow.control$expr.data.tran )
+str( flow.control$expr.data.untr )
+flow.control$figure.scatter.dir
+str( flow.control$flow.set, max.level = 1 )
+str( flow.control$gate.parameter )
+flow.control$marker
+flow.control$marker.n
+flow.control$marker.original
+flow.control$sample
+flow.control$scatter.and.marker
+flow.control$scatter.and.marker.label
+flow.control$scatter.and.marker.original
+flow.control$scatter.parameter
+str( flow.control$transform )
+str( flow.control$transform.inv )
+flow.control$wavelength
+
+
+# gate events before calculating spillover
+
+flow.gate <- gate.flow.data( flow.control, asp )
+
+str( flow.gate )
+
+
+# get initial spillover matrices from untransformed and transformed data
+
+marker.spillover.unco.untr <- get.marker.spillover( TRUE, flow.gate,
+    flow.control, asp )
+marker.spillover.unco.tran <- get.marker.spillover( FALSE, flow.gate,
+    flow.control, asp )
+
+str( marker.spillover.unco.untr$inte )
+str( marker.spillover.unco.untr$coef )
+
+str( marker.spillover.unco.tran$inte )
+str( marker.spillover.unco.tran$coef )
+
+
+# refine spillover matrix iteratively
+
+refine.spillover.result <- refine.spillover( marker.spillover.unco.untr,
+    marker.spillover.unco.tran, flow.gate, flow.control, asp )
+
+str( refine.spillover.result )
+
+
+# output session info
+
+sessionInfo()
+```
+

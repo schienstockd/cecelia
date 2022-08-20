@@ -352,6 +352,7 @@ createPopulationManager <- function(
     ), {
     req(cciaObj())
     req(modulePopType())
+    req(globalManagers$viewerManager()$viewer())
     
     # do not show if the image has not been loaded yet
     req(moduleManagers()$imageViewerManager$imageShown())
@@ -446,6 +447,7 @@ createPopulationManager <- function(
   ), {
     req(cciaObj())
     req(modulePopType())
+    req(globalManagers$viewerManager()$viewer())
     
     # do not show if the image has not been loaded yet
     req(moduleManagers()$imageViewerManager$imageShown())
@@ -573,6 +575,8 @@ createPopulationManager <- function(
   # toggle population visibility
   observeEvent(input$toggleVisibilityForPop, {
     req(cciaObj())
+    req(globalManagers$viewerManager()$viewer())
+    
     popID <- input$toggleVisibilityForPop
     
     popName <- popData()[[popID]]$name

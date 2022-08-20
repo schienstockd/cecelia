@@ -97,6 +97,7 @@ createImageViewerManager <- function(
     ), {
     req(imageSelected())
     # req(globalManagers$viewerManager()$getShowViewer())
+    req(globalManagers$viewerManager()$viewer())
     
     # remove highlights
     for (x in managerConf$imageData()$uID) {
@@ -123,7 +124,7 @@ createImageViewerManager <- function(
     )
     
     # open image
-    if (DEBUG_SHOW_VIEWER == TRUE || globalManagers$projectManager()$getProjectType() == "flow") {
+    if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
       globalManagers$viewerManager()$openImage(
         shownImage, managerConf$imageViewer$napariModule,
         showLabelsAsNpArray()

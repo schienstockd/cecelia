@@ -74,7 +74,7 @@ FlowGatingSet <- R6::R6Class(
       private$setPopObj(load_gs(objFilepath), invalidate = FALSE)
       
       # init channel limits
-      private$initImChannelLimits()
+      # private$initImChannelLimits()
       
       # set value name
       private$setValueNames(c(valueName), invalidate = FALSE)
@@ -379,7 +379,7 @@ FlowGatingSet <- R6::R6Class(
       
       # go through populations and build datatable
       for (x in pops) {
-        popList[[x]] <- .flowFortifyGs(self$getPopObj(), x)
+        popList[[x]] <- .flowFortifyGs(self$getPopObj(), x, cols = cols)
       }
       
       DT <- data.table::rbindlist(popList, idcol = TRUE)
@@ -389,16 +389,7 @@ FlowGatingSet <- R6::R6Class(
         setnames(DT, ".id", "pop")
       }
       
-      # filter on cols
-      if (!is.null(cols)) {
-        if (!"pop" %in% cols) {
-          cols <- c("pop", cols)
-        }
-        
-        return(DT[, ..cols])
-      } else {
-        return(DT)
-      }
+      DT
     },
     
     #' @description Change parent name

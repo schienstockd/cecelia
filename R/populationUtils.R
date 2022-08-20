@@ -21,6 +21,7 @@ PopulationUtils <- R6::R6Class(
     valueNames = NULL,
     
     #' @description Init channel limits
+    #' TODO not use this
     initImChannelLimits = function() {
       # get limits from root
       # TODO is there a faster version of this?
@@ -83,9 +84,8 @@ PopulationUtils <- R6::R6Class(
       private$setPopObjFilepath(popObjFilepath, invalidate = FALSE)
       
       # set channel names
-      private$setImChannels(.flowCorrectChannelNames(
-        imChannels
-      ), invalidate = FALSE)
+      private$setImChannels(.flowCorrectChannelNames(imChannels),
+                            invalidate = FALSE)
     },
     
     #' @description
@@ -115,7 +115,7 @@ PopulationUtils <- R6::R6Class(
       
       # get populations
       if (is.null(popDT)) {
-        popDT <- self$popDT(pops)
+        popDT <- self$popDT(pops, cols = c(self$getImChannels()[1], "label"))
       }
       
       # select with DT 

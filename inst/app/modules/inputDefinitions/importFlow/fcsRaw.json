@@ -8,11 +8,33 @@
   },
   "spec": {
     "inputs": {
+			"fileAutospillComp": {
+				"type:character": {
+					"default": ""
+				}
+			},
+      "applyAutospillComp": {
+				"type:boolean": {
+					"default": false
+				}
+			}
     },
     "outputs": {}
   },
   "ui": {
     "inputs": {
+      "fileAutospillComp": {
+				"index": 0,
+				"label": "Path to autospill (CSV)",
+				"widget:textInput": {
+				}
+			},
+      "applyAutospillComp": {
+				"index": 1,
+				"label": "Apply autospill",
+				"widget:checkbox": {
+				}
+			}
     },
     "outputs": {}
   }

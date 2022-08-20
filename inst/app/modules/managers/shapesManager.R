@@ -34,6 +34,7 @@ createShapesManager <- function(
   observeEvent(input$saveShapes, {
     req(cciaObj())
     req(moduleManagers()$imageViewerManager$imageShown())
+    req(globalManagers$viewerManager()$viewer())
     
     # save shapes
     globalManagers$viewerManager()$viewer()$saveShapes(
@@ -48,6 +49,7 @@ createShapesManager <- function(
     moduleManagers()$imageViewerManager$imageShown()
     ), {
     req(cciaObj())
+    req(globalManagers$viewerManager()$viewer())
     
     # do not show if the image has not been loaded yet
     req(moduleManagers()$imageViewerManager$imageShown())

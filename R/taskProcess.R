@@ -319,18 +319,15 @@ TaskProcess <- R6::R6Class(
     pyScript = function(scriptFile, paramsList = list()) {
       cmd <- c()
       
-      # init conda if necessary
-      if (!purrr::is_empty(private$getCondaEnv()) &&
-          !purrr::is_empty(private$getCondaDir())) {
-        cmd <- c(
-          cmd,
-          # sh: 1: source: not found
-          # sprintf("source %s", file.path(
-          sprintf(". %s", file.path(
-            private$getCondaDir(), "etc", "profile.d", "conda.sh")),
-          sprintf("conda activate %s", private$getCondaEnv())
-        )
-      }
+      # This should be done already in parent process
+      # # init conda if necessary
+      # if (!purrr::is_empty(private$getCondaEnv())) {
+      #   reticulate::use_condaenv(private$getCondaEnv(), required = TRUE)
+      # }
+
+      # set working working directory
+      os <- reticulate::import("os")
+      os$chdir(system.file(".", package = "cecelia"))
       
       # add logfile
       paramsList[["ccia"]] <- list(

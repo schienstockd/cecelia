@@ -16,6 +16,24 @@ cciaUse("~/Desktop/DOHERTY/cecelia")
 ```
 
 ```{r}
+# set test variables
+pID <- "Yl5tkH"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Oqu9Il", versionID = 1, initReactivity = FALSE
+)
+
+cciaObj$popDT("clust")
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
@@ -26,6 +44,6 @@ cciaCreateApp()
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
-cciaRunApp(port = 6860)
+cciaRunApp(port = 6860, localPath = FALSE)
 ```
 
