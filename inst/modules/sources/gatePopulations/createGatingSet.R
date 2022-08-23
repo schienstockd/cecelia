@@ -57,13 +57,35 @@ CreateGatingSet <- R6::R6Class(
         }
         names(ffs) <- self$funParams()$uIDs
         
+        if (length(self$funParams()$transChannels) > 0) {
+          # check with selected channel names
+          channelNames <- channelNames[
+            channelNames %in% self$funParams()$transChannels]
+        }
+        
+        self$writeLog(paste(
+          ">> Tranform", paste(channelNames, collapse = ", ")))
+        
         gs <- .flowCreateGatingSet(
           ffs,
           channelNames,
-          self$funParams()$transformation
+          self$funParams()$transformation,
+          transChannels = self$funParams()$transChannels
         )
       } else {
-        self$writeLog("A")
+        # get channel names
+        channelNames <- cciaObj$imChannelNames(includeTypes = TRUE)
+        
+        if (length(self$funParams()$transChannels) > 0) {
+          # check with selected channel names
+          channelNames <- channelNames[
+            channelNames %in% self$funParams()$transChannels]
+        }
+        
+        self$writeLog(paste(
+          ">> Tranform", paste(channelNames, collapse = ", ")))
+        
+        # create gs
         gs <- .flowCreateGatingSet(
           cciaObj$flowFrame(
             valueName = valueName,
@@ -72,11 +94,10 @@ CreateGatingSet <- R6::R6Class(
             applyReversedLog = self$funParams()$applyReversedLog,
             reversedLogBase = self$funParams()$reversedLogBase
           ),
-          cciaObj$imChannelNames(includeTypes = TRUE),
+          channelNames,
           self$funParams()$transformation,
-          ffNames = cciaObj$getUID()
+          ffNames = cciaObj$getUID(),
         )
-        self$writeLog("B")
       }
       
       # save gs

@@ -15,8 +15,7 @@
 #' @param y list of numeric for 'Y'-values
 #' @examples
 #' TODO
-#' @export
-flowColours <- function(x, y, nbin = 128) {
+.flowColours <- function(x, y, nbin = 128) {
   retVal <- NULL
   
   if (all(length(x) > 0, length(y) > 0)) {
@@ -39,8 +38,7 @@ flowColours <- function(x, y, nbin = 128) {
 #' @param extendLimits numeric to extend limits and avoid "cutting off" contours
 #' @examples
 #' TODO
-#' @export
-flowContourLines <- function(
+.flowContourLines <- function(
     DT, xCol, yCol, n = 25, confidenceLevels = c(0.98, 0.95, 0.90, 0.75, 0.5),
     extendLimits = 0.5) {
   # get contour lines
@@ -218,8 +216,6 @@ flowContourLines <- function(
 #' TODO
 .flowTransformFlowSet <- function(fs, channelNames, transformation = NULL,
                                  flowNames = TRUE) {
-  fsTrans <- fs
-  
   # run transformation
   if (!is.null(transformation) && transformation != "none") {
     if (transformation == "biexponential") transFun <- flowCore::biexponentialTransform()
@@ -230,6 +226,7 @@ flowContourLines <- function(
     else if (transformation == "scale") transFun <- flowCore::scaleTransform()
     else if (transformation == "splitScale") transFun <- flowCore::splitScaleTransform()
     else if (transformation == "truncate") transFun <- flowCore::truncateTransform()
+    else if (transformation == "logicle") transFun <- flowCore::logicleTransform()
     
     # correct channel names
     if (flowNames == TRUE) {
@@ -238,10 +235,10 @@ flowContourLines <- function(
     
     transList <- flowCore::transformList(channelNames, transFun)
     
-    fsTrans <- flowCore::transform(fs, transList)
+    return(flowCore::transform(fs, transList))
+  } else {
+    return(fs)
   }
-  
-  fsTrans
 }
 
 #' @description Fortify gating set
@@ -293,8 +290,7 @@ flowContourLines <- function(
 #' @param flowNames boolean to use "flow-names"
 #' @examples
 #' TODO
-#' @export
-flowCompensatePoly <- function(df, channelNames, refAxis,
+.flowCompensatePoly <- function(df, channelNames, refAxis,
                                polyDegree = 4, suffix = ".corr",
                                replaceValues = FALSE, flowNames = TRUE) {
   # correct channel names before selecting
@@ -596,7 +592,7 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
 #' @param gateParams list of character for gating axis (2)
 #' @examples
 #' TODO
-.flowMatchGatingParamsForPop <- function(gs, pop, gateParams){
+.flowMatchGatingParamsForPop <- function(gs, pop, gateParams) {
   curGateParams <- .flowGatingAxisForPop(gs, pop)
 
   matchAxis <- TRUE
@@ -610,4 +606,88 @@ flowCompensatePoly <- function(df, channelNames, refAxis,
   }
 
   matchAxis
+}
+
+#' @description colour range
+.flowColorRampBlueHeat <- function(n) {
+  # Adapted from https://www.r-bloggers.com/2013/03/r-defining-your-own-color-schemes-for-heatmaps/
+  red <- rgb(1,0,0)
+  green <- rgb(0,1,0)
+  yellow <- rgb(1,1,0)
+  blue <- rgb(0,0,1)
+  white <- rgb(1,1,1)
+  
+  colorRampPalette(c("black", "#1793ff", "#04fa00", "#ffa805", "#ff3856"))(n)
+}
+
+### RASTER
+#' @description Build raster plot
+#' @param DT data.table to prepare
+#' @param flowX character for x column
+#' @param flowY character for y column
+#' @examples
+#' TODO
+.flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark") {
+  r1 <- rasterly::rasterly(
+    data = DT,
+    mapping = rasterly::aes(
+      x = get(flowX),
+      y = get(flowY)
+    )
+  )
+  
+  # check mode
+  if (colorMode == "white") {
+    r1 %>% rasterly::rasterly_points(
+      color = flowViz::flowViz.par.get("argcolramp")(11),
+      background = "#FFFFFFFF",
+      glyph = "square",
+      xlim = range(DT[[flowX]]),
+      ylim = range(DT[[flowY]])
+    ) %>% rasterly::rasterly_build()
+  } else {
+    r1 %>% rasterly::rasterly_points(
+      color = rev(RColorBrewer::brewer.pal(11, "Spectral")),
+      background = "#222222FF",
+      glyph = "square",
+      xlim = range(DT[[flowX]]),
+      ylim = range(DT[[flowY]])
+    ) %>% rasterly::rasterly_build()
+  }
+}
+
+#' @description Prepare raster plot
+#' @param ... passed to .flowRasterBuild
+#' @examples
+#' TODO
+.flowRasterPrepPlotly <- function(...) {
+  # build raster
+  r1 <- .flowRasterBuild(...)
+  
+  # create image
+  z <- r1$image
+  dimZ <- dim(z)
+  # z <- matrix(log(z + 1), nrow = dimZ[1])
+  
+  # from https://github.com/plotly/plotly.R/blob/c35a44ef99d2f0a06f58d5c4447576d032091523/R/add.R
+  cols <- col2rgb(z, alpha = TRUE)
+  dims <- c(dim(z), 4)
+  z <- array(numeric(prod(dims)), dims)
+  matrix_ <- function(x) {
+    matrix(x, byrow = TRUE, nrow = dims[1], ncol = dims[2])
+  }
+  z[,,1] <- matrix_(cols["red",])
+  z[,,2] <- matrix_(cols["green",])
+  z[,,3] <- matrix_(cols["blue",])
+  z[,,4] <- matrix_(cols["alpha",])
+  
+  colormodel <- "rgba"
+  
+  list(
+    z = z,
+    x0 = r1$x_range[1],
+    dx = diff(r1$x_range)/dimZ[2],
+    y0 = r1$y_range[2],
+    dy = -diff(r1$y_range)/dimZ[1]
+  )
 }

@@ -142,11 +142,13 @@
             )
           )
           
-          # save population
-          moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
-          
-          # save population map
-          cciaObj()$savePopMap(popType())
+          if (globalManagers$projectManager()$getProjectType() != "flow") {
+            # save population
+            moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
+            
+            # save population map
+            cciaObj()$savePopMap(popType())
+          }
           
           # update traces where population is shown
           for (x in moduleManagers()$flowPlotManager$flowGatingPlots()) {
@@ -186,7 +188,7 @@
           # add population to image
           popID <- cciaObj()$popIDsByAttrList(
             popType(), list(
-              parent = flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = "root"),
+              parent = .flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = "root"),
               gateID = gateID,
               xChannel = flowPlot()$getPlotXchannel(flowName = TRUE),
               yChannel = flowPlot()$getPlotYchannel(flowName = TRUE)
@@ -208,11 +210,13 @@
           # compute
           cciaObj()$flowGatingSet()$recompute()
           
-          # save population
-          moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
-          
-          # save population map
-          cciaObj()$savePopMap(popType())
+          if (globalManagers$projectManager()$getProjectType() != "flow") {
+            # save population
+            moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
+            
+            # save population map
+            cciaObj()$savePopMap(popType())
+          }
           
           if (length(flowPlot()$getPlotPopLeaves()) > 0) {
             popLeaves <- flowPlot()$getPlotPopLeaves()
@@ -713,12 +717,14 @@
         # set init flag
         moduleManagers()$flowPlotManager$initGatingBoxPlots(TRUE)
         
-        # init all populations from root
-        moduleManagers()$flowPlotManager$flowSavePops(
-          "root", purge = TRUE, completeDT = FALSE)
-        
-        # save pop map
-        cciaObj()$savePopMap(popType())
+        if (globalManagers$projectManager()$getProjectType() != "flow") {
+          # init all populations from root
+          moduleManagers()$flowPlotManager$flowSavePops(
+            "root", purge = TRUE, completeDT = FALSE)
+          
+          # save pop map
+          cciaObj()$savePopMap(popType())
+        }
       })
       
       # listen to viewer output
@@ -952,7 +958,7 @@
               
               # is the population shown on any image?
               # then redraw the gates and annotations
-              if (flowNormRootPath(y()$getPlotPopPath(), "root") == x$parent) {
+              if (.flowNormRootPath(y()$getPlotPopPath(), "root") == x$parent) {
                 moduleManagers()$uiManager$plot_lyClearShapesWithAnnotations(
                   boxIDs$plot
                 )

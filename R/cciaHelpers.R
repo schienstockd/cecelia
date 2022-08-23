@@ -677,7 +677,7 @@ renameChannelColumns <- function(channelList, channelNames, channelPattern = "me
 #' @examples
 #' TODO
 #' @export
-optsFromList <- function(optList, optKey, ...) {
+optsFromList <- function(optList, optKeys, ...) {
   # go through keys
   for (i in names(optKeys)) {
     defaultVal <- optKeys[[i]]

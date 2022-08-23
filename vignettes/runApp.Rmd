@@ -44,6 +44,6 @@ cciaCreateApp()
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
-cciaRunApp(port = 6860, localPath = FALSE)
+cciaRunApp(port = 6861, localPath = FALSE)
 ```
 

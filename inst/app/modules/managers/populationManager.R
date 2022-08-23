@@ -65,7 +65,7 @@ createPopulationManager <- function(
         }
         
         # get short parent path
-        parentPath <- flowTrimPath(x$parent)
+        parentPath <- .flowTrimPath(x$parent)
         
         # put into row
         uiChoices[[popCounter]] <- fluidRow(
@@ -271,12 +271,22 @@ createPopulationManager <- function(
       toUIDs = moduleManagers()$selectionManager$selectedUIDs()
     )
     
+    # copy gating
+    if (modulePopType() == "flow") {
+      moduleManagers()$imageSetManager$selectedSet()$propagateFlowGating(
+        fromUID = cciaObj()$getUID(),
+        toUIDs = moduleManagers()$selectionManager$selectedUIDs(),
+        recompute = TRUE
+      )
+    }
+    
     progress$close()
   })
   
   # save mapping if not done during processing
   observeEvent(input$savePopMapping, {
     req(cciaObj())
+    req(globalManagers$projectManager()$getProjectType() != "flow")
     
     # save pop map
     cciaObj()$savePopMap(
@@ -315,10 +325,12 @@ createPopulationManager <- function(
       includeFiltered = managerConf$population$enableFilterPopulation
     )
     
-    # save pop map
-    cciaObj()$savePopMap(
-      modulePopType(),
-      includeFiltered = managerConf$population$enableFilterPopulation)
+    if (globalManagers$projectManager()$getProjectType() != "flow") {
+      # save pop map
+      cciaObj()$savePopMap(
+        modulePopType(),
+        includeFiltered = managerConf$population$enableFilterPopulation)
+    }
     
     # toggle colour selection for population
     counter <- 1
@@ -471,7 +483,7 @@ createPopulationManager <- function(
         parent = input$popParent,
         # by default set to parent/name
         path = paste(
-          flowNormRootPath(input$popParent),
+          .flowNormRootPath(input$popParent),
           input$popName, sep = "/"
         )
       )
@@ -587,10 +599,12 @@ createPopulationManager <- function(
       includeFiltered = managerConf$population$enableFilterPopulation
     )
     
-    # save pop map
-    cciaObj()$savePopMap(
-      modulePopType(),
-      includeFiltered = managerConf$population$enableFilterPopulation)
+    if (globalManagers$projectManager()$getProjectType() != "flow") {
+      # save pop map
+      cciaObj()$savePopMap(
+        modulePopType(),
+        includeFiltered = managerConf$population$enableFilterPopulation)
+    }
     
     # toggle visibility on viewer and table
     labelID <- sprintf(

@@ -70,7 +70,7 @@ def run(params):
       image_task_dirs[x] = os.path.join(*([os.sep] + task_dir_split))
 
       image_dfs.append(get_adata(
-        image_task_dirs[x], value_name, column_names,
+        image_task_dirs[x], value_name, column_names, logfile_utils,
         pops_to_cluster = pops_to_cluster, pop_type = pop_type,
         keep_pops = keep_pops, as_df = True,
         transformation = transformation if normalise_individually is True else 'NONE',
@@ -94,7 +94,7 @@ def run(params):
       .as_adata()
   else:
     # run clustering on single image
-    adata = get_adata(task_dir, value_name, column_names,
+    adata = get_adata(task_dir, value_name, column_names, logfile_utils,
                       pops_to_cluster = pops_to_cluster, pop_type = pop_type,
                       keep_pops = keep_pops)
   
@@ -229,7 +229,7 @@ def merge_new_adata(new_adata, task_dir, value_name):
   return prev_adata
 
 # get adata from image
-def get_adata(task_dir, value_name, column_names,
+def get_adata(task_dir, value_name, column_names, logfile_utils,
               pops_to_cluster = None, pop_type = None,
               keep_pops = False, as_df = False,
               normalise_axis = 'channels', normalise_to_median = False, max_fraction = 0,

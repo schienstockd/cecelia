@@ -82,8 +82,8 @@ FlowGatingSet <- R6::R6Class(
     
     #' @description Gated populations paths
     #' @param includeRoot boolean to include root
-    popPaths = function (includeRoot = FALSE) {
-      pops <- gs_get_pop_paths(self$getPopObj(), order = 'tsort')
+    popPaths = function (includeRoot = FALSE, popOrder = 'tsort') {
+      pops <- gs_get_pop_paths(self$getPopObj(), order = popOrder)
       
       if (includeRoot == FALSE) {
         pops <- pops[pops != "root"]
@@ -180,10 +180,17 @@ FlowGatingSet <- R6::R6Class(
     #' @param x character of 'X'-coordinate
     #' @param y character of 'Y'-coordinate
     #' @param parentPop character for parent population
+    #' @param flist flow list object
     #' @param invalidate boolean to invalidate object
     addPop = function(popName, gateCoords, x, y, parentPop = "root",
-                      invalidate = TRUE) {
-      flist <- self$flistFromGateCoords(gateCoords, x, y)
+                      flist = NULL, invalidate = TRUE) {
+      if (is.null(flist)) {
+        flist <- self$flistFromGateCoords(gateCoords, x, y)
+      } else {
+        # get x and y
+        x <- names(flist@parameters)[1]
+        y <- names(flist@parameters)[2]
+      }
       
       # add pop to set
       gs_pop_add(self$getPopObj(), flist,
@@ -203,14 +210,25 @@ FlowGatingSet <- R6::R6Class(
     #' @param gateCoords list of (N,2) gate coordinates
     #' @param x character of 'X'-coordinate
     #' @param y character of 'Y'-coordinate
+    #' @param flist flow list object
     #' @param invalidate boolean to invalidate object
-    setPop = function(popPath, gateCoords, x, y, invalidate = TRUE) {
-      flist <- self$flistFromGateCoords(gateCoords, x, y)
+    setPop = function(popPath, gateCoords, x, y, flist = NULL, invalidate = TRUE) {
+      # create gate
+      if (is.null(flist))
+        flist <- self$flistFromGateCoords(gateCoords, x, y)
       
       # add pop to set
       gs_pop_set_gate(self$getPopObj(), popPath, flist)
       
       private$invalidate(invalidate = invalidate)
+    },
+    
+    #' @description Get population gate
+    #' @param popPath character for population path
+    #' @param invalidate boolean to invalidate object
+    getPopGate = function(popPath) {
+      # get population gate
+      .flowGateForPop(self$getPopObj(), popPath)
     },
     
     #' @description Delete population
@@ -313,8 +331,7 @@ FlowGatingSet <- R6::R6Class(
     #' @param popPath character for population
     #' @param channels list of character (2) for channels
     #' @param namesOnly boolean to return only population names not full path
-    popDirectLeaves = function(popPath, channels = NULL,
-                               namesOnly = FALSE) {
+    popDirectLeaves = function(popPath, channels = NULL, namesOnly = FALSE) {
       retVal <- NULL
       
       if (!is.null(channels)) {
@@ -406,6 +423,34 @@ FlowGatingSet <- R6::R6Class(
       
       # invalidate
       private$invalidate(invalidate = invalidate)
+    },
+    
+    #' @description Copy from other GatingSet
+    #' @param gsFrom FlowGatingSet to copy from
+    #' @param removeAll boolean to remove all populations
+    #' @param recompute boolean to recompute after
+    #' @param invalidate boolean to invalidate object
+    copyGatesFrom = function(gsFrom, removeAll = TRUE, recompute = TRUE,
+                             invalidate = TRUE) {
+      # remove pops if necessary
+      if (removeAll == TRUE && length(self$popPaths()) > 0) {
+        # delete from root
+        # TODO this probably has to be a bit more gentle
+        # than just removing everything .. ?
+        for (y in self$popDirectLeaves(popPath = "root"))
+          self$delPop(y, invalidate = invalidate)
+      }
+      
+      # add pops
+      for (x in gsFrom$popPaths()) {
+        self$addPop(popName = .flowTrimPath(x, pathLevels = 0),
+                    parentPop = .flowPopParent(x, root = "root"),
+                    flist = gsFrom$getPopGate(x),
+                    invalidate = invalidate)
+      }
+      
+      if (recompute == TRUE)
+        self$recompute(invalidate = invalidate)
     },
     
     #' @description Save gating set

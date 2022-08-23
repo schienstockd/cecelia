@@ -36,6 +36,9 @@
         "type:string": {
           "default": "none"
         }
+      },
+      "transChannels": {
+        "type:list": {}
       }
     },
     "outputs": {}
@@ -74,6 +77,7 @@
         "widget:selection": {
           "items": {
             "No transformation": "none",
+            "Logicle": "logicle",
             "Biexponential": "biexponential",
             "Logarithm": "log",
             "Natural logarithm": "ln",
@@ -85,6 +89,15 @@
           },
           "size": 1,
           "multiple": false
+        }
+      },
+      "transChannels": {
+        "index": 5,
+        "label": "Channels",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+          "useNames": true
         }
       }
     },

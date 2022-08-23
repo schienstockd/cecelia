@@ -32,7 +32,7 @@ createFlowPlotManager <- function(
       fluidRow(
         column(
           12,
-          plotlyOutput(session$ns(boxIDs$plot)),
+          plotlyOutput(session$ns(boxIDs$plot), height = "500px"),
           tags$hr(),
           fluidRow(
             column(
@@ -128,13 +128,28 @@ createFlowPlotManager <- function(
         greyPops = flowGatingPlot()$getPlotPopPath())
       
       # get limits
-      channelLimits <- flowChannelLimits(flowGatingPlot, popsPrep)
+      channelLimits <- flowChannelLimits(flowGatingPlot)
 
       # if centroid X and Y - use fixed aspect ratio
       axisScale <- NULL
       if (all(c(x, y) %in% c("centroid_x", "centroid_y"))) {
         axisScale <- list(
           y = list(anchor = "x", ratio = 1)
+        )
+      }
+      
+      # prepare raster image
+      if (flowGatingPlot()$getPlotType() == "raster") {
+        # set axis scale because it is an image
+        axisScale <- list(
+          x = list(
+            anchor = "x",
+            ratio = diff(channelLimits$y)/diff(channelLimits$x)
+          ),
+          y = list(
+            anchor = "x",
+            ratio = diff(channelLimits$x)/diff(channelLimits$y)
+          )
         )
       }
       
@@ -195,38 +210,20 @@ createFlowPlotManager <- function(
   }
 
   # return channel limits
-  flowChannelLimits <- function(flowGatingPlot, popsPrep) {
+  flowChannelLimits <- function(flowGatingPlot) {
     flowX <- flowGatingPlot()$getPlotXchannel(flowName = TRUE)
     flowY <- flowGatingPlot()$getPlotYchannel(flowName = TRUE)
-    flowDT <- rbindlist(lapply(popsPrep, function(x) x$dt))
+    
+    # get root for channels
+    flowDT <- cciaObj()$popDT(
+      popType(), pops = c("root"), includeFiltered = FALSE,
+      completeDT = FALSE, cols = c(flowX, flowY))
       
     # get channel limits
     # channelLimits <- cciaObj()$popUtils(popType())$getImChannelLimits()
-    channelLimits <- list()
-    for (x in c(flowX, flowY)) {
-      channelLimits[[x]] <- list(
-        min = min(flowDT[,get(x)]),
-        max = max(flowDT[,get(x)])
-      )
-    }
     
-    xlim <- c(0, 1)
-    ylim <- c(0, 1)
-
-    if (all(c(flowX, flowY) %in% names(channelLimits))) {
-      xlim <- c(floor(channelLimits[[flowX]]$min),
-                ceiling(channelLimits[[flowX]]$max))
-      ylim <- c(floor(channelLimits[[flowY]]$min),
-                ceiling(channelLimits[[flowY]]$max))
-    }
-
-    # # change according to scale
-    # if (flowGatingPlot()$getPlotXchannelScale() == "log") {
-    #   xlim <- log(xlim)
-    # }
-    # if (flowGatingPlot()$getPlotYchannelScale() == "log") {
-    #   ylim <- log(ylim)
-    # }
+    xlim <- range(flowDT[[flowX]])
+    ylim <- range(flowDT[[flowY]])
 
     list(x = xlim, y = ylim)
   }
@@ -433,7 +430,7 @@ createFlowPlotManager <- function(
       greyPops = flowGatingPlot()$getPlotPopPath())
     
     # get channel limits
-    channelLimits <- flowChannelLimits(flowGatingPlot, popsPrep)
+    channelLimits <- flowChannelLimits(flowGatingPlot)
 
     progress <- Progress$new()
 

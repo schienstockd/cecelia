@@ -53,7 +53,7 @@ FcsRaw <- R6::R6Class(
         colnames(comp_matrix) <- rownames(comp_matrix)
         
         comp <- flowCore::compensation(comp_matrix)
-        cf <- compensate(cf, comp)
+        cf <- flowCore::compensate(cf, comp)
       }
       
       # convert to DT

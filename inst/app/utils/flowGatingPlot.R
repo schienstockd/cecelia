@@ -192,7 +192,7 @@ FlowGatingPlot <- R6::R6Class(
       
       # normalise root to '/'
       if (normaliseRoot == TRUE) {
-        path <- flowNormRootPath(path)
+        path <- .flowNormRootPath(path)
       }
       
       # unlist before returning?

@@ -170,7 +170,9 @@
         # set channel names for selected images
         if (input$selectAttribute %in% moduleManagers()$imageSetManager$selectedSet()$cciaObjectsChannelNames()) {
           moduleManagers()$imageSetManager$selectedSet()$editChannelNamesForCciaObjects(
-            input$selectAttribute, attrVals, cciaObjects)
+            input$selectAttribute, attrVals, cciaObjects,
+            checkLength = globalManagers$projectManager()$getProjectType() != "flow"
+            )
         }
       })
       
@@ -232,7 +234,9 @@
             names(chnVals) <- uIDs
             
             moduleManagers()$imageSetManager$selectedSet()$editChannelNamesForCciaObjects(
-              curName, chnVals, cciaObjects)
+              curName, chnVals, cciaObjects,
+              checkLength = globalManagers$projectManager()$getProjectType() != "flow"
+              )
           }
         }
       })

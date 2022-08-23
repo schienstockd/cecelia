@@ -84,8 +84,6 @@
       
       # get adata DT
       getAdataDT <- function(flushCache = FALSE) {
-        browser()
-        
         if (!is.null(clusteringPartOf())) {
           # get objects from selected set
           moduleManagers()$imageSetManager$selectedSet()$popDT(
@@ -140,6 +138,13 @@
         req(input$umapMarkerSelection)
         
         input$umapMarkerSelection
+      })
+      
+      # attribute selection for umap
+      umapAttrSelection <- reactive({
+        req(input$umapAttrSelection)
+        
+        input$umapAttrSelection
       })
       
       # set clustering part of
@@ -342,6 +347,14 @@
           dendextend::find_k(adataColDendC())$k
       })
       
+      # attribute selection
+      attrSelection <- reactive({
+        req(imageData())
+        
+        # TODO anything else.. ?
+        colnames(imageData())
+      })
+      
       # channel selection
       channelSelection <- reactive({
         req(cciaObj())
@@ -360,10 +373,10 @@
       ## Event specific
       
       # provide population type to input manager
-      observeEvent(popType(), {
-        req(popType())
+      observeEvent(popTypeProcessing(), {
+        req(popTypeProcessing())
         
-        moduleManagers()$inputManager$setPopType(popType())
+        moduleManagers()$inputManager$setPopType(popTypeProcessing())
         
         # update inputs that depend on population type
         if (length(moduleManagers()$inputManager$getPopTypeInputs()) > 0) {
@@ -384,7 +397,7 @@
           for (x in moduleManagers()$inputManager$getPopTypeInputs()) {
             updateSelectInput(
               inputId = trimInputName(id, x),
-              choices = if (!is.null(cciaObj$popUtils(popType())))
+              choices = if (!is.null(cciaObj$popUtils(popTypeProcessing())))
                 cciaObj$popUtils(popType())$popPaths()
               else
                 c("")
@@ -406,11 +419,13 @@
         # init anndata utils with reactivity
         # cciaObj()$adataUtils()$reactive()
         
-        # init all populations
-        clustSavePops(purge = TRUE)
-        
-        # save pop map
-        cciaObj()$savePopMap(popType(), includeFiltered = TRUE)
+        if (globalManagers$projectManager()$getProjectType() != "flow") {
+          # init all populations
+          clustSavePops(purge = TRUE)
+          
+          # save pop map
+          cciaObj()$savePopMap(popType(), includeFiltered = TRUE)
+        }
         
         # set population DT
         adataDT(getAdataDT())
@@ -469,11 +484,13 @@
         # set mapping
         cciaObj()$setImPopMap(popType(), popMap, mergeMap = TRUE)
         
-        # save populations
-        clustSavePops(changedPops)
-        
-        # save pop map
-        cciaObj()$savePopMap(popType(), invalidate = FALSE, includeFiltered = TRUE)
+        if (globalManagers$projectManager()$getProjectType() != "flow") {
+          # save populations
+          clustSavePops(changedPops)
+          
+          # save pop map
+          cciaObj()$savePopMap(popType(), invalidate = FALSE, includeFiltered = TRUE)
+        }
         
         # update manually to prevent redrawing of table
         # html(btnID, btnLabel)
@@ -594,13 +611,13 @@
           )
         }
         
-        # save populations
-        clustSavePops(
-          moduleManagers()$populationManager$addedPops()
-        )
-        
-        # save pop map
-        cciaObj()$savePopMap(popType(), includeFiltered = TRUE, invalidate = FALSE)
+        if (globalManagers$projectManager()$getProjectType() != "flow") {
+          # save populations
+          clustSavePops(moduleManagers()$populationManager$addedPops())
+          
+          # save pop map
+          cciaObj()$savePopMap(popType(), includeFiltered = TRUE, invalidate = FALSE)
+        }
         
         # udate viewer
         viewerUpdatePops(runif(1))
@@ -681,6 +698,19 @@
       })
       
       ## Other
+      
+      # selection for attributes in umap
+      output$umapAttrSelection <- renderUI({
+        req(attrSelection())
+        
+        createSelectInput(
+          session$ns("umapAttrSelection"),
+          "Select attribute",
+          choices = attrSelection()[attrSelection() %in% names(adataDT())],
+          selected = shinyInputValue("umapAttrSelection", input),
+          multiple = FALSE
+        )
+      })
       
       # selection for markers in umap
       output$umapMarkerSelection <- renderUI({
@@ -812,6 +842,14 @@
         req(umapMarkerSelection())
         
         plotUMAP(umapMarkerSelection(), "clustUMAPMarkers",
+                 plotType = "intensity")
+      })
+      
+      output$clustUMAPAttrs <- renderPlotly({
+        req(adataDT())
+        req(umapAttrSelection())
+        
+        plotUMAP(umapAttrSelection(), "clustUMAPAttrs",
                  plotType = "intensity")
       })
       

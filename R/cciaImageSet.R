@@ -71,6 +71,49 @@ CciaImageSet <- R6::R6Class(
       }
     },
     
+    #' @description Propagate flow gating to others
+    #' @param fromUID character for unique ID from
+    #' @param toUIDs character for unique ID to
+    #' @param invalidate boolean to invalidate object
+    #' @param saveState boolean to save state
+    propagateFlowGating = function(fromUID, toUIDs = NULL, invalidate = FALSE,
+                                   saveState = FALSE, ...) {
+      # get reference object
+      refObj <- self$cciaObjects()[[fromUID]]
+      
+      # get to uIDs
+      if (is.null(toUIDs)) {
+        toUIDs <- names(self$cciaObjects())
+      }
+      
+      # check that reference is not copied
+      toUIDs = toUIDs[toUIDs != fromUID]
+      
+      # get GatingSet from image
+      if (private$isReactive() == TRUE) {
+        gsFrom <- refObj()$flowGatingSet()
+      } else {
+        gsFrom <- refObj$flowGatingSet()
+      }
+      
+      # set gating
+      for (x in self$cciaObjects(uIDs = toUIDs)) {
+        if (private$isReactive() == TRUE) {
+          x()$flowGatingSet()$copyGatesFrom(
+            gsFrom, removeAll = TRUE, invalidate = invalidate, ...)
+          
+          if (saveState == TRUE)
+            x()$saveState(saveData = FALSE)
+        } else {
+          x$flowGatingSet()$copyGatesFrom(
+            gsFrom, removeAll = TRUE, invalidate = invalidate, ...)
+          
+          if (saveState == TRUE)
+            x$saveState(saveData = FALSE)
+        }
+      }
+    },
+    
     #' @description Channels for objects
     #' @param cciaObjects list of ReactivePersistentObject
     cciaObjectsChannelNames = function(cciaObjects = NULL) {
@@ -99,7 +142,7 @@ CciaImageSet <- R6::R6Class(
     #' @param objChannelNum integer for channel number
     #' @param objChannelNames list of character channel names
     #' @param cciaObjects list of ReactivePersistentObject
-    editChannelNamesForCciaObjects = function(objChannelNum, objChannelNames, cciaObjects = NULL) {
+    editChannelNamesForCciaObjects = function(objChannelNum, objChannelNames, cciaObjects = NULL, ...) {
       # get objects
       if (is.null(cciaObjects)){
         cciaObjects <- self$cciaObjects()
@@ -110,7 +153,8 @@ CciaImageSet <- R6::R6Class(
       # go through objects
       if (length(cciaObjects) > 0) {
         for (curObjName in names(cciaObjects)) {
-          cciaObjects[[curObjName]]()$editChannelName(objChannelNum, objChannelNames[[curObjName]])
+          cciaObjects[[curObjName]]()$editChannelName(
+            objChannelNum, objChannelNames[[curObjName]], ...)
         }
       }
     },

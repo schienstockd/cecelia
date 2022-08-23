@@ -107,7 +107,8 @@ default:
       plotTypes:
         pseudocolour: "Pseudocolour"
         contour: "Contour"
-      defaultPlotType: "contour"
+        raster: "Raster"
+      defaultPlotType: "raster"
       contour:
         levels: [0.95, 0.90, 0.75, 0.5]
         resolution: 20

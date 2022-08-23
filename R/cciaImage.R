@@ -169,7 +169,7 @@ CciaImage <- R6::R6Class(
     #' @param objChannelNum integer for channel number
     #' @param objChannelName character for channel name
     #' @param invalidate boolean to invalidate object
-    editChannelName = function(objChannelNum, objChannelName, invalidate = TRUE) {
+    editChannelName = function(objChannelNum, objChannelName, invalidate = TRUE, ...) {
       # edit attribute if exist
       objChannels <- self$imChannelNames()
       
@@ -178,7 +178,7 @@ CciaImage <- R6::R6Class(
       }
       
       # push back
-      self$setImChannelNames(objChannels, invalidate = invalidate)
+      self$setImChannelNames(objChannels, invalidate = invalidate, ...)
     },
     
     #' @description OME xml
@@ -1731,7 +1731,7 @@ CciaImage <- R6::R6Class(
       
       # compensate Z if selected
       if (compensateZ == TRUE) {
-        labelProps <- flowCompensatePoly(
+        labelProps <- .flowCompensatePoly(
           labelProps, self$imChannelNames(includeTypes = TRUE),
           "centroid_z", replaceValues = TRUE,
           polyDegree = polyDegree)

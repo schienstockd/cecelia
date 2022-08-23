@@ -29,8 +29,10 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "Oqu9Il", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
 )
+
+paste(cciaObj$imChannelNames(), collapse = "','")
 
 funParams <- list(
   fileAutospillComp = "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/20201121/autospill_spillover.csv",
@@ -51,7 +53,7 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "Oqu9Il", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
 )
 
 cciaObj$runTask(
@@ -59,8 +61,283 @@ cciaObj$runTask(
   funParams = list(
     compensateZ = FALSE,
     applyReversedLog = FALSE,
-    transformation = "biexponential"
+    transformation = "logicle",
+    transChannels = c(
+      'FITC-A','PE (561)-A','PerCP-Cy5-5-A',
+      'APC-A','AF700-A','APC-Cy7-A','V450-A',
+      'Qdot 800-A','Qdot 705-A','Qdot 525-A',
+      'Qdot 605-A','PE-Cy7-A'
+    )
   ),
   runInplace = TRUE
 )
 ```
+
+```{r}
+# show white raster plots
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+p1s <- list()
+for (x in fgs$popPaths()) {
+  local({
+    xParent <- .flowPopParent(x, root = "root")
+  
+    # get gate
+    xGate <- fgs$popGate(x)
+    xLabel <- names(xGate@parameters)[1]
+    yLabel <- names(xGate@parameters)[2]
+    
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = c("root", xParent), cols = names(xGate@parameters),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # build raster
+    r1 <- .flowRasterBuild(popDT[pop == xParent], xLabel, yLabel, colorMode = "white")
+    
+    # get boundaries
+    # rectangle gate?
+    if (attr(xGate, "class") == "rectangleGate") {
+      # build path
+      gateDT <- as.data.table(list(
+        x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+        y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+      ))
+      setnames(gateDT, "x", xLabel)
+      setnames(gateDT, "y", yLabel)
+    } else {
+      # close path
+      gateDT <- as.data.table(xGate@boundaries)
+      gateDT <- rbind(gateDT, gateDT[1])
+    }
+    
+    # add label
+    # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+    nameDT <- as.data.frame(list(
+      x = mean(gateDT[[xLabel]]),
+      y = max(gateDT[[yLabel]])
+    ))
+    colnames(nameDT) <- c(xLabel, yLabel)
+    nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+    
+    p1 <- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        r1$image,
+        xmin=r1$x_range[1], xmax=r1$x_range[2],
+        ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) 
+    
+    p1 <- p1 + geom_polygon(
+      data = gateDT,
+      aes(
+        x = get(xLabel),
+        y = get(yLabel)
+        ), size = 1, color = "black", fill = "#23aeff", alpha = 0.2) +
+      geom_label(
+        data = nameDT,
+        aes(
+          label = label,
+          x = get(xLabel),
+          y = get(yLabel))
+        )
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
+ggsave(file.path(anaDir, "gating.pdf"), width = 10, height = 6)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# propagate gating to other objects
+# propagateFlowGating in CciaImageSet
+fromUID <- "nNwqEC"
+toUIDs <- NULL
+
+# get gating set
+cciaFrom <- initCciaObject(
+  pID = pID, uID = fromUID, versionID = versionID, initReactivity = FALSE
+)
+cciaTo <- initCciaObject(
+  pID = pID, uID = "Oqu9Il", versionID = versionID, initReactivity = FALSE
+)
+
+# get gating set
+# gsFrom <- cciaFrom$flowGatingSet()
+# gsTo <- cciaTo$flowGatingSet()
+```
+
+```{r}
+# visualise gating
+# CytoExploreR 
+devtools::install_github("DillonHammill/CytoExploreR")
+```
+
+```{r}
+library(CytoExploreR)
+
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+)
+
+# Gating scheme
+cyto_plot_gating_scheme(
+  cciaObj$flowGatingSet()$getPopObj(),
+  back_gate = TRUE, gate_track = TRUE)
+```
+
+```{r}
+# cluster Va2+
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "etxWEx", versionID = versionID, initReactivity = FALSE
+)
+
+imChannels <- cciaObj$cciaObjects()[[1]]$imChannelNames()
+clusterChannels <- c(
+  'TEAL.FITC','CD71.PE','CD25.APC','CD98.PE.Cy7','CTV'
+)
+
+cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = list(
+    valueName = "default",
+    popsToCluster = c("/Lymph/Singlets/Live/T/Va2+"),
+    popType = "flow",
+    # savePops = TRUE,
+    savePops = FALSE,
+    keepPops = FALSE,
+    resolution = 0.4,
+    normaliseAxis = "channels",
+    normaliseToMedian = FALSE,
+    maxFraction = 0,
+    normalisePercentile = 99.98,
+    normalisePercentileBottom = 0,
+    normaliseIndividually = FALSE,
+    transformation = "log",
+    logBase = 0,
+    uIDs = names(cciaObj$cciaObjects()),
+    clusterChannels = list(
+      base = list(
+        channels = which(imChannels %in% clusterChannels) - 1
+      )
+    )
+  ),
+  runInplace = TRUE
+)
+```
+
+```{r}
+# show treatments on UMAP
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "etxWEx", versionID = versionID, initReactivity = FALSE
+)
+
+popDT <- cciaObj$popDT(
+  popType = "clust",
+  uIDs = names(cciaObj$cciaObjects()),
+  includeFiltered = TRUE,
+  completeDT = FALSE, replaceNA = TRUE,
+  # only focus on clustered values
+  filterMeasures = c("clusters")
+)
+
+exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
+```
+
+
+```{r fig_pop_freq, fig.height=1, fig.width=1.5}
+datToPlot <- copy(popDT) %>% left_join(exp.info) %>%
+  group_by(Treatment, uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n))
+
+ggplot(
+  datToPlot, aes(Treatment, freq, fill = pop)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.4, alpha = 1.0) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+
+ggsave(file.path(anaDir, "pop_freq.pdf"), width = 3, height = 2)
+```
+
+
+```{r fig_umap, fig.height=3, fig.width=6}
+# plot UMAP with paga connections
+datToPlot <- copy(popDT) %>% left_join(exp.info)
+
+p1 <- ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set3") +
+  geom_point(color = "grey") +
+  stat_density_2d(
+    contour_var = "ndensity", bins = 12,
+    colour = "yellow") +
+  facet_grid(.~Treatment)
+
+p1 + plotThemeDark(angle = 0, fontSize = 15) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, "umap_treatment.pdf"), width = 6, height = 3)
+```
+
+

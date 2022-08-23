@@ -96,8 +96,6 @@ AnndataUtils <- R6::R6Class(
       # populations will be filtered?
       DT <- self$getAdataDT()
       
-      browser()
-      
       # filter on cols
       if (!is.null(cols)) {
         return(DT[, ..cols])

@@ -46,7 +46,7 @@ CreateFlowFrame <- R6::R6Class(
       
       # compensate Z if selected
       if (self$funParams()$compensateZ == TRUE) {
-        labelProps <- flowCompensatePoly(
+        labelProps <- .flowCompensatePoly(
           labelProps, cciaObj$imChannelNames(includeTypes = TRUE),
           "centroid_z", replaceValues = TRUE,
           polyDegree = self$funParams()$polyDegree)

@@ -85,8 +85,14 @@
                         fluidRow(
                           column(3, uiOutput(ns("umapMarkerSelection")))
                         ),
-                        plotlyOutput(ns("clustUMAPMarkers"), height = "600px")
-                        )
+                        plotlyOutput(ns("clustUMAPMarkers"), height = "600px"))
+                      # tabPanel(
+                      #   "Attributes", value = "clustUMAPAttrs",
+                      #   tags$br(),
+                      #   fluidRow(
+                      #     column(3, uiOutput(ns("umapAttrSelection")))
+                      #   ),
+                      #   plotlyOutput(ns("clustUMAPAttrs"), height = "600px"))
                     )
                   )
                 )

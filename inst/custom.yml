@@ -1,7 +1,7 @@
 default:
   fcs:
     gating:
-      defaultPlotType: "contour"
+      defaultPlotType: "raster"
   dirs:
     bftools: "/Applications/BFTools"
     bioformats2raw: "/Applications/glencoe/bioformats2raw-0.3.0"

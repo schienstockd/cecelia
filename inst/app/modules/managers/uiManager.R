@@ -58,8 +58,8 @@ UIManager <- R6::R6Class(
     },
 
     # generate colours for flow plots
-    flowColours = function(x, y, nbin = 128) {
-      flowColours(x, y, nbin = nbin)
+    flowColours = function(...) {
+      .flowColours(...)
     },
 
     # return layout for flow plots
@@ -186,6 +186,11 @@ UIManager <- R6::R6Class(
         # TODO set custom data to null
         # you will have to filter the values
         customdata <- NULL
+      } else if (plotType == "raster") {
+        # TODO this is very basic but plotting 2M points as points
+        # or contour is not going to work - you shoul invest a bit
+        # of time to make raster plot nice
+        rasterPlot <- .flowRasterPrepPlotly(dt, flowX, flowY)
       }
 
       traces <- list()
@@ -217,7 +222,7 @@ UIManager <- R6::R6Class(
           # add contour
           if (plotType == "contour") {
             # get contour lines
-            contourDT <- flowContourLines(
+            contourDT <- .flowContourLines(
               curDT, flowX, flowY,
               n = cciaConf()$fcs$gating$contour$resolution,
               confidenceLevels = cciaConf()$fcs$gating$contour$levels
@@ -274,27 +279,40 @@ UIManager <- R6::R6Class(
         # reset colour
         if (plotType == "contour" && useFlowColours == TRUE)
           colours <- NULL
-
-        traces <- list(list(
-          # data = dt,
-          # x = ~get(flowX),
-          # y = ~get(flowY),
-          customdata = customdata,
-          marker = list(
-            color = if (!is.null(colours)) colours else "grey",
-            size = markerSize,
-            opacity = markerOpacity
-          ),
-          hoverinfo = "skip",
-          type = "scattergl",
-          mode = "markers"
-        ))
+        
+        # add raster as image
+        if (plotType == "raster") {
+          traces <- list(append(
+            rasterPlot,
+            list(
+              data = NULL,
+              inherit = TRUE,
+              type = "image",
+              hoverinfo = "skip"
+            )
+          ))
+        } else {
+          traces <- list(list(
+            # data = dt,
+            # x = ~get(flowX),
+            # y = ~get(flowY),
+            customdata = customdata,
+            marker = list(
+              color = if (!is.null(colours)) colours else "grey",
+              size = markerSize,
+              opacity = markerOpacity
+            ),
+            hoverinfo = "skip",
+            type = "scattergl",
+            mode = "markers"
+          ))
+        }
 
         # add contour
         if (plotType == "contour") {
           # get contour lines
           # TODO could you use data.table grouping?
-          contourDT <- flowContourLines(
+          contourDT <- .flowContourLines(
             dt, flowX, flowY,
             n = cciaConf()$fcs$gating$contour$resolution,
             confidenceLevels = cciaConf()$fcs$gating$contour$levels
@@ -333,19 +351,21 @@ UIManager <- R6::R6Class(
             
             traces[[1]]$x <- dt[in_contour == 0,][[flowX]]
             traces[[1]]$y <- dt[in_contour == 0,][[flowY]]
-          } else {
+          } else if (plotType == "pseudocolour") {
             traces[[1]]$x <- dt[[flowX]]
             traces[[1]]$y <- dt[[flowY]]
           }
         } else {
-          # TODO does not seem to work for subpopulations
-          if (plotType == "contour")
-            traces[[1]]$data <- dt[in_contour == 0,]
-          else
-            traces[[1]]$data <- dt
-          
-          traces[[1]]$x <- ~get(flowX)
-          traces[[1]]$y <- ~get(flowY)
+          if (plotType != "raster") {
+            # TODO does not seem to work for subpopulations
+            if (plotType == "contour")
+              traces[[1]]$data <- dt[in_contour == 0,]
+            else if (plotType == "pseudocolour")
+              traces[[1]]$data <- dt
+            
+            traces[[1]]$x <- ~get(flowX)
+            traces[[1]]$y <- ~get(flowY)
+          }
         }
       }
 
