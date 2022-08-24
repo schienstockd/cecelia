@@ -353,7 +353,7 @@
         
         selectInput(
           session$ns("popType"), "Population Type",
-          choices = reverseNamedList(choices),
+          choices = .reverseNamedList(choices),
           selected = choices[[globalManagers$projectManager()$getProjectType()]]
           )
       })

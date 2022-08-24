@@ -109,7 +109,7 @@ createTaskManager <- function(
         managerConf$moduleName, names(funNames), sep = CCID_CLASS_SEP)
       
       # switch labels to names
-      moduleFunctions <- reverseNamedList(funNames)
+      moduleFunctions <- .reverseNamedList(funNames)
       
       # push functions into categories
       funSelection <- list()

@@ -143,7 +143,7 @@
           # update subpopulations
           if (any(names(popInfo) %in% names(popLeaves))) {
             if (length(popLeaves) > 0) {
-              popLeaves <- reverseNamedList(popLeaves)
+              popLeaves <- .reverseNamedList(popLeaves)
             }
             
             updateSelectInput(
@@ -196,7 +196,7 @@
         
         selectInput(
           session$ns("popType"), "Population Type",
-          choices = reverseNamedList(choices),
+          choices = .reverseNamedList(choices),
           selected = choices[[globalManagers$projectManager()$getProjectType()]]
           )
       })

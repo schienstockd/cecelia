@@ -39,24 +39,27 @@
 #' @examples
 #' TODO
 .flowContourLines <- function(
-    DT, xCol, yCol, n = 25, confidenceLevels = c(0.98, 0.95, 0.90, 0.75, 0.5),
-    extendLimits = 0.5) {
-  # get contour lines
-  dens <- MASS::kde2d(
-    DT[[xCol]], DT[[yCol]], n = n,
-    lims = c(
-      range(DT[[xCol]]) * c(1 - extendLimits, 1 + extendLimits),
-      range(DT[[yCol]]) * c(1 - extendLimits, 1 + extendLimits)
-      ))
-  
-  # get z range
-  zRange <- c(min(dens$z), max(dens$z))
-  
-  # normalise z
-  dens$z <- (dens$z - zRange[[1]]) / (zRange[[2]] - zRange[[1]])
+    DT, xCol, yCol, dens = NULL, n = 25, confidenceLevels = c(0.95, 0.90, 0.75, 0.5),
+    extendLimits = 0.5, pointsInContour = TRUE) {
+  if (is.null(dens)) {
+    # get density
+    dens <- MASS::kde2d(
+      DT[[xCol]], DT[[yCol]], n = n,
+      lims = c(
+        range(DT[[xCol]]) * c(1 - extendLimits, 1 + extendLimits),
+        range(DT[[yCol]]) * c(1 - extendLimits, 1 + extendLimits)
+        ))
+    
+    # get z range
+    zRange <- range(dens$z)
+    
+    # normalise z
+    dens$z <- (dens$z - zRange[[1]]) / (zRange[[2]] - zRange[[1]])
+  }
   
   # create contour levels
   contourLevels <- 1 - confidenceLevels
+  # confidenceLines <- contourLines(dens, levels = contourLevels)
   confidenceLines <- contourLines(dens, levels = contourLevels)
   
   # create dataframe for lines
@@ -73,24 +76,25 @@
     SIMPLIFY = FALSE)
   )
   
-  # determine points in contour
-  # get larges contour
-  DT[, in_contour := 0]
-  
-  # go through contours
-  for (i in seq(length(confidenceLines))) {
-    x <- confidenceDT[seq == i,]
+  if (pointsInContour == TRUE) {
+    # determine points in contour
+    # get larges contour
+    DT[, in_contour := 0]
     
-    DT[in_contour == 0,
-       in_contour := sp::point.in.polygon(
-         DT[in_contour == 0, get(xCol)],
-         DT[in_contour == 0, get(yCol)],
-         x$x, x$y
-         )]
+    # go through contours
+    for (i in seq(length(confidenceLines))) {
+      x <- confidenceDT[seq == i,]
+      
+      DT[in_contour == 0,
+         in_contour := sp::point.in.polygon(
+           DT[in_contour == 0, get(xCol)],
+           DT[in_contour == 0, get(yCol)],
+           x$x, x$y
+           )]
+    }
   }
   
-  confidenceDT %>%
-    dplyr::group_by(seq)
+  confidenceDT
 }
 
 #' @description Prepare flowFrame
@@ -334,11 +338,19 @@
 #' @param pop character for population
 #' @examples
 #' TODO
-.flowGateForPop <- function(gs, pop){
+.flowGateForPop <- function(gs, pop) {
   # there will only be one gate returned
-  curGate <- gs_pop_get_gate(gs, pop)[[1]]
+  gs_pop_get_gate(gs, pop)[[1]]
+}
 
-  curGate
+#' @description Get stats for pop
+#' @param gs GatingSet
+#' @param pop character for population
+#' @param ... passed to gs_pop_get_stats
+#' @examples
+#' TODO
+.flowStatsForPop <- function(gs, pop, ...) {
+  gs_pop_get_stats(gs, pop, ...)
 }
 
 #' @description Get channels for pop
@@ -625,35 +637,88 @@
 #' @param DT data.table to prepare
 #' @param flowX character for x column
 #' @param flowY character for y column
+#' @param colorMode character for color mode
+#' @param color character to color
+#' @param reduction_func character for reduction function
 #' @examples
 #' TODO
-.flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark") {
+.flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark", color = NULL,
+                             reduction_func = NULL, colorBy = NULL, ...) {
+  # dummy for reduction function
+  DT[, on := 1]
+  
   r1 <- rasterly::rasterly(
     data = DT,
     mapping = rasterly::aes(
       x = get(flowX),
-      y = get(flowY)
-    )
-  )
+      y = get(flowY),
+      on = on,
+      color = if (!is.null(colorBy)) get(colorBy) else NULL
+    ), ...)
   
   # check mode
   if (colorMode == "white") {
-    r1 %>% rasterly::rasterly_points(
-      color = flowViz::flowViz.par.get("argcolramp")(11),
-      background = "#FFFFFFFF",
+    r1 <- r1 %>% rasterly::rasterly_points(
+      # color = if (is.null(color)) rev(RColorBrewer::brewer.pal(11, "Spectral")) else color,
+      color = if (is.null(color) && is.null(colorBy)) c(
+        "black", rev(RColorBrewer::brewer.pal(11, "Spectral"))
+      ) else color,
+      background = "#00000000",
       glyph = "square",
       xlim = range(DT[[flowX]]),
-      ylim = range(DT[[flowY]])
+      ylim = range(DT[[flowY]]),
+      reduction_func = reduction_func
     ) %>% rasterly::rasterly_build()
   } else {
     r1 %>% rasterly::rasterly_points(
-      color = rev(RColorBrewer::brewer.pal(11, "Spectral")),
-      background = "#222222FF",
+      color = if (is.null(color) && is.null(colorBy)) rev(
+        RColorBrewer::brewer.pal(11, "Spectral")) else color,
+      background = "#22222200",
       glyph = "square",
       xlim = range(DT[[flowX]]),
-      ylim = range(DT[[flowY]])
+      ylim = range(DT[[flowY]]),
+      reduction_func = reduction_func
     ) %>% rasterly::rasterly_build()
   }
+}
+
+#' @description Build raster contour plot
+#' @param DT data.table to prepare
+#' @param flowX character for x column
+#' @param flowY character for y column
+#' @param color character to color
+#' @examples
+#' TODO
+.flowRasterContour <- function(DT, flowX, flowY, colorMode = "white", color = NULL) {
+  # build raster for outliers
+  r1 <- .flowRasterBuild(
+    DT, flowX, flowY, colorMode = colorMode,
+    color = color, reduction_func = "first")
+  
+  # for contour
+  r2 <- .flowRasterBuild(
+    DT, flowX, flowY, colorMode = colorMode, 
+    plot_height = 50, plot_width = 50)
+  
+  # get density for contours
+  dens <- r2$agg$rasterlyPoints1[[1]]
+  
+  # normalise density
+  densRange <- range(dens)
+  dens <- (dens - densRange[[1]]) / (densRange[[2]] - densRange[[1]])
+  
+  # get contour lines
+  rasterContours <- .flowContourLines(
+    popDT, xLabel, yLabel, dens = dens, pointsInContour = FALSE)
+  
+  # adjust XY
+  rasterContours[, x := (x * diff(r1$y_range)) + r1$y_range[1]]
+  rasterContours[, y := (y * diff(r1$x_range)) + r1$x_range[1]]
+  
+  list(
+    raster = r1,
+    contours = rasterContours
+  )
 }
 
 #' @description Prepare raster plot

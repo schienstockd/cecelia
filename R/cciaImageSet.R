@@ -514,10 +514,47 @@ CciaImageSet <- R6::R6Class(
       for (cciaObj in self$cciaObjects()) {
         cciaObj()$loadData(forceReload = TRUE)
       }
-    }
+    },
     
     ## setters
+    setFlowAutospillPath = function(x, valueName = NULL, setDefault = TRUE,
+                                    invalidate = TRUE, reset = FALSE) {
+      objMeta <- self$getCciaMeta()
+      
+      objMeta <- .setVersionedVarInList(
+        objMeta, "flowAutospillPath", x, valueName = valueName,
+        setDefault = setDefault, reset = reset)
+      
+      self$setCciaMeta(objMeta, invalidate = invalidate)
+    },
     
     ## getters
+    flowAutospillPath = function(valueName = NULL, absolutePath = TRUE) {
+      retVal = NULL
+      
+      retVal <- .getVersionedVarInList(
+        self$getCciaMeta(), "flowAutospillPath", valueName = valueName)
+      
+      # add task directory
+      retVal <- file.path(
+        cciaConf()$dirs$tasks$data, "autospill", retVal,
+        "table_spillover", "autospill_spillover.csv")
+      
+      # get absolute path?
+      if (!is.null(retVal)) {
+        if (absolutePath == TRUE) {
+          retVal <- self$persistentObjectDirectoryFile(retVal)
+        }
+      }
+      
+      retVal
+    },
+    
+    flowAutospill = function(valueName = NULL) {
+      # get absolute path
+      aspPath <- self$flowAutospillPath(valueName = valueName, absolutePath = TRUE)
+      
+      browser()
+    }
   )
 )

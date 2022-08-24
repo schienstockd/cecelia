@@ -689,6 +689,18 @@ optsFromList <- function(optList, optKeys, ...) {
   optKeys
 }
 
+#' @description Reverse named list
+#' @param namedList list to reverse
+.reverseNamedList <- function(namedList) {
+  if (length(namedList) > 0) {
+    bak <- copy(namedList)
+    namedList <- names(namedList)
+    names(namedList) <- bak
+  }
+  
+  namedList
+}
+
 #' @description Handle system return
 #' @param retVal character with attributes of system return
 #' @param silent boolean to run command silently

@@ -275,7 +275,7 @@ createFlowPlotManager <- function(
     id <- flowGatingBoxIDs(id)$plotType
 
     selectInput(
-      session$ns(id), "Type", reverseNamedList(cciaConf()$fcs$gating$plotTypes),
+      session$ns(id), "Type", .reverseNamedList(cciaConf()$fcs$gating$plotTypes),
       selected = shinyInputValue(id, input, selected, ignoreInput = ignoreInput),
       multiple = FALSE
     )
@@ -842,10 +842,10 @@ createFlowPlotManager <- function(
           #   includeFiltered = managerConf$flowPlot$showFilters)
           #
           # if (length(popMapPaths) > 0) {
-          #   popPaths <- reverseNamedList(popMapPaths)
+          #   popPaths <- .reverseNamedList(popMapPaths)
           # }
 
-          popPaths <- reverseNamedList(cciaObj()$popPaths(
+          popPaths <- .reverseNamedList(cciaObj()$popPaths(
               popType(), includeFiltered = managerConf$flowPlot$showFilters,
               includeRoot = TRUE
           ))
@@ -869,12 +869,12 @@ createFlowPlotManager <- function(
               includeFiltered = managerConf$flowPlot$showFilters)
 
             if (length(popLeaves) > 0) {
-              popLeaves <- reverseNamedList(popLeaves)
+              popLeaves <- .reverseNamedList(popLeaves)
             }
 
             createGatingBoxPopLeaves(
               local_boxIDs$i, popLeaves,
-              reverseNamedList(local_x()$getPlotPopLeaves()),
+              .reverseNamedList(local_x()$getPlotPopLeaves()),
               ignoreInput = TRUE
             )
           })
@@ -1113,7 +1113,7 @@ createFlowPlotManager <- function(
           )
 
           if (length(popLeaves) > 0) {
-            popLeaves <- reverseNamedList(popLeaves)
+            popLeaves <- .reverseNamedList(popLeaves)
           }
 
           # update subpopulations

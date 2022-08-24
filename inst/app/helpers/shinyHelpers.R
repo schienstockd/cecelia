@@ -397,17 +397,6 @@ toggleButtonBoolean <- function(
   }
 }
 
-# reverse list for shiny inputs
-reverseNamedList <- function(namedList) {
-  if (length(namedList) > 0) {
-    bak <- copy(namedList)
-    namedList <- names(namedList)
-    names(namedList) <- bak
-  }
-  
-  namedList
-}
-
 ### -- ARE THE BELOW STILL NEEDED? --
 paramUIName <- function(taskFunctionName, param) {
   # add function name and capitalise first letter

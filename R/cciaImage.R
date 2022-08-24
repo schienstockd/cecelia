@@ -2084,7 +2084,7 @@ CciaImage <- R6::R6Class(
       
       # reverse
       if (length(popIDs) > 0)
-        reverseNamedList(popIDs)
+        .reverseNamedList(popIDs)
       else
         popIDs
     },

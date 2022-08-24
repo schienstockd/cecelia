@@ -869,7 +869,7 @@ createPopulationManager <- function(
           inputID <- sprintf("filteredPopFun_%d", x)
           
           selectInput(session$ns(inputID), NULL,
-                      choices = reverseNamedList(cciaConf()$parameters$filterFuns),
+                      choices = .reverseNamedList(cciaConf()$parameters$filterFuns),
                       multiple = FALSE,
                       selected = shinyInputValue(inputID, input))
         }

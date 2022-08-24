@@ -225,10 +225,17 @@ FlowGatingSet <- R6::R6Class(
     
     #' @description Get population gate
     #' @param popPath character for population path
-    #' @param invalidate boolean to invalidate object
     getPopGate = function(popPath) {
       # get population gate
       .flowGateForPop(self$getPopObj(), popPath)
+    },
+    
+    #' @description Get population stats
+    #' @param popPath character for population path
+    #' @param ... passed to .flowStatsForPop
+    getPopStats = function(popPath, ...) {
+      # get population gate
+      .flowStatsForPop(self$getPopObj(), popPath, ...)
     },
     
     #' @description Delete population

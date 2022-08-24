@@ -161,7 +161,7 @@
                 session, xIDs$popLeaves,
                 # choices = cciaObj()$flowGatingSet()$popLeaves(
                 #   flowPlot()$getPlotPopPath()),
-                choices = reverseNamedList(
+                choices = .reverseNamedList(
                   cciaObj()$popLeaves(popType(), x()$getPlotPopPath())),
                 selected = x()$getPlotPopLeaves()
               )
@@ -893,7 +893,7 @@
               updateSelectInput(
                 session, boxIDs$popLeaves,
                 # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),
-                choices = reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
+                choices = .reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
                 selected = popLeaves
               )
             }
@@ -993,7 +993,7 @@
                 updateSelectInput(
                   session, boxIDs$popLeaves,
                   # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),
-                  choices = reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
+                  choices = .reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
                   selected = selectedPopLeaves
                 )
               }

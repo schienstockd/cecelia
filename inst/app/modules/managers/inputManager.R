@@ -468,7 +468,7 @@ InputManager <- R6::R6Class(
       specContent <- specType[[1]]
       
       # build image set choices ..
-      setChoices <- reverseNamedList(
+      setChoices <- .reverseNamedList(
         private$getGlobalManagers()$dataManager()$cciaImageCollection()$cciaObjectNames())
 
       list(
@@ -813,7 +813,7 @@ InputManager <- R6::R6Class(
       specContent <- specType[[1]]
       
       # build choices
-      choices <- reverseNamedList(cciaConf()$parameters$popTypes)
+      choices <- .reverseNamedList(cciaConf()$parameters$popTypes)
       
       list(
         ui = createSelectInput(
@@ -870,7 +870,7 @@ InputManager <- R6::R6Class(
           popChoices, uiContent
         )
         
-        popChoices <- reverseNamedList(popChoices)
+        popChoices <- .reverseNamedList(popChoices)
       }
       
       popChoices

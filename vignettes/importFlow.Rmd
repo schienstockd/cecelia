@@ -24,6 +24,27 @@ cciaUse("~/Desktop/DOHERTY/cecelia")
 ```
 
 ```{r}
+# calculate compensation matric
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$runTask(
+  funName = "gatePopulations.applyAutospill",
+  funParams = list(
+    uIDs = names(cciaObj$cciaObjects())
+  ),
+  runInplace = FALSE,
+  taskID = 1
+)
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
@@ -74,7 +95,10 @@ cciaObj$runTask(
 ```
 
 ```{r}
-# show white raster plots
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
+```
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
@@ -82,12 +106,6 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 cciaObj <- initCciaObject(
   pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
 )
-```
-
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 library(ggplot2)
 
@@ -114,7 +132,359 @@ for (x in fgs$popPaths()) {
     yRange <- range(popDT[, ..yLabel])
     
     # build raster
-    r1 <- .flowRasterBuild(popDT[pop == xParent], xLabel, yLabel, colorMode = "white")
+    rasterContours <- .flowRasterContour(popDT[pop == xParent], xLabel, yLabel)
+
+    # get boundaries
+    # rectangle gate?
+    if (attr(xGate, "class") == "rectangleGate") {
+      # build path
+      gateDT <- as.data.table(list(
+        x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+        y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+      ))
+      setnames(gateDT, "x", xLabel)
+      setnames(gateDT, "y", yLabel)
+    } else {
+      # close path
+      gateDT <- as.data.table(xGate@boundaries)
+      gateDT <- rbind(gateDT, gateDT[1])
+    }
+    
+    # add label
+    # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+    nameDT <- as.data.frame(list(
+      x = mean(gateDT[[xLabel]]),
+      y = max(gateDT[[yLabel]])
+    ))
+    colnames(nameDT) <- c(xLabel, yLabel)
+    nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+    
+    # plot out
+    p1 <- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        rasterContours$raster$image,
+        xmin=rasterContours$raster$x_range[1],
+        xmax=rasterContours$raster$x_range[2],
+        ymin=rasterContours$raster$y_range[1],
+        ymax=rasterContours$raster$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) +
+      geom_polygon(
+        data = rasterContours$contours,
+        aes(x = y, y = x, group = as.factor(seq)),
+        size = 0.2, color = "black", fill = "white")
+    
+    p1 <- p1 + geom_polygon(
+      data = gateDT,
+      aes(
+        x = get(xLabel),
+        y = get(yLabel)
+        ), size = 1, color = "black", fill = "#23aeff", alpha = 0.2) +
+      geom_label(
+        data = nameDT,
+        aes(
+          label = label,
+          x = get(xLabel),
+          y = get(yLabel))
+        )
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
+ggsave(file.path(anaDir, "gating_contours.pdf"), width = 10, height = 6)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+p1s <- list()
+for (x in fgs$popPaths()) {
+  local({
+    xParent <- .flowPopParent(x, root = "root")
+  
+    # get gate
+    xGate <- fgs$popGate(x)
+    xLabel <- names(xGate@parameters)[1]
+    yLabel <- names(xGate@parameters)[2]
+    xPops <- c("root", xParent, x, fgs$popDirectLeaves(x))
+    
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = xPops,
+      cols = names(xGate@parameters),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # get colours
+    popColours <- as.list(sapply(
+      xPops,
+      function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+    ))
+    
+    # adjust root colour
+    popColours$root <- "black"
+    
+    popExclude <- ""
+    if (!.flowPopIsRoot(xParent)) {
+      popExclude <- "root"
+      popColours <- popColours[names(popColours) != "root"]
+    }
+    
+    # build raster
+    r1 <- .flowRasterBuild(
+      popDT[pop != popExclude], xLabel, yLabel,
+      colorMode = "white", layout = "cover",
+      colorBy = "pop", color = popColours)
+    
+    # get boundaries
+    # rectangle gate?
+    if (attr(xGate, "class") == "rectangleGate") {
+      # build path
+      gateDT <- as.data.table(list(
+        x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+        y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+      ))
+      setnames(gateDT, "x", xLabel)
+      setnames(gateDT, "y", yLabel)
+    } else {
+      # close path
+      gateDT <- as.data.table(xGate@boundaries)
+      gateDT <- rbind(gateDT, gateDT[1])
+    }
+    
+    # add label
+    # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+    nameDT <- as.data.frame(list(
+      x = mean(gateDT[[xLabel]]),
+      y = max(gateDT[[yLabel]])
+    ))
+    colnames(nameDT) <- c(xLabel, yLabel)
+    nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+    
+    # add percentage
+    popStats <- fgs$getPopStats(x, type = "percent")
+    nameDT$label <- paste(
+      nameDT$label, paste0(
+        sprintf("%0.3f", popStats$percent), "%"))
+    
+    p1 <- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        r1$image,
+        xmin=r1$x_range[1], xmax=r1$x_range[2],
+        ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) 
+    
+    p1 <- p1 + geom_polygon(
+      data = gateDT,
+      aes(
+        x = get(xLabel),
+        y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.0) +
+      geom_label(
+        data = nameDT,
+        aes(
+          label = label,
+          x = get(xLabel),
+          y = get(yLabel)),
+        size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
+ggsave(file.path(anaDir, "gating_overlays.pdf"), width = 10, height = 6)
+```
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+p1s <- list()
+for (x in fgs$popPaths()) {
+  local({
+    xParent <- .flowPopParent(x, root = "root")
+  
+    # get gate
+    xGate <- fgs$popGate(x)
+    xLabel <- names(xGate@parameters)[1]
+    yLabel <- names(xGate@parameters)[2]
+    xPops <- c("root", xParent, x, fgs$popDirectLeaves(x))
+    
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = xPops, cols = names(xGate@parameters),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # get colours
+    popColours <- as.list(sapply(
+      xPops,
+      function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+    ))
+    
+    # adjust root colour
+    popColours$root <- "black"
+    
+    popExclude <- ""
+    if (!.flowPopIsRoot(xParent)) {
+      popExclude <- "root"
+      popColours <- popColours[names(popColours) != "root"]
+    }
+    
+    # build raster
+    rasterContours <- list()
+    for (y in xPops[!xPops %in% popExclude]) {
+      rasterContours[[y]] <- .flowRasterContour(
+        popDT[pop == y], xLabel, yLabel, color = popColours[[y]])
+    }
+
+    # get boundaries
+    # rectangle gate?
+    if (attr(xGate, "class") == "rectangleGate") {
+      # build path
+      gateDT <- as.data.table(list(
+        x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+        y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+      ))
+      setnames(gateDT, "x", xLabel)
+      setnames(gateDT, "y", yLabel)
+    } else {
+      # close path
+      gateDT <- as.data.table(xGate@boundaries)
+      gateDT <- rbind(gateDT, gateDT[1])
+    }
+    
+    # add label
+    # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+    nameDT <- as.data.frame(list(
+      x = mean(gateDT[[xLabel]]),
+      y = max(gateDT[[yLabel]])
+    ))
+    colnames(nameDT) <- c(xLabel, yLabel)
+    nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+    
+    # add percentage
+    popStats <- fgs$getPopStats(x, type = "percent")
+    nameDT$label <- paste(
+      nameDT$label, paste0(
+        sprintf("%0.3f", popStats$percent), "%"))
+    
+    # plot out
+    p1 <- ggplot() +
+      theme_classic()
+    
+    # add rasters
+    for (j in names(rasterContours)) {
+      y <- rasterContours[[j]]
+      
+      p1 <- p1 + annotation_raster(
+        y$raster$image,
+        xmin = y$raster$x_range[1],
+        xmax = y$raster$x_range[2],
+        ymin = y$raster$y_range[1],
+        ymax = y$raster$y_range[2]
+      ) +
+        geom_polygon(
+          data = y$contours,
+          aes(x = y, y = x, group = as.factor(seq)),
+          size = 0.2, color = popColours[[j]], fill = "white"
+          )
+    }
+    
+    p1 <- p1 + xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) +
+      geom_polygon(
+        data = gateDT,
+        aes(
+          x = get(xLabel),
+          y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.0) +
+      geom_label(
+        data = nameDT,
+        aes(
+          label = label,
+          x = get(xLabel),
+          y = get(yLabel)),
+        size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
+ggsave(file.path(anaDir, "gating_contours_overlay.pdf"), width = 10, height = 6)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+p1s <- list()
+for (x in fgs$popPaths()) {
+  local({
+    xParent <- .flowPopParent(x, root = "root")
+  
+    # get gate
+    xGate <- fgs$popGate(x)
+    xLabel <- names(xGate@parameters)[1]
+    yLabel <- names(xGate@parameters)[2]
+    
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = c("root", xParent), cols = names(xGate@parameters),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # build raster
+    r1 <- .flowRasterBuild(popDT[pop == xParent], xLabel, yLabel,
+                           colorMode = "white", layout = "cover")
     
     # get boundaries
     # rectangle gate?
@@ -282,11 +652,6 @@ popDT <- cciaObj$popDT(
 
 exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 ```
-
-```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
-```
-
 
 ```{r fig_pop_freq, fig.height=1, fig.width=1.5}
 datToPlot <- copy(popDT) %>% left_join(exp.info) %>%
