@@ -26,7 +26,7 @@ cciaUse("~/Desktop/DOHERTY/cecelia")
 ```{r}
 # calculate compensation matric
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -43,7 +43,11 @@ cciaObj$runTask(
 )
 ```
 
-```{r fig_comp, fig.height=2.5, fig.width=3}
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
+```
+
+```{r}
 # visualise compensation
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
@@ -51,32 +55,120 @@ library(ggplot2)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "JU2zQg", versionID = versionID, initReactivity = FALSE
-)
-cciaSet <- initCciaObject(
   pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
 )
 
-gs <- cciaObj$flowGatingSet()$getPopObj()
+# get channels
+channels <- paste0(stringr::str_extract(
+  lapply(cciaObj$cciaObjects(), function(x) basename(x$oriFilepath())),
+  "(?<=Controls_).*(?= Stained)"), "-A")
 
-xLabel <- "APC-A"
-# xLabel <- "FSC-A"
-yLabel <- "AF700-A"
-# yLabel <- "SSC-A"
+p1s <- list()
+for (x in channels) {
+  p1s[[x]] <- list()
+}
 
-oriDT <- .flowFortifyGs(gs, cols = c(xLabel, yLabel), subset = "comp")
-comDT <- .flowFortifyGs(
-  .flowCompensateGs(flowWorkspace::gs_clone(gs), cciaSet$flowAutospillMatrix()),
-  cols = c(xLabel, yLabel), subset = "comp")
-gsDT <- rbindlist(list(ori = oriDT, comp = comDT), idcol = "type")
+# go through compensations and plot out
+for (x in cciaObj$cciaObjects()) {
+  fgs <- x$flowGatingSet()
+  gs <- fgs$getPopObj()
+  xPop <- "comp"
+  
+  # get DTs
+  rootDT <- .flowFortifyGs(gs, subset = "root")
+  oriDT <- .flowFortifyGs(gs, subset = "comp")
+  comDT <- .flowFortifyGs(
+    .flowCompensateGs(flowWorkspace::gs_clone(gs), cciaObj$flowAutospillMatrix()),
+    subset = "comp")
+  
+  gsDT <- rbindlist(list(comp = comDT, ori = oriDT), idcol = "type")
+  
+  # get gate
+  xGate <- fgs$popGate(xPop)
+  xLabel <- names(xGate@parameters)[1]
+  yLabel <- names(xGate@parameters)[2]
+    
+  # get range
+  xRange <- range(rootDT[, ..xLabel])
+  yRange <- range(rootDT[, ..yLabel])
+    
+  # build raster
+  r1 <- .flowRasterBuild(rootDT, xLabel, yLabel,
+                         colorMode = "white", layout = "cover",
+                         color = "black",
+                         xRange = xRange, yRange = yRange)
+    
+  # get boundaries
+  # rectangle gate?
+  if (attr(xGate, "class") == "rectangleGate") {
+    # build path
+    gateDT <- as.data.table(list(
+      x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+      y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+    ))
+    setnames(gateDT, "x", xLabel)
+    setnames(gateDT, "y", yLabel)
+  } else {
+    # close path
+    gateDT <- as.data.table(xGate@boundaries)
+    gateDT <- rbind(gateDT, gateDT[1])
+  }
+    
+  # go through channels
+  channelNames <- colnames(gsDT)[!colnames(gsDT) %in% c(
+    'type','.rownames','name','Time','FSC-A','FSC-H','FSC-W','SSC-A','SSC-H','SSC-W'
+  )]
+  
+  channel <- paste0(stringr::str_extract(
+    basename(x$oriFilepath()), "(?<=Controls_).*(?= Stained)"), "-A")
+  
+  # plot gate
+  local({
+    p1s[[channel]][["gate"]] <<- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        r1$image,
+        xmin=r1$x_range[1], xmax=r1$x_range[2],
+        ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) +
+      geom_polygon(
+        data = gateDT,
+        aes(
+          x = get(xLabel),
+          y = get(yLabel)
+          ), size = 2, color = "#ff048e", fill = "#ff048e")
+  })
+  
+  for (y in channelNames[channelNames != channel]) {
+    local({
+      local_channel <- channel
+      local_y <- y
+      
+      # get raster
+      r1 <- .flowRasterBuild(
+        gsDT, local_channel, local_y,
+        colorMode = "white", layout = "cover",
+        colorBy = "type", color = c("black", "blue"))
+      
+      p1s[[channel]][[y]] <<- ggplot() +
+        theme_classic() +
+        annotation_raster(
+          r1$image,
+          xmin=r1$x_range[1], xmax=r1$x_range[2],
+          ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+        xlim(r1$x_range) + ylim(r1$y_range) +
+        xlab(local_channel) + ylab(local_y) 
+    })
+  }
+}
+```
 
-ggplot(gsDT, aes(x = get(xLabel), y = get(yLabel), color = type)) +
-  theme_classic() +
-  geom_point(size = 0.1, alpha = 0.2) +
-  xlab(xLabel) + ylab(yLabel)
-  # xlim(-1000, 1000) +
-  # ylim(-1000, 1000) 
-  # scale_x_flowjo_biexp() + scale_y_flowjo_biexp()
+```{r fig_comp, fig.height=4, fig.width=6}
+for (i in names(p1s)) {
+  ggpubr::ggarrange(plotlist = p1s[[i]], nrow = 3, ncol = 4)
+  ggsave(file.path(anaDir, "comp", paste0(i, ".pdf")), width = 10, height = 6)
+}
 ```
 
 
@@ -128,10 +220,6 @@ cciaObj$runTask(
   ),
   runInplace = TRUE
 )
-```
-
-```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
 ```
 
 ```{r}
