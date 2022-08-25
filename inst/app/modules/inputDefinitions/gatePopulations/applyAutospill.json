@@ -1,0 +1,19 @@
+{
+  "fun": {
+    "applyAutospill": {
+      "category": "Module functions",
+      "label": "Apply autospill",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+    },
+    "outputs": {}
+  }
+}

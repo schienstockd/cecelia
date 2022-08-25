@@ -21,6 +21,7 @@ TODO
 \item \href{#method-TaskProcess-run}{\code{TaskProcess$run()}}
 \item \href{#method-TaskProcess-funName}{\code{TaskProcess$funName()}}
 \item \href{#method-TaskProcess-sshConnection}{\code{TaskProcess$sshConnection()}}
+\item \href{#method-TaskProcess-initCciaObject}{\code{TaskProcess$initCciaObject()}}
 \item \href{#method-TaskProcess-cciaTaskObject}{\code{TaskProcess$cciaTaskObject()}}
 \item \href{#method-TaskProcess-cciaImageCollection}{\code{TaskProcess$cciaImageCollection()}}
 \item \href{#method-TaskProcess-napariViewer}{\code{TaskProcess$napariViewer()}}
@@ -111,6 +112,25 @@ Init ssh connection
 \if{html}{\out{<div class="r">}}\preformatted{TaskProcess$sshConnection()}\if{html}{\out{</div>}}
 }
 
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-TaskProcess-initCciaObject"></a>}}
+\if{latex}{\out{\hypertarget{method-TaskProcess-initCciaObject}{}}}
+\subsection{Method \code{initCciaObject()}}{
+Get ccia object
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$initCciaObject(uID, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{uID}}{character for unique ID}
+
+\item{\code{...}}{passed to initCciaObject}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-TaskProcess-cciaTaskObject"></a>}}

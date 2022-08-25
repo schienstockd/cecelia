@@ -199,7 +199,12 @@ Summary of image
 \subsection{Method \code{editChannelName()}}{
 Edit channel names
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$editChannelName(objChannelNum, objChannelName, invalidate = TRUE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$editChannelName(
+  objChannelNum,
+  objChannelName,
+  invalidate = TRUE,
+  ...
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{

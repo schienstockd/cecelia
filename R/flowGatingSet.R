@@ -32,27 +32,18 @@ FlowGatingSet <- R6::R6Class(
       # make new rectangle gate
       rg1 <- rectangleGate(.gate = mat)
       flist <- list(rg1)
-      names(flist) <- sampleNames(self$getPopObj())
+      names(flist) <- flowWorkspace::sampleNames(self$getPopObj())
       
       flist
     },
     
     #' @description Add path gate
-    #' @param gateCoords list of (N,2) gate coordinates
-    #' @param x character of 'X'-coordinate
-    #' @param y character of 'Y'-coordinate
-    createPathGate = function(gateCoords, x, y) {
-      # create matrix
-      # https://stackoverflow.com/a/43425453/13766165
-      mat <- t(do.call(cbind, gateCoords))
-      colnames(mat) <- c(x, y)
+    #' @param ... .flowPolygonGate
+    createPathGate = function(...) {
+      flist <- .flowPolygonGate(...)
       
-      # make new polygon gate
-      pg1 <- polygonGate(.gate = mat)
-      
-      flist <- list(pg1)
-      names(flist) <- sampleNames(self$getPopObj())
-      
+      # add names
+      names(flist) <- flowWorkspace::sampleNames(self$getPopObj())
       flist
     }
     
@@ -403,7 +394,7 @@ FlowGatingSet <- R6::R6Class(
       
       # go through populations and build datatable
       for (x in pops) {
-        popList[[x]] <- .flowFortifyGs(self$getPopObj(), x, cols = cols)
+        popList[[x]] <- .flowFortifyGs(self$getPopObj(), cols = cols, subset = x)
       }
       
       DT <- data.table::rbindlist(popList, idcol = TRUE)
@@ -426,7 +417,7 @@ FlowGatingSet <- R6::R6Class(
     #' @description Recompute gating
     #' @param invalidate boolean to invalidate object
     recompute = function(invalidate = TRUE) {
-      recompute(self$getPopObj())
+      flowWorkspace::recompute(self$getPopObj())
       
       # invalidate
       private$invalidate(invalidate = invalidate)

@@ -45,6 +45,7 @@ TODO
 \if{latex}{\out{\hypertarget{method-PopulationUtils-new}{}}}
 \subsection{Method \code{new()}}{
 Init channel limits
+TODO not use this
 
 
 Init

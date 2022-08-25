@@ -59,7 +59,6 @@
   
   # create contour levels
   contourLevels <- 1 - confidenceLevels
-  # confidenceLines <- contourLines(dens, levels = contourLevels)
   confidenceLines <- contourLines(dens, levels = contourLevels)
   
   # create dataframe for lines
@@ -188,7 +187,7 @@
 #' @param flowNames boolean to use "flow-names"
 #' @examples
 #' TODO
-.flowCreateGatingSet <- function(ffs, channelNames, ffNames = NULL,
+.flowCreateGatingSet <- function(ffs, channelNames = list(), ffNames = NULL,
                                 transformation = NULL, flowNames = TRUE) {
   # fs <- read.ncdfFlowSet(fcsFiles, alter.names = TRUE)
   # fs <- read.FCS(fcsFiles)
@@ -245,6 +244,15 @@
   }
 }
 
+#' @description Apply compensation to GatingSet
+#' @param gs GatingSet
+#' @param compMat matrix for compensation
+#' @examples
+#' TODO
+.flowCompensateGs <- function(gs, compMat) {
+  flowCore::compensate(gs, compMat)
+}
+
 #' @description Fortify gating set
 #' @importFrom ggplot2 fortify
 #' @import ggcyto
@@ -253,7 +261,7 @@
 #' @param subset character of population subset
 #' @examples
 #' TODO
-.flowFortifyGs <- function(gs, subset = "root", cols) {
+.flowFortifyGs <- function(gs, cols = NULL, subset = "root") {
   retVal <- NULL
   
   tryCatch(
@@ -283,6 +291,26 @@
 #   
 #   # TODO .. how should that work?
 # }
+
+#' @description Add polygon gate
+#' @param gateCoords list of (N,2) gate coordinates
+#' @param x character of 'X'-coordinate
+#' @param y character of 'Y'-coordinate
+.flowPolygonGate = function(gateCoords, x, y) {
+  # create matrix
+  # https://stackoverflow.com/a/43425453/13766165
+  # transpose?
+  if (nrow(gateCoords) > ncol(gateCoords))
+    mat <- do.call(cbind, gateCoords)
+  else
+    mat <- t(do.call(cbind, gateCoords))
+  colnames(mat) <- c(x, y)
+  
+  # make new polygon gate
+  pg1 <- flowCore::polygonGate(.gate = mat)
+  
+  list(pg1)
+}
 
 #' @description Compensate with linear model
 #' @param df data.frame to compensate
@@ -640,12 +668,29 @@
 #' @param colorMode character for color mode
 #' @param color character to color
 #' @param reduction_func character for reduction function
+#' @param colorBy character to group data.table
+#' @param xRange numeric(2) for x range
+#' @param yRange numeric(2) for y range
+#' @param plot_height numeric for plot height
+#' @param plot_width numeric for plot width
 #' @examples
 #' TODO
 .flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark", color = NULL,
-                             reduction_func = NULL, colorBy = NULL, ...) {
+                             reduction_func = NULL, colorBy = NULL,
+                             xRange = NULL, yRange = NULL, plot_height = 256,
+                             plot_width = 256, ...) {
   # dummy for reduction function
   DT[, on := 1]
+  
+  # set range
+  if (is.null(xRange))
+    xRange <- range(DT[[flowX]])
+  if (is.null(yRange))
+    yRange <- range(DT[[flowY]])
+  
+  # adjust plot height and width from range
+  # xAdj <- diff(range(DT[[flowX]]))/diff(xRange)
+  # yAdj <- diff(range(DT[[flowY]]))/diff(yRange)
   
   r1 <- rasterly::rasterly(
     data = DT,
@@ -654,7 +699,8 @@
       y = get(flowY),
       on = on,
       color = if (!is.null(colorBy)) get(colorBy) else NULL
-    ), ...)
+    # ), plot_width = plot_width * xAdj, plot_height = plot_height * yAdj, ...)
+    ), plot_width = plot_width, plot_height = plot_height, ...)
   
   # check mode
   if (colorMode == "white") {
@@ -665,21 +711,27 @@
       ) else color,
       background = "#00000000",
       glyph = "square",
-      xlim = range(DT[[flowX]]),
-      ylim = range(DT[[flowY]]),
+      xlim = xRange,
+      ylim = yRange,
       reduction_func = reduction_func
     ) %>% rasterly::rasterly_build()
   } else {
-    r1 %>% rasterly::rasterly_points(
+    r1 <- r1 %>% rasterly::rasterly_points(
       color = if (is.null(color) && is.null(colorBy)) rev(
         RColorBrewer::brewer.pal(11, "Spectral")) else color,
       background = "#22222200",
       glyph = "square",
-      xlim = range(DT[[flowX]]),
-      ylim = range(DT[[flowY]]),
+      xlim = xRange,
+      ylim = yRange,
       reduction_func = reduction_func
     ) %>% rasterly::rasterly_build()
   }
+  
+  # add adjustment factors
+  # r1$x_adj <- xAdj
+  # r1$y_adj <- yAdj
+  
+  r1
 }
 
 #' @description Build raster contour plot
@@ -687,18 +739,22 @@
 #' @param flowX character for x column
 #' @param flowY character for y column
 #' @param color character to color
+#' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
-.flowRasterContour <- function(DT, flowX, flowY, colorMode = "white", color = NULL) {
+.flowRasterContour <- function(DT, flowX, flowY, colorMode = "white",
+                               color = "black", ...) {
+  
   # build raster for outliers
   r1 <- .flowRasterBuild(
     DT, flowX, flowY, colorMode = colorMode,
-    color = color, reduction_func = "first")
+    color = color, reduction_func = "first", ...)
   
   # for contour
   r2 <- .flowRasterBuild(
-    DT, flowX, flowY, colorMode = colorMode, 
-    plot_height = 50, plot_width = 50)
+    DT, flowX, flowY, colorMode = colorMode,
+    # plot_height = 128 * r1$x_adj, plot_width = 128 * r1$y_adj, ...)
+    plot_height = 64, plot_width = 64, ...)
   
   # get density for contours
   dens <- r2$agg$rasterlyPoints1[[1]]
@@ -709,7 +765,7 @@
   
   # get contour lines
   rasterContours <- .flowContourLines(
-    popDT, xLabel, yLabel, dens = dens, pointsInContour = FALSE)
+    DT, flowX, flowY, dens = dens, pointsInContour = FALSE)
   
   # adjust XY
   rasterContours[, x := (x * diff(r1$y_range)) + r1$y_range[1]]

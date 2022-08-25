@@ -161,6 +161,17 @@ TaskProcess <- R6::R6Class(
       sshConnection
     },
     
+    #' @description Get ccia object
+    #' @param uID character for unique ID
+    #' @param ... passed to initCciaObject
+    initCciaObject = function(uID, ...) {
+      initCciaObject(
+        file.path(
+          self$cciaTaskObject()$persistentObjectDirectory(root = TRUE), uID
+        ), initReactivity = FALSE, ...
+      )
+    },
+    
     #' @description Get task object
     #' @param forceReload boolean to force reload object from disk
     cciaTaskObject = function(forceReload = FALSE) {

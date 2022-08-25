@@ -1718,8 +1718,6 @@ CciaImage <- R6::R6Class(
       labelsView <- self$labelProps(valueName = valueName)
       
       # get extra columns
-      extraChannelColumns <- c()
-      
       extraChannelColumns <- unlist(lapply(
         labelsView$channel_types(), function(x) {
           labelsView$channel_columns(prefix = x)

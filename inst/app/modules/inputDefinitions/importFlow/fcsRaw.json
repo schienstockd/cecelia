@@ -8,7 +8,7 @@
   },
   "spec": {
     "inputs": {
-			"fileAutospillComp": {
+			"autospillSetID": {
 				"type:character": {
 					"default": ""
 				}
@@ -23,12 +23,14 @@
   },
   "ui": {
     "inputs": {
-      "fileAutospillComp": {
-				"index": 0,
-				"label": "Path to autospill (CSV)",
-				"widget:textInput": {
-				}
-			},
+      "autospillSetID": {
+        "index": 0,
+        "label": "Autospill from set",
+        "widget:imageSetSelection": {
+          "size": 1,
+          "multiple": false
+        }
+      },
       "applyAutospillComp": {
 				"index": 1,
 				"label": "Apply autospill",

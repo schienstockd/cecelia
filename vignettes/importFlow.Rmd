@@ -26,7 +26,7 @@ cciaUse("~/Desktop/DOHERTY/cecelia")
 ```{r}
 # calculate compensation matric
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -38,9 +38,45 @@ cciaObj$runTask(
   funParams = list(
     uIDs = names(cciaObj$cciaObjects())
   ),
-  runInplace = FALSE,
+  runInplace = TRUE,
   taskID = 1
 )
+```
+
+```{r fig_comp, fig.height=2.5, fig.width=3}
+# visualise compensation
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+library(ggplot2)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "JU2zQg", versionID = versionID, initReactivity = FALSE
+)
+cciaSet <- initCciaObject(
+  pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+)
+
+gs <- cciaObj$flowGatingSet()$getPopObj()
+
+xLabel <- "APC-A"
+# xLabel <- "FSC-A"
+yLabel <- "AF700-A"
+# yLabel <- "SSC-A"
+
+oriDT <- .flowFortifyGs(gs, cols = c(xLabel, yLabel), subset = "comp")
+comDT <- .flowFortifyGs(
+  .flowCompensateGs(flowWorkspace::gs_clone(gs), cciaSet$flowAutospillMatrix()),
+  cols = c(xLabel, yLabel), subset = "comp")
+gsDT <- rbindlist(list(ori = oriDT, comp = comDT), idcol = "type")
+
+ggplot(gsDT, aes(x = get(xLabel), y = get(yLabel), color = type)) +
+  theme_classic() +
+  geom_point(size = 0.1, alpha = 0.2) +
+  xlab(xLabel) + ylab(yLabel)
+  # xlim(-1000, 1000) +
+  # ylim(-1000, 1000) 
+  # scale_x_flowjo_biexp() + scale_y_flowjo_biexp()
 ```
 
 
@@ -132,7 +168,8 @@ for (x in fgs$popPaths()) {
     yRange <- range(popDT[, ..yLabel])
     
     # build raster
-    rasterContours <- .flowRasterContour(popDT[pop == xParent], xLabel, yLabel)
+    rasterContours <- .flowRasterContour(
+      popDT[pop == xParent], xLabel, yLabel, xRange = xRange, yRange = yRange)
 
     # get boundaries
     # rectangle gate?
@@ -159,6 +196,12 @@ for (x in fgs$popPaths()) {
     colnames(nameDT) <- c(xLabel, yLabel)
     nameDT$label <- .flowTrimPath(x, pathLevels = 0)
     
+    # add percentage
+    popStats <- fgs$getPopStats(x, type = "percent")
+    nameDT$label <- paste(
+      nameDT$label, paste0(
+        sprintf("%0.3f", popStats$percent), "%"))
+    
     # plot out
     p1 <- ggplot() +
       theme_classic() +
@@ -180,13 +223,14 @@ for (x in fgs$popPaths()) {
       aes(
         x = get(xLabel),
         y = get(yLabel)
-        ), size = 1, color = "black", fill = "#23aeff", alpha = 0.2) +
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.2) +
       geom_label(
         data = nameDT,
         aes(
           label = label,
           x = get(xLabel),
-          y = get(yLabel))
+          y = get(yLabel)),
+        size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
         )
     
     p1s[[x]] <<- p1
@@ -251,7 +295,7 @@ for (x in fgs$popPaths()) {
     r1 <- .flowRasterBuild(
       popDT[pop != popExclude], xLabel, yLabel,
       colorMode = "white", layout = "cover",
-      colorBy = "pop", color = popColours)
+      colorBy = "pop", color = popColours, xRange = xRange, yRange = yRange)
     
     # get boundaries
     # rectangle gate?
@@ -315,6 +359,7 @@ for (x in fgs$popPaths()) {
 ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
 ggsave(file.path(anaDir, "gating_overlays.pdf"), width = 10, height = 6)
 ```
+
 ```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
@@ -368,7 +413,8 @@ for (x in fgs$popPaths()) {
     rasterContours <- list()
     for (y in xPops[!xPops %in% popExclude]) {
       rasterContours[[y]] <- .flowRasterContour(
-        popDT[pop == y], xLabel, yLabel, color = popColours[[y]])
+        popDT[pop == y], xLabel, yLabel, color = popColours[[y]],
+        xRange = xRange, yRange = yRange)
     }
 
     # get boundaries
@@ -484,7 +530,8 @@ for (x in fgs$popPaths()) {
     
     # build raster
     r1 <- .flowRasterBuild(popDT[pop == xParent], xLabel, yLabel,
-                           colorMode = "white", layout = "cover")
+                           colorMode = "white", layout = "cover",
+                           xRange = xRange, yRange = yRange)
     
     # get boundaries
     # rectangle gate?
@@ -511,6 +558,12 @@ for (x in fgs$popPaths()) {
     colnames(nameDT) <- c(xLabel, yLabel)
     nameDT$label <- .flowTrimPath(x, pathLevels = 0)
     
+    # add percentage
+    popStats <- fgs$getPopStats(x, type = "percent")
+    nameDT$label <- paste(
+      nameDT$label, paste0(
+        sprintf("%0.3f", popStats$percent), "%"))
+    
     p1 <- ggplot() +
       theme_classic() +
       annotation_raster(
@@ -525,13 +578,14 @@ for (x in fgs$popPaths()) {
       aes(
         x = get(xLabel),
         y = get(yLabel)
-        ), size = 1, color = "black", fill = "#23aeff", alpha = 0.2) +
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.2) +
       geom_label(
         data = nameDT,
         aes(
           label = label,
           x = get(xLabel),
-          y = get(yLabel))
+          y = get(yLabel)),
+        size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
         )
     
     p1s[[x]] <<- p1

@@ -25,6 +25,8 @@ TODO
 \item \href{#method-FlowGatingSet-flistFromGateCoords}{\code{FlowGatingSet$flistFromGateCoords()}}
 \item \href{#method-FlowGatingSet-addPop}{\code{FlowGatingSet$addPop()}}
 \item \href{#method-FlowGatingSet-setPop}{\code{FlowGatingSet$setPop()}}
+\item \href{#method-FlowGatingSet-getPopGate}{\code{FlowGatingSet$getPopGate()}}
+\item \href{#method-FlowGatingSet-getPopStats}{\code{FlowGatingSet$getPopStats()}}
 \item \href{#method-FlowGatingSet-delPop}{\code{FlowGatingSet$delPop()}}
 \item \href{#method-FlowGatingSet-renamePop}{\code{FlowGatingSet$renamePop()}}
 \item \href{#method-FlowGatingSet-popIsRoot}{\code{FlowGatingSet$popIsRoot()}}
@@ -38,6 +40,7 @@ TODO
 \item \href{#method-FlowGatingSet-popDT}{\code{FlowGatingSet$popDT()}}
 \item \href{#method-FlowGatingSet-changeParentName}{\code{FlowGatingSet$changeParentName()}}
 \item \href{#method-FlowGatingSet-recompute}{\code{FlowGatingSet$recompute()}}
+\item \href{#method-FlowGatingSet-copyGatesFrom}{\code{FlowGatingSet$copyGatesFrom()}}
 \item \href{#method-FlowGatingSet-save}{\code{FlowGatingSet$save()}}
 \item \href{#method-FlowGatingSet-isLabelPropsStore}{\code{FlowGatingSet$isLabelPropsStore()}}
 \item \href{#method-FlowGatingSet-clone}{\code{FlowGatingSet$clone()}}
@@ -88,11 +91,7 @@ Init
 
 \item{\code{y}}{character of 'Y'-coordinate}
 
-\item{\code{gateCoords}}{list of (N,2) gate coordinates}
-
-\item{\code{x}}{character of 'X'-coordinate}
-
-\item{\code{y}}{character of 'Y'-coordinate}
+\item{\code{...}}{.flowPolygonGate}
 }
 \if{html}{\out{</div>}}
 }
@@ -103,7 +102,7 @@ Init
 \subsection{Method \code{popPaths()}}{
 Gated populations paths
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popPaths(includeRoot = FALSE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popPaths(includeRoot = FALSE, popOrder = "tsort")}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -231,6 +230,7 @@ Add population
   x,
   y,
   parentPop = "root",
+  flist = NULL,
   invalidate = TRUE
 )}\if{html}{\out{</div>}}
 }
@@ -248,6 +248,8 @@ Add population
 
 \item{\code{parentPop}}{character for parent population}
 
+\item{\code{flist}}{flow list object}
+
 \item{\code{invalidate}}{boolean to invalidate object}
 }
 \if{html}{\out{</div>}}
@@ -259,7 +261,14 @@ Add population
 \subsection{Method \code{setPop()}}{
 Set population
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$setPop(popPath, gateCoords, x, y, invalidate = TRUE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$setPop(
+  popPath,
+  gateCoords,
+  x,
+  y,
+  flist = NULL,
+  invalidate = TRUE
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -273,7 +282,45 @@ Set population
 
 \item{\code{y}}{character of 'Y'-coordinate}
 
+\item{\code{flist}}{flow list object}
+
 \item{\code{invalidate}}{boolean to invalidate object}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-FlowGatingSet-getPopGate"></a>}}
+\if{latex}{\out{\hypertarget{method-FlowGatingSet-getPopGate}{}}}
+\subsection{Method \code{getPopGate()}}{
+Get population gate
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$getPopGate(popPath)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{popPath}}{character for population path}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-FlowGatingSet-getPopStats"></a>}}
+\if{latex}{\out{\hypertarget{method-FlowGatingSet-getPopStats}{}}}
+\subsection{Method \code{getPopStats()}}{
+Get population stats
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$getPopStats(popPath, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{popPath}}{character for population path}
+
+\item{\code{...}}{passed to .flowStatsForPop}
 }
 \if{html}{\out{</div>}}
 }
@@ -525,6 +572,34 @@ Recompute gating
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
+\item{\code{invalidate}}{boolean to invalidate object}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-FlowGatingSet-copyGatesFrom"></a>}}
+\if{latex}{\out{\hypertarget{method-FlowGatingSet-copyGatesFrom}{}}}
+\subsection{Method \code{copyGatesFrom()}}{
+Copy from other GatingSet
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$copyGatesFrom(
+  gsFrom,
+  removeAll = TRUE,
+  recompute = TRUE,
+  invalidate = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{gsFrom}}{FlowGatingSet to copy from}
+
+\item{\code{removeAll}}{boolean to remove all populations}
+
+\item{\code{recompute}}{boolean to recompute after}
+
 \item{\code{invalidate}}{boolean to invalidate object}
 }
 \if{html}{\out{</div>}}

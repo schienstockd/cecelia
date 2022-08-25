@@ -17,6 +17,7 @@ TODO
 \itemize{
 \item \href{#method-CciaImageSet-new}{\code{CciaImageSet$new()}}
 \item \href{#method-CciaImageSet-propagatePopMap}{\code{CciaImageSet$propagatePopMap()}}
+\item \href{#method-CciaImageSet-propagateFlowGating}{\code{CciaImageSet$propagateFlowGating()}}
 \item \href{#method-CciaImageSet-cciaObjectsChannelNames}{\code{CciaImageSet$cciaObjectsChannelNames()}}
 \item \href{#method-CciaImageSet-editChannelNamesForCciaObjects}{\code{CciaImageSet$editChannelNamesForCciaObjects()}}
 \item \href{#method-CciaImageSet-ppp}{\code{CciaImageSet$ppp()}}
@@ -29,6 +30,9 @@ TODO
 \item \href{#method-CciaImageSet-retrieveState}{\code{CciaImageSet$retrieveState()}}
 \item \href{#method-CciaImageSet-resetData}{\code{CciaImageSet$resetData()}}
 \item \href{#method-CciaImageSet-forceDataReload}{\code{CciaImageSet$forceDataReload()}}
+\item \href{#method-CciaImageSet-setFlowAutospillPath}{\code{CciaImageSet$setFlowAutospillPath()}}
+\item \href{#method-CciaImageSet-flowAutospillPath}{\code{CciaImageSet$flowAutospillPath()}}
+\item \href{#method-CciaImageSet-flowAutospillMatrix}{\code{CciaImageSet$flowAutospillMatrix()}}
 \item \href{#method-CciaImageSet-clone}{\code{CciaImageSet$clone()}}
 }
 }
@@ -141,6 +145,35 @@ Propagate population map to others
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-propagateFlowGating"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-propagateFlowGating}{}}}
+\subsection{Method \code{propagateFlowGating()}}{
+Propagate flow gating to others
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$propagateFlowGating(
+  fromUID,
+  toUIDs = NULL,
+  invalidate = FALSE,
+  saveState = FALSE,
+  ...
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{fromUID}}{character for unique ID from}
+
+\item{\code{toUIDs}}{character for unique ID to}
+
+\item{\code{invalidate}}{boolean to invalidate object}
+
+\item{\code{saveState}}{boolean to save state}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImageSet-cciaObjectsChannelNames"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImageSet-cciaObjectsChannelNames}{}}}
 \subsection{Method \code{cciaObjectsChannelNames()}}{
@@ -166,7 +199,8 @@ Edit channel names for objects
 \if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$editChannelNamesForCciaObjects(
   objChannelNum,
   objChannelNames,
-  cciaObjects = NULL
+  cciaObjects = NULL,
+  ...
 )}\if{html}{\out{</div>}}
 }
 
@@ -404,6 +438,39 @@ Reset data
 Force reload data
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$forceDataReload()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-setFlowAutospillPath"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-setFlowAutospillPath}{}}}
+\subsection{Method \code{setFlowAutospillPath()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$setFlowAutospillPath(
+  x,
+  valueName = NULL,
+  setDefault = TRUE,
+  invalidate = TRUE,
+  reset = FALSE
+)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-flowAutospillPath"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-flowAutospillPath}{}}}
+\subsection{Method \code{flowAutospillPath()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$flowAutospillPath(valueName = NULL, absolutePath = TRUE)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-flowAutospillMatrix"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-flowAutospillMatrix}{}}}
+\subsection{Method \code{flowAutospillMatrix()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$flowAutospillMatrix(valueName = NULL)}\if{html}{\out{</div>}}
 }
 
 }

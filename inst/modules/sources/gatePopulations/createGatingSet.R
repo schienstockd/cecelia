@@ -83,7 +83,7 @@ CreateGatingSet <- R6::R6Class(
         }
         
         self$writeLog(paste(
-          ">> Tranform", paste(channelNames, collapse = ", ")))
+          ">> Transform", paste(channelNames, collapse = ", ")))
         
         # create gs
         gs <- .flowCreateGatingSet(

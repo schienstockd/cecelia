@@ -550,11 +550,22 @@ CciaImageSet <- R6::R6Class(
       retVal
     },
     
-    flowAutospill = function(valueName = NULL) {
+    flowAutospillMatrix = function(valueName = NULL) {
       # get absolute path
       aspPath <- self$flowAutospillPath(valueName = valueName, absolutePath = TRUE)
       
-      browser()
+      # Generate compensation matrix with autospill
+      # https://autospill.vib.be/public/#/results/7418326b0127a8a587c276a1bcb39608
+      comp_matrix <- read.csv(aspPath, header = TRUE)
+      
+      # move first column to rownames
+      rownames(comp_matrix) <- comp_matrix[, 1]
+      comp_matrix[, 1] <- NULL
+      
+      # adjust column names
+      colnames(comp_matrix) <- rownames(comp_matrix)
+      
+      flowCore::compensation(comp_matrix)
     }
   )
 )
