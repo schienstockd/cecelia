@@ -250,7 +250,7 @@ CciaImage <- R6::R6Class(
         }
         
         # https://stackoverflow.com/q/45866491/13766165
-        xml_ns_strip(omeXML)
+        xml2::xml_ns_strip(omeXML)
         
         # set
         private$setOmeXML(omeXML)
@@ -262,7 +262,7 @@ CciaImage <- R6::R6Class(
     #' @description Modify xml path if needed for OME
     #' @param x character of path
     omeXMLPath = function(x) {
-      if (startsWith(xml_path(self$omeXML()), "/ome:") == TRUE) {
+      if (startsWith(xml2::xml_path(self$omeXML()), "/ome:") == TRUE) {
         return(stringr::str_replace_all(x, "//", "//ome:"))
       } else {
         return(x)
@@ -274,8 +274,8 @@ CciaImage <- R6::R6Class(
     omeXMLPixels = function(reset = FALSE) {
       # is content already set?
       if (is.null(private$getOmeXMLPixels()) || reset == TRUE) {
-        pixelInfo <- as.list(unlist(xml_attrs(
-          xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels"))
+        pixelInfo <- as.list(unlist(xml2::xml_attrs(
+          xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels"))
         )))
         
         # convert to numeric
@@ -323,13 +323,13 @@ CciaImage <- R6::R6Class(
           # TODO is there a better way?
           # get values in annotations
           suppressWarnings({
-            valueChildren <- xml_children(xml_find_all(
+            valueChildren <- xml2::xml_children(xml2::xml_find_all(
               self$omeXML(), self$omeXMLPath("//StructuredAnnotations//Value")))
             
             # get timelapse axis information
             timelapseAxisNodes <- valueChildren[!is.na(stringr::str_match(valueChildren, "TIMELAPSE"))]
             axisNum <- as.numeric(
-              stringr::str_extract(xml_contents(xml_contents(timelapseAxisNodes)), "(?<=axis #)[0-9]$")
+              stringr::str_extract(xml2::xml_contents(xml2::xml_contents(timelapseAxisNodes)), "(?<=axis #)[0-9]$")
             )
             axisNum <- axisNum[!is.na(axisNum)]
             
@@ -338,7 +338,7 @@ CciaImage <- R6::R6Class(
             
             # put information into list
             tInfo <- list(
-              interval = as.numeric(stringr::str_extract(xml_contents(xml_contents(axisValue)[2]), "[0-9]+\\.[0-9]+")) / 60
+              interval = as.numeric(stringr::str_extract(xml2::xml_contents(xml2::xml_contents(axisValue)[2]), "[0-9]+\\.[0-9]+")) / 60
             )
           })
         } else if (endsWith(basenameOriFilepath, ".lsm")) {
