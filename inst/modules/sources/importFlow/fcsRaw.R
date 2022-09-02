@@ -34,24 +34,70 @@ FcsRaw <- R6::R6Class(
       # set to name if not description known
       paramsDF$desc[naNames] <- paramsDF$name[naNames]
       paramsDF$desc[!naNames] <- paste(paramsDF$name[!naNames], paramsDF$desc[!naNames], sep = "-")
+      # imChannelNames <- c(paramsDF$desc, "label")
+      imChannelNames <- paramsDF$desc
       
-      self$writeLog(paste(">> Convert to DT"))
+      self$writeLog(paste(">> Compensate"))
       
       # compensate data
       # TODO this has to be interactive
       if (self$funParams()$applyAutospillComp == TRUE) {
         # get compensation matrix from set
         compSet <- self$initCciaObject(self$funParams()$autospillSetID)
-        
+
         cf <- flowCore::compensate(cf, compSet$flowAutospillMatrix())
       }
+
+      # add label column to FCS
+      cols <- as.integer(seq(nrow(cf)))
+      cols <- matrix(cols, dimnames = list(NULL, "label"))
+      cf <- flowWorkspace::cf_append_cols(cf, cols)
+
+      # get channel names from cytoframe
+      channelNames <- names(cf)
+
+      # transform all channels that are not FSC, SSC, -A, -H, W
+      # TODO how does this look for Aurora files .. ?
+      transChannels <- channelNames[is.na(
+        stringr::str_match(channelNames, "^Time|FSC-|SSC-|label"))]
+
+      self$writeLog(paste(
+        ">> Transform", paste(transChannels, collapse = ", ")))
+
+      # create gs
+      gs <- .flowCreateGatingSet(
+        cf,
+        transChannels,
+        self$funParams()$transformation,
+        ffNames = cciaObj$getUID(),
+        flowNames = FALSE
+      )
+
+      valueName <- self$funParams()$valueName
+
+      # save gs
+      gsPath <- file.path(
+        self$envParams()$dirs$task,
+        taskDirFiles("data", paste0(valueName, cciaConf()$files$ext$gatingSet))
+      )
+
+      # remove gating set before saving
+      unlink(gsPath, recursive = TRUE)
+      flowWorkspace::save_gs(gs, gsPath, overwrite = TRUE)
+
+      # reset populations
+      cciaObj$setImPopMap("flow", list())
+
+      self$writeLog(paste(">> Convert to DT"))
       
       # convert to DT
+      # Do not use the transformed data
+      # DT <- .flowFortifyGs(gs)
       DT <- fortify(cf)
       
       # remove unwanted columns
       keepCols <- colnames(DT)
-      keepCols <- keepCols[!keepCols %in% c(".rownames", "name")]
+      keepCols <- keepCols[!keepCols %in% c(".rownames", "name", "label")]
       DT <- DT[, ..keepCols]
       
       self$writeLog(paste(">> Save as Anndata"))
@@ -78,7 +124,7 @@ FcsRaw <- R6::R6Class(
       )
       
       # set channel names
-      cciaObj$setImChannelNames(paramsDF$desc, checkLength = FALSE)
+      cciaObj$setImChannelNames(imChannelNames, checkLength = FALSE)
       
       # save
       cciaObj$saveState()

@@ -99,7 +99,7 @@ ApplyClassifier <- R6::R6Class(
         )
         
         # create classification populations
-        popDT <- cciaObj$popDT(popType, pops = c(valueName),  cols = c("clsf"))
+        popDT <- cciaObj$popDT(popType, pops = c(valueName), popCols = c("clsf"))
         
         # add children
         pops <- list()

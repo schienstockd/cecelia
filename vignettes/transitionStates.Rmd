@@ -1,0 +1,280 @@
+---
+title: "Transition states"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
+```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE #  DTx
+)
+
+# PBS v DTx
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c(
+  "5N8Iip", "OWJrYz", "PxwhNn",
+  "CzR7ZQ", "zqrpfq",
+  "NbaQvC", "ypUN8d", "oPmJg0",
+  "o0auGO", "TxTL0a",
+  # check these again
+  "rTvrA2", "xGITW2"
+)]
+```
+
+```{r}
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "tcells.gBT/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+
+```{r}
+library(ggplot2)
+library(ggraph)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+freqThr <- 0.01
+
+pList <- list()
+
+# DTx
+stateOrder <- list(
+  "D" = "3",
+  "M" = "1",
+  "S" = "2",
+  "C" = "4"
+)
+
+stainingCombinations <- stack(sapply(
+  cciaObj$cciaObjects(uIDs = uIDs),
+  function(x) paste(x$imChannelNames(), collapse = ",")
+))
+setnames(stainingCombinations, "values", "staining")
+setnames(stainingCombinations, "ind", "uID")
+
+summaryDF <- popDTs %>%
+  left_join(exp.info) %>%
+  left_join(stainingCombinations)
+
+summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
+summaryDF$stain <- str_extract(
+  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
+  )
+summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
+
+trackClusters <- unique(summaryDF$live.cell.track.clusters.hmm_movement)
+trackClusters <- trackClusters[!trackClusters %in% c(NA, "NA")]
+
+summaryDF$Treatment.DTx.stain <- interaction(summaryDF$Treatment, summaryDF$DTx, summaryDF$stain)
+```
+
+```{r}
+# get nodes and edges
+DF <- summaryDF %>%
+  group_by(Treatment.DTx.stain, uID, live.cell.hmm.transitions.movement) %>%
+  summarise(
+    n = n()
+    ) %>%
+  separate(live.cell.hmm.transitions.movement,
+           into = c("from", "to"),
+           sep = "_", convert = TRUE) %>%
+  mutate(across(c(from, to), as.character)) %>%
+  replace_na(list(from = "0")) %>%
+  drop_na()
+
+# edges for non-self transitions
+edges <- DF %>%
+  dplyr::filter(from != to) %>%
+  mutate(freq = n/sum(n)) %>%
+  complete(from, to, fill = list(freq = 0)) %>%
+  mutate(fromName = from) %>%
+  mutate(toName = to) %>%
+  drop_na()
+
+# get number of self transitions
+nodes <- DF %>%
+  dplyr::filter(from == to) %>%
+  mutate(freq = n/sum(n)) %>%
+  # mutate(freq = GCAMP/n) %>%
+  complete(from = unlist(stateOrder), fill = list(freq = 0)) %>%
+  # mutate(to = replace_na(from, 0)) %>%
+  replace_na(list(to = "0")) %>%
+  # drop_na() %>%
+  select(from, freq) %>%
+  dplyr::rename(node = from) %>%
+  ungroup() %>%
+  add_row(node = "0", freq = 0) %>%
+  mutate(nodeName = node) %>%
+  dplyr::filter(node %in% unique(c(edges$from, edges$to)))
+
+# add names for nodes
+for (i in names(stateOrder)) {
+  nodes[nodes$nodeName == stateOrder[[i]], ]$nodeName <- i
+  edges[edges$fromName == stateOrder[[i]], ]$fromName <- i
+  edges[edges$toName == stateOrder[[i]], ]$toName <- i
+}
+
+# add state order
+counter <- 0
+nodes$order <- 0
+for (y in stateOrder) {
+  nodes[nodes$node == y,]$order <- counter
+
+  counter <- counter + 1
+}
+
+edges$fromName <- factor(edges$fromName, levels = c("D", "M", "S", "C"))
+edges$toName <- factor(edges$toName, levels = c("D", "M", "S", "C"))
+nodes$nodeName <- factor(nodes$nodeName, levels = c("D", "M", "S", "C"))
+
+# summarise
+# edgesSummary <- nodes %>% group_by(node, nodeName, order) %>%
+edgesSummary <- edges %>% group_by(Treatment.DTx.stain, from, to) %>%
+  summarise(freq = mean(freq)) %>%
+  # summarise(freq = median(freq)) %>%
+  dplyr::filter(freq > freqThr) %>%
+  ungroup() %>%
+  mutate(non.self = (freq - min(freq)) / (max(freq) - min(freq))) %>%
+  arrange(freq)
+nodesSummary <- nodes %>% group_by(Treatment.DTx.stain, node, nodeName, order) %>%
+  summarise(freq = mean(freq)) %>%
+  # summarise(freq = median(freq)) %>%
+  ungroup() %>%
+  mutate(self = (freq - min(freq)) / (max(freq) - min(freq)))
+```
+
+
+```{r fig_total_transitions, fig.height=1.5, fig.width=1.5}
+for (x in unique(summaryDF$Treatment.DTx.stain)) {
+  i <- str_split(x, "\\.")[[1]][[1]]
+  dtx <- str_split(x, "\\.")[[1]][[2]]
+  j <- str_split(x, "\\.")[[1]][[3]]
+  
+  ggplot(edges %>% dplyr::filter(Treatment.DTx.stain == x),
+         aes(x = fromName, y = freq, color = toName)) +
+    theme_classic() +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_jitter(
+      position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    scale_color_brewer(name = "To", palette = "Set1") +
+    ylim(0, 1) +
+    xlab("From") + ylab("Frequency")
+  ggsave(file = file.path(anaDir, paste0("network_", x, "_edges.pdf")),
+         width = 4, height = 2, dpi = 400)
+  
+  ggplot(nodes %>% dplyr::filter(Treatment.DTx.stain == x),
+         aes(x = nodeName, y = freq)) +
+    theme_classic() +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_jitter(width = 0.3, alpha = 1) +
+    ylim(0, 1) +
+    xlab("") + ylab("Frequency")
+  ggsave(file = file.path(anaDir, paste0("network_", x, "_nodes.pdf")),
+         width = 2, height = 2, dpi = 400)
+  
+  # https://www.hydrogenwaterusa.com/visualizing-large-directed-networks-with-ggraph-in-r/
+  g <- igraph::graph_from_data_frame(d = edgesSummary %>%
+                                       dplyr::filter(Treatment.DTx.stain == x) %>%
+                                       dplyr::select(-Treatment.DTx.stain),
+                                     vertices = nodesSummary %>%
+                                       dplyr::filter(Treatment.DTx.stain == x) %>%
+                                       dplyr::select(-Treatment.DTx.stain) %>%
+                                       arrange(order),
+                                     directed = TRUE)
+  
+  # pList[[x]] <- ggraph(g, layout = "auto") +
+  # pList[[x]] <- ggraph(g, layout = "igraph", algorithm = "circle") +
+  # pList[[x]] <- ggraph(g, layout = "linear") +
+  # ggraph(g, layout = "igraph", algorithm = "circle") +
+  # ggraph(g, layout = "auto") +
+  ggraph(g, layout = "linear") +
+    # ggtitle(sprintf("%s", x)) +
+    geom_edge_fan2(aes(width = non.self, color = non.self),
+                   arrow = arrow(length = unit(5, 'mm'), type = "closed"),
+                   end_cap = circle(3, 'mm')) +
+    scale_edge_width(range = c(1, 2)) +
+    scale_edge_color_gradient2(
+      # low = "#D1D1D1",
+      low = "#dadada",
+      high = "black",
+      mid = "#616161",
+      midpoint = .5
+    ) +
+    geom_node_label(aes(label = nodeName, fill = self),
+                    color = "white", repel = FALSE, size=5,
+                    label.padding = unit(0.25, "lines")) +
+    scale_fill_gradient2(
+      # low = "blue",
+      low = "#009fe3",
+      mid = "black",
+      # mid = "#ffb804",
+      # high = "red",
+      high = "#e71d73",
+      midpoint = .5
+    ) +
+    theme_graph(
+      plot_margin = margin(0, 0, 0, 0)
+    ) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 6, family = "Arial")
+    )
+
+  # ggsave(file = file.path(anaDir, paste0("total_network", x, ".tiff")),
+  ggsave(file = file.path(anaDir, paste0("network_", x, ".pdf")),
+         width = 3, height = 1, dpi = 400)
+  # ggsave(file = file.path(anaDir, paste0("small_network", x, ".tiff")),
+  #        width = 3, height = 2.5, dpi = 400)
+ }
+
+# ggpubr::ggarrange(plotlist = pList, nrow = 1)
+
+# https://stackoverflow.com/a/17075381
+# ggsave(file = file.path(anaDir, "total_networks.tiff"),
+# ggsave(file = file.path(anaDir, "total_networks_GCAMP.tiff"),
+  # width = 7, height = 2)
+  # width = 20, height = 3.5)
+  # width = 25, height = 2)
+```
+

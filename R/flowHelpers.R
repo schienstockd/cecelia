@@ -268,14 +268,22 @@
     expr = {
       # fortify gating set
       attr(gs, "subset") <- subset
-      if (!is.null(cols))
-        attr(gs, "dims") <- data.table(name = cols)
+      if (!is.null(cols)) {
+        colsGs <- colnames(gs)
+        cols <- colsGs[colsGs %in% cols]
+        
+        # make sure the columns are in the gatingset
+        if (length(cols) > 0)
+          attr(gs, "dims") <- data.table(name = cols)
+      }
       retVal <- fortify(gs)
     },
-    error = function(e){ 
+    error = function(e) {
+      message(e)
       retVal <<- NULL
     },
-    warning = function(w){
+    warning = function(w) {
+      warning(e)
       retVal <<- NULL
     }
   )
@@ -300,7 +308,7 @@
   # create matrix
   # https://stackoverflow.com/a/43425453/13766165
   # transpose?
-  if (nrow(gateCoords) > ncol(gateCoords))
+  if (!is.null(attr(gateCoords, "class")) && nrow(gateCoords) > ncol(gateCoords))
     mat <- do.call(cbind, gateCoords)
   else
     mat <- t(do.call(cbind, gateCoords))
@@ -811,4 +819,331 @@
     y0 = r1$y_range[2],
     dy = -diff(r1$y_range)/dimZ[1]
   )
+}
+
+#' @description List of gated raster contours with gates
+#' @param cciaObj CciaImage to retrieve populations from
+#' @param popPaths list of character for population paths
+#' @examples
+#' TODO
+.flowPlotGatedRasterCountours <- function(cciaObj, popPaths = NULL) {
+  # go through pops and build gating scheme
+  fgs <- cciaObj$flowGatingSet()
+  
+  # get pop paths
+  if (is.null(popPaths))
+    popPaths <- fgs$popPaths()
+  
+  p1s <- list()
+  for (x in popPaths) {
+    local({
+      xParent <- .flowPopParent(x, root = "root")
+      
+      # get gate
+      xGate <- fgs$popGate(x)
+      xLabel <- names(xGate@parameters)[1]
+      yLabel <- names(xGate@parameters)[2]
+      
+      # get pops
+      popDT <- cciaObj$popDT(
+        "flow", pops = c("root", xParent), popCols = names(xGate@parameters),
+        completeDT = FALSE, uniqueLabels = TRUE)
+      
+      # get range
+      xRange <- range(popDT[, ..xLabel])
+      yRange <- range(popDT[, ..yLabel])
+      
+      # build raster
+      rasterContours <- .flowRasterContour(
+        popDT[pop == xParent], xLabel, yLabel, xRange = xRange, yRange = yRange)
+      
+      # get boundaries
+      # rectangle gate?
+      if (attr(xGate, "class") == "rectangleGate") {
+        # build path
+        gateDT <- as.data.table(list(
+          x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+          y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+        ))
+        setnames(gateDT, "x", xLabel)
+        setnames(gateDT, "y", yLabel)
+      } else {
+        # close path
+        gateDT <- as.data.table(xGate@boundaries)
+        gateDT <- rbind(gateDT, gateDT[1])
+      }
+      
+      # add label
+      # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+      nameDT <- as.data.frame(list(
+        x = mean(gateDT[[xLabel]]),
+        y = max(gateDT[[yLabel]])
+      ))
+      colnames(nameDT) <- c(xLabel, yLabel)
+      nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+      
+      # add percentage
+      popStats <- fgs$getPopStats(x, type = "percent")
+      nameDT$label <- paste(
+        nameDT$label, paste0(
+          sprintf("%0.3f", popStats$percent), "%"))
+      
+      # plot out
+      p1 <- ggplot() +
+        theme_classic() +
+        annotation_raster(
+          rasterContours$raster$image,
+          xmin=rasterContours$raster$x_range[1],
+          xmax=rasterContours$raster$x_range[2],
+          ymin=rasterContours$raster$y_range[1],
+          ymax=rasterContours$raster$y_range[2]) +
+        xlim(xRange) + ylim(yRange) +
+        xlab(xLabel) + ylab(yLabel) +
+        geom_polygon(
+          data = rasterContours$contours,
+          aes(x = y, y = x, group = as.factor(seq)),
+          size = 0.2, color = "black", fill = "white")
+      
+      p1 <- p1 + geom_polygon(
+        data = gateDT,
+        aes(
+          x = get(xLabel),
+          y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.2) +
+        geom_label(
+          data = nameDT,
+          aes(
+            label = label,
+            x = get(xLabel),
+            y = get(yLabel)),
+          size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+      
+      p1s[[x]] <<- p1
+    })
+  }
+  
+  p1s
+}
+
+#' @description List of gated raster grouped populations
+#' @param cciaObj CciaImage to retrieve populations from
+#' @param popPaths list of character for population paths
+#' @examples
+#' TODO
+.flowPlotGatedRasterGrouped <- function(cciaObj, popPaths = NULL) {
+  # go through pops and build gating scheme
+  fgs <- cciaObj$flowGatingSet()
+  
+  # get pop paths
+  if (is.null(popPaths))
+    popPaths <- fgs$popPaths()
+  
+  p1s <- list()
+  for (x in popPaths) {
+    local({
+      xParent <- .flowPopParent(x, root = "root")
+      
+      # get gate
+      xGate <- fgs$popGate(x)
+      xLabel <- names(xGate@parameters)[1]
+      yLabel <- names(xGate@parameters)[2]
+      xPops <- c("root", xParent, x, fgs$popDirectLeaves(x))
+      
+      # get pops
+      popDT <- cciaObj$popDT(
+        "flow", pops = xPops,
+        popCols = names(xGate@parameters),
+        completeDT = FALSE, uniqueLabels = TRUE)
+      
+      # get range
+      xRange <- range(popDT[, ..xLabel])
+      yRange <- range(popDT[, ..yLabel])
+      
+      # get colours
+      popColours <- as.list(sapply(
+        xPops,
+        function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+      ))
+      
+      # adjust root colour
+      popColours$root <- "black"
+      
+      popExclude <- ""
+      if (!.flowPopIsRoot(xParent)) {
+        popExclude <- "root"
+        popColours <- popColours[names(popColours) != "root"]
+      }
+      
+      # build raster
+      r1 <- .flowRasterBuild(
+        popDT[pop != popExclude], xLabel, yLabel,
+        colorMode = "white", layout = "cover",
+        colorBy = "pop", color = popColours, xRange = xRange, yRange = yRange)
+      
+      # get boundaries
+      # rectangle gate?
+      if (attr(xGate, "class") == "rectangleGate") {
+        # build path
+        gateDT <- as.data.table(list(
+          x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+          y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+        ))
+        setnames(gateDT, "x", xLabel)
+        setnames(gateDT, "y", yLabel)
+      } else {
+        # close path
+        gateDT <- as.data.table(xGate@boundaries)
+        gateDT <- rbind(gateDT, gateDT[1])
+      }
+      
+      # add label
+      # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+      nameDT <- as.data.frame(list(
+        x = mean(gateDT[[xLabel]]),
+        y = max(gateDT[[yLabel]])
+      ))
+      colnames(nameDT) <- c(xLabel, yLabel)
+      nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+      
+      # add percentage
+      popStats <- fgs$getPopStats(x, type = "percent")
+      nameDT$label <- paste(
+        nameDT$label, paste0(
+          sprintf("%0.3f", popStats$percent), "%"))
+      
+      p1 <- ggplot() +
+        theme_classic() +
+        annotation_raster(
+          r1$image,
+          xmin=r1$x_range[1], xmax=r1$x_range[2],
+          ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+        xlim(xRange) + ylim(yRange) +
+        xlab(xLabel) + ylab(yLabel) 
+      
+      p1 <- p1 + geom_polygon(
+        data = gateDT,
+        aes(
+          x = get(xLabel),
+          y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.0) +
+        geom_label(
+          data = nameDT,
+          aes(
+            label = label,
+            x = get(xLabel),
+            y = get(yLabel)),
+          size = 2, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+      
+      p1s[[x]] <<- p1
+    })
+  }
+  
+  p1s
+}
+
+#' @description List of gated raster
+#' @param cciaObj CciaImage to retrieve populations from
+#' @param popPaths list of character for population paths
+#' @param labelSize numeric for geom_label size
+#' @param ... passed to .flowRasterBuild
+#' @examples
+#' TODO
+.flowPlotGatedRaster <- function(cciaObj, popPaths = NULL, labelSize = 2, ...) {
+  # go through pops and build gating scheme
+  fgs <- cciaObj$flowGatingSet()
+  
+  # get pop paths
+  if (is.null(popPaths))
+    popPaths <- fgs$popPaths()
+  
+  p1s <- list()
+  for (x in popPaths) {
+    local({
+      xParent <- .flowPopParent(x, root = "root")
+      
+      # get gate
+      xGate <- fgs$popGate(x)
+      xLabel <- names(xGate@parameters)[1]
+      yLabel <- names(xGate@parameters)[2]
+      
+      # get pops
+      popDT <- cciaObj$popDT(
+        "flow", pops = c("root", xParent), popCols = names(xGate@parameters),
+        completeDT = FALSE, uniqueLabels = TRUE)
+      
+      # get range
+      xRange <- range(popDT[, ..xLabel])
+      yRange <- range(popDT[, ..yLabel])
+      
+      # extend range for gate
+      xRange <- c(min(xRange[1], xGate@min[1]), max(xRange[2], xGate@max[1]))
+      yRange <- c(min(yRange[1], xGate@min[2]), max(yRange[2], xGate@max[2]))
+      
+      # build raster
+      r1 <- .flowRasterBuild(popDT[pop == xParent], xLabel, yLabel,
+                             colorMode = "white", layout = "cover",
+                             xRange = xRange, yRange = yRange, ...)
+      
+      # get boundaries
+      # rectangle gate?
+      if (attr(xGate, "class") == "rectangleGate") {
+        # build path
+        gateDT <- as.data.table(list(
+          x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+          y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+        ))
+        setnames(gateDT, "x", xLabel)
+        setnames(gateDT, "y", yLabel)
+      } else {
+        # close path
+        gateDT <- as.data.table(xGate@boundaries)
+        gateDT <- rbind(gateDT, gateDT[1])
+      }
+      
+      # add label
+      # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+      nameDT <- as.data.frame(list(
+        x = mean(gateDT[[xLabel]]),
+        y = max(gateDT[[yLabel]])
+      ))
+      colnames(nameDT) <- c(xLabel, yLabel)
+      nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+      
+      # add percentage
+      popStats <- fgs$getPopStats(x, type = "percent")
+      nameDT$label <- paste(
+        nameDT$label, paste0(
+          sprintf("%0.1f", popStats$percent * 100), "%"))
+      
+      p1 <- ggplot() +
+        theme_classic() +
+        annotation_raster(
+          r1$image,
+          xmin=r1$x_range[1], xmax=r1$x_range[2],
+          ymin=r1$y_range[1], ymax=r1$y_range[2]) +
+        xlim(xRange) + ylim(yRange) +
+        xlab(xLabel) + ylab(yLabel) 
+      
+      p1 <- p1 + geom_polygon(
+        data = gateDT,
+        aes(
+          x = get(xLabel),
+          y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.2) +
+        geom_label(
+          data = nameDT,
+          aes(
+            label = label,
+            x = get(xLabel),
+            y = get(yLabel)),
+          size = labelSize, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+      
+      p1s[[x]] <<- p1
+    })
+  }
+  
+  p1s
 }

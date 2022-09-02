@@ -85,11 +85,11 @@ AnndataUtils <- R6::R6Class(
     
     #' @description Population data.table
     #' @param pops list of character for populations
-    #' @param cols list of character for columns
+    #' @param popCols list of character for columns
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param copyDT boolean to copy data.table
-    popDT = function(pops = NULL, cols = NULL, dropNA = FALSE, dropPop = FALSE, copyDT = TRUE) {
+    popDT = function(pops = NULL, popCols = NULL, dropNA = FALSE, dropPop = FALSE, copyDT = TRUE) {
       # TODO that should not change?
       # no pops will be selected here
       # so, just return the same DT every time
@@ -97,8 +97,8 @@ AnndataUtils <- R6::R6Class(
       DT <- self$getAdataDT()
       
       # filter on cols
-      if (!is.null(cols)) {
-        return(DT[, ..cols])
+      if (!is.null(popCols)) {
+        return(DT[, ..popCols])
       } else {
         if (copyDT == TRUE)
           return(copy(DT))

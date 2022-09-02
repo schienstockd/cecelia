@@ -13,11 +13,8 @@ FlowGatingSet <- R6::R6Class(
   
   ## private
   private = list(
-    gatingSet = NULL,
-    
-    # plotting parameters
-    flowChannels = NULL,
-    flowChannelLimits = NULL,
+    # checks
+    backendOpt = "skip",
     
     #' @description Add rectangle gate
     #' @param gateCoords list of (N,2) gate coordinates
@@ -45,11 +42,17 @@ FlowGatingSet <- R6::R6Class(
       # add names
       names(flist) <- flowWorkspace::sampleNames(self$getPopObj())
       flist
-    }
+    },
     
     ## setters
+    setBackendOpt = function(x) {
+      private$backendOpt <- x
+    },
     
     ## getters
+    getBackendOpt = function() {
+      private$backendOpt
+    }
   ),
   
   ### public
@@ -74,7 +77,7 @@ FlowGatingSet <- R6::R6Class(
     #' @description Gated populations paths
     #' @param includeRoot boolean to include root
     popPaths = function (includeRoot = FALSE, popOrder = 'tsort') {
-      pops <- gs_get_pop_paths(self$getPopObj(), order = popOrder)
+      pops <- flowWorkspace::gs_get_pop_paths(self$getPopObj(), order = popOrder)
       
       if (includeRoot == FALSE) {
         pops <- pops[pops != "root"]
@@ -385,16 +388,19 @@ FlowGatingSet <- R6::R6Class(
     
     #' @description Population data.table
     #' @param pops list of character for populations
-    #' @param cols list of character for columns
+    #' @param popCols list of character for columns
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param copyDT boolean to copy data.table
-    popDT = function(pops = "root", cols = NULL, dropNA = FALSE, dropPop = FALSE) {
+    popDT = function(pops = "root", popCols = NULL, dropNA = FALSE, dropPop = FALSE) {
       popList <- list()
+      
+      # make sure that columns are flow names
+      popCols <- .flowCorrectChannelNames(popCols)
       
       # go through populations and build datatable
       for (x in pops) {
-        popList[[x]] <- .flowFortifyGs(self$getPopObj(), cols = cols, subset = x)
+        popList[[x]] <- .flowFortifyGs(self$getPopObj(), cols = popCols, subset = x)
       }
       
       DT <- data.table::rbindlist(popList, idcol = TRUE)
@@ -423,12 +429,41 @@ FlowGatingSet <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    #' @description change column names
+    #' @param colNames list of character with new column names
+    #' @param invalidate boolean to invalidate object
+    renameColumns = function(colNames, invalidate = TRUE) {
+      # flowWorkspace::colnames(self$getPopObj()) <- colNames
+      # flowWorkspace::colnames(private$popObj) <- colNames
+      
+      oldNames <- colnames(self$getPopObj())
+      newNames <- colNames
+      
+      # add label if not present
+      if (!"label" %in% newNames) {
+        newNames <- c(newNames, "label")
+      }
+      
+      # create mapping
+      channelMap <- data.frame(old = oldNames, new = newNames)
+      
+      # apply mapping
+      private$setPopObj(
+        flowWorkspace::gs_update_channels(self$getPopObj(), channelMap))
+      
+      # make sure data is saved
+      private$setBackendOpt("move")
+      
+      # invalidate
+      private$invalidate(invalidate = invalidate)
+    },
+    
     #' @description Copy from other GatingSet
     #' @param gsFrom FlowGatingSet to copy from
     #' @param removeAll boolean to remove all populations
     #' @param recompute boolean to recompute after
     #' @param invalidate boolean to invalidate object
-    copyGatesFrom = function(gsFrom, removeAll = TRUE, recompute = TRUE,
+    copyGatesFrom = function(gsFrom, removeAll = TRUE, recompute = FALSE,
                              invalidate = TRUE) {
       # remove pops if necessary
       if (removeAll == TRUE && length(self$popPaths()) > 0) {
@@ -454,12 +489,14 @@ FlowGatingSet <- R6::R6Class(
     #' @description Save gating set
     save = function() {
       # remove directory if exists
-      if (dir.exists(self$getPopObjFilepath()))
+      if (dir.exists(self$getPopObjFilepath()) && private$getBackendOpt() == "skip")
         unlink(self$getPopObjFilepath())
       
-      save_gs(self$getPopObj(),
-              self$getPopObjFilepath(),
-              backend_opt = "skip")
+      flowWorkspace::save_gs(
+        self$getPopObj(), self$getPopObjFilepath(), backend_opt = private$getBackendOpt())
+      
+      # reset backend opt to skip
+      private$setBackendOpt("skip")
     },
     
     #' @description Return whether utils are based on label props

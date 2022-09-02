@@ -17,7 +17,12 @@
 				"type:boolean": {
 					"default": false
 				}
-			}
+			},
+			"transformation": {
+        "type:string": {
+          "default": "none"
+        }
+      }
     },
     "outputs": {}
   },
@@ -36,7 +41,27 @@
 				"label": "Apply autospill",
 				"widget:checkbox": {
 				}
-			}
+			},
+			"transformation": {
+        "index": 2,
+        "label": "Transform",
+        "widget:selection": {
+          "items": {
+            "No transformation": "none",
+            "Logicle": "logicle",
+            "Biexponential": "biexponential",
+            "Logarithm": "log",
+            "Natural logarithm": "ln",
+            "linear": "linear",
+            "Quadratic": "quadratic",
+            "scale": "scale",
+            "Split Scale": "splitScale",
+            "Truncate": "truncate"
+          },
+          "size": 1,
+          "multiple": false
+        }
+      }
     },
     "outputs": {}
   }

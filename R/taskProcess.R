@@ -245,8 +245,9 @@ TaskProcess <- R6::R6Class(
     
     #' @description Write to log file
     #' @param msg character for logfile
-    writeLog = function(msg) {
-      # print(msg)
+    writeLog = function(msg, printMsg = TRUE) {
+      if (printMsg == TRUE)
+        print(msg)
       write(msg, file = self$getTaskLogFile(), append = TRUE)
     },
     

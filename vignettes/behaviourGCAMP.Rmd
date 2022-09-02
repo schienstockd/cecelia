@@ -1,0 +1,167 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N044/RESULTS/clustering/skip3/"
+```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "BeddcR", versionID = versionID, initReactivity = FALSE #  GCAMP
+)
+
+# GCAMP
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c(
+  # failed tracking
+  "eSfB5I", "O3IRaQ", "a60Xzu",
+  # did not work
+  "aLtS86", "UR4NMo", "TwslTE",
+  "KIzHom",
+  # no TRITC cells
+  "5rIRkE", "HLCoCr", "34Ow8s",
+  "jAndy6", "RH7IVY",
+  # exclude clustering
+  "e5aJmm", "ALSjh5",
+  # did not work for HMM
+  # "nu0Nmo"
+  # exclude
+  "vbjZ4j"
+)]
+# remove clustering movies
+uIDs <- uIDs[!uIDs %in% c(
+  "mb2ri1", "GtMP6S", "RhxGrZ",
+  "gatECw", "1Q16NA", "Itpddx",
+  "KIzHom", "f5KlXo"
+)]
+```
+
+```{r}
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "tcells.gBT/tracked",
+    "tcells.OTI/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+```{r fig_hmm_state_in_clusters, fig.height=1, fig.width=4}
+# plot scanning v migrating cells for treatments
+stainingCombinations <- stack(sapply(
+  cciaObj$cciaObjects(uIDs = uIDs),
+  function(x) paste(x$imChannelNames(), collapse = ",")
+))
+setnames(stainingCombinations, "values", "staining")
+setnames(stainingCombinations, "ind", "uID")
+
+# get track clusters for tracks with at least >= x GCAMP+
+summaryDF <- popDTs %>%
+# popDTs %>%
+  group_by(uID, pop, live.cell.hmm.state.gcamp, live.cell.track.clusters.skip3) %>%
+  summarise(n.clust = n()) %>%
+  mutate(freq.clust = n.clust/sum(n.clust) * 100) %>%
+  ungroup() %>%
+  complete(
+    uID, pop, live.cell.hmm.state.gcamp, live.cell.track.clusters.skip3,
+    fill = list(freq.clust = 0)
+    ) %>%
+  dplyr::filter(
+    !live.cell.track.clusters.skip3 %in% c("NA", NA),
+    live.cell.hmm.state.gcamp == 3,
+    live.cell.track.clusters.skip3 != 3
+    ) %>%
+  left_join(exp.info) %>%
+  left_join(stainingCombinations)
+
+summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
+summaryDF$stain <- str_extract(
+  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
+  )
+# drop NA stain
+summaryDF <- summaryDF %>% drop_na(stain)
+
+# summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
+
+# summaryDF[summaryDF$Treatment == "Uninfected",]$DTx <- ""
+summaryDF[summaryDF$Treatment == "Uninfected",]$Treatment <- "PBS"
+
+summaryDF$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+
+summaryDF$Stain.ID <- 0
+summaryDF[summaryDF$stain == "OTI-CTV",]$Stain.ID <- 2
+summaryDF[summaryDF$stain == "gBT-CTDR",]$Stain.ID <- 1
+
+# plot
+ggplot(summaryDF,
+       aes(
+         interaction(Treatment, DTx, stain), freq.clust,
+         fill = as.factor(live.cell.track.clusters.skip3)
+         )) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Frequency GCAMP+") + xlab("") +
+  # ylim(0, 1) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 0),
+          file.path(anaDir, "gcamp_behaviour_Mea.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 1),
+          file.path(anaDir, "gcamp_behaviour_Dir.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 2),
+          file.path(anaDir, "gcamp_behaviour_Sca.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(Treatment.DTx == 0),
+          file.path(anaDir, "gcamp_behaviour_Uninf.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(Treatment.DTx == 1),
+          file.path(anaDir, "gcamp_behaviour_PBS.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(Treatment.DTx == 2),
+          file.path(anaDir, "gcamp_behaviour_DTx.csv"))
+```

@@ -811,6 +811,13 @@ firstToupper <- function(x) {
   )
 }
 
+#' @description generate unique ID
+#' @param uIDLength integer for unique ID length
+#' @param numValues integer for single number of character
+genUID <- function(uIDLength, numValues = 1){
+  stringi::stri_rand_strings(numValues, uIDLength)
+}
+
 #' @description Apply filter to population
 # TODO is there a better way to do this?
 #' @param popEntry list of character entry from population map

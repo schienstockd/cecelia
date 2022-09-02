@@ -51,7 +51,8 @@
                 fluidRow(
                   column(
                     6,
-                    sliderInput(ns("numFlowPlots"), "Plots", 2, 10, 2),
+                    sliderInput(ns("numFlowPlots"), "Plots", 2, 10, 
+                                cciaConf()$fcs$gating$plots$num),
                     checkboxInput(ns("useFlowColours"), "Density plot", TRUE),
                     sliderInput(ns("plotlyScreenshotHeight"), "Screenshot size", 100, 1000, 400, 25),
                     sliderInput(ns("markerOpacity"), "Marker Opacity", 0.05, 1, 0.2, 0.05)

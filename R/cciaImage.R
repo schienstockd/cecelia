@@ -48,13 +48,14 @@ CciaImage <- R6::R6Class(
     #' @description Complete population DT
     #' @param popUtils PopulationUtils
     #' @param popUtils PopulationUtils
-    #' @param cols list of character
+    #' @param popCols list of character
     #' @param uniqueLabels boolean to force unique labels
     #' @param includeX boolean to include 'X' from adata
+    #' @param replaceX boolean to replace 'X' with 'X' from adata
     #' @param includeObs boolean to include 'obs' from adata
-    completePopDT = function(popUtils, popDT, cols = NULL,
+    completePopDT = function(popUtils, popDT, popCols = NULL,
                              uniqueLabels = TRUE, includeX = FALSE,
-                             includeObs = TRUE) {
+                             replaceX = FALSE, includeObs = TRUE) {
       # add columns from label properties that are
       # not in the popUtils DT
       if (popUtils$isLabelPropsStore() == FALSE) {
@@ -63,9 +64,20 @@ CciaImage <- R6::R6Class(
           labels <- self$labelProps(valueName = i)
           
           # focus on selected columns
-          if (!is.null(cols)) {
-            labels$view_cols(cols)
+          if (!is.null(popCols)) {
+            labels$view_cols(popCols)
           }
+          
+          # filter on labels to reduce reading
+          if ("value_name" %in% colnames(popDT)) {
+            # TODO not sure how to do this for this case
+          } else {
+            labels$filter_rows(popDT$label)
+          }
+          
+          # set include 'X'
+          if (replaceX == TRUE)
+            includeX <- TRUE
           
           # only complete obs
           # TODO is that OK? - not always
@@ -77,16 +89,24 @@ CciaImage <- R6::R6Class(
           # prepare column names
           # exclude channel names
           labelColumns <- colnames(labelDT)
-          labelColumns <- labelColumns[!labelColumns %in% self$imChannelNames(
-            correctChannelNames = TRUE, includeTypes = TRUE)]
-          
+          if (replaceX == FALSE) {
+            labelColumns <- labelColumns[!labelColumns %in% self$imChannelNames(
+              correctChannelNames = TRUE, includeTypes = TRUE)]
+            iColumns <- labelColumns
+          } else {
+            jColumns <- labelColumns[labelColumns %in% colnames(popDT)]
+            jColumns <- jColumns[jColumns != "label"]
+            iColumns <- labelColumns
+            iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
+          } 
+            
           # merge to population DT
           if ("value_name" %in% colnames(popDT)) {
             popDT[labelDT, on = .(value_name == i, label),
-                  (labelColumns) := mget(labelColumns)]
+                  (labelColumns) := mget(iColumns)]
           } else {
             popDT[labelDT, on = .(label),
-                  (labelColumns) := mget(labelColumns)]
+                  (labelColumns) := mget(iColumns)]
           }
         }
       }
@@ -441,12 +461,12 @@ CciaImage <- R6::R6Class(
         else
           parentPop
         
-        # define cols
-        cols <- c("centroids", "track_id", trackStatsNames)
+        # define popCols
+        popCols <- c("centroids", "track_id", trackStatsNames)
         
         # get population DT
         popDT <- self$popDT("live", pops = pops, includeFiltered = TRUE,
-                            cols = cols, forceReload = forceReload,
+                            popCols = popCols, forceReload = forceReload,
                             flushCache = flushCache)
         
         # normalise DT
@@ -466,7 +486,7 @@ CciaImage <- R6::R6Class(
         if (!is.null(popDT) && nrow(popDT) > 0 && "track_id" %in% colnames(popDT)) {
           # get all track statistics?
           # get types for track stats
-          trackStats <- sapply(trackStatsNames, cciaStatsType)
+          trackStats <- sapply(trackStatsNames, .cciaStatsType)
           names(trackStats) <- trackStatsNames
           
           # get columns for stats
@@ -657,7 +677,7 @@ CciaImage <- R6::R6Class(
         
         # get population
         popDT <- self$popDT(
-          "live", pops = valueName, cols = c(
+          "live", pops = valueName, popCols = c(
             "centroids", "track_id"
           ), dropNA = TRUE, includeFiltered = TRUE)
         
@@ -829,7 +849,7 @@ CciaImage <- R6::R6Class(
         valueNames <- self$valueNames("imLabelPropsFilepath")
       }
       
-      # return cols
+      # return popCols
       propCols <- unique(
         unlist(lapply(
           valueNames,
@@ -1132,7 +1152,7 @@ CciaImage <- R6::R6Class(
     #' TODO this got a bit complicated - can you clean this up?
     #' @param popType character for population type
     #' @param pops list of character for populations
-    #' @param cols list of character for columns to include
+    #' @param popCols list of character for columns to include
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param includeFiltered boolean to include filtered population
@@ -1143,14 +1163,23 @@ CciaImage <- R6::R6Class(
     #' @param completeDT boolean to complete data.table with label props
     #' @param filterMeasures list of character to include filter measures
     #' @param includeX boolean to include 'X' from adata
+    #' @param replaceX boolean to replace 'X' with 'X' from adata
     #' @param variable boolean to include 'obs' from adata
     #' @param ... passed to self$popUtils
-    popDT = function(popType, pops = NULL, cols = NULL,
+    popDT = function(popType, pops = NULL, popCols = NULL,
                      dropNA = FALSE, dropPop = FALSE, includeFiltered = FALSE,
                      forceReload = FALSE, uniqueLabels = TRUE,
                      flushCache = FALSE, replaceNA = FALSE,
                      completeDT = TRUE, filterMeasures = NULL,
-                     includeX = FALSE, includeObs = TRUE, ...) {
+                     includeX = FALSE, replaceX = FALSE, includeObs = TRUE, ...) {
+      # make sure label is in columns
+      if (!is.null(popCols)) {
+        if (!"label" %in% popCols)
+          popCols <- c("label", popCols)
+        if (!"pop" %in% popCols)
+          popCols <- c("pop", popCols)
+      }
+      
       # set value name for versioned variable
       # TODO this will save a DT for specific requested
       # columns, that is a bit of an overhead ..
@@ -1162,10 +1191,10 @@ CciaImage <- R6::R6Class(
         sep = ":"
       )
       
-      if (!is.null(cols)) {
+      if (!is.null(popCols)) {
         versionedVarName <- paste(
           versionedVarName,
-          paste(cols, collapse = "&"),
+          paste(popCols, collapse = "&"),
           sep = ":"
         )
       }
@@ -1230,14 +1259,14 @@ CciaImage <- R6::R6Class(
         
         if (length(nonFilteredPops) > 0) {
           popDT <- popUtils$popDT(
-            pops = nonFilteredPops, cols = cols,
+            pops = nonFilteredPops, popCols = popCols,
             dropNA = dropNA, dropPop = dropPop)
           
           # complete DT
           if (completeDT == TRUE)
             popDT <- private$completePopDT(
-              popUtils, popDT, cols = cols, uniqueLabels = uniqueLabels,
-              includeX = includeX, includeObs = includeObs)
+              popUtils, popDT, popCols = popCols, uniqueLabels = uniqueLabels,
+              includeX = includeX, replaceX = replaceX, includeObs = includeObs)
         }
         
         # build list
@@ -1294,16 +1323,16 @@ CciaImage <- R6::R6Class(
             parentIsFiltered <- x$parent %in% filteredPopPaths
             
             # add filter measure to columns
-            if (!is.null(cols)) {
-              if (!any(x[[filterMeasureName]] %in% cols)) {
-                cols <- c(cols, x[[filterMeasureName]][!x[[filterMeasureName]] %in% cols])
+            if (!is.null(popCols)) {
+              if (!any(x[[filterMeasureName]] %in% popCols)) {
+                popCols <- c(popCols, x[[filterMeasureName]][!x[[filterMeasureName]] %in% popCols])
               }
             }
             
             # get population DT
             if (parentIsFiltered == TRUE) {
               filteredPopDT <- self$popDT(
-                popType, x$parent, cols = cols,
+                popType, x$parent, popCols = popCols,
                 dropNA = dropNA, dropPop = dropPop,
                 completeDT = completeDT, replaceNA = replaceNA,
                 includeFiltered = TRUE)
@@ -1312,14 +1341,14 @@ CciaImage <- R6::R6Class(
               filteredPopUtils <- self$popUtils(popType)
               
               filteredPopDT <- filteredPopUtils$popDT(
-                x$parent, cols = cols, dropNA = dropNA, dropPop = dropPop)
+                x$parent, popCols = popCols, dropNA = dropNA, dropPop = dropPop)
               
               # complete DT
               if (completeDT == TRUE)
                 filteredPopDT <- private$completePopDT(
-                  filteredPopUtils, filteredPopDT, cols = cols,
+                  filteredPopUtils, filteredPopDT, popCols = popCols,
                   uniqueLabels = uniqueLabels,
-                  includeX = includeX, includeObs = includeObs)
+                  includeX = includeX, replaceX = replaceX, includeObs = includeObs)
             }
             
             # is the filter value present?
@@ -1433,7 +1462,7 @@ CciaImage <- R6::R6Class(
             # merge names to non-filtered pops
             # https://stackoverflow.com/a/33954334/13766165
             if (!is.null(popDT)) {
-              # make sure cols are in DT
+              # make sure popCols are in DT
               mergeCols <- c("value_name", "label")
               mergeCols <- mergeCols[mergeCols %in% names(popDT)]
               mergeColsFiltered <-  c(mergeCols, "pop")
@@ -1503,13 +1532,14 @@ CciaImage <- R6::R6Class(
       }
       
       # TODO to get a population - get only one column for faster retrieval
-      cols <- c(self$imChannelNames()[1], "label")
+      popCols <- c(self$imChannelNames()[1], "label")
       
       # get population DT
-      popDT <- self$popDT(popType = popType, pops = pops, cols = cols,
+      popDT <- self$popDT(popType = popType, pops = pops, popCols = popCols,
                           includeFiltered = includeFiltered,
                           uniqueLabels = FALSE, flushCache = flushCache,
-                          completeDT = completeDT)
+                          # completeDT = completeDT)
+                          completeDT = includeFiltered)
       
       if (!is.null(popDT)) {
         # add pop column if not present
@@ -1681,7 +1711,7 @@ CciaImage <- R6::R6Class(
       if (is.null(spatialGraph) || forceReload == TRUE) {
         spatialDT <- self$spatialDT(valueName = valueName, ...)
         popDT <- self$popDT(popType,
-                            # cols = c("label", "pop"),
+                            # popCols = c("label", "pop"),
                             includeFiltered = TRUE)
         setnames(popDT, "label", "name")
         
@@ -2503,7 +2533,8 @@ CciaImage <- R6::R6Class(
     
     setImChannelNames = function(x, valueName = NULL, setDefault = TRUE,
                                  invalidate = TRUE, reset = FALSE,
-                                 addNames = TRUE, checkLength = TRUE) {
+                                 addNames = TRUE, checkLength = TRUE,
+                                 updateFlowGatingSet = FALSE) {
       objMeta <- self$getCciaMeta()
       
       lengthOk <- TRUE
@@ -2524,6 +2555,15 @@ CciaImage <- R6::R6Class(
           setDefault = setDefault, reset = reset)
         
         self$setCciaMeta(objMeta, invalidate = invalidate)
+        
+        # update flow gating set
+        if (updateFlowGatingSet == TRUE) {
+          fgs <- self$flowGatingSet()
+          
+          if (!is.null(fgs)) {
+            fgs$renameColumns(unname(x))
+          }
+        }
       }
     },
     

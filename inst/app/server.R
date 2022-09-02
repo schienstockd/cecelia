@@ -314,19 +314,19 @@ server <- function(input, output, session) {
   onRestore(function(state) {
     # check whether the versions are the same
     # otherwise it might not work
-    if (state$values$CCIAVERSION != CCIAVERSION){
-      showNotification(sprintf(
-        "Version mismatch (%s - %s)",
-        state$values$CCIAVERSION, CCIAVERSION))
-    } else {
-      # load managers
-      globalManagers$projectManager <<- loadManagerValuesFromState(
-        state, globalManagers$projectManager, "project")
-      globalManagers$dataManager <<- loadManagerValuesFromState(
-        state, globalManagers$dataManager, "data")
-      globalManagers$viewerManager <<- loadManagerValuesFromState(
-        state, globalManagers$viewerManager, "viewer")
-    }
+    # if (state$values$CCIAVERSION != CCIAVERSION){
+    #   showNotification(sprintf(
+    #     "Version mismatch (%s - %s)",
+    #     state$values$CCIAVERSION, CCIAVERSION))
+    # } else {
+    # load managers
+    globalManagers$projectManager <<- loadManagerValuesFromState(
+      state, globalManagers$projectManager, "project")
+    globalManagers$dataManager <<- loadManagerValuesFromState(
+      state, globalManagers$dataManager, "data")
+    globalManagers$viewerManager <<- loadManagerValuesFromState(
+      state, globalManagers$viewerManager, "viewer")
+    # }
   })
   
   # after restored has happened

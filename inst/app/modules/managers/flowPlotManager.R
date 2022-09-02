@@ -174,6 +174,9 @@ createFlowPlotManager <- function(
       # add populations
       for (pop in popsPrep) {
         # make sure x and y are in DT
+        x <- .flowCorrectChannelNames(x)
+        y <- .flowCorrectChannelNames(y)
+        
         xOK <- x %in% colnames(pop$dt)
         yOK <- y %in% colnames(pop$dt)
 
@@ -217,7 +220,7 @@ createFlowPlotManager <- function(
     # get root for channels
     flowDT <- cciaObj()$popDT(
       popType(), pops = c("root"), includeFiltered = FALSE,
-      completeDT = FALSE, cols = c(flowX, flowY))
+      completeDT = FALSE, popCols = c(flowX, flowY))
       
     # get channel limits
     # channelLimits <- cciaObj()$popUtils(popType())$getImChannelLimits()
@@ -480,53 +483,55 @@ createFlowPlotManager <- function(
     # TODO you should only get the channels that you need
     DT <- cciaObj()$popDT(
       popType(), pops = popsToPlot, includeFiltered = TRUE,
-      completeDT = FALSE, cols = c(
-        flowGatingPlot()$getPlotXchannel(),
-        flowGatingPlot()$getPlotYchannel()
+      completeDT = FALSE, popCols = c(
+        .flowCorrectChannelNames(flowGatingPlot()$getPlotXchannel()),
+        .flowCorrectChannelNames(flowGatingPlot()$getPlotYchannel())
       ))
-
-    # go through pops and create list of datatable and colours
-    for (x in names(popsToPlot)) {
-      pops[[x]] <- list()
-      popInfo <- popsInfo[[x]]
-
-      # filter on population in DT
-      if (.flowPopIsRoot(x)) {
-        popDT <- DT[]
-      } else {
-        # is the population defined?
-        if (is.null(popInfo)) {
-          popDT <- DT[pop == x,]
+    
+    if (!is.null(DT)) {
+      # go through pops and create list of datatable and colours
+      for (x in names(popsToPlot)) {
+        pops[[x]] <- list()
+        popInfo <- popsInfo[[x]]
+  
+        # filter on population in DT
+        if (.flowPopIsRoot(x)) {
+          popDT <- DT[]
         } else {
-          popDT <- DT[pop == popInfo$path,]
-        }
-      }
-
-      # filter cells from selection on plot?
-      if (length(flowGatingPlot()$getPlotFilterLabels()) > 0) {
-        popDT <- popDT[label %in% flowGatingPlot()$getPlotFilterLabels()]
-      }
-
-      # highlight cells?
-      colours <- flowGatingPlotHighlightCells(popDT)
-
-      # are there highlighted cells?
-      if (is.null(colours$colours)) {
-        # are there any leaves selected?
-        if (length(flowGatingPlot()$getPlotPopLeaves()) > 0) {
-          # if (cciaObj()$popUtils(popType())$popIsRoot(x)) {
-          if (any(x %in% names(greyPops))) {
-            colours$colours <- cciaConf()$fcs$gating$default$colour
+          # is the population defined?
+          if (is.null(popInfo)) {
+            popDT <- DT[pop == x,]
           } else {
-            # get colour for current population
-            colours$colours <- popInfo$colour
+            popDT <- DT[pop == popInfo$path,]
           }
         }
+  
+        # filter cells from selection on plot?
+        if (length(flowGatingPlot()$getPlotFilterLabels()) > 0) {
+          popDT <- popDT[label %in% flowGatingPlot()$getPlotFilterLabels()]
+        }
+  
+        # highlight cells?
+        colours <- flowGatingPlotHighlightCells(popDT)
+  
+        # are there highlighted cells?
+        if (is.null(colours$colours)) {
+          # are there any leaves selected?
+          if (length(flowGatingPlot()$getPlotPopLeaves()) > 0) {
+            # if (cciaObj()$popUtils(popType())$popIsRoot(x)) {
+            if (any(x %in% names(greyPops))) {
+              colours$colours <- cciaConf()$fcs$gating$default$colour
+            } else {
+              # get colour for current population
+              colours$colours <- popInfo$colour
+            }
+          }
+        }
+  
+        # save in list
+        pops[[x]]$dt <- popDT
+        pops[[x]]$colours <- colours
       }
-
-      # save in list
-      pops[[x]]$dt <- popDT
-      pops[[x]]$colours <- colours
     }
 
     pops
@@ -614,7 +619,7 @@ createFlowPlotManager <- function(
   # number of shown plots
   numFlowPlots <- reactive({
     managerConf$flowPlot$numFlowPlots()
-  })
+  }) %>% debounce(cciaConf()$fcs$gating$plots$poll)
 
   # use flow colours?
   flowUseFlowColours <- reactive({

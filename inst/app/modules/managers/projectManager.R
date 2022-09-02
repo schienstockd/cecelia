@@ -974,7 +974,7 @@ ProjectManager <- R6::R6Class(
     },
     
     # update settings
-    updateStateID = function(){
+    updateStateID = function() {
       # get state ID
       dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
       

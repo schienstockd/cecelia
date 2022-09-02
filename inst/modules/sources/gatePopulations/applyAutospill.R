@@ -75,8 +75,6 @@ ApplyAutospill <- R6::R6Class(
         # adapted from
         # https://github.com/carlosproca/autospill/blob/master/inst/batch/calculate_compensation_website.r
         
-        Sys.setenv("OBJC_DISABLE_INITIALIZE_FORK_SAFETY" = "YES")
-        
         # set parameters
         asp <- autospill::get.autospill.param("website")
         # adjust to system cores
@@ -131,7 +129,37 @@ ApplyAutospill <- R6::R6Class(
 
         # gate events before calculating spillover
         self$writeLog(">> Gate events")
-        flow.gate <- autospill::gate.flow.data(flow.control, asp)
+        
+        # TODO doesn't work
+        # Sys.setenv(OBJC_DISABLE_INITIALIZE_FORK_SAFETY = "TRUE")
+        Sys.setenv(OBJC_DISABLE_INITIALIZE_FORK_SAFETY = "YES")
+        
+        # too many errors related to OBJC_DISABLE_INITIALIZE_FORK_SAFETY
+        # do the same here - maybe that makes a difference ...
+        # flow.gate <- autospill::gate.flow.data(flow.control, asp)
+        # flow.gate <- parallel::mclapply(flow.control$sample, function(samp)
+        #   autospill:::do.gate(
+        #     flow.control$expr.data.untr[flow.control$event.sample == samp,
+        #                                  flow.control$scatter.parameter],
+        #     flow.control$gate.parameter[[flow.control$marker.original[
+        #       match(samp, flow.control$marker)]]],
+        #     samp, flow.control, asp
+        #   ),
+        #   mc.cores = autospill:::get.worker.process(asp$worker.process.n)
+        # )
+        flow.gate <- lapply(flow.control$sample, function(samp) {
+          self$writeLog(paste(">", samp))
+          
+          autospill:::do.gate(
+            flow.control$expr.data.untr[flow.control$event.sample == samp,
+                                        flow.control$scatter.parameter],
+            flow.control$gate.parameter[[flow.control$marker.original[
+              match(samp, flow.control$marker)]]],
+            samp, flow.control, asp
+          )
+        })
+        
+        names(flow.gate) <- flow.control$sample
         
         # create a gating set with one gate from the convex hull
         # ie/ you can plot the compensation afterwards
@@ -157,7 +185,7 @@ ApplyAutospill <- R6::R6Class(
       cciaObj$setFlowAutospillPath(valueName, valueName = valueName)
 
       # save object
-      cciaObj$saveState()
+      cciaObj$saveState(includeChildren = FALSE)
       
       # DONE
       self$writeLog("Done")

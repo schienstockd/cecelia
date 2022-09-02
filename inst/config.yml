@@ -95,6 +95,9 @@ default:
       - "fill"
       - "asymmetry"
     gating:
+      plots:
+        num: 2
+        poll: 500
       highlight:
         colour: "magenta"
       default:

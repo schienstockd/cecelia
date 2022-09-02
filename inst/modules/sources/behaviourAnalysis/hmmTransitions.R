@@ -45,7 +45,7 @@ HmmTransitions <- R6::R6Class(
       tracks.DT <- cciaObj$popDT(
         popType = self$funParams()$popType,
         pops = self$funParams()$pops,
-        cols = c("cell_id", hmmCols),
+        popCols = c("cell_id", hmmCols),
         includeFiltered = TRUE,
         colsToNormalise = cciaConf()$parameters$shapeDescriptors,
         uIDs = uIDs

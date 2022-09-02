@@ -171,7 +171,8 @@
         if (input$selectAttribute %in% moduleManagers()$imageSetManager$selectedSet()$cciaObjectsChannelNames()) {
           moduleManagers()$imageSetManager$selectedSet()$editChannelNamesForCciaObjects(
             input$selectAttribute, attrVals, cciaObjects,
-            checkLength = globalManagers$projectManager()$getProjectType() != "flow"
+            checkLength = globalManagers$projectManager()$getProjectType() != "flow",
+            updateFlowGatingSet = globalManagers$projectManager()$getProjectType() == "flow"
             )
         }
       })
@@ -186,7 +187,10 @@
         # set channel names for selected images
         for (x in moduleManagers()$imageSetManager$selectedSet()$cciaObjectsByUIDs(setUIDs())) {
           x()$setImChannelNames(
-            channelNames, checkLength = globalManagers$projectManager()$getProjectType() != "flow")
+            channelNames,
+            checkLength = globalManagers$projectManager()$getProjectType() != "flow",
+            updateFlowGatingSet = globalManagers$projectManager()$getProjectType() == "flow"
+            )
         }
       })
       
@@ -235,7 +239,8 @@
             
             moduleManagers()$imageSetManager$selectedSet()$editChannelNamesForCciaObjects(
               curName, chnVals, cciaObjects,
-              checkLength = globalManagers$projectManager()$getProjectType() != "flow"
+              checkLength = globalManagers$projectManager()$getProjectType() != "flow",
+              updateFlowGatingSet = globalManagers$projectManager()$getProjectType() == "flow"
               )
           }
         }

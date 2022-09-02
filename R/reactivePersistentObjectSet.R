@@ -133,9 +133,11 @@ ReactivePersistentObjectSet <- R6::R6Class(
     
     #' @description Remove objects
     #' @param cciaObjects list of ReactivePersistentObject
+    #' @param removeContent boolean to remove object content
     #' @param invalidate boolean to invalidate object
     #' @param ... ReactivePersistentObject$deleteObjectDirectory
-    removeCciaObjects = function(cciaObjects = NULL, invalidate = TRUE, ...) {
+    removeCciaObjects = function(cciaObjects = NULL, removeContent = TRUE,
+                                 invalidate = TRUE, ...) {
       if (is.null(cciaObjects)) {
         cciaObjects <- self$cciaObjects()
       }
@@ -147,7 +149,7 @@ ReactivePersistentObjectSet <- R6::R6Class(
       newObjects <- newObjects[!(names(newObjects) %in% objectsToRemove)]
       
       # remove content
-      if (length(objectsToRemove) > 0) {
+      if (removeContent == TRUE && length(objectsToRemove) > 0) {
         for (curObj in self$cciaObjectsByUIDs(objectsToRemove)) {
           if (private$initReactivity() == TRUE)
             curObj()$deleteObjectDirectory(...)

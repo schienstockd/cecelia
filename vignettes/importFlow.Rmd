@@ -1,4 +1,4 @@
----
+--
 title: "Run modules"
 output: html_document
 date: '2022-08-16'
@@ -26,12 +26,17 @@ cciaUse("~/Desktop/DOHERTY/cecelia")
 ```{r}
 # calculate compensation matric
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "9kkowS", versionID = versionID, initReactivity = FALSE # DTx A
+  pID = pID, uID = "cIbJpd", versionID = versionID, initReactivity = FALSE # DTx B
 )
+
+# cciaObj$setFlowAutospillPath("default", valueName = "default")
+# cciaObj$saveState()
 
 cciaObj$runTask(
   funName = "gatePopulations.applyAutospill",
@@ -44,7 +49,8 @@ cciaObj$runTask(
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/CCIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N036/ANALYSIS/CECELIA"
 ```
 
 ```{r}
@@ -55,7 +61,9 @@ library(ggplot2)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "9kkowS", versionID = versionID, initReactivity = FALSE # DTx A
+  # pID = pID, uID = "cIbJpd", versionID = versionID, initReactivity = FALSE # DTx B
 )
 
 # get channels
@@ -178,23 +186,26 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "x63VLr", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "CgXjkH", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE
 )
-
-paste(cciaObj$imChannelNames(), collapse = "','")
 
 funParams <- list(
-  fileAutospillComp = "/Volumes/USER_data/Dominik/Experiments/DS_N033/ANALYSIS/20201121/autospill_spillover.csv",
-  applyAutospillComp = TRUE
+  autospillSetID = "9kkowS",
+  applyAutospillComp = TRUE,
+  transformation = "logicle"
 )
 
-cciaObj$runTask(
+uIDs <- names(cciaObj$cciaObjects())
+
+cciaObj$runTasks(
   funName = "importFlow.fcsRaw",
   funParams = funParams,
-  runInplace = TRUE
+  runInplace = TRUE,
+  uIDs = uIDs
 )
 ```
-
 
 ```{r}
 devtools::load_all("../")
@@ -202,25 +213,23 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "x63VLr", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "CgXjkH", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "rge3Ge", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$runTask(
-  funName = "gatePopulations.createGatingSet",
-  funParams = list(
-    compensateZ = FALSE,
-    applyReversedLog = FALSE,
-    transformation = "logicle",
-    transChannels = c(
-      'FITC-A','PE (561)-A','PerCP-Cy5-5-A',
-      'APC-A','AF700-A','APC-Cy7-A','V450-A',
-      'Qdot 800-A','Qdot 705-A','Qdot 525-A',
-      'Qdot 605-A','PE-Cy7-A'
-    )
-  ),
-  runInplace = TRUE
-)
+fgs <- cciaObj$flowGatingSet()
+gs <- fgs$getPopObj()
+cf <- flowWorkspace::gs_get_cytoframe(gs, cciaObj$getUID())
+
+flowWorkspace::cf_append_cols()
+
+# cciaObj$popDT("flow", completeDT = FALSE)
+# cciaObj$popDT("flow", completeDT = FALSE,
+#               pops = c("root"), popCols = c("CD45.1.BV785", "Va2.AF700"))
 ```
+
+
 
 ```{r}
 devtools::load_all("../")
@@ -248,7 +257,7 @@ for (x in fgs$popPaths()) {
     
     # get pops
     popDT <- cciaObj$popDT(
-      "flow", pops = c("root", xParent), cols = names(xGate@parameters),
+      "flow", pops = c("root", xParent), popCols = names(xGate@parameters),
       completeDT = FALSE, uniqueLabels = TRUE)
     
     # get range
@@ -357,7 +366,7 @@ for (x in fgs$popPaths()) {
     # get pops
     popDT <- cciaObj$popDT(
       "flow", pops = xPops,
-      cols = names(xGate@parameters),
+      popCols = names(xGate@parameters),
       completeDT = FALSE, uniqueLabels = TRUE)
     
     # get range
@@ -475,7 +484,7 @@ for (x in fgs$popPaths()) {
     
     # get pops
     popDT <- cciaObj$popDT(
-      "flow", pops = xPops, cols = names(xGate@parameters),
+      "flow", pops = xPops, popCols = names(xGate@parameters),
       completeDT = FALSE, uniqueLabels = TRUE)
     
     # get range
@@ -609,7 +618,7 @@ for (x in fgs$popPaths()) {
     
     # get pops
     popDT <- cciaObj$popDT(
-      "flow", pops = c("root", xParent), cols = names(xGate@parameters),
+      "flow", pops = c("root", xParent), popCols = names(xGate@parameters),
       completeDT = FALSE, uniqueLabels = TRUE)
     
     # get range
@@ -736,24 +745,27 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "etxWEx", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE
 )
 
 imChannels <- cciaObj$cciaObjects()[[1]]$imChannelNames()
 clusterChannels <- c(
-  'TEAL.FITC','CD71.PE','CD25.APC','CD98.PE.Cy7','CTV'
+  # 'TEAL.FITC','CD71.PE','CD25.APC','CD98.PE.Cy7','CTV'
+  'CD45.1.BV785','Va2.AF700','CD8a.BV711','CD3e.PerCP.Cy5.5'
 )
 
 cciaObj$runTask(
   funName = "clustPopulations.leidenClustering",
   funParams = list(
     valueName = "default",
-    popsToCluster = c("/Lymph/Singlets/Live/T/Va2+"),
+    # popsToCluster = c("/Lymph/Singlets/Live/T/Va2+"),
+    popsToCluster = c("/Lymph/Singlets/Live"),
     popType = "flow",
     # savePops = TRUE,
+    includeFiltered = FALSE,
     savePops = FALSE,
     keepPops = FALSE,
-    resolution = 0.4,
+    resolution = 0.1,
     normaliseAxis = "channels",
     normaliseToMedian = FALSE,
     maxFraction = 0,
@@ -777,12 +789,10 @@ cciaObj$runTask(
 # show treatments on UMAP
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "etxWEx", versionID = versionID, initReactivity = FALSE
 )
-
 popDT <- cciaObj$popDT(
   popType = "clust",
   uIDs = names(cciaObj$cciaObjects()),
@@ -791,7 +801,6 @@ popDT <- cciaObj$popDT(
   # only focus on clustered values
   filterMeasures = c("clusters")
 )
-
 exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 ```
 
@@ -800,7 +809,6 @@ datToPlot <- copy(popDT) %>% left_join(exp.info) %>%
   group_by(Treatment, uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n))
-
 ggplot(
   datToPlot, aes(Treatment, freq, fill = pop)) +
   theme_classic() +
@@ -809,7 +817,6 @@ ggplot(
     position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
     # width = 0.4, alpha = 1.0) +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
 ggsave(file.path(anaDir, "pop_freq.pdf"), width = 3, height = 2)
 ```
 
@@ -817,7 +824,6 @@ ggsave(file.path(anaDir, "pop_freq.pdf"), width = 3, height = 2)
 ```{r fig_umap, fig.height=3, fig.width=6}
 # plot UMAP with paga connections
 datToPlot <- copy(popDT) %>% left_join(exp.info)
-
 p1 <- ggplot(
   datToPlot,
   aes(UMAP_1, UMAP_2)) +
@@ -828,7 +834,6 @@ p1 <- ggplot(
     contour_var = "ndensity", bins = 12,
     colour = "yellow") +
   facet_grid(.~Treatment)
-
 p1 + plotThemeDark(angle = 0, fontSize = 15) +
   theme(
     axis.text = element_text(size = 15),
@@ -843,8 +848,5 @@ p1 + plotThemeDark(angle = 0, fontSize = 15) +
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
     )
-
 ggsave(file.path(anaDir, "umap_treatment.pdf"), width = 6, height = 3)
 ```
-
-

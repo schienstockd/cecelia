@@ -228,7 +228,7 @@ createPopulationManager <- function(
   filteredPopMeasureTypes <- reactive({
     req(filteredPopMeasures())
     
-    lapply(filteredPopMeasures(), cciaStatsType)
+    lapply(filteredPopMeasures(), .cciaStatsType)
   })
   
   # filter funs

@@ -52,11 +52,11 @@ MultifileLabelPopUtils <- R6::R6Class(
     
     #' @description Population data.table
     #' @param pops list of character for populations
-    #' @param cols list of character for columns
+    #' @param popCols list of character for columns
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param copyDT boolean to copy data.table
-    popDT = function(pops = NULL, cols = NULL, dropNA = FALSE, dropPop = FALSE) {
+    popDT = function(pops = NULL, popCols = NULL, dropNA = FALSE, dropPop = FALSE) {
       # set names if not provided or 'root' is given
       if (is.null(pops) || .flowPopIsRoot(pops)) {
         pops <- names(self$getPopObj())
@@ -71,22 +71,22 @@ MultifileLabelPopUtils <- R6::R6Class(
         
         if (!is.null(labelsView)) {
           # filter on columns?
-          if (!is.null(cols)) {
+          if (!is.null(popCols)) {
             # always add label
-            cols <- c("label", cols)
+            popCols <- c("label", popCols)
             
             # centroids
-            if ("centroids" %in% cols) {
-              cols <- cols[cols != "centroids"]
-              cols <- c(
+            if ("centroids" %in% popCols) {
+              popCols <- popCols[popCols != "centroids"]
+              popCols <- c(
                 labelsView$centroid_columns(),
-                cols
+                popCols
                 )
             }
             
-            # show cols
-            if (length(cols) > 0) {
-              labelsView$view_cols(cols)
+            # show popCols
+            if (length(popCols) > 0) {
+              labelsView$view_cols(popCols)
             }
           }
           

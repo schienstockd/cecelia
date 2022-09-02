@@ -681,7 +681,7 @@
       # number of plots
       numFlowPlots <- reactive({
         input$numFlowPlots
-      })
+      }) %>% debounce(cciaConf()$fcs$gating$plots$poll)
       
       # generate dataframe from selected image list
       imageData <- reactive({

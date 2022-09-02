@@ -76,6 +76,7 @@ CciaImageSet <- R6::R6Class(
     #' @param toUIDs character for unique ID to
     #' @param invalidate boolean to invalidate object
     #' @param saveState boolean to save state
+    #' @param ... passed to FlowGatingSet$copyGatesFrom
     propagateFlowGating = function(fromUID, toUIDs = NULL, invalidate = FALSE,
                                    saveState = FALSE, ...) {
       # get reference object
@@ -100,13 +101,13 @@ CciaImageSet <- R6::R6Class(
       for (x in self$cciaObjects(uIDs = toUIDs)) {
         if (private$isReactive() == TRUE) {
           x()$flowGatingSet()$copyGatesFrom(
-            gsFrom, removeAll = TRUE, invalidate = invalidate, ...)
+            gsFrom, invalidate = invalidate, ...)
           
           if (saveState == TRUE)
             x()$saveState(saveData = FALSE)
         } else {
           x$flowGatingSet()$copyGatesFrom(
-            gsFrom, removeAll = TRUE, invalidate = invalidate, ...)
+            gsFrom, invalidate = invalidate, ...)
           
           if (saveState == TRUE)
             x$saveState(saveData = FALSE)
@@ -251,12 +252,14 @@ CciaImageSet <- R6::R6Class(
           }
         )
       } else {
-        popDTs <- lapply(
+        # popDTs <- lapply(
+        popDTs <- parallel::mclapply(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
             message(sprintf("[popDT] >> %s", x$getUID()))
             x$popDT(...)
-          }
+          # }, mc.cores = parallel::detectCores()
+          }, mc.cores = 3
         )
       }
       

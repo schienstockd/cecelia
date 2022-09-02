@@ -42,7 +42,7 @@ HmmStates <- R6::R6Class(
       tracks.DT <- cciaObj$popDT(
         popType = self$funParams()$popType,
         pops = self$funParams()$pops,
-        cols = c("cell_id", self$funParams()$modelMeasurements),
+        popCols = c("cell_id", self$funParams()$modelMeasurements),
         includeFiltered = TRUE,
         colsToNormalise = cciaConf()$parameters$shapeDescriptors,
         uIDs = uIDs

@@ -1,0 +1,549 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "Yl5tkH"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N036/ANALYSIS/CECELIA"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# combine DTx samples
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaA <- initCciaObject(
+  pID = pID, uID = "x63VLr", versionID = versionID, initReactivity = FALSE # DTx A
+)
+cciaB <- initCciaObject(
+  pID = pID, uID = "qQ7hTL", versionID = versionID, initReactivity = FALSE # DTx B
+)
+cciaC <- initCciaObject(
+  pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE # DTx C
+)
+
+cciaC$removeCciaObjects(cciaC$cciaObjects(), removeContent = FALSE)
+cciaC$addCciaObjects(append(cciaA$cciaObjects(), cciaB$cciaObjects()))
+cciaC$saveState()
+```
+
+```{r}
+# get population DT to compare CTV-
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE
+)
+
+# actChannels <- c('CD69.BV605','XCL1.TEAL','CD71.PE','CD25.APC','CD98.PE.Cy7')
+actChannels <- c('CD71.PE','CD25.APC','CD98.PE.Cy7')
+
+popDT <- cciaObj$popDT(
+  popType = "clust", popCols = actChannels,
+  completeDT = TRUE, replaceX = TRUE, includeFiltered = TRUE)
+exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
+```
+
+```{r fig_act, fig.height=1.5, fig.width=5}
+datToPlot <- popDT %>%
+  dplyr::filter(pop == "CTV-") %>%
+  group_by(uID) %>%
+  summarise(
+    # mean.CD69.BV605 = mean(CD69.BV605),
+    # mean.XCL1.TEAL = mean(XCL1.TEAL),
+    mean.CD71.PE = mean(CD71.PE),
+    mean.CD25.APC = mean(CD25.APC),
+    mean.CD98.PE.Cy7 = mean(CD98.PE.Cy7)
+  ) %>%
+  tidyr::pivot_longer(
+    cols = paste("mean", actChannels, sep = "."),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(Treatment, value)) +
+    theme_classic() +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_jitter(
+      # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+      width = 0.3, alpha = 1.0) +
+    scale_color_brewer(name = "To", palette = "Set1") +
+  facet_grid(.~measure) +
+  xlab("") + ylab("MFI (AU)") +
+  expand_limits(y = 0)
+
+datToPlot$Treatment.ID <- 0
+datToPlot[datToPlot$Treatment == "DTx",]$Treatment.ID <- 1
+
+datToPlot$measure.ID <- 0
+counter <- 0
+for (x in unique(datToPlot$measure)) {
+  datToPlot[datToPlot$measure == x, ]$measure.ID <- counter
+  counter <- counter + 1
+}
+
+write.csv(datToPlot, file.path(anaDir, "freq_measures.csv"))
+```
+
+
+```{r}
+# calculate compensation matric
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "rcjHiw", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "9kkowS", versionID = versionID, initReactivity = FALSE # DTx A
+  pID = pID, uID = "cIbJpd", versionID = versionID, initReactivity = FALSE # DTx B
+)
+
+cciaObj$setFlowAutospillPath("default", valueName = "default")
+cciaObj$saveState()
+
+# cciaObj$runTask(
+#   funName = "gatePopulations.applyAutospill",
+#   funParams = list(
+#     uIDs = names(cciaObj$cciaObjects()[1:2])
+#   ),
+#   runInplace = TRUE,
+#   taskID = 1
+# )
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "CgXjkH", versionID = versionID, initReactivity = FALSE
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+p1s <- list()
+for (x in fgs$popLeaves("/Lymph/Singlets/Live")) {
+  local({
+    xParent <- .flowPopParent(x, root = "root")
+  
+    # get gate
+    xGate <- fgs$popGate(x)
+    xLabel <- names(xGate@parameters)[1]
+    yLabel <- names(xGate@parameters)[2]
+    
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = c("root", xParent), popCols = names(xGate@parameters),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # build raster
+    rasterContours <- .flowRasterContour(
+      popDT[pop == xParent], xLabel, yLabel, xRange = xRange, yRange = yRange)
+
+    # get boundaries
+    # rectangle gate?
+    if (attr(xGate, "class") == "rectangleGate") {
+      # build path
+      gateDT <- as.data.table(list(
+        x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+        y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+      ))
+      setnames(gateDT, "x", xLabel)
+      setnames(gateDT, "y", yLabel)
+    } else {
+      # close path
+      gateDT <- as.data.table(xGate@boundaries)
+      gateDT <- rbind(gateDT, gateDT[1])
+    }
+    
+    # add label
+    # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+    nameDT <- as.data.frame(list(
+      x = mean(gateDT[[xLabel]]),
+      y = max(gateDT[[yLabel]])
+    ))
+    colnames(nameDT) <- c(xLabel, yLabel)
+    nameDT$label <- .flowTrimPath(x, pathLevels = 0)
+    
+    # add percentage
+    popStats <- fgs$getPopStats(x, type = "percent")
+    nameDT$label <- paste(
+      nameDT$label, paste0(
+        sprintf("%0.1f", popStats$percent * 100), "%"))
+    
+    # plot out
+    p1 <- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        rasterContours$raster$image,
+        xmin=rasterContours$raster$x_range[1],
+        xmax=rasterContours$raster$x_range[2],
+        ymin=rasterContours$raster$y_range[1],
+        ymax=rasterContours$raster$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) +
+      geom_polygon(
+        data = rasterContours$contours,
+        aes(x = y, y = x, group = as.factor(seq)),
+        size = 0.2, color = "black", fill = "white")
+    
+    p1 <- p1 + geom_polygon(
+      data = gateDT,
+      aes(
+        x = get(xLabel),
+        y = get(yLabel)
+        ), size = 0.5, color = "black", fill = "#23aeff", alpha = 0.2) +
+      geom_label(
+        data = nameDT,
+        aes(
+          label = label,
+          x = get(xLabel),
+          y = get(yLabel)),
+        nudge_y = 1,
+        size = 4, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+        )
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 1)
+ggsave(file.path(anaDir, "gating_contours.pdf"), width = 5, height = 2.5)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "bVw2WJ", versionID = versionID, initReactivity = FALSE # DTx
+  # pID = pID, uID = "CgXjkH", versionID = versionID, initReactivity = FALSE # PBS
+  # pID = pID, uID = "GUnG5n", versionID = versionID, initReactivity = FALSE # PBS
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+xLabel <- "CTV"
+yLabel <- "CD69.BV605"
+
+p1s <- list()
+for (x in c("/Lymph/Singlets/Live/Va2+/T")) {
+  local({
+    # get pops
+    popDT <- cciaObj$popDT(
+      "flow", pops = c("root", x), popCols = c(xLabel, yLabel),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # get range
+    xRange <- range(popDT[, ..xLabel])
+    yRange <- range(popDT[, ..yLabel])
+    
+    # build raster
+    r1 <- .flowRasterBuild(popDT[pop == x], xLabel, yLabel,
+                           colorMode = "white", layout = "cover",
+                           color = "black", xRange = xRange, yRange = yRange,
+                           size = 0.5)
+    
+    # plot out
+    p1 <- ggplot() +
+      theme_classic() +
+      annotation_raster(
+        r1$image,
+        xmin=r1$x_range[1],
+        xmax=r1$x_range[2],
+        ymin=r1$y_range[1],
+        ymax=r1$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xLabel) + ylab(yLabel) 
+    
+    p1s[[x]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 1)
+
+ggsave(file.path(anaDir, paste0("gating_CD69_", cciaObj$getUID(), ".pdf")), width = 2.5, height = 2.5)
+```
+
+```{r}
+# show treatments on UMAP
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE
+)
+
+popDT <- cciaObj$popDT(
+  popType = "clust",
+  uIDs = names(cciaObj$cciaObjects()),
+  includeFiltered = TRUE,
+  completeDT = FALSE, replaceNA = TRUE,
+  # only focus on clustered values
+  filterMeasures = c("clusters")
+)
+
+exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
+```
+
+```{r fig_pop_freq, fig.height=1, fig.width=2}
+datToPlot <- copy(popDT) %>% left_join(exp.info) %>%
+  group_by(Treatment, uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n))
+
+ggplot(
+  datToPlot, aes(Treatment, freq, fill = pop)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.4, alpha = 1.0) +
+  scale_fill_brewer(name = NULL, palette = "Set2") +
+  xlab("") + ylab("Frequency")
+
+ggsave(file.path(anaDir, "pop_freq.pdf"), width = 5, height = 2)
+
+datToPlot$Treatment.ID <- 0
+datToPlot[datToPlot$Treatment == "DTx",]$Treatment.ID <- 1
+
+datToPlot$pop.ID <- 0
+datToPlot[datToPlot$pop == "CTV+CD69-",]$pop.ID <- 1
+datToPlot[datToPlot$pop == "CTV-",]$pop.ID <- 2
+
+write.csv(datToPlot %>% mutate(freq = freq * 100), file.path(anaDir, "freq_pops.csv"))
+```
+
+```{r fig_CTV, fig.height=3, fig.width=12}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "bVw2WJ", versionID = versionID, initReactivity = FALSE # DTx
+  # pID = pID, uID = "CgXjkH", versionID = versionID, initReactivity = FALSE # PBS
+  # pID = pID, uID = "GUnG5n", versionID = versionID, initReactivity = FALSE # PBS
+)
+
+library(ggplot2)
+
+# go through pops and build gating scheme
+fgs <- cciaObj$flowGatingSet()
+
+# get colours
+colourList <- cciaObj$popAttr("clust", "colour", includeFiltered = TRUE)
+names(colourList) <- cciaObj$popAttr("clust", "path", includeFiltered = TRUE)
+
+# plot out act high and low with CTV and activation markers
+# yChannels <- c('CD69.BV605','XCL1.TEAL','CD71.PE','CD25.APC','CD98.PE.Cy7')
+yChannels <- c('CD69.BV605')
+# yChannels <- c('Va2.AF700','CD8a.BV711','CD3e.PerCP.Cy5.5')
+xChannel <- "CTV"
+# xChannel <- "CD45.1.BV785"
+pops <- c("CTV+CD69+", "CTV+CD69-", "CTV-")
+rootPops <- c("root", "/Lymph/Singlets/Live/Va2+/T")
+
+p1s <- list()
+for (y in yChannels) {
+  local({
+    # get pops
+    popClust <- cciaObj$popDT(
+      "clust", pops = pops, popCols = c("label", "pop"),
+      completeDT = FALSE, uniqueLabels = TRUE, includeFiltered = TRUE)
+    popFlow <- cciaObj$popDT(
+      "flow", pops = c("root", "/Lymph/Singlets/Live/Va2+/T"),
+      popCols = c("label", xChannel, y),
+      completeDT = FALSE, uniqueLabels = TRUE)
+    
+    # add clust pops
+    for (x in pops) {
+      popFlow[label %in% popClust[pop == x, label], pop := x]
+    }
+    
+    # get range
+    xRange <- range(popFlow[, ..xChannel])
+    yRange <- range(popFlow[, ..y])
+    
+    # build raster
+    r1 <- .flowRasterBuild(
+      popFlow[!pop %in% rootPops], xChannel, y,
+      colorMode = "white", layout = "cover",
+      # colorBy = "pop", colors = c("#E41A1C", "#377EB8", "grey"),
+      colorBy = "pop",
+      colors = colourList[unique(popFlow[!pop %in% rootPops, pop])],
+      xRange = xRange, yRange = yRange,
+      size = 2)
+    
+    # plot out
+    p1 <- ggplot() +
+    # ggplot(popDT, aes(get(xChannel), get(y))) +
+      theme_classic() +
+      annotation_raster(
+        r1$image,
+        xmin=r1$x_range[1],
+        xmax=r1$x_range[2],
+        ymin=r1$y_range[1],
+        ymax=r1$y_range[2]) +
+      xlim(xRange) + ylim(yRange) +
+      xlab(xChannel) + ylab(y)
+    
+    p1s[[y]] <<- p1
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
+ggsave(file.path(anaDir, paste0("clust_", cciaObj$getUID(), ".pdf")), width = 2.5, height = 2.5)
+```
+
+
+
+```{r fig_heat, fig.height=2, fig.width=3}
+library(ggplot2)
+library(tidyverse)
+
+datToPlot <- popDT %>%
+  group_by(pop) %>%
+  summarise(
+    mean.CTV = mean(CTV),
+    mean.CD69.BV605 = mean(CD69.BV605),
+    mean.XCL1.TEAL = mean(XCL1.TEAL),
+    mean.CD71.PE = mean(CD71.PE),
+    mean.CD25.APC = mean(CD25.APC),
+    mean.CD98.PE.Cy7 = mean(CD98.PE.Cy7)
+  ) %>%
+  tidyr::pivot_longer(
+    cols = paste("mean", c("CTV", actChannels), sep = "."),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  mutate(value = (value - min(value))/(max(value) - min(value)))
+
+ggplot(datToPlot, aes(pop, measure)) +
+  theme_classic() +
+  geom_tile(aes(fill = value), colour = "white") +
+  scale_fill_gradient2(
+    low = "#03c9b2", mid = "#ffb804", high = "#ff048e", midpoint = 0.5) +
+  xlab("") + ylab("") +
+  theme(
+    axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+  )
+ggsave(file.path(anaDir, "heat.pdf"), width = 3, height = 2)
+```
+
+```{r fig_umap, fig.height=3, fig.width=3}
+# plot UMAP with paga connections
+datToPlot <- copy(popDT) %>% left_join(exp.info)
+
+# get mean positions of pops
+meanPopsPos <- datToPlot %>%
+  group_by(pop) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+
+x <- cciaObj$cciaObjects()[[1]]
+colourList <- x$popAttr("clust", "colour", includeFiltered = TRUE)
+names(colourList) <- x$popAttr("clust", "path", includeFiltered = TRUE)
+
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2, color = pop)) +
+  theme_classic() +
+  scale_color_manual(values = colourList) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  geom_point(size = 0.5) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+  # geom_label(
+  #   data = meanPopsPos,
+  #   aes(label = pop),
+  #   label.size = 0.25,
+  #   color = "black"
+  #   )
+
+ggsave(file.path(anaDir, "umap_pops.tiff"), width = 3, height = 3)
+```
+
+```{r fig_umap, fig.height=3, fig.width=6}
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set3") +
+  geom_point(color = "lightgrey") +
+  stat_density_2d(
+    contour_var = "ndensity", bins = 8,
+    colour = "black") +
+  facet_grid(.~Treatment) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    )
+
+ggsave(file.path(anaDir, "umap_treatment.tiff"), width = 6, height = 3)
+```
+
+

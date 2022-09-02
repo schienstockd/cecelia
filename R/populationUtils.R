@@ -115,7 +115,7 @@ PopulationUtils <- R6::R6Class(
       
       # get populations
       if (is.null(popDT)) {
-        popDT <- self$popDT(pops, cols = c(self$getImChannels()[1], "label"))
+        popDT <- self$popDT(pops, popCols = c(self$getImChannels()[1], "label"))
       }
       
       # select with DT 
@@ -163,11 +163,11 @@ PopulationUtils <- R6::R6Class(
     
     #' @description Population data.table
     #' @param pops list of character for populations
-    #' @param cols list of character for columns
+    #' @param popCols list of character for columns
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param copyDT boolean to copy data.table
-    popDT = function(pops = NULL, cols = NULL, dropNA = FALSE, dropPop = FALSE) {
+    popDT = function(pops = NULL, popCols = NULL, dropNA = FALSE, dropPop = FALSE) {
       stop("Implement popDT()")
     },
     

@@ -50,20 +50,32 @@ LeidenClustering <- R6::R6Class(
           list()
       )
       
+      # include filtered?
+      includeFiltered <- TRUE
+      if ("includeFiltered" %in% names(self$funParams()) &&
+          self$funParams()$includeFiltered == FALSE)
+        includeFiltered <- FALSE
+      
       # save pops before call
       if (self$funParams()$savePops == TRUE && length(self$funParams()$popsToCluster) > 0) {
+        self$writeLog(">> Save populations")
+        
         if (cciaObj$getCciaClass() == "CciaImageSet") {
           for (x in cciaObj$cciaObjects(uIDs = self$funParams()$uIDs)) {
-            x$savePopMap(self$funParams()$popType, includeFiltered = TRUE)
+            self$writeLog(x$getUID())
+            
+            x$savePopMap(self$funParams()$popType, includeFiltered = includeFiltered)
             x$savePops(self$funParams()$popType,
                        pops = self$funParams()$popsToCluster,
-                       includeFiltered = TRUE)
+                       includeFiltered = includeFiltered)
           }
         } else {
-          cciaObj$savePopMap(self$funParams()$popType, includeFiltered = TRUE)
+          self$writeLog(cciaObj$getUID())
+          
+          cciaObj$savePopMap(self$funParams()$popType, includeFiltered = includeFiltered)
           cciaObj$savePops(self$funParams()$popType,
                            pops = self$funParams()$popsToCluster,
-                           includeFiltered = TRUE)
+                           includeFiltered = includeFiltered)
         }
       }
       

@@ -52,7 +52,8 @@
                 fluidRow(
                   column(
                     6,
-                    sliderInput(ns("numFlowPlots"), "Plots", 2, 10, 2),
+                    sliderInput(ns("numFlowPlots"), "Plots",
+                                2, 10, cciaConf()$fcs$gating$plots$num),
                   ),
                   column(
                     6,

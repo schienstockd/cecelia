@@ -188,7 +188,7 @@ ClusterTracks <- R6::R6Class(
       }
       
       # which measures are logical?
-      measureTypes <- sapply(self$funParams()$objectMeasures, cciaStatsTypeIsCategorical)
+      measureTypes <- sapply(self$funParams()$objectMeasures, .cciaStatsTypeIsCategorical)
       
       # get object
       # prepare params
