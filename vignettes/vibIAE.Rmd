@@ -101,7 +101,7 @@ funParams <- list(
   popsToCluster = c("/gBT+")
 )
 
-cciaObj$runTask(
+cciaObj$runTasks(
   funName = "spatialAnalysis.cellClustersMeshes",
   funParams = funParams,
   runInplace = FALSE,
