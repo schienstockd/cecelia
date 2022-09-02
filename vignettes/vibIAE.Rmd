@@ -56,7 +56,7 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/OUT"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/IAE"
 ```
 
 ```{r}
@@ -95,16 +95,53 @@ uIDs <- c(
 )
 
 funParams <- list(
-  popType = "flow",
-  maxClusterDist = 5,
-  minCellNum = 4,
-  popsToCluster = c("/gBT+")
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  funTasks = list(
+    spatialAnalysis.cellClustersMeshes = list(
+      funEnv = "hpc",
+      taskID = 1,
+      funParams = list(
+        popType = "flow",
+        maxClusterDist = 5,
+        minCellNum = 4,
+        popsToCluster = c("/gBT+")
+      )
+    )
+  )
 )
 
 cciaObj$runTasks(
-  funName = "spatialAnalysis.cellClustersMeshes",
+  funName = "launchpad.runCciaObj",
   funParams = funParams,
   runInplace = FALSE,
+  taskID = 1,
+  uIDs = uIDs
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "KuJu1C", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- c(
+  "R47v2u", "NLjHAe", "PqtUCE", "aaDoip", "z2oi2l"
+)
+
+funParams <- list(
+  valueNames = c("default"),
+  callingFun = "cellClustersMeshes"
+)
+
+cciaObj$runTasks(
+  funName = "spatialAnalysis.retrieve",
+  funParams = funParams,
+  runInplace = TRUE,
   env = "hpc",
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
@@ -131,15 +168,6 @@ exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr"), uIDs = uIDs
 ))
 
-# complete info
-exp.info[uID == "R47v2u", Genotype := "B6"]
-exp.info[uID == "NLjHAe", Genotype := "B6"]
-exp.info[uID == "PqtUCE", Genotype := "B6"]
-exp.info[uID == "aaDoip", Genotype := "IAE"]
-exp.info[uID == "z2oi2l", Genotype := "IAE"]
-
-popPaths("flow", includeFiltered = TRUE)
-
 # get pops
 popDT <- cciaObj$popDT(
   popType = "flow", includeFiltered = TRUE,
@@ -147,70 +175,17 @@ popDT <- cciaObj$popDT(
 )
 ```
 
-```{r fig_pops_umap, fig.height=2, fig.width=2}
-library(tidyverse)
-
-dfToPlot <- copy(popDT)
-
-# get mean positions of clusters
-meanClusterPos <- dfToPlot %>%
-  group_by(pop) %>%
-  summarise(
-    UMAP_1 = mean(UMAP_1),
-    UMAP_2 = mean(UMAP_2)
-  )
-
-# plot UMAP with paga connections
-ggplot(
-  dfToPlot,
-  aes(UMAP_1, UMAP_2)
-  ) +
-  theme_classic() +
-  geom_point(aes(color = pop), size = 0.5) +
-  # scale_color_brewer(name = NULL, palette = "Set3") +
-  scale_color_manual(values = c("black", "#00ccff", "#e10f21", "#33cc00")) +
-  theme(
-    axis.text = element_text(size = 15),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom"
-    legend.position = "none",
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-    )
-
-ggsave(file.path(anaDir, "uamp.tiff"), width = 5, height = 5)
-```
-
-```{r}
-# plot frequency of contact from clustering cells
-popDT <- cciaObj$popDT(
-  popType = "clust",
-  # pops = c("gBT+/contact.clust.XCR1+"),
-  pops = c("gBT+/clustered", "gBT+/non.clustered"),
-  includeFiltered = TRUE,
-  completeDT = TRUE,
-  replaceNA = TRUE
-)
-```
-
-```{r fig_clust_XCR1, fig.height=2, fig.width=1.5}
+```{r fig_clusters, fig.height=2, fig.width=1.5}
 summaryDF <- popDT %>%
-  group_by(uID, pop, `clust.cell.contact#clust.XCR1+`) %>%
+  group_by(uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   dplyr::filter(
-    `clust.cell.contact#clust.XCR1+` == TRUE
-  )
+    pop == "/gBT+/clustered"
+  ) %>%
+  left_join(exp.info)
 
-summaryDF$pop.id <- 1
-summaryDF[summaryDF$pop == "gBT+/clustered", ]$pop.id <- 2
-
-ggplot(summaryDF, aes(pop, freq)) +
+ggplot(summaryDF, aes(Genotype, freq)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -221,70 +196,8 @@ ggplot(summaryDF, aes(pop, freq)) +
       angle = 45, vjust = 1, hjust = 1, size = 15),
     )
 
-t.test(
-  summaryDF[summaryDF$pop == "gBT+/clustered",]$freq,
-  summaryDF[summaryDF$pop == "gBT+/non.clustered",]$freq,
-  paired = TRUE
-)
+summaryDF$Genotype.ID <- 0
+summaryDF[summaryDF$Genotype == "IAE",]$Genotype.ID <- 1
 
-write.csv(summaryDF, file.path(anaDir, "XCR1-contact.csv"))
+write.csv(summaryDF, file.path(anaDir, "IAE_clusters.csv"))
 ```
-
-```{r fig_clust_TRITC, fig.height=2, fig.width=1.5}
-summaryDF <- popDT %>%
-  group_by(uID, pop, `clust.cell.contact#clust.TRITC+`) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(
-    `clust.cell.contact#clust.TRITC+` == TRUE
-  )
-
-summaryDF$pop.id <- 1
-summaryDF[summaryDF$pop == "gBT+/clustered", ]$pop.id <- 2
-
-ggplot(summaryDF, aes(pop, freq)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    width = 0.3, alpha = 1.0) +
-  theme(
-    axis.text.x = element_text(
-      angle = 45, vjust = 1, hjust = 1, size = 15),
-    )
-
-t.test(
-  summaryDF[summaryDF$pop == "gBT+/clustered",]$freq,
-  summaryDF[summaryDF$pop == "gBT+/non.clustered",]$freq,
-  paired = TRUE
-)
-
-write.csv(summaryDF, file.path(anaDir, "TRITC-contact.csv"))
-```
-
-```{r fig_gating, fig.height=2, fig.width=2}
-# show gating of CD69 populations
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  # pID = pID, uID = "15SFzg", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "QS9obm", versionID = versionID, initReactivity = FALSE
-)
-
-cciaObj$editPopColour(
-  popType = "flow", colour = "#ff1493",
-  popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT+/CD69+"))
-
-# get raster contours
-p1s <- .flowPlotGatedRaster(
-  cciaObj, popPaths = "/gBT+/CD69+", size = 2, color = "black",
-  labelSize = 4)
-
-ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
-ggsave(file.path(anaDir, paste0("CD69_gating_", cciaObj$getUID(), ".pdf")),
-       width = 3, height = 3)
-```
-
-

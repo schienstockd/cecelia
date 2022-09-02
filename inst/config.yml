@@ -321,6 +321,6 @@ default:
       projectPrefix: "punim"
       analysis: "ANALYSIS/"
     scripts:
-      watchJobCompletion: "slurm/watchJobCompletion.sh"
+      watchJobCompletion: "hpc/slurm/watchJobCompletion.sh"
 
 # production:

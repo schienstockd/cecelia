@@ -133,7 +133,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @examples
 #' TODO
 #' @export
-cciaEncrypt <- function(x, asInteger = TRUE) {
+.cciaEncrypt <- function(x, asInteger = TRUE) {
   # very basic encryption for the password
   # TODO could you store that somehow in the keyring .. ?
   # https://stackoverflow.com/a/32359993/13766165
@@ -153,7 +153,7 @@ cciaEncrypt <- function(x, asInteger = TRUE) {
 #' @examples
 #' TODO
 #' @export
-cciaDecrypt <- function(x, fromInteger = TRUE) {
+.cciaDecrypt <- function(x, fromInteger = TRUE) {
   if (fromInteger == TRUE) {
     x <- as.raw(x)
   }

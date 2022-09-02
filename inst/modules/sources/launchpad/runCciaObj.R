@@ -30,6 +30,7 @@ RunCciaObj <- R6::R6Class(
         x <- self$funParams()$funTasks[[i]]
         
         self$writeLog(sprintf(">> %s on %s", i, x$funEnv))
+        self$writeLog("---")
         
         # run task for object
         taskLauncher <- cciaObj$runTask(

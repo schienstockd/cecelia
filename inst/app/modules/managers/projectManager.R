@@ -121,7 +121,7 @@ ProjectManager <- R6::R6Class(
     setProjectLabServerSmbPwd = function(x, encrypt = TRUE, invalidate = TRUE) {
       # encyrpt password
       if (encrypt == TRUE) {
-        x <- cciaEncrypt(x)
+        x <- .cciaEncrypt(x)
       }
       
       private$handleProjectLabServerSmbPwd <- x
@@ -275,7 +275,7 @@ ProjectManager <- R6::R6Class(
       
       # decrypt password
       if (decrypt == TRUE) {
-        retVal <- cciaDecrypt(retVal)
+        retVal <- .cciaDecrypt(retVal)
       }
       
       # prep for bash output

@@ -159,7 +159,8 @@ TaskLauncher <- R6::R6Class(
           curTplFile <- taskMANAGER_HPC_SLURM_CPU_TPL
         }
         
-        curSlurm <- readLines(curTplFile)
+        curSlurm <- readLines(system.file(
+          curTplFile, package = "cecelia"))
         
         # go through params and replace
         for (i in names(slurmParams)) {

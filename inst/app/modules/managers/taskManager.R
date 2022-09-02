@@ -577,6 +577,7 @@ createTaskManager <- function(
       # TODO is this ok .. ?
       launchList <- list(
         envVars = taskVars$env,
+        hpcDir = if (useHPC() == TRUE) dirname(dirname(taskVars$env$hpc$dirs$task)) else NULL,
         pID = taskVars$env$global$pID,
         pName = taskVars$env$global$pName,
         funTasks = list()
@@ -679,7 +680,9 @@ createTaskManager <- function(
           )
         }
       } else {
-        taskLauncher$initTask("launchpad.runCciaObj", taskVars)
+        taskLauncher$initTask("launchpad.runCciaObj", taskVars, inplace = FALSE)
+        # for debugging
+        # taskLauncher$initTask("launchpad.runCciaObj", taskVars, inplace = TRUE)
         
         # add launcher to logfiles
         logfilepaths <- prepLogfilepaths(

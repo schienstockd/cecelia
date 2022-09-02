@@ -65,7 +65,7 @@ TransferFrom <- R6::R6Class(
         smbCmd,
         sprintf(
           "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
-          .prepForBash(cciaDecrypt(self$utilsParams()$smb$password)),
+          .prepForBash(.cciaDecrypt(self$utilsParams()$smb$password)),
           self$utilsParams()$smb$remoteDir,
           self$utilsParams()$smb$username,
           getDir, self$envParams(remoteTo)$dirs$zero,

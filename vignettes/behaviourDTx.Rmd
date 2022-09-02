@@ -200,15 +200,15 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) +
-  geom_label(
-    data = meanClusterPos,
-    aes(label = clusters),
-    label.size = 0.25,
-    color = "black"
     )
+  # geom_label(
+  #   data = meanClusterPos,
+  #   aes(label = clusters),
+  #   label.size = 0.25,
+  #   color = "black"
+  #   )
 
-# ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
 ```
 
 ```{r}
