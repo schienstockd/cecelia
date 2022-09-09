@@ -203,7 +203,7 @@ popDT <- cciaObj$popDT(popType = "clust", includeFiltered = TRUE)
 # now you can plot this as a normal data.table
 library(ggplot2)
 
-ggplot(popDT, aes(centroid_x, centroid_y)) +
+ggplot(popDT, aes(centroid_x, centroid_y, color = pop)) +
   theme_classic() +
   geom_point(aes(color = as.factor(clusters)), size = 0.5) +
   facet_wrap(.~uID, scales = "free")
