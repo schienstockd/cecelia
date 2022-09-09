@@ -99,8 +99,8 @@ funParams <- list(
   popType = "clust",
   popsToCluster = c("lymphs", "macro.mono"),
   # popsToCluster = c(),
-  savePops = TRUE,
-  # savePops = FALSE,
+  # savePops = TRUE,
+  savePops = FALSE,
   keepPops = TRUE,
   # keepPops = FALSE,
   resolution = 0.6,
@@ -128,8 +128,8 @@ task <- cciaObj$runTask(
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
   # env = "hpc",
   env = "local",
-  runInplace = FALSE,
-  # runInplace = TRUE,
+  # runInplace = FALSE,
+  runInplace = TRUE,
   taskID = 1
 )
 ```
@@ -156,13 +156,11 @@ popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE, uIDs = uIDs)
 
 # exclude not relevant clusters
-excludeClusters <- c(
-  4, 1, 8, 6, seq(11, 19),
-  3, 7, 5, 10
-  )
+excludeClusters <- c(4, 1, 8)
 popDT <- popDT[!clusters %in% excludeClusters]
 
 melanoClusters <- c(0, 2)
+endothelialClusters <- c(9)
 
 unique(popDT$clusters)
 ```
@@ -171,7 +169,7 @@ unique(popDT$clusters)
 excludeMarkers <- c(
   # "S100_Lu175", "SOX10_Dy164", # melano
   "Histone-H3_Yb176", "x191Ir_Ir191", "x193Ir_Ir193", # backbone
-  "CD31_Sm147", # endothelial
+  # "CD31_Sm147", # endothelial
   "x127I_I127", "x132Xe_Xe132", "x138Ba_Ba138", "x190BCKG_BCKG190",
   "x195Pt_Pt195", "x208Pb_Pb208", "x80ArAr_ArAr80"
 )
@@ -251,13 +249,13 @@ ggplot(markersSummary %>%
     ) +
   xlab("") + ylab("")
 
-# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 12, height = 11)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 13, height = 11)
 ```
 
 ```{r fig_pops_umap, fig.height=2, fig.width=2}
 library(tidyverse)
 
-dfToPlot <- copy(popDT[!clusters %in% melanoClusters])
+dfToPlot <- copy(popDT[!clusters %in% c(melanoClusters, endothelialClusters)])
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -310,7 +308,7 @@ ggsave(file.path(anaDir, "cd45_umap.tiff"), width = 5, height = 6.5)
 
 ```{r fig_pops_freq, fig.height=5, fig.width=8}
 # show frequency of populations for treatments
-summaryDF <- copy(popDT[!clusters %in% melanoClusters]) %>%
+summaryDF <- copy(popDT[!clusters %in% c(melanoClusters, endothelialClusters)]) %>%
   group_by(uID, clusters) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
@@ -333,16 +331,6 @@ ggplot(summaryDF,
   ylab("Population (%)") + xlab("") +
   facet_wrap(.~clusters, ncol = 10, scales = "free_y") +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
-valuesA <- summaryDF[summaryDF$clusters == 10 & summaryDF$Response == "Yes",]$freq
-valuesB <- summaryDF[summaryDF$clusters == 10 & summaryDF$Response == "No",]$freq
-valuesC <- summaryDF[summaryDF$clusters == 10 & summaryDF$Cohort == "non-ICI",]$freq
-
-paste(valuesA[!is.na(valuesA)], collapse = ",")
-paste(valuesB[!is.na(valuesB)], collapse = ",")
-paste(valuesC[!is.na(valuesC)], collapse = ",")
-
-t.test(valuesA[!is.na(valuesA)], valuesB[!is.na(valuesB)])
 ```
 
 ```{r}

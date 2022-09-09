@@ -276,3 +276,36 @@ cciaRunApp <- function(localPath = TRUE, ...) {
   else
     shiny::runApp(system.file("app", package = "cecelia"), ...)
 }
+
+#' @description Install R libraries needed
+#' @export
+cciaRequirements <- function() {
+  # use binary for rgl
+  # https://stackoverflow.com/q/51289395
+  # options(pkgType="binary")
+  
+  # read packages to install
+  packagesToInstall <- readLines(
+    system.file("r-requirements.txt", package = "cecelia"))
+  
+  install.packages(
+    packagesToInstall,
+    repos="http://cran.us.r-project.org",
+    dependencies = TRUE
+  )
+  
+  # for R 4.2
+  BiocManager::install(version = '3.15')
+  
+  # downgrade reticulate
+  # The following is not solved
+  # https://github.com/rstudio/reticulate/issues/1155
+  remotes::install_version("reticulate", "1.22")
+  
+  # install protobuf separately
+  remotes::install_github("rglab/RProtoBufLib")
+  
+  BiocManager::install(
+    c('openCyto', 'ggcyto', 'flowCore', 'aoles/RBioFormats', 'EBImage')
+  )
+}
