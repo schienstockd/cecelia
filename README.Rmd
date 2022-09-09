@@ -18,6 +18,8 @@ knitr::opts_chunk$set(
 <!-- badges: start -->
 <!-- badges: end -->
 
+![Image]{./im/logo.png}
+
 The goal of `cecelia` is to simplify image analysis for immunologists and integrate
 static and live cell imaging with flow cytometry data. The package primarily builds upon
 [`napari`](https://napari.org) and [`shiny`](https://shiny.rstudio.com/). Our aim was 
@@ -27,7 +29,7 @@ __This package is pre-alpha__
 
 ## Installation
 
-__This package currently only works on Unix systems__ We have a Docker version to support other
+__This package currently only works on Unix systems.__ We have a Docker version to support other
 systems if necessary, so do open an issue if that is needed.
 
 You can install the development version of cecelia like so:
@@ -41,9 +43,12 @@ For first time users, you will need to define base directory where
 configuration files, models and the shiny app will be stored. `cecelia` depends
 on a python environment which needs to be created. There are multiple options available
 depending on how you would like to use the app:
-* For image analysis on Desktop
-* For image processing without GUI
-* For flow cytometry analysis
+
+- `image` For image analysis on Desktop
+
+- `image-nogui` For image processing without GUI
+
+- `flow` For flow cytometry analysis
 
 ```r
 library(cecelia)
