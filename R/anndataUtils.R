@@ -97,7 +97,7 @@ AnndataUtils <- R6::R6Class(
       DT <- self$getAdataDT()
       
       # filter on cols
-      if (!is.null(popCols)) {
+      if (!is.null(popCols) && all(popCols %in% colnames(DT))) {
         return(DT[, ..popCols])
       } else {
         if (copyDT == TRUE)

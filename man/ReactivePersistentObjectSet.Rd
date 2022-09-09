@@ -123,6 +123,7 @@ Remove objects
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{ReactivePersistentObjectSet$removeCciaObjects(
   cciaObjects = NULL,
+  removeContent = TRUE,
   invalidate = TRUE,
   ...
 )}\if{html}{\out{</div>}}
@@ -132,6 +133,8 @@ Remove objects
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{cciaObjects}}{list of ReactivePersistentObject}
+
+\item{\code{removeContent}}{boolean to remove object content}
 
 \item{\code{invalidate}}{boolean to invalidate object}
 

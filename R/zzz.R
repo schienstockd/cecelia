@@ -149,8 +149,10 @@ cciaModels <- function(dlModels = c(
 
 #' @description Use cecelia working directory
 #' @param path character to define working directory of cecelia
+#' @param initConda boolean to init conda environment
+#' @param initJupyter boolean to init jupyter server
 #' @export
-cciaUse <- function(path, initConda = TRUE) {
+cciaUse <- function(path, initConda = TRUE, initJupyter = FALSE) {
   # set path in environment
   pkg.env$path <- path
   
@@ -197,6 +199,11 @@ cciaUse <- function(path, initConda = TRUE) {
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
     reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
+  }
+  
+  # init jupyter
+  if (initJupyter == TRUE) {
+    pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE)
   }
   
   message("[CCIA] >> Source python files")

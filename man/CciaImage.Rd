@@ -165,11 +165,13 @@ init
 
 \item{\code{popUtils}}{PopulationUtils}
 
-\item{\code{cols}}{list of character}
+\item{\code{popCols}}{list of character}
 
 \item{\code{uniqueLabels}}{boolean to force unique labels}
 
 \item{\code{includeX}}{boolean to include 'X' from adata}
+
+\item{\code{replaceX}}{boolean to replace 'X' with 'X' from adata}
 
 \item{\code{includeObs}}{boolean to include 'obs' from adata}
 }
@@ -604,7 +606,7 @@ TODO this got a bit complicated - can you clean this up?
 \if{html}{\out{<div class="r">}}\preformatted{CciaImage$popDT(
   popType,
   pops = NULL,
-  cols = NULL,
+  popCols = NULL,
   dropNA = FALSE,
   dropPop = FALSE,
   includeFiltered = FALSE,
@@ -615,6 +617,7 @@ TODO this got a bit complicated - can you clean this up?
   completeDT = TRUE,
   filterMeasures = NULL,
   includeX = FALSE,
+  replaceX = FALSE,
   includeObs = TRUE,
   ...
 )}\if{html}{\out{</div>}}
@@ -627,7 +630,7 @@ TODO this got a bit complicated - can you clean this up?
 
 \item{\code{pops}}{list of character for populations}
 
-\item{\code{cols}}{list of character for columns to include}
+\item{\code{popCols}}{list of character for columns to include}
 
 \item{\code{dropNA}}{boolean to drop NA}
 
@@ -648,6 +651,8 @@ TODO this got a bit complicated - can you clean this up?
 \item{\code{filterMeasures}}{list of character to include filter measures}
 
 \item{\code{includeX}}{boolean to include 'X' from adata}
+
+\item{\code{replaceX}}{boolean to replace 'X' with 'X' from adata}
 
 \item{\code{...}}{passed to self$popUtils}
 
@@ -1575,7 +1580,8 @@ Value attr for versioned variable
   invalidate = TRUE,
   reset = FALSE,
   addNames = TRUE,
-  checkLength = TRUE
+  checkLength = TRUE,
+  updateFlowGatingSet = FALSE
 )}\if{html}{\out{</div>}}
 }
 

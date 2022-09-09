@@ -134,7 +134,7 @@ def find_populations(
   adata, resolution = 1, clusterMethod = 'leiden',
   axis = 'channels', to_median = False, max_fraction = 0,
   percentile = cfg.data['images']['normalise']['percentile'],
-  percentile_bottom = 0,
+  percentile_bottom = 0, create_umap = True,
   paga_threshold = 0.1, use_paga = False, transformation = 'NONE', log_base = 0):
   # transform data
   apply_transform(adata, transformation = transformation, log_base = log_base)
@@ -168,16 +168,17 @@ def find_populations(
       adata, resolution = resolution,
       key_added = "clusters")
   
-  if use_paga is True:
-    # calculate PAGA
-    sc.tl.paga(adata, groups = 'clusters')
-    # ValueError: Plot PAGA first, so that adata.uns['paga'] with key 'pos'.
-    sc.pl.paga(adata, plot = False, show = False, threshold = paga_threshold)
-    
-    # then UMAP based on paga
-    sc.tl.umap(adata, init_pos = 'paga')
-  else:
-    sc.tl.umap(adata)
+  if create_umap is True:
+    if use_paga is True:
+      # calculate PAGA
+      sc.tl.paga(adata, groups = 'clusters')
+      # ValueError: Plot PAGA first, so that adata.uns['paga'] with key 'pos'.
+      sc.pl.paga(adata, plot = False, show = False, threshold = paga_threshold)
+      
+      # then UMAP based on paga
+      sc.tl.umap(adata, init_pos = 'paga')
+    else:
+      sc.tl.umap(adata)
   
 """
 Save data

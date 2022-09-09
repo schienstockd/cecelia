@@ -78,6 +78,7 @@ ApplyClassifier <- R6::R6Class(
       self$pyScript("apply_classifier", params)
       
       popType <- "clsf"
+      # popType <- self$funParams()$popType
       
       # go through classifiers
       for (i in names(clMapping)) {

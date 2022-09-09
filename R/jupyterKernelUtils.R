@@ -14,18 +14,20 @@ JupyterKernelUtils <- R6::R6Class(
     #' @description Init
     #' @param condaEnv character for conda environment
     #' @param connectionFile character for connection file path
-    initialize = function(connectionFile = NULL, useConnectionFile = FALSE) {
+    initialize = function(connectionFile = NULL, useConnectionFile = TRUE) {
       # check config
-      if (is.null(connectionFile) && useConnectionFile == TRUE)
-        connectionFile <- file.path(
+      if (is.null(connectionFile) && useConnectionFile == TRUE) {
+        connectionFile <- system.file(file.path(
+          "app",
           cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile)
-      
-      jupyterClient <- reticulate::import("jupyter_client")
+          cciaConf()$python$viewer$connectionFile), package = "cecelia")
+      }
       
       # use connection file
       if (!is.null(connectionFile)) {
         message(paste(">> Use connection file", connectionFile))
+        
+        jupyterClient <- reticulate::import("jupyter_client")
         
         km <- jupyterClient$BlockingKernelClient(
           connection_file = connectionFile)
@@ -35,29 +37,53 @@ JupyterKernelUtils <- R6::R6Class(
         private$setKernelClient(km)
         private$setKernelConnectionFile(connectionFile)
         
+        # set working directory to be safe
+        self$execute(paste(
+          "import os",
+          sprintf("os.chdir('%s')", system.file(".", package = "cecelia")),
+          sep = "\n"
+        ))
+        
+        message(">> Jupyter kernel started")
+        message(self$printConsoleConn())
       } else {
-        message(">> Start new Jupyter kernel")
+        message(">> Start new Jupyter kernel process")
         
-        # otherwise start kernel
-        jupyterKernel <- jupyterClient$manager$start_new_kernel()
+        # get connection file
+        connectionFile <- system.file(file.path(
+          "app",
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$connectionFile), package = "cecelia")
         
-        private$setKernelManager(jupyterKernel[[1]])
-        private$setKernelClient(jupyterKernel[[2]])
+        # file.remove(connectionFile)
+        f <- file(connectionFile)
+        writeLines(c(""), f)
+        close(f)
         
-        # set connection_file
-        private$setKernelConnectionFile(
-          self$kernelClient()$connection_file)
+        # start kernel in separate process
+        private$setKernelProcess(
+          parallel::mcparallel({
+            # start kernel
+            jupyterClient <- reticulate::import("jupyter_client")
+            jupyterKernel <- jupyterClient$manager$start_new_kernel()
+            
+            # copy connection file
+            file.copy(
+              jupyterKernel[[2]]$connection_file,
+              connectionFile,
+              overwrite = TRUE)
+          })
+        )
+        
+        message(">> Wait for kernel")
+        
+        # wait until file is created
+        f <- file(connectionFile)
+        while (length(readLines(f)) <= 1) Sys.sleep(1/2)
+        close(f)
+        
+        message(">> OK")
       }
-      
-      # set working directory to be safe
-      self$execute(paste(
-        "import os",
-        sprintf("os.chdir('%s')", system.file(".", package = "cecelia")),
-        sep = "\n"
-      ))
-      
-      print(">> Jupyter kernel started")
-      print(self$printConsoleConn())
     },
     
     #' @description print console connection info
@@ -71,17 +97,29 @@ JupyterKernelUtils <- R6::R6Class(
     #' @description quit kernel
     quitKernel = function() {
       # send quit
-      # TODO why does this not work on its own?
-      self$execute("quit()")
+      if (!is.null(self$kernelClient())) {
+        # shutdown python kernel
+        self$execute("exit")
+        
+        # shutdown
+        if (!is.null(private$getKernelManager()))
+          private$getKernelManager()$shutdown_kernel()
+      }
       
-      # shutdown
-      if (!is.null(private$getKernelManager()))
-        private$getKernelManager()$shutdown_kernel()
+      # collect process
+      if (!is.null(self$kernelProcess())) {
+        parallel::mccollect(self$kernelProcess())
+      }
     },
     
     #' @description return kernel client
     kernelClient = function() {
       private$getKernelClient()
+    },
+    
+    #' @description return kernel process
+    kernelProcess = function() {
+      private$getKernelProcess()
     },
     
     #' @description execute command
@@ -107,6 +145,7 @@ JupyterKernelUtils <- R6::R6Class(
     kernelConnectionFile = NULL,
     handleKernelManager = NULL,
     handleKernelClient = NULL,
+    handleKernelProcess = NULL,
     
     # # return kernel manager
     # kernelManager = function() {
@@ -130,6 +169,10 @@ JupyterKernelUtils <- R6::R6Class(
       private$handleKernelClient <- x
     },
     
+    setKernelProcess = function(x) {
+      private$handleKernelProcess <- x
+    },
+    
     ## getters
     getCondaEnv = function() {
       private$condaEnv
@@ -141,6 +184,10 @@ JupyterKernelUtils <- R6::R6Class(
     
     getKernelClient = function() {
       private$handleKernelClient
+    },
+    
+    getKernelProcess = function() {
+      private$handleKernelProcess
     }
   )
 )

@@ -124,6 +124,132 @@ ggplot(
 ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
 ```
 
+```{r}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "GCAMP (ratio)",
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "GCAMP (ratio)" = "live.cell.peak.ratio.GCAMP",
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.gcamp"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    ) %>%
+  dplyr::filter(!is.na(hmm_value))
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# rename
+propsToPlot$hmm_name <- "High"
+propsToPlot[propsToPlot$hmm_value == 1,]$hmm_name <- "Low"
+propsToPlot[propsToPlot$hmm_value == 2,]$hmm_name <- "Negative"
+```
+
+
+```{r fig_hmm_props, fig.height=2, fig.width=2.5}
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  group_by(hmm_type, hmm_name, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_name), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+```
+
+```{r fig_GCAMP_trace, fig.height=2, fig.width=2}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "2b5uDC", versionID = versionID, initReactivity = FALSE
+)
+
+popDT <- cciaObj$popDT(
+  "live", pops = c("tcells.gBT/tracked"),
+  includeFiltered = TRUE)
+
+# convert angle to degrees
+popDT[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+popDT[, live.cell.hmm.state.gcamp.ordered := 0]
+popDT[live.cell.hmm.state.gcamp == 2, live.cell.hmm.state.gcamp.ordered := 0]
+popDT[live.cell.hmm.state.gcamp == 1, live.cell.hmm.state.gcamp.ordered := 1]
+popDT[live.cell.hmm.state.gcamp == 3, live.cell.hmm.state.gcamp.ordered := 2]
+
+colsToPlot <- list(
+  "GCAMP HMM" = "live.cell.hmm.state.gcamp.ordered",
+  "GCAMP/CTV" = "live.cell.peak.ratio.GCAMP",
+  "Speed (um/min)" = "live.cell.speed",
+  "Sphericity" = "sphericity"
+)
+
+trackToPlot <- popDT[track_id == 37, ] %>%
+  pivot_longer(
+    cols = unname(unlist(colsToPlot)), names_to = "measure", values_to = "value"
+  ) %>%
+  mutate(measure = factor(measure, levels = unname(unlist(colsToPlot))))
+
+ggplot(
+  trackToPlot,
+  aes(x = (centroid_t * cciaObj$omeXMLTimelapseInfo()$interval))) +
+  geom_line(aes(y = value), colour = "black") +
+  theme_classic() +
+  xlab("Time (min)") + ylab("") +
+  theme(
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    axis.text.y = element_text(size = 11),
+    axis.text.x = element_text(size = 11),
+    ) +
+  facet_wrap(measure~., scales = "free_y", ncol = 1)
+  
+ggsave(file.path(anaDir, "2b5uDC_track-37.pdf"), width = 3, height = 3)
+```
 
 ```{r fig_hmm_state_in_clusters, fig.height=1, fig.width=4}
 # plot scanning v migrating cells for treatments

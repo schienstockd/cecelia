@@ -142,7 +142,7 @@
             )
           )
           
-          if (globalManagers$projectManager()$getProjectType() != "flow") {
+          if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
             # save population
             moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
             
@@ -210,7 +210,7 @@
           # compute
           cciaObj()$flowGatingSet()$recompute()
           
-          if (globalManagers$projectManager()$getProjectType() != "flow") {
+          if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
             # save population
             moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
             
@@ -717,7 +717,7 @@
         # set init flag
         moduleManagers()$flowPlotManager$initGatingBoxPlots(TRUE)
         
-        if (globalManagers$projectManager()$getProjectType() != "flow") {
+        if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # init all populations from root
           moduleManagers()$flowPlotManager$flowSavePops(
             "root", purge = TRUE, completeDT = FALSE)

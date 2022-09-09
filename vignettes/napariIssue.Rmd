@@ -12,14 +12,16 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, initJupyter = TRUE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE, initJupyter = TRUE)
+```
 
+
+```{r}
 # start ipython kernel
 viewer <- NapariUtils$new()
 
 viewer$initNapari()
 ```
-
 
 ```{r}
 # init ccia object
@@ -32,6 +34,8 @@ viewer$openImage(
 ```
 
 ```{r}
+a <- cciaEnv()
 
+cciaEnv()$jupyterKernel$quitKernel()
 ```
 

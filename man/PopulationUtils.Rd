@@ -129,7 +129,7 @@ Population data.table
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{PopulationUtils$popDT(
   pops = NULL,
-  cols = NULL,
+  popCols = NULL,
   dropNA = FALSE,
   dropPop = FALSE
 )}\if{html}{\out{</div>}}
@@ -140,7 +140,7 @@ Population data.table
 \describe{
 \item{\code{pops}}{list of character for populations}
 
-\item{\code{cols}}{list of character for columns}
+\item{\code{popCols}}{list of character for columns}
 
 \item{\code{dropNA}}{boolean to drop NA}
 

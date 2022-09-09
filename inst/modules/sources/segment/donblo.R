@@ -57,7 +57,7 @@ Donblo <- R6::R6Class(
           basename(cciaObj$imFilepath())
         ),
         fijiPath = cciaConf()$imagej$path,
-        scriptsPath = cciaConf()$imagej$scripts,
+        scriptsPath = system.file(cciaConf()$imagej$scripts, package = "cecelia"),
         cellRadius = self$funParams()$cellRadius,
         gaussianFilter = self$funParams()$gaussianFilter,
         medianFilter = self$funParams()$medianFilter,

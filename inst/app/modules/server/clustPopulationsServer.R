@@ -419,7 +419,7 @@
         # init anndata utils with reactivity
         # cciaObj()$adataUtils()$reactive()
         
-        if (globalManagers$projectManager()$getProjectType() != "flow") {
+        if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # init all populations
           clustSavePops(purge = TRUE)
           
@@ -484,7 +484,7 @@
         # set mapping
         cciaObj()$setImPopMap(popType(), popMap, mergeMap = TRUE)
         
-        if (globalManagers$projectManager()$getProjectType() != "flow") {
+        if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # save populations
           clustSavePops(changedPops)
           
@@ -611,7 +611,7 @@
           )
         }
         
-        if (globalManagers$projectManager()$getProjectType() != "flow") {
+        if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # save populations
           clustSavePops(moduleManagers()$populationManager$addedPops())
           

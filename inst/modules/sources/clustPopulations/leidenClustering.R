@@ -35,6 +35,7 @@ LeidenClustering <- R6::R6Class(
         popsToCluster = self$funParams()$popsToCluster,
         keepPops = self$funParams()$keepPops,
         resolution = self$funParams()$resolution,
+        mergeUmap = self$funParams()$mergeUmap,
         clusterChannels = self$funParams()$clusterChannels,
         normaliseAxis = self$funParams()$normaliseAxis,
         normaliseToMedian = self$funParams()$normaliseToMedian,

@@ -830,24 +830,26 @@ genUID <- function(uIDLength, numValues = 1){
   if ("filterMeasures" %in% names(popEntry)) {
     i <- 1
     for (x in popEntry$filterMeasures) {
-      if (popEntry$filterFuns[[i]] == "gt") {
-        popDT <- popDT[
-          get(x) > popEntry$filterValues[[i]], ]
-      } else if (popEntry$filterFuns[[i]] == "gte") {
-        popDT <- popDT[
-          get(x) >= popEntry$filterValues[[i]], ]
-      } else if (popEntry$filterFuns[[i]] == "lt") {
-        popDT <- popDT[
-          get(x) < popEntry$filterValues[[i]], ]
-      } else if (popEntry$filterFuns[[i]] == "lte") {
-        popDT <- popDT[
-          get(x) <= popEntry$filterValues[[i]], ]
-      } else if (popEntry$filterFuns[[i]] == "eq") {
-        popDT <- popDT[
-          get(x) %in% popEntry$filterValues[[i]], ]
-      } else if (popEntry$filterFuns[[i]] == "neq") {
-        popDT <- popDT[
-          !get(x) %in% popEntry$filterValues[[i]], ]
+      if (x %in% colnames(popDT)) {
+        if (popEntry$filterFuns[[i]] == "gt") {
+          popDT <- popDT[
+            get(x) > popEntry$filterValues[[i]], ]
+        } else if (popEntry$filterFuns[[i]] == "gte") {
+          popDT <- popDT[
+            get(x) >= popEntry$filterValues[[i]], ]
+        } else if (popEntry$filterFuns[[i]] == "lt") {
+          popDT <- popDT[
+            get(x) < popEntry$filterValues[[i]], ]
+        } else if (popEntry$filterFuns[[i]] == "lte") {
+          popDT <- popDT[
+            get(x) <= popEntry$filterValues[[i]], ]
+        } else if (popEntry$filterFuns[[i]] == "eq") {
+          popDT <- popDT[
+            get(x) %in% popEntry$filterValues[[i]], ]
+        } else if (popEntry$filterFuns[[i]] == "neq") {
+          popDT <- popDT[
+            !get(x) %in% popEntry$filterValues[[i]], ]
+        }
       }
       
       i <- i + 1

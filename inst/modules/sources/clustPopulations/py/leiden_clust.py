@@ -24,7 +24,8 @@ def run(params):
   # get properties
   value_name = script_utils.get_ccia_param(params, 'value_name', default = None)
   resolution = script_utils.get_param(params, 'resolution', default = 1)
-  cluster_channels = script_utils.get_param(params, 'clusterChannels', default = [])
+  merge_umap = script_utils.get_param(params, 'mergeUmap', default = True)
+  cluster_channels = script_utils.get_param(params, 'clusterChannels', default = {})
   pop_type = script_utils.get_param(params, 'popType', default = None)
   pops_to_cluster = script_utils.get_param(params, 'popsToCluster', default = [])
   keep_pops = script_utils.get_param(params, 'keepPops', default = False)
@@ -42,6 +43,8 @@ def run(params):
   # should be a dict of channel types with lists
   column_names = []
 
+  logfile_utils.log(cluster_channels)
+
   for i, x in cluster_channels.items():
     # get column names
     column_names += [f'{i}_mean_intensity_{y}' if i != 'base' else f'mean_intensity_{y}' for y in x['channels']]
@@ -50,6 +53,7 @@ def run(params):
   logfile_utils.log(f'>> Normalise by {normalise_percentile} with {normalise_axis} for individual images ({normalise_individually})')
   logfile_utils.log(f'>> Transform by {transformation}')
   logfile_utils.log(f'>> Normalise to median {normalise_to_median}')
+  logfile_utils.log(f'>> Create UMAP {merge_umap}')
 
   image_task_dirs = dict()
 
@@ -109,7 +113,8 @@ def run(params):
     to_median = False if len(uIDs) > 0 and normalise_individually is True else normalise_to_median,
     max_fraction = max_fraction,
     percentile = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile,
-    percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom
+    percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom,
+    create_umap = merge_umap
     )
     
   logfile_utils.log(f'>> save back')
@@ -127,7 +132,7 @@ def run(params):
 
       # save back
       if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-         merge_new_adata(image_adata, x, value_name).write_h5ad(os.path.join(
+         merge_new_adata(image_adata, x, value_name, merge_umap = merge_umap).write_h5ad(os.path.join(
           x, 'labelProps', f'{value_name}.clust.h5ad'))
       else:
         image_adata.write_h5ad(os.path.join(
@@ -135,7 +140,7 @@ def run(params):
           
   else:
     if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-      merge_new_adata(adata, task_dir, value_name).write_h5ad(os.path.join(
+      merge_new_adata(adata, task_dir, value_name, merge_umap = merge_umap).write_h5ad(os.path.join(
         task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
     else:
       adata.write_h5ad(os.path.join(
@@ -145,7 +150,7 @@ def run(params):
   adata.file.close()
 
 # merge new adata clusters with previous ones
-def merge_new_adata(new_adata, task_dir, value_name):
+def merge_new_adata(new_adata, task_dir, value_name, merge_umap = True):
   # load previous adata
   label_view = LabelPropsUtils(task_dir = task_dir)\
     .label_props_view(value_name = f'{value_name}.clust')
@@ -222,9 +227,15 @@ def merge_new_adata(new_adata, task_dir, value_name):
     ] = list(new_adata.obs['clusters'])
     
   # merge UMAP values
-  prev_adata.obsm['X_umap'][
-    prev_adata.obs['label'].isin(new_adata.obs['label']), :
-  ] = new_adata.obsm['X_umap']
+  if merge_umap is True:
+    # check that UMAP exists
+    if 'X_umap' not in prev_adata.obsm.keys():
+      prev_adata.obsm['X_umap'] = np.zeros(
+        [len(prev_adata.obs.index), 2], dtype = np.float32)
+    
+    prev_adata.obsm['X_umap'][
+      prev_adata.obs['label'].isin(new_adata.obs['label']), :
+    ] = new_adata.obsm['X_umap']
     
   return prev_adata
 

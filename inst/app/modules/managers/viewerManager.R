@@ -78,7 +78,7 @@ ViewerManager <- R6::R6Class(
         cciaConf()$python$viewer$inputFile)
       ) {
       
-      if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE) {
+      if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE && DEBUG_SHOW_VIEWER == TRUE) {
         # init viewer
         viewer <- NapariUtils$new()
         viewer$initNapari()
@@ -239,13 +239,18 @@ ViewerManager <- R6::R6Class(
     },
     
     # quit
-    quit = function() {
+    quit = function(quitKernelProcess = TRUE) {
       if (!is.null(private$getViewer())){
+        # quit viewer
         self$viewer()$quitKernel()
         
         # reset viewer
         private$setViewer(NULL)
       }
+      
+      # quit kernel process
+      if (quitKernelProcess == TRUE)
+        cciaEnv()$jupyterKernel$quitKernel()
     },
     
     # setters

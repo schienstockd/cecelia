@@ -301,7 +301,7 @@ default:
     useDocker: FALSE
   imagej:
     path: "/path/to/ImageJ-exec"
-    scripts: "ImageJ/Jython/"
+    scripts: "IJ/"
   hpc:
     useHPC: TRUE
     connectTimeout: 5

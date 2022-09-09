@@ -169,6 +169,8 @@ Propagate flow gating to others
 \item{\code{invalidate}}{boolean to invalidate object}
 
 \item{\code{saveState}}{boolean to save state}
+
+\item{\code{...}}{passed to FlowGatingSet$copyGatesFrom}
 }
 \if{html}{\out{</div>}}
 }

@@ -286,6 +286,7 @@ createPopulationManager <- function(
   # save mapping if not done during processing
   observeEvent(input$savePopMapping, {
     req(cciaObj())
+    req(DEBUG_SHOW_VIEWER == TRUE)
     req(globalManagers$projectManager()$getProjectType() != "flow")
     
     # save pop map
@@ -325,7 +326,7 @@ createPopulationManager <- function(
       includeFiltered = managerConf$population$enableFilterPopulation
     )
     
-    if (globalManagers$projectManager()$getProjectType() != "flow") {
+    if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
       # save pop map
       cciaObj()$savePopMap(
         modulePopType(),
@@ -599,7 +600,7 @@ createPopulationManager <- function(
       includeFiltered = managerConf$population$enableFilterPopulation
     )
     
-    if (globalManagers$projectManager()$getProjectType() != "flow") {
+    if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
       # save pop map
       cciaObj()$savePopMap(
         modulePopType(),

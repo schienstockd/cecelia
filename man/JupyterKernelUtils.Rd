@@ -16,6 +16,7 @@ TODO
 \item \href{#method-JupyterKernelUtils-printConsoleConn}{\code{JupyterKernelUtils$printConsoleConn()}}
 \item \href{#method-JupyterKernelUtils-quitKernel}{\code{JupyterKernelUtils$quitKernel()}}
 \item \href{#method-JupyterKernelUtils-kernelClient}{\code{JupyterKernelUtils$kernelClient()}}
+\item \href{#method-JupyterKernelUtils-kernelProcess}{\code{JupyterKernelUtils$kernelProcess()}}
 \item \href{#method-JupyterKernelUtils-execute}{\code{JupyterKernelUtils$execute()}}
 \item \href{#method-JupyterKernelUtils-getKernelConnectionFile}{\code{JupyterKernelUtils$getKernelConnectionFile()}}
 \item \href{#method-JupyterKernelUtils-clone}{\code{JupyterKernelUtils$clone()}}
@@ -27,7 +28,7 @@ TODO
 \subsection{Method \code{new()}}{
 Init
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(connectionFile = NULL, useConnectionFile = FALSE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(connectionFile = NULL, useConnectionFile = TRUE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -67,6 +68,16 @@ quit kernel
 return kernel client
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$kernelClient()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-JupyterKernelUtils-kernelProcess"></a>}}
+\if{latex}{\out{\hypertarget{method-JupyterKernelUtils-kernelProcess}{}}}
+\subsection{Method \code{kernelProcess()}}{
+return kernel process
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$kernelProcess()}\if{html}{\out{</div>}}
 }
 
 }

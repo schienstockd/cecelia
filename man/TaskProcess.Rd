@@ -212,7 +212,7 @@ Remove log
 \subsection{Method \code{writeLog()}}{
 Write to log file
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$writeLog(msg)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$writeLog(msg, printMsg = TRUE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{

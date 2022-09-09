@@ -415,8 +415,7 @@ class LabelPropsView:
   Create new adata
   """
   def create_new_dataset(self, x_values, var, obs = None):
-    return ad.AnnData(
-      x_values, var = var, obs = obs)
+    return ad.AnnData(x_values, var = var, obs = obs, dtype = np.float32)
   
   """
   Return adata

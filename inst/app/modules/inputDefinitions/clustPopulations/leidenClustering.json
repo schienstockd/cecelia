@@ -28,6 +28,11 @@
           "default": 1
         }
       },
+      "mergeUmap": {
+				"type:boolean": {
+				  "default": true
+				}
+      },
       "normaliseAxis": {
         "type:character": {
           "default": "channels"
@@ -115,8 +120,14 @@
           "step": 0.05
         }
       },
-      "normaliseAxis": {
+      "mergeUmap": {
         "index": 4,
+        "label": "Calculate UMAP",
+				"widget:checkbox": {
+				}
+      },
+      "normaliseAxis": {
+        "index": 5,
         "label": "Normalisation Axis",
         "widget:radioButtons": {
           "items": {
@@ -127,40 +138,40 @@
         }
       },
       "normaliseToMedian": {
-        "index": 5,
+        "index": 6,
         "label": "Normalise to median",
         "widget:checkbox": {
         }
       },
       "maxFraction": {
-        "index": 6,
+        "index": 7,
         "label": "Maximum fraction",
         "widget:slider": {
           "step": 0.01
         }
       },
       "normalisePercentile": {
-        "index": 7,
+        "index": 8,
         "label": "Normalisation Top",
         "widget:slider": {
           "step": 0.1
         }
       },
       "normalisePercentileBottom": {
-        "index": 8,
+        "index": 9,
         "label": "Normalisation Bottom",
         "widget:slider": {
           "step": 0.1
         }
       },
       "normaliseIndividually": {
-        "index": 9,
+        "index": 10,
         "label": "Individual normalisation",
         "widget:checkbox": {
         }
       },
       "transformation": {
-        "index": 10,
+        "index": 11,
         "label": "Transform data",
         "widget:selection": {
           "items": {
@@ -173,7 +184,7 @@
         }
       },
       "logBase": {
-        "index": 11,
+        "index": 12,
         "label": "Log base",
         "widget:selection": {
           "items": {
@@ -186,7 +197,7 @@
         }
       },
       "clusterChannels": {
-				"index": 12,
+				"index": 13,
 				"label": "Use for clusterings",
 				"widget:channelSelectionTypeGroup": {
           "channels": {

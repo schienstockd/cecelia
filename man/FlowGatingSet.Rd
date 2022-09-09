@@ -40,6 +40,7 @@ TODO
 \item \href{#method-FlowGatingSet-popDT}{\code{FlowGatingSet$popDT()}}
 \item \href{#method-FlowGatingSet-changeParentName}{\code{FlowGatingSet$changeParentName()}}
 \item \href{#method-FlowGatingSet-recompute}{\code{FlowGatingSet$recompute()}}
+\item \href{#method-FlowGatingSet-renameColumns}{\code{FlowGatingSet$renameColumns()}}
 \item \href{#method-FlowGatingSet-copyGatesFrom}{\code{FlowGatingSet$copyGatesFrom()}}
 \item \href{#method-FlowGatingSet-save}{\code{FlowGatingSet$save()}}
 \item \href{#method-FlowGatingSet-isLabelPropsStore}{\code{FlowGatingSet$isLabelPropsStore()}}
@@ -519,7 +520,7 @@ Population data.table
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popDT(
   pops = "root",
-  cols = NULL,
+  popCols = NULL,
   dropNA = FALSE,
   dropPop = FALSE
 )}\if{html}{\out{</div>}}
@@ -530,7 +531,7 @@ Population data.table
 \describe{
 \item{\code{pops}}{list of character for populations}
 
-\item{\code{cols}}{list of character for columns}
+\item{\code{popCols}}{list of character for columns}
 
 \item{\code{dropNA}}{boolean to drop NA}
 
@@ -578,6 +579,25 @@ Recompute gating
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-FlowGatingSet-renameColumns"></a>}}
+\if{latex}{\out{\hypertarget{method-FlowGatingSet-renameColumns}{}}}
+\subsection{Method \code{renameColumns()}}{
+change column names
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$renameColumns(colNames, invalidate = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{colNames}}{list of character with new column names}
+
+\item{\code{invalidate}}{boolean to invalidate object}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-FlowGatingSet-copyGatesFrom"></a>}}
 \if{latex}{\out{\hypertarget{method-FlowGatingSet-copyGatesFrom}{}}}
 \subsection{Method \code{copyGatesFrom()}}{
@@ -586,7 +606,7 @@ Copy from other GatingSet
 \if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$copyGatesFrom(
   gsFrom,
   removeAll = TRUE,
-  recompute = TRUE,
+  recompute = FALSE,
   invalidate = TRUE
 )}\if{html}{\out{</div>}}
 }
