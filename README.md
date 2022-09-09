@@ -183,7 +183,7 @@ cciaObj$runTask(
 ## Creating plots
 
 One aim of `ceelia` is to provide plotting over the GUI with `shiny`. We
-are currently in the process of testing processing data, this part of
+are currently in the process of testing processing data. This part of
 the app is less developed as we learn which plots and statistics are
 relevant. Plotting is currently done in `RMarkdown` files but we are
 planning to incorporate these into the app.
@@ -206,5 +206,5 @@ library(ggplot2)
 ggplot(popDT, aes(centroid_x, centroid_y)) +
   theme_classic() +
   geom_point(aes(color = as.factor(clusters)), size = 0.5) +
-  facet_wrap(.~Treatment, scales = "free")
+  facet_wrap(.~uID, scales = "free")
 ```
