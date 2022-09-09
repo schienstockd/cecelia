@@ -331,6 +331,13 @@ ggplot(summaryDF,
   ylab("Population (%)") + xlab("") +
   facet_wrap(.~clusters, ncol = 10, scales = "free_y") +
   scale_fill_brewer(name = NULL, palette = "Set3")
+
+summaryDF$Treatment <- 0
+summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "No",]$Treatment <- 1
+summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 2
+
+# save as csv for plotting in Prism
+write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}
