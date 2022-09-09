@@ -56,8 +56,7 @@ HPC_CONF <-  list(
       keyfile = "/Users/schiend/.ssh/spartan_rsa"
     ),
     python = list(
-      condaEnv = cciaConf()$python$conda$source$env,
-      condaDir = cciaConf()$python$conda$dir
+      condaEnv = cciaConf()$python$conda$source$env
     )
   )
 )

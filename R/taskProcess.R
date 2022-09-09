@@ -121,8 +121,7 @@ TaskProcess <- R6::R6Class(
           # self$utilsParams()$python$condaEnv,
           # self$utilsParams()$python$condaDir
           # use local config
-          cciaConf()$python$conda$source$env,
-          cciaConf()$python$conda$dir
+          cciaConf()$python$conda$source$env
         )
       }
       
@@ -319,10 +318,9 @@ TaskProcess <- R6::R6Class(
     
     #' @description Init python environment
     #' @param condaEnv character for conda environment
-    #' @param condaDir character for conda directiory
-    initPy = function(condaEnv = NULL, condaDir = NULL) {
+    initPy = function(condaEnv = NULL) {
       private$setCondaEnv(condaEnv)
-      private$setCondaDir(condaDir)
+      # private$setCondaDir(condaDir)
     },
     
     #' @description Run python script
