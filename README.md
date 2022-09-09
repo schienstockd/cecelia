@@ -6,7 +6,7 @@
 <!-- badges: start -->
 <!-- badges: end -->
 
-\[Image\]{./im/logo.png}
+![Image](./im/logo.png)
 
 The goal of `cecelia` is to simplify image analysis for immunologists
 and integrate static and live cell imaging with flow cytometry data. The
