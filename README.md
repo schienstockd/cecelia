@@ -43,11 +43,11 @@ app:
 ``` r
 library(cecelia)
 
-# setup cecelia directory
-cciaSetup("~/path/to/cecelia")
-
 # install all required R libraries
 cciaRequirements()
+
+# setup cecelia directory
+cciaSetup("~/path/to/cecelia")
 
 # create conda environment
 cciaCondaCreate()
