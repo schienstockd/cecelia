@@ -311,15 +311,13 @@ Get class directory
 \subsection{Method \code{initPy()}}{
 Init python environment
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$initPy(condaEnv = NULL, condaDir = NULL)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$initPy(condaEnv = NULL)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{condaEnv}}{character for conda environment}
-
-\item{\code{condaDir}}{character for conda directiory}
 }
 \if{html}{\out{</div>}}
 }
