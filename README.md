@@ -1,18 +1,16 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# cecelia
+![Image](./im/logo.png)
 
 <!-- badges: start -->
 <!-- badges: end -->
-
-![Image](./im/logo.png)
 
 The goal of `cecelia` is to simplify image analysis for immunologists
 and integrate static and live cell imaging with flow cytometry data. The
 package primarily builds upon [`napari`](https://napari.org) and
 [`shiny`](https://shiny.rstudio.com/). Our aim was to combine shiny’s
-grahp plotting engine with napari’s image display.
+graph plotting engine with napari’s image display.
 
 **This package is pre-alpha**
 
