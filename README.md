@@ -46,7 +46,7 @@ cciaModels()
 ```
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
-your system. You need download/install: \*
+your system. You need download/install: -
 [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
 \*
 [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
