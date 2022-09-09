@@ -12,10 +12,15 @@ package primarily builds upon [`napari`](https://napari.org) and
 [`shiny`](https://shiny.rstudio.com/). Our aim was to combine shiny’s
 grahp plotting engine with napari’s image display.
 
+**This package is pre-alpha**
+
 ## Installation
 
-\*\* This package currently only works on Unix systems \*\* You can
-install the development version of cecelia like so:
+**This package currently only works on Unix systems** We have a Docker
+version to support other systems if necessary, so do open an issue if
+that is needed.
+
+You can install the development version of cecelia like so:
 
 ``` r
 if (!require("remotes", quietly = TRUE))
@@ -52,11 +57,16 @@ your system. You need download/install:
 
 -   [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
 
--   [`ImageJ` if using Spot
-    segmentation](https://imagej.net/imagej-wiki-static/Fiji/Downloads)
+-   [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
+    using Spot segmentation
 
-For `ImageJ`, activate the following update sites: \* IJPB-plugins \*
-3D-ImageJ-Suite \* Bio-Formats
+For `ImageJ`, activate the following update sites:
+
+-   IJPB-plugins
+
+-   3D-ImageJ-Suite
+
+-   Bio-Formats
 
 ``` yml
 default:
@@ -71,16 +81,39 @@ default:
   python:
     conda:
       env: "r-cecelia-env"
-      dir: "~/opt/anaconda3/"
       source:
         env: "r-cecelia-env"
   imagej:
     path: "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"
 ```
 
-## Example
+## Image analysis general workflow
+
+1.  Create a Project for `satic`, `live` or `flow` analysis.
+
+2.  Images have to be imported as `OME-ZARR`. Choose `Import Images` and
+    create an `Experimental Set`. It is helpful if all images within
+    this set have the same colour combinations. Add Images. Select all
+    images you want to import and choose `OME-ZARR`. Select the required
+    `pyramid scales` and `run` the task.
+
+3.  Select `Image Metadata` and click `Load Metadata` to load the
+    channel information.
+
+## Examples
+
+Run the image analysis app
 
 ``` r
 library(cecelia)
-## basic example code
+cciaUse("~/path/to/cecelia", initJupyter = TRUE)
+cciaRunApp(port = 6860)
+```
+
+Run the flow analysis app
+
+``` r
+library(cecelia)
+cciaUse("~/path/to/cecelia", initJupyter = FALSE)
+cciaRunApp(port = 6860)
 ```
