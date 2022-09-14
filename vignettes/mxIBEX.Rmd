@@ -12,8 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-pID <- "pEdOoZ"
-versionID <- 2
+pID <- "wEsnzt"
+versionID <- 1
 projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
@@ -63,7 +63,7 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/Moldoveanu2022_IMC/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/IBEX/CECELIA"
 ```
 
 ```{r}
@@ -72,124 +72,35 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "fhz81P", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
+  # pID = pID, uID = "TyFwVs", versionID = versionID, initReactivity = FALSE # Set
 )
 
-popDT <- cciaObj$popDT("clust", pops = c("lymphs"), includeFiltered = TRUE)
-```
+# exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
-
-```{r}
-# run clustering
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
-  # pID = pID, uID = "JQE7xd", versionID = versionID, initReactivity = FALSE # ICB
-  # pID = pID, uID = "pkuB3P", versionID = versionID, initReactivity = FALSE # BioMax
-)
-
-exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
-
-# get cluster channels
-excludeChannels <- c(
-  "S100_Lu175", "SOX10_Dy164", # melano
-  "Histone-H3_Yb176", "x191Ir_Ir191", "x193Ir_Ir193", # backbone
-  "CD31_Sm147", # endothelial
-  "x127I_I127", "x132Xe_Xe132", "x138Ba_Ba138", "x190BCKG_BCKG190",
-  "x195Pt_Pt195", "x208Pb_Pb208", "x80ArAr_ArAr80"
-  )
-clusterChannels <- which(
-  !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
-
-# run task
-funParams <- list(
-  popType = "clust",
-  popsToCluster = c("lymphs", "macro.mono"),
-  # popsToCluster = c(),
-  # savePops = TRUE,
-  savePops = FALSE,
-  keepPops = TRUE,
-  # keepPops = FALSE,
-  resolution = 0.6,
-  mergeUmap = TRUE,
-  normalisePercentile = 99.8,
-  normalisePercentileBottom = 0,
-  normaliseAxis = "channels",
-  normaliseToMedian = FALSE,
-  normaliseIndividually = FALSE,
-  transformation = "log",
-  logBase = 0,
-  valueName = "default",
-  uIDs = uIDs,
-  clusterChannels = list(
-    base = list(
-      channels = clusterChannels
-    )
-  )
-)
-
-task <- cciaObj$runTask(
-  funName = "clustPopulations.leidenClustering",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  # env = "hpc",
-  env = "local",
-  # runInplace = FALSE,
-  runInplace = TRUE,
-  taskID = 1
-)
-```
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
-)
-
-exp.info <- as.data.table(
-  cciaObj$summary(withSelf = FALSE, fields = c("Attr")) %>%
-    left_join(read.csv(file.path(anaDir, "sample.info.csv")))
-  )
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% exp.info[
-  exp.info$Include == "Y" & exp.info$Cohort == "ICI", ]$uID]
+# uIDs <- c("BNcZ2j")
 
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("melano", "endothelial", "lymphs", "macro.mono", "macro.PDL1+"), uIDs = uIDs)
+  # pops = c("T", "B", "others"), uIDs = uIDs)
+  pops = c("T", "B", "others", "macro.dc", "endothelial", "lymphatic", "lymphs"))
 
 unique(popDT$clusters)
 ```
 
 ```{r}
 excludeMarkers <- c(
-  # "S100_Lu175", "SOX10_Dy164", # melano
-  "Histone-H3_Yb176", "x191Ir_Ir191", "x193Ir_Ir193", # backbone
-  # "CD31_Sm147", # endothelial
-  "x127I_I127", "x132Xe_Xe132", "x138Ba_Ba138", "x190BCKG_BCKG190",
-  "x195Pt_Pt195", "x208Pb_Pb208", "x80ArAr_ArAr80"
 )
 
-markersToShow <- cciaObj$cciaObjects()[[1]]$imChannelNames()[
-  !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeMarkers]
+markersToShow <- cciaObj$imChannelNames()[!cciaObj$imChannelNames() %in% excludeMarkers]
 markersToShow <- unname(unlist(.flowCorrectChannelNames(markersToShow)))
 markersToShow <- markersToShow[markersToShow %in% colnames(popDT)]
+markersToShow <- c(markersToShow, "nuc_FOXP3", "nuc_Ki.67")
 
 markersToShowNoDye <- stringr::str_extract(markersToShow, ".*(?=_)")
 
-colsToShow <- c("uID", "label", "clusters", "pop", markersToShow)
+colsToShow <- c("label", "clusters", "pop", markersToShow)
 colsToShow <- colsToShow[colsToShow %in% colnames(popDT)]
 
 # show heatmap
@@ -204,19 +115,10 @@ markersToPlot$marker <- as.factor(markersToPlot$marker)
 # show heatmap for clusters
 markersSummary <- markersToPlot %>%
   drop_na() %>%
-  # group_by(clusters, marker) %>%
   group_by(marker, clusters) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
-  # summarise(mean = scale(value, center = FALSE)) %>%
   mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
-  mutate(
-    marker = factor(
-      stringr::str_extract(marker, ".*(?=_)"),
-      levels = rev(markersToShowNoDye))
-    )
-  # replace_na(list(value = 0))
-  # group_by(marker)
-  # mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
+  replace_na(list(norm = 0))
 ```
 
 
@@ -259,7 +161,7 @@ ggplot(markersSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 13, height = 11)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 11, height = 11)
 ```
 
 ```{r fig_pops_umap, fig.height=2, fig.width=2}
@@ -316,38 +218,30 @@ ggplot(
 ggsave(file.path(anaDir, "cd45_umap.tiff"), width = 5, height = 6.5)
 ```
 
-```{r fig_pops_freq, fig.height=5, fig.width=8}
+```{r fig_pops_freq, fig.height=1, fig.width=3}
 # show frequency of populations for treatments
 summaryDF <- popDT %>%
-  dplyr::filter(
-    !clusters %in% c("0", "3")
-  ) %>%
-  group_by(uID, clusters) %>%
+  mutate(clusters = as.character(clusters)) %>%
+  group_by(clusters) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
-  complete(uID, clusters, fill = list(freq = 0)) %>%
-  left_join(exp.info)
+  complete(clusters, fill = list(freq = 0))
+  # left_join(exp.info)
+
+summaryDF$clusters <- factor(
+  summaryDF$clusters, levels = unique((summaryDF %>% arrange(-freq))$clusters))
 
 # plot
 ggplot(summaryDF,
-       aes(interaction(Cohort, Response), freq, fill = interaction(Cohort, Response))) +
+       aes(clusters, freq)) +
   theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    # width = 0.3, alpha = 0.6) +
-  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  geom_point() +
   theme(
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
   ) +
   ylab("Population (%)") + xlab("") +
-  facet_wrap(.~clusters, ncol = 10, scales = "free_y") +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
-summaryDF$Treatment <- 0
-# summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "No",]$Treatment <- 1
-summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
 
 # save as csv for plotting in Prism
 write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
@@ -359,37 +253,27 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
 )
 
-exp.info <- as.data.table(
-  cciaObj$summary(withSelf = FALSE, fields = c("Attr")) %>%
-    left_join(read.csv(file.path(anaDir, "sample.info.csv")))
-  )
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
-
 # get cluster information
-spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
+spatialDT <- cciaObj$spatialDT(valueName = "default")
 
 # join pops
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "to" = "label"),
+# spatialDT[popDT[, c("label", "pop")],
+#           on = c("to" = "label"),
 #           pop.to := pop]
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "from" = "label"),
+# spatialDT[popDT[, c("label", "pop")],
+#           on = c("from" = "label"),
 #           pop.from := pop]
-spatialDT[popDT[, c("uID", "label", "clusters")],
-          on = c("uID", "to" = "label"),
+spatialDT[popDT[, c("label", "clusters")],
+          on = c("to" = "label"),
           clusters.to := clusters]
-spatialDT[popDT[, c("uID", "label", "clusters")],
-          on = c("uID", "from" = "label"),
+spatialDT[popDT[, c("label", "clusters")],
+          on = c("from" = "label"),
           clusters.from := clusters]
 
 # filter same type associations
-spatialDT <- spatialDT[clusters.to == "3", clusters.to := "0"]
-spatialDT <- spatialDT[clusters.from == "3", clusters.from := "0"]
 spatialDT <- spatialDT[clusters.to != clusters.from]
 ```
 
@@ -397,39 +281,54 @@ spatialDT <- spatialDT[clusters.to != clusters.from]
 ```{r fig_kmeans_clusters, fig.height=1.5, fig.width=12}
 # get "i-niches" and determine a given number of defined clusters
 freqRegions <- spatialDT %>%
-  dplyr::filter(
-    # !clusters.from %in% c("0"),
-    # !clusters.from %in% c("0")
-    # clusters.from %in% c("9")
-    # !clusters.to %in% c("9")
-  ) %>%
-  # group_by(uID, from, clusters.from, clusters.to) %>%
-  group_by(uID, clusters.from, clusters.to) %>%
-  # group_by(uID, to, clusters.to, clusters.from) %>%
+  group_by(clusters.from, clusters.to) %>%
   summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  drop_na() %>%
-  ungroup() %>%
-  complete(uID, clusters.from, clusters.to, fill = list(freq = 0)) %>%
-  left_join(exp.info)
-  # pivot_wider(
-  #   id_cols = c(uID, clusters.from),
-  #   names_from = clusters.to,
-  #   values_from = freq,
-  #   values_fill = 0
-  # )
+  mutate(freq = n/sum(n)) %>%
+  drop_na()
+  # ungroup() %>%
+  # complete(clusters.from, clusters.to, fill = list(freq = 0))
+```
 
+```{r fig_interactions_heat, fig.height=5, fig.width=5}
+ggplot(freqRegions %>%
+         ungroup() %>%
+         complete(clusters.from, clusters.to, fill = list(freq = 0)),
+       aes(clusters.from, clusters.to)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 0.5),
+    labels = c(0, 0.5)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20),
+    legend.key.size = unit(10, "mm"),
+    axis.text.y = element_text(size = 20),
+    # axis.text.x = element_text(size = 20),
+    axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "interactions_heat.pdf"), width = 10, height = 10)
+```
+
+
+```{r fig_kmeans_clusters, fig.height=1.5, fig.width=12}
 # show interactions of individuals
 for (i in unique(freqRegions$clusters.from)) {
   x <- freqRegions %>% dplyr::filter(clusters.from == i) 
   
   p1 <- ggplot(x,
-               aes(clusters.to, freq, fill = Response)) +
+               aes(clusters.to, freq)) +
     theme_classic() +
     geom_boxplot(outlier.alpha = 0) +
     geom_jitter(
-      position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-      # width = 0.3, alpha = 0.6) +
+      # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+      width = 0.3, alpha = 0.6) +
     # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
     ylab("Population (%)") + xlab("") +
     # ylim(0, 1) +
@@ -437,9 +336,6 @@ for (i in unique(freqRegions$clusters.from)) {
     ggtitle(i)
 
   print(p1)
-  
-  x$Treatment <- 0
-  x[x$Cohort == "ICI" & x$Response == "Yes",]$Treatment <- 1
   
   # save as csv for plotting in Prism
   write.csv(x, file.path(anaDir, paste0("interactions_freq", i, ".csv")))
@@ -454,9 +350,9 @@ freqRegionsWider <- freqRegions %>%
   # ungroup() %>%
   # mutate(norm = normalit(freq)) %>%
   pivot_wider(
-    # id_cols = c(uID, clusters.from),
-    id_cols = c(uID, from, clusters.from),
-    # id_cols = c(uID, to, clusters.to),
+    # id_cols = c(clusters.from),
+    id_cols = c(from, clusters.from),
+    # id_cols = c(to, clusters.to),
     # id_cols = c(from),
     # id_cols = c(uID),
     names_from = clusters.to,
@@ -468,31 +364,33 @@ freqRegionsWider <- freqRegions %>%
 
 freqRegionsMat <- as.matrix(freqRegionsWider %>%
   ungroup() %>% 
-  select(-c(uID, from, clusters.from)))
+  select(-c(from, clusters.from)))
 rownames(freqRegionsMat) <- freqRegionsWider$from
 ```
 
 ```{r fig_kmeans_clusters, fig.height=1.5, fig.width=2.5}
-clustToFind <- 3
+clustToFind <- 4
 
-clusters <- kmeans(
-  freqRegionsWider %>%
-    ungroup() %>%
-    select(-c(uID, clusters.from)),
-    # select(-c(uID, clusters.to)),
-  clustToFind)
-# mcl.model <- mclust::Mclust(freqRegionsMat)
-# mcl.model <- mclust::Mclust(freqRegionsMat, clustToFind)
+library(mclust)
+
+# clusters <- kmeans(
+#   freqRegionsWider %>%
+#     ungroup() %>%
+#     select(-c(from, clusters.from)),
+#     # select(-c(clusters.to)),
+#   clustToFind)
+# mcl.model <- Mclust(freqRegionsMat)
+mcl.model <- Mclust(freqRegionsMat, clustToFind)
 
 # Plot our results.
 # plot(mcl.model, what = "classification", main = "Mclust Classification")
 
 # push back clusters
-freqRegionsWider$cluster <- clusters$cluster
-# freqRegionsWider$cluster <- mcl.model$classification
+# freqRegionsWider$cluster <- clusters$cluster
+freqRegionsWider$cluster <- mcl.model$classification
 
 popCols <- colnames(freqRegionsWider)[!colnames(freqRegionsWider) %in% c(
-  "uID", "from", "to", "n", "cluster", "clusters.from", "clusters.to")]
+  "from", "to", "n", "cluster", "clusters.from", "clusters.to")]
 
 freqRegionsWiderSummary <- freqRegionsWider %>%
   group_by(cluster) %>%
@@ -512,15 +410,38 @@ ggplot(
   theme(legend.title=element_blank()) +
   xlab("") + ylab("")
 ```
+```{r fig_kmeans_clusters_map, fig.height=3, fig.width=4}
+# plot out
+popDT[as.data.table(freqRegionsWider[, c("from", "cluster")]),
+      on = list(label = from), spatial_cluster := cluster]
+
+ggplot(popDT %>% drop_na(),
+       aes(centroid_x, -centroid_y, color = as.factor(spatial_cluster))) +
+  theme_classic() +
+  geom_point() +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+  ) +
+  xlab("") + ylab("")
+```
+
 
 ```{r fig_region_freq, fig.height=1, fig.width=6}
 # show frequency of populations for treatments
 summaryDF <- copy(freqRegionsWider) %>%
-  group_by(uID, cluster) %>%
+  group_by(cluster) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
-  complete(uID, cluster, fill = list(freq = 0)) %>%
+  complete(cluster, fill = list(freq = 0)) %>%
   left_join(exp.info)
 
 # plot
@@ -603,18 +524,18 @@ popDT <- cciaObj$popDT(
 ```{r}
 # get distance of activated T cells to melano
 clusterDist <- popDT %>%
-  group_by(uID, clusters) %>%
+  group_by(clusters) %>%
   summarise(mean.dist = median(`clust.cell.min_distance#clust.melano`)) %>%
   ungroup() %>%
-  # complete(uID, clusters, fill = list(mean.dist = 100)) %>%
+  # complete(clusters, fill = list(mean.dist = 100)) %>%
   left_join(exp.info)
 clusterContact <- popDT[,`clust.cell.contact#clust.melano` := `clust.cell.min_distance#clust.melano` <= 1] %>%
-  group_by(uID, clusters, `clust.cell.contact#clust.melano`) %>%
+  group_by(clusters, `clust.cell.contact#clust.melano`) %>%
   summarise(n = n()) %>%
   mutate(freq.contact = n/sum(n)) %>%
   dplyr::filter(`clust.cell.contact#clust.melano` == TRUE) %>%
   ungroup() %>%
-  complete(uID, clusters, fill = list(freq.contact = 0)) %>%
+  complete(clusters, fill = list(freq.contact = 0)) %>%
   left_join(exp.info)
 ```
 

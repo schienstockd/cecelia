@@ -724,6 +724,15 @@ handleSystem <- function(retVal, silent = FALSE) {
   invisible()
 }
 
+#' @description Print message using echo for inside mclapply
+#' https://stackoverflow.com/a/63372671
+#' @param ... passed to paste0
+#' @examples
+#' TODO
+.cciaMessageParallel <- function(...) {
+  system(sprintf('echo "\n%s\n"', paste0(..., collapse = "")))
+}
+
 #' @description Check whether task was successful
 #' @param res character with attributes of result
 #' @examples

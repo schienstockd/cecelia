@@ -372,18 +372,22 @@ ReactivePersistentObjectSet <- R6::R6Class(
     #' @description Run tasks for children
     #' @param uIDs list of character of unique IDs
     #' @param ... ReactivePersistentObject$runTask
-    runTasks = function(uIDs = NULL, ...) {
+    runTasks = function(uIDs = NULL, mc.cores = NULL, ...) {
+      # set task number
+      if (is.null(mc.cores))
+        mc.cores <- parallel::detectCores()
+      
+      # set IDs
       if (is.null(uIDs)) {
         uIDs <- names(self$cciaObjects())
       }
       
       # go through children
-      for (x in self$cciaObjects()[uIDs]) {
-        message(sprintf(">> Run task for %s", x$getUID()))
-        
-        # run
+      # for (x in self$cciaObjects()[uIDs]) {
+      parallel::mclapply(self$cciaObjects()[uIDs], function(x) {
+        .cciaMessageParallel(sprintf(">> Run task for %s", x$getUID()))
         x$runTask(...)
-      }
+        }, mc.cores = mc.cores)
     },
     
     #' @description All objects

@@ -1674,7 +1674,7 @@ CciaImage <- R6::R6Class(
           popDT[, id := (1:.N) - 1]
           labelView$close()
           
-          if (!is.null(spatialDT)) {
+          if (!is.null(spatialDT) && length(spatialDT) > 0) {
             # TODO this is a bad fix if vertices are missing in popDT
             spatialDT <- spatialDT[
               spatialDT$from %in% popDT$id,]

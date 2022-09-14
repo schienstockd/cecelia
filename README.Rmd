@@ -64,6 +64,9 @@ cciaCondaCreate()
 
 # download models for deep-learning segmentation
 cciaModels()
+
+# create app
+cciaCreateApp()
 ```
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to your system.

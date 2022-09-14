@@ -87,7 +87,10 @@
             "type:list": {}
           }
         }
-      }
+      },
+      "objectMeasures": {
+				"type:list": {}
+			}
     },
     "outputs": {}
   },
@@ -198,7 +201,7 @@
       },
       "clusterChannels": {
 				"index": 13,
-				"label": "Use for clusterings",
+				"label": "Use channels for clusterings",
 				"widget:channelSelectionTypeGroup": {
           "channels": {
             "index": 0,
@@ -209,7 +212,16 @@
             }
           }
   			}
-      }
+      },
+      "objectMeasures": {
+				"index": 7,
+				"label": "Object measurements",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true,
+					"includeChannels": false
+				}
+			}
     },
     "outputs": {}
   }

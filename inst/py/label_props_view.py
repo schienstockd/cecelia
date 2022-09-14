@@ -441,13 +441,20 @@ class LabelPropsView:
   """
   def as_spatial_connectivities(self):
     if 'spatial_connectivities' in self.adata.obsp.keys():
-      # convert nonzero entried to DF
-      df = pd.DataFrame(
-        np.vstack(self.adata.obsp['spatial_connectivities'].nonzero()).T
-      )
-      df.columns = ['from', 'to']
+      if self.adata.obsp['spatial_connectivities'].count_nonzero() > 0:
+        # convert nonzero entried to DF
+        df_connectivities = pd.DataFrame(
+          np.vstack(self.adata.obsp['spatial_connectivities'].nonzero()).T
+        )
+        df_connectivities.columns = ['from', 'to']
+        df_distances = pd.DataFrame(self.adata.obsp['spatial_distances'][
+          self.adata.obsp['spatial_connectivities'].nonzero()].T)
+          
+        # bind columns
+        df = pd.concat([df_connectivities, df_distances], axis = 1)
+        df.columns = ['from', 'to', 'dist']
       
-      return df
+        return df
   
   """
   Return adata as dataframe w/o obs

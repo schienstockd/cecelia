@@ -248,9 +248,9 @@ ViewerManager <- R6::R6Class(
         private$setViewer(NULL)
       }
       
-      # quit kernel process
-      if (quitKernelProcess == TRUE)
-        cciaEnv()$jupyterKernel$quitKernel()
+      # # quit kernel process
+      # if (quitKernelProcess == TRUE)
+      #   cciaEnv()$jupyterKernel$quitKernel()
     },
     
     # setters

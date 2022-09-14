@@ -22,7 +22,7 @@
 			"neighbourRadius": {
 				"type:double": {
 					"min": 0,
-					"max": 50,
+					"max": 200,
 					"default": 30
 				}
 			},

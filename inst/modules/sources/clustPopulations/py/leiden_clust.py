@@ -26,6 +26,7 @@ def run(params):
   resolution = script_utils.get_param(params, 'resolution', default = 1)
   merge_umap = script_utils.get_param(params, 'mergeUmap', default = True)
   cluster_channels = script_utils.get_param(params, 'clusterChannels', default = {})
+  object_measures = script_utils.get_param(params, 'objectMeasures', default = {})
   pop_type = script_utils.get_param(params, 'popType', default = None)
   pops_to_cluster = script_utils.get_param(params, 'popsToCluster', default = [])
   keep_pops = script_utils.get_param(params, 'keepPops', default = False)
@@ -44,11 +45,15 @@ def run(params):
   column_names = []
 
   logfile_utils.log(cluster_channels)
+  logfile_utils.log(object_measures)
 
   for i, x in cluster_channels.items():
     # get column names
     column_names += [f'{i}_mean_intensity_{y}' if i != 'base' else f'mean_intensity_{y}' for y in x['channels']]
-
+  
+  # add object measurements to column names
+  column_names += object_measures
+  
   logfile_utils.log(f'>> Find clusters for {column_names} at {resolution}')
   logfile_utils.log(f'>> Normalise by {normalise_percentile} with {normalise_axis} for individual images ({normalise_individually})')
   logfile_utils.log(f'>> Transform by {transformation}')
@@ -61,6 +66,8 @@ def run(params):
   if len(uIDs) > 0:
     logfile_utils.log(f'>> Running clustering on set for {uIDs}')
     image_dfs = []
+    
+    max_clusters = 0
 
     # make task dirs
     task_dir_split = task_dir.split(os.sep)
@@ -73,7 +80,7 @@ def run(params):
       task_dir_split[-1] = x
       image_task_dirs[x] = os.path.join(*([os.sep] + task_dir_split))
 
-      image_dfs.append(get_adata(
+      image_df, image_clusters = get_adata(
         image_task_dirs[x], value_name, column_names, logfile_utils,
         pops_to_cluster = pops_to_cluster, pop_type = pop_type,
         keep_pops = keep_pops, as_df = True,
@@ -84,7 +91,13 @@ def run(params):
         max_fraction = max_fraction,
         normalise_percentile = normalise_percentile if normalise_individually is True else 0,
         normalise_percentile_bottom = normalise_percentile_bottom if normalise_individually is True else 0
-        ))
+        )
+      
+      # append
+      image_dfs.append(image_df)
+      
+      # set max clusters
+      max_clusters = max(image_clusters, max_clusters)
 
       # set uID
       image_dfs[-1]['uID'] = x
@@ -98,10 +111,12 @@ def run(params):
       .as_adata()
   else:
     # run clustering on single image
-    adata = get_adata(task_dir, value_name, column_names, logfile_utils,
-                      pops_to_cluster = pops_to_cluster, pop_type = pop_type,
-                      keep_pops = keep_pops)
+    adata, max_clusters = get_adata(
+      task_dir, value_name, column_names, logfile_utils,
+      pops_to_cluster = pops_to_cluster, pop_type = pop_type,
+      keep_pops = keep_pops)
   
+  logfile_utils.log(f'>> increase cluster numbering by {max_clusters}')
   logfile_utils.log(f'>> find populations')
   
   # find populations
@@ -132,7 +147,7 @@ def run(params):
 
       # save back
       if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-         merge_new_adata(image_adata, x, value_name, merge_umap = merge_umap).write_h5ad(os.path.join(
+         merge_new_adata(image_adata, x, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
           x, 'labelProps', f'{value_name}.clust.h5ad'))
       else:
         image_adata.write_h5ad(os.path.join(
@@ -140,7 +155,7 @@ def run(params):
           
   else:
     if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-      merge_new_adata(adata, task_dir, value_name, merge_umap = merge_umap).write_h5ad(os.path.join(
+      merge_new_adata(adata, task_dir, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
         task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
     else:
       adata.write_h5ad(os.path.join(
@@ -150,25 +165,33 @@ def run(params):
   adata.file.close()
 
 # merge new adata clusters with previous ones
-def merge_new_adata(new_adata, task_dir, value_name, merge_umap = True):
+def merge_new_adata(new_adata, task_dir, value_name, logfile_utils, merge_umap = True, max_clusters = 0):
   # load previous adata
   label_view = LabelPropsUtils(task_dir = task_dir)\
     .label_props_view(value_name = f'{value_name}.clust')
   
   # remove columns from previous data
   # if used in the new data
-  use_cols = [
+  non_used_cols = [
     i for i, x in enumerate(label_view.col_names()) if x not in new_adata.var_names.tolist()
+    ]
+  used_cols = [
+    i for i, x in enumerate(label_view.col_names()) if x in new_adata.var_names.tolist()
     ]
   
   # define new column names
-  new_var_names = [label_view.col_names()[i] for i in use_cols] + new_adata.var_names.tolist()
+  new_var_names = [label_view.col_names()[i] for i in non_used_cols] + new_adata.var_names.tolist()
+  
+  # remember old values
+  # TODO this has to be cleaner
+  prev_x = label_view.adata.X[
+    ~label_view.adata.obs['label'].isin(new_adata.obs['label']), used_cols]
   
   # merge X
   # extend x for new columns with '0'
   label_view.x_values(
       np.append(
-          label_view.adata.X[:, use_cols],
+          label_view.adata.X[:, non_used_cols],
           np.zeros((label_view.adata.X[:].shape[0], new_adata.X.shape[1])),
           axis = 1
       ), var_names = new_var_names
@@ -177,13 +200,19 @@ def merge_new_adata(new_adata, task_dir, value_name, merge_umap = True):
   # copy in new values
   label_view.adata.X[
     label_view.adata.obs['label'].isin(new_adata.obs['label']),
-    len(use_cols):
+    len(non_used_cols):
     ] = new_adata.X
+    
+  # copy in old values
+  label_view.adata.X[
+    ~label_view.adata.obs['label'].isin(new_adata.obs['label']),
+    len(non_used_cols):
+    ] = prev_x
     
   # set values not used for clustering to '0'
   label_view.adata.X[
     label_view.adata.obs['label'].isin(new_adata.obs['label']),
-    :len(use_cols)
+    :len(non_used_cols)
     ] = 0
     
   # TODO you need to get this from the whole dataset
@@ -211,10 +240,10 @@ def merge_new_adata(new_adata, task_dir, value_name, merge_umap = True):
   
   # increase cluster numbering
   # clusters start at '0'
-  new_adata.obs['clusters'] += prev_adata.obs.loc[
-    ~prev_adata.obs['label'].isin(new_adata.obs['label']),
-    'clusters'
-    ].max() + 1
+  # max_clusters = prev_adata.obs.loc[
+  #   ~prev_adata.obs['label'].isin(new_adata.obs['label']), 'clusters'].max() + 1
+  
+  new_adata.obs['clusters'] += max_clusters + 1
   
   # merge
   prev_adata.obs['clusters'] = prev_adata.obs['clusters'].astype('str')
@@ -247,24 +276,40 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
               normalise_percentile = 100, normalise_percentile_bottom = 0,
               transformation = 'NONE', log_base = 10):
   label_view = LabelPropsUtils(task_dir, value_name = value_name).label_props_view(read_only = False)
-
+  
   # get population for clustering
+  pop_labels = []
   if pops_to_cluster is not None and len(pops_to_cluster) > 0:
     # get the requested population from here
     pop_utils = PopUtils()
     pop_map = pop_utils.pop_map(task_dir, pop_type, pops = pops_to_cluster)
     pop_data = pop_utils.pop_data(task_dir, pop_type, pops = pops_to_cluster)
     
-    # filter labels
-    label_view.filter_by_obs(
-      [y for x in pop_data.values() for y in x]
-    )
+    pop_labels += [y for x in pop_data.values() for y in x]
+    
+  # filter labels
+  if len(pop_labels) > 0:
+    label_view.filter_by_obs(pop_labels)
+    
+  # get max clusters
+  max_clusters = 0
+  
+  if keep_pops is True:
+    clust_label_view = LabelPropsUtils(task_dir = task_dir)\
+      .label_props_view(value_name = f'{value_name}.clust')
+      
+    if 'clusters' in clust_label_view.values_obs().keys():
+      max_clusters = clust_label_view.values_obs().loc[
+        ~clust_label_view.values_obs()['label'].isin(pop_labels), 'clusters'].astype(np.int32).max()
+    
+    clust_label_view.close()
   
   # get data for clustering
-  label_view.view_vars_cols(column_names)\
+  # label_view.view_vars_cols(column_names)\
+  label_view.view_cols(column_names)\
     .view_label_col()\
     .exclude_spatial_temporal()
-
+  
   # transform columns?
   scanpy_utils.apply_transform(label_view.adata, transformation = transformation, log_base = log_base)
 
@@ -284,12 +329,12 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
 
   label_view.close()
 
-  return adata
+  return adata, max_clusters
 
 def main():
   # get params
   params = script_utils.script_params(
-    flatten_except = ['clusterChannels', 'uIDs', 'popsToCluster']
+    flatten_except = ['clusterChannels', 'objectMeasures', 'uIDs', 'popsToCluster']
   )
 
   # run

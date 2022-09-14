@@ -558,6 +558,13 @@ InputManager <- R6::R6Class(
         namesChoices, uiContent
       )
       
+      # exclude channels?
+      if ("includeChannels" %in% names(uiContent) && uiContent$includeChannels == FALSE) {
+        namesChoices <- namesChoices[
+          !namesChoices %in% self$cciaObject()$imChannelNames(
+            correctChannelNames = TRUE, includeTypes = TRUE)]
+      }
+      
       list(
         ui = createSelectInput(
           elmntName,

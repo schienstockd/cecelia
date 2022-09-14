@@ -63,7 +63,7 @@ def run(params):
       cols = prop_cols,
       pops = [pop_a]
     )
-
+    
     # same value for all within a population
     pop_value_name_a = pop_df_a['value_name'][0]
     

@@ -18,6 +18,10 @@ def normalise_adata(
   adata, axis = 'channels', to_median = False, max_fraction = 0,
   percentile = cfg.data['images']['normalise']['percentile'],
   percentile_bottom = 0):
+  
+  # replace NA with 0  
+  adata.X[np.isnan(adata.X)] = 0
+  
   if axis == 'cells':
     exclude_highly_expressed = False
     if max_fraction > 0:

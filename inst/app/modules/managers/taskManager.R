@@ -222,7 +222,7 @@ createTaskManager <- function(
   # task limit
   taskLimit <- reactive({
     input$taskLimit
-  })
+  }) %>% debounce(cciaConf()$tasks$results$poll)
   
   # number of tasks
   numRunningTasks <- reactive({

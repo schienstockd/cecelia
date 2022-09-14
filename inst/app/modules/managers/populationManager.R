@@ -372,6 +372,7 @@ createPopulationManager <- function(
     
     # was the image just selected?
     execInteractive <- TRUE
+    
     if (!is.null(showPopMapInteractive())) {
       if (showPopMapInteractive() == moduleManagers()$imageViewerManager$imageShown()) {
         execInteractive <- TRUE
@@ -731,7 +732,7 @@ createPopulationManager <- function(
     
     # set pop table columns
     if (!is.null(popTableDF)) {
-      if (is.null(popTableColumns()) || popTableColumns() != colnames(popTableDF)) {
+      if (is.null(popTableColumns()) || !(popTableColumns() %in% colnames(popTableDF))) {
         cols <- as.data.frame(
           rep(list(""), length(colnames(popTableDF))))
         colnames(cols) <- colnames(popTableDF)

@@ -33,7 +33,11 @@ def run(params):
     'omexml': omexml,
     'task_dir': params['taskDir'],
     'im_path': params['imPath'],
+    'segment': params['segment'] if 'segment' in params else True,
     'measure': True,
+    'update_measures': params['updateMeasures'] if 'updateMeasures' in params else False,
+    'save_meshes': params['saveMeshes'] if 'saveMeshes' in params else False,
+    'find_contours': False,
     # init params
     'fiji_path': params['fijiPath'],
     'scripts_path': params['scriptsPath'],
