@@ -34,11 +34,11 @@ depends on a python environment which needs to be created. There are
 multiple options available depending on how you would like to use the
 app:
 
--   `image` For image analysis on Desktop
+- `image` For image analysis on Desktop
 
--   `image-nogui` For image processing without GUI
+- `image-nogui` For image processing without GUI
 
--   `flow` For flow cytometry analysis
+- `flow` For flow cytometry analysis
 
 ``` r
 library(cecelia)
@@ -56,25 +56,28 @@ cciaCondaCreate()
 
 # download models for deep-learning segmentation
 cciaModels()
+
+# create app
+cciaCreateApp()
 ```
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:
 
--   [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
+- [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
 
--   [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
+- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
 
--   [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
-    using Spot segmentation
+- [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
+  using Spot segmentation
 
 For `ImageJ`, activate the following update sites:
 
--   IJPB-plugins
+- IJPB-plugins
 
--   3D-ImageJ-Suite
+- 3D-ImageJ-Suite
 
--   Bio-Formats
+- Bio-Formats
 
 ``` yml
 default:

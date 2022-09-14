@@ -341,7 +341,7 @@ Overview dataframe
 \subsection{Method \code{runTasks()}}{
 Run tasks for children
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ReactivePersistentObjectSet$runTasks(uIDs = NULL, ...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ReactivePersistentObjectSet$runTasks(uIDs = NULL, mc.cores = NULL, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
