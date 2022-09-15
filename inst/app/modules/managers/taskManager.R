@@ -346,6 +346,19 @@ createTaskManager <- function(
     partitions
   })
   
+  # return HPC qos
+  hpcProjectQos <- reactive({
+    qos <- NULL
+    
+    if (useGPU() == TRUE) {
+      qos <- globalManagers$projectManager()$getProjectHPCqosGPU()
+    } else {
+      qos <- globalManagers$projectManager()$getProjectHPCqosCPU()
+    }
+    
+    qos
+  })
+  
   useGPU <- reactive({
     if (useHPC() == TRUE)
       input$taskHPCuseGPU

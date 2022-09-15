@@ -286,17 +286,17 @@ default:
     stardist:
       model2D:
         name: "python_2D_versatile_fluo"
-        dir: "utils/python/stardistModels/"
+        dir: "models/stardistModels/"
     mesmer:
       models: ["whole-cell", "nuclear"]
-      modelsDir: "utils/python/mesmerModels/MultiplexSegmentation"
+      modelsDir: "models/mesmerModels/MultiplexSegmentation"
     cellpose:
       models: ["cyto","nuclei","bact","cyto2","bact_omni","cyto2_omni"]
-      modelsDir: "utils/python/cellposeModels/"
+      modelsDir: "models/cellposeModels/"
     btrack:
       default:
         name: "cell_config.json"
-        dir: "utils/python/btrackModels/"
+        dir: "models/btrackModels/"
   docker:
     useDocker: FALSE
   imagej:
@@ -309,6 +309,9 @@ default:
     partitions:
       cpu: "physical"
       gpu: "shortgpgpu,gpgpu"
+    qos:
+      cpu: ""
+      gpu: "gpgpumdhs"
     projects:
       cpu: 1124
       gpu: 1031

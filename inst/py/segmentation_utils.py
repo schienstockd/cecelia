@@ -70,6 +70,7 @@ class SegmentationUtils:
     
     # get labels name
     self.value_name = script_utils.get_ccia_param(params, 'value_name', default = 'default')
+    self.ccia_path = script_utils.get_ccia_param(params, 'ccia_path', default = 'default')
     self.labels_filename = cfg.value_dir(self.value_name, 'labels')
     self.labels_props_filename = cfg.value_dir(self.value_name, 'labelProps')
     

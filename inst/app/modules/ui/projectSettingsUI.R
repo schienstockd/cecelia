@@ -53,14 +53,21 @@
         ),
         fluidRow(
           column(
-            7,
+            6,
             textInput(ns("projectHPCpartitionsCPU"), "CPU partitions",
                       value = cciaConf()$hpc$partitions$cpu),
             textInput(ns("projectHPCpartitionsGPU"), "GPU partitions",
                       value = cciaConf()$hpc$partitions$gpu)
           ),
           column(
-            5,
+            3,
+            textInput(ns("projectHPCqosCPU"), "CPU qos",
+                      value = cciaConf()$hpc$qos$cpu),
+            textInput(ns("projectHPCqosGPU"), "GPU qos",
+                      value = cciaConf()$hpc$qos$gpu)
+          ),
+          column(
+            3,
             textInput(ns("projectHPCprojectCPU"), "CPU project",
                       value = cciaConf()$hpc$project$cpu),
             textInput(ns("projectHPCprojectGPU"), "GPU project",

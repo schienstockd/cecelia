@@ -1,6 +1,7 @@
 inst/app/db/*
 inst/app/shiny_bookmarks
 inst/app/viewer/*
+inst/models/*
 .Rhistory
 .RData
 .RdataTmp

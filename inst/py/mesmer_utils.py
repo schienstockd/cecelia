@@ -34,7 +34,7 @@ class MesmerUtils(SegmentationUtils):
     # pre-trained
     if self.segment is True:
       self.model = Mesmer(model = tf.keras.models.load_model(
-          cfg.data['python']['mesmer']['modelsDir']
+          os.path.join(self.ccia_path, cfg.data['python']['mesmer']['modelsDir'])
         ))
     
   """

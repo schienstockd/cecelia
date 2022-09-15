@@ -352,6 +352,13 @@ TaskProcess <- R6::R6Class(
         paramsList[["ccia"]][["value_name"]] <- "default"
       }
       
+      # add ccia path
+      if ("cciaPath" %in% names(self$funParams())) {
+        paramsList[["ccia"]][["ccia_path"]] <- self$funParams()$cciaPath
+      } else {
+        paramsList[["ccia"]][["ccia_path"]] <- cciaPath()
+      }
+      
       # add channel names
       if ("channelNames" %in% names(self$funParams())) {
         paramsList[["ccia"]][["channel_names"]] <- self$funParams()$channelNames

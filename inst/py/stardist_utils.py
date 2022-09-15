@@ -38,7 +38,7 @@ class StarDistUtils(SegmentationUtils):
     self.model = StarDist2D(
       None,
       cfg.data['python']['stardist']['model2D']['name'],
-      cfg.data['python']['stardist']['model2D']['dir'])
+      os.path.join(self.ccia_path, cfg.data['python']['stardist']['model2D']['dir']))
     
   """
   Predict slice

@@ -99,6 +99,7 @@ class CellposeUtils(SegmentationUtils):
             gpu = self.use_gpu,
             # omni = self.use_omni,
             pretrained_model = os.path.join(
+              self.ccia_path,
               cfg.data['python']['cellpose']['modelsDir'],
               cp_model
               )

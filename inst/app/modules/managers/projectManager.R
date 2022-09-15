@@ -51,6 +51,16 @@ ProjectManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setProjectHPCqosCPU = function(x, invalidate = TRUE) {
+      private$projectHPCqosCPU <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectHPCqosGPU = function(x, invalidate = TRUE) {
+      private$projectHPCqosGPU <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setProjectHPCprojectCPU = function(x, invalidate = TRUE) {
       private$projectHPCprojectCPU <- x
       private$invalidate(invalidate = invalidate)
@@ -168,6 +178,14 @@ ProjectManager <- R6::R6Class(
     
     getProjectHPCpartitionsGPU = function() {
       private$projectHPCpartitionsGPU
+    },
+    
+    getProjectHPCqosCPU = function() {
+      private$projectHPCqosCPU
+    },
+    
+    getProjectHPCqosGPU = function() {
+      private$projectHPCqosGPU
     },
     
     getProjectHPCprojectCPU = function() {
@@ -1108,6 +1126,8 @@ ProjectManager <- R6::R6Class(
     projectHPCsshKeyfile = NULL,
     projectHPCpartitionsCPU = NULL,
     projectHPCpartitionsGPU = NULL,
+    projectHPCqosCPU = NULL,
+    projectHPCqosGPU = NULL,
     projectHPCprojectCPU = NULL,
     projectHPCprojectGPU = NULL,
     projectHPCemail = NULL,

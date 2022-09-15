@@ -88,6 +88,24 @@
         )
       })
       
+      observeEvent(input$projectHPCqosGPU, {
+        req(input$projectHPCqosGPU)
+        
+        # save in manager
+        globalManagers$projectManager()$setProjectHPCqosGPU(
+          input$projectHPCqosGPU, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$projectHPCprojectCPU, {
+        req(input$projectHPCprojectCPU)
+        
+        # save in manager
+        globalManagers$projectManager()$setProjectHPCprojectCPU(
+          input$projectHPCprojectCPU, invalidate = FALSE
+        )
+      })
+      
       observeEvent(input$projectHPCprojectGPU, {
         req(input$projectHPCprojectGPU)
         

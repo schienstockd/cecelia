@@ -118,6 +118,7 @@ TaskLauncher <- R6::R6Class(
           CCIA_MEMORY = self$envParams()$conf$memory * 1024,
           CCIA_WALLTIME = self$envParams()$conf$walltime,
           
+          CCIA_QOS = self$envParams()$conf$projectQos,
           CCIA_PARTITIONS = self$envParams()$conf$projectPartitions,
           CCIA_PROJECT_ACCOUNT = self$envParams()$conf$projectID,
           

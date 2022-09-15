@@ -79,14 +79,14 @@ Mesmer <- R6::R6Class(
       )
       
       # call python
-      self$pyScript("mesmer_wrapper", params)
+      # self$pyScript("mesmer_wrapper", params)
       
       # DONE
       self$writeLog("Done")
       self$exitLog()
       
       # update image information
-      self$updateImageInfo()
+      self$updateImageInfo(labelSuffixes = c("nuc", "cyto"))
     }
   )
 )

@@ -70,6 +70,7 @@ class BayesianTrackingUtils(TrackingUtils):
       
       # load base config
       model_config = btrack.config.load_config(os.path.join(
+        self.ccia_path,
         cfg.data['python']['btrack']['default']['dir'],
         cfg.data['python']['btrack']['default']['name']
         ))

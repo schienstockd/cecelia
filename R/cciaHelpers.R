@@ -394,9 +394,11 @@ createTaskVars <- function(uID, projectManager, taskEnv,
                            hpcUseGPU = FALSE) {
   # set HPC settings
   if (hpcUseGPU == TRUE) {
+    hpcProjectQos = projectManager$getProjectHPCqosGPU()
     hpcProjectPartitions = projectManager$getProjectHPCpartitionsGPU()
     hpcProjectID = projectManager$getProjectHPCprojectGPU()
   } else {
+    hpcProjectQos = ""
     hpcProjectPartitions = projectManager$getProjectHPCpartitionsCPU()
     hpcProjectID = projectManager$getProjectHPCprojectCPU()
   }
@@ -434,6 +436,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           numGPUperTask = taskHPCnumGPUperTask,
           memory = taskHPCmemory,
           walltime = taskHPCwalltime,
+          projectQos = hpcProjectQos,
           projectPartitions = hpcProjectPartitions,
           projectID = hpcProjectID,
           useGPU = hpcUseGPU
