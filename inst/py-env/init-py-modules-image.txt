@@ -5,7 +5,6 @@ python-dateutil
 h5py
 fsspec
 urllib3
-numpy
 scikit-image
 requests
 scanpy[leiden]

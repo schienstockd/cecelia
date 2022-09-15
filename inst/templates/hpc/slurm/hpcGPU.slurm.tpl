@@ -47,7 +47,7 @@ module load fosscuda/2020b
 module load openblas/0.3.18
 # module load cudnn/8.1.0.77-cuda-11.2.1
 # compiled with gcccore/10.2.0; 'module av python/'
-module load python/3.9.6
+# module load python/3.9.6
 module load r/4.2.0
 # ImageJ does not work with 11
 # module load java/11.0.2

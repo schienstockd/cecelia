@@ -89,7 +89,7 @@ class CellposeUtils(SegmentationUtils):
       
       if len(x['cellChannels']) > 0:
         # init model
-        if i in cfg.data['python']['cellpose']['models']:
+        if cp_model in cfg.data['python']['cellpose']['models']:
           model = models.Cellpose(
             gpu = self.use_gpu, model_type = cp_model
             # omni = self.use_omni
