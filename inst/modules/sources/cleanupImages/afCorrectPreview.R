@@ -26,6 +26,8 @@ AfCorrectPreview <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      self$writeLog("Get Viewer")
+      
       # call napari and show AF correction
       # connect to existing napari instance
       viewer <- self$napariViewer()
@@ -38,6 +40,8 @@ AfCorrectPreview <- R6::R6Class(
           
           x
         })
+      
+      self$writeLog("Apply correction")
       
       # run AF correction
       viewer$execute(
@@ -70,6 +74,8 @@ AfCorrectPreview <- R6::R6Class(
       # remove names and convert to list
       channelNames <- as.list(channelNames)
       names(channelNames) <- NULL
+      
+      self$writeLog("Show Preview")
       
       # show in napari
       viewer$showPreview(

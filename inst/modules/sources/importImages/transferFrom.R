@@ -35,6 +35,7 @@ TransferFrom <- R6::R6Class(
         fileIMAGE_TO_IMPORT
       )
       
+      self$writeLog(smbCmd)
       self$writeLog("Transfer from SMB server")
       self$writeLog(unlist(filesToCopy))
       

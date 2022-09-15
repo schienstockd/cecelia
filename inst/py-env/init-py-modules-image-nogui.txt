@@ -33,3 +33,4 @@ stardist
 mxnet
 leidenalg
 squidpy
+deepcell

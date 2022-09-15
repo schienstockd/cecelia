@@ -8,7 +8,7 @@ Import <- R6::R6Class(
   
   public = list(
     funName = function() {
-      "import"
+      "importImages"
     },
     
     # run pre import functions
@@ -30,7 +30,7 @@ Import <- R6::R6Class(
       # create MIP?
       if (self$funParams()$createMIP == TRUE) {
         self$runTasks(c(
-          "import.createMip"
+          "importImages.createMip"
         ))
       }
       
@@ -44,7 +44,7 @@ Import <- R6::R6Class(
       # rescale image?
       if (self$funParams()$rescaleImage == TRUE) {
         self$runTasks(c(
-          "import.rescaleImage"
+          "importImages.rescaleImage"
         ))
       }
     },

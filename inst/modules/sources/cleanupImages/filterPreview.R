@@ -26,9 +26,13 @@ FilterPreview <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      self$writeLog("Get Viewer")
+      
       # call napari and show AF correction
       # connect to existing napari instance
       viewer <- NapariUtils$new(useConnectionFile = TRUE)
+      
+      self$writeLog("Apply filter")
       
       # run AF correction
       viewer$execute(
@@ -49,6 +53,8 @@ FilterPreview <- R6::R6Class(
           sep = "\n"
         )
       )
+      
+      self$writeLog("Show Preview")
       
       # show in napari
       viewer$showPreview(

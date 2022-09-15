@@ -14,15 +14,11 @@ knitr::opts_chunk$set(echo = TRUE)
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
 
-cciaRunApp(port = 6860, localPath = FALSE)
+cciaRunApp(port = 6861, localPath = FALSE)
 
 # when you are done shutdown kernel
 cciaEnv()$jupyterKernel$quitKernel()
 .rs.removeAllObjects(env = .GlobalEnv, includeHidden = TRUE)
 .rs.api.restartSession()
-```
-
-```{r}
-renv::env
 ```
 

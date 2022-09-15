@@ -577,7 +577,8 @@ createTaskManager <- function(
       # TODO is this ok .. ?
       launchList <- list(
         envVars = taskVars$env,
-        hpcDir = if (useHPC() == TRUE) dirname(dirname(taskVars$env$hpc$dirs$task)) else NULL,
+        # hpcDir = if (useHPC() == TRUE) dirname(dirname(taskVars$env$hpc$dirs$task)) else NULL,
+        hpcDir = if ("hpc" %in% names(taskVars$env)) dirname(dirname(taskVars$env$hpc$dirs$task)) else NULL,
         pID = taskVars$env$global$pID,
         pName = taskVars$env$global$pName,
         funTasks = list()
