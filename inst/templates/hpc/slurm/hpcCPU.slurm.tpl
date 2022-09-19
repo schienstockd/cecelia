@@ -39,7 +39,7 @@ fi
 
 # Run the job from the directory where it was launched (default)
 module load foss/2021b
-module load openblas/0.3.18
+# module load openblas/0.3.18
 # module load python/3.9.6
 # compiled with gcccore/10.2.0; 'module av python/'
 module load r/4.2.0

@@ -330,6 +330,7 @@ TaskProcess <- R6::R6Class(
       cmd <- c()
       
       # This should be done already in parent process
+      # but this should happen during console call
       # # init conda if necessary
       # if (!purrr::is_empty(private$getCondaEnv())) {
       #   reticulate::use_condaenv(private$getCondaEnv(), required = TRUE)
@@ -356,7 +357,7 @@ TaskProcess <- R6::R6Class(
       if ("cciaPath" %in% names(self$funParams())) {
         paramsList[["ccia"]][["ccia_path"]] <- self$funParams()$cciaPath
       } else {
-        paramsList[["ccia"]][["ccia_path"]] <- cciaPath()
+        paramsList[["ccia"]][["ccia_path"]] <- normalizePath(cciaPath())
       }
       
       # add channel names
@@ -369,37 +370,46 @@ TaskProcess <- R6::R6Class(
           )
       }
       
+      # source python file
+      pyFile <- file.path(self$classDir(), "py",
+                          paste(scriptFile, "py", sep = "."))
+      
       # save as combined JSON
       exportJSON <- jsonlite::toJSON(paramsList)
-      
+
       # generate params file
       paramsFile <- file.path(
         self$envParams()$dirs$task,
         sprintf("pyParams_%s.json", genUID(6))
       )
-      
+
       # save in task directory
       write(exportJSON, paramsFile)
+
+      # source conda
+      cmd <- c(
+        paste("source",
+              file.path(reticulate::miniconda_path(), "etc/profile.d/conda.sh")),
+        paste("conda activate", cciaEnv()$cfg$python$conda$env)
+      )
       
       # add python call
       cmd <- c(
         cmd,
         sprintf(
           "python %s %s",
-          file.path(self$classDir(), "py",
-                    paste(scriptFile, "py", sep = ".")
-                    ),
+          pyFile,
           sprintf("--params \"%s\"", paramsFile)
         )
       )
-      
+
       # collapse
       cmd <- paste(cmd, collapse = ";")
-      
+
       self$writeLog(">> EXEC PY")
       # self$writeLog(paramsList)
       self$writeLog(cmd)
-      
+
       # call python
       handleSystem(.execSystem(cmd))
     },

@@ -195,7 +195,7 @@
               "items": {
                 "Cytoplasm (version 2)": "cyto2",
                 "Cytoplasm": "cyto",
-      				  "T cells": "tcells20211221",
+      				  "ccia Fluorescent": "ccia.fluo",
       				  "Nuclei": "nuclei"
       				}
             }
