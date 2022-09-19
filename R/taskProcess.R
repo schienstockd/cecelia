@@ -370,10 +370,6 @@ TaskProcess <- R6::R6Class(
           )
       }
       
-      # source python file
-      pyFile <- file.path(self$classDir(), "py",
-                          paste(scriptFile, "py", sep = "."))
-      
       # save as combined JSON
       exportJSON <- jsonlite::toJSON(paramsList)
 
@@ -389,7 +385,8 @@ TaskProcess <- R6::R6Class(
       # source conda
       cmd <- c(
         paste("source",
-              file.path(reticulate::miniconda_path(), "etc/profile.d/conda.sh")),
+              file.path(dirname(dirname(reticulate::conda_binary())),
+                        "etc/profile.d/conda.sh")),
         paste("conda activate", cciaEnv()$cfg$python$conda$env)
       )
       
@@ -398,7 +395,8 @@ TaskProcess <- R6::R6Class(
         cmd,
         sprintf(
           "python %s %s",
-          pyFile,
+          file.path(self$classDir(), "py",
+                    paste(scriptFile, "py", sep = ".")),
           sprintf("--params \"%s\"", paramsFile)
         )
       )
