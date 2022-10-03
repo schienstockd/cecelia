@@ -190,8 +190,10 @@ After this we can open the image and do sequential gating for `T cells`,
 
 We can use these populations to create `spatial neighbours`.
 
+<p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours.png" width="300"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours_image.png" width="300"/>
+</p>
 
 7.  Custom plotting of interactions
 
