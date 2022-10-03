@@ -268,7 +268,9 @@ ggplot(freqRegions,
   ) + xlab("") + ylab("")
 ```
 
-![Image](./im/examples/2D_spleen/7_interactions_heat.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/7_interactions_heat.png" height="300"/>
+</p>
 
 ## Flow Cytometry general workflow
 
