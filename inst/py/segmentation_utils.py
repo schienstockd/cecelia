@@ -27,6 +27,7 @@ class SegmentationUtils:
     self.segment = script_utils.get_param(params, 'segment', default = True)
     self.measure = script_utils.get_param(params, 'measure', default = False)
     self.update_measures = script_utils.get_param(params, 'update_measures', default = False)
+    self.save_measures = script_utils.get_param(params, 'save_measures', default = True)
     self.save_meshes = script_utils.get_param(params, 'save_meshes', default = False)
     self.find_contours = script_utils.get_param(params, 'find_contours', default = False)
     self.use_gpu = script_utils.get_param(params, 'use_gpu', default = False)
@@ -161,13 +162,14 @@ class SegmentationUtils:
           obsm['temporal'] = props[centroid_temporal].to_numpy()
         
         # save props
-        LabelPropsUtils(self.task_dir, self.labels_props_filename)\
-          .label_props(
-            props[[x for x in props.columns if x not in centroid_spatial + centroid_temporal]],
-            save = True,
-            update_existing = self.update_measures,
-            obsm = obsm, uns = uns
-            )
+        if self.save_measures is True:
+          LabelPropsUtils(self.task_dir, self.labels_props_filename)\
+            .label_props(
+              props[[x for x in props.columns if x not in centroid_spatial + centroid_temporal]],
+              save = True,
+              update_existing = self.update_measures,
+              obsm = obsm, uns = uns
+              )
 
       # find shapes of identified labels
       if self.find_contours is True:
@@ -260,68 +262,68 @@ class SegmentationUtils:
       alg_labels = self.predict_slice(im_dat, dat_slices)
       
       if alg_labels is not None:
-        for i, x in alg_labels.items():
-          if x is not None:
+        for j in alg_labels.keys():
+          if alg_labels[j] is not None:
             # erode labels
             if self.label_erosion > 0:
-              x = erosion(x, selem = ball(self.label_erosion) \
+              alg_labels[j] = erosion(alg_labels[j], selem = ball(self.label_erosion) \
                 if self.dim_utils.is_3D() else disk(self.label_erosion))
             
             # expand labels
             if self.label_expansion > 0:
-              x = expand_labels(x, self.label_expansion)
+              alg_labels[j] = expand_labels(alg_labels[j], self.label_expansion)
             
             # remove border labels
-            x = measure_utils.clear_border_labels(
-              x, self.dim_utils, context = self.context,
+            alg_labels[j] = measure_utils.clear_border_labels(
+              alg_labels[j], self.dim_utils, context = self.context,
               clear_borders = clear_borders,
               clear_touching_border = self.clear_touching_border,
               clear_depth = self.clear_depth)
               
             # remove small/big objects
             if self.cell_size_min > 0:
-              x = remove_small_objects(x, self.cell_size_min)
+              alg_labels[j] = remove_small_objects(alg_labels[j], self.cell_size_min)
             if self.cell_size_max > 0:
-              x = measure_utils.remove_big_objects(x, self.cell_size_max)
+              alg_labels[j] = measure_utils.remove_big_objects(alg_labels[j], self.cell_size_max)
             
             # post process labels
             if self.subtract_edges is True:
-              x = measure_utils.subtract_edges_from_labels(x)
+              alg_labels[j] = measure_utils.subtract_edges_from_labels(alg_labels[j])
       
             # add dummy dimension if time is used
             # otherwise cur_labels and alg_labels cannot
             # be merged together
             if self.dim_utils.is_timeseries() is True:
-              x = np.expand_dims(
-                x, axis = self.dim_utils.dim_idx("T"))
+              alg_labels[j] = np.expand_dims(
+                alg_labels[j], axis = self.dim_utils.dim_idx("T"))
             
             # rank label ids
-            if self.rank_labels is True:
-              x = measure_utils.rank_labels(x)
-              
-            # set labels
-            alg_labels[i] = x
+            # TODO not run run when labels have to be matched .. ?
+            if self.match_labels is False and self.rank_labels is True:
+              alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
             
         # match labels, then go on
         if self.match_labels is True:
           # TODO there must be a better way of doing this
+          # get all label ids
           label_ids = {
             i: set(np.unique(x)) for i, x in alg_labels.items()
           }
           
           matched_labels = None
           
-          for i, x in label_ids.items():
+          # find intersections
+          for y in label_ids.values():
             if matched_labels is None:
-              matched_labels = x
+              matched_labels = y
             else:
-              matched_labels = set(matched_labels).intersection(x)
+              matched_labels = set(matched_labels).intersection(y)
               
           # set all values not in set as '0'
           # TODO not very nice
-          for i, x in label_ids.items():
-            for j in [y for y in list(x) if y not in list(matched_labels)]:
-              alg_labels[i][alg_labels[i] == j] = 0
+          for j, y in label_ids.items():
+            for k in [z for z in list(y) if z not in list(matched_labels)]:
+              alg_labels[j][alg_labels[j] == k] = 0
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)

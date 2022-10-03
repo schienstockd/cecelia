@@ -155,6 +155,12 @@
         cciaObj()$valuePartOf("imAnndataFilepath")
       })
       
+      setClusterForPop <- reactive({
+        req(input$setClusterForPop)
+        
+        input$setClusterForPop
+      }) %>% debounce(cciaConf()$fcs$gating$plots$poll)
+      
       ### Reactive-like values
       
       ### Reactives - RxCalc
@@ -438,14 +444,14 @@
       })
       
       # set cluster for population
-      observeEvent(input$setClusterForPop, {
-        req(input$setClusterForPop)
+      observeEvent(setClusterForPop(), {
+        req(setClusterForPop())
         req(cciaObj())
         
         # set cluster for population
         # split into population and cluster ID
         params <- stringr::str_split(
-          input$setClusterForPop, pattern = "\\.")[[1]]
+          setClusterForPop(), pattern = "\\.")[[1]]
         popID <- params[[1]]
         clustID <- as.numeric(params[[2]])
         

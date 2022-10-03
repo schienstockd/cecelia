@@ -12,11 +12,11 @@ class LogfileUtils():
   Write to log
   """
   def log(self, log_message):
+    print(log_message)
+    
     if self.filepath is not None:
       with open(self.filepath, 'a') as f:
         print(log_message, file = f)
-    else:
-      print(log_message)
   
   """
   Getters

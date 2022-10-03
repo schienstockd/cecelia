@@ -175,17 +175,17 @@ def merge_new_adata(new_adata, task_dir, value_name, logfile_utils, merge_umap =
   non_used_cols = [
     i for i, x in enumerate(label_view.col_names()) if x not in new_adata.var_names.tolist()
     ]
-  used_cols = [
-    i for i, x in enumerate(label_view.col_names()) if x in new_adata.var_names.tolist()
-    ]
+  used_cols = {
+    i: x for i, x in enumerate(label_view.col_names()) if x in new_adata.var_names.tolist()
+    }
   
   # define new column names
   new_var_names = [label_view.col_names()[i] for i in non_used_cols] + new_adata.var_names.tolist()
   
   # remember old values
   # TODO this has to be cleaner
-  prev_x = label_view.adata.X[
-    ~label_view.adata.obs['label'].isin(new_adata.obs['label']), used_cols]
+  prev_x = label_view.adata[
+    ~label_view.adata.obs['label'].isin(new_adata.obs['label'])].X[:, list(used_cols.keys())]
   
   # merge X
   # extend x for new columns with '0'
@@ -204,10 +204,11 @@ def merge_new_adata(new_adata, task_dir, value_name, logfile_utils, merge_umap =
     ] = new_adata.X
     
   # copy in old values
-  label_view.adata.X[
-    ~label_view.adata.obs['label'].isin(new_adata.obs['label']),
-    len(non_used_cols):
-    ] = prev_x
+  # TODO loop through, is there a better way?
+  for i, x in enumerate(used_cols.values()):
+    label_view.adata.X[
+      ~label_view.adata.obs['label'].isin(new_adata.obs['label']),
+      new_var_names.index(x)] = prev_x[:, i]
     
   # set values not used for clustering to '0'
   label_view.adata.X[

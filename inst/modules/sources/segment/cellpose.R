@@ -69,6 +69,7 @@ Cellpose <- R6::R6Class(
         updateMeasures = self$funParams()$updateMeasures,
         segment = self$funParams()$segment,
         saveMeshes = self$funParams()$saveMeshes,
+        saveMeasures = self$funParams()$saveMeasures,
         extendedMeasures = self$funParams()$extendedMeasures
       )
       

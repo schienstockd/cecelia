@@ -175,7 +175,7 @@ class PopUtils:
   return population dataframe
   """
   def pop_df(self, task_dir, label_props_utils, pop_type, pops = list(), cols = list(),
-             unique_labels = True, value_name = None):
+             unique_labels = True, value_name = None, invert = False):
     # TODO add root population to get DF for classifications
     if pop_type == 'clsf':
       root_pops = list(set([x.split('/', 1)[0] for x in pops]))
@@ -225,7 +225,8 @@ class PopUtils:
           label_view.view_cols(cols = cols)
         
         # create population df
-        pop_df = label_view.filter_by_obs(x).as_df()
+        pop_df = label_view.filter_by_obs(
+          x, filter_fun = 'eq' if invert is False else 'neq').as_df()
         label_view.close()
         
         # add value name and population

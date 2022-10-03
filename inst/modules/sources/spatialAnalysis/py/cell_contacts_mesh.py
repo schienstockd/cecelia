@@ -44,6 +44,7 @@ def run(params):
   max_contact_dist = script_utils.get_param(params, 'maxContactDist', default = 5)
   pops_a = script_utils.get_param(params, 'popsA', default = list())
   pops_b = script_utils.get_param(params, 'popsB', default = list())
+  invert_pops_a = script_utils.get_param(params, 'invertPopsA', default = False)
 
   # init pop utils
   pop_utils = PopUtils()
@@ -61,6 +62,8 @@ def run(params):
       LabelPropsUtils(task_dir),
       pop_type_a,
       cols = prop_cols,
+      # TODO invert population for randomised testing
+      invert = invert_pops_a,
       pops = [pop_a]
     )
     
@@ -91,9 +94,13 @@ def run(params):
         pops = [pop_b]
         )
       
-      # define columns  
-      dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
-      contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
+      # define columns
+      if invert_pops_a is True:
+        dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
+        contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
+      else:
+        dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
+        contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
         
       if pop_df_b is not None:
         # same value for all within a population

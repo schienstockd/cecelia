@@ -131,6 +131,129 @@ cciaRunApp(port = 6860)
 6.  Select `Spatial Analysis` to define spatial neighbourhoods, detect
     clustering cells or detect contact between cells.
 
+## 2D static image analysis - Spleen example
+
+- [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
+
+1.  Create project
+
+![Image](./im/examples/2D_spleen/1_create_project.png)
+
+2.  Import image
+
+![Image](./im/examples/2D_spleen/2_import_image.png)
+
+3.  Assign channel names
+
+![Image](./im/examples/2D_spleen/3_assign_channels.png)
+
+4.  Segment cells
+
+With conventional confocal microscopy it is not always possible to
+include a nuclear stain for cell segmentation. In this case, we can
+check whether `cellpose` or a sequence of morphological filters which
+segments donut- and blob-like objects (`donblo`) works for a partiular
+image.
+
+- `cellpose` is a good choice for most cases. We use `cellpose` to
+  segment a single merged image. We can create a sequence of merged
+  images to create individual segmentations if necessary.
+
+![Image](./im/examples/2D_spleen/4_seg_cellpose_params.png)
+![Image](./im/examples/2D_spleen/4_seg_cellpose.png)
+
+- In this case, `cellpose` did not capture some of the more dense and
+  noisy cells. We have implemented a simple sequence of morphological
+  filters with subsequent spot detection and segmentation in `ImageJ`
+  using `TrackMate` and the `3D Image Suite`. The quality of the
+  segmentation is lower than `cellpose` but it will capture more cells,
+  such as the `yellow XCR1+ DCs` within the `T cell zone`.
+
+![Image](./im/examples/2D_spleen/4_seg_donblo_params.png)
+![Image](./im/examples/2D_spleen/4_seg_donblo.png)
+
+5.  Gate cells
+
+Cell populations can be created using `clustering` or `gating`. In this
+case, we will utilise `gating`. We have to create a `GatingSet` from the
+`label properties`.
+
+![Image](./im/examples/2D_spleen/5_create_gatingset.png)
+
+After this we can open the image and do sequential gating for `T cells`,
+`Macrophages`, `cDC1` and `cDC2`.
+
+![Image](./im/examples/2D_spleen/5_gating.png)
+![Image](./im/examples/2D_spleen/5_gating_image.png)
+
+6.  Create spatial neighbours
+
+We can use these populations to create `spatial neighbours`.
+
+![Image](./im/examples/2D_spleen/6_spatial_neighbours.png)
+![Image](./im/examples/2D_spleen/6_spatial_neighbours_image.png)
+
+7.  Custom plotting of interactions
+
+Our aim is to provide custom plots within `cecelia` but this is still in
+development. The following is illustrating how to use the generated
+populations for customised plotting within `RMarkdown`. This simple
+example shows the interactions between `T cells` and `cDC1` in the
+`T cell zone`.
+
+``` r
+# set test variables
+pID <- "s3n6dR"
+versionID <- 1
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "LvfcHB", versionID = versionID, initReactivity = FALSE
+)
+
+# get populations
+popDT <- cciaObj$popDT("flow", pops = cciaObj$popPaths("flow"))
+
+# get spatial information
+spatialDT <- cciaObj$spatialDT()
+
+# join pops
+spatialDT[popDT[, c("label", "pop")],
+          on = c("to" = "label"),
+          pop.to := pop]
+spatialDT[popDT[, c("label", "pop")],
+          on = c("from" = "label"),
+          pop.from := pop]
+
+# filter same type associations
+spatialDT <- spatialDT[pop.to != pop.from]
+
+# get interaction frequencies
+freqRegions <- spatialDT %>%
+  group_by(pop.from, pop.to) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  drop_na() %>%
+  ungroup() %>%
+  complete(pop.from, pop.to, fill = list(freq = 0))
+
+ggplot(freqRegions,
+       aes(pop.from, pop.to)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 0.5),
+    labels = c(0, 0.5)
+  ) +
+  theme(
+    legend.title = element_blank(),
+    legend.key.size = unit(3, "mm"),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  ) + xlab("") + ylab("")
+```
+
+![Image](./im/examples/2D_spleen/7_interactions_heat.png)
+
 ## Flow Cytometry general workflow
 
 ``` r

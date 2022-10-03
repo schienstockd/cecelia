@@ -99,6 +99,11 @@
 					"default": false
 				}
 			},
+			"saveMeasures": {
+				"type:boolean": {
+					"default": true
+				}
+			},
 			"saveMeshes": {
 				"type:boolean": {
 					"default": false
@@ -216,14 +221,20 @@
 				"widget:checkbox": {
 				}
 			},
-			"saveMeshes": {
+			"saveMeasures": {
 				"index": 14,
+				"label": "Save Measures",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 15,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 15,
+				"index": 16,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}

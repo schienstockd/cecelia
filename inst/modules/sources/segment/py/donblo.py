@@ -36,6 +36,7 @@ def run(params):
     'segment': params['segment'] if 'segment' in params else True,
     'measure': True,
     'update_measures': params['updateMeasures'] if 'updateMeasures' in params else False,
+    'save_measures': params['saveMeasures'] if 'saveMeasures' in params else True,
     'save_meshes': params['saveMeshes'] if 'saveMeshes' in params else False,
     'find_contours': False,
     # init params

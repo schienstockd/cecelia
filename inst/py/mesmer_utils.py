@@ -100,8 +100,9 @@ class MesmerUtils(SegmentationUtils):
       
       if len(cyto_label_freq) > 1:
         # get max index
-        max_idx = cyto_label_freq[1:].argmax(axis=0)
-
+        # ie/ that cell which is overlapping most
+        max_idx = cyto_label_freq[1:].argmax(axis = 0)
+        
         # get max label
         cur_cyto_label = cyto_label_ids[1:][max_idx]
 

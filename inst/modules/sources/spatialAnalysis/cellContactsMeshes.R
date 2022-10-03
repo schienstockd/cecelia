@@ -35,6 +35,7 @@ CellContactsMeshes <- R6::R6Class(
         # popType = self$funParams()$popType,
         popsA = self$funParams()$popsA,
         popsB = self$funParams()$popsB,
+        invertPopsA = self$funParams()$invertPopsA,
         maxContactDist = self$funParams()$maxContactDist,
         timepoints = if ("timepoints" %in% names(self$funParams()))
           self$funParams()$timepoints

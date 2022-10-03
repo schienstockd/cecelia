@@ -38,6 +38,7 @@ def run(params):
 	'segment': params['segment'] if 'segment' in params else True,
 	'measure': True,
 	'update_measures': params['updateMeasures'] if 'updateMeasures' in params else False,
+	'save_measures': params['saveMeasures'] if 'saveMeasures' in params else True,
 	'save_meshes': params['saveMeshes'] if 'saveMeshes' in params else False,
 	'find_contours': False,
 	'label_erosion': params['labelErosion'],
@@ -51,7 +52,8 @@ def run(params):
 	'extended_measures': params['extendedMeasures'] if 'extendedMeasures' in params else False,
 	'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,
 	'clear_touching_border': params['clearTouchingBorder'] if 'clearTouchingBorder' in params else False,
-	'rank_labels': params['rankLabels'] if 'rankLabels' in params else True
+	# TODO is this important for label matching to turn off?
+	'rank_labels': params['rankLabels'] if 'rankLabels' in params else False
   }
 
   # call stardist on highest resolution
