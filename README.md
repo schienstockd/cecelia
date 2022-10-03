@@ -218,6 +218,12 @@ example shows the interactions between `T cells` and `cDC1` in the
 `T cell zone`.
 
 ``` r
+library(ggplot2)
+library(tidyverse)
+
+library(cecelia)
+cciaUse("~/path/to/cecelia")
+
 # set test variables
 pID <- "s3n6dR"
 versionID <- 1
@@ -299,6 +305,7 @@ can be loaded and manipulated as such:
 
 ``` r
 library(cecelia)
+cciaUse("~/path/to/cecelia")
 
 # set test variables
 pID <- "pEdOoZ"   # project ID
@@ -322,33 +329,4 @@ cciaObj$runTask(
   funParams = funParams,
   runInplace = TRUE
 )
-```
-
-## Creating plots
-
-One aim of `ceelia` is to provide plotting over the GUI with `shiny`. We
-are currently in the process of testing processing data. This part of
-the app is less developed as we learn which plots and statistics are
-relevant. Plotting is currently done in `RMarkdown` files but we are
-planning to incorporate these into the app.
-
-``` r
-# init experimental set
-cciaObj <- initCciaObject(
-  pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE
-)
-
-# get image attributes
-exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
-
-# get cluster populations
-popDT <- cciaObj$popDT(popType = "clust", includeFiltered = TRUE)
-
-# now you can plot this as a normal data.table
-library(ggplot2)
-
-ggplot(popDT, aes(centroid_x, centroid_y, color = pop)) +
-  theme_classic() +
-  geom_point(aes(color = as.factor(clusters)), size = 0.5) +
-  facet_wrap(.~uID, scales = "free")
 ```
