@@ -183,16 +183,18 @@ we will utilise `gating`. We have to create a `GatingSet` from the `label proper
 After this we can open the image and do sequential gating for `T cells`, `Macrophages`,
 `cDC1` and `cDC2`.
 
-![Image](./im/examples/2D_spleen/5_gating.png)
-![Image](./im/examples/2D_spleen/5_gating_image.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating_image.png" height="300"/>
+</p>
 
 6. Create spatial neighbours
 
 We can use these populations to create `spatial neighbours`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours.png" width="300"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours_image.png" width="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours_image.png" height="300"/>
 </p>
 
 7. Custom plotting of interactions
