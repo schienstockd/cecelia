@@ -278,7 +278,7 @@ ggplot(freqRegions,
 ```
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/7_interactions_heat.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/7_interactions_heat.png" height="250"/>
 </p>
 
 8.  Population detection by clustering
