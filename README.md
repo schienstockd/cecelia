@@ -184,9 +184,11 @@ image.
 
 5.  Gate cells
 
-Cell populations can be created using `clustering` or `gating`. In this
-case, we will utilise `gating`. We have to create a `GatingSet` from the
-`label properties`.
+Cell populations can be created using `clustering` or `gating`. `Gating`
+cell populations will give you more control when using fewer markers.
+`Clustering` will be more beneficial when using `multiplex` images to
+identify multiparameter cell populations. In this case, we will utilise
+`gating`. We have to create a `GatingSet` from the `label properties`.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_create_gatingset.png" height="300"/>
