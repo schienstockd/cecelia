@@ -296,12 +296,9 @@ other populations will be removed during clustering. So if you want to
 sequential clusters, please tick that box.**
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_params.png" height="300"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_heat.png" height="300"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_UMAP.png" height="300"/>
-</p>
-<p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_params.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_heat.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_UMAP.png" height="250"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_image.png" height="250"/>
 </p>
 
