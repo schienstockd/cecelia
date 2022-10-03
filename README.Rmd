@@ -192,6 +192,8 @@ We can use these populations to create `spatial neighbours`.
 
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours.png" width="200"/>
 
+![Image](./im/examples/2D_spleen/6_spatial_neighbours_image.png)
+
 7. Custom plotting of interactions
 
 Our aim is to provide custom plots within `cecelia` but this is still in development. The following 
