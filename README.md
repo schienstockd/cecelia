@@ -137,15 +137,21 @@ cciaRunApp(port = 6860)
 
 1.  Create project
 
-![Image](./im/examples/2D_spleen/1_create_project.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/1_create_project.png" height="300"/>
+</p>
 
 2.  Import image
 
-![Image](./im/examples/2D_spleen/2_import_image.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/2_import_image.png" height="300"/>
+</p>
 
 3.  Assign channel names
 
-![Image](./im/examples/2D_spleen/3_assign_channels.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/3_assign_channels.png" height="300"/>
+</p>
 
 4.  Segment cells
 
@@ -159,8 +165,10 @@ image.
   segment a single merged image. We can create a sequence of merged
   images to create individual segmentations if necessary.
 
-![Image](./im/examples/2D_spleen/4_seg_cellpose_params.png)
-![Image](./im/examples/2D_spleen/4_seg_cellpose.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose_params.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose.png" height="300"/>
+</p>
 
 - In this case, `cellpose` did not capture some of the more dense and
   noisy cells. We have implemented a simple sequence of morphological
@@ -169,8 +177,10 @@ image.
   segmentation is lower than `cellpose` but it will capture more cells,
   such as the `yellow XCR1+ DCs` within the `T cell zone`.
 
-![Image](./im/examples/2D_spleen/4_seg_donblo_params.png)
-![Image](./im/examples/2D_spleen/4_seg_donblo.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_donblo_params.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_donblo.png" height="300"/>
+</p>
 
 5.  Gate cells
 
@@ -178,14 +188,16 @@ Cell populations can be created using `clustering` or `gating`. In this
 case, we will utilise `gating`. We have to create a `GatingSet` from the
 `label properties`.
 
-![Image](./im/examples/2D_spleen/5_create_gatingset.png)
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_create_gatingset.png" height="300"/>
+</p>
 
 After this we can open the image and do sequential gating for `T cells`,
 `Macrophages`, `cDC1` and `cDC2`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating.png" height="300"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating_image.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating_image.png" height="250"/>
 </p>
 
 6.  Create spatial neighbours
