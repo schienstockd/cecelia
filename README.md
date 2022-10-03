@@ -225,12 +225,13 @@ library(cecelia)
 cciaUse("~/path/to/cecelia")
 
 # set test variables
-pID <- "s3n6dR"
-versionID <- 1
+pID <- "s3n6dR"   # project ID
+versionID <- 1    # version ID
+uID <- "LvfcHB"   # image ID
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "LvfcHB", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = uID, versionID = versionID, initReactivity = FALSE
 )
 
 # get populations
@@ -276,6 +277,32 @@ ggplot(freqRegions,
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/7_interactions_heat.png" height="300"/>
+</p>
+
+8.  Population detection by clustering
+
+We have incorporated `UMAP` and `Leiden` to detect populations by
+clustering. Clustering can be done on `individual` images or combined on
+`multiple` images from the same set. If `multiple` images are used, the
+clustering results will be written back to the original `individual`
+images and subsequent analysis such as `neighbour detection` can be done
+on the `individual` images again. This is useful when processing a
+`batch` of images that have the same staining.
+
+It is also possible to do `sequential clustering`, as a kind of
+multidimensional gate, by selecting `Root populations` from which to
+calculate clusters. **When you do not tick `Keep other populations` the
+other populations will be removed during clustering. So if you want to
+sequential clusters, please tick that box.**
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_params.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_heat.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_UMAP.png" height="300"/>
+</p>
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_image.png" height="250"/>
 </p>
 
 ## Flow Cytometry general workflow
