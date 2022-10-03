@@ -190,8 +190,7 @@ After this we can open the image and do sequential gating for `T cells`, `Macrop
 
 We can use these populations to create `spatial neighbours`.
 
-![Image](./im/examples/2D_spleen/6_spatial_neighbours.png)
-![Image](./im/examples/2D_spleen/6_spatial_neighbours_image.png)
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/6_spatial_neighbours.png" width="200"/>
 
 7. Custom plotting of interactions
 
