@@ -303,6 +303,42 @@ tick that box.__
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/8_pop_clustering_image.png" height="220"/>
 </p>
 
+## 3D static image analysis - Lymph node example
+
+- [`Download 3D lymph node example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=M4-v1%20CTRL%20z_100um%20tile_10x7_stitch%20COMPED%20WORKING%20GATED%20DOWNSAMPLED%204C-scaled.tif)
+
+1. Create project
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/1_create_project.png" height="300"/>
+</p>
+
+2. Import image
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/2_import_image.png" height="300"/>
+</p>
+
+3. Assign channel names
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/3_assign_channels.png" height="300"/>
+</p>
+
+4. Segment cells
+
+We commonly use fluorescently stained cells for `two-photon` and `histology` imaging. 
+We trained a `cellpose` model, called `ccia Fluorescent`, to detect these fluorescent cells as the pre-trained
+models could not segment them. We can use this model to sequentially segment
+`dendritic cells` (stained with `TRITC`) and `T cells`.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_DC.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_T.png" height="300"/>
+</p>
+
+.. CONTINUE HERE ..
+
 ## Flow Cytometry general workflow
 
 ```r
