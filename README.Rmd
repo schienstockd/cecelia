@@ -333,8 +333,8 @@ models could not segment them. We can use this model to sequentially segment
 `dendritic cells` (stained with `TRITC`) and `T cells`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_DC.png" height="300"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_T.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_DC.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_T.png" height="200"/>
 </p>
 
 .. CONTINUE HERE ..
