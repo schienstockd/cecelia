@@ -134,6 +134,57 @@ Select `Populations Clustering` to use cluster algorithms to define populations.
 6. Select `Spatial Analysis` to define spatial neighbourhoods, detect clustering cells or
 detect contact between cells.
 
+## Flow Cytometry general workflow
+
+```r
+library(cecelia)
+cciaUse("~/path/to/cecelia", initJupyter = FALSE)
+cciaRunApp(port = 6860)
+```
+
+1. Create a Project for `flow`analysis.
+
+2. `FCS` files can be imported either from raw or other sources such as `FlowJo`.
+They will converted into an [`Anndata`](https://anndata.readthedocs.io) to perform clustering and
+a [`GatingSet`](https://github.com/RGLab/flowWorkspace) to perform manual gating.
+
+3. The rest of the pipeline is the same as for image analysis.
+
+## Running workflows from `RMarkdown`
+
+All Processing available in the app can be done from `RMarkdown`  as well.
+Every image is `ReactivePersistentObject` whose state is saved in an `RDS` file
+and is `reactive` in a `shiny` app context. These objects can be loaded and manipulated
+as such:
+
+```r
+library(cecelia)
+cciaUse("~/path/to/cecelia")
+
+# set test variables
+pID <- "pEdOoZ"   # project ID
+versionID <- 2    # version ID
+uID <- "tPl6da"   # image ID
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = uID, versionID = versionID, initReactivity = FALSE
+)
+
+funParams <- list(
+  pyramidScale = 4,
+  dimOrder = "",
+  createMIP = FALSE,
+  rescaleImage = FALSE
+)
+
+cciaObj$runTask(
+  funName = "importImages.omezarr",
+  funParams = funParams,
+  runInplace = TRUE
+)
+```
+
 ## 2D static image analysis - Spleen example
 
 - [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
@@ -430,54 +481,3 @@ ggplot(summaryToPlot) +
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="250"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_TRITC_contact.png" height="250"/>
 </p>
-
-## Flow Cytometry general workflow
-
-```r
-library(cecelia)
-cciaUse("~/path/to/cecelia", initJupyter = FALSE)
-cciaRunApp(port = 6860)
-```
-
-1. Create a Project for `flow`analysis.
-
-2. `FCS` files can be imported either from raw or other sources such as `FlowJo`.
-They will converted into an [`Anndata`](https://anndata.readthedocs.io) to perform clustering and
-a [`GatingSet`](https://github.com/RGLab/flowWorkspace) to perform manual gating.
-
-3. The rest of the pipeline is the same as for image analysis.
-
-## Running workflows from `RMarkdown`
-
-All Processing available in the app can be done from `RMarkdown`  as well.
-Every image is `ReactivePersistentObject` whose state is saved in an `RDS` file
-and is `reactive` in a `shiny` app context. These objects can be loaded and manipulated
-as such:
-
-```r
-library(cecelia)
-cciaUse("~/path/to/cecelia")
-
-# set test variables
-pID <- "pEdOoZ"   # project ID
-versionID <- 2    # version ID
-uID <- "tPl6da"   # image ID
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = uID, versionID = versionID, initReactivity = FALSE
-)
-
-funParams <- list(
-  pyramidScale = 4,
-  dimOrder = "",
-  createMIP = FALSE,
-  rescaleImage = FALSE
-)
-
-cciaObj$runTask(
-  funName = "importImages.omezarr",
-  funParams = funParams,
-  runInplace = TRUE
-)
-```
