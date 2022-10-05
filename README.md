@@ -374,9 +374,66 @@ cells and interactions between cells. Then we can check whether
 visualise these in `napari`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_clusters.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_contacts.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_clusters.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_contacts.png" height="220"/>
+</p>
+
+``` r
+library(ggplot2)
+library(tidyverse)
+
+library(cecelia)
+cciaUse("~/path/to/cecelia")
+
+# set test variables
+pID <- "4UryU2"   # project ID
+versionID <- 1    # version ID
+uID <- "jpVjeh"   # image ID
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+)
+
+# get populations
+popDT <- cciaObj$popDT(
+  "flow", pops = c("/nonDebris/gBT/clustered", "/nonDebris/gBT/non.clustered"),
+  includeFiltered = TRUE)
+
+# get summary
+summaryToPlot <- popDT %>%
+  group_by(pop, `flow.cell.contact#flow./nonDebris/others/TRITC`) %>%
+  summarise(n = n()) %>%
+  mutate(
+    freq = n/sum(n),
+    pop = str_extract(pop, "[^\\/]+$")
+    )
+    
+# plot frequencies
+ggplot(summaryToPlot) +
+  aes(1, freq, fill = `flow.cell.contact#flow./nonDebris/others/TRITC`) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  xlim(0, 1.8) +
+  facet_wrap(.~pop, nrow = 1) +
+  ggtitle("TRITC contact") +
+  theme(
+    axis.text = element_text(size = 5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+```
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_TRITC_contact.png" height="250"/>
 </p>
 
 ## Flow Cytometry general workflow

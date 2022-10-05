@@ -28,43 +28,48 @@ library(ggplot2)
 library(tidyverse)
 ```
 
-```{r}
+```{r fig_interactions, fig.height=3, fig.width=3}
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
 )
 
 # get populations
-popDT <- cciaObj$popDT("flow", pops = cciaObj$popPaths("flow"))
+popDT <- cciaObj$popDT(
+  "flow", pops = c("/nonDebris/gBT/clustered", "/nonDebris/gBT/non.clustered"),
+  includeFiltered = TRUE)
+
+summaryToPlot <- popDT %>%
+  group_by(pop, `flow.cell.contact#flow./nonDebris/others/TRITC`) %>%
+  summarise(n = n()) %>%
+  mutate(
+    freq = n/sum(n),
+    pop = str_extract(pop, "[^\\/]+$")
+    )
 ```
 
-```{r fig_interactions_heat, fig.height=3, fig.width=3}
-popDT
 
-
-# get interaction frequencies
-freqRegions <- spatialDT %>%
-  group_by(pop.from, pop.to) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n)) %>%
-  drop_na() %>%
-  ungroup() %>%
-  complete(pop.from, pop.to, fill = list(freq = 0))
-
-ggplot(freqRegions,
-       aes(pop.from, pop.to)) +
+```{r fig_interactions, fig.height=1, fig.width=2}
+ggplot(summaryToPlot) +
+  aes(1, freq, fill = `flow.cell.contact#flow./nonDebris/others/TRITC`) +
   theme_classic() +
-  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
-  viridis::scale_fill_viridis(
-    breaks = c(0, 0.5),
-    labels = c(0, 0.5)
-  ) +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  xlim(0, 1.8) +
+  facet_wrap(.~pop, nrow = 1) +
+  ggtitle("TRITC contact") +
   theme(
+    axis.text = element_text(size = 5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
     legend.title = element_blank(),
-    legend.key.size = unit(3, "mm"),
-    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
-  ) + xlab("") + ylab("")
+    legend.position = "bottom",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
 
-ggsave(file.path(anaDir, "interactions_heat.png"), width = 3, height = 2)
+ggsave(file.path(anaDir, "TRITC_contact.png"), width = 4, height = 3)
 ```
 
