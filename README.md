@@ -362,7 +362,7 @@ We can use `gating` to identify `TRITC+ dendritic cells` and `T cells`.
 In this image, we can also gate on `CD68+ T cells`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3_LN/5_gating.png" height="300"/>
 </p>
 
 6.  Detect spatial interactions
@@ -374,9 +374,9 @@ cells and interactions between cells. Then we can check whether
 visualise these in `napari`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_clusters.png" height="220"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_contacts.png" height="220"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_clusters.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_contacts.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="200"/>
 </p>
 
 ## Flow Cytometry general workflow
