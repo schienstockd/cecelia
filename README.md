@@ -17,10 +17,15 @@ graph plotting engine with napari’s image display.
 ## Installation
 
 **This package currently only works on Unix systems.** We have a Docker
-version to support other systems if necessary, so do open an issue if
-that is needed.
+version to support other systems if necessary, so do open an `issue` if
+that is needed and we will help you setting it up.
 
-You can install the development version of cecelia like so:
+We designed `cecelia` to also process jobs on the `HPC` (High
+Performance Computing) system. We currently only support `Slurm` as a
+scheduler. If you want to set this up on your system - please open an
+`issue` and we will get you started.
+
+You can install the development version of `cecelia` like so:
 
 ``` r
 if (!require("remotes", quietly = TRUE))
@@ -147,7 +152,12 @@ cciaRunApp(port = 6860)
     and a [`GatingSet`](https://github.com/RGLab/flowWorkspace) to
     perform manual gating.
 
-3.  The rest of the pipeline is the same as for image analysis.
+Compensation controls can be added into one `experimental set` which can
+be used by `autospill` to calculate a `compensation matrix`. This matrix
+can then be applied to the other samples.
+
+3.  The rest of the pipeline for `gating` and `plotting` is the same as
+    for image analysis.
 
 ## Running workflows from `RMarkdown`
 
@@ -488,3 +498,7 @@ ggplot(summaryToPlot) +
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="250"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_TRITC_contact.png" height="250"/>
 </p>
+
+## 3D live image analysis - Two-photon lymph node example
+
+- [`Download 2P example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M)
