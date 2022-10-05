@@ -357,12 +357,22 @@ to the signal across `depth`.
 We can use `gating` to identify `TRITC+ dendritic cells` and `T cells`.
 In this image, we can also gate on `CD68+ T cells`.
 
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/5_gating.png" height="300"/>
+</p>
+
 6. Detect spatial interactions
 
 For 3D objects it is helpful to generate `3D meshes` during segmentation.
-These `meshes` can then be utilised to detect interactions between cells.
+These `meshes` can then be utilised to detect clusters of cells and interactions between cells.
+Then we can check whether `CD69+ T cells` are in contact with `migrating TRITC+ cells` and
+visualise these in `napari`.
 
-.. CONTINUE HERE ..
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_clusters.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_contacts.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/6_spatial_napari.png" height="220"/>
+</p>
 
 ## Flow Cytometry general workflow
 

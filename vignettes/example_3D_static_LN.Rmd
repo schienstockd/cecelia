@@ -1,0 +1,70 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "4UryU2"
+versionID <- 1
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/OUT/CECELIA"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+)
+
+# get populations
+popDT <- cciaObj$popDT("flow", pops = cciaObj$popPaths("flow"))
+```
+
+```{r fig_interactions_heat, fig.height=3, fig.width=3}
+popDT
+
+
+# get interaction frequencies
+freqRegions <- spatialDT %>%
+  group_by(pop.from, pop.to) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  drop_na() %>%
+  ungroup() %>%
+  complete(pop.from, pop.to, fill = list(freq = 0))
+
+ggplot(freqRegions,
+       aes(pop.from, pop.to)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 0.5),
+    labels = c(0, 0.5)
+  ) +
+  theme(
+    legend.title = element_blank(),
+    legend.key.size = unit(3, "mm"),
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+  ) + xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "interactions_heat.png"), width = 3, height = 2)
+```
+
