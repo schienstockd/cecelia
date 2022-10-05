@@ -354,8 +354,8 @@ incorporated `depth correction` by fitting `polynomial` function to the
 signal across `depth`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_original.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_corrected.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_original.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_corrected.png" height="250"/>
 </p>
 
 We can use `gating` to identify `TRITC+ dendritic cells` and `T cells`.
