@@ -337,6 +337,31 @@ models could not segment them. We can use this model to sequentially segment
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_T.png" height="200"/>
 </p>
 
+Sometimes the segmentation can benefit from a small morphological filter. In this
+case we can use a `Gaussian` filter of `1` to improve segmentation results.
+
+5. Gate cells
+
+During imaging of thick tissue slices that were stained with antibodies it can happen
+that staining intensity varies across the `depth` of the tissue due to antibody
+penetration or differences in light properties and scattering within the tissue or
+increase of laser power or gain due to reduction of signal with increasing depth.
+For this reason, we incorporated `depth correction` by fitting `polynomial` function
+to the signal across `depth`.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_original.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_corrected.png" height="200"/>
+</p>
+
+We can use `gating` to identify `TRITC+ dendritic cells` and `T cells`.
+In this image, we can also gate on `CD68+ T cells`.
+
+6. Detect spatial interactions
+
+For 3D objects it is helpful to generate `3D meshes` during segmentation.
+These `meshes` can then be utilised to detect interactions between cells.
+
 .. CONTINUE HERE ..
 
 ## Flow Cytometry general workflow

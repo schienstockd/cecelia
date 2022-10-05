@@ -34,11 +34,11 @@ depends on a python environment which needs to be created. There are
 multiple options available depending on how you would like to use the
 app:
 
--   `image` For image analysis on Desktop
+- `image` For image analysis on Desktop
 
--   `image-nogui` For image processing without GUI
+- `image-nogui` For image processing without GUI
 
--   `flow` For flow cytometry analysis
+- `flow` For flow cytometry analysis
 
 ``` r
 library(cecelia)
@@ -64,20 +64,20 @@ cciaCreateApp()
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:
 
--   [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
+- [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
 
--   [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
+- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
 
--   [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
-    using Spot segmentation
+- [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
+  using Spot segmentation
 
 For `ImageJ`, activate the following update sites:
 
--   IJPB-plugins
+- IJPB-plugins
 
--   3D-ImageJ-Suite
+- 3D-ImageJ-Suite
 
--   Bio-Formats
+- Bio-Formats
 
 ``` yml
 default:
@@ -133,7 +133,7 @@ cciaRunApp(port = 6860)
 
 ## 2D static image analysis - Spleen example
 
--   [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
+- [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
 
 1.  Create project
 
@@ -161,21 +161,21 @@ check whether `cellpose` or a sequence of morphological filters which
 segments donut- and blob-like objects (`donblo`) works for a partiular
 image.
 
--   `cellpose` is a good choice for most cases. We use `cellpose` to
-    segment a single merged image. We can create a sequence of merged
-    images to create individual segmentations if necessary.
+- `cellpose` is a good choice for most cases. We use `cellpose` to
+  segment a single merged image. We can create a sequence of merged
+  images to create individual segmentations if necessary.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose_params.png" height="300"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose.png" height="300"/>
 </p>
 
--   In this case, `cellpose` did not capture some of the more dense and
-    noisy cells. We have implemented a simple sequence of morphological
-    filters with subsequent spot detection and segmentation in `ImageJ`
-    using `TrackMate` and the `3D Image Suite`. The quality of the
-    segmentation is lower than `cellpose` but it will capture more
-    cells, such as the `yellow XCR1+ DCs` within the `T cell zone`.
+- In this case, `cellpose` did not capture some of the more dense and
+  noisy cells. We have implemented a simple sequence of morphological
+  filters with subsequent spot detection and segmentation in `ImageJ`
+  using `TrackMate` and the `3D Image Suite`. The quality of the
+  segmentation is lower than `cellpose` but it will capture more cells,
+  such as the `yellow XCR1+ DCs` within the `T cell zone`.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_donblo_params.png" height="300"/>
@@ -306,7 +306,7 @@ sequential clusters, please tick that box.**
 
 ## 3D static image analysis - Lymph node example
 
--   [`Download 3D lymph node example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=M4-v1%20CTRL%20z_100um%20tile_10x7_stitch%20COMPED%20WORKING%20GATED%20DOWNSAMPLED%204C-scaled.tif)
+- [`Download 3D lymph node example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=M4-v1%20CTRL%20z_100um%20tile_10x7_stitch%20COMPED%20WORKING%20GATED%20DOWNSAMPLED%204C-scaled.tif)
 
 1.  Create project
 
@@ -338,6 +338,34 @@ segment `dendritic cells` (stained with `TRITC`) and `T cells`.
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_DC.png" height="200"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/4_seg_cellpose_T.png" height="200"/>
 </p>
+
+Sometimes the segmentation can benefit from a small morphological
+filter. In this case we can use a `Gaussian` filter of `1` to improve
+segmentation results.
+
+5.  Gate cells
+
+During imaging of thick tissue slices that were stained with antibodies
+it can happen that staining intensity varies across the `depth` of the
+tissue due to antibody penetration or differences in light properties
+and scattering within the tissue or increase of laser power or gain due
+to reduction of signal with increasing depth. For this reason, we
+incorporated `depth correction` by fitting `polynomial` function to the
+signal across `depth`.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_original.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_LN/depth_correction/TRITC_corrected.png" height="200"/>
+</p>
+
+We can use `gating` to identify `TRITC+ dendritic cells` and `T cells`.
+In this image, we can also gate on `CD68+ T cells`.
+
+6.  Detect spatial interactions
+
+For 3D objects it is helpful to generate `3D meshes` during
+segmentation. These `meshes` can then be utilised to detect interactions
+between cells.
 
 .. CONTINUE HERE ..
 

@@ -1,0 +1,112 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "4UryU2"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Users/schiend/Desktop/DOHERTY/R-workspace/cecelia/im/examples/3D_LN"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# get population DT to compare CTV-
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+)
+```
+
+```{r fig_compensate, fig.height=1.5, fig.width=1.2}
+library(splines)
+
+refAxis <- "centroid_z"
+polyDegree <- 4
+df <- cciaObj$labelProps()$as_df()
+n <- nrow(df)
+channels <- cciaObj$imChannelNames(correctChannelNames = TRUE)
+
+for (x in channels) {
+  medianIntensity <- median(df[[x]])
+  
+  # get sd to limit data
+  dfSD <- sd(df[[x]])
+  
+  dataDF <- df[df[, x] >=  medianIntensity - dfSD &
+                 df[, x] <= medianIntensity + dfSD,]
+  
+  # plot fit and compensation
+  polyEstimate <- lm(get(x) ~ poly(get(refAxis), polyDegree, raw = FALSE), data = dataDF)
+  # polyEstimate <- lm(get(x) ~ log(get(refAxis) + 1), data = dataDF)
+  # polyEstimate <- lm(get(x) ~ get(refAxis), data = dataDF)
+  # polyEstimate <- lm(get(x) ~ ns(get(refAxis), polyDegree), data = dataDF)
+  
+  # predict values
+  polyPredict <- predict(
+    polyEstimate,
+    newdata = data.frame(x = df[[refAxis]]) %>%
+      rename_with(.cols = 1, ~refAxis))
+  
+  # correct values to median
+  polyCorrected <- polyPredict / medianIntensity
+  corrName <- paste0(x, ".corr")
+  
+  # correct values
+  df[[corrName]] <- df[[x]] / polyCorrected
+  
+  xColours <- .flowColours(df[[refAxis]], df[[x]])
+  corrColours <- .flowColours(df[[refAxis]], df[[corrName]])
+  
+  # plot
+  p1 <- ggplot(df, aes(get(refAxis))) +
+    theme_classic() +
+    geom_point(aes(y = log(get(x))), color = xColours, size = 0.5) +
+    xlab(refAxis) + ylab(x) +
+    geom_line(aes(y = log(polyPredict)), size = 1, colour = "#B91428") +
+    geom_hline(colour = "#F9B300", yintercept = log(medianIntensity), size = 1) +
+    ggtitle(paste(x, "original"))
+    # theme(plot.title = element_text(color = "white"))
+  p2 <- ggplot(df, aes(get(refAxis))) +
+    theme_classic() +
+    geom_point(aes(y = log(get(corrName))), color = corrColours, size = 0.5) +
+    xlab(refAxis) + ylab(x) +
+    geom_line(aes(y = log(polyPredict)), size = 1, colour = "#B91428") +
+    geom_hline(colour = "#F9B300", yintercept = log(medianIntensity), size = 1) +
+    ggtitle(paste(x, "corrected"))
+    # theme(plot.title = element_text(color = "white"))
+  
+  # print(p1 + plotThemeDark())
+  # print(p2 + plotThemeDark())
+  print(p1)
+  ggsave(file.path(anaDir, "depth_correction", paste0(x, "_original.png")),
+         width = 2.5, height = 2.5)
+  
+  print(p2)
+  ggsave(file.path(anaDir, "depth_correction", paste0(x, "_corrected.png")),
+         width = 2.5, height = 2.5)
+}
+```

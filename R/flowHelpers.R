@@ -341,10 +341,16 @@
   
   # correct all channels
   for (x in channelNames) {
+    # get sd to limit data
+    medianIntensity <- median(df[[x]])
+    dfSD <- sd(df[[x]])
+    
+    dataDF <- df[df[[x]] >=  medianIntensity - dfSD &
+                   df[[x]] <= medianIntensity + dfSD,]
+    
     # fit model
     # https://stackoverflow.com/a/3822706/13766165
-    polyEstimate <- lm(get(x) ~ poly(get(refAxis), polyDegree, raw = FALSE),
-                       data = df)
+    polyEstimate <- lm(get(x) ~ poly(get(refAxis), polyDegree, raw = FALSE), data = dataDF)
     
     # predict values
     polyPredict <- predict(
@@ -352,9 +358,8 @@
       newdata = data.frame(x = df[[refAxis]]) %>%
         rename_with(.cols = 1, ~refAxis))
     
-    # correct values to mean
-    meanIntensity <- mean(df[[x]])
-    polyCorrected <- polyPredict / meanIntensity
+    # correct values to median
+    polyCorrected <- polyPredict / medianIntensity
     
     # set name for correction
     corrName <- if (replaceValues)
