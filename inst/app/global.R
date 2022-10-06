@@ -18,7 +18,7 @@ for (x in appSources) {
 
 # DEBUG
 DEBUG_FILE <- file.path(cciaConf()$dirs$debug, cciaConf()$files$debug)
-DEBUG_SHOW_VIEWER <- FALSE
+DEBUG_SHOW_VIEWER <- TRUE
 DEBUG_NO_VIEWER_SHUTDOWN <- FALSE
 DEBUG_SHOW_TASK_RESULT <- FALSE
 DEBUG_SHOW_TASK_EXPRESSION <- TRUE

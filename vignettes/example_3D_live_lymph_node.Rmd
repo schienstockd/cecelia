@@ -147,3 +147,51 @@ ggplot(clustersTime,
 ggsave(file.path(anaDir, "hmm_time_clusters.png"), height = 2.5, width = 3)
 ```
 
+```{r fig_states_space, fig.height = 2, fig.width = 5}
+# get frequencies of hmm states at time points
+hmmSpace <- copy(popDTs) %>%
+  dplyr::filter(
+    !is.na(live.cell.track.clusters.default),
+        live.cell.track.clusters.default != "NA"
+    )
+
+# get density colours
+hmmSpace$density <- ""
+for (i in unique(hmmSpace$uID)) {
+  for (j in unique(hmmSpace$live.cell.track.clusters.default)) {
+    x <- hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.track.clusters.default == j,]
+    
+    hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.track.clusters.default == j,]$density <- .flowColours(
+      x$centroid_x, x$centroid_y)
+  }
+}
+
+ggplot(hmmSpace, aes(centroid_x, centroid_y)) +
+  theme_classic() +
+  plotThemeDark(
+    fontSize = 8,
+    legend.justification = "centre"
+    ) +
+  # geom_point(color = hmmSpace$density) +
+  geom_point(
+    # aes(color = live.cell.track.clusters.default),
+    color = hmmSpace$density, size = 0.5
+    ) +
+  scale_color_brewer(name = NULL, palette = "Set3") +
+  # stat_bin_hex(bins = 10) +
+  # scale_fill_viridis_c() +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = 'bottom'
+    ) +
+  facet_grid(live.cell.track.clusters.default~uID)
+
+ggsave(file.path(anaDir, "cluster_space.tiff"), height = 5, width = 2)
+```
