@@ -111,27 +111,31 @@ ggsave(file.path(anaDir, "clusters_heat.png"), width = 4.5, height = 4)
 
 ```{r fig_states_time, fig.height = 2, fig.width = 2}
 # get frequencies of clusters at time points
-clustersTime <- popDTs %>%
+hmmTime <- popDTs %>%
   dplyr::filter(
     !is.na(live.cell.hmm.state.default),
     live.cell.track.clusters.default != "NA"
     ) %>%
   group_by(uID,
     centroid_t,
-    live.cell.track.clusters.default
+    # live.cell.track.clusters.default
+    live.cell.hmm.state.default
     ) %>%
   summarise(n = n()) %>%
   mutate(
-    live.cell.track.clusters.default = as.factor(live.cell.track.clusters.default),
+    # live.cell.track.clusters.default = as.factor(live.cell.track.clusters.default),
+    live.cell.hmm.state.default = as.factor(live.cell.hmm.state.default),
     freq = n/sum(n)
     )
 
 time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
 
-ggplot(clustersTime,
+ggplot(hmmTime,
        aes((centroid_t * time.interval), freq,
-           color = live.cell.track.clusters.default,
-           fill = live.cell.track.clusters.default,
+           # color = live.cell.track.clusters.default,
+           # fill = live.cell.track.clusters.default,
+           color = live.cell.hmm.state.default,
+           fill = live.cell.hmm.state.default,
            )) +
   geom_smooth() +
   theme_classic() +
@@ -141,27 +145,24 @@ ggplot(clustersTime,
     legend.title = element_blank(),
     legend.position = "bottom"
     ) +
-  xlab("Time (min)") + ylab("Cluster frequency") +
+  xlab("Time (min)") + ylab("HMM frequency") +
   ylim(0, 1) + facet_grid(uID~.)
 
-ggsave(file.path(anaDir, "hmm_time_clusters.png"), height = 2.5, width = 3)
+ggsave(file.path(anaDir, "hmm_time.png"), height = 2.5, width = 3)
 ```
 
 ```{r fig_states_space, fig.height = 2, fig.width = 5}
 # get frequencies of hmm states at time points
 hmmSpace <- copy(popDTs) %>%
-  dplyr::filter(
-    !is.na(live.cell.track.clusters.default),
-        live.cell.track.clusters.default != "NA"
-    )
+  dplyr::filter(!is.na(live.cell.hmm.state.default))
 
 # get density colours
 hmmSpace$density <- ""
 for (i in unique(hmmSpace$uID)) {
-  for (j in unique(hmmSpace$live.cell.track.clusters.default)) {
-    x <- hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.track.clusters.default == j,]
+  for (j in unique(hmmSpace$live.cell.hmm.state.default)) {
+    x <- hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.default == j,]
     
-    hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.track.clusters.default == j,]$density <- .flowColours(
+    hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.default == j,]$density <- .flowColours(
       x$centroid_x, x$centroid_y)
   }
 }
@@ -172,14 +173,10 @@ ggplot(hmmSpace, aes(centroid_x, centroid_y)) +
     fontSize = 8,
     legend.justification = "centre"
     ) +
-  # geom_point(color = hmmSpace$density) +
   geom_point(
-    # aes(color = live.cell.track.clusters.default),
     color = hmmSpace$density, size = 0.5
     ) +
   scale_color_brewer(name = NULL, palette = "Set3") +
-  # stat_bin_hex(bins = 10) +
-  # scale_fill_viridis_c() +
   coord_fixed() +
   theme(
     axis.text.x = element_blank(),
@@ -191,7 +188,7 @@ ggplot(hmmSpace, aes(centroid_x, centroid_y)) +
     legend.title = element_blank(),
     legend.position = 'bottom'
     ) +
-  facet_grid(live.cell.track.clusters.default~uID)
+  facet_grid(uID~live.cell.hmm.state.default)
 
-ggsave(file.path(anaDir, "cluster_space.tiff"), height = 5, width = 2)
+ggsave(file.path(anaDir, "hmm_space.tiff"), height = 2, width = 5)
 ```

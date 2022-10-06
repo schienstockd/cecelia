@@ -538,11 +538,12 @@ We can utilise `cellpose` and the `ccia Fluorescent` model to segment both cell 
 
 6. Track cells
 
-We incorporated [`btrack`](https://github.com/quantumjot/BayesianTracker/tree/38b144c09f384cb30c2fd9572f19f8dfb3007fca) to track segmented cells.
+We incorporated [`btrack`](https://github.com/quantumjot/BayesianTracker/tree/38b144c09f384cb30c2fd9572f19f8dfb3007fca) to track segmented cells. `Filters` can be used to filter based on object measurements.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_A.png" height="220"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_B.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_B_filters.png" height="220"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_image.png" height="220"/>
 </p>
 
@@ -567,18 +568,11 @@ We can visualise these behaviours on the image by creating a `filtered populatio
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_pop_image.png" height="250"/>
 </p>
 
-8. Cluster tracks
-
-We incorporated `Leiden clustering` to cluster tracks based on `whole` track measurements
-and individual `object` measurements. These clusters can be compared in time which
-shows that cells first have `directed` movement. After treatment, they `stop` and return
-to `meandering` behaviour.
+Then we can map these behaviours in `time` and `space`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_cluster_tracks.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_umap.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_clusters_heat.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_clusters_time.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_time.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_space.png" height="250"/>
 </p>
 
 ```r
@@ -603,86 +597,28 @@ popDTs <- cciaObj$popDT(
   popType = "live", pops = c("cellA/tracked", "cellB/tracked"),
   includeFiltered = TRUE, flushCache = TRUE)
 
-# get clustering
-cells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(), value_name = "tracks.clusters.cells.default.sc")$label_props_view()$as_df())
-  
-# plot UMAP
-ggplot(
-  cells.sc,
-  aes(UMAP_1, UMAP_2)
-  ) +
-  geom_point(aes(color = clusters)) +
-  theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
-  theme(
-    axis.text = element_text(size = 15),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.justification = "center",
-    legend.position = "bottom",
-    legend.text = element_text(size = 20),
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    ) + guides(colour = guide_legend(override.aes = list(size = 6)))
-    
-# show heatmap for clusters
-propsSummary <- cells.sc %>%
-  pivot_longer(
-    cols = colnames(cells.sc)[!colnames(cells.sc) %in% c(
-      "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
-      )],
-    names_to = "prop", values_to = "value"
-    ) %>%
-  group_by(clusters, prop) %>%
-  summarise(mean = mean(value, rm.na = TRUE)) %>%
-  group_by(prop) %>%
-  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
-
-ggplot(propsSummary, aes(as.factor(clusters), prop)) +
-  theme_classic() +
-  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
-  viridis::scale_fill_viridis(
-    breaks = c(0, 1),
-    labels = c(0, 1)
-  ) +
-  theme(
-    # legend.position = "none",
-    legend.key.size = unit(4, "mm"),
-    legend.title = element_blank(),
-    legend.text = element_text(size = 14),
-    axis.text.y = element_text(size = 14),
-    axis.text.x = element_text(size = 14),
-    strip.background = element_blank(),
-    strip.text.x = element_blank()
-    ) +
-  xlab("") + ylab("")
-  
-# get frequencies of clusters at time points
-clustersTime <- popDTs %>%
+# get frequencies of HMM at time points
+hmmTime <- popDTs %>%
   dplyr::filter(
     !is.na(live.cell.hmm.state.default),
     live.cell.track.clusters.default != "NA"
     ) %>%
   group_by(uID,
     centroid_t,
-    live.cell.track.clusters.default
+    live.cell.hmm.state.default
     ) %>%
   summarise(n = n()) %>%
   mutate(
-    live.cell.track.clusters.default = as.factor(live.cell.track.clusters.default),
+    live.cell.hmm.state.default = as.factor(live.cell.hmm.state.default),
     freq = n/sum(n)
     )
 
 time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
 
-ggplot(clustersTime,
+ggplot(hmmTime,
        aes((centroid_t * time.interval), freq,
-           color = live.cell.track.clusters.default,
-           fill = live.cell.track.clusters.default,
+           color = live.cell.hmm.state.default,
+           fill = live.cell.hmm.state.default,
            )) +
   geom_smooth() +
   theme_classic() +
@@ -692,6 +628,44 @@ ggplot(clustersTime,
     legend.title = element_blank(),
     legend.position = "bottom"
     ) +
-  xlab("Time (min)") + ylab("Cluster frequency") +
+  xlab("Time (min)") + ylab("HMM frequency") +
   ylim(0, 1) + facet_grid(uID~.)
+  
+# get frequencies of hmm states at time points
+hmmSpace <- copy(popDTs) %>%
+  dplyr::filter(!is.na(live.cell.hmm.state.default))
+
+# get density colours
+hmmSpace$density <- ""
+for (i in unique(hmmSpace$uID)) {
+  for (j in unique(hmmSpace$live.cell.hmm.state.default)) {
+    x <- hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.default == j,]
+    
+    hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.default == j,]$density <- .flowColours(
+      x$centroid_x, x$centroid_y)
+  }
+}
+
+ggplot(hmmSpace, aes(centroid_x, centroid_y)) +
+  theme_classic() +
+  plotThemeDark(
+    fontSize = 8,
+    legend.justification = "centre"
+    ) +
+  geom_point(
+    color = hmmSpace$density, size = 0.5
+    ) +
+  scale_color_brewer(name = NULL, palette = "Set3") +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = 'bottom'
+    ) +
+  facet_grid(uID~live.cell.hmm.state.default)
 ```
