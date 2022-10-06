@@ -640,7 +640,9 @@ CciaImage <- R6::R6Class(
         for (measure.x in measures) {
           # get measurements
           tracks.DTs[[measure.x]] <- tracks.measure.fun(
-            tracks, get(measure.x), result.name = measure.x, idcol = "cell_type")
+            # tracks, get(measure.x), result.name = measure.x, idcol = "cell_type")
+            tracks, eval(parse(text = paste0("celltrackR::", measure.x))),
+            result.name = measure.x, idcol = "cell_type")
         }
         
         tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.DTs)
@@ -694,7 +696,7 @@ CciaImage <- R6::R6Class(
           
           # convert to physical units for tracks
           suppressWarnings({
-            tracks <- as.tracks(
+            tracks <- celltrackR::as.tracks(
               convertPixelToPhysical(popDT, self$omeXMLPixelRes()),
               id.column = id.column,
               time.column = time.column,

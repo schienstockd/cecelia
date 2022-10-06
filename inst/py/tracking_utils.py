@@ -26,6 +26,7 @@ class TrackingUtils:
     
     # get labels name and channel info
     self.value_name = script_utils.get_ccia_param(params, 'value_name', default = 'default')
+    self.ccia_path = script_utils.get_ccia_param(params, 'ccia_path', default = 'default')
     self.labels_props_filename = cfg.value_dir(self.value_name, 'labelProps')
     self.channel_names = script_utils.get_ccia_param(params, 'channel_names', default = None)
     

@@ -90,7 +90,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
       # tracks.groups[[x]] <- list()
       
       if (length(uIDNames) > 0) {
-        tracks.groups[[x]] <- as.tracks(
+        tracks.groups[[x]] <- celltrackR::as.tracks(
           unlist(tracks[uIDNames], recursive = FALSE)
         )
       }
@@ -104,7 +104,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
   if (subtracks.i > 0) {
     tracks <- lapply(
       tracks,
-      function(x) subtracks(x, subtracks.i, subtracks.overlap)
+      function(x) celltrackR::subtracks(x, subtracks.i, subtracks.overlap)
       )
   }
   
@@ -187,7 +187,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     function(x) {
       # apply subtracks?
       if (!is.null(steps.subtracks)) {
-        return(sapply(subtracks(x, i = steps.subtracks,
+        return(sapply(celltrackR::subtracks(x, i = steps.subtracks,
                                 overlap = steps.overlap),
                       call.FUN, ...))
       } else {
@@ -218,7 +218,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     # split track id?
     if (!is.null(steps.subtracks)) {
       DT[, c("track_id", "cell_id") := lapply(
-        tstrsplit(track_id, ".", fixed = TRUE),
+        data.table::tstrsplit(track_id, ".", fixed = TRUE),
         as.numeric
         )]
       

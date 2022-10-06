@@ -61,7 +61,8 @@ ClusterTracks <- R6::R6Class(
           for (measure.x in self$funParams()$trackMeasures) {
             tracks.DTs[[measure.x]] <- tracks.combine.dt(lapply(
               tracks, function(x) tracks.measure.fun(
-                x, get(measure.x), measure.x)
+                x, eval(parse(text = paste0("celltrackR::", measure.x))),
+                result.name = measure.x)
               # steps.subtracks = 10)
             ), idcol = "pop")
           }

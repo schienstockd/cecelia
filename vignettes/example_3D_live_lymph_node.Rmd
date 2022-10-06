@@ -1,0 +1,66 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "kicbHw"
+versionID <- 1
+```
+
+```{r}
+anaDir <- ""
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "SRMXQH", versionID = versionID, initReactivity = FALSE
+)
+
+# upload local files
+funParams <- list(
+  pops = c(
+    "cellA/tracked",
+    "cellB/tracked"
+    ),
+  popType = "live",
+  colName = "movement",
+  modelMeasurements = c(
+    "live.cell.speed",
+    "live.cell.angle"
+  ),
+  appendStates = list(
+  ),
+  noiseFilterMeasurements = 5,
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  numStates = 4, # movement
+  uIDs = names(cciaObj$cciaObjects())
+)
+
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  runInplace = TRUE
+)
+```

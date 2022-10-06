@@ -502,3 +502,81 @@ ggplot(summaryToPlot) +
 ## 3D live image analysis - Two-photon lymph node example
 
 - [`Download 2P example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M)
+
+1.  Create project
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/1_create_project.png" height="300"/>
+</p>
+
+2.  Import image
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/2_import_image.png" height="300"/>
+</p>
+
+3.  Assign channel names
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/3_assign_channels.png" height="300"/>
+</p>
+
+4.  Autofluorescence and drift correction
+
+We correct autofluorescence by dividing channels from each other. In
+this example there are only two which we can use for channel correction.
+The same module function will also do drift correction based on
+[`phase cross correlation`](https://scikit-image.org/docs/stable/api/skimage.registration.html#skimage.registration.phase_cross_correlation).
+We will use the `AF generated` channel that is generated during
+autofluorescence correction.
+
+\[IMAGES HERE\]
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/4_AF_drift_A.png" height="300"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/4_AF_drift_image.png" height="300"/>
+</p>
+
+5.  Segment cells
+
+We can utilise `cellpose` and the `ccia Fluorescent` model to segment
+both cell types.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/5_seg_cellpose_A.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/5_seg_cellpose_B.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/5_seg_cellpose_image.png" height="220"/>
+</p>
+
+6.  Track cells
+
+We incorporated
+[`btrack`](https://github.com/quantumjot/BayesianTracker/tree/38b144c09f384cb30c2fd9572f19f8dfb3007fca)
+to track segmented cells.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_A.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_B.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/6_tracking_image.png" height="220"/>
+</p>
+
+7.  Extract cell behaviour
+
+We utilised `HMM` (Hidden markov model) to extract behaviour from the
+generated tracks. This analysis extracts a defined number of cellular
+behaviours based on `shape` and `movement` parameters. For this method,
+we combine tracking data from multiple images - therefore, we need to
+tick the box to `Combine images` when running the task. This will run
+the task with the selected images from the `set`.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_task.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM.png" height="250"/>
+</p>
+
+8.  Cluster tracks
+
+We incorporated `Leiden clustering` to cluster tracks based on `whole`
+track measurements and individual `object` measurements.
+
+\[IMAGES HERE\]

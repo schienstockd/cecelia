@@ -97,7 +97,7 @@ HmmStates <- R6::R6Class(
               # get new angle
               tracks.DT[
                 tracks.measure.fun(
-                  popTracks, overallAngle, "live.cell.angle",
+                  popTracks, celltrackR::overallAngle, "live.cell.angle",
                   steps.subtracks = subtrackSteps,
                   steps.overlap = subtrackOverlap,
                   idcol = "uID"),

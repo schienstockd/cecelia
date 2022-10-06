@@ -72,8 +72,9 @@ MultifileLabelPopUtils <- R6::R6Class(
         if (!is.null(labelsView)) {
           # filter on columns?
           if (!is.null(popCols)) {
-            # always add label
-            popCols <- c("label", popCols)
+            # always add label if not present
+            if (!"label" %in% popCols)
+              popCols <- c("label", popCols)
             
             # centroids
             if ("centroids" %in% popCols) {

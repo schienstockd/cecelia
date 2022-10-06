@@ -62,7 +62,9 @@
         for (measure.x in names(tracksMeasures())) {
           # compare measure on plot
           tracks.DTs[[measure.x]] <- tracks.measure.fun(
-            tracks(), get(measure.x), measure.x, idcol = "cell_type")
+            # tracks(), get(measure.x), measure.x, idcol = "cell_type")
+            tracks(), eval(parse(text = paste0("celltrackR::", measure.x))),
+            result.name = measure.x, idcol = "cell_type")
         }
         
         tracks.DTs
@@ -237,7 +239,8 @@
             # compare measure on plot
             tracks.DTs[[measure.x]] <- tracks.combine.dt(lapply(
               tracksToCalc, function(x) tracks.measure.fun(
-                x, get(measure.x), measure.x)
+                x, eval(parse(text = paste0("celltrackR::", measure.x))),
+                result.name = measure.x)
               # steps.subtracks = 10)
             ))
             

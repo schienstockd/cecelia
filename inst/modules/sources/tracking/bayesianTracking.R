@@ -70,7 +70,7 @@ BayesianTracking <- R6::R6Class(
         if (self$funParams()$maxMeanTurningAngle > 0) {
           # get mean angle for tracks and filter
           meanAngleMeasure <- tracks.measure.fun(
-            tracks, meanTurningAngle, "meanTurningAngle",
+            tracks, celltrackR::meanTurningAngle, "meanTurningAngle",
             idcol = "cell_type")
           
           # get filtered IDs
@@ -82,7 +82,7 @@ BayesianTracking <- R6::R6Class(
         if (self$funParams()$minDisplacement > 0) {
           # get mean angle for tracks and filter
           displacementMeasure <- tracks.measure.fun(
-            tracks, displacement, "displacement",
+            tracks, celltrackR::displacement, "displacement",
             idcol = "cell_type")
           
           # get filtered IDs
@@ -104,14 +104,14 @@ BayesianTracking <- R6::R6Class(
         self$writeLog("D")
         
         # create data.table with properties
-        tracks.DT <- tracks.measure.fun(tracks, speed, "live.cell.speed",
-                                        steps.subtracks = 1,
+        tracks.DT <- tracks.measure.fun(tracks, celltrackR::speed,
+                                        "live.cell.speed", steps.subtracks = 1,
                                         idcol = "cell_type")
         
         # add further measurements
         tracks.DT[
           tracks.measure.fun(
-            tracks, overallAngle, "live.cell.angle",
+            tracks, celltrackR::overallAngle, "live.cell.angle",
             steps.subtracks = 2, idcol = "cell_type"),
           on = .(cell_type, track_id, cell_id),
           live.cell.angle := .(live.cell.angle)]
