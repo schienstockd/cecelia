@@ -144,6 +144,6 @@ ggplot(clustersTime,
   xlab("Time (min)") + ylab("Cluster frequency") +
   ylim(0, 1) + facet_grid(uID~.)
 
-ggsave(file.path(anaDir, "hmm_time_clusters.png"), height = 2.5, width = 3)
+ggsave(file.path(anaDir, "hmm_time_clusters.png"), height = 2.5, width = 2.5)
 ```
 
