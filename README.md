@@ -592,10 +592,10 @@ movement. After treatment, they `stop` and return to `meandering`
 behaviour.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_cluster_tracks.png" height="220"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_umap.png" height="220"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_clusters_heat.png" height="220"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_time_clusters.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_cluster_tracks.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_umap.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_clusters_heat.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_time_clusters.png" height="250"/>
 </p>
 
 ``` r
