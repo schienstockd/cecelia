@@ -190,5 +190,5 @@ ggplot(hmmSpace, aes(centroid_x, centroid_y)) +
     ) +
   facet_grid(uID~live.cell.hmm.state.default)
 
-ggsave(file.path(anaDir, "hmm_space.tiff"), height = 2, width = 5)
+ggsave(file.path(anaDir, "hmm_space.png"), height = 2, width = 5)
 ```
