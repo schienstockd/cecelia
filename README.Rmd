@@ -560,6 +560,13 @@ This will run the task with the selected images from the `set`.
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_result.png" height="220"/>
 </p>
 
+We can visualise these behaviours on the image creating a `filtered population`.
+
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_pop.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_pop_image.png" height="250"/>
+</p>
+
 8. Cluster tracks
 
 We incorporated `Leiden clustering` to cluster tracks based on `whole` track measurements

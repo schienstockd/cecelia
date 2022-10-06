@@ -12,8 +12,8 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-# cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
-cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = FALSE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
+# cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = FALSE)
 
 cciaRunApp(port = 6861, localPath = FALSE)
 ```
