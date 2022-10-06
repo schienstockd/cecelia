@@ -595,7 +595,7 @@ behaviour.
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_cluster_tracks.png" height="200"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_umap.png" height="200"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_clusters_heat.png" height="200"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_time_clusters.png" height="200"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_clusters_time.png" height="200"/>
 </p>
 
 ``` r
