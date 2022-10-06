@@ -571,8 +571,8 @@ We can visualise these behaviours on the image by creating a `filtered populatio
 Then we can map these behaviours in `time` and `space`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_time.png" height="250"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_space.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_time.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_space.png" height="220"/>
 </p>
 
 ```r
