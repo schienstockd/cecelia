@@ -29,6 +29,16 @@ library(tidyverse)
 ```
 
 ```{r}
+cciaObj <- initCciaObject(
+  pID = pID, uID = "OGaUro", versionID = versionID, initReactivity = FALSE
+)
+
+liveCols <- cciaObj$labelPropsCols(popType = "live")
+liveCols[!is.na(stringr::str_match(liveCols, "^live\\.cell\\.hmm\\.state\\..*"))]
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 

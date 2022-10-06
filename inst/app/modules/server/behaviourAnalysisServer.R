@@ -44,6 +44,10 @@
         input$resultParamsCols
       })
       
+      resultParamsColName <- reactive({
+        input$resultParamsColName
+      })
+      
       # summary properties to show
       resultSummaryAxisX <- reactive({
         input$resultSummaryAxisX
@@ -224,6 +228,7 @@
       # show hmm parameters
       observeEvent(resultParamsCols(), {
         req(resultParamsCols())
+        req(resultParamsColName())
         
         # show plots
         for (x in resultParamsCols()) {
@@ -241,9 +246,10 @@
                     cols = local_x,
                     names_to = "measure",
                     values_to = "value") %>%
-                  drop_na(any_of(c("value", "live.cell.hmm.state"))) %>%
-                  dplyr::mutate(across(c(live.cell.hmm.state), factor))
-                , aes(x = live.cell.hmm.state, y = value, fill = live.cell.hmm.state)) +
+                  drop_na(any_of(c("value", resultParamsColName()))) %>%
+                  dplyr::mutate(across(c(resultParamsColName()), factor))
+                , aes(x = get(resultParamsColName()), y = value,
+                      fill = get(resultParamsColName()))) +
                 theme_classic() +
                 xlab("") +
                 ylab(local_x)
@@ -320,9 +326,10 @@
       output$hmmPlotSummary <- renderPlot({
         req(popDT())
         req(resultSummaryAxisX())
+        req(resultParamsColName())
         
         # make summary
-        summaryDF <- popDT()[, .(n.state = .N), by = .(pop, uID, live.cell.hmm.state)] %>%
+        summaryDF <- popDT()[, .(n.state = .N), by = .(pop, uID, get(resultParamsColName()))] %>%
           drop_na() %>% 
           group_by(pop, uID) %>%
           dplyr::mutate(freq.state = n.state/sum(n.state)) %>%
@@ -337,9 +344,9 @@
                      get(resultSummaryInteraction())
                    )
                  else
-                   as.factor(get(resultSummaryAxisX())),
+                   as.factor(resultSummaryAxisX()),
                  freq.state,
-                 fill = as.factor(live.cell.hmm.state))
+                 fill = as.factor(resultParamsColName()))
                ) +
           ylab("Frequency type") + xlab("") +
           ylim(0, 1)
@@ -361,6 +368,9 @@
       ## Other
       output$resultParams <- renderUI({
         req(cciaObj())
+        
+        # get live columns
+        liveCols <- cciaObj()$labelPropsCols(popType = "live")
         
         # create ui elements
         tagList(fluidRow(
@@ -386,6 +396,14 @@
                   "live.cell.speed", "live.cell.angle",
                   "ellipticity", "area"
                 ))
+            ),
+            createSelectInput(
+              session$ns("resultParamsColName"),
+              label = "HMM type",
+              choices = liveCols[!is.na(
+                stringr::str_match(liveCols, "^live\\.cell\\.hmm\\.state\\..*"))],
+              multiple = FALSE,
+              selected = input$resultParamsColName
             )
           ),
           column(

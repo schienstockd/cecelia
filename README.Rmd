@@ -555,8 +555,9 @@ images - therefore, we need to tick the box to `Combine images` when running the
 This will run the task with the selected images from the `set`.
 
 <p float="left">
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_task.png" height="250"/>
-<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM.png" height="250"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_task.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_result.png" height="220"/>
 </p>
 
 8. Cluster tracks
