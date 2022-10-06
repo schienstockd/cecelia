@@ -710,7 +710,7 @@ CciaImage <- R6::R6Class(
           
           # filter tracks by length
           if (minTracklength > 0) {
-            tracks <- filterTracks(
+            tracks <- celltrackR::filterTracks(
               tracks.fun.time.filter,
               tracks,
               min.timepoints = minTracklength

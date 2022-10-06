@@ -446,7 +446,7 @@ uID <- "jpVjeh"   # image ID
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = uID, versionID = versionID, initReactivity = FALSE
 )
 
 # get populations
@@ -560,7 +560,7 @@ This will run the task with the selected images from the `set`.
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_result.png" height="220"/>
 </p>
 
-We can visualise these behaviours on the image creating a `filtered population`.
+We can visualise these behaviours on the image by creating a `filtered population`.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/7_HMM_pop.png" height="250"/>
@@ -570,6 +570,128 @@ We can visualise these behaviours on the image creating a `filtered population`.
 8. Cluster tracks
 
 We incorporated `Leiden clustering` to cluster tracks based on `whole` track measurements
-and individual `object` measurements.
+and individual `object` measurements. These clusters can be compared in time which
+shows that cells first have `directed` movement. After treatment, they `stop` and return
+to `meandering` behaviour.
 
-[IMAGES HERE]
+<p float="left">
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_cluster_tracks.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_umap.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_clusters_heat.png" height="220"/>
+<img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/3D_2P/8_hmm_time_clusters.png" height="220"/>
+</p>
+
+```r
+library(ggplot2)
+library(tidyverse)
+
+library(cecelia)
+cciaUse("~/path/to/cecelia")
+
+# set test variables
+pID <- "kicbHw"   # project ID
+versionID <- 1    # version ID
+uID <- "SRMXQH"   # image ID
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = uID, versionID = versionID, initReactivity = FALSE
+)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c("cellA/tracked", "cellB/tracked"),
+  includeFiltered = TRUE, flushCache = TRUE)
+
+# get clustering
+cells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(), value_name = "tracks.clusters.cells.default.sc")$label_props_view()$as_df())
+  
+# plot UMAP
+ggplot(
+  cells.sc,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = clusters)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "bottom",
+    legend.text = element_text(size = 20),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    ) + guides(colour = guide_legend(override.aes = list(size = 6)))
+    
+# show heatmap for clusters
+propsSummary <- cells.sc %>%
+  pivot_longer(
+    cols = colnames(cells.sc)[!colnames(cells.sc) %in% c(
+      "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+      )],
+    names_to = "prop", values_to = "value"
+    ) %>%
+  group_by(clusters, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
+
+ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(4, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.text.x = element_text(size = 14),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+  
+# get frequencies of clusters at time points
+clustersTime <- popDTs %>%
+  dplyr::filter(
+    !is.na(live.cell.hmm.state.default),
+    live.cell.track.clusters.default != "NA"
+    ) %>%
+  group_by(uID,
+    centroid_t,
+    live.cell.track.clusters.default
+    ) %>%
+  summarise(n = n()) %>%
+  mutate(
+    live.cell.track.clusters.default = as.factor(live.cell.track.clusters.default),
+    freq = n/sum(n)
+    )
+
+time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
+
+ggplot(clustersTime,
+       aes((centroid_t * time.interval), freq,
+           color = live.cell.track.clusters.default,
+           fill = live.cell.track.clusters.default,
+           )) +
+  geom_smooth() +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  scale_fill_brewer(name = NULL, palette = "Dark2") +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom"
+    ) +
+  xlab("Time (min)") + ylab("Cluster frequency") +
+  ylim(0, 1) + facet_grid(uID~.)
+```

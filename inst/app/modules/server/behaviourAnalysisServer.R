@@ -37,12 +37,12 @@
       # populations to show
       resultParamsPops <- reactive({
         input$resultParamsPops
-      })
+      }) %>% debounce(cciaConf()$tasks$results$poll)
       
       # properties to show
       resultParamsCols <- reactive({
         input$resultParamsCols
-      })
+      }) %>% debounce(cciaConf()$tasks$results$poll)
       
       resultParamsColName <- reactive({
         input$resultParamsColName
@@ -52,9 +52,11 @@
       resultSummaryAxisX <- reactive({
         input$resultSummaryAxisX
       })
+      
       resultSummaryInteraction <- reactive({
         input$resultSummaryInteraction
       })
+      
       resultSummaryFill <- reactive({
         input$resultSummaryFill
       })
@@ -329,7 +331,8 @@
         req(resultParamsColName())
         
         # make summary
-        summaryDF <- popDT()[, .(n.state = .N), by = .(pop, uID, get(resultParamsColName()))] %>%
+        summaryDF <- popDT()[, .(n.state = .N),
+                             by = eval(c("pop", "uID", resultParamsColName()))] %>%
           drop_na() %>% 
           group_by(pop, uID) %>%
           dplyr::mutate(freq.state = n.state/sum(n.state)) %>%
@@ -344,9 +347,9 @@
                      get(resultSummaryInteraction())
                    )
                  else
-                   as.factor(resultSummaryAxisX()),
+                   as.factor(get(resultSummaryAxisX())),
                  freq.state,
-                 fill = as.factor(resultParamsColName()))
+                 fill = as.factor(get(resultParamsColName())))
                ) +
           ylab("Frequency type") + xlab("") +
           ylim(0, 1)
@@ -383,7 +386,7 @@
               choices = unname(cciaObj()$popPaths(
                 popType(), includeFiltered = TRUE)),
               multiple = TRUE,
-              selected = input$resultParamsPops
+              selected = resultParamsPops()
             ),
             createSelectInput(
               session$ns("resultParamsCols"),
@@ -403,7 +406,7 @@
               choices = liveCols[!is.na(
                 stringr::str_match(liveCols, "^live\\.cell\\.hmm\\.state\\..*"))],
               multiple = FALSE,
-              selected = input$resultParamsColName
+              selected = resultParamsColName()
             )
           ),
           column(
@@ -414,14 +417,14 @@
               label = "X Axis",
               choices = colnames(expInfo()),
               multiple = FALSE,
-              selected = input$resultSummaryAxisX
+              selected = resultSummaryAxisX()
             ),
             createSelectInput(
               session$ns("resultSummaryInteraction"),
               label = "Interaction",
               choices = c("NONE", colnames(expInfo())),
               multiple = FALSE,
-              selected = input$resultSummaryInteraction
+              selected = resultSummaryInteraction()
             )
             # createSelectInput(
             #   session$ns("resultSummaryFill"),
