@@ -1387,7 +1387,8 @@ CciaImage <- R6::R6Class(
               # add all cells by default
               if ("filterDefaultAll" %in% names(x)) {
                 if (x$filterDefaultAll == TRUE) {
-                  if (!is.null(filteredPopDT) && nrow(filteredPopDT) > 0) {
+                  # if (!is.null(filteredPopDT) && nrow(filteredPopDT) > 0) {
+                  if (length(filteredPopDT) > 0 && nrow(filteredPopDT) > 0) {
                     filteredDTs[[x$path]] <- filteredPopDT
                     
                     # add population name

@@ -245,6 +245,8 @@ default:
       sphericity: "numeric"
       compactness: "numeric"
       pop: "categorical"
+      clusters: "categorical"
+      pop.freq: "numeric"
       live.cell.speed: "numeric"
       live.cell.angle: "numeric"
       live.cell.is.clust: "logical"
@@ -259,6 +261,7 @@ default:
       live.cell.has.peak: "logical"
       live.cell.contact: "logical"
       live.cell.min_distance: "numeric"
+      live.cell.track.clusters: "categorical"
       live.region.is.clust: "numeric"
       live.region.clust.id: "numeric"
       live.region.state: "numeric"
@@ -267,8 +270,9 @@ default:
       clust.region.contained.in: "logical"
       clust.cell.cl.value: "numeric"
       clust.cell.cl.bool: "logical"
-      clust.cell.min_distance: "numeric"
       clust.cell.is.clust: "logical"
+      clust.cell.contact: "logical"
+      clust.cell.min_distance: "numeric"
   python:
     viewer:
       viewerPath: "viewer/"

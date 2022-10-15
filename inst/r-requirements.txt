@@ -64,3 +64,4 @@ BH
 spatstat
 ggraph
 ggpubr
+ggbeeswarm

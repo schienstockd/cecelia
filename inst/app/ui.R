@@ -13,6 +13,7 @@ ui <- function(request) {
       menuItemOutput("menuStaticAnalysis"),
       menuItemOutput("menuLiveAnalysis"),
       menuItemOutput("menuFlowAnalysis"),
+      menuItemOutput("menuPlotCanvas"),
       menuItemOutput("menuSettings"),
       
       # --- Viewer settings ---
@@ -173,6 +174,12 @@ ui <- function(request) {
       tabItem(
         tabName = "behaviourAnalysis",
         .behaviourAnalysisUI("behaviourAnalysis")
+      ),
+      
+      # canvas
+      tabItem(
+        tabName = "plotCharts",
+        .plotChartsUI("plotCharts")
       ),
       
       # settings

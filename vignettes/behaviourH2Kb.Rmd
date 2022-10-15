@@ -1,0 +1,278 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N052/ANALYSIS/IMAGE/CECELIA"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "YJRfCW", versionID = versionID, initReactivity = FALSE # H2Kb
+)
+
+# GCAMP
+uIDs <- names(cciaObj$cciaObjects())
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "OTI/tracked",
+    "gBT/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+```{r fig_hmm_props, fig.height=2, fig.width=2.5}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.movement"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+```
+
+```{r fig_hmm_freq, fig.height=2, fig.width=3}
+# save frequencies of HMM
+datToPlot <- popDTs %>%
+  drop_na(live.cell.hmm.state.movement) %>%
+  group_by(uID, pop, live.cell.hmm.state.movement) %>%
+  summarise(n.hmm = n()) %>%
+  mutate(freq.hmm = n.hmm/sum(n.hmm) * 100) %>%
+  left_join(exp.info)
+
+# plot
+ggplot(datToPlot,
+       aes(
+         as.factor(live.cell.hmm.state.movement), freq.hmm,
+         fill = pop
+         )) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Frequency state") + xlab("") +
+  ylim(0, 100) +
+  scale_fill_brewer(name = NULL, palette = "Set3") +
+  facet_grid(.~Genotype)
+
+ggsave(file.path(anaDir, "HMM_freq.pdf"), width = 5, height = 2)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(tcells.sc)
+
+propsToPlot <- propsToPlot %>%
+  dplyr::rename(
+    "Movement HMM 1" = "live.cell.hmm.state.movement.1",
+    "Movement HMM 2" = "live.cell.hmm.state.movement.2",
+    "Movement HMM 3" = "live.cell.hmm.state.movement.3",
+    "Movement HMM 4" = "live.cell.hmm.state.movement.4",
+  )
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+propsToPlot$clusters.name <- "NONE"
+propsToPlot[propsToPlot$clusters == 1, ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters == 2, ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters == 0, ]$clusters.name <- "Directed"
+propsToPlot[propsToPlot$clusters == 3, ]$clusters.name <- "Clustering"
+
+propsList <- c(
+  'Movement HMM 1',
+  'Movement HMM 2',
+  'Movement HMM 3',
+  'Movement HMM 4',
+  'asphericity',
+  'displacement',
+  'displacementRatio',
+  'duration',
+  'meanTurningAngle',
+  'outreachRatio',
+  'overallAngle',
+  'speed',
+  'straightness',
+  'trackLength'
+)
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  dplyr::filter(
+    clusters.name != "NONE",
+    prop %in% propsList
+    ) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=3, fig.width=3}
+propsSummary$prop <- factor(
+  propsSummary$prop, levels = rev(propsList))
+propsSummary$clusters.name <- factor(
+  propsSummary$clusters.name, levels = c(
+    "Directed", "Meandering", "Scanning", "Clustering"
+  ))
+
+ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4, height = 6)
+```
+
+```{r}
+# save frequencies of track clusters
+summaryDF <- copy(tcells.sc)
+
+# show frequency of clusters
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+  droplevels() %>%
+  group_by(uID, pop) %>%
+  mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
+  complete(clusters, fill = list(freq.clusters = 0)) %>%
+  left_join(exp.info)
+
+summaryDF$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+
+write.csv(
+  summaryDF,
+  file = file.path(anaDir, "freq_clusters.csv")
+)
+```

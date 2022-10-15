@@ -92,8 +92,7 @@
       ### Managers
       # init managers
       managerNames = c(
-        "ui", "input", "selection", "task", "imageSet",
-        "imageViewer")
+        "ui", "input", "selection", "task", "imageSet", "imageViewer")
       managerConf = list(
         moduleName = id,
         imageData = imageData,

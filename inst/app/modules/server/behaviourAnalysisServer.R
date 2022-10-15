@@ -331,6 +331,7 @@
         req(resultParamsColName())
         
         # make summary
+        # TODO data.table only
         summaryDF <- popDT()[, .(n.state = .N),
                              by = eval(c("pop", "uID", resultParamsColName()))] %>%
           drop_na() %>% 

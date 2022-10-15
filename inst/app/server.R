@@ -920,6 +920,21 @@ server <- function(input, output, session) {
     )
   })
   
+  output$menuPlotCanvas <- renderMenu({
+    menuItem(
+      "Plot canvas",
+      startExpanded = TRUE,
+      selected = TRUE,
+      icon = icon("clover"),
+      tabName = "plotCanvas",
+      menuSubItem(
+        "Comparison charts",
+        selected = TRUE,
+        icon = icon("chart-simple"),
+        tabName = "plotCharts")
+    )
+  })
+  
   # settings
   output$menuSettings <- renderMenu({
     req(globalManagers$projectManager()$getProjectType())
@@ -956,6 +971,9 @@ server <- function(input, output, session) {
   # specific to static images?
   .clustPopulationsServer("clustPopulations", session, globalManagers)
   .gatePopulationsServer("gatePopulations", session, globalManagers)
+  
+  # plot canvases
+  .plotChartsServer("plotCharts", session, globalManagers)
   
   # specific to live?
   .cleanupImagesServer("cleanupImages", session, globalManagers)
