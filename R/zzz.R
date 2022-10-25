@@ -84,7 +84,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     
     reticulate::conda_install(
       envname = envName, packages = pyModules,
-      pip = TRUE, pip_options = c(
+      pip = TRUE, pip_ignore_installed = TRUE, pip_options = c(
         # "--user",
         "-U",
         # for A100 support
