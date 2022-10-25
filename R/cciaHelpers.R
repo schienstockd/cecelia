@@ -5,6 +5,11 @@ CCID_STATE_FILE <- "ccid.rds"
 CCID_CLASS_FILE <- "ccid.type"
 CCID_CLASS_SEP <- "."
 
+# Task manager
+taskMANAGER_HPC_SLURM_CPU_TPL <- "templates/hpc/slurm/hpcCPU.slurm.tpl"
+taskMANAGER_HPC_SLURM_GPU_TPL <- "templates/hpc/slurm/hpcGPU.slurm.tpl"
+taskMANAGER_HPC_SLURM_OUT_TPL <- "templates/hpc/slurm/hpcWatchJob.tpl"
+
 # File conventions
 fileIMAGE_CONVERTED <- "ccidImage"
 fileIMAGE_TO_IMPORT <- "ImageToImport"

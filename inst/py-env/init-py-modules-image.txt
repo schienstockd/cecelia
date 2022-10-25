@@ -32,6 +32,9 @@ cpython
 stardist
 # for cellpose
 mxnet
+torch
+torchvision
+torchaudio
 leidenalg
 squidpy
 deepcell

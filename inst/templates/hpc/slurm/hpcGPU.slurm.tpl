@@ -2,7 +2,7 @@
 # Based on the University of Melbourne job script generator for SLURM
 
 # Partition for the job:
-#SBATCH --qos=$CCIA_QOS
+##SBATCH --qos=$CCIA_QOS
 #SBATCH --partition=$CCIA_PARTITIONS
 
 # Multithreaded (SMP) job: must run on one node

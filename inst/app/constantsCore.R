@@ -77,8 +77,3 @@ btnLABEL_EXPORT <- "EXPORT"
 # database
 dbTABLE_PROJECTS <- "projects"
 dbTABLE_PROJECT_VERSIONS <- "projectVersions"
-
-# Task manager
-taskMANAGER_HPC_SLURM_CPU_TPL <- "templates/hpc/slurm/hpcCPU.slurm.tpl"
-taskMANAGER_HPC_SLURM_GPU_TPL <- "templates/hpc/slurm/hpcGPU.slurm.tpl"
-taskMANAGER_HPC_SLURM_OUT_TPL <- "templates/hpc/slurm/hpcWatchJob.tpl"
