@@ -22,7 +22,6 @@ pandas
 cellpose
 anndata
 python-bioformats
-torch
 dask_image
 apoc
 python-fcl
