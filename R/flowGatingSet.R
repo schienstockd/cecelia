@@ -2,7 +2,6 @@
 #' 
 #' @name FlowGatingSet
 #' @description Populations represented in GatingSet
-#' @import flowWorkspace
 #'
 #' @examples
 #' TODO

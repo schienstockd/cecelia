@@ -38,7 +38,7 @@ if [ "x$SLURM_JOB_ID" == "x" ]; then
 fi
 
 # Run the job from the directory where it was launched (default)
-module load foss/2021b
+# module load foss/2021b
 # module load openblas/0.3.18
 # module load python/3.9.6
 # compiled with gcccore/10.2.0; 'module av python/'
@@ -54,7 +54,7 @@ module load miniconda3/4.9.2
 #module load cgal/4.14.1-python-3.7.4
 
 # otherwise rJava does not work
-export LD_LIBRARY_PATH=$JAVA_HOME/jre/lib/amd64/server/
+export LD_LIBRARY_PATH=~/.conda/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
 # need to activate conda environment for R to work
 . /usr/local/easybuild-2019/easybuild/software/core/miniconda3/4.9.2/bin/activate
