@@ -1,7 +1,5 @@
 jupyter
 napari[all]
-pytz
-python-dateutil
 h5py
 fsspec
 urllib3
