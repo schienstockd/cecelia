@@ -83,9 +83,9 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
     
     reticulate::conda_install(
-      envname = envName, packages = pyModules
-      # pip = TRUE,
-      # pip_ignore_installed = TRUE,
+      envname = envName, packages = pyModules,
+      # channel = c("conda-forge", "anaconda")
+      pip = TRUE
       # pip_options = c(
       #   # "--user",
       #   "-U"
