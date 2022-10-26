@@ -87,9 +87,10 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       pip = TRUE, pip_ignore_installed = TRUE, pip_options = c(
         # "--user",
         "-U",
-        # for A100 support
+        # for A100 support?
         # https://pytorch.org/get-started/locally/
-        "--extra-index-url https://download.pytorch.org/whl/cu116"))
+        # "--extra-index-url https://download.pytorch.org/whl/cu116"
+        ))
     
     # install OME bioformats
     if (envType %in% c("image", "image-nogui")) {
