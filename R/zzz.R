@@ -83,16 +83,17 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
     
     reticulate::conda_install(
-      envname = envName, packages = pyModules,
-      pip = TRUE,
+      envname = envName, packages = pyModules
+      # pip = TRUE,
       # pip_ignore_installed = TRUE,
-      pip_options = c(
-        # "--user",
-        "-U"
-        # for A100 support?
-        # https://pytorch.org/get-started/locally/
-        # "--extra-index-url https://download.pytorch.org/whl/cu116"
-        ))
+      # pip_options = c(
+      #   # "--user",
+      #   "-U"
+      #   # for A100 support?
+      #   # https://pytorch.org/get-started/locally/
+      #   # "--extra-index-url https://download.pytorch.org/whl/cu116"
+      #   )
+      )
     
     # install OME bioformats
     if (envType %in% c("image", "image-nogui")) {
