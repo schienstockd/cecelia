@@ -7,4 +7,4 @@ dependencies:
   - python-dateutil
   - pytz
   - pip
-  # - r=4.2
+  - r=4.2

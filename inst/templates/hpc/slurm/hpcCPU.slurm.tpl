@@ -42,7 +42,8 @@ module load foss/2021b
 # module load openblas/0.3.18
 # module load python/3.9.6
 # compiled with gcccore/10.2.0; 'module av python/'
-module load r/4.2.0
+# R should be in the conda environment
+# module load r/4.2.0
 # ImageJ does not work with 11
 # module load java/11.0.2
 module load java/1.8.0_241
@@ -54,6 +55,10 @@ module load miniconda3/4.9.2
 
 # otherwise rJava does not work
 export LD_LIBRARY_PATH=$JAVA_HOME/jre/lib/amd64/server/
+
+# need to activate conda environment for R to work
+. /usr/local/easybuild-2019/easybuild/software/core/miniconda3/4.9.2/bin/activate
+conda activate 'r-cecelia-env'
 
 # The job command(s):
 $CCIA_JOB_COMMAND

@@ -49,6 +49,8 @@ app:
 library(cecelia)
 
 # install all required R libraries
+if (!require("data.table", quietly = TRUE))
+  install.packages("data.table")
 cciaRequirements()
 
 # setup cecelia directory

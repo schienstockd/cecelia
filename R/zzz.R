@@ -50,10 +50,17 @@ cciaSetup <- function(path) {
 #' @param envType character for environment type. Any of c("image", "flow")
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
-                            rebuild = FALSE) {
+                            rebuild = FALSE, onHPC = FALSE) {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
+  
+  if (onHPC == TRUE) {
+    envFile <- system.file(
+      file.path("py-env", "conda-env-hpc.yml"),
+      package = "cecelia")
+  }
+  
   pyModulesFile <- system.file(
     file.path("py-env", "init-py-modules-image.txt"),
     package = "cecelia")
@@ -85,14 +92,14 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     reticulate::conda_install(
       envname = envName, packages = pyModules,
       # channel = c("conda-forge", "anaconda")
-      pip = TRUE
-      # pip_options = c(
-      #   # "--user",
-      #   "-U"
-      #   # for A100 support?
-      #   # https://pytorch.org/get-started/locally/
-      #   # "--extra-index-url https://download.pytorch.org/whl/cu116"
-      #   )
+      pip = TRUE,
+      pip_options = c(
+        # "--user",
+        "-U",
+        # for A100 support?
+        # https://pytorch.org/get-started/locally/
+        "--extra-index-url https://download.pytorch.org/whl/cu116"
+        )
       )
     
     # install OME bioformats
@@ -300,7 +307,7 @@ cciaRequirements <- function() {
   
   install.packages(
     packagesToInstall,
-    repos="http://cran.us.r-project.org",
+    repos = "http://cran.us.r-project.org",
     dependencies = TRUE
   )
   
