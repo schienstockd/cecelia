@@ -84,9 +84,11 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     
     reticulate::conda_install(
       envname = envName, packages = pyModules,
-      pip = TRUE, pip_ignore_installed = TRUE, pip_options = c(
+      pip = TRUE,
+      # pip_ignore_installed = TRUE,
+      pip_options = c(
         # "--user",
-        "-U",
+        "-U"
         # for A100 support?
         # https://pytorch.org/get-started/locally/
         # "--extra-index-url https://download.pytorch.org/whl/cu116"
