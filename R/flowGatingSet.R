@@ -64,7 +64,7 @@ FlowGatingSet <- R6::R6Class(
       super$initialize(objFilepath, imChannels)
       
       # set gating set
-      private$setPopObj(load_gs(objFilepath), invalidate = FALSE)
+      private$setPopObj(flowWorkspace::load_gs(objFilepath), invalidate = FALSE)
       
       # init channel limits
       # private$initImChannelLimits()

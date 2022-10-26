@@ -255,7 +255,6 @@
 
 #' @description Fortify gating set
 #' @importFrom ggplot2 fortify
-#' @import ggcyto
 #' 
 #' @param gs GatingSet
 #' @param subset character of population subset
@@ -276,7 +275,7 @@
         if (length(cols) > 0)
           attr(gs, "dims") <- data.table(name = cols)
       }
-      retVal <- fortify(gs)
+      retVal <- ggcyto::fortify(gs)
     },
     error = function(e) {
       message(e)

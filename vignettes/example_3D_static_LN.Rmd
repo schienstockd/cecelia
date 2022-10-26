@@ -28,6 +28,22 @@ library(ggplot2)
 library(tidyverse)
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+)
+
+fgs <- cciaObj$flowGatingSet()
+gs <- fgs$getPopObj()
+
+ggcyto::fortify_fs(gs)
+```
+
+
 ```{r fig_interactions, fig.height=3, fig.width=3}
 # init ccia object
 cciaObj <- initCciaObject(
