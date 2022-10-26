@@ -30,6 +30,8 @@ You can install the development version of `cecelia` like so:
 ``` r
 if (!require("remotes", quietly = TRUE))
   install.packages("remotes")
+if (!require("data.table", quietly = TRUE))
+  install.packages("data.table")
 remotes::install_github("schienstockd/cecelia")
 ```
 
@@ -49,8 +51,6 @@ app:
 library(cecelia)
 
 # install all required R libraries
-if (!require("data.table", quietly = TRUE))
-  install.packages("data.table")
 cciaRequirements()
 
 # setup cecelia directory
