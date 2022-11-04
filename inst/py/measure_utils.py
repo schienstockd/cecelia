@@ -435,21 +435,29 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
             shape_descriptors.append(morpho_utils.mesh_shape_descriptors(volume_mesh))
             
             # get ellipsoid
-            centre, evecs, radii = morpho_utils.ellipsoid_fit(
-              volume_mesh.convex_hull.vertices,
-              dims = {
-                x: dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ['X', 'Y', 'Z']
-              }
-            )
-            
-            # sort array
-            radii = abs(radii)
-            radii.sort()
-            
-            # get major/minor axis lengths
-            ellipsoid_minor_axis_length[index] = radii[0]
-            ellipsoid_interm_axis_length[index] = radii[1]
-            ellipsoid_major_axis_length[index] = radii[2]
+            # TODO error in ellipsoid_fit
+            # u = np.linalg.solve(D.T.dot(D), D.T.dot(d2))
+            # numpy.linalg.LinAlgError: Singular matrix
+            try:
+              centre, evecs, radii = morpho_utils.ellipsoid_fit(
+                volume_mesh.convex_hull.vertices,
+                dims = {
+                  x: dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ['X', 'Y', 'Z']
+                }
+              )
+              
+              # sort array
+              radii = abs(radii)
+              radii.sort()
+              
+              # get major/minor axis lengths
+              ellipsoid_minor_axis_length[index] = radii[0]
+              ellipsoid_interm_axis_length[index] = radii[1]
+              ellipsoid_major_axis_length[index] = radii[2]
+            except:
+              ellipsoid_minor_axis_length[index] = np.nan
+              ellipsoid_interm_axis_length[index] = np.nan
+              ellipsoid_major_axis_length[index] = np.nan
       
           # go through shape descriptors and add to table
           if len(shape_descriptors) > 0:

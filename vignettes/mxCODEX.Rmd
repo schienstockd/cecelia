@@ -92,7 +92,7 @@ uIDs <- names(cciaObj$cciaObjects())
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
+  pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
   # completeDT = TRUE, replaceX = TRUE)
   # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
@@ -101,88 +101,130 @@ unique(popDT$clusters)
 ```
 
 ```{r}
-excludeMarkers <- c(
-)
-
-channelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames(includeTypes = TRUE)
-markersToShow <- channelNames[!channelNames %in% excludeMarkers]
-markersToShow <- unname(unlist(.flowCorrectChannelNames(markersToShow)))
-markersToShow <- markersToShow[markersToShow %in% colnames(popDT)]
-markersToShow <- c(markersToShow, "extent", "solidity", "oblate", "nuc_area")
-
-colsToShow <- c("uID", "label", "clusters", "pop", markersToShow)
-colsToShow <- colsToShow[colsToShow %in% colnames(popDT)]
-
-# show heatmap
-popLymphs <- popDT[, ..colsToShow]
-
-markersToPlot <- popLymphs %>%
-  pivot_longer(
-    cols = all_of(markersToShow), names_to = "marker", values_to = "value"
-    )
-markersToPlot$marker <- as.factor(markersToPlot$marker)
-
-# show heatmap for clusters
-markersSummary <- markersToPlot %>%
-  drop_na() %>%
-  # group_by(clusters, marker) %>%
-  group_by(marker, clusters) %>%
-  summarise(mean = mean(value, rm.na = TRUE)) %>%
-  # summarise(mean = scale(value, center = FALSE)) %>%
-  mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
-  dplyr::filter(!is.nan(norm))
-  # mutate(
-  #   marker = factor(
-  #     stringr::str_extract(marker, ".*(?=_)"),
-  #     levels = rev(markersToShowNoDye))
-  #   )
-  # replace_na(list(value = 0))
-  # group_by(marker)
-  # mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
+popDT[]
 ```
 
 
 ```{r}
-# find order for clusters and markers
-markersMatrix <- markersSummary %>%
-  pivot_wider(names_from = marker, values_from = norm, id_cols = clusters)
+# define populations
+clust <- list(
+  init = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"),
+  hoechst = c("non.debris", "Th.ae", "Th.malignant", "Treg")
+)
 
-hcClusters <- hclust(dist(as.matrix(markersMatrix %>% dplyr::select(-clusters))), "ave")
-hcMarkers <- hclust(dist(t(as.matrix(markersMatrix %>% dplyr::select(-clusters)))), "ave")
+markers <- list(
+  init = c("nuc_Hoechst", "nuc_DRAQ5", "nuc_area"),
+  hoechst = c(
+    "CD2", "CD3", "CD4", "CD5", "CD7", "CD25", "CD30", "CD69",
+    "MMP-12", "MMP-9", "CD45", "CD45RA", "CD45RO", "GranzymeB", 
+    "ICOS", "LAG-3", "PD-1", "PD-L1", "CD11b", "CD163", "CD68", 
+    "CD16", "CD56", "CD57", "CD138", "CD20", "CD38", "CD15",
+    "Mast-cell-tryptase", "CD1a", "CD11c", "BCL-2", "B-catenin", 
+    "CD71", "EGFR", "HLA-DR", "IDO-1", "Cytokeratin", "MUC-1",
+    "CD31", "CD34", "Podoplanin", "Collagen-IV", "Vimentin", "VISTA", 
+    "CD164", "p53", "CD162", "CD194", "CD8", "nuc_FOXP3", "nuc_GATA3", 
+    "nuc_T-bet", "nuc_Ki-67", "nuc_area", "oblate", "extent", "solidity"
+  )
+)
 
-clustersOrder <- markersMatrix$clusters[hcClusters$order]
-markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMarkers$order]
+groupVars <- list(
+  init = "pop",
+  hoechst = "clusters"
+)
+
+combinePops <- list(
+  init = list(
+    debris = c("root"),
+    non.debris = c("non.debris", "Th.ae", "Th.malignant", "Treg")
+  ),
+  hoechst = list()
+)
+
+plotSizes <- list(
+  init = c(3, 3),
+  hoechst = c(12, 16)
+)
 ```
 
-
 ```{r fig_clusters_heat, fig.height=5, fig.width=8}
-ggplot(markersSummary %>%
-         mutate(
-           # clusters = factor(clusters, levels = clustersOrder),
-           clusters = factor(clusters, levels = sort(clustersOrder)),
-           marker = factor(marker, levels = markerOrder)
-         ), aes(clusters, marker)) +
-  theme_classic() +
-  # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
-  geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
-  viridis::scale_fill_viridis(
-    breaks = c(0, 1),
-    labels = c(0, 1)
-  ) +
-  theme(
-    # legend.position = "none",
-    legend.title = element_blank(),
-    legend.text = element_text(size = 20),
-    legend.key.size = unit(10, "mm"),
-    axis.text.y = element_text(size = 20),
-    # axis.text.x = element_text(size = 20),
-    axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
-    strip.background = element_blank(),
-    strip.text.x = element_blank()
+for (i in names(clust)) {
+  popsToShow <- clust[[i]]
+  markersToShow <- .flowCorrectChannelNames(markers[[i]])
+  groupVar <- groupVars[[i]]
+  popsToCombine <- combinePops[[i]]
+  plotSize <- plotSizes[[i]]
+  
+  markersToShowNoDye <- stringr::str_extract(markersToShow, ".*(?=_)")
+  
+  colsToShow <- c("label", "clusters", "pop", markersToShow)
+  colsToShow <- colsToShow[colsToShow %in% colnames(popDT)]
+  
+  # show heatmap
+  popLymphs <- popDT[pop %in% popsToShow, ..colsToShow]
+  
+  # combine pops
+  if (length(popsToCombine) > 0) {
+    for (j in names(popsToCombine))
+      popLymphs[pop %in% popsToCombine[[j]], pop := j]
+  }
+  
+  markersToPlot <- popLymphs %>%
+    pivot_longer(
+      cols = all_of(markersToShow), names_to = "marker", values_to = "value"
+      )
+  markersToPlot$marker <- as.factor(markersToPlot$marker)
+  
+  # show heatmap for clusters
+  markersSummary <- markersToPlot %>%
+    drop_na() %>%
+    group_by(marker, get(groupVar)) %>%
+    summarise(mean = mean(value, rm.na = TRUE)) %>%
+    mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
+    replace_na(list(norm = 0)) %>%
+    rename_with(~ c(groupVar), all_of(c("get(groupVar)")))
+  
+  # find order for clusters and markers
+  markersMatrix <- markersSummary %>%
+    pivot_wider(names_from = marker, values_from = norm, id_cols = groupVar)
+  
+  hcClusters <- hclust(dist(as.matrix(markersMatrix %>% dplyr::select(-all_of(groupVar)))), "ave")
+  hcMarkers <- hclust(dist(t(as.matrix(markersMatrix %>% dplyr::select(-all_of(groupVar))))), "ave")
+  
+  clustersOrder <- markersMatrix[[groupVar]][hcClusters$order]
+  markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMarkers$order]
+  
+  markersSummary[[groupVar]] <- factor(markersSummary[[groupVar]], levels = clustersOrder)
+  
+  p1 <- ggplot(markersSummary %>%
+           mutate(
+             # clusters = factor(clusters, levels = clustersOrder),
+             # clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
+             marker = factor(marker, levels = markerOrder)
+           ), aes(get(groupVar), marker)) +
+    theme_classic() +
+    # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+    geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
+    viridis::scale_fill_viridis(
+      breaks = c(0, 1),
+      labels = c(0, 1)
     ) +
-  xlab("") + ylab("")
-
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 11, height = 20)
+    theme(
+      legend.position = "none",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 20),
+      legend.key.size = unit(10, "mm"),
+      axis.text.y = element_text(size = 20),
+      # axis.text.x = element_text(size = 20),
+      axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
+      strip.background = element_blank(),
+      strip.text.x = element_blank()
+      ) +
+    xlab("") + ylab("")
+  plot(p1)
+  
+  ggsave(file.path(anaDir, paste0("clusters_heat_", i, ".pdf")),
+         width = plotSize[[1]], height = plotSize[[2]])
+}
 ```
 
 ```{r fig_pops_umap, fig.height=2, fig.width=2}
