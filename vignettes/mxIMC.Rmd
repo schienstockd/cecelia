@@ -172,6 +172,8 @@ popDT <- cciaObj$popDT(
   pops = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+"),
   uIDs = uIDs, completeDT = TRUE, replaceX = TRUE)
 
+cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imChannelNames()
+
 unique(popDT$clusters)
 ```
 
@@ -187,7 +189,7 @@ clust <- list(
 markers <- list(
   init = c(
     "x191Ir_Ir191", "x193Ir_Ir193", "Histone-H3_Yb176", "CD45_Sm152",
-    "S100_Lu175", "SOX10_Dy164"
+    "CD31_Sm147", "S100_Lu175", "SOX10_Dy164"
   ),
   cd45 = c(
     "x191Ir_Ir191", "x193Ir_Ir193", "Histone-H3_Yb176", "CD45_Sm152",
@@ -213,7 +215,9 @@ groupVars <- list(
 )
 
 combinePops <- list(
-  init = list(),
+  init = list(
+    non.melano = c("lymphs", "macro.mono", "macro.PDL1+")
+  ),
   cd45 = list(
     macro.mono = c("macro.mono", "macro.PDL1+")
     ),
@@ -222,7 +226,7 @@ combinePops <- list(
 )
 
 plotSizes <- list(
-  init = c(5, 4),
+  init = c(4.5, 4.5),
   cd45 = c(4, 5),
   macro = c(5, 3),
   lymphs = c(7, 6)

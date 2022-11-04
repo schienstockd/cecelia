@@ -201,7 +201,11 @@ def mesh_from_label_volume(volume, spacing = 1.0,
     volume_mesh = trimesh.voxel.ops.matrix_to_marching_cubes(
         volume, pitch = spacing
     )
-    volume_mesh.fill_holes()
+    
+    # make sure it is watertight if not
+    # TODO could not find a better solution
+    if volume_mesh.fill_holes() is False:
+      volume_mesh = volume_mesh.split(only_watertight = True)[0]
     
     # does that help ..?
     volume_mesh.merge_vertices(merge_tex = True, merge_norm = True)

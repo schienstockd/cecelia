@@ -158,7 +158,7 @@ def run(params):
           contained.update(
             {i: meshes_b[m.min_distance_single(
               # x, return_name = True)[1]].convex_hull.contains(
-              x, return_name = True)[1]].smoothed().contains(
+              x, return_name = True)[1]].contains(
                 x.vertices).all() for i, x in meshes_a.items()}
             )
             
