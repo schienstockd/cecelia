@@ -172,8 +172,6 @@ popDT <- cciaObj$popDT(
   pops = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+"),
   uIDs = uIDs, completeDT = TRUE, replaceX = TRUE)
 
-cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imChannelNames()
-
 unique(popDT$clusters)
 ```
 

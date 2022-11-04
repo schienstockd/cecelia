@@ -160,7 +160,7 @@ def run(params):
               # x, return_name = True)[1]].convex_hull.contains(
               x, return_name = True)[1]].contains(
                 # x.vertices).all() for i, x in meshes_a.items()}
-                x.center_mass).all() for i, x in meshes_a.items()}
+                [x.center_mass]).all() for i, x in meshes_a.items()}
             )
             
         logfile_utils.log(f'>> Add distances back')
