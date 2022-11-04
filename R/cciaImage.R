@@ -346,14 +346,32 @@ CciaImage <- R6::R6Class(
           tInfo <- list(
             interval = self$omeXMLPixels()$TimeIncrement / 60
           )
+        } else if (endsWith(basenameOriFilepath, ".ims")) {
+          # TODO is there a better way?
+          # get values in annotations
+          suppressWarnings({
+            valueChildren <- xml2::xml_children(xml2::xml_find_all(
+              self$omeXML(), self$omeXMLPath("//StructuredAnnotations//Value")))
+            
+            # get time step information
+            timeStepNode <- valueChildren[!is.na(stringr::str_match(valueChildren, "Time_Step")[,1])]
+            
+            # put information into list
+            tInfo <- list(
+              interval = as.numeric(stringr::str_extract(xml2::xml_contents(xml2::xml_contents(timeStepNode)[2]), "[0-9]+\\.[0-9]+")) / 60
+            )
+          })
         }
       }
       
       # if the interval is '0', take the information
       # from the metadata
-      if (tInfo$interval == 0) {
-        tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
-      }
+      if (length(tInfo$interval) == 0 || tInfo$interval == 0) {
+        if (length(self$getCciaAttr("TimelapseInterval")) > 1)
+          tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
+        else
+          tInfo$interval <- 1
+      } 
       
       tInfo
     },

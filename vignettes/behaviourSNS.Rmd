@@ -1,0 +1,432 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_SNS_2P/CECELIA"
+```
+
+```{r}
+# adjust segmentation names
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "SSmEIR", versionID = versionID, initReactivity = FALSE # SNS
+)
+
+cciaObj$omeXMLTimelapseInfo()
+```
+
+```{r}
+# # adjust segmentation names
+# devtools::load_all("../")
+# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "LUw0Nx", versionID = versionID, initReactivity = FALSE # SNS
+# )
+# 
+# # get experimental info
+# exp.info <- cciaObj$summary(
+#   withSelf = FALSE, fields = c("Attr")
+# )
+# 
+# uIDs <- exp.info[exp.info$Treatment == "iso",]$uID
+# 
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   x.rds <- readRDS(x$persistentObjectDirectoryFile("ccid.rds"))
+# 
+#   names(x.rds$CciaMeta$imLabelsFilepath) <- c("T.A", "T.B")
+#   x.rds$CciaMeta$imLabelsFilepath$T.A <- "T.A.zarr"
+#   x.rds$CciaMeta$imLabelsFilepath$T.B <- "T.B.zarr"
+#   try(system(paste(
+#     'mv',
+#     x$persistentObjectDirectoryFile("labels/tcells.A.zarr"),
+#     x$persistentObjectDirectoryFile("labels/T.A.zarr"))))
+#   try(system(paste(
+#     'mv',
+#     x$persistentObjectDirectoryFile("labels/tcells.B.zarr"),
+#     x$persistentObjectDirectoryFile("labels/T.B.zarr"))))
+# 
+#   names(x.rds$CciaMeta$imLabelPropsFilepath) <- c("T.A", "T.B")
+#   x.rds$CciaMeta$imLabelPropsFilepath$T.A <- "T.A.h5ad"
+#   x.rds$CciaMeta$imLabelPropsFilepath$T.B <- "T.B.h5ad"
+#   try(system(paste(
+#     'mv',
+#     x$persistentObjectDirectoryFile("labelProps/tcells.A.h5ad"),
+#     x$persistentObjectDirectoryFile("labelProps/T.A.h5ad"))))
+#   try(system(paste(
+#     'mv',
+#     x$persistentObjectDirectoryFile("labelProps/tcells.B.h5ad"),
+#     x$persistentObjectDirectoryFile("labelProps/T.B.h5ad"))))
+# 
+#   if (length(x.rds$CciaMeta$imPopMap$live) > 1) {
+#     x.rds$CciaMeta$imPopMap$live[[1]]$parent <- "T.A"
+#     x.rds$CciaMeta$imPopMap$live[[1]]$path <- "T.A/tracked"
+#     x.rds$CciaMeta$imPopMap$live[[1]]$valueName <- "T.A"
+#     x.rds$CciaMeta$imPopMap$live[[2]]$parent <- "T.B"
+#     x.rds$CciaMeta$imPopMap$live[[2]]$path <- "T.B/tracked"
+#     x.rds$CciaMeta$imPopMap$live[[2]]$valueName <- "T.B"
+# 
+#     saveRDS(x.rds, x$persistentObjectDirectoryFile("ccid.rds"))
+#   }
+# }
+```
+
+
+```{r}
+# devtools::load_all("../")
+# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "LUw0Nx", versionID = versionID, initReactivity = FALSE # SNS
+# )
+# 
+# # get experimental info
+# exp.info <- cciaObj$summary(
+#   withSelf = FALSE, fields = c("Attr")
+# )
+# 
+# uIDs <- exp.info[exp.info$Include == "Y",]$uID
+# 
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   x$savePopMap("live", includeFiltered = TRUE)
+# }
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "LUw0Nx", versionID = versionID, initReactivity = FALSE # SNS
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+uIDs <- exp.info[exp.info$Include == "Y",]$uID
+
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "T.A/tracked",
+    "T.B/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+```{r fig_hmm_props, fig.height=2, fig.width=2.5}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.movement"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+```
+
+```{r fig_speed_time, fig.height = 3, fig.width = 2}
+# get frequencies of clusters at time points
+speedTime <- popDTs %>%
+  group_by(uID, centroid_t) %>%
+  summarise(mean.speed = mean(live.cell.speed, na.rm = TRUE))
+
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+ggplot(speedTime,
+       aes((centroid_t * time.interval), mean.speed * 2,
+           # color = live.cell.hmm.state.movement,
+           # fill = live.cell.hmm.state.movement,
+           )) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  stat_smooth(span = 0.4) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom"
+    ) +
+  xlab("Time (min)") + ylab("Velocity") +
+  # ylim(0, 1) +
+  facet_grid(uID~.)
+
+ggsave(file.path(anaDir, "speed_time.png"), height = 8, width = 3)
+```
+
+```{r fig_states_time, fig.height = 3, fig.width = 4}
+# get frequencies of clusters at time points
+hmmTime <- popDTs %>%
+  dplyr::filter(
+    !is.na(live.cell.hmm.state.movement),
+    ) %>%
+  group_by(
+    uID, centroid_t, live.cell.hmm.state.movement
+    ) %>%
+  summarise(n = n()) %>%
+  mutate(
+    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    freq = n/sum(n)
+    ) %>%
+  ungroup() %>%
+  complete(uID, centroid_t, live.cell.hmm.state.movement, fill = list(
+    freq = 0
+  ))
+
+# TODO this is not nice
+# set NA for each object after completion with 0
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  hmmTime[hmmTime$uID == x$getUID() &
+            hmmTime$centroid_t > x$omeXMLPixels()$SizeT, ]$freq = NA
+}
+```
+
+```{r fig_states_time, fig.height = 1.5, fig.width = 2}
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+for (i in unique(hmmTime$uID)) {
+  p1 <- ggplot(hmmTime[hmmTime$uID == i,],
+         aes((centroid_t * time.interval), freq,
+             color = live.cell.hmm.state.movement,
+             fill = live.cell.hmm.state.movement,
+             )) +
+    stat_smooth(span = 0.2) +
+    # geom_line(size = 0.8) +
+    theme_classic() +
+    # scale_color_brewer(name = NULL, palette = "Set1") +
+    # scale_fill_brewer(name = NULL, palette = "Set1") +
+    scale_color_manual(values = c("black", "#f28500", "#0080ff")) +
+    scale_fill_manual(values = c("black", "#f28500", "#0080ff")) +
+    theme(
+      legend.title = element_blank(),
+      # legend.position = "bottom"
+      legend.position = "none"
+      ) +
+    xlab("Time (min)") + ylab("HMM frequency")
+    # ylim(0, 1) +
+    # facet_grid(uID~.)
+  print(p1)
+  
+  # ggsave(file.path(anaDir, "hmm_time.png"), height = 4, width = 3)
+  ggsave(file.path(anaDir, paste0("hmm_time_", i, ".tiff")), height = 2, width = 3)
+}
+```
+
+```{r fig_states_time, fig.height = 3, fig.width = 4}
+# get steady state HMM proportions
+# then normalise frequencies to that
+timeSplit <- hmmTime %>%
+  arrange(uID, centroid_t) %>%
+  dplyr::filter(
+    live.cell.hmm.state.movement == 3,
+    freq > 0.3
+    ) %>%
+  group_by(uID, live.cell.hmm.state.movement) %>%
+  slice_head(n = 1)
+
+# get average of range
+# go through and split off data
+baseList <- list()
+responseList <- list()
+for (i in uIDs) {
+  x <- timeSplit[timeSplit$uID == i,]$centroid_t
+  baseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t < x,])
+  responseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t >= x,])
+}
+
+baseDT <- rbindlist(baseList) 
+responseDT <- rbindlist(responseList) 
+baseSummary <- baseDT %>%
+  group_by(uID, live.cell.hmm.state.movement) %>%
+  summarise(sum.hmm = sum(n, na.rm = TRUE)) %>%
+  mutate(
+    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    freq.base = sum.hmm/sum(sum.hmm)
+    )
+
+# normalise to baseline
+# hmmTime <- hmmTime %>%
+#   left_join(baseSummary, by = c("uID", "live.cell.hmm.state.movement")) %>%
+#   mutate(freq.norm = freq/freq.base * 100)
+
+ggplot(baseSummary, aes(live.cell.hmm.state.movement, freq.base,
+                        fill = live.cell.hmm.state.movement)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(width = 0.2) +
+  ylim(0, 0.8) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  xlab("HMM state")
+
+ggsave(file.path(anaDir, "hmm_baseline.png"), height = 2, width = 2)
+
+write.csv(baseSummary %>% mutate(freq.base = freq.base * 100),
+          file.path(anaDir, "hmm_baseline.csv"))
+```
+
+```{r fig_states_space, fig.height = 2, fig.width = 2}
+# get frequencies of hmm states at time points
+hmmSpaceAll <- copy(popDTs) %>%
+  dplyr::filter(
+    !is.na(live.cell.hmm.state.movement),
+    uID == "O5H6Yx"
+    )
+
+tInterval <- 10
+for (i in seq(ceiling(max(hmmSpaceAll$centroid_t)/tInterval))) {
+  p1 <- ggplot(hmmSpaceAll %>%
+         dplyr::filter(
+           centroid_t >= i * tInterval,
+           centroid_t < (i * tInterval) + tInterval
+         ), aes(centroid_x, -centroid_y,
+                color = as.factor(live.cell.hmm.state.movement))) +
+    theme_classic() +
+    # plotThemeDark(
+    #   fontSize = 8,
+    #   legend.justification = "centre"
+    #   ) +
+    scale_color_manual(values = c("black", "#f28500", "#0080ff")) +
+    geom_point(size = 2) +
+    coord_fixed() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.title = element_blank(),
+      legend.position = "none",
+      axis.line = element_blank(),
+      panel.border = element_rect(colour = "black", fill = NA, size = 1)
+      )
+  print(p1)
+
+  ggsave(file.path(anaDir, "hmm_space", paste0("O5H6Yx", "_", i, ".tiff")),
+         height = 2, width = 2)
+}
+```
+
+
+```{r fig_states_time, fig.height = 2, fig.width = 6}
+ggplot(hmmTime,
+       aes((centroid_t * time.interval), freq.norm,
+           color = live.cell.hmm.state.movement,
+           fill = live.cell.hmm.state.movement,
+           )) +
+  geom_hline(yintercept = 1) +
+  # geom_line(size = 0.8) +
+  stat_smooth(span = 0.4) +
+  # geom_smooth(size = 0.8) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom"
+    ) +
+  xlab("Time (min)") + ylab("HMM frequency") +
+  # ylim(0, 1) +
+  # facet_wrap(live.cell.hmm.state.movement~uID, nrow = 3, scales = "free_y")
+  facet_wrap(live.cell.hmm.state.movement~uID, nrow = 3, scales = "free_y")
+
+ggsave(file.path(anaDir, "hmm_time_split.png"), height = 6, width = 8)
+```

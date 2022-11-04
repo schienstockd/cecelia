@@ -93,6 +93,7 @@ uIDs <- names(cciaObj$cciaObjects())
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   pops = c("non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
+  # completeDT = TRUE, replaceX = TRUE)
   # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
 popDT[, clusters := as.numeric(as.character(clusters))]
@@ -157,7 +158,8 @@ markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMark
 ```{r fig_clusters_heat, fig.height=5, fig.width=8}
 ggplot(markersSummary %>%
          mutate(
-           clusters = factor(clusters, levels = clustersOrder),
+           # clusters = factor(clusters, levels = clustersOrder),
+           clusters = factor(clusters, levels = sort(clustersOrder)),
            marker = factor(marker, levels = markerOrder)
          ), aes(clusters, marker)) +
   theme_classic() +

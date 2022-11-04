@@ -68,7 +68,7 @@ HmmStates <- R6::R6Class(
             # get new speed
             tracks.DT[
               tracks.measure.fun(
-                popTracks, speed, "live.cell.speed",
+                popTracks, celltrackR::speed, "live.cell.speed",
                 steps.subtracks = 1 + self$funParams()$skipTimesteps,
                 steps.overlap = if (self$funParams()$subtrackOverlap == TRUE)
                   self$funParams()$skipTimesteps

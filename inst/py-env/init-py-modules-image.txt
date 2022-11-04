@@ -35,3 +35,4 @@ torchaudio
 leidenalg
 squidpy
 deepcell
+napari-animation

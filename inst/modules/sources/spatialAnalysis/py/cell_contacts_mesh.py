@@ -45,6 +45,7 @@ def run(params):
   pops_a = script_utils.get_param(params, 'popsA', default = list())
   pops_b = script_utils.get_param(params, 'popsB', default = list())
   invert_pops_a = script_utils.get_param(params, 'invertPopsA', default = False)
+  check_b_contains_a = script_utils.get_param(params, 'checkBContainsA', default = False)
 
   # init pop utils
   pop_utils = PopUtils()
@@ -98,9 +99,11 @@ def run(params):
       if invert_pops_a is True:
         dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
+        contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
       else:
         dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
+        contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
         
       if pop_df_b is not None:
         # same value for all within a population
@@ -117,6 +120,7 @@ def run(params):
         
         # go through timepoints and get contacts
         contacts = dict()
+        contained = dict()
         
         for i, t in tqdm(enumerate(timepoints)):
           # load meshes
@@ -149,13 +153,22 @@ def run(params):
             {i: m.min_distance_single(x, return_name = False) for i, x in meshes_a.items()}
             )
             
+          # check whether B contains A
+          # TODO combine with previous to avoid calling min distance twice
+          contained.update(
+            {i: meshes_b[m.min_distance_single(
+              x, return_name = True)[1]].convex_hull.contains(
+                x.vertices).all() for i, x in meshes_a.items()}
+            )
+            
         logfile_utils.log(f'>> Add distances back')
-    
+        
         # convert to dataframe
         contact_df = pd.DataFrame.from_dict({
           'label_id': contacts.keys(),
           dist_col: contacts.values(),
-          contact_col: [x <= max_contact_dist for x in contacts.values()]
+          contact_col: [x <= max_contact_dist for x in contacts.values()],
+          contained_col: contained.values()
         })
         
         # merge contacts to labels
@@ -165,15 +178,18 @@ def run(params):
         merged_contacts_ids = labels_ids.copy()
         merged_contacts_ids[dist_col] = np.NaN
         merged_contacts_ids[contact_col] = np.NaN
+        merged_contacts_ids[contained_col] = np.NaN
         
       # set NaN to False
       merged_contacts_ids[dist_col].replace(np.NaN, -1, inplace = True)
       merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
+      merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
   
       # convert column to dict
       contact_dict = {
         dist_col: merged_contacts_ids[dist_col],
-        contact_col: merged_contacts_ids[contact_col]
+        contact_col: merged_contacts_ids[contact_col],
+        contained_col: merged_contacts_ids[contained_col]
       }
   
       logfile_utils.log(

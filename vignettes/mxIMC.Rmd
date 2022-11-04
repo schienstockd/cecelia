@@ -168,7 +168,9 @@ uIDs <- uIDs[uIDs %in% exp.info[
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("melano", "endothelial", "lymphs", "macro.mono", "macro.PDL1+"), uIDs = uIDs)
+  # pops = c("melano", "endothelial", "lymphs", "macro.mono", "macro.PDL1+"),
+  pops = c("melano", "lymphs", "macro.mono", "macro.PDL1+"),
+  uIDs = uIDs, completeDT = TRUE, replaceX = TRUE)
 
 unique(popDT$clusters)
 ```
@@ -236,9 +238,11 @@ markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMark
 ```{r fig_clusters_heat, fig.height=5, fig.width=8}
 ggplot(markersSummary %>%
          mutate(
-           clusters = factor(clusters, levels = clustersOrder),
+           # clusters = factor(clusters, levels = clustersOrder),
+           clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
            marker = factor(marker, levels = markerOrder)
-         ), aes(clusters, marker)) +
+         ) %>%
+         dplyr::filter(!clusters %in% c(10)), aes(clusters, marker)) +
   theme_classic() +
   # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
   geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
@@ -259,7 +263,7 @@ ggplot(markersSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 13, height = 11)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 9, height = 10)
 ```
 
 ```{r fig_pops_umap, fig.height=2, fig.width=2}

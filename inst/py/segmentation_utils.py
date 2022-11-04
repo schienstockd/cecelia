@@ -40,7 +40,8 @@ class SegmentationUtils:
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
-    self.cell_size_max = script_utils.get_param(params, 'cell_size_max', default = 10**5)
+    # self.cell_size_max = script_utils.get_param(params, 'cell_size_max', default = 10**5)
+    self.cell_size_max = script_utils.get_param(params, 'cell_size_max', default = 0)
     
     # thresholding
     self.threshold = script_utils.get_param(params, 'threshold', default = 0)

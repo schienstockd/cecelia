@@ -84,7 +84,8 @@ cciaObj <- initCciaObject(
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   # pops = c("T", "B", "others"), uIDs = uIDs)
-  pops = c("T", "B", "others", "macro.dc", "endothelial", "lymphatic", "lymphs"))
+  pops = c("T", "B", "others", "macro.dc", "endothelial", "lymphatic", "lymphs"),
+  completeDT = TRUE, replaceX = TRUE)
 
 unique(popDT$clusters)
 ```
@@ -110,6 +111,7 @@ markersToPlot <- popLymphs %>%
   pivot_longer(
     cols = all_of(markersToShow), names_to = "marker", values_to = "value"
     )
+markersToPlot[markersToPlot$marker == "CLEC9a.AF488", ]$marker <- "CLEC9a"
 markersToPlot$marker <- as.factor(markersToPlot$marker)
 
 # show heatmap for clusters
@@ -138,7 +140,8 @@ markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMark
 ```{r fig_clusters_heat, fig.height=5, fig.width=8}
 ggplot(markersSummary %>%
          mutate(
-           clusters = factor(clusters, levels = clustersOrder),
+           # clusters = factor(clusters, levels = clustersOrder),
+           clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
            marker = factor(marker, levels = markerOrder)
          ), aes(clusters, marker)) +
   theme_classic() +
