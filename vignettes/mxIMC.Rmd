@@ -169,8 +169,10 @@ uIDs <- uIDs[uIDs %in% exp.info[
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   # pops = c("melano", "endothelial", "lymphs", "macro.mono", "macro.PDL1+"),
-  pops = c("melano", "lymphs", "macro.mono", "macro.PDL1+"),
+  pops = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+"),
   uIDs = uIDs, completeDT = TRUE, replaceX = TRUE)
+
+cciaObj$cciaObjects(uIDs = uIDs)[[1]]$popPaths("clust", includeFiltered = TRUE)
 
 unique(popDT$clusters)
 ```
