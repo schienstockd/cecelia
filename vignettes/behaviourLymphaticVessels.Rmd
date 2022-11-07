@@ -1,0 +1,285 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/Immunemap_expID_49/CECELIA"
+```
+
+```{r}
+# # add positive LV pop
+# devtools::load_all("../")
+# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "mrMpi5", versionID = versionID, initReactivity = FALSE # Immunemap
+# )
+# 
+# popType <- "live"
+# parentPops <- c("LV")
+# valueName <- "LV"
+# pops <- list(
+#   "accepted" = list(
+#     filterMeasure = "volume",
+#     # filterValues = 60000,
+#     # filterValues = 20000, # 01MS5C
+#     filterValues = 40000, # AcTxRT
+#     filterFun = "gt",
+#     colour = "white"
+#   )
+# )
+# 
+# # go through all children
+# for (x in cciaObj$cciaObjects()["AcTxRT"]) {
+#   x$delPopsByPath(popType, paste(parentPops, names(pops), sep = "/"),
+#            includeFiltered = TRUE)
+#   x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+#   x$saveState()
+# }
+```
+
+
+```{r}
+# adjust segmentation names
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mrMpi5", versionID = versionID, initReactivity = FALSE # Immunemap
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get clustering
+tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(),
+  value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
+
+lymphatic.clusters <- seq(1, 3)
+behaviour.directed <- c(0, 3)
+behaviour.meandering <- c(1, 4)
+behaviour.scanning <- c(2)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "T/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+```{r fig_umap, fig.height=3, fig.width=3}
+dfToPlot <- copy(tcells.sc) %>% left_join(exp.info)
+
+dfToPlot$type <- "Away from lymphatics"
+dfToPlot[dfToPlot$clusters %in% lymphatic.clusters, ]$type <- "Close to lymphatics"
+dfToPlot$behaviour <- "Directed"
+dfToPlot[dfToPlot$clusters %in% behaviour.meandering, ]$behaviour <- "Meandering"
+dfToPlot[dfToPlot$clusters %in% behaviour.scanning, ]$behaviour <- "Scanning"
+
+# plot UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = clusters)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    legend.position = "bottom",
+    # legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(tcells.sc)
+
+propsToPlot <- propsToPlot %>%
+  dplyr::rename(
+    # "Close to lymphatics" = "live.cell.contact#live.LV/accepted.TRUE",
+    # "Away from lymphatics" = "live.cell.contact#live.LV/accepted.FALSE",
+    "Distance to lymphatics" = "live.cell.min_distance#live.LV/accepted.mean",
+    "Movement HMM 1" = "live.cell.hmm.state.movement.1",
+    "Movement HMM 2" = "live.cell.hmm.state.movement.2",
+    "Movement HMM 3" = "live.cell.hmm.state.movement.3"
+  )
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+propsToPlot$clusters.name <- "NONE"
+propsToPlot[propsToPlot$clusters == 0, ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters == 1, ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters == 2, ]$clusters.name <- "Directed"
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  # dplyr::filter(!is.na(live.cell.hmm.state.movement)) %>%
+  # group_by(live.cell.hmm.state.movement, prop) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=3, fig.width=5}
+propsSummary$prop <- factor(propsSummary$prop, levels = rev(c(
+  # 'Close to lymphatics',
+  # 'Away from lymphatics',
+  'Distance to lymphatics',
+  'Movement HMM 1',
+  'Movement HMM 2',
+  'Movement HMM 3',
+  'asphericity',
+  'displacement',
+  'displacementRatio',
+  'duration',
+  'meanTurningAngle',
+  'outreachRatio',
+  'overallAngle',
+  'speed',
+  'straightness',
+  'trackLength'
+)))
+
+# ggplot(propsSummary, aes(prop, as.factor(clusters))) +
+ggplot(propsSummary %>% drop_na(), aes(as.factor(clusters), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4, height = 3.5)
+```
+
+```{r fig_clusters_freq, fig.height=1, fig.width=1}
+# show HMM states for clusters
+dfToPlot <- popDTs %>%
+  group_by(uID, live.cell.track.clusters.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100)
+
+write.csv(dfToPlot, file.path(anaDir, "clusters_freq.csv"))
+
+ggplot(dfToPlot,
+       aes(
+         live.cell.track.clusters.movement, freq
+         )) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.3, alpha = 0.6) +
+  ylab("Behaviour (%)") + xlab("") +
+  # ylim(0, 60) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+```
+
+```{r fig_psuedotime, fig.height=3, fig.width=5}
+# show proportion of freq of populations in clusters
+# plotColors <- c("#707070", "#ffb804")
+
+ggplot(
+  dfToPlot %>%
+    # group_by(type, clusters) %>%
+    group_by(type, behaviour) %>%
+    summarise(n = n()) %>%
+    mutate(
+      freq = n/sum(n),
+      ),
+  # aes(x = 1, y = freq, fill = clusters)) +
+  aes(x = 1, y = freq, fill = behaviour)) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  theme_classic() +
+  # geom_bar(stat = "identity", width = 1) +
+  geom_col() +
+  coord_polar("y", start = 0) +
+  facet_wrap(.~type, ncol = 2) +
+  xlim(0, 1.5) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    legend.position = "bottom",
+    # legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )
+
+ggsave(file.path(anaDir, "pop_clusters_freq.tiff"), width = 3, height = 2)
+```

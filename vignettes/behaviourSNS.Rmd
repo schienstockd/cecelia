@@ -31,19 +31,6 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_SNS_2P/CECELIA"
 ```
 
 ```{r}
-# adjust segmentation names
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "SSmEIR", versionID = versionID, initReactivity = FALSE # SNS
-)
-
-cciaObj$omeXMLTimelapseInfo()
-```
-
-```{r}
 # # adjust segmentation names
 # devtools::load_all("../")
 # cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)

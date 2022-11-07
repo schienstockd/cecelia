@@ -100,10 +100,12 @@ def run(params):
         dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
+        contact_id_col = f'{pop_type_a}.cell.contact_id.inv#{pop_type_b}.{pop_b}'
       else:
         dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
+        contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
         
       if pop_df_b is not None:
         # same value for all within a population
@@ -121,6 +123,7 @@ def run(params):
         # go through timepoints and get contacts
         contacts = dict()
         contained = dict()
+        contact_ids = dict()
         
         for i, t in tqdm(enumerate(timepoints)):
           # load meshes
@@ -149,19 +152,14 @@ def run(params):
             m.add_object(i, x)
           
           # go through pop A and get minimum distances to pop B
-          contacts.update(
-            {i: m.min_distance_single(x, return_name = False) for i, x in meshes_a.items()}
-            )
+          meshes_dist = {i: m.min_distance_single(x, return_name = True) for i, x in meshes_a.items()}
+          
+          # update contacts
+          contacts.update({i: x[0] for i, x in meshes_dist.items()})
+          contact_ids.update({i: x[1] for i, x in meshes_dist.items()})
             
           # check whether B contains A
-          # TODO combine with previous to avoid calling min distance twice
-          contained.update(
-            {i: meshes_b[m.min_distance_single(
-              # x, return_name = True)[1]].convex_hull.contains(
-              x, return_name = True)[1]].contains(
-                # x.vertices).all() for i, x in meshes_a.items()}
-                [x.center_mass]).all() for i, x in meshes_a.items()}
-            )
+          contained.update({i: meshes_b[contact_ids[i]].contains([x.center_mass]).all() for i, x in meshes_a.items()})
             
         logfile_utils.log(f'>> Add distances back')
         
@@ -170,7 +168,8 @@ def run(params):
           'label_id': contacts.keys(),
           dist_col: contacts.values(),
           contact_col: [x <= max_contact_dist for x in contacts.values()],
-          contained_col: contained.values()
+          contained_col: contained.values(),
+          contact_id_col: contact_ids.values()
         })
         
         # merge contacts to labels
@@ -181,17 +180,20 @@ def run(params):
         merged_contacts_ids[dist_col] = np.NaN
         merged_contacts_ids[contact_col] = np.NaN
         merged_contacts_ids[contained_col] = np.NaN
+        merged_contacts_ids[contact_id_col] = np.NaN
         
       # set NaN to False
       merged_contacts_ids[dist_col].replace(np.NaN, -1, inplace = True)
       merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
       merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
+      merged_contacts_ids[contact_id_col].replace(np.NaN, -1, inplace = True)
   
       # convert column to dict
       contact_dict = {
         dist_col: merged_contacts_ids[dist_col],
         contact_col: merged_contacts_ids[contact_col],
         contained_col: merged_contacts_ids[contained_col]
+        contact_id_col: merged_contacts_ids[contact_id_col]
       }
   
       logfile_utils.log(

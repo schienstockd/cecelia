@@ -92,16 +92,12 @@ uIDs <- names(cciaObj$cciaObjects())
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
-  # completeDT = TRUE, replaceX = TRUE)
+  pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs,
+  completeDT = TRUE, replaceX = TRUE)
   # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
 popDT[, clusters := as.numeric(as.character(clusters))]
 unique(popDT$clusters)
-```
-
-```{r}
-popDT[]
 ```
 
 

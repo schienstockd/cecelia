@@ -169,7 +169,7 @@ uIDs <- uIDs[uIDs %in% exp.info[
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   # pops = c("melano", "endothelial", "lymphs", "macro.mono", "macro.PDL1+"),
-  pops = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+"),
+  pops = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+", "Tc.Ki67+"),
   uIDs = uIDs, completeDT = TRUE, replaceX = TRUE)
 
 unique(popDT$clusters)
@@ -178,10 +178,10 @@ unique(popDT$clusters)
 ```{r}
 # define populations
 clust <- list(
-  init = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+"),
-  cd45 = c("lymphs", "macro.mono", "macro.PDL1+"),
+  init = c("debris", "endothelial", "melano", "lymphs", "macro.mono", "macro.PDL1+", "Tc.Ki67+"),
+  cd45 = c("lymphs", "macro.mono", "macro.PDL1+", "Tc.Ki67+"),
   macro = c("macro.mono", "macro.PDL1+"),
-  lymphs = c("lymphs")
+  lymphs = c("lymphs", "Tc.Ki67+")
 )
 
 markers <- list(
@@ -214,10 +214,11 @@ groupVars <- list(
 
 combinePops <- list(
   init = list(
-    non.melano = c("lymphs", "macro.mono", "macro.PDL1+")
+    non.melano = c("lymphs", "macro.mono", "macro.PDL1+", "Tc.Ki67+")
   ),
   cd45 = list(
-    macro.mono = c("macro.mono", "macro.PDL1+")
+    macro.mono = c("macro.mono", "macro.PDL1+"),
+    lymphs = c("lymphs", "Tc.Ki67+")
     ),
   macro = list(),
   lymphs = list()
