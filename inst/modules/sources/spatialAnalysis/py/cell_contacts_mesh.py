@@ -192,7 +192,7 @@ def run(params):
       contact_dict = {
         dist_col: merged_contacts_ids[dist_col],
         contact_col: merged_contacts_ids[contact_col],
-        contained_col: merged_contacts_ids[contained_col]
+        contained_col: merged_contacts_ids[contained_col],
         contact_id_col: merged_contacts_ids[contact_id_col]
       }
   
