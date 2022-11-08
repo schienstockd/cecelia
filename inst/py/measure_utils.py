@@ -430,8 +430,9 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
             center_mass_adj = [x1 / x2 for (x1, x2) in zip(
               volume_mesh.center_mass, dim_utils.im_scale(['X', 'Y', 'Z']))]
             
-            for i, x in centroid_idx.items() if x is not None:
-              props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
+            for i, x in centroid_idx.items(): 
+              if x is not None:
+                props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
             
             # save mesh
             if save_meshes is True:
@@ -547,8 +548,9 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
           center_mass_adj = [x1 / x2 for (x1, x2) in zip(
             volume_mesh.center_mass, dim_utils.im_scale(['X', 'Y', 'Z']))]
           
-          for i, x in centroid_idx.items() if x is not None:
-            props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
+          for i, x in centroid_idx.items():
+            if x is not None:
+              props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
           
           # save mesh
           if save_meshes is True:
