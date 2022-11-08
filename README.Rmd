@@ -64,8 +64,8 @@ depending on how you would like to use the app:
 ```r
 library(cecelia)
 
-# install all required R libraries
-cciaRequirements()
+# install Bioconductor requirements
+cciaBiocRequirements()
 
 # setup cecelia directory
 cciaSetup("~/path/to/cecelia")

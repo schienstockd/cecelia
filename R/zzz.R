@@ -294,23 +294,23 @@ cciaRunApp <- function(localPath = TRUE, ...) {
     shiny::runApp(system.file("app", package = "cecelia"), ...)
 }
 
-#' @description Install R libraries needed
+#' @description Install BioC
 #' @export
-cciaRequirements <- function() {
+cciaBiocRequirements <- function() {
   # use binary for rgl
   # https://stackoverflow.com/q/51289395
   # options(pkgType="binary")
   
-  # read packages to install
-  packagesToInstall <- readLines(
-    system.file("r-requirements.txt", package = "cecelia"))
-  
-  install.packages(
-    packagesToInstall,
-    repos = "http://cran.us.r-project.org",
-    dependencies = TRUE
-  )
-  
+  # # read packages to install
+  # packagesToInstall <- readLines(
+  #   system.file("r-requirements.txt", package = "cecelia"))
+  # 
+  # install.packages(
+  #   packagesToInstall,
+  #   repos = "http://cran.us.r-project.org",
+  #   dependencies = TRUE
+  # )
+  # 
   # for R 4.2
   BiocManager::install(version = '3.15')
   
