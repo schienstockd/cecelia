@@ -323,6 +323,7 @@ cciaRequirements <- function() {
   remotes::install_github("rglab/RProtoBufLib")
   
   BiocManager::install(
-    c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
+    # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
+    c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "EBImage")
   )
 }
