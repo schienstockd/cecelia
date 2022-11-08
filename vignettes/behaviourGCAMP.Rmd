@@ -27,7 +27,7 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N044/RESULTS/clustering/skip3/"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N030/ANALYSIS/IMAGE/clustering/skip3/"
 ```
 
 ```{r}

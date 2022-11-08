@@ -34,8 +34,15 @@ We designed `cecelia` to also process jobs on the `HPC` (High Performance Comput
 We currently only support `Slurm` as a scheduler. If you want to set this up on 
 your system - please open an `issue` and we will get you started.
 
+All components will be packaged within a `conda` environment.
+We recommend to install [`miniconda`](https://docs.conda.io/en/latest/miniconda.html).
 You can install the development version of `cecelia` like so:
 ```r
+conda create -y -n cecelia-env -c conda-forge python=3.9
+conda activate cecelia-env
+conda install -c conda-forge r-base=4.2.0
+R
+
 if (!require("remotes", quietly = TRUE))
   install.packages("remotes")
 remotes::install_github("schienstockd/cecelia")

@@ -66,86 +66,130 @@ HPC_CONF <-  list(
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/Moldoveanu2022_IMC/CECELIA"
 ```
 
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "fhz81P", versionID = versionID, initReactivity = FALSE
-)
-
-popDT <- cciaObj$popDT("clust", pops = c("lymphs"), includeFiltered = TRUE)
-```
-
 
 ```{r}
-# run clustering
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
-  # pID = pID, uID = "JQE7xd", versionID = versionID, initReactivity = FALSE # ICB
-  # pID = pID, uID = "pkuB3P", versionID = versionID, initReactivity = FALSE # BioMax
-)
-
-exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
-
-# get cluster channels
-excludeChannels <- c(
-  "S100_Lu175", "SOX10_Dy164", # melano
-  "Histone-H3_Yb176", "x191Ir_Ir191", "x193Ir_Ir193", # backbone
-  "CD31_Sm147", # endothelial
-  "x127I_I127", "x132Xe_Xe132", "x138Ba_Ba138", "x190BCKG_BCKG190",
-  "x195Pt_Pt195", "x208Pb_Pb208", "x80ArAr_ArAr80"
-  )
-clusterChannels <- which(
-  !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
-
-# run task
-funParams <- list(
-  popType = "clust",
-  popsToCluster = c("lymphs", "macro.mono"),
-  # popsToCluster = c(),
-  # savePops = TRUE,
-  savePops = FALSE,
-  keepPops = TRUE,
-  # keepPops = FALSE,
-  resolution = 0.6,
-  mergeUmap = TRUE,
-  normalisePercentile = 99.8,
-  normalisePercentileBottom = 0,
-  normaliseAxis = "channels",
-  normaliseToMedian = FALSE,
-  normaliseIndividually = FALSE,
-  transformation = "log",
-  logBase = 0,
-  valueName = "default",
-  uIDs = uIDs,
-  clusterChannels = list(
-    base = list(
-      channels = clusterChannels
-    )
-  )
-)
-
-task <- cciaObj$runTask(
-  funName = "clustPopulations.leidenClustering",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  # env = "hpc",
-  env = "local",
-  # runInplace = FALSE,
-  runInplace = TRUE,
-  taskID = 1
-)
+# # run clustering
+# devtools::load_all("../")
+# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
+#   # pID = pID, uID = "JQE7xd", versionID = versionID, initReactivity = FALSE # ICB
+#   # pID = pID, uID = "pkuB3P", versionID = versionID, initReactivity = FALSE # BioMax
+# )
+# 
+# exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
+# 
+# uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
+# 
+# # get cluster channels
+# excludeChannels <- c(
+#   "S100_Lu175", "SOX10_Dy164", # melano
+#   "Histone-H3_Yb176", "x191Ir_Ir191", "x193Ir_Ir193", # backbone
+#   "CD31_Sm147", # endothelial
+#   "x127I_I127", "x132Xe_Xe132", "x138Ba_Ba138", "x190BCKG_BCKG190",
+#   "x195Pt_Pt195", "x208Pb_Pb208", "x80ArAr_ArAr80"
+#   )
+# clusterChannels <- which(
+#   !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
+# 
+# # run task
+# funParams <- list(
+#   popType = "clust",
+#   popsToCluster = c("lymphs", "macro.mono"),
+#   # popsToCluster = c(),
+#   # savePops = TRUE,
+#   savePops = FALSE,
+#   keepPops = TRUE,
+#   # keepPops = FALSE,
+#   resolution = 0.6,
+#   mergeUmap = TRUE,
+#   normalisePercentile = 99.8,
+#   normalisePercentileBottom = 0,
+#   normaliseAxis = "channels",
+#   normaliseToMedian = FALSE,
+#   normaliseIndividually = FALSE,
+#   transformation = "log",
+#   logBase = 0,
+#   valueName = "default",
+#   uIDs = uIDs,
+#   clusterChannels = list(
+#     base = list(
+#       channels = clusterChannels
+#     )
+#   )
+# )
+# 
+# task <- cciaObj$runTask(
+#   funName = "clustPopulations.leidenClustering",
+#   funParams = funParams,
+#   envVars = HPC_CONF,
+#   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+#   # env = "hpc",
+#   env = "local",
+#   # runInplace = FALSE,
+#   runInplace = TRUE,
+#   taskID = 1
+# )
 ```
+
+```{r fig_mean_intensity_radii, fig.height=1, fig.width=4}
+library(tidyverse)
+library(readr)
+library(dbscan)
+library(ggplot2)
+df <- read.csv(file = "~/Downloads/DK01P_nonbrisk.csv", na = c("", "NA")) %>%
+  drop_na()
+colnames(df) <- c("Image", "Class", "coord_x", "coord_y", "CD31",
+                  "MITF", "NGFR", "CD3",
+                  "CD20", "SOX10")
+
+x <- as.matrix(df[df$Class == "SOX10", c("coord_x", "coord_y")])
+y <- as.matrix(df[df$Class != "SOX10", c("coord_x", "coord_y")])
+
+rownames(x) <- rownames(df[df$Class == "SOX10", ])
+rownames(y) <- rownames(df[df$Class != "SOX10", ])
+
+# get CD3 intensity for radii
+mean.intensities <- c()
+dists <- seq(30, 100, 5)
+dists.CD3 <- c()
+dists.CD20 <- c()
+
+for (i in dists) {
+  if (i %% 10 == 0)
+    print(paste(">> Get frNN for", i))
+  x.neighbours <- dbscan::frNN(x, eps = i, query = y)
+  
+  # get labels
+  x.rows <- rownames(df) %in% rownames(y)[unique(unlist(x.neighbours$id))]
+  
+  # get average CD3 intensity
+  dists.CD3 <- c(dists.CD3, mean(df[x.rows, ]$CD3))
+  dists.CD20 <- c(dists.CD20, mean(df[x.rows, ]$CD20))
+  }
+
+# bind together
+df2 <- data.frame(
+  dist = dists,
+  CD3 = dists.CD3,
+  CD20 = dists.CD20
+) %>%
+  pivot_longer(
+    cols = c("CD3", "CD20"),
+    values_to = "value",
+    names_to = "marker")
+
+ggplot(df2, aes(dist, value)) +
+  theme_classic() +
+  geom_smooth() +
+  xlab("Radius (um)") + ylab("Mean intensity (AU)") +
+  facet_wrap(.~marker, nrow = 1, scales = "free_y")
+
+```
+
 
 ```{r}
 devtools::load_all("../")
@@ -699,3 +743,4 @@ ggplot(clusterContact, aes(clusters, freq.contact,
   ylab("Contact with melano (%)") + xlab("") +
   scale_fill_brewer(name = NULL, palette = "Set3")
 ```
+

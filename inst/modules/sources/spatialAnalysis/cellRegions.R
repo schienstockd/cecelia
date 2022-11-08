@@ -18,7 +18,7 @@ CellRegions <- R6::R6Class(
     # detect regions
     detectRegions = function(x) {
       # get regions
-      regions <- frNN(x, eps = self$funParams()$regionRadius)
+      regions <- dbscan::frNN(x, eps = self$funParams()$regionRadius)
       
       resultList <- list()
       
