@@ -367,7 +367,7 @@ CciaImage <- R6::R6Class(
       # if the interval is '0', take the information
       # from the metadata
       if (length(tInfo$interval) == 0 || tInfo$interval == 0) {
-        if (length(self$getCciaAttr("TimelapseInterval")) > 1)
+        if (length(self$getCciaAttr("TimelapseInterval")) > 0)
           tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
         else
           tInfo$interval <- 1
