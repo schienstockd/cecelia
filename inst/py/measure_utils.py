@@ -424,16 +424,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
               volume, dim_utils.im_scale(['X', 'Y', 'Z'])
             )
             
-            # replace centroid with centre of mass
-            # this needs to be adjusted for the scale to match pixels again
-            # https://stackoverflow.com/a/8194178
-            center_mass_adj = [x1 / x2 for (x1, x2) in zip(
-              volume_mesh.center_mass, dim_utils.im_scale(['X', 'Y', 'Z']))]
-            
-            for i, x in centroid_idx.items(): 
-              if x is not None:
-                props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
-            
             # save mesh
             if save_meshes is True:
               volume_mesh.export(os.path.join(
@@ -541,16 +531,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
           volume_mesh = morpho_utils.mesh_from_label_volume(
             volume,  dim_utils.im_scale(['X', 'Y', 'Z'])
             )
-            
-          # replace centroid with centre of mass
-          # this needs to be adjusted for the scale to match pixels again
-          # https://stackoverflow.com/a/8194178
-          center_mass_adj = [x1 / x2 for (x1, x2) in zip(
-            volume_mesh.center_mass, dim_utils.im_scale(['X', 'Y', 'Z']))]
-          
-          for i, x in centroid_idx.items():
-            if x is not None:
-              props_table[base_labels]['centroid_' + str(i).lower()] = center_mass_adj[x]
           
           # save mesh
           if save_meshes is True:
