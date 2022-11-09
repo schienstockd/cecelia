@@ -23,7 +23,7 @@ echo 'Install Cecelia'
 R -e 'if (!require("remotes", quietly = TRUE)) install.packages("remotes", repos = "https://cloud.r-project.org")'
 R -e 'remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")'
 # run this in slurm job if it fails
-if R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate("image-nogui", rebuild = TRUE)'; then
+if R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate(envType = "image-nogui", rebuild = TRUE)'; then
   echo "OK"
 else
   sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./installConda.slurm 

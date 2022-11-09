@@ -71,8 +71,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   }
   
   # create conda environment
-  print(reticulate::conda_list()$name)
-  print(envName %in% reticulate::conda_list()$name)
   envPresent <- envName %in% reticulate::conda_list()$name
   
   if (envPresent == FALSE || rebuild == TRUE) {
@@ -97,8 +95,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # https://pytorch.org/get-started/locally/
     "--extra-index-url https://download.pytorch.org/whl/cu116"
   )
-  
-  if (donwloadOnly == TRUE)
   
   reticulate::conda_install(
     envname = envName, packages = pyModules,
