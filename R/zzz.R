@@ -313,7 +313,7 @@ cciaAppRequirements <- function() {
 
 #' @description Install bioconductor requirements
 #' @export
-cciaBioRequirements <- function() {
+cciaBiocRequirements <- function() {
   # for R 4.2
   BiocManager::install(version = '3.15')
   

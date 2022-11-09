@@ -8,7 +8,7 @@
 #SBATCH --nodes=1
 
 # The name of the job:
-#SBATCH --job-name="Behaviour analysis (cleanupImages.afDriftCorrect): SSmEIR.3"
+#SBATCH --job-name="[CCIA] Install conda environment"
 
 # The project ID which this job should run under:
 #SBATCH --account="punim1124"
@@ -17,13 +17,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 
-
-
 # The amount of memory in megabytes per process in the job:
 #SBATCH --mem=102400
-
-# Send yourself an email when the job:
-#SBATCH --mail-type=FAIL
 
 # The maximum running time of the job in days-hours:mins:sec
 #SBATCH --time=00-12:00:00
