@@ -50,16 +50,10 @@ cciaSetup <- function(path) {
 #' @param envType character for environment type. Any of c("image", "flow")
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
-                            rebuild = FALSE, onHPC = FALSE) {
+                            rebuild = FALSE) {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
-  
-  if (onHPC == TRUE) {
-    envFile <- system.file(
-      file.path("py-env", "conda-env-hpc.yml"),
-      package = "cecelia")
-  }
   
   pyModulesFile <- system.file(
     file.path("py-env", "init-py-modules-image.txt"),
@@ -83,30 +77,35 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
+  }
   
-    # install packages not in conda environment
-    # TODO some of these did not work when included in the environment.yml
-    pyModules <- readLines(pyModulesFile)
-    pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
+  # install packages not in conda environment
+  # TODO some of these did not work when included in the environment.yml
+  pyModules <- readLines(pyModulesFile)
+  pyModules <- pyModules[grepl(pattern = "^(?!#)", x = pyModules, perl = TRUE)]
+  
+  # create pip options
+  pipOptions <- c(
+    # "--user",
+    "-U",
+    # for A100 support?
+    # https://pytorch.org/get-started/locally/
+    "--extra-index-url https://download.pytorch.org/whl/cu116"
+  )
+  
+  if (donwloadOnly == TRUE)
+  
+  reticulate::conda_install(
+    envname = envName, packages = pyModules,
+    # channel = c("conda-forge", "anaconda")
+    pip = TRUE,
+    pip_options = pipOptions
+    )
     
+  # install OME bioformats
+  if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
-      envname = envName, packages = pyModules,
-      # channel = c("conda-forge", "anaconda")
-      pip = TRUE,
-      pip_options = c(
-        # "--user",
-        "-U",
-        # for A100 support?
-        # https://pytorch.org/get-started/locally/
-        "--extra-index-url https://download.pytorch.org/whl/cu116"
-        )
-      )
-    
-    # install OME bioformats
-    if (envType %in% c("image", "image-nogui")) {
-      reticulate::conda_install(
-        envname = envName, packages = c("bioformats2raw"), channel = "ome")
-    }
+      envname = envName, packages = c("bioformats2raw"), channel = "ome")
   }
 }
 

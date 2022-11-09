@@ -266,8 +266,8 @@
             # add output
             if (!is.null(hpcOutput()) && attr(hpcOutput(), "updated") == TRUE) {
               html(id = "hpcOutput",
-                            html = paste0("<br/>", hpcOutput()),
-                            add = TRUE)
+                   html = paste0("<br/>", attr(hpcOutput(), "updatedContent")),
+                   add = TRUE)
             }
             
             # is task finished?
@@ -275,7 +275,7 @@
               o$destroy()
               
               # reset log
-              hpcOutput("")
+              hpcOutput(NULL)
               html(id = "hpcOutput", html = paste0("<br/>", "*** END ***"), add = TRUE)
               
               # reset buttons

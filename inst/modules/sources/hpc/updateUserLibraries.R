@@ -21,7 +21,7 @@ UpdateUserLibraries <- R6::R6Class(
       self$sshConnection()$sshExecute(
         paste(
           sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
-          "sh ./hpc-setup/init-HPC-packages.sh",
+          "sh ./scripts/hpc/slurm/updateUserLibraries.sh",
           sep = ";"
           # TODO this should output on console
           # but does not appear in sink(logfile)
