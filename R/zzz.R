@@ -72,6 +72,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   
   # create conda environment
   print(reticulate::conda_list()$name)
+  print(envName %in% reticulate::conda_list()$name)
   envPresent <- envName %in% reticulate::conda_list()$name
   
   if (envPresent == FALSE || rebuild == TRUE) {
