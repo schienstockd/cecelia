@@ -1245,7 +1245,7 @@ createTaskManager <- function(
           ),
           fluidRow(
             column(12,
-                   div(style = "max-height:600px;overflow-y:scroll",
+                   div(style = "max-height:500px;overflow-y:scroll",
                        uiOutput(session$ns("logOutput")))
             )
           )

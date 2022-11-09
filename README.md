@@ -28,12 +28,13 @@ scheduler. If you want to set this up on your system - please open an
 All components can be packaged within a `conda` environment. We
 recommend to install
 [`miniconda`](https://docs.conda.io/en/latest/miniconda.html) if you
-want to keep a separate environment:
+want to keep a separate environment. If you opt for this, then you
+should also install `RStudio` within that conda environment.
 
 ``` bash
-conda create -y -n cecelia-env -c conda-forge python=3.9
-conda activate cecelia-env
-conda install -c conda-forge r-base=4.1.2
+conda create -y -n r-cecelia-env -c conda-forge python=3.9
+conda activate r-cecelia-env
+conda install -c conda-forge r-base=4.1.2 rstudio
 ```
 
 You can install the development version of `cecelia` like so:
