@@ -59,7 +59,7 @@ app:
 ``` r
 library(cecelia)
 
-# install app requirements
+# install App requirements
 # (i) they are not needed when using only markdown files or on HPC
 cciaAppRequirements()
 

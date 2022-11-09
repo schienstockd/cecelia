@@ -71,12 +71,16 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   }
   
   # create conda environment
+  print(reticulate::conda_list()$name)
   envPresent <- envName %in% reticulate::conda_list()$name
   
   if (envPresent == FALSE || rebuild == TRUE) {
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
+  } else {
+    # TODO only install dependencies?
+    # reticulate::conda_install()
   }
   
   # install packages not in conda environment
@@ -323,7 +327,7 @@ cciaBiocRequirements <- function() {
   # downgrade reticulate; should be done in DESCRIPTION?
   # The following is not solved
   # https://github.com/rstudio/reticulate/issues/1155
-  remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
+  # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
   remotes::install_github("rglab/RProtoBufLib")
