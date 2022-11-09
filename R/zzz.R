@@ -294,7 +294,7 @@ cciaRunApp <- function(localPath = TRUE, ...) {
     shiny::runApp(system.file("app", package = "cecelia"), ...)
 }
 
-#' @description Install BioC
+#' @description Install BioC requirements
 #' @export
 cciaBiocRequirements <- function() {
   # use binary for rgl

@@ -37,6 +37,7 @@ your system - please open an `issue` and we will get you started.
 All components can be packaged within a `conda` environment.
 We recommend to install [`miniconda`](https://docs.conda.io/en/latest/miniconda.html) if you want
 to keep a separate environment:
+
 ```bash
 conda create -y -n cecelia-env -c conda-forge python=3.9
 conda activate cecelia-env
