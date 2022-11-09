@@ -18,10 +18,10 @@
 #SBATCH --cpus-per-task=2
 
 # The amount of memory in megabytes per process in the job:
-#SBATCH --mem=102400
+#SBATCH --mem=51200
 
 # The maximum running time of the job in days-hours:mins:sec
-#SBATCH --time=00-12:00:00
+#SBATCH --time=00-01:00:00
 
 # check that the script is launched with sbatch
 if [ "x$SLURM_JOB_ID" == "x" ]; then

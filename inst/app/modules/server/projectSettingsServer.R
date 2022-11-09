@@ -265,9 +265,12 @@
             
             # add output
             if (!is.null(hpcOutput()) && attr(hpcOutput(), "updated") == TRUE) {
-              html(id = "hpcOutput",
-                   html = paste0("<br/>", attr(hpcOutput(), "updatedContent")),
-                   add = TRUE)
+              # only print if not only spaces
+              # https://stackoverflow.com/a/35726243
+              if (!grepl("^\\s*$", attr(hpcOutput(), "updatedContent")))
+                html(id = "hpcOutput",
+                     html = paste0("<br/>", attr(hpcOutput(), "updatedContent")),
+                     add = TRUE)
             }
             
             # is task finished?

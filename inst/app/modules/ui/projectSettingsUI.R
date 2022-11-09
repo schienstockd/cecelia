@@ -124,7 +124,11 @@
         ),
         tags$hr(),
         fluidRow(
-          column(12, verbatimTextOutput(ns("hpcOutput")))
+          column(12,
+                 # https://stackoverflow.com/a/48500417
+                 div(style = "max-height:600px;overflow-y:scroll",
+                     verbatimTextOutput(ns("hpcOutput")))
+          )
         )
       ),
       box(
