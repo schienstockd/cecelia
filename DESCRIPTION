@@ -51,6 +51,7 @@ Imports:
     scales,
     munsell,
     fs,
+    RcppParallel,
     latticeExtra,
     RColorBrewer,
     deldir,
