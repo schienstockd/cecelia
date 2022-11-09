@@ -315,7 +315,10 @@ cciaAppRequirements <- function() {
 #' @export
 cciaBiocRequirements <- function() {
   # for R 4.2
-  BiocManager::install(version = '3.15')
+  if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^2\\."))
+    BiocManager::install(version = '3.15')
+  if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^1\\."))
+    BiocManager::install(version = '3.14')
   
   # downgrade reticulate; should be done in DESCRIPTION?
   # The following is not solved
