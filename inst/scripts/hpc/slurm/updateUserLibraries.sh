@@ -16,7 +16,7 @@ echo 'Install R'
 # has to be 4.1.2 for now
 # https://github.com/gagolews/stringi/issues/452#issuecomment-1051951327
 conda install -y -c conda-forge r-base=4.1.2
-conda install -y -c anaconda openssl
+conda install -y -c conda-forge openssl
 
 # install cecelia
 echo 'Install Cecelia'

@@ -59,6 +59,10 @@ app:
 ``` r
 library(cecelia)
 
+# install app requirements
+# (i) they are not needed when using only markdown files or on HPC
+cciaAppRequirements()
+
 # install Bioconductor requirements
 cciaBiocRequirements()
 

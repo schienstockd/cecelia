@@ -293,27 +293,31 @@ cciaRunApp <- function(localPath = TRUE, ...) {
     shiny::runApp(system.file("app", package = "cecelia"), ...)
 }
 
-#' @description Install BioC requirements
+#' @description Install app requirements
 #' @export
-cciaBiocRequirements <- function() {
+cciaAppRequirements <- function() {
   # use binary for rgl
   # https://stackoverflow.com/q/51289395
   # options(pkgType="binary")
   
-  # # read packages to install
-  # packagesToInstall <- readLines(
-  #   system.file("r-requirements.txt", package = "cecelia"))
-  # 
-  # install.packages(
-  #   packagesToInstall,
-  #   repos = "http://cran.us.r-project.org",
-  #   dependencies = TRUE
-  # )
-  # 
+  # read packages to install
+  packagesToInstall <- readLines(
+    system.file("r-requirements.txt", package = "cecelia"))
+
+  install.packages(
+    packagesToInstall,
+    repos = "http://cran.us.r-project.org",
+    dependencies = TRUE
+  )
+}
+
+#' @description Install bioconductor requirements
+#' @export
+cciaBioRequirements <- function() {
   # for R 4.2
   BiocManager::install(version = '3.15')
   
-  # downgrade reticulate
+  # downgrade reticulate; should be done in DESCRIPTION?
   # The following is not solved
   # https://github.com/rstudio/reticulate/issues/1155
   remotes::install_version("reticulate", "1.22")
