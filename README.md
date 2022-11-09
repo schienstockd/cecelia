@@ -33,7 +33,7 @@ want to keep a separate environment:
 ``` bash
 conda create -y -n cecelia-env -c conda-forge python=3.9
 conda activate cecelia-env
-conda install -c conda-forge r-base=4.2.0
+conda install -c conda-forge r-base=4.1.2
 ```
 
 You can install the development version of `cecelia` like so:

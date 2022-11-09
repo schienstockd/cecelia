@@ -22,6 +22,10 @@ UpdateUserLibraries <- R6::R6Class(
         paste(
           sprintf("cd %s", cciaConf()$hpc$dirs$cecelia),
           "sh ./scripts/hpc/slurm/updateUserLibraries.sh",
+          # submit job to install python libraries
+          # otherwise it will be killed due to 4GB memory limit on login node
+          sprintf("sbatch --wait -o %1$s.log -e %1$s.log ./scripts/hpc/slurm/installConda.slurm",
+                  file.path(self$envParams()$dirs$task, "updateUserLibraries")),
           sep = ";"
           # TODO this should output on console
           # but does not appear in sink(logfile)

@@ -236,6 +236,8 @@ TaskLauncher <- R6::R6Class(
       }
       
       # add watch exit
+      # TODO this could also be done by adding "--wait"?
+      # but then you cannot 'hook up' on processes that are running from a previous session?
       cmd <- paste(
         cmd, private$hpcWatchJobExit(cmdOnly = TRUE),
         # remove job id file after finish
