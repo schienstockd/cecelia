@@ -22,5 +22,5 @@ conda install -y -c conda-forge openssl
 echo 'Install Cecelia'
 R -e 'if (!require("remotes", quietly = TRUE)) install.packages("remotes", repos = "https://cloud.r-project.org")'
 R -e 'remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")'
-# run this in slurm job
-# R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate("image-nogui", rebuild = TRUE)'
+# run this in slurm job if it fails
+R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate("image-nogui", rebuild = TRUE)'

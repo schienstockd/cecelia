@@ -323,7 +323,7 @@ cciaBiocRequirements <- function() {
   # downgrade reticulate; should be done in DESCRIPTION?
   # The following is not solved
   # https://github.com/rstudio/reticulate/issues/1155
-  remotes::install_version("reticulate", "1.22")
+  remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
   remotes::install_github("rglab/RProtoBufLib")
