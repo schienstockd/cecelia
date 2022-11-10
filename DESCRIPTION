@@ -16,6 +16,7 @@ Imports:
     data.table (>= 1.14.2),
     config (>= 0.3.1),
     shiny (>= 1.7.2),
+    ggplot2,
     reticulate,
     memoise,
     httpuv,
