@@ -1,4 +1,4 @@
-jupyter
+jupyter==1.0.0
 napari[all]
 h5py
 fsspec
@@ -22,13 +22,13 @@ cellpose
 anndata
 python-bioformats
 dask_image
-apoc
+apoc>=0.8.1
 python-fcl
 cpython
 stardist
 # for cellpose
 mxnet
-torch
+torch>=1.12.1
 torchvision
 torchaudio
 leidenalg
