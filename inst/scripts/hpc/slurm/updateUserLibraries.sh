@@ -27,5 +27,5 @@ R -e 'remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-p
 if R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate(envType = "image-nogui")'; then
   echo "OK"
 else
-  sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./installConda.slurm 
+  sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./scripts/hpc/slurm/installConda.slurm 
 fi

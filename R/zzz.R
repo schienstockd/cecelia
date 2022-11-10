@@ -295,8 +295,9 @@ cciaRunApp <- function(localPath = TRUE, ...) {
 }
 
 #' @description Install app requirements
+#' @param ... passed to install.packages
 #' @export
-cciaAppRequirements <- function() {
+cciaAppRequirements <- function(...) {
   # use binary for rgl
   # https://stackoverflow.com/q/51289395
   # options(pkgType="binary")
@@ -308,13 +309,15 @@ cciaAppRequirements <- function() {
   install.packages(
     packagesToInstall,
     repos = "https://cloud.r-project.org",
-    dependencies = TRUE
+    dependencies = TRUE,
+    ...
   )
 }
 
 #' @description Install bioconductor requirements
+#' @param ... passed to BiocManager::install
 #' @export
-cciaBiocRequirements <- function() {
+cciaBiocRequirements <- function(...) {
   # for R 4.2
   if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^2\\."))
     BiocManager::install(version = '3.15')
@@ -331,6 +334,6 @@ cciaBiocRequirements <- function() {
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-    c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "EBImage")
-  )
+    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace", "EBImage"),
+    ...)
 }

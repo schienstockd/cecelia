@@ -266,8 +266,7 @@
             # add output
             if (!is.null(hpcOutput()) && attr(hpcOutput(), "updated") == TRUE) {
               # crop to a limit
-              # if (attr(hpcOutput(), "lineReads") > 100) {
-              if (length(attr(hpcOutput(), "updatedContent")) > 100) {
+              if (attr(hpcOutput(), "lineReads") > 100 || length(attr(hpcOutput(), "updatedContent")) > 100) {
                 html(id = "hpcOutput",
                      html = trimws(paste(tail(hpcOutput(), 100), collapse = "\n")))
               } else {
