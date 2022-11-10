@@ -50,7 +50,7 @@ You can install the development version of `cecelia` like so:
 ```r
 if (!require("remotes", quietly = TRUE))
   install.packages("remotes")
-remotes::install_github("schienstockd/cecelia")
+remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")
 ```
 
 For first time users, you will need to define base directory where
