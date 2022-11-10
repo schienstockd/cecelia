@@ -295,9 +295,10 @@ cciaRunApp <- function(localPath = TRUE, ...) {
 }
 
 #' @description Install app requirements
+#' @param ncpus number of parallel processes
 #' @param ... passed to install.packages
 #' @export
-cciaAppRequirements <- function(...) {
+cciaAppRequirements <- function(ncpus = 4, ...) {
   # use binary for rgl
   # https://stackoverflow.com/q/51289395
   # options(pkgType="binary")
@@ -309,15 +310,14 @@ cciaAppRequirements <- function(...) {
   install.packages(
     packagesToInstall,
     repos = "https://cloud.r-project.org",
-    dependencies = TRUE,
-    ...
-  )
+    dependencies = TRUE, Ncpus = ncpus, ...)
 }
 
 #' @description Install bioconductor requirements
+#' @param ncpus number of parallel processes
 #' @param ... passed to BiocManager::install
 #' @export
-cciaBiocRequirements <- function(...) {
+cciaBiocRequirements <- function(ncpus = 4, ...) {
   # for R 4.2
   if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^2\\."))
     BiocManager::install(version = '3.15')
@@ -334,5 +334,5 @@ cciaBiocRequirements <- function(...) {
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), ...)
+    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
 }
