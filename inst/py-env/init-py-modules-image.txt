@@ -1,5 +1,7 @@
-jupyter==1.0.0
+jupyter
 napari[all]
+napari-animation
+apoc
 h5py
 fsspec
 urllib3
@@ -22,16 +24,14 @@ cellpose
 anndata
 python-bioformats
 dask_image
-apoc>=0.8.1
 python-fcl
 cpython
 stardist
 # for cellpose
 mxnet
-torch>=1.12.1
+torch
 torchvision
 torchaudio
 leidenalg
 squidpy
 deepcell
-napari-animation
