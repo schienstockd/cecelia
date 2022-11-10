@@ -334,6 +334,5 @@ cciaBiocRequirements <- function(...) {
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace", "EBImage"),
-    ...)
+    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), ...)
 }
