@@ -307,7 +307,7 @@ cciaAppRequirements <- function() {
 
   install.packages(
     packagesToInstall,
-    repos = "http://cran.us.r-project.org",
+    repos = "https://cloud.r-project.org",
     dependencies = TRUE
   )
 }
