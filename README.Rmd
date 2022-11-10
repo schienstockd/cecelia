@@ -42,8 +42,7 @@ to keep a separate environment. If you opt for this, then you should also instal
 ```bash
 conda create -y -n r-cecelia-env -c conda-forge python=3.9
 conda activate r-cecelia-env
-conda install -c conda-forge r-base=4.1.2
-conda install -c conda-forge rstudio
+conda install -y -c conda-forge r-base=4.1.2 rstudio
 rstudio
 ```
 
