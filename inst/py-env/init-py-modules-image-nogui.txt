@@ -12,7 +12,6 @@ btrack
 ome-types
 threadpoolctl
 trimesh
-gmsh
 rtree
 shapely
 pyopencl

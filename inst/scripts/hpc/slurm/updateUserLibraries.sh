@@ -28,5 +28,6 @@ if R -e 'library(cecelia);cciaBiocRequirements();cciaCondaCreate(envType = "imag
   echo "OK"
 else
   echo "Killed - submit job to install packages"
-  sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./scripts/hpc/slurm/installConda.slurm 
+  sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./scripts/hpc/slurm/installConda.slurm
+  echo "OK"
 fi
