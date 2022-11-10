@@ -13,9 +13,8 @@ default:
     computer: "/"
   python:
     conda:
-      env: "cecelia-env"
-      dir: "~/opt/anaconda3/"
+      env: "r-cecelia-env"
       source:
-        env: "cecelia-env"
+        env: "r-cecelia-env"
   imagej:
     path: "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"

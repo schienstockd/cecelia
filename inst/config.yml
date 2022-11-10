@@ -283,10 +283,10 @@ default:
       connectionFile: "connectionFile.debug.json"
       populationPrefix: "(P)"
     conda:
-      env: "napari-env"
+      env: "r-cecelia-env"
       dir: "~/opt/anaconda3/"
       source:
-        env: "napari-env"
+        env: "r-cecelia-env"
     stardist:
       model2D:
         name: "python_2D_versatile_fluo"
