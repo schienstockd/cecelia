@@ -108,6 +108,7 @@
               ns("hpcTask"), NULL,
               choices = list(
                 "Update user libraries" = "updateUserLibraries",
+                "Update Cecelia package" = "updateCecelia",
                 "Cleanup transferred images" = "cleanupTransferredImages"
               ), selected = "updateUserLibraries"
               ))
@@ -126,7 +127,7 @@
         fluidRow(
           column(12,
                  # https://stackoverflow.com/a/48500417
-                 div(style = "max-height:500px;overflow-y:scroll",
+                 div(style = "max-height:300px;overflow-y:scroll",
                      verbatimTextOutput(ns("hpcOutput")))
           )
         )

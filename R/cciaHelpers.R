@@ -540,15 +540,16 @@ readLogFile <- function(logFile, previousContent = NULL, mergeContent = TRUE) {
     curLineReads <- length(logContent)
     
     # collapse
-    logContent <- paste(logContent, collapse = "\n")
+    # logContent <- paste(logContent, collapse = "\n")
     
     # set line reads
     lineReads <- prevLineReads + curLineReads
     
-    output <- paste(c(
-      # there are sometimes new line markers at the end
-      trimws(previousContent), logContent
-    ), collapse = "\n")
+    # output <- paste(c(
+    #   # there are sometimes new line markers at the end
+    #   trimws(previousContent), logContent
+    # ), collapse = "\n")
+    output <- c(previousContent, logContent)
     
     # remember attributes
     attr(output, "state") <- logSize

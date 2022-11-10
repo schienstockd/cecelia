@@ -16,7 +16,7 @@ devtools::load_all("../")
 # cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = FALSE)
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, initJupyter = FALSE)
 
-cciaRunApp(port = 6864, localPath = FALSE)
+cciaRunApp(port = 6867, localPath = FALSE)
 ```
 
 

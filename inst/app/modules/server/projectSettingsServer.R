@@ -265,12 +265,21 @@
             
             # add output
             if (!is.null(hpcOutput()) && attr(hpcOutput(), "updated") == TRUE) {
-              # only print if not only spaces
-              # https://stackoverflow.com/a/35726243
-              if (!grepl("^\\s*$", attr(hpcOutput(), "updatedContent")))
+              # crop to a limit
+              if (attr(hpcOutput(), "lineReads") > 100) {
                 html(id = "hpcOutput",
-                     html = paste0("<br/>", attr(hpcOutput(), "updatedContent")),
-                     add = TRUE)
+                     html = trimws(paste(tail(hpcOutput(), 100), collapse = "\n")))
+              } else {
+                updatedContent <- trimws(paste(attr(hpcOutput(), "updatedContent"), collapse = "\n"))
+                
+                # only print if not only spaces
+                # https://stackoverflow.com/a/35726243
+                if (!grepl("^\\s*$", updatedContent))
+                    html(id = "hpcOutput",
+                         html = paste0("<br/>", updatedContent),
+                         add = TRUE)
+              }
+              # }
             }
             
             # is task finished?

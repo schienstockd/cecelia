@@ -1162,7 +1162,8 @@ createTaskManager <- function(
               html(id = sprintf("logOutputPanel_%s", local_x),
                             # html = attr(taskLogContent[[local_x]](), "updatedContent"),
                             # add = TRUE)
-                            html = taskLogContent[[local_x]]())
+                            # html = taskLogContent[[local_x]]())
+                            html = trimws(paste(taskLogContent[[local_x]](), collapse = "\n")))
             }
           }
           

@@ -34,7 +34,8 @@ should also install `RStudio` within that conda environment.
 ``` bash
 conda create -y -n r-cecelia-env -c conda-forge python=3.9
 conda activate r-cecelia-env
-conda install -c conda-forge r-base=4.1.2 rstudio
+conda install -c conda-forge r-base=4.1.2
+conda install -c conda-forge rstudio
 rstudio
 ```
 
