@@ -322,9 +322,9 @@ FlowGatingSet <- R6::R6Class(
     },
     
     #' @description Leaves of population
-    #' @param popPath character for population
-    popLeaves = function(popPath) {
-      .flowLeavesForPop(self$getPopObj(), popPath)
+    #' @param ... passed to .flowLeavesForPop
+    popLeaves = function(...) {
+      .flowLeavesForPop(self$getPopObj(), ...)
     },
     
     #' @description Direct leaves of population
