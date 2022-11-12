@@ -383,7 +383,7 @@
 #' TODO
 .flowGateForPop <- function(gs, pop) {
   # there will only be one gate returned
-  gs_pop_get_gate(gs, pop)[[1]]
+  flowWorkspace::gs_pop_get_gate(gs, pop)[[1]]
 }
 
 #' @description Get stats for pop
@@ -393,7 +393,7 @@
 #' @examples
 #' TODO
 .flowStatsForPop <- function(gs, pop, ...) {
-  gs_pop_get_stats(gs, pop, ...)
+  flowWorkspace::gs_pop_get_stats(gs, pop, ...)
 }
 
 #' @description Get channels for pop
@@ -412,7 +412,7 @@
 #' @examples
 #' TODO
 .flowLeavesForPop <- function(gs, pop = "/") {
-  pops <- gs_get_pop_paths(gs, order = 'bfs')
+  pops <- flowWorkspace::gs_get_pop_paths(gs, order = 'bfs')
   
   # return parent leaves
   .popsGetParentLeaves(pops = pops, pop = pop)
