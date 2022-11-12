@@ -267,6 +267,7 @@
     expr = {
       # fortify gating set
       attr(gs, "subset") <- subset
+      
       if (!is.null(cols)) {
         colsGs <- colnames(gs)
         cols <- colsGs[colsGs %in% cols]
@@ -275,7 +276,9 @@
         if (length(cols) > 0)
           attr(gs, "dims") <- data.table(name = cols)
       }
-      retVal <- ggcyto::fortify(gs)
+      
+      # retVal <- fortify(gs)
+      retVal <- ggcyto:::fortify.GatingSet(gs)
     },
     error = function(e) {
       message(e)

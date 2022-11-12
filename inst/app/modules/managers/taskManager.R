@@ -1245,10 +1245,11 @@ createTaskManager <- function(
             )
           ),
           fluidRow(
-            column(12,
-                   div(style = "max-height:500px;overflow-y:scroll",
-                       uiOutput(session$ns("logOutput")))
-            )
+            # column(12,
+            #        div(style = "max-height:500px;overflow-y:scroll",
+            #            uiOutput(session$ns("logOutput")))
+            # )
+            column(12, uiOutput(session$ns("logOutput")))
           )
         ),
         footer = tagList(),
@@ -1676,8 +1677,10 @@ createTaskManager <- function(
     tabPanels <- lapply(taskLogfilepaths(), function(x) {
       tabPanel(
         basename(x), value = basename(x),
-        verbatimTextOutput(
-          session$ns(sprintf("logOutputPanel_%s", basename(x)))
+        div(style = "max-height:500px;overflow-y:scroll",
+            verbatimTextOutput(
+              session$ns(sprintf("logOutputPanel_%s", basename(x)))
+              )
         )
       )
     }) %>% unname

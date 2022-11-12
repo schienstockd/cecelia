@@ -1621,7 +1621,7 @@ CciaImage <- R6::R6Class(
           zrange = c(floor(windowDF$z), ceiling(windowDF$z))
         )
         
-        spatstat.geom::as.ppp(pointsDF, W = W)
+        spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
       } else {
         NULL
       }
@@ -1670,7 +1670,7 @@ CciaImage <- R6::R6Class(
           arrange(desc(row_number()))
         W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
         
-        spatstat.geom::as.ppp(pointsDF, W = W)
+        spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
       } else {
         NULL
       }
