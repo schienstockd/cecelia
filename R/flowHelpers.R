@@ -269,7 +269,7 @@
       attr(gs, "subset") <- subset
       
       if (!is.null(cols)) {
-        colsGs <- colnames(gs)
+        colsGs <- flowWorkspace::colnames(gs)
         cols <- colsGs[colsGs %in% cols]
         
         # make sure the columns are in the gatingset

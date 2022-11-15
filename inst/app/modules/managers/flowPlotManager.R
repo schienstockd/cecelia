@@ -129,7 +129,7 @@ createFlowPlotManager <- function(
       
       # get limits
       channelLimits <- flowChannelLimits(flowGatingPlot)
-
+      
       # if centroid X and Y - use fixed aspect ratio
       axisScale <- NULL
       if (all(c(x, y) %in% c("centroid_x", "centroid_y"))) {
@@ -170,7 +170,7 @@ createFlowPlotManager <- function(
           axisScale = axisScale,
           reverseRange = flowReverseRangeForAxis(flowGatingPlot)
         )
-
+      
       # add populations
       for (pop in popsPrep) {
         # make sure x and y are in DT
@@ -191,7 +191,7 @@ createFlowPlotManager <- function(
           )
         }
       }
-
+      
       p1 %>% event_register("plotly_afterplot") %>% toWebGL()
     })
   }

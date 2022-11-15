@@ -31,6 +31,83 @@ library(tidyverse)
 ```
 
 ```{r}
+# get population DT to compare CTV-
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "2aPNfa", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "lPua3F", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$popDT("flow", pops = c("/Lymphs/Singlets/Live/CD45/nonNK/T"),
+              popCols = .flowCorrectChannelNames(c("FSC-A", "SSC-A")),
+              completeDT = FALSE)
+```
+
+```{r}
+# get population DT to compare CTV-
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Vi0cWp", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+cciaObj$cciaObjects()[[1]]$imChannelNames()
+
+# get cluster channels
+excludeChannels <- c(
+  "Time", paste("FSC", c("A", "H"), sep = "-"),
+  paste("SSC", c("A", "H", "B-A", "B-H"), sep = "-"),
+  "BUV563-A-NK1.1", "BUV737-A-CD44", "BUV563-A-NK1.1",
+  "BV480-A-CD62L", "APC-Cy7-A-TCRb"
+)
+clusterChannels <- which(
+  !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
+
+# run task
+funParams <- list(
+  popType = "flow",
+  popsToCluster = c("/Lymphs/Singlets/Live/CD45/nonNK/T"),
+  # popsToCluster = c(),
+  savePops = TRUE,
+  # savePops = FALSE,
+  # keepPops = TRUE,
+  keepPops = FALSE,
+  resolution = 0.6,
+  mergeUmap = TRUE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  # transformation = "log",
+  transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(
+      channels = clusterChannels
+    )
+  )
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
 # combine DTx samples
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)

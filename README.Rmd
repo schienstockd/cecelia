@@ -34,7 +34,7 @@ We designed `cecelia` to also process jobs on the `HPC` (High Performance Comput
 We currently only support `Slurm` as a scheduler. If you want to set this up on 
 your system - please open an `issue` and we will get you started.
 
-All components can be packaged within a `conda` environment.
+(Optional) All components can be packaged within a `conda` environment.
 We recommend to install [`miniconda`](https://docs.conda.io/en/latest/miniconda.html) if you want
 to keep a separate environment. If you opt for this, then you should also install
 `RStudio` within that conda environment.

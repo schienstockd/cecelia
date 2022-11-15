@@ -33,9 +33,18 @@ FcsRaw <- R6::R6Class(
       
       # set to name if not description known
       paramsDF$desc[naNames] <- paramsDF$name[naNames]
-      paramsDF$desc[!naNames] <- paste(paramsDF$name[!naNames], paramsDF$desc[!naNames], sep = "-")
+      paramsDF$desc[!naNames] <- paste(paramsDF$name[!naNames],
+                                       paramsDF$desc[!naNames],
+                                       sep = "-")
       # imChannelNames <- c(paramsDF$desc, "label")
       imChannelNames <- paramsDF$desc
+      
+      # change names
+      # TODO because this does not happen from FCS files
+      for (i in seq(length(names(cf)))) {
+        flowWorkspace::cf_rename_channel(
+          cf, names(cf)[[i]], .flowCorrectChannelNames(imChannelNames[[i]]))
+      }
       
       self$writeLog(paste(">> Compensate"))
       
@@ -59,8 +68,8 @@ FcsRaw <- R6::R6Class(
       # transform all channels that are not FSC, SSC, -A, -H, W
       # TODO how does this look for Aurora files .. ?
       transChannels <- channelNames[is.na(
-        stringr::str_match(channelNames, "^Time|FSC-|SSC-|label"))]
-
+        stringr::str_match(channelNames, "^Time|FSC.|SSC.|label"))]
+      
       self$writeLog(paste(
         ">> Transform", paste(transChannels, collapse = ", ")))
 
@@ -118,6 +127,11 @@ FcsRaw <- R6::R6Class(
           DT, save = TRUE
         )
       
+      # set property paths
+      cciaObj$setImGatingSetFilepath(
+        paste0(self$funParams()$valueName, cciaConf()$files$ext$gatingSet),
+        valueName = self$funParams()$valueName
+      )
       cciaObj$setImLabelPropsFilepath(
         paste0(self$funParams()$valueName, cciaConf()$files$ext$labelProps),
         valueName = self$funParams()$valueName
