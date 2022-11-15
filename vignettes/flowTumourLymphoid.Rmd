@@ -1,0 +1,264 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "Yl5tkH"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_FACS/ANALYSIS/CECELIA/lymphoid"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# run population clustering
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Vi0cWp", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get cluster channels
+excludeChannels <- c(
+  "Time", paste("FSC", c("A", "H"), sep = "-"),
+  paste("SSC", c("A", "H", "B-A", "B-H"), sep = "-"),
+  "BUV563-A-NK1.1", "BUV737-A-CD44", "BUV563-A-NK1.1",
+  "BV480-A-CD62L", "APC-Cy7-A-TCRb", "Zombie Yellow-A-LiveDead",
+  "PerCP-A-CD45", "BUV395-A-B220", "APC-Cy7-A-CD19",
+  "BUV661-A-CD11b", "V450-A-Ly6G", "mCherry-A-Tumours"
+)
+clusterChannels <- which(
+  !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
+
+# run task
+funParams <- list(
+  popType = "flow",
+  popsToCluster = c("/Lymphs/Singlets/Live/CD45/nonNK/T"),
+  # popsToCluster = c(),
+  savePops = TRUE,
+  # savePops = FALSE,
+  # keepPops = TRUE,
+  keepPops = FALSE,
+  resolution = 0.4,
+  mergeUmap = TRUE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  # transformation = "log",
+  transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(
+      channels = clusterChannels
+    )
+  )
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
+# compare clusters across treatments
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Vi0cWp", versionID = versionID, initReactivity = FALSE
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+popDT <- cciaObj$popDT(
+  popType = "clust",
+  uIDs = names(cciaObj$cciaObjects()),
+  includeFiltered = TRUE,
+  completeDT = FALSE, replaceNA = TRUE,
+  # only focus on clustered values
+  filterMeasures = c("clusters")
+)
+```
+
+```{r fig_umap, fig.height=3, fig.width=3}
+# plot UMAP with paga connections
+datToPlot <- copy(popDT) %>% left_join(exp.info)
+
+# get mean positions of pops
+meanPopsPos <- datToPlot %>%
+  group_by(clusters) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+
+# x <- cciaObj$cciaObjects()[[1]]
+# colourList <- x$popAttr("clust", "colour", includeFiltered = TRUE)
+# names(colourList) <- x$popAttr("clust", "path", includeFiltered = TRUE)
+colourList <- randomcoloR::distinctColorPalette(length(unique(datToPlot$clusters)))
+
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2, color = clusters)) +
+  theme_classic() +
+  scale_color_manual(values = colourList) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  geom_point(size = 0.5) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    legend.position = "bottom",
+    # legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.title = element_blank()
+    # legend.key.size = unit(20, "mm"),
+    # legend.text = element_text(size = 40)
+    ) +
+  guides(colour = guide_legend(override.aes = list(size = 4)))
+  # geom_label(
+  #   data = meanPopsPos,
+  #   aes(label = pop),
+  #   label.size = 0.25,
+  #   color = "black"
+  #   )
+
+ggsave(file.path(anaDir, "umap_clusters.tiff"), width = 4, height = 5)
+```
+
+```{r fig_clusters_freq, fig.height=1.5, fig.width=8}
+# show cluster proportions for files
+ggplot(
+  datToPlot %>%
+    group_by(uID, Treatment, clusters) %>%
+    summarise(n = n()) %>%
+    mutate(
+      freq = n/sum(n),
+      ),
+  aes(x = factor(Treatment), y = freq)) +
+  scale_color_manual(values = colourList) +
+  # scale_fill_brewer(name = NULL, palette = "Set1") +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    width = 0.3, alpha = 0.6) +
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  facet_grid(.~clusters)
+
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 8, height = 2)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(popDT)
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "label", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  group_by(clusters, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
+```
+
+```{r fig_clusters_heat, fig.height=3, fig.width=5}
+ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 8, height = 6)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Vi0cWp", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# positions for population labels
+labelPos <- list(
+  # "/nonDebris" = list(x = 5000, y = 500),
+)
+
+plotWidth <- 8
+plotHeight <- 5
+nRow <- 2
+nCol <- 3
+
+p1s <- .flowPlotGatedRaster(
+  cciaObj$cciaObjects(uIDs = uIDs)[[2]],
+  labelPos = labelPos, asContours = TRUE, showPopColours = TRUE)
+
+ggpubr::ggarrange(plotlist = p1s, nrow = nRow, ncol = nCol)
+ggsave(file.path(anaDir, "gating.pdf"),
+       width = plotWidth, height = plotHeight)
+```
