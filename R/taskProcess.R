@@ -194,7 +194,7 @@ TaskProcess <- R6::R6Class(
         cciaObj <- initCciaObject(
           file.path(
             self$cciaTaskObject()$persistentObjectDirectory(root = TRUE),
-            "IIIII0"
+            CCID_IMAGE_COLLECTION
           ),
           initReactivity = FALSE
         )

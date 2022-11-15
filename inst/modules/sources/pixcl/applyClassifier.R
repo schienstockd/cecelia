@@ -41,7 +41,7 @@ ApplyClassifier <- R6::R6Class(
             # classifier filepath
             x$clPath <- file.path(
               cciaObj$persistentObjectDirectory(root = TRUE),
-              "IIIII0",
+              CCID_IMAGE_COLLECTION,
               cciaConf()$dirs$tasks$classifications,
               cciaConf()$dirs$classifications$pix,
               paste0(i, ".cl")

@@ -235,7 +235,7 @@
           # call update task on image analysis object set
           taskLauncher$initTask(
             hpcTask,
-            createTaskVars("IIIII0", globalManagers$projectManager(), "local"))
+            createTaskVars(CCID_IMAGE_COLLECTION, globalManagers$projectManager(), "local"))
           
           # prep run
           taskLauncher$prepRun()

@@ -5,7 +5,7 @@ DataManager <- R6::R6Class(
   
   ### private
   private = list(
-    cciaImageCollectionUID = "IIIII0",
+    cciaImageCollectionUID = CCID_IMAGE_COLLECTION,
     # cciaAnalysisCollectionUID = CCID_ANALYSIS_COLLECTION,
     handleCciaImageCollection = NULL,
     # handleCciaAnalysisCollection = NULL,

@@ -31,8 +31,8 @@ Upload <- R6::R6Class(
       remoteDir <- dirname(self$envParams("hpc")$dirs$task)
       
       # TODO classifiers are currently in the global image collection
-      localDir <- file.path(localDir, "IIIII0")
-      remoteDir <- paste(remoteDir, "IIIII0", sep = "/")
+      localDir <- file.path(localDir, CCID_IMAGE_COLLECTION)
+      remoteDir <- paste(remoteDir, CCID_IMAGE_COLLECTION, sep = "/")
       
       # get local classification files
       localFiles <- list.files(file.path(
