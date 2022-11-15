@@ -6,8 +6,8 @@ appSources <- c(
   "constantsCore.R",
   # TODO should the libraries be added to 'depends' in DESCRIPTION
   # rather than here to load into global workspace?
-  list.files("helpers", pattern = ".R$", recursive = TRUE, full.names = TRUE),
   list.files("lib", pattern = ".R$", recursive = TRUE, full.names = TRUE),
+  list.files("helpers", pattern = ".R$", recursive = TRUE, full.names = TRUE),
   list.files("utils", pattern = ".R$", recursive = TRUE, full.names = TRUE),
   list.files("modules", pattern = ".R$", recursive = TRUE, full.names = TRUE)
 )
