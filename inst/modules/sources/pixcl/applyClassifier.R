@@ -11,7 +11,7 @@ ApplyClassifier <- R6::R6Class(
       paste(
         super$funName(),
         "applyClassifier",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     
@@ -41,7 +41,7 @@ ApplyClassifier <- R6::R6Class(
             # classifier filepath
             x$clPath <- file.path(
               cciaObj$persistentObjectDirectory(root = TRUE),
-              CCID_IMAGE_COLLECTION,
+              cecelia:::CCID_IMAGE_COLLECTION,
               cciaConf()$dirs$tasks$classifications,
               cciaConf()$dirs$classifications$pix,
               paste0(i, ".cl")

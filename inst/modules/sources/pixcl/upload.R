@@ -11,7 +11,7 @@ Upload <- R6::R6Class(
       paste(
         super$funName(),
         "upload",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     
@@ -31,8 +31,8 @@ Upload <- R6::R6Class(
       remoteDir <- dirname(self$envParams("hpc")$dirs$task)
       
       # TODO classifiers are currently in the global image collection
-      localDir <- file.path(localDir, CCID_IMAGE_COLLECTION)
-      remoteDir <- paste(remoteDir, CCID_IMAGE_COLLECTION, sep = "/")
+      localDir <- file.path(localDir, cecelia:::CCID_IMAGE_COLLECTION)
+      remoteDir <- paste(remoteDir, cecelia:::CCID_IMAGE_COLLECTION, sep = "/")
       
       # get local classification files
       localFiles <- list.files(file.path(

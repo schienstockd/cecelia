@@ -358,7 +358,7 @@ ProjectManager <- R6::R6Class(
       # add ccid file
       if (ccidFile == TRUE){
         objDir <- file.path(
-          objDir, CCID_STATE_FILE
+          objDir, cecelia:::CCID_STATE_FILE
         )
       }
       

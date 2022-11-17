@@ -11,7 +11,7 @@ CellContactsMeshes <- R6::R6Class(
       paste(
         super$funName(),
         "cellContactsMeshes",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     

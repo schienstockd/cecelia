@@ -11,7 +11,7 @@ UpdateImageInfo <- R6::R6Class(
       paste(
         super$funName(),
         "updateImageInfo",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     

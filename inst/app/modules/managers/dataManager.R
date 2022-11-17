@@ -5,8 +5,8 @@ DataManager <- R6::R6Class(
   
   ### private
   private = list(
-    cciaImageCollectionUID = CCID_IMAGE_COLLECTION,
-    # cciaAnalysisCollectionUID = CCID_ANALYSIS_COLLECTION,
+    cciaImageCollectionUID = cecelia:::CCID_IMAGE_COLLECTION,
+    # cciaAnalysisCollectionUID = cecelia:::CCID_ANALYSIS_COLLECTION,
     handleCciaImageCollection = NULL,
     # handleCciaAnalysisCollection = NULL,
     
@@ -63,7 +63,7 @@ DataManager <- R6::R6Class(
             file.path(
               objDir,
               private$cciaImageCollectionUID,
-              CCID_STATE_FILE),
+              cecelia:::CCID_STATE_FILE),
             private$cciaImageCollectionUID,
             initParams = curParamsImage
           )$reactive()
@@ -74,7 +74,7 @@ DataManager <- R6::R6Class(
         #     file.path(
         #       objDir,
         #       private$cciaAnalysisCollectionUID,
-        #       CCID_STATE_FILE),
+        #       cecelia:::CCID_STATE_FILE),
         #     private$cciaAnalysisCollectionUID,
         #     initParams = curParamsAnalysis
         #   )$reactive()

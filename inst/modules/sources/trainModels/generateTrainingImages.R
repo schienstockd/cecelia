@@ -11,7 +11,7 @@ GenerateTrainingImages <- R6::R6Class(
       paste(
         super$funName(),
         "generateTrainingImages",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     
@@ -71,7 +71,7 @@ GenerateTrainingImages <- R6::R6Class(
         newUID <- genUID(cciaConf()$images$lenUID)
         newImage <- CciaImage$new(
           file.path(
-            rootDir, newUID, CCID_STATE_FILE
+            rootDir, newUID, cecelia:::CCID_STATE_FILE
           ),
           newUID, initParams = curParams, retrieveState = FALSE)
         

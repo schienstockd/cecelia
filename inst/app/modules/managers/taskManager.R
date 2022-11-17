@@ -106,7 +106,7 @@ createTaskManager <- function(
     if (length(funNames) > 0) {
       # add module name
       names(funNames) <- paste(
-        managerConf$moduleName, names(funNames), sep = CCID_CLASS_SEP)
+        managerConf$moduleName, names(funNames), sep = cecelia:::CCID_CLASS_SEP)
       
       # switch labels to names
       moduleFunctions <- .reverseNamedList(funNames)

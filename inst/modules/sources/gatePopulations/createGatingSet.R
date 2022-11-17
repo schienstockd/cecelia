@@ -11,7 +11,7 @@ CreateGatingSet <- R6::R6Class(
       paste(
         super$funName(),
         "createGatingSet",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     

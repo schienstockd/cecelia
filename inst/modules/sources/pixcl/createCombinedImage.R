@@ -11,7 +11,7 @@ CreateCombinedImage <- R6::R6Class(
       paste(
         super$funName(),
         "createCombinedImage",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     
@@ -45,7 +45,7 @@ CreateCombinedImage <- R6::R6Class(
       # generate image
       newImage <- CciaImage$new(
         file.path(
-          rootDir, newUID, CCID_STATE_FILE
+          rootDir, newUID, cecelia:::CCID_STATE_FILE
         ),
         newUID, initParams = imParams,
         retrieveState = FALSE)

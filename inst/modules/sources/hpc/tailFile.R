@@ -11,7 +11,7 @@ TailFile <- R6::R6Class(
       paste(
         super$funName(),
         "tailFile",
-        sep = CCID_CLASS_SEP
+        sep = cecelia:::CCID_CLASS_SEP
       )
     },
     
