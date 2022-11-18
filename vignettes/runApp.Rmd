@@ -11,6 +11,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Run app
 
 ```{r}
+# remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaCreateApp()
+```
+
+
+```{r}
 # devtools::load_all("../")
 library(cecelia)
 cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
