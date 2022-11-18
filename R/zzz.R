@@ -96,6 +96,15 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     "--extra-index-url https://download.pytorch.org/whl/cu116"
   )
   
+  # install python javabridge separate
+  # pip install fails on Apple M1
+  if (envType %in% c("image", "image-nogui")) {
+    reticulate::conda_install(
+      envname = envName, packages = "python-javabridge",
+      channel = c("conda-forge")
+    )
+  }
+  
   reticulate::conda_install(
     envname = envName, packages = pyModules,
     # channel = c("conda-forge", "anaconda")
