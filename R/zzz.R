@@ -320,6 +320,10 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
     packagesToInstall,
     repos = "https://cloud.r-project.org",
     dependencies = TRUE, Ncpus = ncpus, ...)
+  
+  # install rasterly
+  # TODO maintained alternative?
+  remotes::install_github("plotly/rasterly")
 }
 
 #' @description Install bioconductor requirements

@@ -67,7 +67,8 @@ Imports:
     RcppArmadillo,
     BH,
     spatstat,
-    RSQLite
+    RSQLite,
+    remotes
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1
