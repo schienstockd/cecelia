@@ -2,6 +2,7 @@
 #' @param channelNames list of character for channel names
 #' @examples
 #' TODO
+#' @export
 .flowCorrectChannelNames <- function(channelNames) {
   channelNames <- gsub(" |\\(|\\)|\\-", ".", channelNames)
   channelNames <- gsub("\\.+", ".", channelNames)
@@ -15,6 +16,7 @@
 #' @param y list of numeric for 'Y'-values
 #' @examples
 #' TODO
+#' @export
 .flowColours <- function(x, y, nbin = 128) {
   retVal <- NULL
   
@@ -38,6 +40,7 @@
 #' @param extendLimits numeric to extend limits and avoid "cutting off" contours
 #' @examples
 #' TODO
+#' @export
 .flowContourLines <- function(
     DT, xCol, yCol, dens = NULL, n = 25, confidenceLevels = c(0.95, 0.90, 0.75, 0.5),
     extendLimits = 0.5, pointsInContour = TRUE) {
@@ -105,6 +108,7 @@
 #' @param flowNames boolean to use corrected "flow-names"
 #' @examples
 #' TODO
+#' @export
 .prepareFlowFrame <- function(
     x, channelNames, attrNames = NULL,
     channelPattern = "mean_intensity", addRownames = FALSE,
@@ -187,6 +191,7 @@
 #' @param flowNames boolean to use "flow-names"
 #' @examples
 #' TODO
+#' @export
 .flowCreateGatingSet <- function(ffs, channelNames = list(), ffNames = NULL,
                                 transformation = NULL, flowNames = TRUE) {
   # fs <- read.ncdfFlowSet(fcsFiles, alter.names = TRUE)
@@ -217,6 +222,7 @@
 #' @param flowNames boolean to use "flow-names"
 #' @examples
 #' TODO
+#' @export
 .flowTransformFlowSet <- function(fs, channelNames, transformation = NULL,
                                  flowNames = TRUE) {
   # run transformation
@@ -249,6 +255,7 @@
 #' @param compMat matrix for compensation
 #' @examples
 #' TODO
+#' @export
 .flowCompensateGs <- function(gs, compMat) {
   flowCore::compensate(gs, compMat)
 }
@@ -260,6 +267,7 @@
 #' @param subset character of population subset
 #' @examples
 #' TODO
+#' @export
 .flowFortifyGs <- function(gs, cols = NULL, subset = "root") {
   retVal <- NULL
   
@@ -306,6 +314,9 @@
 #' @param gateCoords list of (N,2) gate coordinates
 #' @param x character of 'X'-coordinate
 #' @param y character of 'Y'-coordinate
+#' @examples
+#' TODO
+#' @export
 .flowPolygonGate = function(gateCoords, x, y) {
   # create matrix
   # https://stackoverflow.com/a/43425453/13766165
@@ -332,6 +343,7 @@
 #' @param flowNames boolean to use "flow-names"
 #' @examples
 #' TODO
+#' @export
 .flowCompensatePoly <- function(df, channelNames, refAxis,
                                polyDegree = 4, suffix = ".corr",
                                replaceValues = FALSE, flowNames = TRUE) {
@@ -381,6 +393,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowGateForPop <- function(gs, pop) {
   # there will only be one gate returned
   flowWorkspace::gs_pop_get_gate(gs, pop)[[1]]
@@ -392,6 +405,7 @@
 #' @param ... passed to gs_pop_get_stats
 #' @examples
 #' TODO
+#' @export
 .flowStatsForPop <- function(gs, pop, ...) {
   flowWorkspace::gs_pop_get_stats(gs, pop, ...)
 }
@@ -401,6 +415,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowChannelsForPop <- function(gs, pop){
   gates <- .flowGateForPop(gs, pop)
   names(gates@parameters)
@@ -411,6 +426,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowLeavesForPop <- function(gs, pop = "/", groupByParent = FALSE) {
   pops <- flowWorkspace::gs_get_pop_paths(gs, order = 'bfs')
   
@@ -449,6 +465,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowPopIsRoot <- function(pop) {
   if (all(pop %in% c("", "/", "root"))) TRUE else FALSE
 }
@@ -460,6 +477,7 @@
 #' @param addSuffix boolean to add population suffix
 #' @examples
 #' TODO
+#' @export
 .flowNormRootPath <- function(pop, defaultVal = "/", popSuffix = "/", addSuffix = FALSE) {
   attr(pop, "suffix") <- popSuffix
   
@@ -481,6 +499,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowDirectLeavesForPop <- function(gs, pop = "/") {
   # get all leaves
   allLeaves <- .flowLeavesForPop(gs, pop = pop)
@@ -507,6 +526,7 @@
 #' @param pathLevels integer for path levels
 #' @examples
 #' TODO
+#' @export
 .flowTrimPath <- function(path, pathLevels = 1) {
   # split path
   splitPath <- unlist(stringr::str_split(path, "/"))
@@ -528,6 +548,7 @@
 #' @param root character for root population
 #' @examples
 #' TODO
+#' @export
 .flowPopParent <- function(pop, root = "") {
   # replace last population with empty string
   # popParent <- stri_replace_last(pop, "", regex = "/.+$")
@@ -549,6 +570,7 @@
 #' @param pop character for population path
 #' @examples
 #' TODO
+#' @export
 .flowNamesForPops <- function(pop){
   popName <- substring(stringr::str_match(pop, "/[:alnum:]+$"), first = 2) %>%
     replace_na("root")
@@ -562,6 +584,7 @@
 #' @param gateParams list of character for gating axis (2)
 #' @examples
 #' TODO
+#' @export
 .flowDirectLeavesForPopWithAxis <- function(gs, pop, gateParams){
   # get direct leaves
   directLeaves <- .flowDirectLeavesForPop(gs, pop)
@@ -584,6 +607,7 @@
 #' @param checkEqual boolean to check whether match and replace are equal
 #' @examples
 #' TODO
+#' @export
 .flowPopReplaceParent <- function(popPath, popToMatch, popToReplace, checkEqual = FALSE) {
   popPath <- .flowNormRootPath(popPath)
   popToMatch <- .flowNormRootPath(popToMatch)
@@ -613,6 +637,7 @@
 #' @param checkEqual boolean to check whether match and replace are equal
 #' @examples
 #' TODO
+#' @export
 .flowPopIsParent <- function(popPath, popToMatch, checkEqual = FALSE) {
   popPath <- .flowNormRootPath(popPath)
   popToMatch <- .flowNormRootPath(popToMatch)
@@ -634,6 +659,7 @@
 #' @param popParent character for parent population
 #' @examples
 #' TODO
+#' @export
 .flowPopPath <- function(popName, popParent) {
   if (popParent == "root") popParent <- "/"
   if (popParent == "/") popParent <- ""
@@ -646,6 +672,7 @@
 #' @param popParent character for parent population
 #' @examples
 #' TODO
+#' @export
 .flowChangeParentName <- function(popPath, parentPath) {
   a <- stringr::str_split(popPath, "/")[[1]]
   b <- stringr::str_split(parentPath, "/")[[1]]
@@ -664,6 +691,7 @@
 #' @param pop character for population
 #' @examples
 #' TODO
+#' @export
 .flowGatingAxisForPop <- function(gs, pop){
   .flowGateForPop(gs, pop)@parameters
 }
@@ -674,6 +702,7 @@
 #' @param gateParams list of character for gating axis (2)
 #' @examples
 #' TODO
+#' @export
 .flowMatchGatingParamsForPop <- function(gs, pop, gateParams) {
   curGateParams <- .flowGatingAxisForPop(gs, pop)
 
@@ -691,6 +720,7 @@
 }
 
 #' @description colour range
+#' @export
 .flowColorRampBlueHeat <- function(n) {
   # Adapted from https://www.r-bloggers.com/2013/03/r-defining-your-own-color-schemes-for-heatmaps/
   red <- rgb(1,0,0)
@@ -717,6 +747,7 @@
 #' @param plot_width numeric for plot width
 #' @examples
 #' TODO
+#' @export
 .flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark", color = NULL,
                              reduction_func = NULL, colorBy = NULL,
                              xRange = NULL, yRange = NULL, plot_height = 256,
@@ -784,6 +815,7 @@
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
+#' @export
 .flowRasterContour <- function(DT, flowX, flowY, colorMode = "white",
                                color = "black", ...) {
   
@@ -823,6 +855,7 @@
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
+#' @export
 .flowRasterPrepPlotly <- function(...) {
   # build raster
   r1 <- .flowRasterBuild(...)
@@ -864,6 +897,7 @@
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
+#' @export
 .flowPlotGatedRaster <- function(cciaObj, popPath = "root", labelSize = 2,
                                  labelPos = list(), asContours = FALSE,
                                  showPopColours = FALSE, ...) {

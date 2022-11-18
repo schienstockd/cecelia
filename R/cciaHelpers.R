@@ -83,6 +83,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param x character of measure
 #' @examples
 #' TODO
+#' @export
 .cciaStatsType <- function(x) {
   # is there a "#" in the name?
   if (grepl("#", x) == TRUE) {
@@ -106,6 +107,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param x character of measure
 #' @examples
 #' TODO
+#' @export
 .cciaStatsName <- function(x) {
   # is there a "#" in the name?
   if (grepl("#", x) == TRUE) {
@@ -128,6 +130,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param x character of measure
 #' @examples
 #' TODO
+#' @export
 .cciaStatsTypeIsCategorical <- function(x) {
   .cciaStatsType(x) %in% c("categorical", "logical")
 }
@@ -175,6 +178,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param batchGroup character to identify batch groups
 #' @examples
 #' TODO
+#' @export
 .normaliseDT <- function(popDT, colsToNormalise, normPercentile = 0.998, batchGroup = "uID") {
   # make sure the columns are in the DT
   colsToNormalise <- colnames(popDT)[colnames(popDT) %in% colsToNormalise]
@@ -210,6 +214,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param reset boolean to reset value
 #' @examples
 #' TODO
+#' @export
 .setVersionedVar <- function(valueList, itemValue,
                             setDefault = TRUE, valueName = NULL,
                             reset = FALSE) {
@@ -255,6 +260,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param reset boolean to reset value
 #' @examples
 #' TODO
+#' @export
 .setVersionedVarInList <- function(attrList, itemName, itemValue,
                                  setDefault = TRUE, valueName = NULL,
                                  reset = FALSE) {
@@ -299,6 +305,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param valueName character of value name
 #' @examples
 #' TODO
+#' @export
 .getVersionedVar <- function(valueList, valueName = NULL) {
   retVal <- NULL
   
@@ -335,6 +342,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param valueName character of value name
 #' @examples
 #' TODO
+#' @export
 .getVersionedVarInList <- function(attrList, itemName,
                                  valueName = NULL) {
   retVal <- NULL
@@ -352,6 +360,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param x character of module function
 #' @examples
 #' TODO
+#' @export
 .trimModuleFunName <- function(x) {
   xTrimmed <- x
   
@@ -372,6 +381,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param ... passed to system
 #' @examples
 #' TODO
+#' @export
 .execSystem <- function(cmd, intern = TRUE, ...) {
   suppressWarnings(
     system(cmd, intern = intern, ...)
@@ -474,6 +484,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
 #' @param quotingStyle character which quating style to use, any of c("single", "double")
 #' @examples
 #' TODO
+#' @export
 .prepForBash <- function(x, quotingStyle = "single") {
   # add extra backslashes
   x <- stringr::str_replace_all(x, fixed("\\"), r"(\\\\)")
@@ -649,6 +660,7 @@ renameChannelColumns <- function(channelList, channelNames, channelPattern = "me
 #' @param percentile numeric of normalisation percentile
 #' @examples
 #' TODO
+#' @export
 .normDTCol <- function(DT, col, normCol = col, percentile = 0.98) {
   maxSubtract <- quantile(
     DT[[col]], percentile, na.rm = TRUE)
@@ -669,6 +681,7 @@ renameChannelColumns <- function(channelList, channelNames, channelPattern = "me
 #' @param defaultVal character of default value if key not found
 #' @examples
 #' TODO
+#' @export
 .optFromList <- function(optList, optKey, defaultVal = NULL) {
   retVal <- defaultVal
   
@@ -700,6 +713,7 @@ optsFromList <- function(optList, optKeys, ...) {
 
 #' @description Reverse named list
 #' @param namedList list to reverse
+#' @export
 .reverseNamedList <- function(namedList) {
   if (length(namedList) > 0) {
     bak <- copy(namedList)
@@ -738,6 +752,7 @@ handleSystem <- function(retVal, silent = FALSE) {
 #' @param ... passed to paste0
 #' @examples
 #' TODO
+#' @export
 .cciaMessageParallel <- function(...) {
   system(sprintf('echo "\n%s\n"', paste0(..., collapse = "")))
 }
@@ -806,6 +821,7 @@ popPathsFromPops <- function(pops, popSplit = "\\.") {
 #' @param pop character of population
 #' @examples
 #' TODO
+#' @export
 .popsGetParentLeaves <- function(pops, pop = "/") {
   # get all leaves
   if (!.flowPopIsRoot(pop)) {
@@ -822,6 +838,7 @@ popPathsFromPops <- function(pops, popSplit = "\\.") {
 
 #' @description capitalise first letter
 #' @param x character to modify
+#' @export
 firstToupper <- function(x) {
   paste0(
     toupper(substr(x, 1, 1)),
@@ -832,6 +849,7 @@ firstToupper <- function(x) {
 #' @description generate unique ID
 #' @param uIDLength integer for unique ID length
 #' @param numValues integer for single number of character
+#' @export
 genUID <- function(uIDLength, numValues = 1){
   stringi::stri_rand_strings(numValues, uIDLength)
 }
@@ -842,6 +860,7 @@ genUID <- function(uIDLength, numValues = 1){
 #' @param popDT data.table of population
 #' @examples
 #' TODO
+#' @export
 .popsApplyFilterToPopDT <- function(popEntry, popDT) {
   # get filter measures
   # TODO Do I need to duplicate here because values could be a list?

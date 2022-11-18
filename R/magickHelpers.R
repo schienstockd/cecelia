@@ -9,6 +9,7 @@
 #' @param imColour character to colour image
 #' @examples
 #' TODO
+#' @export
 .changeImageColour <- function(im, imColour){
   # multiply image for colour
   dummyIm <- image_colorize(im, 100, imColour)
@@ -32,6 +33,7 @@
 #' @param imColours list of character to colour image
 #' @examples
 #' TODO
+#' @export
 .changeImageColours <- function(imList, imColours){
   # go through images and change colours
   for (curIm in seq(1, length(imList))){
@@ -45,6 +47,7 @@
 #' @param imList list of magickImage
 #' @examples
 #' TODO
+#' @export
 .createComposite <- function(imList){
   curComposite <- imList[[1]]
   

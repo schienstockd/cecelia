@@ -45,7 +45,7 @@ createModuleManager <- function(
         if (!x %in% nonReactiveManagers) {
           # init create function
           curCreateFun <- paste0(
-            "create", cecelia:::firstToupper(x), "Manager")
+            "create", firstToupper(x), "Manager")
           curCreateExpr <- sprintf(
             "%s(input, output, session, globalManagers, managers, managerConf)", curCreateFun
           )

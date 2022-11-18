@@ -89,8 +89,17 @@ plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "lef
 
 # colour themes
 # from Paul Tol: https://personal.sron.nl/~pault/
+#' @examples
+#' TODO
+#' @export
 .plotColourTolBright <- c("#EE6677", "#228833", "#4477AA", "#CCBB44", "#66CCEE", "#AA3377", "#BBBBBB")
+#' @examples
+#' TODO
+#' @export
 .plotColourTolMuted <- c("#88CCEE", "#44AA99", "#117733", "#332288", "#DDCC77", "#999933","#CC6677", "#882255", "#AA4499", "#DDDDDD")
+#' @examples
+#' TODO
+#' @export
 .plotColourTolLight <- c("#BBCC33", "#AAAA00", "#77AADD", "#EE8866", "#EEDD88", "#FFAABB", "#99DDFF", "#44BB99", "#DDDDDD")
 
 # from Color Universal Design (CUD): https://jfly.uni-koeln.de/color/
@@ -98,6 +107,9 @@ plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "lef
 
 # Adapted from https://github.com/JoachimGoedhart/PlotsOfData
 # TODO need to adjust the following
+#' @examples
+#' TODO
+#' @export
 theme_darker <- function(base_size = 11, base_family = "",  base_line_size = base_size/22, base_rect_size = base_size/22)
 {
   half_line <- base_size/2
@@ -160,6 +172,9 @@ theme_darker <- function(base_size = 11, base_family = "",  base_line_size = bas
   
 }
 
+#' @examples
+#' TODO
+#' @export
 theme_light_dark_bg <- function(base_size = 11, base_family = "",
                                 base_line_size = base_size / 22,
                                 base_rect_size = base_size / 22) {

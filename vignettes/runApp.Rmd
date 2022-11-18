@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Run app
 
 ```{r}
-# remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")
+remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")
 cciaUse("~/Desktop/DOHERTY/cecelia")
 cciaCreateApp()
 ```

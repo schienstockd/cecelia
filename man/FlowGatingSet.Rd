@@ -417,13 +417,13 @@ Does the population exists in leaves?
 \subsection{Method \code{popLeaves()}}{
 Leaves of population
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popLeaves(popPath)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popLeaves(...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{popPath}}{character for population}
+\item{\code{...}}{passed to .flowLeavesForPop}
 }
 \if{html}{\out{</div>}}
 }
