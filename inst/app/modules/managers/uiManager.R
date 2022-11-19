@@ -99,18 +99,18 @@ UIManager <- R6::R6Class(
         if ("y" %in% reverseRange)
           ay$autorange <- "reversed"
       }
-
+      
       # set ratio
       if (!is.null(axisScale)) {
         for (i in names(axisScale)) {
           x <- axisScale[[i]]
 
-          if (i == "x") {
+          if (i == "x" && !is.na(x$ratio)) {
             ax$scaleanchor = x$anchor
             ax$scaleratio = x$ratio
           }
 
-          if (i == "y") {
+          if (i == "y" && !is.na(x$ratio)) {
             ay$scaleanchor = x$anchor
             ay$scaleratio = x$ratio
           }

@@ -366,7 +366,7 @@ CciaImage <- R6::R6Class(
       
       # if the interval is '0', take the information
       # from the metadata
-      if (length(tInfo$interval) == 0 || tInfo$interval == 0) {
+      if (is.na(tInfo$interval) || length(tInfo$interval) == 0 || tInfo$interval == 0) {
         if (length(self$getCciaAttr("TimelapseInterval")) > 0)
           tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
         else
@@ -2582,7 +2582,8 @@ CciaImage <- R6::R6Class(
           fgs <- self$flowGatingSet()
           
           if (!is.null(fgs)) {
-            fgs$renameColumns(unname(x))
+            # fgs$renameColumns(unname(x))
+            fgs$renameColumns(.flowCorrectChannelNames(unname(x)))
           }
         }
       }

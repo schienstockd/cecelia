@@ -51,7 +51,8 @@ excludeChannels <- c(
   "BUV563-A-NK1.1", "BUV737-A-CD44", "BUV563-A-NK1.1",
   "BV480-A-CD62L", "BV650-A-TCRb", "Zombie Yellow-A-LiveDead",
   "PerCP-A-CD45", "BUV395-A-B220", "APC-Cy7-A-CD19",
-  "V450-A-Ly6G", "mCherry-A-Tumours"
+  # "V450-A-Ly6G", "mCherry-A-Tumours"
+  "mCherry-A-Tumours"
 )
 clusterChannels <- which(
   !cciaObj$cciaObjects()[[1]]$imChannelNames() %in% excludeChannels) - 1
@@ -65,7 +66,7 @@ funParams <- list(
   # savePops = FALSE,
   # keepPops = TRUE,
   keepPops = FALSE,
-  resolution = 0.3,
+  resolution = 0.4,
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0,
@@ -161,7 +162,8 @@ ggplot(
     # legend.key.size = unit(20, "mm"),
     # legend.text = element_text(size = 40)
     ) +
-  guides(colour = guide_legend(override.aes = list(size = 4)))
+  guides(colour = guide_legend(override.aes = list(size = 4))) +
+  facet_grid(dpi~Treatment)
   # geom_label(
   #   data = meanPopsPos,
   #   aes(label = pop),
@@ -169,29 +171,43 @@ ggplot(
   #   color = "black"
   #   )
 
-ggsave(file.path(anaDir, "umap_clusters.tiff"), width = 4, height = 5)
+ggsave(file.path(anaDir, "umap_clusters.tiff"), width = 6, height = 6)
 ```
 
 ```{r fig_clusters_freq, fig.height=1.5, fig.width=8}
-# show cluster proportions for files
-ggplot(
-  datToPlot %>%
-    group_by(uID, Treatment, clusters) %>%
+summaryToPlot <- copy(datToPlot)
+
+# combine clusters
+summaryToPlot$clusters <- as.numeric(as.character(summaryToPlot$clusters))
+summaryToPlot[summaryToPlot$clusters == 3,]$clusters <- 1
+
+summaryToPlot <- summaryToPlot %>%
+    group_by(uID, dpi, Treatment, clusters) %>%
     summarise(n = n()) %>%
     mutate(
-      freq = n/sum(n),
-      ),
-  aes(x = factor(Treatment), y = freq)) +
-  scale_color_manual(values = colourList) +
-  # scale_fill_brewer(name = NULL, palette = "Set1") +
+      freq = n/sum(n) * 100,
+      )
+
+# show cluster proportions for files
+ggplot(
+  summaryToPlot,
+  aes(x = factor(dpi), y = freq, color = factor(Treatment))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
-    width = 0.3, alpha = 0.6) +
-    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-  facet_grid(.~clusters)
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  facet_grid(.~clusters) +
+  xlab("day") +
+  theme(
+    legend.title = element_blank()
+  )
 
-ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 8, height = 2)
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 14, height = 2)
+
+summaryToPlot$Treatment.ID <- 1
+summaryToPlot[summaryToPlot$Treatment == "B",]$Treatment.ID <- 2
+
+write.csv(summaryToPlot, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}
@@ -236,8 +252,68 @@ ggplot(propsSummary, aes(as.factor(clusters), prop)) +
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 8, height = 6)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 8, height = 5)
 ```
+
+```{r}
+datToPlot <- popDT[exp.info, on = c("uID")]
+
+xLabel <- "BV785.A.Ly6C"
+yLabel <- "BUV661.A.CD11b"
+plotWidth <- 3
+plotHeight <- 3
+
+for (x in unique(datToPlot$Treatment)) {
+  # plot clusters on FACS
+  r1 <- .flowRasterContour(
+    datToPlot[clusters != 3 & Treatment == x,],
+    flowX = xLabel, flowY = yLabel, color = "black")
+  r2 <- .flowRasterContour(
+    datToPlot[clusters == 3 & Treatment == x,],
+    flowX = xLabel, flowY = yLabel, color = "#00d6f9")
+  
+  # get range
+  xRange <- range(datToPlot[, ..xLabel])
+  yRange <- range(popDT[, ..yLabel])
+  
+  # prepare plot
+  p1 <- ggplot2::ggplot() +
+    ggplot2::theme_classic() +
+    ggplot2::xlim(range(pretty(xRange))) +
+    ggplot2::ylim(range(pretty(yRange))) +
+    ggplot2::xlab(xLabel) +
+    ggplot2::ylab(yLabel)
+  
+  p1 <- p1 + 
+    ggplot2::annotation_raster(
+      r1$raster$image,
+      xmin = r1$raster$x_range[1],
+      xmax = r1$raster$x_range[2],
+      ymin = r1$raster$y_range[1],
+      ymax = r1$raster$y_range[2]) +
+    ggplot2::geom_polygon(
+      data = r1$contours,
+      aes(x = y, y = x, group = as.factor(seq)),
+      size = 0.2, color = "black", fill = "white")
+  p1 <- p1 + 
+    ggplot2::annotation_raster(
+      r2$raster$image,
+      xmin = r2$raster$x_range[1],
+      xmax = r2$raster$x_range[2],
+      ymin = r2$raster$y_range[1],
+      ymax = r2$raster$y_range[2]) +
+    ggplot2::geom_polygon(
+      data = r2$contours,
+      aes(x = y, y = x, group = as.factor(seq)),
+      size = 0.2, color = "black", fill = "#00d6f9")
+  
+  print(p1)
+  
+  ggsave(file.path(anaDir, paste0("cluster_plot_", x, ".png")),
+         width = plotWidth, height = plotHeight)
+}
+```
+
 
 ```{r}
 devtools::load_all("../")

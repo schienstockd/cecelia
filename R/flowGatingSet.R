@@ -435,7 +435,7 @@ FlowGatingSet <- R6::R6Class(
       # flowWorkspace::colnames(self$getPopObj()) <- colNames
       # flowWorkspace::colnames(private$popObj) <- colNames
       
-      oldNames <- colnames(self$getPopObj())
+      oldNames <- flowWorkspace::colnames(self$getPopObj())
       newNames <- colNames
       
       # add label if not present

@@ -204,7 +204,7 @@ createFlowPlotManager <- function(
       flowGatingPlot()$getPlotXchannel(),
       flowGatingPlot()$getPlotYchannel()
     )
-
+    
     if ("centroid_y" %in% channelAxis) {
       reverseRange <- c("x", "y")[which("centroid_y" == channelAxis)]
     }
@@ -221,7 +221,7 @@ createFlowPlotManager <- function(
     flowDT <- cciaObj()$popDT(
       popType(), pops = c("root"), includeFiltered = FALSE,
       completeDT = FALSE, popCols = c(flowX, flowY))
-      
+    
     # get channel limits
     # channelLimits <- cciaObj()$popUtils(popType())$getImChannelLimits()
     

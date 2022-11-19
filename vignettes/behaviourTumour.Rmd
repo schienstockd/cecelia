@@ -144,30 +144,139 @@ hmmTime <- popDTs %>%
   summarise(n = n()) %>%
   mutate(
     live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
-    freq = n/sum(n)
-    )
+    freq = n/sum(n) * 100
+    ) %>%
+  ungroup() %>%
+  complete(uID, centroid_t, live.cell.hmm.state.movement,
+           fill = list(freq = 0)) %>%
+  dplyr::filter(uID == "SQKg4Y")
 
 time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
+time.interval <- 0.5
+
+hmmTime$type <- "Stopping"
+hmmTime[hmmTime$live.cell.hmm.state.movement == 2, ]$type <- "Scanning"
+hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$type <- "Meandering"
+plotColours <- c("#ff1493", "#ffd700", "#4169e1")
 
 ggplot(hmmTime,
        aes((centroid_t * time.interval), freq,
-           color = live.cell.hmm.state.movement,
-           fill = live.cell.hmm.state.movement,
+           color = type,
+           fill = type,
            )) +
-  geom_line(size = 0.8) +
+  stat_smooth(span = 0.2) +
+  # geom_line(size = 0.8) +
   theme_classic() +
   # scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_fill_brewer(name = NULL, palette = "Set1") +
-  scale_color_manual(values = c("#4169e1", "#ffd700", "#ff1493")) +
+  scale_color_manual(values = plotColours) +
+  scale_fill_manual(values = plotColours) +
+  xlab("Time (min)") + ylab("HMM (%)") +
+  # facet_grid(uID~.) +
+  ylim(0, 100) + 
+  plotThemeDark(angle = 0) +
   theme(
     legend.title = element_blank(),
     legend.position = "bottom"
     ) +
-  xlab("Time (min)") + ylab("HMM frequency") +
-  ylim(0, 1) + facet_grid(uID~.)
+  ggtitle("") +
+  scale_x_continuous(limits = c(0, 120), breaks = seq(0, 120, 20))
 
-ggsave(file.path(anaDir, "hmm_time.png"), height = 4, width = 3)
+ggsave(file.path(anaDir, "hmm_time.pdf"), height = 3.5, width = 5)
+write.csv(hmmTime %>% mutate(
+  time = centroid_t * time.interval
+  ), file.path(anaDir, "hmm_time.csv"))
 ```
+
+```{r fig_states_time, fig.height = 3, fig.width = 4}
+# get steady state HMM proportions
+# then normalise frequencies to that
+timeSplit <- hmmTime %>%
+  arrange(uID, centroid_t) %>%
+  dplyr::filter(
+    live.cell.hmm.state.movement == 1,
+    freq > 0.6
+    ) %>%
+  group_by(uID, live.cell.hmm.state.movement) %>%
+  slice_head(n = 1)
+
+# first 15 minutes
+timeSplit$centroid_t <- 30
+
+# get average of range
+# go through and split off data
+baseList <- list()
+responseList <- list()
+for (i in timeSplit$uID) {
+  x <- timeSplit[timeSplit$uID == i,]$centroid_t
+  baseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t < x,])
+  responseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t >= x,])
+}
+
+baseDT <- rbindlist(baseList) 
+responseDT <- rbindlist(responseList) 
+
+baseSummary <- baseDT %>%
+  group_by(uID, live.cell.hmm.state.movement) %>%
+  summarise(sum.hmm = sum(n, na.rm = TRUE)) %>%
+  mutate(
+    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    freq.base = sum.hmm/sum(sum.hmm)
+    )
+
+# normalise to baseline
+# hmmTime <- hmmTime %>%
+#   left_join(baseSummary, by = c("uID", "live.cell.hmm.state.movement")) %>%
+#   mutate(freq.norm = freq/freq.base * 100)
+
+ggplot(baseSummary, aes(live.cell.hmm.state.movement, freq.base,
+                        fill = live.cell.hmm.state.movement)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(width = 0.2) +
+  ylim(0, 0.8) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  xlab("HMM state")
+
+ggsave(file.path(anaDir, "hmm_baseline.png"), height = 2, width = 2)
+
+write.csv(baseSummary %>% mutate(freq.base = freq.base * 100),
+          file.path(anaDir, "hmm_baseline.csv"))
+```
+
+```{r fig_base_freq, fig.height = 2, fig.width = 5}
+baseSummary$type <- "Stopping"
+baseSummary[baseSummary$live.cell.hmm.state.movement == 2, ]$type <- "Scanning"
+baseSummary[baseSummary$live.cell.hmm.state.movement == 3, ]$type <- "Meandering"
+
+ggplot(baseSummary,
+  aes(1, freq.base, fill = type)) +
+  scale_fill_manual(values = plotColours) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  xlim(0, 1.8) +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_blank(),
+    legend.justification = "center",
+    legend.position = "bottom",
+    # legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )
+
+ggsave(file.path(anaDir, "base_freq.pdf"), width = 5, height = 4)
+```
+
 
 ```{r fig_states_space, fig.height = 2, fig.width = 5}
 # get frequencies of hmm states at time points

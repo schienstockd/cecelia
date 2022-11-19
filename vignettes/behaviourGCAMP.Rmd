@@ -63,7 +63,7 @@ uIDs <- uIDs[!uIDs %in% c(
 
 # get experimental info
 exp.info <- cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr")
+  withSelf = FALSE, fields = c("Attr"), uIDs = uIDs
 )
 
 # get clustering
@@ -81,6 +81,20 @@ popDTs <- cciaObj$popDT(
   flushCache = TRUE,
   uIDs = uIDs)
 ```
+
+```{r}
+# how many movies and mice per treatment?
+# exp.info %>% group_by(Treatment, DTx, Date) %>%
+exp.info %>% group_by(Treatment, DTx) %>%
+  summarise(movies = n()) %>%
+  group_by(interaction(Treatment, DTx)) %>%
+  summarise(
+    # mice = n(),
+    sum_movies = sum(movies)
+    ) 
+  # mutate(movies_per_mouse = sum_movies/mice)
+```
+
 
 ```{r fig_umap, fig.height=3, fig.width=3}
 dfToPlot <- copy(tcells.sc) %>% left_join(exp.info)

@@ -46,8 +46,9 @@ uIDs <- names(cciaObj$cciaObjects())
 excludeChannels <- c(
   "Time", paste("FSC", c("A", "H"), sep = "-"),
   paste("SSC", c("A", "H", "B-A", "B-H"), sep = "-"),
-  "BUV563-A-NK1.1", "BUV737-A-CD44", "BUV563-A-NK1.1",
-  "BV480-A-CD62L", "APC-Cy7-A-TCRb", "Zombie Yellow-A-LiveDead",
+  "BUV563-A-NK1.1", "BUV737-A-CD44",
+  # "BV480-A-CD62L",
+  "APC-Cy7-A-TCRb", "Zombie Yellow-A-LiveDead",
   "PerCP-A-CD45", "BUV395-A-B220", "APC-Cy7-A-CD19",
   "BUV661-A-CD11b", "V450-A-Ly6G", "mCherry-A-Tumours"
 )
@@ -63,8 +64,9 @@ funParams <- list(
   # savePops = FALSE,
   # keepPops = TRUE,
   keepPops = FALSE,
-  resolution = 0.4,
+  resolution = 0.5,
   mergeUmap = TRUE,
+  # mergeUmap = FALSE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0,
   normaliseAxis = "channels",
@@ -117,7 +119,7 @@ popDT <- cciaObj$popDT(
 )
 ```
 
-```{r fig_umap, fig.height=3, fig.width=3}
+```{r fig_umap, fig.height=2, fig.width=3}
 # plot UMAP with paga connections
 datToPlot <- copy(popDT) %>% left_join(exp.info)
 
@@ -157,7 +159,8 @@ ggplot(
     # legend.key.size = unit(20, "mm"),
     # legend.text = element_text(size = 40)
     ) +
-  guides(colour = guide_legend(override.aes = list(size = 4)))
+  guides(colour = guide_legend(override.aes = list(size = 4))) +
+  facet_grid(dpi~Treatment)
   # geom_label(
   #   data = meanPopsPos,
   #   aes(label = pop),
@@ -165,29 +168,37 @@ ggplot(
   #   color = "black"
   #   )
 
-ggsave(file.path(anaDir, "umap_clusters.tiff"), width = 4, height = 5)
+ggsave(file.path(anaDir, "umap_clusters.tiff"), width = 10, height = 8)
 ```
 
 ```{r fig_clusters_freq, fig.height=1.5, fig.width=8}
-# show cluster proportions for files
-ggplot(
-  datToPlot %>%
-    group_by(uID, Treatment, clusters) %>%
+summaryToPlot <- datToPlot %>%
+    group_by(uID, dpi, Treatment, clusters) %>%
     summarise(n = n()) %>%
     mutate(
-      freq = n/sum(n),
-      ),
-  aes(x = factor(Treatment), y = freq)) +
-  scale_color_manual(values = colourList) +
-  # scale_fill_brewer(name = NULL, palette = "Set1") +
+      freq = n/sum(n) * 100,
+      )
+
+# show cluster proportions for files
+ggplot(
+  summaryToPlot,
+  aes(x = factor(dpi), y = freq, color = factor(Treatment))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
-    width = 0.3, alpha = 0.6) +
-    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-  facet_grid(.~clusters)
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  facet_grid(.~clusters) +
+  xlab("day") +
+  theme(
+    legend.title = element_blank()
+  )
 
-ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 8, height = 2)
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 14, height = 2)
+
+summaryToPlot$Treatment.ID <- 1
+summaryToPlot[summaryToPlot$Treatment == "B",]$Treatment.ID <- 2
+
+write.csv(summaryToPlot, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}
@@ -232,7 +243,7 @@ ggplot(propsSummary, aes(as.factor(clusters), prop)) +
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 8, height = 6)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 9, height = 6)
 ```
 
 ```{r}

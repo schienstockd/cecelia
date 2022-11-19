@@ -517,7 +517,7 @@ ProjectManager <- R6::R6Class(
       bookmarkInfo <- read.csv(bookmarkFile)
       
       # add information to db
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # go through project info
       valNames <- c("projectUID", "name", "type", "tp")
@@ -528,7 +528,7 @@ ProjectManager <- R6::R6Class(
         paste(rep("?", length(valNames)), collapse = ", ")
       )
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         projectInfo$projectUID,
         projectInfo$name,
@@ -549,7 +549,7 @@ ProjectManager <- R6::R6Class(
           paste(rep("?", length(valNames)), collapse = ", ")
         )
         
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           dbTABLE_PROJECT_VERSIONS,
           projectInfo$projectUID,
@@ -567,7 +567,7 @@ ProjectManager <- R6::R6Class(
       unlink(bookmarkFile)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
     },
     
     # delete a project 
@@ -582,12 +582,12 @@ ProjectManager <- R6::R6Class(
         projectUID = projectUID)
       
       # connect to db
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # remove versions
       sqlQuery <- 'DELETE FROM ?table WHERE projectUID == ?projectUID'
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECT_VERSIONS,
         projectUID = projectUID)
@@ -597,7 +597,7 @@ ProjectManager <- R6::R6Class(
       # remove project
       sqlQuery <- 'DELETE FROM ?table WHERE projectUID == ?projectUID'
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECTS,
         projectUID = projectUID)
@@ -605,7 +605,7 @@ ProjectManager <- R6::R6Class(
       dbExecute(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # remove shiny bookmarks
       for(i in 1:nrow(versionInfos)) {
@@ -624,31 +624,31 @@ ProjectManager <- R6::R6Class(
       nameUnique <- TRUE
       
       # get connection
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # was a project table created?
       sqlQuery <- "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?table"
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECTS)
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       if (dbRes$count > 0) {
         sqlQuery <- 'SELECT COUNT(*) AS count FROM ?table WHERE name == ?name LIMIT 1'
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           table = dbTABLE_PROJECTS,
           name = projectName)
         
-        dbRes <- dbGetQuery(dbConn, dbQuery)
+        dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
         
         nameUnique <- !(dbRes$count > 0)
       }
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       nameUnique
     },
@@ -656,7 +656,7 @@ ProjectManager <- R6::R6Class(
     # create a project 
     createProject = function() {
       # create a new project
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # create project table
       dbQuery <- sprintf(
@@ -698,7 +698,7 @@ ProjectManager <- R6::R6Class(
         paste(rep("?", length(valNames)), collapse = ", ")
       )
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         self$getProjectUID(),
         self$getProjectName(),
@@ -709,7 +709,7 @@ ProjectManager <- R6::R6Class(
       dbExecute(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
     },
     
     # delete a project version
@@ -722,11 +722,11 @@ ProjectManager <- R6::R6Class(
         versionInfo <- private$getProjectVersionInfo(versionID)
         
         # connect to db
-        dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+        dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
         
         sqlQuery <- 'DELETE FROM ?table WHERE projectUID == ?projectUID AND version == ?version'
         
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           table = dbTABLE_PROJECT_VERSIONS,
           projectUID = self$getProjectUID(),
@@ -740,7 +740,7 @@ ProjectManager <- R6::R6Class(
           versionInfo$stateID)
         
         # close connection
-        dbDisconnect(dbConn)
+        DBI::dbDisconnect(dbConn)
         
         # delete content
         self$deleteVersionContent(versionID)
@@ -750,21 +750,21 @@ ProjectManager <- R6::R6Class(
     # create a project version
     createProjectVersion = function() {
       # get number of versions
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # get last version if no version given
       sqlQuery <- 'SELECT version FROM ?table WHERE projectUID == ?projectUID ORDER BY version DESC LIMIT 1'
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECT_VERSIONS,
         projectUID = self$getProjectUID()
       )
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # set new version
       prevVersion <- as.numeric(dbRes[1, "version"])
@@ -775,22 +775,22 @@ ProjectManager <- R6::R6Class(
     # check whether the version exists
     existProjectVersion = function(versionID) {
       # connect to db
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # get last version if no version given
       sqlQuery <- 'SELECT version FROM ?table WHERE projectUID == ?projectUID AND version == ?version'
 
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECT_VERSIONS,
         projectUID = self$getProjectUID(),
         version = versionID
       )
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # check
       nrow(dbRes) > 0
@@ -812,9 +812,9 @@ ProjectManager <- R6::R6Class(
     },
     
     # get all projects
-    projectTable = function(countOnly = FALSE, onlyProject = FALSE){
+    projectTable = function(countOnly = FALSE, onlyProject = FALSE) {
       # get versions
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # get version info
       if (countOnly == TRUE){
@@ -823,7 +823,7 @@ ProjectManager <- R6::R6Class(
         if (onlyProject == TRUE) {
           sqlQuery <- 'SELECT * FROM ?table WHERE projectUID == ?projectUID ORDER BY date(tp) DESC'
           
-          dbQuery <- sqlInterpolate(
+          dbQuery <- DBI::sqlInterpolate(
             dbConn, sqlQuery,
             table = dbTABLE_PROJECTS,
             projectUID = self$getProjectUID()
@@ -831,17 +831,17 @@ ProjectManager <- R6::R6Class(
         } else {
           sqlQuery <- 'SELECT * FROM ?table ORDER BY date(tp) DESC'
           
-          dbQuery <- sqlInterpolate(
+          dbQuery <- DBI::sqlInterpolate(
             dbConn, sqlQuery,
             table = dbTABLE_PROJECTS
           )
         }
       }
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # convert to dataframe
       dbRes <- as.data.frame(dbRes)
@@ -861,7 +861,7 @@ ProjectManager <- R6::R6Class(
       }
       
       # get versions
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # get version info
       if (countOnly == TRUE){
@@ -870,16 +870,16 @@ ProjectManager <- R6::R6Class(
         sqlQuery <- 'SELECT * FROM ?table WHERE projectUID == ?projectUID ORDER BY version DESC'
       }
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECT_VERSIONS,
         projectUID = projectUID
       )
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # convert to dataframe
       dbRes <- as.data.frame(dbRes)
@@ -912,9 +912,9 @@ ProjectManager <- R6::R6Class(
       )
       
       # connect to db
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         dbTABLE_PROJECTS,
         self$getProjectName(),
@@ -925,7 +925,7 @@ ProjectManager <- R6::R6Class(
       dbExecute(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
     },
     
     # update project version table
@@ -944,9 +944,9 @@ ProjectManager <- R6::R6Class(
         )
         
         # connect to db
-        dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+        dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
   
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           dbTABLE_PROJECT_VERSIONS,
           self$getProjectVersionTp(),
@@ -972,9 +972,9 @@ ProjectManager <- R6::R6Class(
         )
         
         # connect to db
-        dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+        dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
         
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           dbTABLE_PROJECT_VERSIONS,
           self$getProjectUID(),
@@ -988,17 +988,17 @@ ProjectManager <- R6::R6Class(
       dbExecute(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
     },
     
     # update settings
     updateStateID = function() {
       # get state ID
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       sqlQuery <- 'SELECT * FROM ?table WHERE projectUID == ?projectUID AND version == ?version'
       
-      dbQuery <- sqlInterpolate(
+      dbQuery <- DBI::sqlInterpolate(
         dbConn, sqlQuery,
         table = dbTABLE_PROJECT_VERSIONS,
         projectUID = self$getProjectUID(),
@@ -1006,10 +1006,10 @@ ProjectManager <- R6::R6Class(
       )
       
       # submit
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       # set state ID
       self$setProjectVersionStateID(
@@ -1167,13 +1167,13 @@ ProjectManager <- R6::R6Class(
       # load last state of project
       
       # connect to db
-      dbConn <- dbConnect(RSQLite::SQLite(), private$dbFile())
+      dbConn <- DBI::dbConnect(RSQLite::SQLite(), private$dbFile())
       
       # get last version if no version given
       if (is.null(versionID)) {
         sqlQuery <- 'SELECT * FROM ?table WHERE projectUID == ?projectUID ORDER BY version DESC LIMIT 1'
 
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           table = dbTABLE_PROJECT_VERSIONS,
           projectUID = self$getProjectUID()
@@ -1181,7 +1181,7 @@ ProjectManager <- R6::R6Class(
       } else {
         sqlQuery <- 'SELECT * FROM ?table WHERE projectUID == ?projectUID AND version == ?version LIMIT 1'
         
-        dbQuery <- sqlInterpolate(
+        dbQuery <- DBI::sqlInterpolate(
           dbConn, sqlQuery,
           table = dbTABLE_PROJECT_VERSIONS,
           projectUID = self$getProjectUID(),
@@ -1189,10 +1189,10 @@ ProjectManager <- R6::R6Class(
         )
       }
       
-      dbRes <- dbGetQuery(dbConn, dbQuery)
+      dbRes <- DBI::dbGetQuery(dbConn, dbQuery)
       
       # close connection
-      dbDisconnect(dbConn)
+      DBI::dbDisconnect(dbConn)
       
       return(as.data.frame(dbRes)[1,])
     }
