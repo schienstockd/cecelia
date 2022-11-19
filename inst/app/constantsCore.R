@@ -41,7 +41,7 @@ errDELETE_VERSION_SELF <- c(
 )
 
 # Buttons
-btnICON_SELECTED <- "circle"
+btnICON_SELECTED <- "circle-x"
 btnICON_NOTSELECTED <- "circle-notch"
 btnICON_HALFSELECTED <- "life-ring"
 btnICON_RELOAD <- "rotate"
