@@ -19,7 +19,7 @@ R -e 'if (!require("remotes", quietly = TRUE)) install.packages("remotes", repos
 R -e 'remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")'
 
 # install BioConductor requirements
-R -e 'cecelia::cciaBiocRequirements()'
+R -e 'cecelia::cciaBiocRequirements(ask = FALSE)'
 
 # run this in slurm job if it fails
 # it needs to donwload packages - not sure that reticulate has `pip download` .. ?
