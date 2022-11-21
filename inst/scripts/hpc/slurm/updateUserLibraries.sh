@@ -9,7 +9,7 @@ module load miniconda3/4.9.2
 # create conda environment
 echo 'Create R/python conda environment'
 # R 'openssl' needs openssl1
-conda create -y -n r-cecelia-env -c r r-openssl
+conda create -y -n r-cecelia-env -c r r-openssl r-base=4.1.3
 conda activate r-cecelia-env
 conda install -y -c conda-forge python=3.9
 
@@ -19,7 +19,7 @@ R -e 'if (!require("remotes", quietly = TRUE)) install.packages("remotes", repos
 R -e 'remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")'
 
 # install BioConductor requirements
-R -e 'cecelia::cciaBiocRequirements(ask = FALSE)'
+R -e 'cecelia::cciaBiocRequirements(ask = FALSE, ncpus = 1)'
 
 # run this in slurm job if it fails
 # it needs to donwload packages - not sure that reticulate has `pip download` .. ?
