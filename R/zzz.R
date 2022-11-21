@@ -323,7 +323,7 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
   
   # install rasterly
   # TODO maintained alternative?
-  remotes::install_github("plotly/rasterly")
+  remotes::install_github("plotly/rasterly", ...)
 }
 
 #' @description Install bioconductor requirements
@@ -333,9 +333,9 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
 cciaBiocRequirements <- function(ncpus = 4, ...) {
   # for R 4.2
   if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^2\\."))
-    BiocManager::install(version = '3.15')
+    BiocManager::install(version = '3.15', ...)
   if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^1\\."))
-    BiocManager::install(version = '3.14')
+    BiocManager::install(version = '3.14', ...)
   
   # downgrade reticulate; should be done in DESCRIPTION?
   # The following is not solved
@@ -343,9 +343,10 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  remotes::install_github("rglab/RProtoBufLib")
+  remotes::install_github("rglab/RProtoBufLib", ...)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+    # c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+    c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
 }

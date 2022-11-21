@@ -41,4 +41,4 @@ export LD_LIBRARY_PATH=~/.conda/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/
 conda activate 'r-cecelia-env'
 
 # The job command(s):
-R -e 'library(cecelia);cciaCondaCreate(envType = "image-nogui")'
+R -e 'cecelia::cciaCondaCreate(envType = "image-nogui")'
