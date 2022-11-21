@@ -178,7 +178,7 @@ cciaModels <- function(dlModels = c(
 #' @param initConda boolean to init conda environment
 #' @param initJupyter boolean to init jupyter server
 #' @export
-cciaUse <- function(path, initConda = TRUE, initJupyter = FALSE) {
+cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE) {
   # set path in environment
   pkg.env$path <- path
   
