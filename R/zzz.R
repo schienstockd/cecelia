@@ -31,7 +31,7 @@ cciaEnv <- function() {
 #' @description Setup cecelia working directory
 #' @param path character to define working directory of cecelia
 #' @export
-cciaSetup <- function(path) {
+cciaSetup <- function(path = "~/cecelia") {
   # set path in environment
   pkg.env$path <- path
   
@@ -178,7 +178,8 @@ cciaModels <- function(dlModels = c(
 #' @param initConda boolean to init conda environment
 #' @param initJupyter boolean to init jupyter server
 #' @export
-cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE) {
+cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
+                    jupyterConnectionFile = NULL) {
   # set path in environment
   pkg.env$path <- path
   
@@ -229,7 +230,10 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE) {
   
   # init jupyter
   if (initJupyter == TRUE) {
-    pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE)
+    if (is.null(jupyterConnectionFile))
+      pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE)
+    else
+      pkg.env$jupyterKernel <- JupyterKernelUtils$new(connectionFile = jupyterConnectionFile)
   }
   
   message("[CCIA] >> Source python files")
@@ -343,7 +347,7 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  remotes::install_github("rglab/RProtoBufLib", ...)
+  remotes::install_github("rglab/RProtoBufLib")
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
