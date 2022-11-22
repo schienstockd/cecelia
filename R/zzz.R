@@ -281,6 +281,12 @@ cciaCreateApp <- function() {
   
   # copy config, db and shiny_bookmarks
   if (copyPrevious == TRUE) {
+    if (file.exists(file.path(cciaPath(), "app.bak", "docker.yml"))) {
+      file.copy(
+        file.path(cciaPath(), "app.bak", "docker.yml"),
+        file.path(cciaPath(), "app", "docker.yml")
+      )
+    }
     file.copy(
       file.path(cciaPath(), "app.bak", "custom.yml"),
       file.path(cciaPath(), "app", "custom.yml")
@@ -347,7 +353,7 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  remotes::install_github("rglab/RProtoBufLib", upgrade = "never")
+  remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ..)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
