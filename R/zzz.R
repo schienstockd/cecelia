@@ -328,7 +328,6 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
 
   install.packages(
     packagesToInstall,
-    repos = "https://cloud.r-project.org",
     dependencies = TRUE, Ncpus = ncpus, ...)
   
   # install rasterly

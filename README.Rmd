@@ -50,7 +50,7 @@ You can install the development version of `cecelia` like so:
 ```r
 if (!require("remotes", quietly = TRUE))
   install.packages("remotes")
-remotes::install_github("schienstockd/cecelia", repos = "https://cloud.r-project.org")
+remotes::install_github("schienstockd/cecelia", Ncpus = 4, repos = "https://cloud.r-project.org")
 ```
 
 For first time users, you will need to define base directory where
@@ -69,10 +69,10 @@ library(cecelia)
 
 # install App requirements
 # (i) they are not needed when using only markdown files or on HPC
-cciaAppRequirements()
+cciaAppRequirements(repos = "https://cloud.r-project.org")
 
 # install Bioconductor requirements
-cciaBiocRequirements()
+cciaBiocRequirements(repos = "https://cloud.r-project.org")
 
 # setup cecelia directory
 cciaSetup("~/path/to/cecelia")
