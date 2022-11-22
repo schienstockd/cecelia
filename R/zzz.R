@@ -352,7 +352,7 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ..)
+  remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
