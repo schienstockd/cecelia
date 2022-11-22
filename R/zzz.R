@@ -39,10 +39,7 @@ cciaSetup <- function(path = "~/cecelia") {
   dir.create(path, showWarnings = FALSE)
   
   # copy in custom.yml to be modified
-  file.copy(
-    system.file("custom.yml", package = "cecelia"),
-    file.path(path)
-  )
+  file.copy(system.file("custom.yml", package = "cecelia"), file.path(path))
 }
 
 #' @description Create conda environment for cecelia
