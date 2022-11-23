@@ -14,7 +14,8 @@ JupyterKernelUtils <- R6::R6Class(
     #' @description Init
     #' @param condaEnv character for conda environment
     #' @param connectionFile character for connection file path
-    initialize = function(connectionFile = NULL, useConnectionFile = TRUE) {
+    initialize = function(connectionFile = NULL, useConnectionFile = TRUE,
+                          libDir = NULL) {
       # check config
       if (is.null(connectionFile) && useConnectionFile == TRUE) {
         connectionFile <- system.file(file.path(
@@ -22,6 +23,10 @@ JupyterKernelUtils <- R6::R6Class(
           cciaConf()$python$viewer$viewerPath,
           cciaConf()$python$viewer$connectionFile), package = "cecelia")
       }
+      
+      # set working directory in jupyter
+      if (is.null(libDir))
+        libDir <- system.file(package = "cecelia")
       
       # use connection file
       if (!is.null(connectionFile)) {
@@ -40,7 +45,7 @@ JupyterKernelUtils <- R6::R6Class(
         # set working directory to be safe
         self$execute(paste(
           "import os",
-          sprintf("os.chdir('%s')", system.file(package = "cecelia")),
+          sprintf("os.chdir('%s')", libDir),
           sep = "\n"
         ))
         
