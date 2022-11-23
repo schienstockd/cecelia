@@ -40,7 +40,7 @@ JupyterKernelUtils <- R6::R6Class(
         # set working directory to be safe
         self$execute(paste(
           "import os",
-          sprintf("os.chdir('%s')", system.file(".", package = "cecelia")),
+          sprintf("os.chdir('%s')", system.file(package = "cecelia")),
           sep = "\n"
         ))
         
