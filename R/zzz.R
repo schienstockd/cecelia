@@ -176,7 +176,7 @@ cciaModels <- function(dlModels = c(
 #' @param initJupyter boolean to init jupyter server
 #' @export
 cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
-                    jupyterConnectionFile = NULL) {
+                    jupyterConnectionFile = NULL, jupyterLibDir = NULL) {
   # set path in environment
   pkg.env$path <- path
   
@@ -228,9 +228,9 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   # init jupyter
   if (initJupyter == TRUE) {
     if (is.null(jupyterConnectionFile))
-      pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE)
+      pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
     else
-      pkg.env$jupyterKernel <- JupyterKernelUtils$new(connectionFile = jupyterConnectionFile)
+      pkg.env$jupyterKernel <- JupyterKernelUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
   }
   
   message("[CCIA] >> Source python files")
