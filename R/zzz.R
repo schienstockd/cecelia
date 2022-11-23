@@ -353,6 +353,6 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-    # c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
-    c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+    c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+    # c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
 }
