@@ -209,6 +209,7 @@ TaskProcess <- R6::R6Class(
     #' @description Get napari viewer
     napariViewer = function() {
       # init napari
+      # TODO this will not work .. ?
       viewer <- NapariUtils$new(useConnectionFile = TRUE)
       
       viewer$initNapari()

@@ -81,6 +81,7 @@ ViewerManager <- R6::R6Class(
       if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE && DEBUG_SHOW_VIEWER == TRUE) {
         # init viewer
         # viewer <- NapariUtils$new()
+        viewer <- cciaNapariUtils()
         viewer$initNapari()
         
         private$setViewer(viewer)

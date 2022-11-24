@@ -34,8 +34,7 @@ JupyterKernelUtils <- R6::R6Class(
         
         jupyterClient <- reticulate::import("jupyter_client")
         
-        km <- jupyterClient$BlockingKernelClient(
-          connection_file = connectionFile)
+        km <- jupyterClient$BlockingKernelClient(connection_file = connectionFile)
         km$load_connection_file()
         
         # set client and connection file
