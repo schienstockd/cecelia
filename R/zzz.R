@@ -229,27 +229,27 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
     reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
+  
+    # init jupyter
+    if (initJupyter == TRUE) {
+      if (is.null(jupyterConnectionFile))
+        pkg.env$napariUtils <- NapariUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
+      else
+        pkg.env$napariUtils <- NapariUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
+    }
+  
+    message("[CCIA] >> Source python files")
+    
+    # set working working directory
+    os <- reticulate::import("os")
+    os$chdir(system.file(".", package = "cecelia"))
+    
+    # source python files
+    reticulate::source_python(
+      system.file(file.path("py", "label_props_utils.py"), package = "cecelia"),
+      envir = pkg.env
+    )
   }
-  
-  # init jupyter
-  if (initJupyter == TRUE) {
-    if (is.null(jupyterConnectionFile))
-      pkg.env$napariUtils <- NapariUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
-    else
-      pkg.env$napariUtils <- NapariUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
-  }
-  
-  message("[CCIA] >> Source python files")
-  
-  # set working working directory
-  os <- reticulate::import("os")
-  os$chdir(system.file(".", package = "cecelia"))
-  
-  # source python files
-  reticulate::source_python(
-    system.file(file.path("py", "label_props_utils.py"), package = "cecelia"),
-    envir = pkg.env
-  )
 }
 
 #' @description Create app
