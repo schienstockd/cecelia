@@ -80,7 +80,7 @@ ViewerManager <- R6::R6Class(
       
       if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE && DEBUG_SHOW_VIEWER == TRUE) {
         # init viewer
-        viewer <- NapariUtils$new()
+        # viewer <- NapariUtils$new()
         viewer$initNapari()
         
         private$setViewer(viewer)
@@ -249,7 +249,7 @@ ViewerManager <- R6::R6Class(
       
       # # quit kernel process
       # if (quitKernelProcess == TRUE)
-      #   cciaEnv()$jupyterKernel$quitKernel()
+      #   cciaNapariUtils$quitKernel()
     },
     
     # setters

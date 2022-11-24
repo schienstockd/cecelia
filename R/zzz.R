@@ -28,6 +28,12 @@ cciaEnv <- function() {
   pkg.env
 }
 
+#' @description Napari utils
+#' @export
+cciaNapariUtils <- function() {
+  cciaEnv()$napariUtils
+}
+
 #' @description Setup cecelia working directory
 #' @param path character to define working directory of cecelia
 #' @export
@@ -228,9 +234,9 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   # init jupyter
   if (initJupyter == TRUE) {
     if (is.null(jupyterConnectionFile))
-      pkg.env$jupyterKernel <- JupyterKernelUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
+      pkg.env$napariUtils <- NapariUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
     else
-      pkg.env$jupyterKernel <- JupyterKernelUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
+      pkg.env$napariUtils <- NapariUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
   }
   
   message("[CCIA] >> Source python files")
