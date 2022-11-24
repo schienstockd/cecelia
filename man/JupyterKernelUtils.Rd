@@ -28,7 +28,11 @@ TODO
 \subsection{Method \code{new()}}{
 Init
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(connectionFile = NULL, useConnectionFile = TRUE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{JupyterKernelUtils$new(
+  connectionFile = NULL,
+  useConnectionFile = TRUE,
+  libDir = NULL
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
