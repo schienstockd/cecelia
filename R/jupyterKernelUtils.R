@@ -103,7 +103,7 @@ JupyterKernelUtils <- R6::R6Class(
       # send quit
       if (!is.null(self$kernelClient())) {
         # shutdown python kernel
-        self$execute("exit")
+        self$execute("exit()")
         
         # shutdown
         if (!is.null(private$getKernelManager()))
