@@ -240,14 +240,14 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
       else
         pkg.env$napariUtils <- NapariUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
     }
-  }
-  
-  if (sourceConda == TRUE) {
-    message("[CCIA] >> Source python files")
     
     # set working working directory
     os <- reticulate::import("os")
     os$chdir(system.file(package = "cecelia"))
+  }
+  
+  if (sourceConda == TRUE) {
+    message("[CCIA] >> Source python files")
     
     # source python files
     reticulate::source_python(
