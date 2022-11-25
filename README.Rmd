@@ -27,8 +27,9 @@ __This package is pre-alpha__
 
 ## Installation
 
-__This package currently only works on Unix systems.__ We have a Docker version to support other
-systems if necessary, so do open an `issue` if that is needed and we will help you setting it up.
+__This package currently only works on Unix systems.__
+For `Windows` system, or if you prefer a containerised version, we also have a
+[Docker image](https://github.com/schienstockd/ceceliaDocker).
 
 We designed `cecelia` to also process jobs on the `HPC` (High Performance Computing) system.
 We currently only support `Slurm` as a scheduler. If you want to set this up on 

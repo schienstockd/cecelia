@@ -53,19 +53,13 @@ uIDs <- uIDs[!uIDs %in% c("cb3KHD")]
 #   value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
-cciaObj$cciaObjects(uIDs = uIDs)[[1]]$popDT(
+popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
     "T/tracked"
     ),
   includeFiltered = TRUE,
-  flushCache = TRUE)
-# popDTs <- cciaObj$popDT(
-#   popType = "live", pops = c(
-#     "T/tracked"
-#     ),
-#   includeFiltered = TRUE,
-#   flushCache = TRUE,
-#   uIDs = uIDs)
+  flushCache = TRUE,
+  uIDs = uIDs)
 ```
 
 ```{r fig_hmm_props, fig.height=2, fig.width=2.5}
@@ -207,22 +201,35 @@ timeSplit <- hmmTime %>%
   slice_head(n = 1)
 
 # first 15 minutes
-timeSplit$centroid_t <- 30
+timeSplit$centroid_tA <- 30
+timeSplit$centroid_tB <- 100
+timeSplit$centroid_tC <- 120
 
 # get average of range
 # go through and split off data
 baseList <- list()
 responseList <- list()
 for (i in timeSplit$uID) {
-  x <- timeSplit[timeSplit$uID == i,]$centroid_t
-  baseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t < x,])
-  responseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i & hmmTime$centroid_t >= x,])
+  x <- timeSplit[timeSplit$uID == i,]
+  
+  baseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i &
+                                           hmmTime$centroid_t < x$centroid_tA,])
+  responseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i &
+                                               hmmTime$centroid_t >= x$centroid_tB &
+                                               hmmTime$centroid_t < x$centroid_tC,])
 }
 
 baseDT <- rbindlist(baseList) 
 responseDT <- rbindlist(responseList) 
 
 baseSummary <- baseDT %>%
+  group_by(uID, live.cell.hmm.state.movement) %>%
+  summarise(sum.hmm = sum(n, na.rm = TRUE)) %>%
+  mutate(
+    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    freq.base = sum.hmm/sum(sum.hmm)
+    )
+responseSummary <- responseDT %>%
   group_by(uID, live.cell.hmm.state.movement) %>%
   summarise(sum.hmm = sum(n, na.rm = TRUE)) %>%
   mutate(
@@ -251,12 +258,17 @@ write.csv(baseSummary %>% mutate(freq.base = freq.base * 100),
 ```
 
 ```{r fig_base_freq, fig.height = 2, fig.width = 5}
-baseSummary$type <- "Stopping"
-baseSummary[baseSummary$live.cell.hmm.state.movement == 2, ]$type <- "Scanning"
-baseSummary[baseSummary$live.cell.hmm.state.movement == 3, ]$type <- "Meandering"
+datToPlot <- rbind(
+  baseSummary %>% mutate(type = "basal"),
+  responseSummary %>% mutate(type = "response"))
+  
+datToPlot$hmm.type <- "Immotile"
+datToPlot[datToPlot$live.cell.hmm.state.movement == 2, ]$hmm.type <- "Scanning"
+datToPlot[datToPlot$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
+datToPlot$hmm.type <- factor(datToPlot$hmm.type, levels = c("Meandering", "Scanning", "Immotile"))
 
-ggplot(baseSummary,
-  aes(1, freq.base, fill = type)) +
+ggplot(datToPlot,
+  aes(1, freq.base, fill = hmm.type)) +
   scale_fill_manual(values = plotColours) +
   theme_classic() +
   geom_bar(stat = "identity", width = 1) +
@@ -278,7 +290,8 @@ ggplot(baseSummary,
     axis.title.y = element_blank(),
     strip.background = element_blank(),
     strip.text.x = element_blank()
-  )
+  ) +
+  facet_grid(.~type)
 
 ggsave(file.path(anaDir, "base_freq.pdf"), width = 5, height = 4)
 ```
