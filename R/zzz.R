@@ -247,7 +247,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     
     # set working working directory
     os <- reticulate::import("os")
-    os$chdir(system.file(".", package = "cecelia"))
+    os$chdir(system.file(package = "cecelia"))
     
     # source python files
     reticulate::source_python(
