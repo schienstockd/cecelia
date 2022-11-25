@@ -53,13 +53,19 @@ uIDs <- uIDs[!uIDs %in% c("cb3KHD")]
 #   value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
-popDTs <- cciaObj$popDT(
+cciaObj$cciaObjects(uIDs = uIDs)[[1]]$popDT(
   popType = "live", pops = c(
     "T/tracked"
     ),
   includeFiltered = TRUE,
-  flushCache = TRUE,
-  uIDs = uIDs)
+  flushCache = TRUE)
+# popDTs <- cciaObj$popDT(
+#   popType = "live", pops = c(
+#     "T/tracked"
+#     ),
+#   includeFiltered = TRUE,
+#   flushCache = TRUE,
+#   uIDs = uIDs)
 ```
 
 ```{r fig_hmm_props, fig.height=2, fig.width=2.5}

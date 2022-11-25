@@ -180,9 +180,12 @@ cciaModels <- function(dlModels = c(
 #' @param path character to define working directory of cecelia
 #' @param initConda boolean to init conda environment
 #' @param initJupyter boolean to init jupyter server
+#' @param jupyterLibDir character to define library for jupyter python source files
+#' @param sourceConda boolean to source conda files
 #' @export
 cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
-                    jupyterConnectionFile = NULL, jupyterLibDir = NULL) {
+                    jupyterConnectionFile = NULL, jupyterLibDir = NULL,
+                    sourceConda = TRUE) {
   # set path in environment
   pkg.env$path <- path
   
@@ -237,7 +240,9 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
       else
         pkg.env$napariUtils <- NapariUtils$new(connectionFile = jupyterConnectionFile, libDir = jupyterLibDir)
     }
+  }
   
+  if (sourceConda == TRUE) {
     message("[CCIA] >> Source python files")
     
     # set working working directory
