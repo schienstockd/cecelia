@@ -385,7 +385,8 @@ TaskProcess <- R6::R6Class(
 
       # source conda
       cmd <- c(
-        paste("source",
+        # paste("source",
+        paste(".",
               file.path(dirname(dirname(reticulate::conda_binary())),
                         "etc/profile.d/conda.sh")),
         paste("conda activate", cciaEnv()$cfg$python$conda$env)

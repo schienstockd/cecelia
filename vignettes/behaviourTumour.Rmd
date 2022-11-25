@@ -19,6 +19,15 @@ library(tidyverse)
 ```
 
 ```{r}
+a <- "E:\\Cecelia\\Dominik\\projects"
+b <- "/cecelia/projects"
+c <- "/cecelia/projects/asads/asads/asd.ome.zarr"
+
+stringr::str_replace(c, b, a)
+```
+
+
+```{r}
 # set test variables
 pID <- "8BR53W"
 versionID <- 1
