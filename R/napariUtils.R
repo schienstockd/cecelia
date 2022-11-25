@@ -145,7 +145,7 @@ NapariUtils <- R6::R6Class(
       self$execute(
         sprintf(
           paste(
-            "if napari_utils.viewer is not None: napari_utils.open_image('%s',",
+            "if napari_utils.viewer is not None: napari_utils.open_image(r'%s',",
             "use_channel_axis=%s,",
             "channel_names=%s,",
             "channel_colormaps=%s,",
@@ -211,7 +211,7 @@ NapariUtils <- R6::R6Class(
         sprintf(
           paste(
             "if napari_utils.viewer is not None: napari_utils.save_labels(",
-            "filepath = '%s',",
+            "filepath = r'%s',",
             "layer_name = '%s',",
             sprintf("exclude_names = %s,", if (!is.null(excludeNames)) "'%s'" else "%s"),
             sprintf("notify_module_id = %s,", if (!is.null(notifyModuleID)) "'%s'" else "%s"),
@@ -547,7 +547,7 @@ NapariUtils <- R6::R6Class(
     ## setters
     setViewerOutputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_output_file = '%s'", x),
+        sprintf("napari_utils.viewer_output_file = r'%s'", x),
         execInteractive = execInteractive
       )
       
@@ -556,7 +556,7 @@ NapariUtils <- R6::R6Class(
     
     setViewerInputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_input_file = '%s'", x),
+        sprintf("napari_utils.viewer_input_file = r'%s'", x),
         execInteractive = execInteractive
       )
       
