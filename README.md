@@ -120,11 +120,6 @@ default:
     path: "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"
 ```
 
-## Docker installation
-
-``` r
-```
-
 ## Image analysis general workflow
 
 ``` r
