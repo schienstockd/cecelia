@@ -28,36 +28,15 @@ JupyterKernelUtils <- R6::R6Class(
       if (is.null(libDir))
         libDir <- system.file(package = "cecelia")
       
-      # use connection file
-      if (!is.null(connectionFile)) {
-        message(paste(">> Use connection file", connectionFile))
-        
-        jupyterClient <- reticulate::import("jupyter_client")
-        
-        km <- jupyterClient$BlockingKernelClient(connection_file = connectionFile)
-        km$load_connection_file()
-        
-        # set client and connection file
-        private$setKernelClient(km)
-        private$setKernelConnectionFile(connectionFile)
-        
-        # set working directory to be safe
-        self$execute(paste(
-          "import os",
-          sprintf("os.chdir(r'%s')", libDir),
-          sep = "\n"
-        ))
-        
-        message(">> Jupyter kernel started")
-        message(self$printConsoleConn())
-      } else {
+      # start kernel
+      if (is.null(connectionFile)) {
         message(">> Start new Jupyter kernel process")
         
         # get connection file
-        connectionFile <- system.file(file.path(
-          "app",
+        connectionFile <- file.path(
+          system.file("app", package = "cecelia"),
           cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile), package = "cecelia")
+          cciaConf()$python$viewer$connectionFile)
         
         # file.remove(connectionFile)
         f <- file(connectionFile)
@@ -88,6 +67,28 @@ JupyterKernelUtils <- R6::R6Class(
         
         message(">> OK")
       }
+      
+      # use connection file
+      message(paste(">> Use connection file", connectionFile))
+      
+      jupyterClient <- reticulate::import("jupyter_client")
+      
+      km <- jupyterClient$BlockingKernelClient(connection_file = connectionFile)
+      km$load_connection_file()
+      
+      # set client and connection file
+      private$setKernelClient(km)
+      private$setKernelConnectionFile(connectionFile)
+      
+      # set working directory to be safe
+      self$execute(paste(
+        "import os",
+        sprintf("os.chdir(r'%s')", libDir),
+        sep = "\n"
+      ))
+      
+      message(">> Jupyter kernel started")
+      message(self$printConsoleConn())
     },
     
     #' @description print console connection info
