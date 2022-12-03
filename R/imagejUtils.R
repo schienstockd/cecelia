@@ -101,7 +101,9 @@ ImagejUtils <- R6::R6Class(
         }
       }
       
-      scriptParams <- lapply(lapply(scriptParams, reticulate::r_to_py), py_str)
+      scriptParams <- lapply(
+        lapply(scriptParams, reticulate::r_to_py),
+        reticulate::py_str)
       
       # https://imagej.github.io/scripting/headless
       scriptParamsString <- paste0(
@@ -156,7 +158,8 @@ ImagejUtils <- R6::R6Class(
     },
     
     setScriptsPath = function(x) {
-      private$scriptsPath <- file.path(getwd(), x)
+      # private$scriptsPath <- file.path(getwd(), x)
+      private$scriptsPath <- system.file(x, package = "cecelia")
     },
     
     ## getters

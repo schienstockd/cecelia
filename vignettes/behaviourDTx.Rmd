@@ -194,6 +194,7 @@ meanClusterPos <- dfToPlot %>%
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
   )
+dfToPlot$clusters <- factor(dfToPlot$clusters, levels = c(3, 1, 2, 0))
 
 # plot UMAP
 ggplot(

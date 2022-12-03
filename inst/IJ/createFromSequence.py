@@ -11,7 +11,7 @@ from ij.plugin import FolderOpener
 # why do I need to do this .. ?
 sys.path.append(".")
 
-# open image
+# open image
 imp = FolderOpener.open(imPathIn, "");
 
 # switch channels and time?
