@@ -61,7 +61,7 @@ def run(params):
 def main():
   # get params
   params = script_utils.script_params(
-    flatten_except = ['nucleiChannels', 'cytoChannels']
+    flatten_except = ['models']
   )
 
   # run stardist
