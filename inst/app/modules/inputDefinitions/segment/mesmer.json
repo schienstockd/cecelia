@@ -22,6 +22,41 @@
     					"max": 100,
     					"default": 99.9
     				}
+    			},
+    								"threshold": {
+						"type:integer": {
+							"min": 0,
+							"max": 1000,
+							"default": 0
+						}
+					},
+					"relThreshold": {
+						"type:double": {
+							"min": 0,
+							"max": 100,
+							"default": 0
+						}
+					},
+					"medianFilter": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 0
+						}
+					},
+					"gaussianFilter": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 0
+						}
+					},
+    			"labelExpansion": {
+    				"type:integer": {
+    					"min": 0,
+    					"max": 10,
+    					"default": 0
+    				}
     			}
         }
       },
@@ -154,6 +189,41 @@
     				"label": "Normalise",
     				"widget:slider": {
     					"step": 0.1
+    				}
+    			},
+    			"threshold": {
+						"index": 3,
+						"label": "Threshold",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"relThreshold": {
+						"index": 4,
+						"label": "Relative threshold",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"medianFilter": {
+						"index": 5,
+						"label": "Median filter",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"gaussianFilter": {
+						"index": 6,
+						"label": "Gaussian filter",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"labelExpansion": {
+    				"index": 7,
+    				"label": "Cell expansion",
+    				"widget:slider": {
+    					"step": 1
     				}
     			}
 				}

@@ -523,7 +523,19 @@ def af_correct_image(
 """
 Normalise channel
 """
-def norm_channel(im, normalise_percentile = 99.5):
+def norm_channel(im, normalise_percentile = 99.5, threshold = 0,
+                 rel_threshold = 0):
+  # apply threshold?
+  if threshold > 0:
+    im[im < threshold] = threshold
+    im = im - threshold
+    
+  # apply relative threshold?
+  if rel_threshold > 0:
+    rel_threshold = np.percentile(im, rel_threshold)
+    im[im < rel_threshold] = rel_threshold
+    im = im - rel_threshold
+  
   # get min/max values for channels
   max_percentile = np.percentile(im, normalise_percentile)
   min_percentile = np.percentile(im, 100 - normalise_percentile)
@@ -540,7 +552,8 @@ def norm_channel(im, normalise_percentile = 99.5):
 """
 Combine and normalise images
 """
-def combine_norm_channels(im, channels, slices, dim_utils, normalise_percentile = 99.5):
+def combine_norm_channels(im, channels, slices, dim_utils, normalise_percentile = 99.5,
+                          threshold = 0, rel_threshold = 0):
   # prepare image
   slices = list(slices)
   slices[dim_utils.dim_idx('C')] = 0
@@ -555,7 +568,9 @@ def combine_norm_channels(im, channels, slices, dim_utils, normalise_percentile 
     combined_im = np.maximum(
       combined_im, norm_channel(
         im[tuple(slices)],
-        normalise_percentile = normalise_percentile
+        normalise_percentile = normalise_percentile,
+        threshold = threshold,
+        rel_threshold = rel_threshold
         )
       )
       

@@ -8,6 +8,13 @@ import json
 from time import sleep
 from tqdm import tqdm
 
+import scipy.ndimage as ndi
+import skimage.filters
+import skimage.morphology
+import skimage.measure
+import skimage.feature
+import skimage.segmentation
+
 # utils
 from py.segmentation_utils import SegmentationUtils
 import py.correction_utils as correction_utils
@@ -72,18 +79,36 @@ class MesmerUtils(SegmentationUtils):
       nuclei_channels = x['nucleiChannels']
       cyto_channels = x['cytoChannels']
       normalise_percentile = x['normalisePercentile'][0]
+      threshold = x['threshold'][0] if 'threshold' in x.keys() else 0
+      rel_threshold = x['rel_threshold'][0] if 'rel_threshold' in x.keys() else 0
+      label_expansion = x['label_expansion'][0] if 'label_expansion' in x.keys() else 0
       
       # nucleus
       X_train[0, ..., 0] = correction_utils.combine_norm_channels(
         im_dat, nuclei_channels, dat_slices,
-        self.dim_utils, normalise_percentile = normalise_percentile
+        self.dim_utils, normalise_percentile = normalise_percentile,
+        threshold = threshold, rel_threshold = rel_threshold
       )
       
       # cytoplasm
       X_train[0, ..., 1] = correction_utils.combine_norm_channels(
         im_dat, cyto_channels, dat_slices,
-        self.dim_utils, normalise_percentile = normalise_percentile
+        self.dim_utils, normalise_percentile = normalise_percentile,
+        threshold = threshold, rel_threshold = rel_threshold
       )
+      
+      # apply filter
+      if x['medianFilter'][0] > 0:
+        if self.dim_utils.is_3D():
+          median_selem = skimage.morphology.ball(x['medianFilter'][0])
+        else:
+          median_selem = skimage.morphology.disk(x['medianFilter'][0])
+        
+        X_train[0, ..., 0] = skimage.filters.median(X_train[0, ..., 0], median_selem)
+        X_train[0, ..., 1] = skimage.filters.median(X_train[0, ..., 1], median_selem)
+      
+      X_train[0, ..., 0] = ndi.gaussian_filter(X_train[0, ..., 1], x['gaussianFilter'][0])
+      X_train[0, ..., 1] = ndi.gaussian_filter(X_train[0, ..., 1], x['gaussianFilter'][0])
       
       # get segmentation
       # TODO what are the post processing parameters?
@@ -135,6 +160,10 @@ class MesmerUtils(SegmentationUtils):
             nuc_labels_merged,
             (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label * cur_nuc
           )
+          
+      # expand labels
+      if label_expansion > 0:
+        cyto_labels_merged = skimage.segmentation.expand_labels(cyto_labels_merged, label_expansion)
         
       # add masks to list
       if np.max(nuc_labels_merged) > 0 and np.max(cyto_labels_merged) > 0:

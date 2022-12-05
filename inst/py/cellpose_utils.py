@@ -10,7 +10,6 @@ import scipy.ndimage as ndi
 import skimage.filters
 import skimage.morphology
 import skimage.measure
-import skimage.segmentation
 import skimage.feature
 import skimage.segmentation
 
