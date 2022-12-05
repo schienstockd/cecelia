@@ -98,10 +98,12 @@ class MesmerUtils(SegmentationUtils):
           else:
             median_selem = skimage.morphology.disk(x['medianFilter'][0])
           
-          X_train[0, ..., 0] = skimage.filters.median(X_train[0, ..., 0], median_selem)
+          # only filter cytoplasm
+          # X_train[0, ..., 0] = skimage.filters.median(X_train[0, ..., 0], median_selem)
           X_train[0, ..., 1] = skimage.filters.median(X_train[0, ..., 1], median_selem)
         
-        X_train[0, ..., 0] = ndi.gaussian_filter(X_train[0, ..., 1], x['gaussianFilter'][0])
+        # only filter cytoplasm
+        # X_train[0, ..., 0] = ndi.gaussian_filter(X_train[0, ..., 1], x['gaussianFilter'][0])
         X_train[0, ..., 1] = ndi.gaussian_filter(X_train[0, ..., 1], x['gaussianFilter'][0])
         
         # get segmentation
