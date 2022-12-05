@@ -169,8 +169,8 @@ class MesmerUtils(SegmentationUtils):
     max_label_val = 0
     
     for i in range(len(model_masks['cyto'])):
-      nuc_masks = x['nuc'][i]
-      cyto_masks = x['cyto'][i]
+      nuc_masks = model_masks['nuc'][i]
+      cyto_masks = model_masks['cyto'][i]
       
       # add previous label value
       model_masks['nuc'][i][nuc_masks > 0] += max_label_val
@@ -184,11 +184,8 @@ class MesmerUtils(SegmentationUtils):
     merged_cyto_labels = np.zeros(label_shape, dtype = np.uint32)
     
     for i in range(len(model_masks['cyto'])):
-      nuc_masks = x['nuc'][i]
-      cyto_masks = x['cyto'][i]
-      
-      merged_nuc_labels = np.maximum(merged_nuc_labels, nuc_masks)
-      merged_cyto_labels = np.maximum(merged_cyto_labels, cyto_masks)
+      merged_nuc_labels = np.maximum(merged_nuc_labels, model_masks['nuc'][i])
+      merged_cyto_labels = np.maximum(merged_cyto_labels, model_masks['cyto'][i])
       
     return {
       'nuc': merged_nuc_labels,
