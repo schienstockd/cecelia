@@ -31,20 +31,21 @@ Mesmer <- R6::R6Class(
       self$writeLog("Run prediction")
       
       # convert channels names to numbers
-      nucleiChannels <- sapply(
-        self$funParams()$nucleiChannels,
-        function (x) {
-          unname(which(cciaObj$imChannelNames() == x)) - 1
-        },
-        USE.NAMES = FALSE
-      )
-      cytoChannels <- sapply(
-        self$funParams()$cytoChannels,
-        function (x) {
-          unname(which(cciaObj$imChannelNames() == x)) - 1
-        },
-        USE.NAMES = FALSE
-      )
+      models <- lapply(
+        self$funParams()$models, function(x) {
+          x$nucleiChannels <- sapply(
+            x$nucleiChannels, function(y) {
+              unname(which(cciaObj$imChannelNames() == y)) - 1
+            }, USE.NAMES = FALSE
+          )
+          x$cytoChannels <- sapply(
+            x$cytoChannels, function(y) {
+              unname(which(cciaObj$imChannelNames() == y)) - 1
+            }, USE.NAMES = FALSE
+          )
+          
+          x
+        })
       
       # prepare params
       params <- list(
@@ -53,9 +54,7 @@ Mesmer <- R6::R6Class(
           self$envParams()$dirs$zero,
           basename(cciaObj$imFilepath())
         ),
-        nucleiChannels = nucleiChannels,
-        cytoChannels = cytoChannels,
-        normalisePercentile = self$funParams()$normalisePercentile,
+        models = models,
         minCellSize = self$funParams()$minCellSize,
         labelErosion = self$funParams()$labelErosion,
         haloSize = self$funParams()$haloSize,

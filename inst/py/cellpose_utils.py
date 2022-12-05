@@ -70,7 +70,6 @@ class CellposeUtils(SegmentationUtils):
     
     # get label shape
     label_shape = list(cur_im_dat.shape)
-    
     label_shape.pop(self.dim_utils.dim_idx("C"))
     
     # remove time if present

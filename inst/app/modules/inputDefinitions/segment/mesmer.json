@@ -8,19 +8,23 @@
   },
   "spec": {
     "inputs": {
-      "nucleiChannels": {
-        "type:list": {}
+      "models": {
+        "type:group": {
+          "nucleiChannels": {
+            "type:list": {}
+          },
+          "cytoChannels": {
+            "type:list": {}
+          },
+      		"normalisePercentile": {
+    				"type:double": {
+    					"min": 50,
+    					"max": 100,
+    					"default": 99.9
+    				}
+    			}
+        }
       },
-      "cytoChannels": {
-        "type:list": {}
-      },
-  		"normalisePercentile": {
-				"type:double": {
-					"min": 50,
-					"max": 100,
-					"default": 99.9
-				}
-			},
 			"minCellSize": {
 				"type:integer": {
 					"min": 0,
@@ -122,31 +126,38 @@
   },
   "ui": {
     "inputs": {
-      "nucleiChannels": {
-        "index": 0,
-        "label": "Nuclei",
-        "widget:channelSelection": {
-          "size": 1,
-          "multiple": true,
-					"useNames": true
-        }
-      },
-      "cytoChannels": {
-        "index": 1,
-        "label": "Cytoplasm",
-        "widget:channelSelection": {
-          "size": 1,
-          "multiple": true,
-					"useNames": true
-        }
-      },
-  		"normalisePercentile": {
-				"index": 2,
-				"label": "Normalise",
-				"widget:slider": {
-					"step": 0.1
+      "models": {
+				"index": 1,
+				"label": "Model Parameters",
+				"widget:group": {
+				  "numItems": 5,
+          "nucleiChannels": {
+            "index": 0,
+            "label": "Nuclei",
+            "widget:channelSelection": {
+              "size": 1,
+              "multiple": true,
+    					"useNames": true
+            }
+          },
+          "cytoChannels": {
+            "index": 1,
+            "label": "Cytoplasm",
+            "widget:channelSelection": {
+              "size": 1,
+              "multiple": true,
+    					"useNames": true
+            }
+          },
+      		"normalisePercentile": {
+    				"index": 2,
+    				"label": "Normalise",
+    				"widget:slider": {
+    					"step": 0.1
+    				}
+    			}
 				}
-			},
+      },
 			"minCellSize": {
 				"index": 3,
 				"label": "Minimum cell size",

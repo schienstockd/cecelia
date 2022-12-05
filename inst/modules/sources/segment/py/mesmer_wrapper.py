@@ -23,9 +23,7 @@ def run(params):
   # prepare parameters
   seg_params = {
 	'ccia': params['ccia'],
-	'nuclei_channels': params['nucleiChannels'],
-	'cyto_channels': params['cytoChannels'],
-	'normalise_percentile': params['normalisePercentile'],
+	'models': params['models'],
 	'labels_suffixes': ['nuc', 'cyto'],
 	'halo_size': params['haloSize'],
 	'halo_whole_cell': params['haloWholeCell'],
