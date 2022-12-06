@@ -14,6 +14,7 @@ import skimage.morphology
 import skimage.measure
 import skimage.feature
 import skimage.segmentation
+import skimage.io
 
 # utils
 from py.segmentation_utils import SegmentationUtils
@@ -90,6 +91,9 @@ class MesmerUtils(SegmentationUtils):
           self.dim_utils, normalise_percentile = normalise_percentile,
           threshold = threshold, rel_threshold = rel_threshold
         )
+        
+        skimage.io.imsave('/Users/schiend/Downloads/A.png', X_train[0, ..., 0])
+        skimage.io.imsave('/Users/schiend/Downloads/B.png', X_train[0, ..., 1])
         
         # apply filter
         if x['medianFilter'][0] > 0:
