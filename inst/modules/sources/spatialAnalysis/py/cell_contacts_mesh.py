@@ -165,10 +165,9 @@ def run(params):
           contained.update({i: meshes_b[contact_ids[i]].contains([x.center_mass]).all() for i, x in meshes_a.items()})
           
           # check how many B are contained in A
-          # TODO truth value is ambiguous
           # contains.update({
-          #   i: [x.contains([y.center_mass for y in meshes_b.values()])
-          #   for i, x in meshes_a.items()].count(True)
+          #   i: [x.contains([y.center_mass for y in meshes_b.values()])].count(True)
+          #   for i, x in meshes_a.items()
           #   })
             
         logfile_utils.log(f'>> Add distances back')
