@@ -532,8 +532,11 @@ ReactivePersistentObject <- R6::R6Class(
       attrVals <- private$cciaAttr
       
       # get specific attribute
-      if (!is.null(attrName) && attrName %in% names(private$cciaAttr)) {
-        attrVals <- private$cciaAttr[[attrName]]
+      if (!is.null(attrName)) {
+        if (attrName %in% names(private$cciaAttr))
+          attrVals <- private$cciaAttr[[attrName]]
+        else
+          attrVals <- NULL
       }
       
       attrVals
