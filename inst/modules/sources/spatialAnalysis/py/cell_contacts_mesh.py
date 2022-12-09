@@ -100,11 +100,13 @@ def run(params):
         dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
+        contains_col = f'{pop_type_a}.cell.contains.inv#{pop_type_b}.{pop_b}'
         contact_id_col = f'{pop_type_a}.cell.contact_id.inv#{pop_type_b}.{pop_b}'
       else:
         dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
+        contains_col = f'{pop_type_a}.cell.contains_by#{pop_type_b}.{pop_b}'
         contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
         
       if pop_df_b is not None:
@@ -123,6 +125,7 @@ def run(params):
         # go through timepoints and get contacts
         contacts = dict()
         contained = dict()
+        contains = dict()
         contact_ids = dict()
         
         for i, t in tqdm(enumerate(timepoints)):
@@ -160,6 +163,12 @@ def run(params):
             
           # check whether B contains A
           contained.update({i: meshes_b[contact_ids[i]].contains([x.center_mass]).all() for i, x in meshes_a.items()})
+          
+          # check how many B are contained in A
+          contains.update({
+            i: [x.contains([y.center_mass for y in meshes_b.values()])
+            for i, x in meshes_a.items()].count(True)
+            })
             
         logfile_utils.log(f'>> Add distances back')
         
@@ -169,6 +178,7 @@ def run(params):
           dist_col: contacts.values(),
           contact_col: [x <= max_contact_dist for x in contacts.values()],
           contained_col: contained.values(),
+          contains_col: contains.values(),
           contact_id_col: contact_ids.values()
         })
         
@@ -180,12 +190,14 @@ def run(params):
         merged_contacts_ids[dist_col] = np.NaN
         merged_contacts_ids[contact_col] = np.NaN
         merged_contacts_ids[contained_col] = np.NaN
+        merged_contacts_ids[contains_col] = np.NaN
         merged_contacts_ids[contact_id_col] = np.NaN
         
       # set NaN to False
       merged_contacts_ids[dist_col].replace(np.NaN, -1, inplace = True)
       merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
       merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
+      merged_contacts_ids[contains_col].replace(np.NaN, 0, inplace = True)
       merged_contacts_ids[contact_id_col].replace(np.NaN, -1, inplace = True)
   
       # convert column to dict
@@ -193,6 +205,7 @@ def run(params):
         dist_col: merged_contacts_ids[dist_col],
         contact_col: merged_contacts_ids[contact_col],
         contained_col: merged_contacts_ids[contained_col],
+        contains_col: merged_contacts_ids[contains_col],
         contact_id_col: merged_contacts_ids[contact_id_col]
       }
   
