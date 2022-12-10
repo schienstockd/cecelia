@@ -59,9 +59,6 @@ types.tests.sc <- sapply(
       value_name = paste0("tracks.clusters.types.", x,".sc"))$label_props_view()$as_df())
   }
 )
-  
-  as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(), value_name = "tracks.clusters.types.all.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -304,8 +301,6 @@ propsToPlot <- propsToPlot %>%
     "volume (sd)" = "volume.sd",
     "compactness (mean)" = "compactness.mean",
     "compactness (sd)" = "compactness.sd",
-    "extent (mean)" = "extent.mean",
-    "extent (sd)" = "extent.sd",
     "Movement HMM 1" = "live.cell.hmm.state.movement.1",
     "Movement HMM 2" = "live.cell.hmm.state.movement.2",
     "Movement HMM 3" = "live.cell.hmm.state.movement.3",

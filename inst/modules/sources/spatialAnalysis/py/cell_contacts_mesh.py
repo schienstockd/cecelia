@@ -151,23 +151,24 @@ def run(params):
           # add pop B to collision manager
           m = trimesh.collision.CollisionManager()
           
-          for i, x in meshes_b.items():
-            m.add_object(i, x)
+          for j, y in meshes_b.items():
+            m.add_object(j, y)
           
           # go through pop A and get minimum distances to pop B
-          meshes_dist = {i: m.min_distance_single(x, return_name = True) for i, x in meshes_a.items()}
+          meshes_dist = {j: m.min_distance_single(y, return_name = True) for j, y in meshes_a.items()}
           
           # update contacts
-          contacts.update({i: x[0] for i, x in meshes_dist.items()})
-          contact_ids.update({i: x[1] for i, x in meshes_dist.items()})
+          contacts.update({j: y[0] for j, y in meshes_dist.items()})
+          contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
             
           # check whether B contains A
-          contained.update({i: meshes_b[contact_ids[i]].contains([x.center_mass]).all() for i, x in meshes_a.items()})
+          if len(meshes_dist) > 0:
+            contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
           
           # check how many B are contained in A
           # contains.update({
-          #   i: [x.contains([y.center_mass for y in meshes_b.values()])].count(True)
-          #   for i, x in meshes_a.items()
+          #   j: [x.contains([z.center_mass for z in meshes_b.values()])].count(True)
+          #   for j, y in meshes_a.items()
           #   })
             
         logfile_utils.log(f'>> Add distances back')

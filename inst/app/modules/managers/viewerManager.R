@@ -110,7 +110,7 @@ ViewerManager <- R6::R6Class(
       if (length(imObj()$imFilepath()) > 0 &&
         file.exists(imObj()$imFilepath())) {
         # reset data from currently shown image
-        if (!is.null(private$handleImObj()))
+        if (length(private$handleImObj) > 0)
           private$handleImObj()$resetData()
         
         # retrieve data for current image
