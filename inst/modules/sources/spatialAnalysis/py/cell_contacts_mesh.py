@@ -166,6 +166,7 @@ def run(params):
             contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
             
             # check how many B are contained in A
+            logfile_utils.log([y.contains([z.center_mass for z in meshes_b.values()])])
             contains_n.update({
               j: [y.contains([z.center_mass for z in meshes_b.values()])].count(True)
               for j, y in meshes_a.items()
