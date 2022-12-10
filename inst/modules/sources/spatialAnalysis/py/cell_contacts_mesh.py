@@ -162,6 +162,8 @@ def run(params):
           contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
             
           # check whether B contains A
+          print('--')
+          print(meshes_dist)
           if len(meshes_dist) > 0:
             contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
           
