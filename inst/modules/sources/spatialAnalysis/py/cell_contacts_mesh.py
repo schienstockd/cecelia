@@ -148,28 +148,28 @@ def run(params):
           logfile_utils.log(f'>> (t {t}) {pop_a} loaded {len(meshes_a)} meshes')
           logfile_utils.log(f'>> (t {t}) {pop_b} loaded {len(meshes_b)} meshes')
     
-          # add pop B to collision manager
-          m = trimesh.collision.CollisionManager()
-          
-          for j, y in meshes_b.items():
-            m.add_object(j, y)
-          
-          # go through pop A and get minimum distances to pop B
-          meshes_dist = {j: m.min_distance_single(y, return_name = True) for j, y in meshes_a.items()}
-          
-          # update contacts
-          contacts.update({j: y[0] for j, y in meshes_dist.items()})
-          contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
-            
-          # check whether B contains A
           if len(meshes_b) > 0:
+            # add pop B to collision manager
+            m = trimesh.collision.CollisionManager()
+            
+            for j, y in meshes_b.items():
+              m.add_object(j, y)
+            
+            # go through pop A and get minimum distances to pop B
+            meshes_dist = {j: m.min_distance_single(y, return_name = True) for j, y in meshes_a.items()}
+            
+            # update contacts
+            contacts.update({j: y[0] for j, y in meshes_dist.items()})
+            contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
+              
+            # check whether B contains A
             contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
-          
-          # check how many B are contained in A
-          # contains.update({
-          #   j: [x.contains([z.center_mass for z in meshes_b.values()])].count(True)
-          #   for j, y in meshes_a.items()
-          #   })
+            
+            # check how many B are contained in A
+            # contains.update({
+            #   j: [x.contains([z.center_mass for z in meshes_b.values()])].count(True)
+            #   for j, y in meshes_a.items()
+            #   })
             
         logfile_utils.log(f'>> Add distances back')
         
