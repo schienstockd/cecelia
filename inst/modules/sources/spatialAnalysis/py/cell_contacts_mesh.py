@@ -167,7 +167,7 @@ def run(params):
             
             # check how many B are contained in A
             contains_n.update({
-              j: y.contains([z.center_mass for z in meshes_b.values()]).count(True)
+              j: y.contains([z.center_mass for z in meshes_b.values()]).sum()
               for j, y in meshes_a.items()
               })
             
