@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import igraph as ig
 from tqdm import tqdm
+from copy import deepcopy
 
 from py.label_props_utils import LabelPropsUtils
 from py.pop_utils import PopUtils
@@ -101,12 +102,14 @@ def run(params):
         contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
         contains_n_col = f'{pop_type_a}.cell.contains_n.inv#{pop_type_b}.{pop_b}'
+        contact_n_col = f'{pop_type_a}.cell.contact_n.inv#{pop_type_b}.{pop_b}'
         contact_id_col = f'{pop_type_a}.cell.contact_id.inv#{pop_type_b}.{pop_b}'
       else:
         dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
         contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
         contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
         contains_n_col = f'{pop_type_a}.cell.contains_n#{pop_type_b}.{pop_b}'
+        contact_n_col = f'{pop_type_a}.cell.contact_n#{pop_type_b}.{pop_b}'
         contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
         
       if pop_df_b is not None:
@@ -126,6 +129,7 @@ def run(params):
         contacts = dict()
         contained = dict()
         contains_n = dict()
+        contact_n = dict()
         contact_ids = dict()
         
         for i, t in tqdm(enumerate(timepoints)):
@@ -170,6 +174,36 @@ def run(params):
               j: y.contains([z.center_mass for z in meshes_b.values()]).sum()
               for j, y in meshes_a.items()
               })
+              
+            # check how many B contact A
+            for j, y in meshes_a.items():
+              has_contact = True
+              removed_objects = dict()
+              
+              # get copy of collision manager
+              m_copy = deepcopy(m)
+              
+              while has_contact is True:
+                min_dist = [max_contact_dist + 1]
+                
+                try:
+                  # get distance to nearest object
+                  min_dist = m_copy.min_distance_single(y, return_name = True)
+                except TypeError:
+                  # TypeError: 'reversed' object is not subscriptable
+                  # this happens if there is no mesh in CollisionManager
+                  # TODO is there a way to get the number of meshes
+                  # in the collision manager?
+                  pass
+                
+                # is below threshold?
+                if min_dist[0] > max_contact_dist:
+                  has_contact = False
+                else:
+                  m_copy.remove_object(min_dist[1])
+                  removed_objects.append(min_dist[1])
+            
+              contact_n.update({j: len(removed_objects)})
             
         logfile_utils.log(f'>> Add distances back')
         
@@ -180,6 +214,7 @@ def run(params):
           contact_col: [x <= max_contact_dist for x in contacts.values()],
           contained_col: contained.values(),
           contains_n_col: contains_n.values(),
+          contact_n_col: contact_n.values(),
           contact_id_col: contact_ids.values()
         })
         
@@ -192,6 +227,7 @@ def run(params):
         merged_contacts_ids[contact_col] = np.NaN
         merged_contacts_ids[contained_col] = np.NaN
         merged_contacts_ids[contains_n_col] = np.NaN
+        merged_contacts_ids[contact_n_col] = np.NaN
         merged_contacts_ids[contact_id_col] = np.NaN
         
       # set NaN to False
@@ -199,6 +235,7 @@ def run(params):
       merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
       merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
       merged_contacts_ids[contains_n_col].replace(np.NaN, 0, inplace = True)
+      merged_contacts_ids[contact_n_col].replace(np.NaN, 0, inplace = True)
       merged_contacts_ids[contact_id_col].replace(np.NaN, -1, inplace = True)
   
       # convert column to dict
@@ -207,6 +244,7 @@ def run(params):
         contact_col: merged_contacts_ids[contact_col],
         contained_col: merged_contacts_ids[contained_col],
         contains_n_col: merged_contacts_ids[contains_n_col],
+        contact_n_col: merged_contacts_ids[contact_n_col],
         contact_id_col: merged_contacts_ids[contact_id_col]
       }
   
