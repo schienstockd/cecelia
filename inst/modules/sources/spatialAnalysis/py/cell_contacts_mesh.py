@@ -10,7 +10,6 @@ import pandas as pd
 import numpy as np
 import igraph as ig
 from tqdm import tqdm
-from copy import deepcopy
 
 from py.label_props_utils import LabelPropsUtils
 from py.pop_utils import PopUtils
@@ -180,15 +179,12 @@ def run(params):
               has_contact = True
               removed_objects = dict()
               
-              # get copy of collision manager
-              m_copy = deepcopy(m)
-              
               while has_contact is True:
                 min_dist = [max_contact_dist + 1]
                 
                 try:
                   # get distance to nearest object
-                  min_dist = m_copy.min_distance_single(y, return_name = True)
+                  min_dist = m.min_distance_single(y, return_name = True)
                 except TypeError:
                   # TypeError: 'reversed' object is not subscriptable
                   # this happens if there is no mesh in CollisionManager
@@ -200,10 +196,14 @@ def run(params):
                 if min_dist[0] > max_contact_dist:
                   has_contact = False
                 else:
-                  m_copy.remove_object(min_dist[1])
+                  m.remove_object(min_dist[1])
                   removed_objects.append(min_dist[1])
             
               contact_n.update({j: len(removed_objects)})
+              
+              # add objects back
+              for k, z in removed_objects.items():
+                m.add_object(k, z)
             
         logfile_utils.log(f'>> Add distances back')
         
