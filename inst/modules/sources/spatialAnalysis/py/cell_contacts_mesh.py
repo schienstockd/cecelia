@@ -197,7 +197,7 @@ def run(params):
                   has_contact = False
                 else:
                   m.remove_object(min_dist[1])
-                  removed_objects[min_dist[1]] = meshes[min_dist[1]]
+                  removed_objects[min_dist[1]] = meshes_b[min_dist[1]]
             
               contact_n.update({j: len(removed_objects)})
               
