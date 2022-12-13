@@ -260,6 +260,7 @@ default:
       live.cell.peak.acc: "numeric"
       live.cell.has.peak: "logical"
       live.cell.contact: "logical"
+      live.cell.contact_n: "numeric"
       live.cell.contains_n: "numeric"
       live.cell.contained_by: "logical"
       live.cell.min_distance: "numeric"

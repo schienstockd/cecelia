@@ -53,6 +53,8 @@ def drift_correction_shifts(
     slices_b = tuple(slices_b)
 
     # (sub)pixel precision
+    # TODO There is a lot more correction you can do
+    # https://scikit-image.org/docs/stable/auto_examples/registration/plot_register_rotation.html
     shift, error, diffphase = phase_cross_correlation(
       np.squeeze(image_array[slices_a]),
       np.squeeze(image_array[slices_b]),
@@ -68,7 +70,7 @@ def drift_correction_shifts(
 """
 get max, min and sum shift
 """
-def drift_shifts_summary(shifts):
+def shifts_summary(shifts):
   max_shifts = np.zeros((3))
   min_shifts = np.zeros((3))
   cur_shifts = np.zeros((3))
@@ -92,9 +94,9 @@ def drift_shifts_summary(shifts):
     }
 
 """
-get new image dimensions for drift correction
+get new image dimensions for correction
 """
-def drift_correction_im_shape(image_array, dim_utils, shifts_summary):
+def correction_im_shape(image_array, dim_utils, shifts_summary):
   # get new shape
   new_shape = list(image_array.shape)
 
@@ -134,15 +136,15 @@ def drift_correct_im(
       )
 
   # get shifts summary
-  shifts_summary = drift_shifts_summary(shifts)
+  shifts_summary = shifts_summary(shifts)
 
   # get new image dimensions
-  drift_im_shape, drift_im_shape_round = drift_correction_im_shape(
+  drift_im_shape, drift_im_shape_round = correction_im_shape(
     input_array, dim_utils, shifts_summary
   )
 
   # get first image position
-  first_im_pos = drift_correction_first_im_pos(
+  first_im_pos = correction_first_im_pos(
     drift_im_shape, dim_utils, shifts_summary
   )
 
@@ -196,8 +198,8 @@ def drift_correct_im(
       slices = new_slices
 
     # round for slicing
-    new_slices = [slice(None) for x in range(len(drift_im_shape_round))]
-    im_slices = [slice(None) for x in range(len(drift_im_shape_round))]
+    new_slices = [slice(None) for _ in range(len(drift_im_shape_round))]
+    im_slices = [slice(None) for _ in range(len(drift_im_shape_round))]
 
     # set Z, X, Y for new slices
     for j, y in enumerate(('Z', 'Y', 'X')):
@@ -259,9 +261,9 @@ def drift_correct_im(
   return drift_correction_zarr
 
 """
-get position of first image for drift correction
+get position of first image for correction
 """
-def drift_correction_first_im_pos(drift_im_shape, dim_utils, shifts_summary):
+def correction_first_im_pos(drift_im_shape, dim_utils, shifts_summary):
   # get new position
   new_pos = np.take(
     drift_im_shape,

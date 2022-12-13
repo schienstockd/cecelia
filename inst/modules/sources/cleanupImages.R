@@ -30,8 +30,7 @@ CleanupImages <- R6::R6Class(
       cciaObj <- self$cciaTaskObject()
       
       # set filename
-      cciaObj$setImFilepath("ccidCorrected.zarr",
-                            valueName = "corrected")
+      cciaObj$setImFilepath("ccidCorrected.zarr", valueName = "corrected")
       
       # update channel information
       if (length(addChannels) > 0) {

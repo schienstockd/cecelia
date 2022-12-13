@@ -290,12 +290,17 @@ class DimUtils:
   """
   Get value of dimension
   """
-  def dim_val(self, dim):
+  def dim_val(self, dim, scale = 0):
     dim_val = 1
     
     # is the dimension set?
     if self.dim_idx(dim) >= 0:
       dim_val = self.im_dim[self.dim_idx(dim)]
+      
+    # adjust for scale
+    # TODO is that fair .. ?
+    if dim in ['X', 'Y']:
+      dim_val = math.floor(dim_val / 2**scale)
     
     return dim_val
   
