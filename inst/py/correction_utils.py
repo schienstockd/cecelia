@@ -70,7 +70,7 @@ def drift_correction_shifts(
 """
 get max, min and sum shift
 """
-def shifts_summary(shifts):
+def shifts_summary(shifts, cumulative = True):
   max_shifts = np.zeros((3))
   min_shifts = np.zeros((3))
   cur_shifts = np.zeros((3))
@@ -78,7 +78,10 @@ def shifts_summary(shifts):
   # get maximum shifts for left and right
   for x in shifts:
     # get new shifts
-    cur_shifts = cur_shifts + x
+    if cumulative is True:
+      cur_shifts = cur_shifts + x
+    else:
+      cur_shifts = x
 
     # set max and min shifts
     max_shifts = np.maximum(cur_shifts, max_shifts)
