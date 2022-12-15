@@ -10,7 +10,8 @@ createTaskManager <- function(
   }
   
   # set buttons to enable selection from UI
-  if (managerConf$task$runTaskCombinedSelect == TRUE)
+  if (managerConf$task$runTaskCombinedSelect == TRUE ||
+      managerConf$task$runTaskCombined == TRUE)
     enable("runTaskCombined")
   
   ### Reactive values
