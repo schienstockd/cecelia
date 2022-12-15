@@ -98,7 +98,7 @@ def run(params):
     logfile_utils.log(f'>> Register {i}')
     
     # set slicing
-    slices[i + 1][dim_utils[i].dim_idx('C')] = reg_channels[i]
+    slices[i + 1][dim_utils[i].dim_idx('C')] = reg_channels[i + 1]
     
     # apply
     # TODO can you do this somehow in the low res image and then scale up .. ?
