@@ -94,6 +94,8 @@ def run(params):
   
   # get fixed image
   slices[0][dim_utils[0].dim_idx('C')] = reg_channels[0]
+  logfile_utils.log(slices)
+  
   fixed_im = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(input_arrays[0][0][tuple(slices[0])])))
   
   # go through arrays
