@@ -91,8 +91,6 @@ def run(params):
   
   # get fixed image
   slices[0][dim_utils[0].dim_idx('C')] = reg_channels[0]
-  logfile_utils.log(slices)
-  
   fixed_im = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(input_arrays[0][0][tuple(slices[0])])))
   
   # go through arrays
@@ -151,7 +149,7 @@ def run(params):
           
         k += 1
     
-    channel_sum += dim_utils[i + 1].dim_val('C')
+    channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
 
   logfile_utils.log('>> save back')
   
