@@ -12,7 +12,11 @@
         "type:character": {
           "default": "hpc"
         }
-      }
+      },
+      "remoteFiles": {
+				"type:character": {
+				}
+			}
     },
     "outputs": {}
   },
@@ -24,6 +28,18 @@
         "widget:selection": {
           "items": {
             "HPC": "hpc"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "remoteFiles": {
+        "index": 1,
+        "label": "Files to retrieve",
+        "widget:selection": {
+          "items": {
+            "Corrected": "ccidCorrected",
+            "Registered": "ccidRegistered"
           },
           "multiple": false,
           "size": 1

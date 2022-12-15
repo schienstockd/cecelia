@@ -31,11 +31,13 @@ Retrieve <- R6::R6Class(
       remoteDir <- self$envParams("hpc")$dirs$zero
       # if (self$funParams()$remoteEnv == "hpc")
       
+      # get files to retrieve
+      # assuming these will be zarr files
+      remoteFiles <- paste0(self$funParams()$remoteFiles, ".zarr")
+      
       # upload local files
       taskVars$fun <- list(
-        remoteFiles = c(
-          "ccidCorrected.zarr"
-        ),
+        remoteFiles = remoteFiles,
         localDir = localDir,
         remoteDir = remoteDir,
         useCompression = TRUE,
@@ -49,8 +51,7 @@ Retrieve <- R6::R6Class(
       self$initLog()
       self$writeLog(paste("Retrieve"))
       
-      taskLauncher$initTask(
-        "hpc.retrieve", taskVars, inplace = runInplace)
+      taskLauncher$initTask("hpc.retrieve", taskVars, inplace = runInplace)
       
       # prep run
       taskLauncher$prepRun()
@@ -61,7 +62,8 @@ Retrieve <- R6::R6Class(
       self$writeLog(taskLauncher$result(TRUE))
       
       # update image information
-      self$updateImageInfo("AF generated")
+      # self$updateImageInfo("AF generated")
+      self$runTasks("hpc.retrieveCciaObj")
       
       self$writeLog("Done")
       self$exitLog()

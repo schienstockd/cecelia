@@ -69,16 +69,16 @@ def run(params):
   reg_im_shape[dim_utils[0].dim_idx('C')] = sum([x.dim_val('C') - 1 for x in dim_utils]) + 1
   
   # remove previous folder
-  if im_reg_path is not None and os.path.exists(im_reg_path) is True:
-    shutil.rmtree(im_reg_path)
+  # if im_reg_path is not None and os.path.exists(im_reg_path) is True:
+  #   shutil.rmtree(im_reg_path)
   
   # create array
-  reg_zarr = zarr.create(
-    reg_im_shape,
-    dtype = input_arrays[0][0].dtype,
-    chunks = input_arrays[0][0].chunksize,
-    store = im_reg_path
-  )
+  # reg_zarr = zarr.create(
+  #   reg_im_shape,
+  #   dtype = input_arrays[0][0].dtype,
+  #   chunks = input_arrays[0][0].chunksize,
+  #   store = im_reg_path
+  # )
   
   # get slicing
   slices = [[slice(None) for _ in range(len(input_arrays[0][0].shape))]] * len(input_arrays)
@@ -102,17 +102,17 @@ def run(params):
     
     # apply
     # TODO can you do this somehow in the low res image and then scale up .. ?
-    reg_tx.append(sitkibex.registration(
-      fixed_im,
-      sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(slices[i + 1])]))),
-      do_fft_initialization = do_fft_initialization,
-      do_affine2d = do_affine_2d,
-      do_affine3d = do_affine_3d,
-      ignore_spacing = ignore_spacing,
-      sigma = sigma,
-      auto_mask = auto_mask,
-      samples_per_parameter = samples_per_parameter,
-      expand = expand))
+    # reg_tx.append(sitkibex.registration(
+    #   fixed_im,
+    #   sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(slices[i + 1])]))),
+    #   do_fft_initialization = do_fft_initialization,
+    #   do_affine2d = do_affine_2d,
+    #   do_affine3d = do_affine_3d,
+    #   ignore_spacing = ignore_spacing,
+    #   sigma = sigma,
+    #   auto_mask = auto_mask,
+    #   samples_per_parameter = samples_per_parameter,
+    #   expand = expand))
       
   # apply transforms
   reg_slices = [slice(None) for _ in range(len(reg_zarr.shape))]
@@ -122,7 +122,7 @@ def run(params):
   im_slices[dim_utils[0].dim_idx('T')] = 0
   
   # push first image
-  reg_zarr[tuple(reg_slices)] = input_arrays[0][0][tuple(im_slices)]
+  # reg_zarr[tuple(reg_slices)] = input_arrays[0][0][tuple(im_slices)]
   
   channel_sum = dim_utils[0].dim_val('C')
   
@@ -143,16 +143,18 @@ def run(params):
         logfile_utils.log(f'> Channel {j}')
         
         # push to zarr
-        reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
-          fixed_image = fixed_im,
-          moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
-          transform = reg_tx[i]))
+        # reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
+        #   fixed_image = fixed_im,
+        #   moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
+        #   transform = reg_tx[i]))
           
         k += 1
     
     channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
 
   logfile_utils.log('>> save back')
+  
+  reg_zarr = zarr.open(im_reg_path)
   
   # save back
   zarr_utils.create_multiscales(
