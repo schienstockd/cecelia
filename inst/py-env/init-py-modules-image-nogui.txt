@@ -32,3 +32,4 @@ torchaudio
 leidenalg
 squidpy
 deepcell
+SimpleITK

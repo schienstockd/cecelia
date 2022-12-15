@@ -21,46 +21,66 @@ RegisterImages <- R6::R6Class(
       self$resetImageInfo()
       
       self$initLog()
-      self$writeLog("Start autofluorescence and drift correction")
+      self$writeLog("Start register and transformation")
       
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      # convert AF combination list to integer
-      afCombinations <- self$funParams()$afCombinations
-      afCombinations <- lapply(
-        afCombinations, function(x) {
-          x$divisionChannels <- sapply(x$divisionChannels, as.integer)
-          
-          x
-        })
+      # get uIDs
+      uIDs <- NULL
+      if ("uIDs" %in% names(self$funParams())) {
+        uIDs <- self$funParams()$uIDs
+      }
+      
+      # get image paths
+      imPaths <- lapply(
+        cciaObj$cciaObjects(uIDs = uIDs),
+        function(x) x$imFilepath(valueName = "default"))
+      
+      # convert registration channels to integers
+      regChannels <- sapply(
+        self$funParams()$regChannel,
+        function (x) {
+          unname(which(cciaObj$imChannelNames() == x)) - 1
+        },
+        USE.NAMES = FALSE
+      )
       
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
-        imPath = file.path(
+        fixedImPath = file.path(
           self$envParams()$dirs$zero,
-          basename(cciaObj$imFilepath(valueName = "default"))
+          basename(imPaths[[0]])
         ),
-        afCombinations = afCombinations,
-        driftChannel = self$funParams()$driftChannel,
-        applyDriftCorrection = self$funParams()$applyDriftCorrection,
-        applyGaussianToOthers = self$funParams()$applyGaussianToOthers,
-        imCorrectionPath = file.path(
+        imPaths = file.path(
           self$envParams()$dirs$zero,
-          "ccidCorrected.zarr"
-        ) 
+          basename(unlist(imPaths))
+        ),
+        imRegPath = file.path(
+          self$envParams()$dirs$zero,
+          "ccidRegistered.zarr"
+        ),
+        regChannels = regChannels,
+        doFftInitialization = self$funParams()$doFftInitialization,
+        doAffine2d = self$funParams()$doAffine2d,
+        doAffine3d = self$funParams()$doAffine3d,
+        ignoreSpacing = self$funParams()$ignoreSpacing,
+        sigma = self$funParams()$sigma,
+        autoMask = self$funParams()$autoMask,
+        samplesPerParameter = self$funParams()$samplesPerParameter,
+        expand = if (self$funParams()$expand > 0) self$funParams()$expand else NULL
       )
       
       # call python
-      self$pyScript("af_drift_correct", params)
+      self$pyScript("register_images", params)
       
       # DONE
       self$writeLog("Done")
       self$exitLog()
       
       # update image information
-      self$updateImageInfo()
+      self$updateImageInfo(filename = "ccidRegistered", valueName = "registered")
     }
   )
 )

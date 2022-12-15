@@ -1,0 +1,114 @@
+{
+  "fun": {
+    "registerImages": {
+      "category": "Module functions",
+      "label": "Register Images by channel",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"regChannel": {
+				"type:character": {
+				}
+			},
+			"doFftInitialization": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"doAffine2d": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"doAffine3d": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"ignoreSpacing": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"sigma": {
+				"type:double": {
+					"min": 0,
+					"max": 5,
+					"default": 1.0
+				}
+			},
+			"autoMask": {
+        "type:boolean": {
+          "default": false
+        }
+      },
+			"expand": {
+				"type:integer": {
+				  "min": 0,
+					"max": 5,
+					"default": 0
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "regChannel": {
+        "index": 0,
+        "label": "Registration channel",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": false,
+        }
+      },
+			"doFftInitialization": {
+				"index": 1,
+				"label": "FFT initialisation",
+				"widget:checkbox": {
+				}
+			},
+			"doAffine2d": {
+				"index": 1,
+				"label": "2D affine (MIP)",
+				"widget:checkbox": {
+				}
+			},
+			"doAffine3d": {
+				"index": 2,
+				"label": "3D affine",
+				"widget:checkbox": {
+				}
+			},
+			"ignoreSpacing": {
+				"index": 3,
+				"label": "Ignore spacing",
+				"widget:checkbox": {
+				}
+			},
+			"sigma": {
+				"index": 4,
+				"label": "Sigma",
+				"widget:slider": {
+					"step": 0.1
+				}
+			},
+			"autoMask": {
+				"index": 5,
+				"label": "Auto Mask",
+				"widget:checkbox": {
+				}
+			},
+			"expand": {
+				"index": 6,
+				"label": "Expand",
+				"widget:slider": {
+					"step": 1
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

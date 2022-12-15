@@ -1,0 +1,90 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "nGUEI6"
+versionID <- 1
+```
+
+```{r}
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/OUT/CECELIA"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "p9u1Th", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$setImFilepath(NULL, valueName = "corrected")
+cciaObj$setImChannelNames(NULL, valueName = "corrected")
+cciaObj$saveState()
+```
+
+
+```{r fig_interactions, fig.height=3, fig.width=3}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jpVjeh", versionID = versionID, initReactivity = FALSE
+)
+
+# get populations
+popDT <- cciaObj$popDT(
+  "flow", pops = c("/nonDebris/gBT/clustered", "/nonDebris/gBT/non.clustered"),
+  includeFiltered = TRUE)
+
+summaryToPlot <- popDT %>%
+  group_by(pop, `flow.cell.contact#flow./nonDebris/others/TRITC`) %>%
+  summarise(n = n()) %>%
+  mutate(
+    freq = n/sum(n),
+    pop = str_extract(pop, "[^\\/]+$")
+    )
+```
+
+
+```{r fig_interactions, fig.height=1, fig.width=2}
+ggplot(summaryToPlot) +
+  aes(1, freq, fill = `flow.cell.contact#flow./nonDebris/others/TRITC`) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 1) +
+  coord_polar("y", start = 0) +
+  xlim(0, 1.8) +
+  facet_wrap(.~pop, nrow = 1) +
+  ggtitle("TRITC contact") +
+  theme(
+    axis.text = element_text(size = 5),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+ggsave(file.path(anaDir, "TRITC_contact.png"), width = 4, height = 3)
+```
+
