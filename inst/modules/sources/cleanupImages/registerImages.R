@@ -73,9 +73,21 @@ RegisterImages <- R6::R6Class(
       self$writeLog("Done")
       self$exitLog()
       
+      # get channels to add
+      # addChannels <- append(
+      #   cciaObj$cciaObjects(uIDs = uIDs[1])[[1]]$imChannelNames(
+      #     valueName = "default", useNames = FALSE),
+      addChannels <- unlist(sapply(
+        cciaObj$cciaObjects(uIDs = uIDs[2:length(uIDs)]),
+        function(x) {
+          y <- x$imChannelNames(valueName = "default", useNames = FALSE)
+          y[y != regChannel]
+        }))
+      
       # update image information for fixed image
       self$updateImageInfo(
-        filename = "ccidRegistered", valueName = "registered", uID = uIDs[[1]])
+        addChannels = addChannels, filename = "ccidRegistered",
+        valueName = "registered", uID = uIDs[[1]])
     }
   )
 )

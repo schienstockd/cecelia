@@ -76,7 +76,23 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "Jg3ofZ", versionID = versionID, initReactivity = FALSE # Set
 )
 
-cciaObj$persistentObjectDirectory(root = TRUE, zero = TRUE)
+exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[uIDs %in% exp.info[exp.info$Organ == "Liver",]$uID]
+
+regChannel <- "Hoechst"
+
+channelNames <- append(
+  cciaObj$cciaObjects(uIDs = uIDs[1])[[1]]$imChannelNames(
+    valueName = "default", useNames = FALSE),
+  unlist(sapply(
+    cciaObj$cciaObjects(uIDs = uIDs[2:length(uIDs)]),
+    function(x) {
+      y <- x$imChannelNames(valueName = "default", useNames = FALSE)
+      y[y != regChannel]
+    }))
+)
 ```
 
 ```{r}

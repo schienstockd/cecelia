@@ -118,6 +118,7 @@ def run(params):
   reg_slices = [slice(None) for _ in range(len(reg_zarr.shape))]
   im_slices = [slice(None) for _ in range(len(x[0].shape))]
   reg_slices[dim_utils[0].dim_idx('T')] = 0
+  reg_slices[dim_utils[0].dim_idx('C')] = slice(0, dim_utils[0].dim_val('C'), 1)
   im_slices[dim_utils[0].dim_idx('T')] = 0
   
   # push first image
