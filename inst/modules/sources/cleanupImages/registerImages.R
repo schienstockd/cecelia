@@ -24,7 +24,7 @@ RegisterImages <- R6::R6Class(
       }
       
       # reset image information
-      self$resetImageInfo(valueName = "registered", uID = uIDs[[0]])
+      self$resetImageInfo(valueName = "registered", uID = uIDs[[1]])
       
       self$initLog()
       self$writeLog("Start register and transformation")
@@ -33,31 +33,36 @@ RegisterImages <- R6::R6Class(
       cciaObj <- self$cciaTaskObject()
       
       # get image paths
-      imPaths <- lapply(
-        cciaObj$cciaObjects(uIDs = uIDs),
-        function(x) x$imFilepath(valueName = "default"))
+      # imPaths <- lapply(
+      #   cciaObj$cciaObjects(uIDs = uIDs),
+      #   function(x) x$imFilepath(valueName = "default"))
+      zeroRootDir <- cciaObj$persistentObjectDirectory(root = TRUE, zero = TRUE)
+      fixedImPath <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imFilepath(valueName = "default")
       
       # convert registration channels to integers
       regChannels <- unname(lapply(
         cciaObj$cciaObjects(uIDs = uIDs),
-        function(x) unname(which(cciaObj$imChannelNames() == self$funParams()$regChannel)) - 1))
+        function(x) unname(which(x$imChannelNames() == self$funParams()$regChannel)) - 1))
+      
+      self$writeLog(self$funParams()$expand)
       
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
         fixedImPath = file.path(
           self$envParams()$dirs$zero,
-          basename(imPaths[[0]])
-        ),
-        imPaths = file.path(
-          self$envParams()$dirs$zero,
-          basename(unlist(imPaths))
+          basename(fixedImPath)
         ),
         imRegPath = file.path(
           self$envParams()$dirs$zero,
           "ccidRegistered.zarr"
         ),
         regChannels = regChannels,
+        zeroRootDir = zeroRootDir,
+        uIDs = uIDs,
+        # assuming they all come from the same source
+        # use the value from the first image
+        imSourceName = basename(fixedImPath),
         doFftInitialization = self$funParams()$doFftInitialization,
         doAffine2d = self$funParams()$doAffine2d,
         doAffine3d = self$funParams()$doAffine3d,
@@ -65,7 +70,7 @@ RegisterImages <- R6::R6Class(
         sigma = self$funParams()$sigma,
         autoMask = self$funParams()$autoMask,
         samplesPerParameter = self$funParams()$samplesPerParameter,
-        expand = if (self$funParams()$expand > 0) self$funParams()$expand else NULL
+        expand = self$funParams()$expand
       )
       
       # call python
@@ -77,7 +82,7 @@ RegisterImages <- R6::R6Class(
       
       # update image information for fixed image
       self$updateImageInfo(
-        filename = "ccidRegistered", valueName = "registered", uID = uIDs[[0]])
+        filename = "ccidRegistered", valueName = "registered", uID = uIDs[[1]])
     }
   )
 )

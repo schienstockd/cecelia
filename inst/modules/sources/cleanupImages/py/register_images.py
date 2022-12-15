@@ -5,25 +5,18 @@ sys.path.append("./")
 
 import py.script_utils as script_utils
 
-import os
-import numpy as np
-# import working directory to check functions
-# os.chdir('~/R/x86_64-pc-linux-gnu-library/4.2/cecelia/inst')
-import sys
-os.chdir("/home/schienstockd/R/x86_64-pc-linux-gnu-library/4.2/cecelia")
-sys.path.append("/home/schienstockd/R/x86_64-pc-linux-gnu-library/4.2/cecelia")
-
 # config
 import py.config_utils as cfg
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils
 from py.dim_utils import DimUtils
-import SimpleITK as sitk
 import py.sitkibex as sitkibex
+import SimpleITK as sitk
 
 import math
 import shutil
 import zarr
+import numpy as np
 
 # register images and apply transformations
 def run(params):
@@ -32,9 +25,11 @@ def run(params):
 
   # init params
   fixed_im_path = script_utils.get_param(params, 'fixedImPath', default = '')
-  im_paths = script_utils.get_param(params, 'imPaths', default = list())
+  zero_root_dir = script_utils.get_param(params, 'zeroRootDir', default = '')
+  im_source_name = script_utils.get_param(params, 'imSourceName', default = 'ccidImage.zarr')
+  uids = script_utils.get_param(params, 'uIDs', default = [])
   im_reg_path = script_utils.get_param(params, 'imRegPath', default = '')
-  reg_channels = script_utils.get_param(params, 'regChannels', default = list())
+  reg_channels = script_utils.get_param(params, 'regChannels', default = [])
   do_fft_initialization = script_utils.get_param(params, 'doFftInitialization', default = False)
   do_affine_2d = script_utils.get_param(params, 'doAffine2d', default = True)
   do_affine_3d = script_utils.get_param(params, 'doAffine3d', default = False)
@@ -43,8 +38,13 @@ def run(params):
   auto_mask = script_utils.get_param(params, 'autoMask', default = False)
   samples_per_parameter = script_utils.get_param(params, 'samplesPerParameter', default = 5000)
   expand = script_utils.get_param(params, 'expand', default = None)
+  expand = expand if expand > 0 else None
 
   # get image information
+  im_paths = [os.path.join(zero_root_dir, x, im_source_name) for x in uids]
+  logfile_utils.log(uids)
+  logfile_utils.log(im_paths)
+  
   input_arrays = [zarr_utils.open_as_zarr(x, as_dask = True) for x in im_paths]
   input_arrays = [x[0] for x in input_arrays]
 
@@ -54,7 +54,7 @@ def run(params):
   ]
 
   for i, x in enumerate(dim_utils):
-    x.calc_image_dimensions(im_zarrs[i][0].shape)
+    x.calc_image_dimensions(input_arrays[i][0].shape)
   
   ### Registration with ITK from here ###
   # All credit goes to sitkibex - this is just a port into Cecelia
@@ -101,6 +101,14 @@ def run(params):
   # go through arrays
   for i, x in enumerate(input_arrays[1:]):
     logfile_utils.log(f'>> Register {i}')
+    logfile_utils.log(do_fft_initialization)
+    logfile_utils.log(do_affine_2d)
+    logfile_utils.log(do_affine_3d)
+    logfile_utils.log(ignore_spacing)
+    logfile_utils.log(sigma)
+    logfile_utils.log(auto_mask)
+    logfile_utils.log(samples_per_parameter)
+    logfile_utils.log(expand)
     
     # set slicing
     slices[i][dim_utils[i].dim_idx('C')] = reg_channels[i]
@@ -111,8 +119,8 @@ def run(params):
       fixed_im,
       sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(slices[i + 1])]))),
       do_fft_initialization = do_fft_initialization,
-      do_affine2d = do_affine2d,
-      do_affine3d = do_affine3d,
+      do_affine2d = do_affine_2d,
+      do_affine3d = do_affine_3d,
       ignore_spacing = ignore_spacing,
       sigma = sigma,
       auto_mask = auto_mask,
@@ -177,7 +185,7 @@ def run(params):
 def main():
   # get params
   params = script_utils.script_params(
-    flatten_except = ['imPaths', 'regChannels']
+    flatten_except = ['uIDs', 'regChannels']
   )
 
   # run AF and drift correction

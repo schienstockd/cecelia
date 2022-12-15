@@ -44,6 +44,13 @@
           "default": false
         }
       },
+			"samplesPerParameter": {
+				"type:integer": {
+				  "min": 0,
+					"max": 10000,
+					"default": 5000
+				}
+			},
 			"expand": {
 				"type:integer": {
 				  "min": 0,
@@ -101,8 +108,15 @@
 				"widget:checkbox": {
 				}
 			},
-			"expand": {
+			"samplesPerParameter": {
 				"index": 6,
+				"label": "Samples per parameter",
+				"widget:slider": {
+					"step": 50
+				}
+			},
+			"expand": {
+				"index": 7,
 				"label": "Expand",
 				"widget:slider": {
 					"step": 1
