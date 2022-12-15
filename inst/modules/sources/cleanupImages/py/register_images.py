@@ -85,9 +85,6 @@ def run(params):
   
   for i, x in enumerate(slices):
     slices[i][dim_utils[i].dim_idx('T')] = 0
-    
-    # DEBUG ONLY
-    slices[i][dim_utils[i].dim_idx('Z')] = slice(0, 2, 1)
   
   # get transforms
   reg_tx = list()
@@ -125,10 +122,6 @@ def run(params):
   reg_slices[dim_utils[0].dim_idx('T')] = 0
   im_slices[dim_utils[0].dim_idx('T')] = 0
   
-  # DEBUG ONLY
-  reg_slices[dim_utils[0].dim_idx('Z')] = slice(0, 2, 1)
-  im_slices[dim_utils[0].dim_idx('Z')] = slice(0, 2, 1)
-  
   # push first image
   reg_zarr[tuple(reg_slices)] = input_arrays[0][0][tuple(im_slices)]
   
@@ -146,7 +139,7 @@ def run(params):
       if j != reg_channels[0]:
         # set slicing
         reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
-        im_slices[dim_utils[i + 1].dim_idx('C')] = k
+        im_slices[dim_utils[i + 1].dim_idx('C')] = j
         
         logfile_utils.log(f'> Channel {k}')
         
