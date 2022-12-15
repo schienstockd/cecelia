@@ -17,20 +17,20 @@ RegisterImages <- R6::R6Class(
     
     # run
     run = function() {
+      # get uIDs
+      uIDs <- NULL
+      if ("uIDs" %in% names(self$funParams())) {
+        uIDs <- self$funParams()$uIDs
+      }
+      
       # reset image information
-      self$resetImageInfo()
+      self$resetImageInfo(valueName = "registered", uID = uIDs[[0]])
       
       self$initLog()
       self$writeLog("Start register and transformation")
       
       # get object
       cciaObj <- self$cciaTaskObject()
-      
-      # get uIDs
-      uIDs <- NULL
-      if ("uIDs" %in% names(self$funParams())) {
-        uIDs <- self$funParams()$uIDs
-      }
       
       # get image paths
       imPaths <- lapply(

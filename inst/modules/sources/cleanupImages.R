@@ -12,13 +12,17 @@ CleanupImages <- R6::R6Class(
     },
     
     # reset image information before segmentation
-    resetImageInfo = function() {
+    resetImageInfo = function(valueName = "corrected", uID = NULL) {
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      # get object from set
+      if (!is.null(uID))
+        cciaObj <- cciaObj$cciaObjects()[[uID]]
+      
       # reset channel information
-      cciaObj$setImFilepath(NULL, valueName = "corrected")
-      cciaObj$setImChannelNames(NULL, valueName = "corrected")
+      cciaObj$setImFilepath(NULL, valueName = valueName)
+      cciaObj$setImChannelNames(NULL, valueName = valueName)
       
       # save object
       cciaObj$saveState()
