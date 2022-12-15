@@ -165,10 +165,11 @@ TaskLauncher <- R6::R6Class(
         
         # go through params and replace
         for (i in names(slurmParams)) {
-          curSlurm <- gsub(
-            pattern = sprintf("\\$%s", i),
-            replace = slurmParams[[i]],
-            x = curSlurm)
+          if (!is.null(slurmParams[[i]]))
+            curSlurm <- gsub(
+              pattern = sprintf("\\$%s", i),
+              replace = slurmParams[[i]],
+              x = curSlurm)
         }
         
         # write slurm params

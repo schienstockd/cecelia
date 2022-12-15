@@ -44,8 +44,6 @@ RegisterImages <- R6::R6Class(
         cciaObj$cciaObjects(uIDs = uIDs),
         function(x) unname(which(x$imChannelNames() == self$funParams()$regChannel)) - 1))
       
-      self$writeLog(self$funParams()$expand)
-      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,

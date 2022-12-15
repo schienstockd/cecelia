@@ -343,15 +343,14 @@ ReactivePersistentObject <- R6::R6Class(
       retDir <- dirname(private$getStateFile())
       
       # zero?
-      if (zero == TRUE) {
-        retDir <- file.path(retDir, "..", "..", "0", self$getUID())
-      }
+      if (zero == TRUE) 
+        retDir <- file.path(dirname(dirname(retDir)), "0", self$getUID())
       
       # root?
       if (root == TRUE) {
-        retDir <- file.path(retDir, "../")
+        retDir <- file.path(dirname(retDir))
       } else if (!is.null(uID)) {
-        retDir <- file.path(retDir, "../", uID)
+        retDir <- file.path(dirname(retDir), uID)
       }
       
       normalizePath(retDir)

@@ -42,8 +42,6 @@ def run(params):
 
   # get image information
   im_paths = [os.path.join(zero_root_dir, x, im_source_name) for x in uids]
-  logfile_utils.log(uids)
-  logfile_utils.log(im_paths)
   
   input_arrays = [zarr_utils.open_as_zarr(x, as_dask = True) for x in im_paths]
   input_arrays = [x[0] for x in input_arrays]

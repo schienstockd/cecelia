@@ -20,12 +20,14 @@ CleanupImages <- R6::R6Class(
       if (!is.null(uID))
         cciaObj <- cciaObj$cciaObjects()[[uID]]
       
-      # reset channel information
-      cciaObj$setImFilepath(NULL, valueName = valueName)
-      cciaObj$setImChannelNames(NULL, valueName = valueName)
-      
-      # save object
-      cciaObj$saveState()
+      if (cciaObj$getCciaClass() == "CciaImage") {
+        # reset channel information
+        cciaObj$setImFilepath(NULL, valueName = valueName)
+        cciaObj$setImChannelNames(NULL, valueName = valueName)
+        
+        # save object
+        cciaObj$saveState()
+      }
     },
     
     # update image information after segmentation
@@ -37,27 +39,29 @@ CleanupImages <- R6::R6Class(
       # get object from set
       if (!is.null(uID))
         cciaObj <- cciaObj$cciaObjects()[[uID]]
-        
-      # set filename
-      cciaObj$setImFilepath(paste0(filename, ".zarr"), valueName = valueName)
       
-      # update channel information
-      if (length(addChannels) > 0) {
+      if (cciaObj$getCciaClass() == "CciaImage") {
+        # set filename
+        cciaObj$setImFilepath(paste0(filename, ".zarr"), valueName = valueName)
         
-        
-        # is the number of channels correct?
-        if (cciaObj$omeXMLPixels(reset = TRUE)$SizeC >= (length(cciaObj$imChannelNames()) + length(addChannels))) {
-          newChannelNames <- c(cciaObj$imChannelNames(), addChannels)
-          names(newChannelNames) <- c(names(cciaObj$imChannelNames()),
-                                      sprintf("Chn%d", length(newChannelNames)))
+        # update channel information
+        if (length(addChannels) > 0) {
           
-          cciaObj$setImChannelNames(newChannelNames,
-                                    valueName = valueName)
+          
+          # is the number of channels correct?
+          if (cciaObj$omeXMLPixels(reset = TRUE)$SizeC >= (length(cciaObj$imChannelNames()) + length(addChannels))) {
+            newChannelNames <- c(cciaObj$imChannelNames(), addChannels)
+            names(newChannelNames) <- c(names(cciaObj$imChannelNames()),
+                                        sprintf("Chn%d", length(newChannelNames)))
+            
+            cciaObj$setImChannelNames(newChannelNames,
+                                      valueName = valueName)
+          }
         }
-      }
       
-      # save object
-      cciaObj$saveState()
+        # save object
+        cciaObj$saveState()
+      }
     }
   )
 )

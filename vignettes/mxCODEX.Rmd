@@ -75,21 +75,6 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
 )
 
-unlist(unname(lapply(
-  cciaObj$cciaObjects(),
-  function(x) unname(which(x$imChannelNames() == "FOXP3")) - 1)))
-```
-
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
-)
-
 exp.info <- as.data.table(
   cciaObj$summary(withSelf = FALSE, fields = c("Attr")) %>%
     mutate(GroupSeq = as.numeric(GroupSeq)) %>%
