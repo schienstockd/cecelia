@@ -10,8 +10,7 @@ createTaskManager <- function(
   }
   
   # set buttons to enable selection from UI
-  if (managerConf$task$runTaskCombinedSelect == TRUE ||
-      managerConf$task$runTaskCombined == TRUE)
+  if (managerConf$task$runTaskCombinedSelect == TRUE)
     enable("runTaskCombined")
   
   ### Reactive values
@@ -722,7 +721,7 @@ createTaskManager <- function(
           funParams <- list()
           
           if (runTaskCombined() == TRUE || runTaskOnSet() == TRUE) 
-            funParams$uID <- moduleManagers()$selectionManager$selectedUIDs()
+            funParams$uIDs <- moduleManagers()$selectionManager$selectedUIDs()
           
           hpcTasks[["hpc.uploadCciaObj"]] <- list(
             funEnv = "local",

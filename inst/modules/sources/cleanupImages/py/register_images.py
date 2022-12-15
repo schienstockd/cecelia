@@ -98,7 +98,7 @@ def run(params):
     logfile_utils.log(f'>> Register {i}')
     
     # set slicing
-    slices[i][dim_utils[i].dim_idx('C')] = reg_channels[i]
+    slices[i + 1][dim_utils[i].dim_idx('C')] = reg_channels[i]
     
     # apply
     # TODO can you do this somehow in the low res image and then scale up .. ?
@@ -139,7 +139,7 @@ def run(params):
         reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
         im_slices[dim_utils[i + 1].dim_idx('C')] = j
         
-        logfile_utils.log(f'> Channel {k}')
+        logfile_utils.log(f'> Channel {j}')
         
         # push to zarr
         reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
