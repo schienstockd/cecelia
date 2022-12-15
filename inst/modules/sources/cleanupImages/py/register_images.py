@@ -73,6 +73,7 @@ def run(params):
   #   shutil.rmtree(im_reg_path)
   
   # create array
+  reg_zarr = zarr.open(im_reg_path)
   # reg_zarr = zarr.create(
   #   reg_im_shape,
   #   dtype = input_arrays[0][0].dtype,
@@ -153,8 +154,6 @@ def run(params):
     channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
 
   logfile_utils.log('>> save back')
-  
-  reg_zarr = zarr.open(im_reg_path)
   
   # save back
   zarr_utils.create_multiscales(
