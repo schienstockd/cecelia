@@ -99,14 +99,6 @@ def run(params):
   # go through arrays
   for i, x in enumerate(input_arrays[1:]):
     logfile_utils.log(f'>> Register {i}')
-    logfile_utils.log(do_fft_initialization)
-    logfile_utils.log(do_affine_2d)
-    logfile_utils.log(do_affine_3d)
-    logfile_utils.log(ignore_spacing)
-    logfile_utils.log(sigma)
-    logfile_utils.log(auto_mask)
-    logfile_utils.log(samples_per_parameter)
-    logfile_utils.log(expand)
     
     # set slicing
     slices[i][dim_utils[i].dim_idx('C')] = reg_channels[i]

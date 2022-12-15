@@ -68,7 +68,8 @@
         "label": "Registration channel",
         "widget:channelSelection": {
           "size": 1,
-          "multiple": false
+          "multiple": false,
+          "useNames": true
         }
       },
 			"doFftInitialization": {

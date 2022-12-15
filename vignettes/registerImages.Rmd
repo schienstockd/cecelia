@@ -113,10 +113,10 @@ task <- cciaObj$runTask(
   funParams = funParams,
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  # env = "local",
-  runInplace = FALSE,
-  # runInplace = TRUE,
+  # env = "hpc",
+  env = "local",
+  # runInplace = FALSE,
+  runInplace = TRUE,
   taskID = 1
 )
 ```
