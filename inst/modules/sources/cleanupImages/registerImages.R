@@ -79,8 +79,9 @@ RegisterImages <- R6::R6Class(
       self$writeLog("Done")
       self$exitLog()
       
-      # update image information
-      self$updateImageInfo(filename = "ccidRegistered", valueName = "registered")
+      # update image information for fixed image
+      self$updateImageInfo(
+        filename = "ccidRegistered", valueName = "registered", uID = uIDs[[0]])
     }
   )
 )

@@ -26,10 +26,14 @@ CleanupImages <- R6::R6Class(
     
     # update image information after segmentation
     updateImageInfo = function(addChannels = NULL, filename = "ccidCorrected",
-                               valueName = "corrected") {
+                               valueName = "corrected", uID = NULL) {
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      # get object from set
+      if (!is.null(uID))
+        cciaObj <- cciaObj$cciaObjects()[[uID]]
+        
       # set filename
       cciaObj$setImFilepath(paste0(filename, ".zarr"), valueName = valueName)
       

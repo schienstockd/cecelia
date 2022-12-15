@@ -105,7 +105,8 @@
         ),
         task = list(
           funLabel = "Cleanup method",
-          taskVarsToAdd = taskVarsToAdd
+          taskVarsToAdd = taskVarsToAdd,
+          runTaskCombined = TRUE
         )
       )
       
