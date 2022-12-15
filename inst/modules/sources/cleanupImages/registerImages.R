@@ -36,6 +36,7 @@ RegisterImages <- R6::R6Class(
       # imPaths <- lapply(
       #   cciaObj$cciaObjects(uIDs = uIDs),
       #   function(x) x$imFilepath(valueName = "default"))
+      zeroDir <- cciaObj$persistentObjectDirectory(zero = TRUE, uID = uIDs[[1]])
       zeroRootDir <- cciaObj$persistentObjectDirectory(root = TRUE, zero = TRUE)
       fixedImPath <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imFilepath(valueName = "default")
       
@@ -47,14 +48,8 @@ RegisterImages <- R6::R6Class(
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
-        fixedImPath = file.path(
-          self$envParams()$dirs$zero,
-          basename(fixedImPath)
-        ),
-        imRegPath = file.path(
-          self$envParams()$dirs$zero,
-          "ccidRegistered.zarr"
-        ),
+        fixedImPath = file.path(zeroDir, basename(fixedImPath)),
+        imRegPath = file.path(zeroDir, "ccidRegistered.zarr"),
         regChannels = regChannels,
         zeroRootDir = zeroRootDir,
         uIDs = uIDs,
