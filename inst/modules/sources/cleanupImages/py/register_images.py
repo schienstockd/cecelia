@@ -22,7 +22,7 @@ import numpy as np
 def run(params):
   # logging
   logfile_utils = script_utils.get_logfile_utils(params)
-
+  
   # init params
   fixed_im_path = script_utils.get_param(params, 'fixedImPath', default = '')
   zero_root_dir = script_utils.get_param(params, 'zeroRootDir', default = '')
@@ -39,18 +39,18 @@ def run(params):
   samples_per_parameter = script_utils.get_param(params, 'samplesPerParameter', default = 5000)
   expand = script_utils.get_param(params, 'expand', default = None)
   expand = expand if expand > 0 else None
-
+  
   # get image information
   im_paths = [os.path.join(zero_root_dir, x, im_source_name) for x in uids]
   
   input_arrays = [zarr_utils.open_as_zarr(x, as_dask = True) for x in im_paths]
   input_arrays = [x[0] for x in input_arrays]
-
+  
   # create dim utils for images
   dim_utils = [
     DimUtils(ome_xml_utils.parse_meta(x), use_channel_axis = True) for x in im_paths
   ]
-
+  
   for i, x in enumerate(dim_utils):
     x.calc_image_dimensions(input_arrays[i][0].shape)
   
@@ -85,7 +85,7 @@ def run(params):
   slices = [[slice(None) for _ in range(len(input_arrays[0][0].shape))]] * len(input_arrays)
   
   for i, x in enumerate(slices):
-    slices[i][dim_utils[i].dim_idx('T')] = 0
+  slices[i][dim_utils[i].dim_idx('T')] = 0
   
   # get transforms
   reg_tx = list()
@@ -114,7 +114,7 @@ def run(params):
     #   auto_mask = auto_mask,
     #   samples_per_parameter = samples_per_parameter,
     #   expand = expand))
-      
+  
   # apply transforms
   reg_slices = [slice(None) for _ in range(len(reg_zarr.shape))]
   im_slices = [slice(None) for _ in range(len(x[0].shape))]
@@ -129,37 +129,37 @@ def run(params):
   
   # go through arrays
   for i, x in enumerate(input_arrays[1:]):
-    # count channels to exclude registration channel
-    k = 0
-    
-    logfile_utils.log(f'>> Save {i}')
-    
-    # go through channels
-    for j in range(dim_utils[i + 1].dim_val('C')):
-      if j != reg_channels[0]:
-        # set slicing
-        reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
-        im_slices[dim_utils[i + 1].dim_idx('C')] = j
-        
-        logfile_utils.log(f'> Channel {j}')
-        
-        # push to zarr
-        # reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
-        #   fixed_image = fixed_im,
-        #   moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
-        #   transform = reg_tx[i]))
-          
-        k += 1
+  # count channels to exclude registration channel
+  k = 0
+  
+  logfile_utils.log(f'>> Save {i}')
+  
+  # go through channels
+  for j in range(dim_utils[i + 1].dim_val('C')):
+    if j != reg_channels[0]:
+      # set slicing
+      reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
+      im_slices[dim_utils[i + 1].dim_idx('C')] = j
+      
+      logfile_utils.log(f'> Channel {j}')
+      
+      # push to zarr
+      # reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
+      #   fixed_image = fixed_im,
+      #   moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
+      #   transform = reg_tx[i]))
+      
+      k += 1
     
     channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
-
+  
   logfile_utils.log('>> save back')
   
   # save back
   zarr_utils.create_multiscales(
     reg_zarr, im_reg_path,
     dim_utils = dim_utils[0], nscales = len(input_arrays[0]))
-
+  
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
     fixed_im_path, im_reg_path,
