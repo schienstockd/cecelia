@@ -85,7 +85,7 @@ def run(params):
   slices = [[slice(None) for _ in range(len(input_arrays[0][0].shape))]] * len(input_arrays)
   
   for i, x in enumerate(slices):
-  slices[i][dim_utils[i].dim_idx('T')] = 0
+    slices[i][dim_utils[i].dim_idx('T')] = 0
   
   # get transforms
   reg_tx = list()
