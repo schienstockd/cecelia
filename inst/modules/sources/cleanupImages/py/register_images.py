@@ -129,29 +129,29 @@ def run(params):
   
   # go through arrays
   for i, x in enumerate(input_arrays[1:]):
-  # count channels to exclude registration channel
-  k = 0
-  
-  logfile_utils.log(f'>> Save {i}')
-  
-  # go through channels
-  for j in range(dim_utils[i + 1].dim_val('C')):
-    if j != reg_channels[0]:
-      # set slicing
-      reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
-      im_slices[dim_utils[i + 1].dim_idx('C')] = j
-      
-      logfile_utils.log(f'> Channel {j}')
-      
-      # push to zarr
-      # reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
-      #   fixed_image = fixed_im,
-      #   moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
-      #   transform = reg_tx[i]))
-      
-      k += 1
+    # count channels to exclude registration channel
+    k = 0
     
-    channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
+    logfile_utils.log(f'>> Save {i}')
+    
+    # go through channels
+    for j in range(dim_utils[i + 1].dim_val('C')):
+      if j != reg_channels[0]:
+        # set slicing
+        reg_slices[dim_utils[0].dim_idx('C')] = channel_sum + k
+        im_slices[dim_utils[i + 1].dim_idx('C')] = j
+        
+        logfile_utils.log(f'> Channel {j}')
+        
+        # push to zarr
+        # reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
+        #   fixed_image = fixed_im,
+        #   moving_image = sitk.GetImageFromArray(np.squeeze(zarr_utils.fortify(x[0][tuple(im_slices)]))),
+        #   transform = reg_tx[i]))
+        
+        k += 1
+      
+      channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
   
   logfile_utils.log('>> save back')
   
