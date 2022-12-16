@@ -67,7 +67,7 @@ RegisterImages <- R6::R6Class(
       )
       
       # call python
-      self$pyScript("register_images", params)
+      # self$pyScript("register_images", params)
       
       # DONE
       self$writeLog("Done")
@@ -77,12 +77,12 @@ RegisterImages <- R6::R6Class(
       # addChannels <- append(
       #   cciaObj$cciaObjects(uIDs = uIDs[1])[[1]]$imChannelNames(
       #     valueName = "default", useNames = FALSE),
-      addChannels <- unlist(sapply(
+      addChannels <- unname(unlist(lapply(
         cciaObj$cciaObjects(uIDs = uIDs[2:length(uIDs)]),
         function(x) {
           y <- x$imChannelNames(valueName = "default", useNames = FALSE)
-          y[y != regChannel]
-        }))
+          unlist(y[y != regChannel])
+        })))
       
       # update image information for fixed image
       self$updateImageInfo(
