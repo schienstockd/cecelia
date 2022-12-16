@@ -81,31 +81,6 @@ exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 uIDs <- names(cciaObj$cciaObjects())
 uIDs <- uIDs[uIDs %in% exp.info[exp.info$Organ == "Liver",]$uID]
 
-regChannel <- "Hoechst"
-
-unname(unlist(lapply(
-        cciaObj$cciaObjects(uIDs = uIDs[2:length(uIDs)]),
-        function(x) {
-          y <- x$imChannelNames(valueName = "default", useNames = FALSE)
-          unlist(y[y != regChannel])
-        })))
-```
-
-```{r}
-# run clustering
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "Jg3ofZ", versionID = versionID, initReactivity = FALSE # Set
-)
-
-exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% exp.info[exp.info$Organ == "Liver",]$uID]
-
 # run task
 funParams <- list(
   uIDs = uIDs,

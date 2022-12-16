@@ -81,7 +81,7 @@ RegisterImages <- R6::R6Class(
         cciaObj$cciaObjects(uIDs = uIDs[2:length(uIDs)]),
         function(x) {
           y <- x$imChannelNames(valueName = "default", useNames = FALSE)
-          unlist(y[y != regChannel])
+          unlist(y[y != self$funParams()$regChannel])
         })))
       
       # update image information for fixed image
