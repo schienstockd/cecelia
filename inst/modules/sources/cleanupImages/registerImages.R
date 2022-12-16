@@ -67,7 +67,7 @@ RegisterImages <- R6::R6Class(
       )
       
       # call python
-      # self$pyScript("register_images", params)
+      self$pyScript("register_images", params)
       
       # DONE
       self$writeLog("Done")
