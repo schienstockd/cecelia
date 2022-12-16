@@ -41,6 +41,10 @@ def run(params):
   expand = expand if expand > 0 else None
   
   # get image information
+  logfile_utils.log(zero_root_dir)
+  logfile_utils.log(im_source_name)
+  logfile_utils.log(uids)
+  
   im_paths = [os.path.join(zero_root_dir, x, im_source_name) for x in uids]
   
   input_arrays = [zarr_utils.open_as_zarr(x, as_dask = True) for x in im_paths]
