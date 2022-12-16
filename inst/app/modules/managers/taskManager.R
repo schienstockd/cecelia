@@ -564,7 +564,7 @@ createTaskManager <- function(
       
       # add selected images as parameter?
       if (runTaskCombined() == TRUE) {
-        taskVars$fun$uIDs <- moduleManagers()$selectionManager$selectedUIDs()
+        taskVars$fun$uIDs <- unlist(moduleManagers()$selectionManager$selectedUIDs())
       }
       
       # watch exit only for HPC?
