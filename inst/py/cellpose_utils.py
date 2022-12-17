@@ -189,7 +189,12 @@ class CellposeUtils(SegmentationUtils):
         
         # add masks to list
         if np.max(masks) > 0:
-          model_masks.append(masks)
+          if x['matchAs'][0] == 'cyto':
+            cyto_masks.append(masks)
+          elif x['matchAs'][0] == 'nuc':
+            nuc_masks.append(masks)
+          else:
+            model_masks.append(masks)
 
     # combine masks
     max_label_val = 0
@@ -245,8 +250,8 @@ class CellposeUtils(SegmentationUtils):
     
     if len(cyto_masks) > 0:
       return {
-        'nuc': np.squeeze(merged_labels)
-        'base': np.squeeze(merged_labels)
+        'nuc': np.squeeze(nuc_labels)
+        'base': np.squeeze(cyto_labels)
       }
     else:
       return {'base': np.squeeze(merged_labels)}

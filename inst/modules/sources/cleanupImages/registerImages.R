@@ -41,7 +41,7 @@ RegisterImages <- R6::R6Class(
       fixedImPath <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imFilepath(valueName = "default")
       
       # convert registration channels to integers
-      regChannels <- unname(lapply(
+      regChannels <- unlist(lapply(
         cciaObj$cciaObjects(uIDs = uIDs),
         function(x) unname(which(x$imChannelNames(valueName = "default") == self$funParams()$regChannel)) - 1))
       
