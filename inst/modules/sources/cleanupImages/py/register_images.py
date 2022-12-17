@@ -141,6 +141,10 @@ def run(params):
         im_slices[dim_utils[i + 1].dim_idx('C')] = j
         
         logfile_utils.log(f'> Channel {j}')
+        logfile_utils.log(channel_sum)
+        logfile_utils.log(k)
+        logfile_utils.log(reg_slices)
+        logfile_utils.log(im_slices)
         
         # push to zarr
         reg_zarr[tuple(reg_slices)] = sitk.GetArrayFromImage(sitkibex.resample(
@@ -150,7 +154,7 @@ def run(params):
         
         k += 1
       
-      channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
+    channel_sum += (dim_utils[i + 1].dim_val('C') - 1)
   
   logfile_utils.log('>> save back')
   
