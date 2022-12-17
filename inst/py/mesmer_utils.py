@@ -92,9 +92,6 @@ class MesmerUtils(SegmentationUtils):
           threshold = threshold, rel_threshold = rel_threshold
         )
         
-        skimage.io.imsave('/Users/schiend/Downloads/A.png', X_train[0, ..., 0])
-        skimage.io.imsave('/Users/schiend/Downloads/B.png', X_train[0, ..., 1])
-        
         # apply filter
         if x['medianFilter'][0] > 0:
           if self.dim_utils.is_3D():
