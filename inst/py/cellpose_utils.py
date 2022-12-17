@@ -79,6 +79,8 @@ class CellposeUtils(SegmentationUtils):
 
     # save masks in list
     model_masks = list()
+    cyto_masks = list()
+    nuc_masks = list()
     
     # go through models
     for i, x in self.models.items():
@@ -202,7 +204,49 @@ class CellposeUtils(SegmentationUtils):
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
     for x in model_masks:
       merged_labels = np.maximum(merged_labels, x)
-
-    return {
-      'base': np.squeeze(merged_labels)
+    
+    # go through all nuclei labels
+        # TODO does every cell need a nucleus .. ?
+        for i in tqdm(np.unique(nuc_labels[0, ..., 0])):
+          cur_nuc = nuc_labels[0, ..., 0] == i
+          cur_cyto = cur_nuc * cyto_labels[0, ..., 0]
+      
+          # map onto cytoplasm labels
+          cyto_label_ids, cyto_label_freq = np.unique(
+            cur_cyto, return_counts = True
+          )
+          
+          if len(cyto_label_freq) > 1:
+            # get max index
+            # ie/ that cell which is overlapping most
+            max_idx = cyto_label_freq[1:].argmax(axis = 0)
+            
+            # get max label
+            cur_cyto_label = cyto_label_ids[1:][max_idx]
+    
+            # assign nucleus and cytoplasm back
+            cyto_labels_merged = np.maximum(
+              cyto_labels_merged,
+              (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label
+            )
+            nuc_labels_merged = np.maximum(
+              nuc_labels_merged,
+              (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label * cur_nuc
+            )
+            
+        # expand labels
+        if label_expansion > 0:
+          cyto_labels_merged = skimage.segmentation.expand_labels(cyto_labels_merged, label_expansion)
+          
+        # add masks to list
+        if np.max(nuc_labels_merged) > 0 and np.max(cyto_labels_merged) > 0:
+          model_masks['nuc'].append(nuc_labels_merged)
+          model_masks['cyto'].append(cyto_labels_merged)
+    
+    if len(cyto_masks) > 0:
+      return {
+        'nuc': np.squeeze(merged_labels)
+        'base': np.squeeze(merged_labels)
       }
+    else:
+      return {'base': np.squeeze(merged_labels)}
