@@ -12,7 +12,7 @@ Segment <- R6::R6Class(
     },
     
     # reset image information before segmentation
-    resetImageInfo = function(valueName = NULL) {
+    resetImageInfo = function(valueName = NULL, suffixes = list()) {
       if (is.null(valueName)) {
         valueName <- self$funParams()$valueName
       }
@@ -29,8 +29,10 @@ Segment <- R6::R6Class(
       
       # set spaceholder name
       spaceholder <- "SPACEHOLDER"
-      if (self$funParams()$callingFun == "mesmer") {
-        attr(spaceholder, "suffixes") <- c("cyto", "nuc")
+      # if (self$funParams()$callingFun %in% c("mesmer", "cellpose")) {
+      if (length(suffixes) > 0) {
+        # attr(spaceholder, "suffixes") <- c("cyto", "nuc")
+        attr(spaceholder, "suffixes") <- suffixes
       }
       
       # add halo

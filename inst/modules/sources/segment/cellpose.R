@@ -18,8 +18,16 @@ Cellpose <- R6::R6Class(
     
     # run
     run = function() {
+      # check whether to use suffixes or not
+      labelSuffixes <- c()
+      
+      if (all(c("cyto", "nuc") %in% sapply(self$funParams()$models, function(x) x$matchAs))) {
+        labelSuffixes <- c("cyto", "nuc")
+      }
+      
       # reset image information
-      self$resetImageInfo()
+      # self$resetImageInfo()
+      self$resetImageInfo(suffixes = labelSuffixes)
       
       self$initLog()
       self$writeLog("Start Cellpose segmentation")
@@ -49,6 +57,7 @@ Cellpose <- R6::R6Class(
           basename(cciaObj$imFilepath())
         ),
         models = models,
+        labelSuffixes = labelSuffixes,
         useOmni = FALSE,
         useGPU = if ("useGPU" %in% names(self$envParams()$conf))
           self$envParams()$conf$useGPU
@@ -86,7 +95,7 @@ Cellpose <- R6::R6Class(
       self$exitLog()
       
       # update image information
-      self$updateImageInfo()
+      self$updateImageInfo(labelSuffixes = labelSuffixes)
     }
   )
 )

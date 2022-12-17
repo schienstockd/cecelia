@@ -107,3 +107,70 @@ task <- cciaObj$runTask(
   taskID = 1
 )
 ```
+
+
+```{r}
+# segment
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "UEssFo", versionID = versionID, initReactivity = FALSE # Test
+)
+
+# run task
+funParams <- list(
+  valueName = "default",
+  models = list(
+    "1" = list(
+      "model" = "cyto2",
+      "matchAs" = "cyto",
+      "cellDiameter" = 10,
+      "cellChannels" = list("CD20"),
+      "normalise" = 0.99,
+      "threshold" = 0,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "subtractgaussianFilter" = 0,
+      "subtractCellDiameter" = 0
+    ),
+    "2" = list(
+      "model" = "cyto2",
+      "matchAs" = "nuc",
+      "cellDiameter" = 10,
+      "cellChannels" = list("Hoechst"),
+      "normalise" = 0.99,
+      "threshold" = 0,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "subtractgaussianFilter" = 0,
+      "subtractCellDiameter" = 0
+    )
+  ),
+  clearDepth = FALSE,
+  clearTouchingBorder = FALSE,
+  haloSize = 0,
+  blockSize = -1,
+  overlap = -1,
+  blockSizeZ = -1,
+  overlapZ = -1,
+  context = 1,
+  segment = TRUE,
+  updateMeasures = FALSE,
+  saveMeshes = FALSE
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.cellpose",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  # env = "hpc",
+  env = "local",
+  # runInplace = FALSE,
+  runInplace = TRUE,
+  taskID = 1
+)
+```

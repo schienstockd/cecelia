@@ -36,7 +36,7 @@ class SegmentationUtils:
     self.halo_size = script_utils.get_param(params, 'halo_size', default = 0)
     self.halo_whole_cell = script_utils.get_param(params, 'halo_whole_cell', default = False)
     self.rank_labels = script_utils.get_param(params, 'rank_labels', default = False)
-    self.labels_suffixes = script_utils.get_param(params, 'labels_suffixes', default = [])
+    self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -90,23 +90,25 @@ class SegmentationUtils:
     
     # add labels for halo
     if self.halo_size > 0:
-      self.labels_suffixes += ['halo']
+      self.label_suffixes += ['halo']
     
     self.labels_paths = {
       'base': os.path.join(self.task_dir, self.labels_filename)
     }
     
-    for x in self.labels_suffixes:
+    for x in self.label_suffixes:
       self.labels_paths[x] = os.path.join(self.task_dir, labels_parent, f'{labels_stem}_{x}{labels_suffix}')
         
+    # logging
+    self.logfile_utils = script_utils.get_logfile_utils(params)  
+      
     # keep segmentation labels matched?
     self.match_labels = False
-    if all([x in self.labels_suffixes for x in ['nuc', 'cyto']]):
+    if all([x in self.label_suffixes for x in ['nuc', 'cyto']]):
       self.match_labels = True
+      
+    self.logfile_utils.log(f'>> Match segmentation: {self.match_labels}')
         
-    # logging
-    self.logfile_utils = script_utils.get_logfile_utils(params)
-    
   """
   Predict objects
   """
@@ -129,7 +131,7 @@ class SegmentationUtils:
       # this will be the last step and
       # should be done on the whole image with Zarr arrays
       if self.measure is True:
-        self.logfile_utils.log("Measure labels")
+        self.logfile_utils.log('Measure labels')
 
         props = measure_utils.measure_from_zarr(
           labels, im_dat, self.dim_utils, self.logfile_utils,
@@ -335,8 +337,7 @@ class SegmentationUtils:
             x[x > 0] = x[x > 0] + cur_max_labels
             
             # merge with exisiting labels
-            labels[i][cur_slices] = np.maximum(
-              labels[i][cur_slices], x)
+            labels[i][cur_slices] = np.maximum(labels[i][cur_slices], x)
           
         # set current maximum from base
         # TODO is this a fair assumption?

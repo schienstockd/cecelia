@@ -24,6 +24,7 @@ def run(params):
   seg_params = {
     'ccia': params['ccia'],
     'models': params['models'],
+    'label_suffixes': params['labelSuffixes'],
     'remove_small_objects': params['minCellSize'],
     'subtract_edges': False,
     'process_as_zarr': True,
@@ -63,7 +64,7 @@ def run(params):
 def main():
   # get params
   params = script_utils.script_params(
-    flatten_except = ['models', 'modelsOrder']
+    flatten_except = ['models', 'modelsOrder', 'labelSuffixes']
   )
 
   # run cellpose

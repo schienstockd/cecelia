@@ -24,7 +24,7 @@ def run(params):
   seg_params = {
 	'ccia': params['ccia'],
 	'models': params['models'],
-	'labels_suffixes': ['nuc', 'cyto'],
+	'label_suffixes': ['nuc', 'cyto'],
 	'halo_size': params['haloSize'],
 	'halo_whole_cell': params['haloWholeCell'],
 	'remove_small_objects': params['minCellSize'],

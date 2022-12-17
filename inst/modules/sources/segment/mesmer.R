@@ -20,7 +20,7 @@ Mesmer <- R6::R6Class(
     # run
     run = function() {
       # reset image information
-      self$resetImageInfo()
+      self$resetImageInfo(suffixes = c("cyto", "nuc"))
       
       self$initLog()
       self$writeLog("Start Mesmer segmentation")

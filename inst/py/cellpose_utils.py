@@ -6,6 +6,8 @@ from py.segmentation_utils import SegmentationUtils
 import py.script_utils as script_utils
 import py.config_utils as cfg
 
+from tqdm import tqdm
+
 import scipy.ndimage as ndi
 import skimage.filters
 import skimage.morphology
@@ -88,6 +90,9 @@ class CellposeUtils(SegmentationUtils):
     for i, x in self.models.items():
       # get model
       cp_model = x['model'][0]
+      
+      self.logfile_utils.log(f'>> Evaluate {i}: {cp_model}')
+      self.logfile_utils.log(x['cellChannels'])
       
       if len(x['cellChannels']) > 0:
         # init model
@@ -221,6 +226,12 @@ class CellposeUtils(SegmentationUtils):
     # TODO does every cell need a nucleus .. ?
     # TODO generalise as this is the same as for mesmer
     if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:
+      self.logfile_utils.log(f'>> Merge nuclei and cyto')
+      
+      # save merged labels
+      nuc_labels_merged = np.zeros_like(interm_labels['nuc'])
+      cyto_labels_merged = np.zeros_like(interm_labels['cyto'])
+      
       for i in tqdm(np.unique(interm_labels['nuc'])):
         cur_nuc = interm_labels['nuc'] == i
         cur_cyto = cur_nuc * interm_labels['cyto']
@@ -245,9 +256,13 @@ class CellposeUtils(SegmentationUtils):
           )
           nuc_labels_merged = np.maximum(
             nuc_labels_merged,
-            (interm_labels['nuc'] == cur_cyto_label) * cur_cyto_label * cur_nuc
+            (interm_labels['cyto'] == cur_cyto_label) * cur_cyto_label * cur_nuc
           )
           
+      self.logfile_utils.log('merging results')
+      self.logfile_utils.log(np.max(nuc_labels_merged))
+      self.logfile_utils.log(np.max(cyto_labels_merged))
+      
       # add masks to list
       if np.max(nuc_labels_merged) > 0 and np.max(cyto_labels_merged) > 0:
         interm_labels['nuc'] = nuc_labels_merged
@@ -256,18 +271,16 @@ class CellposeUtils(SegmentationUtils):
     # final merge of cyto and base
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
     
-    # https://stackoverflow.com/a/16004611
-    if interm_labels.keys() & {'unmatched', 'cyto'}:
-      merged_labels = np.maximum(
-          interm_labels['cyto'], interm_labels['unmatched'])
+    if set({'unmatched', 'cyto'}).issubset(interm_labels.keys()):
+      merged_labels = np.maximum(interm_labels['cyto'], interm_labels['unmatched'])
     elif 'cyto' in interm_labels.keys():
       merged_labels = interm_labels['cyto']
-    else 'unmatched' in interm_labels.keys():
+    elif 'unmatched' in interm_labels.keys():
       merged_labels = interm_labels['unmatched']
     
     if 'nuc' in interm_labels.keys():
       return {
-        'nuc': np.squeeze(interm_labels['nuc'])
+        'nuc': np.squeeze(interm_labels['nuc']),
         'base': np.squeeze(merged_labels)
       }
     else:
