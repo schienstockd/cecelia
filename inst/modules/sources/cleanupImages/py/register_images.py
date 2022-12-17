@@ -155,9 +155,16 @@ def run(params):
   logfile_utils.log('>> save back')
   
   # save back
+  multiscales_file_path = im_reg_path + ".multiscales"
+  
   zarr_utils.create_multiscales(
-    reg_zarr, im_reg_path,
-    dim_utils = dim_utils[0], nscales = len(input_arrays[0]))
+    reg_zarr, multiscales_file_path,
+    dim_utils = dim_utils[0], nscales = len(input_arrays[0])
+  )
+  
+  # remove previous labels and rename multiscales
+  shutil.rmtree(im_reg_path)
+  os.rename(multiscales_file_path, im_reg_path)
   
   # add metadata
   ome_xml_utils.save_meta_in_zarr(

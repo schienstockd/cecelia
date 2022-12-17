@@ -78,9 +78,11 @@ class CellposeUtils(SegmentationUtils):
     label_shape = tuple(label_shape)
 
     # save masks in list
-    model_masks = list()
-    cyto_masks = list()
-    nuc_masks = list()
+    model_masks = {
+      'unmatched': list(),
+      'cyto': list(),
+      'nuc': list()
+      }
     
     # go through models
     for i, x in self.models.items():
@@ -190,68 +192,73 @@ class CellposeUtils(SegmentationUtils):
         # add masks to list
         if np.max(masks) > 0:
           if x['matchAs'][0] == 'cyto':
-            cyto_masks.append(masks)
+            model_masks['cyto'].append(masks)
           elif x['matchAs'][0] == 'nuc':
-            nuc_masks.append(masks)
+            model_masks['nuc'].append(masks)
           else:
-            model_masks.append(masks)
+            model_masks['unmatched'].append(masks)
 
     # combine masks
     max_label_val = 0
-    for i, x in enumerate(model_masks):
-      # add previous label value
-      model_masks[i][x > 0] += max_label_val
-
-      # get maximum label value
-      max_label_val = np.max(x)
+    
+    # TODO this will put unmatched labels as lowest
+    for i, x in 
+      for i, x in enumerate(model_masks):
+        # add previous label value
+        model_masks[i][x > 0] += max_label_val
+  
+        # get maximum label value
+        max_label_val = np.max(x)
+    
+    # go through all nuclei labels
+    # TODO does every cell need a nucleus .. ?
+    # TODO generalise as this is the same as for mesmer
+    if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:
+      for i in tqdm(np.unique(nuc_labels[0, ..., 0])):
+        cur_nuc = nuc_labels[0, ..., 0] == i
+        cur_cyto = cur_nuc * cyto_labels[0, ..., 0]
+    
+        # map onto cytoplasm labels
+        cyto_label_ids, cyto_label_freq = np.unique(
+          cur_cyto, return_counts = True
+        )
+        
+        if len(cyto_label_freq) > 1:
+          # get max index
+          # ie/ that cell which is overlapping most
+          max_idx = cyto_label_freq[1:].argmax(axis = 0)
+          
+          # get max label
+          cur_cyto_label = cyto_label_ids[1:][max_idx]
+  
+          # assign nucleus and cytoplasm back
+          cyto_labels_merged = np.maximum(
+            cyto_labels_merged,
+            (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label
+          )
+          nuc_labels_merged = np.maximum(
+            nuc_labels_merged,
+            (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label * cur_nuc
+          )
+          
+      # expand labels
+      if label_expansion > 0:
+        cyto_labels_merged = skimage.segmentation.expand_labels(cyto_labels_merged, label_expansion)
+        
+      # add masks to list
+      if np.max(nuc_labels_merged) > 0 and np.max(cyto_labels_merged) > 0:
+        model_masks['nuc'].append(nuc_labels_merged)
+        model_masks['cyto'].append(cyto_labels_merged)
     
     # merge together
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
     for x in model_masks:
       merged_labels = np.maximum(merged_labels, x)
     
-    # go through all nuclei labels
-        # TODO does every cell need a nucleus .. ?
-        for i in tqdm(np.unique(nuc_labels[0, ..., 0])):
-          cur_nuc = nuc_labels[0, ..., 0] == i
-          cur_cyto = cur_nuc * cyto_labels[0, ..., 0]
-      
-          # map onto cytoplasm labels
-          cyto_label_ids, cyto_label_freq = np.unique(
-            cur_cyto, return_counts = True
-          )
-          
-          if len(cyto_label_freq) > 1:
-            # get max index
-            # ie/ that cell which is overlapping most
-            max_idx = cyto_label_freq[1:].argmax(axis = 0)
-            
-            # get max label
-            cur_cyto_label = cyto_label_ids[1:][max_idx]
-    
-            # assign nucleus and cytoplasm back
-            cyto_labels_merged = np.maximum(
-              cyto_labels_merged,
-              (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label
-            )
-            nuc_labels_merged = np.maximum(
-              nuc_labels_merged,
-              (cyto_labels[0, ..., 0] == cur_cyto_label) * cur_cyto_label * cur_nuc
-            )
-            
-        # expand labels
-        if label_expansion > 0:
-          cyto_labels_merged = skimage.segmentation.expand_labels(cyto_labels_merged, label_expansion)
-          
-        # add masks to list
-        if np.max(nuc_labels_merged) > 0 and np.max(cyto_labels_merged) > 0:
-          model_masks['nuc'].append(nuc_labels_merged)
-          model_masks['cyto'].append(cyto_labels_merged)
-    
     if len(cyto_masks) > 0:
       return {
         'nuc': np.squeeze(nuc_labels)
-        'base': np.squeeze(cyto_labels)
+        'base': np.squeeze(merged_labels)
       }
     else:
       return {'base': np.squeeze(merged_labels)}

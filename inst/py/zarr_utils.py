@@ -113,7 +113,7 @@ Open labels as zarr array
 """
 def open_labels_as_zarr(filepath, multiscales = None):
   return zarr_data_to_list(
-    filepath, multiscales = multiscales, data_group = "labels")
+    filepath, multiscales = multiscales, data_group = 'labels')
   
 """
 Open zarr data as dask
@@ -231,9 +231,10 @@ https://zarr.readthedocs.io/en/stable/tutorial.html
 def create_multiscales(im_array, filepath, dim_utils = None,
                        x_idx = None, y_idx = None,
                        nscales = 1, keyword = 'datasets',
-                       ignore_channel = False, reference_zarr = None):
+                       ignore_channel = False, reference_zarr = None,
+                       mode = 'w'):
   # create multiscales
-  multiscales_zarr = zarr.open(filepath, mode = 'w')
+  multiscales_zarr = zarr.open(filepath, mode = mode)
   
   # add path information to attributes
   multiscales_zarr.attrs['multiscales'] = [{keyword: [

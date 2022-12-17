@@ -118,8 +118,7 @@ class SegmentationUtils:
         labels = dict()
         
         for i, x in self.labels_paths.items():
-          labels[i], group_info = zarr_utils.open_labels_as_zarr(
-            x, len(im_dat))
+          labels[i], group_info = zarr_utils.open_labels_as_zarr(x, len(im_dat))
         
         # get first level
         labels = {i: x[0] for i, x in labels.items()}
@@ -197,7 +196,7 @@ class SegmentationUtils:
             labels[i], multiscales_file_path,
             dim_utils = self.dim_utils,
             nscales = nscales,
-            keyword = "labels",
+            keyword = 'labels',
             ignore_channel = True
           )
           
