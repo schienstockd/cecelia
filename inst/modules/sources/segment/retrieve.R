@@ -17,6 +17,9 @@ Retrieve <- R6::R6Class(
     
     # run
     run = function() {
+      # get object first
+      self$runTasks("hpc.retrieveCciaObj")
+      
       # get object
       cciaObj <- self$cciaTaskObject()
       
@@ -99,8 +102,8 @@ Retrieve <- R6::R6Class(
       self$writeLog(taskLauncher$result(TRUE))
       
       # update image information
-      self$updateImageInfo(valueNames = self$funParams()$valueNames,
-                           labelSuffixes = as.list(labelSuffixes))
+      # self$updateImageInfo(valueNames = self$funParams()$valueNames,
+      #                      labelSuffixes = as.list(labelSuffixes))
       
       self$writeLog("Done")
       self$exitLog()

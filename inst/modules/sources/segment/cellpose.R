@@ -27,7 +27,7 @@ Cellpose <- R6::R6Class(
       
       # reset image information
       # self$resetImageInfo()
-      self$resetImageInfo(suffixes = labelSuffixes)
+      self$resetImageInfo(labelSuffixes = labelSuffixes)
       
       self$initLog()
       self$writeLog("Start Cellpose segmentation")
@@ -45,6 +45,12 @@ Cellpose <- R6::R6Class(
               unname(which(cciaObj$imChannelNames() == y)) - 1
             }, USE.NAMES = FALSE
           )
+          if (length(x$nucChannels) > 0)
+            x$nucChannels <- sapply(
+              x$nucChannels, function(y) {
+                unname(which(cciaObj$imChannelNames() == y)) - 1
+              }, USE.NAMES = FALSE
+            )
           
           x
         })

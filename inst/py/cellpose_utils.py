@@ -31,14 +31,16 @@ class CellposeUtils(SegmentationUtils):
   """
   get masks from model
   """
-  def get_masks(self, model_name, model, im, cell_diameter, normalise_intensity = False):
+  def get_masks(self, model_name, model, im, cell_diameter, normalise_intensity = False,
+                channels = [0, 0], channel_axis = None, z_axis = None):
     #TODO is there a better way to do this .. ?
     try:
       masks = np.zeros(1)
       
       if model_name in cfg.data['python']['cellpose']['models']:
         masks, flows, styles, diams = model.eval(
-          im, channels = [0,0], diameter = cell_diameter,
+          im, channels = channels, diameter = cell_diameter,
+          channel_axis = channel_axis, z_axis = z_axis,
           do_3D = self.dim_utils.is_3D(),
           batch_size = 4,
           augment = False, net_avg = False,
@@ -47,7 +49,8 @@ class CellposeUtils(SegmentationUtils):
           flow_threshold = 0.99)
       else:
         masks, flows, styles = model.eval(
-          im, channels = [0,0], diameter = cell_diameter,
+          im, channels = channels, diameter = cell_diameter,
+          channel_axis = channel_axis, z_axis = z_axis,
           do_3D = self.dim_utils.is_3D(),
           # batch_size = 8,
           # augment = True, net_avg = True,
@@ -64,6 +67,49 @@ class CellposeUtils(SegmentationUtils):
     return masks
 
   """
+  Prepare im for run
+  """
+  def prepare_im(self, im, model_params, normalise_percentile = 99.9):
+    # apply threshold?
+    if 'threshold' in model_params.keys() and model_params['threshold'][0] > 0:
+      im[im < model_params['threshold'][0]] = model_params['threshold'][0]
+      im = im - model_params['threshold'][0]
+      
+    # apply relative threshold?
+    if 'relThreshold' in model_params.keys() and model_params['relThreshold'][0] > 0:
+      rel_threshold = np.percentile(im, model_params['relThreshold'][0])
+      im[im < rel_threshold] = rel_threshold
+      im = im - rel_threshold
+      
+    # prepare image
+    im_to_predict = im
+    
+    if model_params['medianFilter'][0] > 0:
+      if self.dim_utils.is_3D():
+        median_selem = skimage.morphology.ball(model_params['medianFilter'][0])
+      else:
+        median_selem = skimage.morphology.disk(model_params['medianFilter'][0])
+      
+      im_to_predict = skimage.filters.median(im_to_predict, median_selem)
+    
+    im_to_predict = ndi.gaussian_filter(im_to_predict, model_params['gaussianFilter'][0])
+    
+    # normalise image
+    if normalise_percentile > 0:
+      # get min/max values for channels
+      max_percentile = np.percentile(im_to_predict, normalise_percentile)
+      min_percentile = np.percentile(im_to_predict, 100 - normalise_percentile)
+      
+      # calculate relative values
+      im_to_predict = (im_to_predict - min_percentile) / (max_percentile - min_percentile)
+      
+      # adjust
+      im_to_predict[im_to_predict < 0] = 0
+      im_to_predict[im_to_predict > 1] = 1
+    
+    return im_to_predict
+
+  """
   Predict slice
   """
   def predict_slice(self, im_dat, dat_slices):
@@ -71,11 +117,11 @@ class CellposeUtils(SegmentationUtils):
     
     # get label shape
     label_shape = list(cur_im_dat.shape)
-    label_shape.pop(self.dim_utils.dim_idx("C"))
+    label_shape.pop(self.dim_utils.dim_idx('C'))
     
     # remove time if present
     if self.dim_utils.is_timeseries():
-      label_shape.pop(self.dim_utils.dim_idx("T"))
+      label_shape.pop(self.dim_utils.dim_idx('T'))
      
     label_shape = tuple(label_shape)
 
@@ -113,27 +159,24 @@ class CellposeUtils(SegmentationUtils):
             )
         
         im = np.zeros(label_shape, dtype = np.uint32)
+        nuc_im = None
         
         for y in x['cellChannels']:
           im = np.maximum(
             im, np.squeeze(np.take(
-              cur_im_dat, y, axis = self.dim_utils.dim_idx("C"))
+              cur_im_dat, y, axis = self.dim_utils.dim_idx('C'))
               ))
-        
-        # squeeze image
-        #im = np.squeeze(im)
-        
-        # apply threshold?
-        if 'threshold' in x.keys() and x['threshold'][0] > 0:
-          im[im < x['threshold'][0]] = x['threshold'][0]
-          im = im - x['threshold'][0]
+              
+        # add nuclei channel?
+        if len(x['nucChannels']) > 0:
+          nuc_im = np.zeros(label_shape, dtype = np.uint32)
           
-        # apply relative threshold?
-        if 'relThreshold' in x.keys() and x['relThreshold'][0] > 0:
-          rel_threshold = np.percentile(im, x['relThreshold'][0])
-          im[im < rel_threshold] = rel_threshold
-          im = im - rel_threshold
-          
+          for y in x['nucChannels']:
+            nuc_im = np.maximum(
+              nuc_im, np.squeeze(np.take(
+                cur_im_dat, y, axis = self.dim_utils.dim_idx('C'))
+                ))
+
         cell_diameter = x['cellDiameter'][0]
         # normalise_intensity = x['normalise'][0]
         normalise_percentile = x['normalise'][0]
@@ -148,35 +191,35 @@ class CellposeUtils(SegmentationUtils):
         
         cell_diameter /= scaling_factor
         
-        # prepare image
-        im_to_predict = im
+        # squeeze image
+        #im = np.squeeze(im)
         
-        if x['medianFilter'][0] > 0:
-          if self.dim_utils.is_3D():
-            median_selem = skimage.morphology.ball(x['medianFilter'][0])
-          else:
-            median_selem = skimage.morphology.disk(x['medianFilter'][0])
+        # prepare images
+        # grayscale
+        channels = [0, 0]
+        channel_axis = None
+        z_axis = self.dim_utils.dim_idx('Z', ignore_time = True, squeeze = True)
+        im_to_predict = self.prepare_im(im, x, normalise_percentile = normalise_percentile)
+        nuc_im_to_predict = None
+        
+        if nuc_im is not None:
+          nuc_im_to_predict = self.prepare_im(nuc_im, x, normalise_percentile = normalise_percentile)
           
-          im_to_predict = skimage.filters.median(im_to_predict, median_selem)
+          # add nucleus channel to image
+          im_to_predict = np.stack((im_to_predict, nuc_im_to_predict), axis = -1)
+          channels = [1, 2]
+          channel_axis = len(im_to_predict.shape) - 1
         
-        im_to_predict = ndi.gaussian_filter(im_to_predict, x['gaussianFilter'][0])
+        self.logfile_utils.log(f'>> im shape {im_to_predict.shape}')
+        self.logfile_utils.log(f'> channels: {channels}')
+        self.logfile_utils.log(f'> channel_axis: {channel_axis}')
         
-        # normalise image
-        if normalise_percentile > 0:
-          # get min/max values for channels
-          max_percentile = np.percentile(im_to_predict, normalise_percentile)
-          min_percentile = np.percentile(im_to_predict, 100 - normalise_percentile)
-          
-          # calculate relative values
-          im_to_predict = (im_to_predict - min_percentile) / (max_percentile - min_percentile)
-          
-          # adjust
-          im_to_predict[im_to_predict < 0] = 0
-          im_to_predict[im_to_predict > 1] = 1
-        
+        ## EVAL ##
         masks = self.get_masks(
           cp_model, model, im_to_predict,
-          cell_diameter = cell_diameter)
+          cell_diameter = cell_diameter,
+          channels = channels, channel_axis = channel_axis,
+          z_axis = z_axis)
           # normalise_intensity = normalise_intensity)
         
         # merge labels?

@@ -116,6 +116,28 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "Gal2rO", versionID = versionID, initReactivity = FALSE # Test
+)
+
+cciaObj$valueSuffixes("imLabelsFilepath", valueName = "default")
+```
+
+```{r}
+# segment
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "UEssFo", versionID = versionID, initReactivity = FALSE # Test
+)
+```{r}
+# segment
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "UEssFo", versionID = versionID, initReactivity = FALSE # Test
 )
 

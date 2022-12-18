@@ -91,7 +91,7 @@ class DimUtils:
   def create_channel_slices(self, channel):
     # create slices to access data from store
     slice_list = [slice(None) for i in range(len(self.im_dim))]
-    slice_list[self.dim_idx("C")] = slice(channel, channel + 1, 1)
+    slice_list[self.dim_idx('C')] = slice(channel, channel + 1, 1)
     
     return tuple(slice_list)
 
@@ -317,7 +317,7 @@ class DimUtils:
     # ignore channel?
     if ignore_channel is True:
       if self.use_channel_axis is True:
-        dim_order.pop(self.dim_idx("C"))
+        dim_order.pop(self.dim_idx('C'))
         
     # ignore channel?
     # if processing a timeseries but only use one frame
@@ -449,8 +449,8 @@ class DimUtils:
       
     # remove further axis
     if ignore_channel_axis is True:
-      if "C" in array_order: array_order.remove("C")
-      if "C" in ref_order: ref_order.remove("C")
+      if 'C' in array_order: array_order.remove('C')
+      if 'C' in ref_order: ref_order.remove('C')
       
     if ignore_time_axis is True:
       if "T" in array_order: array_order.remove("T")
@@ -476,7 +476,7 @@ class DimUtils:
   def get_norm_range(self, im_dat, channels = None, min_perc = 2, max_perc = 98):
     if channels is not None:
       im_dat = np.take(im_dat, channels,
-        axis = self.dim_idx("C"))
+        axis = self.dim_idx('C'))
     
     norm_min = math.floor(np.percentile(im_dat.flatten(), min_perc))
     norm_max = math.ceil(np.percentile(im_dat.flatten(), max_perc))
