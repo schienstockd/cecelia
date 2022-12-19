@@ -213,6 +213,7 @@ class CellposeUtils(SegmentationUtils):
         self.logfile_utils.log(f'>> im shape {im_to_predict.shape}')
         self.logfile_utils.log(f'> channels: {channels}')
         self.logfile_utils.log(f'> channel_axis: {channel_axis}')
+        self.logfile_utils.log(f'> z_axis: {z_axis}')
         
         ## EVAL ##
         masks = self.get_masks(
