@@ -45,6 +45,13 @@
 							"default": 99.9
 						}
 					},
+					"stitchThreshold": {
+						"type:double": {
+							"min": 0,
+							"max": 1,
+							"default": 0.0
+						}
+					},
 					"mergeLabels": {
 						"type:boolean": {
 							"default": false
@@ -258,35 +265,42 @@
 							"step": 0.1
 						}
 					},
-					"mergeLabels": {
+					"stitchThreshold": {
 						"index": 6,
+						"label": "Stitch threshold",
+						"widget:slider": {
+							"step": 0.01
+						}
+					},
+					"mergeLabels": {
+						"index": 7,
 						"label": "Merge Labels",
 						"widget:checkbox": {
 						}
 					},
 					"threshold": {
-						"index": 7,
+						"index": 8,
 						"label": "Threshold",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"relThreshold": {
-						"index": 8,
+						"index": 9,
 						"label": "Relative threshold",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"medianFilter": {
-						"index": 9,
+						"index": 10,
 						"label": "Median filter",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"gaussianFilter": {
-						"index": 10,
+						"index": 11,
 						"label": "Gaussian filter",
 						"widget:slider": {
 							"step": 1

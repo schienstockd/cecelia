@@ -32,8 +32,7 @@ class CellposeUtils(SegmentationUtils):
   get masks from model
   """
   def get_masks(self, model_name, model, im, cell_diameter, normalise_intensity = False,
-                channels = [0, 0], channel_axis = None, z_axis = None, do_not_3D = False,
-                stitch_threshold = 0.0):
+                channels = [0, 0], channel_axis = None, z_axis = None, stitch_threshold = 0.0):
     #TODO is there a better way to do this .. ?
     try:
       masks = np.zeros(1)
@@ -41,7 +40,7 @@ class CellposeUtils(SegmentationUtils):
       do_3D = self.dim_utils.is_3D()
       
       # if that does not work well
-      if do_3D is True and do_not_3D is True:
+      if do_3D is True and stitch_threshold > 0:
         do_3D = False
         stitch_threshold = stitch_threshold
       
@@ -233,9 +232,7 @@ class CellposeUtils(SegmentationUtils):
           cell_diameter = cell_diameter,
           channels = channels, channel_axis = channel_axis,
           z_axis = z_axis,
-          # DEBUG there should be an option for that
-          do_not_3D = True,
-          stitch_threshold = 0.2
+          stitch_threshold = x['stitchThreshold'][0]
           )
           # normalise_intensity = normalise_intensity)
         
