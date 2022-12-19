@@ -82,7 +82,8 @@ class CellposeUtils(SegmentationUtils):
       im = im - rel_threshold
       
     # prepare image
-    im_to_predict = im
+    # im_to_predict = im
+    im_to_predict = np.squeeze(im)
     
     if model_params['medianFilter'][0] > 0:
       if self.dim_utils.is_3D():
@@ -191,16 +192,17 @@ class CellposeUtils(SegmentationUtils):
         
         cell_diameter /= scaling_factor
         
-        # squeeze image
-        #im = np.squeeze(im)
-        
         # prepare images
         # grayscale
         channels = [0, 0]
         channel_axis = None
-        z_axis = self.dim_utils.dim_idx('Z', ignore_time = True, squeeze = True)
+        z_axis = None
         im_to_predict = self.prepare_im(im, x, normalise_percentile = normalise_percentile)
         nuc_im_to_predict = None
+        
+        if self.dim_utils.is_3D():
+          # z_axis = self.dim_utils.dim_idx('Z', ignore_time = True, squeeze = True)
+          z_axis = 0
         
         if nuc_im is not None:
           nuc_im_to_predict = self.prepare_im(nuc_im, x, normalise_percentile = normalise_percentile)
