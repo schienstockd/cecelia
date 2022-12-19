@@ -32,16 +32,25 @@ class CellposeUtils(SegmentationUtils):
   get masks from model
   """
   def get_masks(self, model_name, model, im, cell_diameter, normalise_intensity = False,
-                channels = [0, 0], channel_axis = None, z_axis = None):
+                channels = [0, 0], channel_axis = None, z_axis = None, do_not_3D = False,
+                stitch_threshold = 0.0):
     #TODO is there a better way to do this .. ?
     try:
       masks = np.zeros(1)
+      
+      do_3D = self.dim_utils.is_3D()
+      
+      # if that does not work well
+      if do_not_3D is True:
+        do_3D = False
+        stitch_threshold = stitch_threshold
       
       if model_name in cfg.data['python']['cellpose']['models']:
         masks, flows, styles, diams = model.eval(
           im, channels = channels, diameter = cell_diameter,
           channel_axis = channel_axis, z_axis = z_axis,
-          do_3D = self.dim_utils.is_3D(),
+          do_3D = do_3D,
+          stitch_threshold = stitch_threshold,
           batch_size = 4,
           augment = False, net_avg = False,
           normalize = normalise_intensity,
@@ -51,7 +60,8 @@ class CellposeUtils(SegmentationUtils):
         masks, flows, styles = model.eval(
           im, channels = channels, diameter = cell_diameter,
           channel_axis = channel_axis, z_axis = z_axis,
-          do_3D = self.dim_utils.is_3D(),
+          do_3D = do_3D,
+          stitch_threshold = stitch_threshold,
           # batch_size = 8,
           # augment = True, net_avg = True,
           # normalize = True, invert = False,
@@ -222,7 +232,11 @@ class CellposeUtils(SegmentationUtils):
           cp_model, model, im_to_predict,
           cell_diameter = cell_diameter,
           channels = channels, channel_axis = channel_axis,
-          z_axis = z_axis)
+          z_axis = z_axis,
+          # DEBUG there should be an option for that
+          do_not_3D = True,
+          stitch_threshold = 0.2
+          )
           # normalise_intensity = normalise_intensity)
         
         # merge labels?
