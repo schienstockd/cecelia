@@ -41,7 +41,7 @@ class CellposeUtils(SegmentationUtils):
       do_3D = self.dim_utils.is_3D()
       
       # if that does not work well
-      if do_not_3D is True:
+      if do_3D is True and do_not_3D is True:
         do_3D = False
         stitch_threshold = stitch_threshold
       
