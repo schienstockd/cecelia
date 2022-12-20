@@ -412,7 +412,7 @@ class CellposeUtils(SegmentationUtils):
 
       # match cells to a nucleus - some cells might not have a nucleus
       labels_merged = self.match_cells_and_nuclei(
-        [interm_labels['nuc'], interm_labels['cyto']]
+        [interm_labels['nuc'], interm_labels['cyto']],
         # [interm_labels['cyto'], interm_labels['nuc']],
         stitch_threshold = self.match_threshold,
         remove_unmatched = self.remove_unmatched
