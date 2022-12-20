@@ -340,9 +340,13 @@ class SegmentationUtils:
             labels[i][cur_slices] = np.maximum(labels[i][cur_slices], x)
           
         # set current maximum from base
-        # TODO is this a fair assumption?
-        if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
-          cur_max_labels = alg_labels['base'].max()
+        # TODO is this a fair assumption? - No
+        # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
+        #   cur_max_labels = alg_labels['base'].max()
+        next_max_labels = [x.max() for x in alg_labels if x is not None and x.max() > 0]
+        
+        if len(next_max_labels) > 0:
+          cur_max_labels = max(next_max_labels)
       
     return labels
 
