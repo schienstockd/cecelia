@@ -226,6 +226,7 @@ class SegmentationUtils:
       if os.path.exists(x):
         shutil.rmtree(x)
       
+      self.logfile_utils.log(f'> Create label Zarr {i}: {x}')
       labels[i] = zarr.open(
         x,
         mode = 'w',
@@ -338,7 +339,6 @@ class SegmentationUtils:
             y[y > 0] = y[y > 0] + cur_max_labels
             
             self.logfile_utils.log(f'> place {j}: {y.shape}')
-            self.logfile_utils.log(np.unique(y))
             
             # merge with exisiting labels
             labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
