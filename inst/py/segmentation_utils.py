@@ -190,7 +190,8 @@ class SegmentationUtils:
       
       # generate multiscales for labels
       # TODO is there a more elegant way to do this .. ?
-      if nscales > 1:
+      # if nscales > 1:
+      if False is True:
         for i, x in self.labels_paths.items():
           multiscales_file_path = x + ".multiscales"
 
@@ -226,7 +227,6 @@ class SegmentationUtils:
       if os.path.exists(x):
         shutil.rmtree(x)
       
-      self.logfile_utils.log(f'> Create label Zarr {i}: {x}')
       labels[i] = zarr.open(
         x,
         mode = 'w',
@@ -337,8 +337,6 @@ class SegmentationUtils:
             # increase numbering
             # y[y > 0] = y[y > 0] + cur_max_labels[i]
             y[y > 0] = y[y > 0] + cur_max_labels
-            
-            self.logfile_utils.log(f'> place {j}: {y.shape} into {cur_slices}')
             
             # merge with exisiting labels
             labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
