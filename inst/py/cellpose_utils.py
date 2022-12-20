@@ -362,7 +362,7 @@ class CellposeUtils(SegmentationUtils):
         interm_labels[i] = np.zeros(label_shape, dtype = np.uint32)
         
         for y in model_masks[i]:
-          interm_labels[i] = np.maximum(interm_labels[i], y)
+          interm_labels[i] = np.squeeze(np.maximum(interm_labels[i], y))
     
     # match labels
     if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:
@@ -390,7 +390,6 @@ class CellposeUtils(SegmentationUtils):
     if set({'unmatched', 'cyto'}).issubset(interm_labels.keys()):
       merged_labels = np.maximum(interm_labels['cyto'], interm_labels['unmatched'])
     elif 'cyto' in interm_labels.keys():
-      self.logfile_utils.log('> take cyto')
       merged_labels = interm_labels['cyto']
     elif 'unmatched' in interm_labels.keys():
       merged_labels = interm_labels['unmatched']
