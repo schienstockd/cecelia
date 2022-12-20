@@ -380,9 +380,9 @@ class CellposeUtils(SegmentationUtils):
       self.logfile_utils.log(f'> Nuclei: {np.max(labels_merged[1])}')
       
       # add masks to list
-      if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
-        interm_labels['cyto'] = labels_merged[0]
-        interm_labels['nuc'] = labels_merged[1]
+      # if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
+      #   interm_labels['cyto'] = labels_merged[0]
+      #   interm_labels['nuc'] = labels_merged[1]
 
     # final merge of cyto and base
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
