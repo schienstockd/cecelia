@@ -345,10 +345,10 @@ class SegmentationUtils:
         #   cur_max_labels = alg_labels['base'].max()
         next_max_labels = [x.max() for x in alg_labels.values() if x is not None and x.max() > 0]
         
-        self.logfile_utils.log(f'>> Max labels {next_max_labels}')
-        
         if len(next_max_labels) > 0:
           cur_max_labels = max(next_max_labels)
+      
+        self.logfile_utils.log(f'>> Max label {cur_max_labels}')
       
     return labels
 
