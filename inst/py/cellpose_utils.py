@@ -162,7 +162,6 @@ class CellposeUtils(SegmentationUtils):
     # save merged labels
     mmax = masks[0].max()
     empty = 0
-    common_labels = list()
   
     for i in range(len(masks)-1):
       iou = self.intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
@@ -186,16 +185,18 @@ class CellposeUtils(SegmentationUtils):
         masks[i + 1] = istitch[masks[i + 1]]
         empty = 1
         
-      # remove labels that were not matched
-      if remove_unmatched is True:
-        # get common labels from all masks
+    # only accept common labels
+    if remove_unmatched is True:
+      common_labels = list()
+      
+      # get common labels from all masks
+      for i in range(len(masks)):
         if i > 0:
           common_labels = np.intersect1d(common_labels, masks[i])
         else:
           common_labels = np.unique(masks[i])
-        
-    # only accept common labels
-    if len(common_labels) > 0:
+      
+      # remove non-matched labels
       for i in range(len(masks)):
         masks[i] = masks[i] * np.isin(masks[i], common_labels)
     
