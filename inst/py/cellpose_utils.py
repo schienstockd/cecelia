@@ -356,7 +356,7 @@ class CellposeUtils(SegmentationUtils):
           model_masks[i][j][y > 0] += max_label_val
     
           # get maximum label value
-          max_label_val = np.max(y)
+          max_label_val = np.max(model_masks[i][j])
           
         # intermediate merge
         interm_labels[i] = np.zeros(label_shape, dtype = np.uint32)
