@@ -26,7 +26,7 @@ class CellposeUtils(SegmentationUtils):
     
     # init params
     self.models = params['models']
-    # self.use_omni = script_utils.get_param(params, 'use_omni', default = False)
+    self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
 
   """
   get masks from model
@@ -370,7 +370,7 @@ class CellposeUtils(SegmentationUtils):
       labels_merged = self.match_cells_and_nuclei(
         # [interm_labels['nuc'], interm_labels['cyto']]
         [interm_labels['cyto'], interm_labels['nuc']],
-        stitch_threshold = x['matchThreshold'][0],
+        stitch_threshold = self.match_threshold,
         remove_unmatched = True
       )
           

@@ -52,13 +52,6 @@
 							"default": 0.2
 						}
 					},
-					"matchThreshold": {
-						"type:double": {
-							"min": 0,
-							"max": 1,
-							"default": 0.75
-						}
-					},
 					"mergeLabels": {
 						"type:boolean": {
 							"default": false
@@ -94,6 +87,13 @@
 					}
         }
       },
+			"matchThreshold": {
+  			"type:double": {
+  				"min": 0,
+  				"max": 1,
+  				"default": 0.8
+  			}
+			},
 			"minCellSize": {
 				"type:integer": {
 					"min": 0,
@@ -279,42 +279,35 @@
 							"step": 0.05
 						}
 					},
-					"matchThreshold": {
-						"index": 7,
-						"label": "Match threshold",
-						"widget:slider": {
-							"step": 0.05
-						}
-					},
 					"mergeLabels": {
-						"index": 8,
+						"index": 7,
 						"label": "Merge Labels",
 						"widget:checkbox": {
 						}
 					},
 					"threshold": {
-						"index": 9,
+						"index": 8,
 						"label": "Threshold",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"relThreshold": {
-						"index": 10,
+						"index": 9,
 						"label": "Relative threshold",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"medianFilter": {
-						"index": 11,
+						"index": 10,
 						"label": "Median filter",
 						"widget:slider": {
 							"step": 1
 						}
 					},
 					"gaussianFilter": {
-						"index": 12,
+						"index": 11,
 						"label": "Gaussian filter",
 						"widget:slider": {
 							"step": 1
@@ -322,113 +315,120 @@
 					}
 				}
       },
-			"minCellSize": {
+  		"matchThreshold": {
 				"index": 2,
+				"label": "Match threshold",
+				"widget:slider": {
+					"step": 0.05
+				}
+			},
+			"minCellSize": {
+				"index": 3,
 				"label": "Minimum cell size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"labelExpansion": {
-				"index": 3,
+				"index": 4,
 				"label": "Cell expansion",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"labelErosion": {
-				"index": 4,
+				"index": 5,
 				"label": "Cell erosion",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"haloSize": {
-				"index": 5,
+				"index": 6,
 				"label": "Halo size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"haloWholeCell": {
-				"index": 6,
+				"index": 7,
 				"label": "Halo whole cell",
 				"widget:checkbox": {
 				}
 			},
 			"blockSize": {
-				"index": 7,
+				"index": 8,
 				"label": "Block size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"overlap": {
-				"index": 8,
+				"index": 9,
 				"label": "Overlap",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"blockSizeZ": {
-				"index": 9,
+				"index": 10,
 				"label": "Block size Z",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"overlapZ": {
-				"index": 10,
+				"index": 11,
 				"label": "Overlap Z",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"context": {
-				"index": 11,
+				"index": 12,
 				"label": "Context",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"clearDepth": {
-				"index": 12,
+				"index": 13,
 				"label": "Clear depth",
 				"widget:checkbox": {
 				}
 			},
 			"clearTouchingBorder": {
-				"index": 13,
+				"index": 14,
 				"label": "Clear borders",
 				"widget:checkbox": {
 				}
 			},
 			"segment": {
-				"index": 14,
+				"index": 15,
 				"label": "Segment image",
 				"widget:checkbox": {
 				}
 			},
 			"updateMeasures": {
-				"index": 15,
+				"index": 16,
 				"label": "Update properties",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeasures": {
-				"index": 16,
+				"index": 17,
 				"label": "Save Measures",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeshes": {
-				"index": 17,
+				"index": 18,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 18,
+				"index": 19,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}
