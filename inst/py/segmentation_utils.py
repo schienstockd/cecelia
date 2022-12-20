@@ -329,25 +329,29 @@ class SegmentationUtils:
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
+        next_max_labels = list()
         
-        for i, x in alg_labels.items():
-          if x is not None:
+        for j, y in alg_labels.items():
+          if y is not None:
             # increase numbering
-            # x[x > 0] = x[x > 0] + cur_max_labels[i]
-            x[x > 0] = x[x > 0] + cur_max_labels
+            # y[y > 0] = y[y > 0] + cur_max_labels[i]
+            y[y > 0] = y[y > 0] + cur_max_labels
             
-            self.logfile_utils.log(f'> place {i}: {x.shape}')
-            self.logfile_utils.log(np.unique(x))
+            self.logfile_utils.log(f'> place {j}: {y.shape}')
+            self.logfile_utils.log(np.unique(y))
             
             # merge with exisiting labels
-            labels[i][cur_slices] = np.maximum(labels[i][cur_slices], x)
+            labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
+            
+            y_max_label = y.max()
+            
+            if y_max_label > 0:
+              next_max_labels.append(y_max_label)
           
         # set current maximum from base
         # TODO is this a fair assumption? - No
         # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
         #   cur_max_labels = alg_labels['base'].max()
-        next_max_labels = [x.max() for x in alg_labels.values() if x is not None and x.max() > 0]
-        
         if len(next_max_labels) > 0:
           cur_max_labels = max(next_max_labels)
       
