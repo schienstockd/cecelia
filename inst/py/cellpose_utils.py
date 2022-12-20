@@ -392,6 +392,9 @@ class CellposeUtils(SegmentationUtils):
       merged_labels = interm_labels['cyto']
     elif 'unmatched' in interm_labels.keys():
       merged_labels = interm_labels['unmatched']
+      
+    self.logfile_utils.log(interm_labels['nuc'].shape)
+    self.logfile_utils.log(merged_labels.shape)
     
     if 'nuc' in interm_labels.keys():
       return {
