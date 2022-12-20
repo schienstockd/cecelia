@@ -362,7 +362,7 @@ class CellposeUtils(SegmentationUtils):
         interm_labels[i] = np.zeros(label_shape, dtype = np.uint32)
         
         for y in model_masks[i]:
-          interm_labels[i] = np.squeeze(np.maximum(interm_labels[i], y))
+          interm_labels[i] = np.maximum(interm_labels[i], y)
     
     # match labels
     if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:

@@ -65,7 +65,7 @@ class SegmentationUtils:
     self.timepoints = None
     if self.dim_utils.is_timeseries() is True:
       self.timepoints = script_utils.get_param(params, 'timepoints',
-        default = list(range(self.dim_utils.dim_val("T"))))
+        default = list(range(self.dim_utils.dim_val('T'))))
 
     # process as zarr?
     self.process_as_zarr = script_utils.get_param(params, 'process_as_zarr', default = False)
@@ -216,8 +216,8 @@ class SegmentationUtils:
     zarr_shape = list(im_dat.shape)
     zarr_chunks = list(zarr_utils.chunks(im_dat))
 
-    zarr_shape.pop(self.dim_utils.dim_idx("C"))
-    zarr_chunks.pop(self.dim_utils.dim_idx("C"))
+    zarr_shape.pop(self.dim_utils.dim_idx('C'))
+    zarr_chunks.pop(self.dim_utils.dim_idx('C'))
     
     # create empty zarr file
     labels = dict()
@@ -244,20 +244,20 @@ class SegmentationUtils:
     
     # clear borders?
     if self.dim_utils.is_timeseries() is True:
-      clear_borders = len(slices) > self.dim_utils.dim_val("T")
+      clear_borders = len(slices) > self.dim_utils.dim_val('T')
     else:
       clear_borders = len(slices) > 1
     
     # go through slices
     for i, cur_slices in enumerate(slices):
-      self.logfile_utils.log(">> Slice: " + str(i + 1) + "/" + str(len(slices)))
+      self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
       
       # add channel back for slice prediction
       if len(cur_slices) < len(im_dat.shape):
         dat_slices = list(cur_slices)
-        dat_slices.insert(self.dim_utils.dim_idx("C"), slice(None))
+        dat_slices.insert(self.dim_utils.dim_idx('C'), slice(None))
         dat_slices = tuple(dat_slices)
       
       # call segmentation implementation
@@ -297,7 +297,7 @@ class SegmentationUtils:
             # be merged together
             if self.dim_utils.is_timeseries() is True:
               alg_labels[j] = np.expand_dims(
-                alg_labels[j], axis = self.dim_utils.dim_idx("T"))
+                alg_labels[j], axis = self.dim_utils.dim_idx('T'))
             
             # rank label ids
             # TODO not run run when labels have to be matched .. ?
@@ -344,6 +344,8 @@ class SegmentationUtils:
         # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
         #   cur_max_labels = alg_labels['base'].max()
         next_max_labels = [x.max() for x in alg_labels.values() if x is not None and x.max() > 0]
+        
+        self.logfile_utils.log(f'>> Max labels {next_max_labels}')
         
         if len(next_max_labels) > 0:
           cur_max_labels = max(next_max_labels)
