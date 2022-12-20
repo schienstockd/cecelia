@@ -372,7 +372,7 @@ class CellposeUtils(SegmentationUtils):
         # [interm_labels['nuc'], interm_labels['cyto']]
         [interm_labels['cyto'], interm_labels['nuc']],
         stitch_threshold = self.match_threshold,
-        remove_unmatched = True
+        remove_unmatched = False
       )
           
       self.logfile_utils.log(f'> Cells: {np.max(labels_merged[0])}')
@@ -393,9 +393,6 @@ class CellposeUtils(SegmentationUtils):
     elif 'unmatched' in interm_labels.keys():
       merged_labels = interm_labels['unmatched']
       
-    self.logfile_utils.log(interm_labels['nuc'].shape)
-    self.logfile_utils.log(merged_labels.shape)
-    
     if 'nuc' in interm_labels.keys():
       return {
         'nuc': np.squeeze(interm_labels['nuc']),
