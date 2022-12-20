@@ -196,7 +196,7 @@ class CellposeUtils(SegmentationUtils):
         
     # only accept common labels
     if len(common_labels) > 0:
-      for i in range(len(masks)-1):
+      for i in range(len(masks)):
         masks[i] = masks[i] * np.isin(masks[i], common_labels)
     
     return masks
