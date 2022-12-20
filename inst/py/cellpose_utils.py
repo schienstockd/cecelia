@@ -368,21 +368,21 @@ class CellposeUtils(SegmentationUtils):
     if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:
       self.logfile_utils.log(f'>> Merge nuclei and cyto')
       
-      # match cells to a nucleus - some cells might not have a nucleus
-      labels_merged = self.match_cells_and_nuclei(
-        # [interm_labels['nuc'], interm_labels['cyto']]
-        [interm_labels['cyto'], interm_labels['nuc']],
-        stitch_threshold = self.match_threshold,
-        remove_unmatched = self.remove_unmatched
-      )
-          
-      self.logfile_utils.log(f'> Cells: {np.max(labels_merged[0])}')
-      self.logfile_utils.log(f'> Nuclei: {np.max(labels_merged[1])}')
-      
-      # add masks to list
-      if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
-        interm_labels['cyto'] = labels_merged[0]
-        interm_labels['nuc'] = labels_merged[1]
+      # # match cells to a nucleus - some cells might not have a nucleus
+      # labels_merged = self.match_cells_and_nuclei(
+      #   # [interm_labels['nuc'], interm_labels['cyto']]
+      #   [interm_labels['cyto'], interm_labels['nuc']],
+      #   stitch_threshold = self.match_threshold,
+      #   remove_unmatched = self.remove_unmatched
+      # )
+      #     
+      # self.logfile_utils.log(f'> Cells: {np.max(labels_merged[0])}')
+      # self.logfile_utils.log(f'> Nuclei: {np.max(labels_merged[1])}')
+      # 
+      # # add masks to list
+      # if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
+      #   interm_labels['cyto'] = labels_merged[0]
+      #   interm_labels['nuc'] = labels_merged[1]
 
     # final merge of cyto and base
     merged_labels = np.zeros(label_shape, dtype = np.uint32)

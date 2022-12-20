@@ -190,21 +190,21 @@ class SegmentationUtils:
       
       # generate multiscales for labels
       # TODO is there a more elegant way to do this .. ?
-      # if nscales > 1:
-      #   for i, x in self.labels_paths.items():
-      #     multiscales_file_path = x + ".multiscales"
-      #     
-      #     zarr_utils.create_multiscales(
-      #       labels[i], multiscales_file_path,
-      #       dim_utils = self.dim_utils,
-      #       nscales = nscales,
-      #       keyword = 'labels',
-      #       ignore_channel = True
-      #     )
-      #     
-      #     # remove previous labels and rename multiscales
-      #     shutil.rmtree(x)
-      #     os.rename(multiscales_file_path, x)
+      if nscales > 1:
+        for i, x in self.labels_paths.items():
+          multiscales_file_path = x + ".multiscales"
+
+          zarr_utils.create_multiscales(
+            labels[i], multiscales_file_path,
+            dim_utils = self.dim_utils,
+            nscales = nscales,
+            keyword = 'labels',
+            ignore_channel = True
+          )
+
+          # remove previous labels and rename multiscales
+          shutil.rmtree(x)
+          os.rename(multiscales_file_path, x)
       
     return labels
 
