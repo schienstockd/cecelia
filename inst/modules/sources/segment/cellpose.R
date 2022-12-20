@@ -69,8 +69,8 @@ Cellpose <- R6::R6Class(
           self$envParams()$conf$useGPU
         else
           FALSE,
-        # matchThreshold = self$funParams()$matchThreshold,
-        # removeUnmatched = self$funParams()$removeUnmatched,
+        matchThreshold = self$funParams()$matchThreshold,
+        removeUnmatched = self$funParams()$removeUnmatched,
         minCellSize = self$funParams()$minCellSize,
         haloSize = self$funParams()$haloSize,
         haloWholeCell = self$funParams()$haloWholeCell,

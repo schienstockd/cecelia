@@ -26,8 +26,8 @@ class CellposeUtils(SegmentationUtils):
     
     # init params
     self.models = params['models']
-    # self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
-    # self.remove_unmatched = script_utils.get_param(params, 'remove_unmatched', default = True)
+    self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
+    self.remove_unmatched = script_utils.get_param(params, 'remove_unmatched', default = True)
 
   """
   get masks from model
