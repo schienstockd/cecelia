@@ -94,6 +94,11 @@
   				"default": 0.8
   			}
 			},
+			"removeUnmatched": {
+  			"type:boolean": {
+  				"default": true
+  			}
+			},
 			"minCellSize": {
 				"type:integer": {
 					"min": 0,
@@ -322,113 +327,119 @@
 					"step": 0.05
 				}
 			},
-			"minCellSize": {
+  		"removeUnmatched": {
 				"index": 3,
+				"label": "Remove unmatched",
+				"widget:checkbox": {
+				}
+			},
+			"minCellSize": {
+				"index": 4,
 				"label": "Minimum cell size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"labelExpansion": {
-				"index": 4,
+				"index": 5,
 				"label": "Cell expansion",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"labelErosion": {
-				"index": 5,
+				"index": 6,
 				"label": "Cell erosion",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"haloSize": {
-				"index": 6,
+				"index": 7,
 				"label": "Halo size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"haloWholeCell": {
-				"index": 7,
+				"index": 8,
 				"label": "Halo whole cell",
 				"widget:checkbox": {
 				}
 			},
 			"blockSize": {
-				"index": 8,
+				"index": 9,
 				"label": "Block size",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"overlap": {
-				"index": 9,
+				"index": 10,
 				"label": "Overlap",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"blockSizeZ": {
-				"index": 10,
+				"index": 11,
 				"label": "Block size Z",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"overlapZ": {
-				"index": 11,
+				"index": 12,
 				"label": "Overlap Z",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"context": {
-				"index": 12,
+				"index": 13,
 				"label": "Context",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"clearDepth": {
-				"index": 13,
+				"index": 14,
 				"label": "Clear depth",
 				"widget:checkbox": {
 				}
 			},
 			"clearTouchingBorder": {
-				"index": 14,
+				"index": 15,
 				"label": "Clear borders",
 				"widget:checkbox": {
 				}
 			},
 			"segment": {
-				"index": 15,
+				"index": 16,
 				"label": "Segment image",
 				"widget:checkbox": {
 				}
 			},
 			"updateMeasures": {
-				"index": 16,
+				"index": 17,
 				"label": "Update properties",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeasures": {
-				"index": 17,
+				"index": 18,
 				"label": "Save Measures",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeshes": {
-				"index": 18,
+				"index": 19,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 19,
+				"index": 20,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}
