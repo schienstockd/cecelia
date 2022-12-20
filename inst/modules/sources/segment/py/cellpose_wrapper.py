@@ -40,8 +40,8 @@ def run(params):
     'use_gpu': params['useGPU'],
     # 'use_omni': params['useOmni'] if 'useOmni' in params else False,
     # segmentation blocks
-    'match_threshold': params['matchThreshold'],
-    'remove_unmatched': params['removeUnmatched'],
+    # 'match_threshold': params['matchThreshold'],
+    # 'remove_unmatched': params['removeUnmatched'],
     'halo_size': params['haloSize'],
     'halo_whole_cell': params['haloWholeCell'],
     'label_expansion': params['labelExpansion'],

@@ -26,8 +26,8 @@ class CellposeUtils(SegmentationUtils):
     
     # init params
     self.models = params['models']
-    self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
-    self.remove_unmatched = script_utils.get_param(params, 'remove_unmatched', default = True)
+    # self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
+    # self.remove_unmatched = script_utils.get_param(params, 'remove_unmatched', default = True)
 
   """
   get masks from model
@@ -154,54 +154,97 @@ class CellposeUtils(SegmentationUtils):
         
     return overlap
 
+  # """
+  # TODO this is ok - but it merges too many cells
+  # Match cells and nuclei
+  # adapted from cellpose.utils.stitch3D
+  # https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
+  # """
+  # def match_cells_and_nuclei(self, masks, stitch_threshold = 0.2, remove_unmatched = False):
+  #   # save merged labels
+  #   mmax = masks[0].max()
+  #   empty = 0
+  # 
+  #   for i in range(len(masks)-1):
+  #     iou = self.intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
+  #     if not iou.size and empty == 0:
+  #       masks[i + 1] = masks[i + 1]
+  #       mmax = masks[i + 1].max()
+  #     elif not iou.size and not empty == 0:
+  #       icount = masks[i + 1].max()
+  #       istitch = np.arange(mmax + 1, mmax + icount + 1, 1, int)
+  #       mmax += icount
+  #       istitch = np.append(np.array(0), istitch)
+  #       masks[i + 1] = istitch[masks[i + 1]]
+  #     else:
+  #       iou[iou < stitch_threshold] = 0.0
+  #       iou[iou < iou.max(axis = 0)] = 0.0
+  #       istitch = iou.argmax(axis = 1) + 1
+  #       ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
+  #       istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, int)
+  #       mmax += len(ino)
+  #       istitch = np.append(np.array(0), istitch)
+  #       masks[i + 1] = istitch[masks[i + 1]]
+  #       empty = 1
+  #       
+  #   # only accept common labels
+  #   if remove_unmatched is True:
+  #     common_labels = list()
+  #     
+  #     # get common labels from all masks
+  #     for i in range(len(masks)):
+  #       if i > 0:
+  #         common_labels = np.intersect1d(common_labels, masks[i])
+  #       else:
+  #         common_labels = np.unique(masks[i])
+  #     
+  #     # remove non-matched labels
+  #     for i in range(len(masks)):
+  #       masks[i] = masks[i] * np.isin(masks[i], common_labels)
+  #   
+  #   return masks
+  
   """
   Match cells and nuclei
-  adapted from cellpose.utils.stitch3D
-  https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
+  TODO this is slow
   """
-  def match_cells_and_nuclei(self, masks, stitch_threshold = 0.2, remove_unmatched = False):
+  def match_cells_and_nuclei(self, nuc_im, cyto_im):
     # save merged labels
-    mmax = masks[0].max()
-    empty = 0
-  
-    for i in range(len(masks)-1):
-      iou = self.intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
-      if not iou.size and empty == 0:
-        masks[i + 1] = masks[i + 1]
-        mmax = masks[i + 1].max()
-      elif not iou.size and not empty == 0:
-        icount = masks[i + 1].max()
-        istitch = np.arange(mmax + 1, mmax + icount + 1, 1, int)
-        mmax += icount
-        istitch = np.append(np.array(0), istitch)
-        masks[i + 1] = istitch[masks[i + 1]]
-      else:
-        iou[iou < stitch_threshold] = 0.0
-        iou[iou < iou.max(axis = 0)] = 0.0
-        istitch = iou.argmax(axis = 1) + 1
-        ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
-        istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, int)
-        mmax += len(ino)
-        istitch = np.append(np.array(0), istitch)
-        masks[i + 1] = istitch[masks[i + 1]]
-        empty = 1
-        
-    # only accept common labels
-    if remove_unmatched is True:
-      common_labels = list()
-      
-      # get common labels from all masks
-      for i in range(len(masks)):
-        if i > 0:
-          common_labels = np.intersect1d(common_labels, masks[i])
-        else:
-          common_labels = np.unique(masks[i])
-      
-      # remove non-matched labels
-      for i in range(len(masks)):
-        masks[i] = masks[i] * np.isin(masks[i], common_labels)
+    nuc_labels_merged = np.zeros_like(nuc_im)
+    cyto_labels_merged = np.zeros_like(cyto_im)
     
-    return masks
+    for i in tqdm(np.unique(nuc_im)):
+      cur_nuc = nuc_im == i
+      cur_cyto = cur_nuc * cyto_im
+  
+      # map onto cytoplasm labels
+      cyto_label_ids, cyto_label_freq = np.unique(
+        cur_cyto, return_counts = True
+      )
+      
+      if len(cyto_label_freq) > 1:
+        # get max index
+        # ie/ that cell which is overlapping most
+        max_idx = cyto_label_freq[1:].argmax(axis = 0)
+        
+        # get max label
+        cur_cyto_label = cyto_label_ids[1:][max_idx]
+
+        # assign nucleus and cytoplasm back
+        cyto_labels_merged = np.maximum(
+          cyto_labels_merged,
+          (cyto_im == cur_cyto_label) * cur_cyto_label
+        )
+        nuc_labels_merged = np.maximum(
+          nuc_labels_merged,
+          (cyto_im == cur_cyto_label) * cur_cyto_label * cur_nuc
+        )
+        
+    self.logfile_utils.log('merging results')
+    self.logfile_utils.log(np.max(nuc_labels_merged))
+    self.logfile_utils.log(np.max(cyto_labels_merged))
+    
+    return nuc_labels_merged, cyto_labels_merged
 
   """
   Predict slice
@@ -369,20 +412,26 @@ class CellposeUtils(SegmentationUtils):
       self.logfile_utils.log(f'>> Merge nuclei and cyto')
 
       # match cells to a nucleus - some cells might not have a nucleus
-      labels_merged = self.match_cells_and_nuclei(
-        # [interm_labels['nuc'], interm_labels['cyto']]
-        [interm_labels['cyto'], interm_labels['nuc']],
-        stitch_threshold = self.match_threshold,
-        remove_unmatched = self.remove_unmatched
+      # labels_merged = self.match_cells_and_nuclei(
+      #   # [interm_labels['nuc'], interm_labels['cyto']]
+      #   [interm_labels['cyto'], interm_labels['nuc']],
+      #   stitch_threshold = self.match_threshold,
+      #   remove_unmatched = self.remove_unmatched
+      # )
+      labels_merged_nuc, labels_merged_cyto = self.match_cells_and_nuclei(
+        interm_labels['nuc'], interm_labels['cyto']
       )
 
       self.logfile_utils.log(f'> Cells: {np.max(labels_merged[0])}')
       self.logfile_utils.log(f'> Nuclei: {np.max(labels_merged[1])}')
 
       # add masks to list
-      if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
-        interm_labels['cyto'] = labels_merged[0]
-        interm_labels['nuc'] = labels_merged[1]
+      # if np.max(labels_merged[0]) > 0 and np.max(labels_merged[1]) > 0:
+      if np.max(labels_merged_nuc) > 0 and np.max(labels_merged_cyto) > 0:
+        # interm_labels['cyto'] = labels_merged[0]
+        # interm_labels['nuc'] = labels_merged[1]
+        interm_labels['nuc'] = labels_merged_nuc
+        interm_labels['cyto'] = labels_merged_cyto
 
     # final merge of cyto and base
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
