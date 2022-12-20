@@ -337,7 +337,7 @@ class SegmentationUtils:
             x[x > 0] = x[x > 0] + cur_max_labels
             
             self.logfile_utils.log(f'> place {i}: {x.shape}')
-            self.logfile_utils.log(x)
+            self.logfile_utils.log(np.unique(x))
             
             # merge with exisiting labels
             labels[i][cur_slices] = np.maximum(labels[i][cur_slices], x)
