@@ -175,7 +175,7 @@ class SegmentationUtils:
 
       # find shapes of identified labels
       if self.find_contours is True:
-        self.logfile_utils.log("Find contours")
+        self.logfile_utils.log('Find contours')
 
         label_contours = measure_utils.countours_2D_from_zarr(
           labels, im_dat, self.dim_utils, self.logfile_utils,
@@ -185,15 +185,14 @@ class SegmentationUtils:
 
         # save contours
         label_contours.to_csv(
-          os.path.join(self.task_dir, "label_contours.csv"),
+          os.path.join(self.task_dir, 'label_contours.csv'),
           index = False)
       
       # generate multiscales for labels
       # TODO is there a more elegant way to do this .. ?
-      # if nscales > 1:
-      if False is True:
+      if nscales > 1:
         for i, x in self.labels_paths.items():
-          multiscales_file_path = x + ".multiscales"
+          multiscales_file_path = x + '.multiscales'
 
           zarr_utils.create_multiscales(
             labels[i], multiscales_file_path,
