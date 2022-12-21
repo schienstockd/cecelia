@@ -328,7 +328,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         cur_labels[i] = remove_small_objects(x, 40)
         
         # make sure that objects are not flat
-        cur_labels[i] = remove_flat_objects(x, min_span = 3)
+        # cur_labels[i] = remove_flat_objects(x, min_span = 3)
     else:
       props_to_get = [
         'label',
