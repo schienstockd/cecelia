@@ -163,9 +163,15 @@ class CellposeUtils(SegmentationUtils):
     # save merged labels
     mmax = masks[0].max()
     empty = 0
-
+    
     for i in range(len(masks)-1):
+      # limit signal if no unmatched labels should be found
+      if remove_unmatched is True:
+        masks[i] = (masks[i + 1] > 0) * masks[i]
+      
+      # get intersection
       iou = self.intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
+      
       if not iou.size and empty == 0:
         masks[i + 1] = masks[i + 1]
         mmax = masks[i + 1].max()
