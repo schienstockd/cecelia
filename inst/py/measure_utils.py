@@ -361,10 +361,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       )) for i, x in cur_labels.items()
       }
       
-    # print properties
-    logfile_utils.log('>> Properties:')
-    logfile_utils.log(props_table)
-    
     # edit column names
     # INFO this could be done on the whole DF afterwards
     # but I need to know the bbox for surface quantification
