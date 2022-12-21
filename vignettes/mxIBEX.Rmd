@@ -67,6 +67,23 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/IBEX/CECELIA"
 ```
 
 ```{r}
+# check labels
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Gal2rO", versionID = versionID, initReactivity = FALSE
+)
+
+popLabels <- cciaObj$labelProps("default")
+popDT <- as.data.table(popLabels$as_df())
+
+popDT
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 

@@ -360,6 +360,10 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         properties = props_to_get if i == 'base' else minimal_props_to_get
       )) for i, x in cur_labels.items()
       }
+      
+    # print properties
+    logfile_utils.log('>> Properties:')
+    logfile_utils.log(props_table)
     
     # edit column names
     # INFO this could be done on the whole DF afterwards
