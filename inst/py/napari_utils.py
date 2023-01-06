@@ -472,7 +472,7 @@ class NapariUtils:
           self.remove_layer_by_name(labels_layer)
           
           # show nuclei as contours
-          contour = 0
+          contour = 2
           opacity = 0.7
           if i in ['nuc', 'halo']:
             contour = 1

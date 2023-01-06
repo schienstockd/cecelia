@@ -235,7 +235,8 @@ createFlowPlotManager <- function(
   createGatingBoxChannelSelect <- function(id, label, selected, ignoreInput = FALSE) {
     # add properties
     # chnlNames <- names(cciaObj()$popUtils(popType())$getImChannelLimits())
-    chnlNames <- c(unname(cciaObj()$imChannelNames()),
+    # chnlNames <- c(unname(cciaObj()$imChannelNames()),
+    chnlNames <- c(unname(cciaObj()$imChannelNames(includeTypes = TRUE)),
                    cciaConf()$fcs$propsToAdd)
     
     selectInput(

@@ -116,6 +116,8 @@ CreateGatingSet <- R6::R6Class(
         )
       }
       
+      browser()
+      
       # save gs
       gsPath <- file.path(
         self$envParams()$dirs$task,

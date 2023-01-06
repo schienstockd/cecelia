@@ -81,7 +81,7 @@ cciaObj$runTask(
     compensateZ = TRUE,
     polyDegree = 4,
     applyReversedLog = FALSE,
-    transformation = "logical"
+    transformation = "logicle"
   ),
   runInplace = TRUE
 )

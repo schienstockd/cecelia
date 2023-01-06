@@ -356,8 +356,8 @@
   # correct all channels
   for (x in channelNames) {
     # get sd to limit data
-    medianIntensity <- median(df[[x]])
-    dfSD <- sd(df[[x]])
+    medianIntensity <- median(df[[x]], na.rm = TRUE)
+    dfSD <- sd(df[[x]], na.rm = TRUE)
     
     dataDF <- df[df[[x]] >=  medianIntensity - dfSD &
                    df[[x]] <= medianIntensity + dfSD,]
