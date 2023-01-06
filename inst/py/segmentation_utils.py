@@ -132,7 +132,7 @@ class SegmentationUtils:
       # should be done on the whole image with Zarr arrays
       if self.measure is True:
         self.logfile_utils.log('Measure labels')
-
+        
         props = measure_utils.measure_from_zarr(
           labels, im_dat, self.dim_utils, self.logfile_utils,
           block_size = self.block_size, overlap = self.overlap,

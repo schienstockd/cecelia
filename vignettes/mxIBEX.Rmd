@@ -67,29 +67,13 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/IBEX/CECELIA"
 ```
 
 ```{r}
-# check labels
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "Gal2rO", versionID = versionID, initReactivity = FALSE
-)
-
-popLabels <- cciaObj$labelProps("default")
-popDT <- as.data.table(popLabels$as_df())
-
-popDT
-```
-
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
+  # pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
+  pID = pID, uID = "SXejeM", versionID = versionID, initReactivity = FALSE # Liver
   # pID = pID, uID = "TyFwVs", versionID = versionID, initReactivity = FALSE # Set
 )
 
@@ -100,7 +84,8 @@ cciaObj <- initCciaObject(
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("T", "B", "macro.dc", "endothelial", "lymphatic", "lymphs"),
+  pops = c("root"),
+  # pops = c("T", "B", "macro.dc", "endothelial", "lymphatic", "lymphs"), # LN
   completeDT = TRUE, replaceX = TRUE)
 
 unique(popDT$clusters)

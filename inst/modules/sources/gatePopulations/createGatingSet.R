@@ -15,6 +15,19 @@ CreateGatingSet <- R6::R6Class(
       )
     },
     
+    # filter channel names
+    filterChannelNames = function(channelNames, filterNames) {
+      # check with selected channel names
+      acceptedChannels <- channelNames %in% filterNames
+      
+      if (!is.null(attr(channelNames, "types"))) {
+        for (i in attr(channelNames, "types"))
+          acceptedChannels <- acceptedChannels | channelNames %in% paste0(i, "_", filterNames) 
+      }
+      
+      channelNames <- channelNames[acceptedChannels]
+    },
+    
     # run
     run = function() {
       # get value name
@@ -59,8 +72,8 @@ CreateGatingSet <- R6::R6Class(
         
         if (length(self$funParams()$transChannels) > 0) {
           # check with selected channel names
-          channelNames <- channelNames[
-            channelNames %in% self$funParams()$transChannels]
+          channelNames <- self$filterChannelNames(
+            channelNames, self$funParams()$transChannels)
         }
         
         self$writeLog(paste(
@@ -76,10 +89,13 @@ CreateGatingSet <- R6::R6Class(
         # get channel names
         channelNames <- cciaObj$imChannelNames(includeTypes = TRUE)
         
+        self$writeLog(paste(
+          ">> BEFORE", paste(channelNames, collapse = ", ")))
+        self$writeLog(paste(attr(channelNames, "types"), collapse = ", "))
+        
         if (length(self$funParams()$transChannels) > 0) {
-          # check with selected channel names
-          channelNames <- channelNames[
-            channelNames %in% self$funParams()$transChannels]
+          channelNames <- self$filterChannelNames(
+            channelNames, self$funParams()$transChannels)
         }
         
         self$writeLog(paste(

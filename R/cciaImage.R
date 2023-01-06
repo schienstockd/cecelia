@@ -2720,6 +2720,9 @@ CciaImage <- R6::R6Class(
       if (includeTypes == TRUE) {
         # add further channel types
         if (!is.null(attr(channelNames, "types"))) {
+          # retain attributes
+          channelAttr <- attributes(channelNames)
+          
           channelNames <- c(
             channelNames,
             unlist(lapply(
@@ -2733,6 +2736,12 @@ CciaImage <- R6::R6Class(
               }
             ))
           )
+          
+          # TODO is there a better way?  
+          # attributes(channelNames) <- channelAttr[names(channelAttr) != "names"]
+          for (i in names(channelAttr)[names(channelAttr) != "names"]) {
+            attr(channelNames, i) <- channelAttr[[i]]
+          }
         }
       }
       

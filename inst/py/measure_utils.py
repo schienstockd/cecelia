@@ -490,12 +490,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       # compactness
       props_table[base_labels]['perimeter_to_area'] = (props_table[base_labels]['perimeter'] ** 2) / props_table[base_labels]['area']
       
-      # add intensities for individual compartments
-      intensity_cols = [i for i in props_table[base_labels].columns if i.startswith('mean_intensity_')]
-      for j in [y for y in props_table.keys() if y in ['halo', 'nuc', 'cyto']]:
-        for i, x in enumerate(intensity_cols):
-          props_table[base_labels][f'{j}_mean_intensity_{i}'] = props_table[j][x]
-      
       # TODO there should be more in 2D
       # calculate nucleus to cytoplasm area
       # TODO you have to make sure that the tables are matching up
@@ -574,6 +568,12 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
           
           # Concavities
           # TODO
+    
+    # add intensities for individual compartments
+    intensity_cols = [i for i in props_table[base_labels].columns if i.startswith('mean_intensity_')]
+    for j in [y for y in props_table.keys() if y in ['halo', 'nuc', 'cyto']]:
+      for i, x in enumerate(intensity_cols):
+        props_table[base_labels][f'{j}_mean_intensity_{i}'] = props_table[j][x]
       
     centroid_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('centroid')]
     bbox_min_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_min')]
