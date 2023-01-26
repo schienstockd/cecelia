@@ -33,3 +33,4 @@ leidenalg
 squidpy
 deepcell
 SimpleITK
+SimpleITK-SimpleElastix

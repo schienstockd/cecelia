@@ -99,14 +99,14 @@ def shifts_summary(shifts, cumulative = True):
 """
 get new image dimensions for correction
 """
-def correction_im_shape(image_array, dim_utils, shifts_summary):
+def correction_im_shape(image_array, dim_utils, shifts_sum):
   # get new shape
   new_shape = list(image_array.shape)
 
   # assuming shifts are Z, Y, X
-  new_shape[dim_utils.dim_idx('Z')] += abs(shifts_summary['sum'][0])
-  new_shape[dim_utils.dim_idx('Y')] += abs(shifts_summary['sum'][1])
-  new_shape[dim_utils.dim_idx('X')] += abs(shifts_summary['sum'][2])
+  new_shape[dim_utils.dim_idx('Z')] += abs(shifts_sum['sum'][0])
+  new_shape[dim_utils.dim_idx('Y')] += abs(shifts_sum['sum'][1])
+  new_shape[dim_utils.dim_idx('X')] += abs(shifts_sum['sum'][2])
 
   # round new shape for new array
   new_shape_round = tuple([
@@ -139,16 +139,16 @@ def drift_correct_im(
       )
 
   # get shifts summary
-  shifts_summary = shifts_summary(shifts)
+  shifts_sum = shifts_summary(shifts)
 
   # get new image dimensions
   drift_im_shape, drift_im_shape_round = correction_im_shape(
-    input_array, dim_utils, shifts_summary
+    input_array, dim_utils, shifts_sum
   )
 
   # get first image position
   first_im_pos = correction_first_im_pos(
-    drift_im_shape, dim_utils, shifts_summary
+    drift_im_shape, dim_utils, shifts_sum
   )
 
   # use new shape for chunking
@@ -266,7 +266,7 @@ def drift_correct_im(
 """
 get position of first image for correction
 """
-def correction_first_im_pos(drift_im_shape, dim_utils, shifts_summary):
+def correction_first_im_pos(drift_im_shape, dim_utils, shifts_sum):
   # get new position
   new_pos = np.take(
     drift_im_shape,
@@ -275,8 +275,8 @@ def correction_first_im_pos(drift_im_shape, dim_utils, shifts_summary):
 
   # place the first image
   first_pos = tuple(
-    [slice(shifts_summary['min'][i],
-           new_pos[i] - shifts_summary['max'][i],
+    [slice(shifts_sum['min'][i],
+           new_pos[i] - shifts_sum['max'][i],
            1) for i in range(3)]
   )
 
