@@ -26,6 +26,10 @@ SlidingWindowCorrect <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      self$writeLog(self$funParams()$valueName)
+      self$writeLog(cciaObj$imFilepath(valueName = self$funParams()$valueName))
+      self$writeLog(cciaObj$imFilepath(valueName = "corrected"))
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,

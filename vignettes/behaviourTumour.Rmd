@@ -39,8 +39,10 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "giJZjT", versionID = versionID, initReactivity = FALSE # Tumour
 )
 
+cciaObj$imFilepath("corrected")
 cciaObj$setImFilepath(paste0("ccidCorrected", ".zarr"), valueName = "corrected")
-cciaObj$valueNames("imFilepath")
+cciaObj$imFilepath("corrected")
+cciaObj$saveState()
 ```
 
 ```{r}

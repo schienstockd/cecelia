@@ -20,14 +20,14 @@ CleanupImages <- R6::R6Class(
       if (!is.null(uID))
         cciaObj <- cciaObj$cciaObjects()[[uID]]
       
-      if (cciaObj$getCciaClass() == "CciaImage") {
-        # reset channel information
-        cciaObj$setImFilepath(NULL, valueName = valueName)
-        cciaObj$setImChannelNames(NULL, valueName = valueName)
-        
-        # save object
-        cciaObj$saveState()
-      }
+      # if (cciaObj$getCciaClass() == "CciaImage") {
+      #   # reset channel information
+      #   cciaObj$setImFilepath(NULL, valueName = valueName)
+      #   cciaObj$setImChannelNames(NULL, valueName = valueName)
+      #   
+      #   # save object
+      #   cciaObj$saveState()
+      # }
     },
     
     # update image information after segmentation
