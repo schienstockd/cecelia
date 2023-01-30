@@ -1,0 +1,33 @@
+{
+  "fun": {
+    "slidingWindowCorrect": {
+      "category": "Module functions",
+      "label": "Sliding Window Correction",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"slidingWindow": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 2
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+  		"slidingWindow": {
+  			"index": 0,
+  			"label": "Sliding Window",
+				"widget:slider": {
+					"step": 1
+				}
+  		},
+    },
+    "outputs": {}
+  }
+}

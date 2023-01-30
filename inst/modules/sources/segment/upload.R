@@ -31,11 +31,12 @@ Upload <- R6::R6Class(
       remoteDir <- self$envParams("hpc")$dirs$zero
       # if (self$funParams()$remoteEnv == "hpc")
       
+      # get files
+      imFiles <- basename(cciaObj$imFilepath())
+      
       # upload local files
       taskVars$fun <- list(
-        localFiles = file.path(
-          localDir,
-          paste0(fileIMAGE_CONVERTED, c(".ome.tiff", ".ome.zarr", ".zarr"))),
+        localFiles = file.path(localDir, imFiles),
         localDir = localDir,
         remoteDir = remoteDir,
         useCompression = FALSE
@@ -46,7 +47,8 @@ Upload <- R6::R6Class(
       runInplace <- TRUE
       
       self$initLog()
-      self$writeLog(paste("Upload", c(".ome.tiff", ".ome.zarr", ".zarr")))
+      # self$writeLog(paste("Upload", c(".ome.tiff", ".ome.zarr", ".zarr")))
+      self$writeLog(paste("Upload", imFiles))
       
       taskLauncher$initTask(
         "hpc.upload", taskVars, inplace = runInplace)

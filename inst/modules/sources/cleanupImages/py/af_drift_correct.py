@@ -40,7 +40,7 @@ def run(params):
   )
   
   # save everything into first multilevel
-  drift_corrected_path = os.path.join(params['imCorrectionPath'], "0")
+  drift_corrected_path = os.path.join(params['imCorrectionPath'], '0')
 
   if params['applyDriftCorrection'] is True:
     logfile_utils.log('>> get shifts')
