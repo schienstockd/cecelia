@@ -31,12 +31,11 @@ SlidingWindowCorrect <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         imPath = file.path(
           self$envParams()$dirs$zero,
-          basename(cciaObj$imFilepath(valueName = "default"))
+          # basename(cciaObj$imFilepath(valueName = "default"))
+          basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         imCorrectionPath = file.path(
-          self$envParams()$dirs$zero,
-          "ccidSlidingWindow.zarr"
-        ),
+          self$envParams()$dirs$zero, "ccidSlidingWindow.zarr"),
         slidingWindow = self$funParams()$slidingWindow
       )
       

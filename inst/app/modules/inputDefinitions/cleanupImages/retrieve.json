@@ -39,6 +39,7 @@
         "widget:selection": {
           "items": {
             "Corrected": "ccidCorrected",
+            "Sliding Window": "ccidSlidingWindow",
             "Registered": "ccidRegistered"
           },
           "multiple": false,

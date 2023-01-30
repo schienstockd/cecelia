@@ -8,6 +8,11 @@
   },
   "spec": {
     "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
 			"slidingWindow": {
 				"type:integer": {
 					"min": 0,
@@ -20,13 +25,22 @@
   },
   "ui": {
     "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
   		"slidingWindow": {
-  			"index": 0,
+  			"index": 1,
   			"label": "Sliding Window",
 				"widget:slider": {
 					"step": 1
 				}
-  		},
+  		}
     },
     "outputs": {}
   }

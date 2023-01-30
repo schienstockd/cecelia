@@ -36,10 +36,11 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "h4bJUq", versionID = versionID, initReactivity = FALSE # Tumour
+  pID = pID, uID = "giJZjT", versionID = versionID, initReactivity = FALSE # Tumour
 )
 
-cciaObj$omeXMLPixelRes()
+cciaObj$setImFilepath(paste0("ccidCorrected", ".zarr"), valueName = "corrected")
+cciaObj$valueNames("imFilepath")
 ```
 
 ```{r}
