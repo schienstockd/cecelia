@@ -13,3 +13,4 @@ ggraph
 ggpubr
 ggbeeswarm
 PKI
+htmltools

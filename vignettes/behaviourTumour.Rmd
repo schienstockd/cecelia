@@ -145,7 +145,7 @@ hmmTime[hmmTime$live.cell.hmm.state.movement == 1, ]$hmm.type <- "Motile"
 # hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
 hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile"))
 
-hmmTime %>%
+hmmTime <- hmmTime %>%
   dplyr::filter(
     # !is.na(live.cell.hmm.state.movement)
     !is.na(hmm.type)
