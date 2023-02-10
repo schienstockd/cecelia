@@ -66,7 +66,7 @@ library(cecelia)
 cciaAppRequirements(repos = "https://cloud.r-project.org")
 
 # install Bioconductor requirements
-cciaBiocRequirements(repos = "https://cloud.r-project.org")
+cciaBiocRequirements()
 
 # setup cecelia directory
 cciaSetup("~/path/to/cecelia")
