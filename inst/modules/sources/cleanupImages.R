@@ -20,6 +20,7 @@ CleanupImages <- R6::R6Class(
       if (!is.null(uID))
         cciaObj <- cciaObj$cciaObjects()[[uID]]
       
+      # TODO is this required .. ?
       # if (cciaObj$getCciaClass() == "CciaImage") {
       #   # reset channel information
       #   cciaObj$setImFilepath(NULL, valueName = valueName)

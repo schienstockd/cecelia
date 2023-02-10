@@ -1,0 +1,58 @@
+{
+  "fun": {
+    "remove": {
+      "category": "Manage images",
+      "label": "Remove image",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"newDefault": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"removeHPC": {
+        "type:boolean": {
+          "default": true
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to delete",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+			"newDefault": {
+				"index": 1,
+				"label": "New default",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+			"removeHPC": {
+				"index": 2,
+				"label": "Remove HPC files",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

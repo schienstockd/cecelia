@@ -124,7 +124,8 @@ HmmStates <- R6::R6Class(
         tracks.DT[,
                   (self$funParams()$modelMeasurements) := lapply(
                     self$funParams()$modelMeasurements,
-                    function(x) caTools::runmean(
+                    # function(x) caTools::runmean(
+                    function(x) runmed(
                       .SD[[x]],
                       k = self$funParams()$noiseFilterMeasurements)
                   ),

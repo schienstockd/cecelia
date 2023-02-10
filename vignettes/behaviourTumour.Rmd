@@ -36,22 +36,8 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "giJZjT", versionID = versionID, initReactivity = FALSE # Tumour
-)
-
-cciaObj$imFilepath("corrected")
-cciaObj$setImFilepath(paste0("ccidCorrected", ".zarr"), valueName = "corrected")
-cciaObj$imFilepath("corrected")
-cciaObj$saveState()
-```
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
+  # pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
+  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE # Tumour
 )
 
 # get experimental info
@@ -60,7 +46,9 @@ exp.info <- cciaObj$summary(
 )
 
 uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c("cb3KHD")]
+# uIDs <- uIDs[!uIDs %in% c("cb3KHD")]
+uIDs <- uIDs[uIDs %in% exp.info[
+  exp.info$Include == "Y" & exp.info$Treatment == "CNO", ]$uID]
 
 # # get clustering
 # tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
@@ -70,7 +58,8 @@ uIDs <- uIDs[!uIDs %in% c("cb3KHD")]
 # get popDTs for set
 popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
-    "T/tracked"
+    # "T/tracked"
+    "default/tracked"
     ),
   includeFiltered = TRUE,
   flushCache = TRUE,
@@ -147,38 +136,57 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 ```
 
-```{r fig_states_time, fig.height = 2, fig.width = 2}
+```{r fig_states_time, fig.height = 5, fig.width = 3}
 # get frequencies of clusters at time points
-hmmTime <- popDTs %>%
+hmmTime <- copy(popDTs)
+
+hmmTime$hmm.type <- "Immotile"
+hmmTime[hmmTime$live.cell.hmm.state.movement == 1, ]$hmm.type <- "Motile"
+# hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
+hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile"))
+
+hmmTime %>%
   dplyr::filter(
-    !is.na(live.cell.hmm.state.movement),
+    # !is.na(live.cell.hmm.state.movement)
+    !is.na(hmm.type)
     ) %>%
   group_by(
-    uID, centroid_t, live.cell.hmm.state.movement
+    uID, centroid_t, hmm.type
     ) %>%
   summarise(n = n()) %>%
   mutate(
-    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    hmm.type = as.factor(hmm.type),
     freq = n/sum(n) * 100
     ) %>%
   ungroup() %>%
-  complete(uID, centroid_t, live.cell.hmm.state.movement,
+  complete(uID, centroid_t, hmm.type,
            fill = list(freq = 0)) %>%
-  dplyr::filter(uID == "SQKg4Y")
+  # dplyr::filter(uID == "SQKg4Y")
+  # dplyr::filter(uID == "BW9cet")
+  # dplyr::filter(uID == "tbh61I")
+  dplyr::filter(uID %in% exp.info[exp.info$Treatment == "CNO",]$uID)
+
+# add CNO treatment time
+hmmTime$cno <- 0
+
+for (i in unique(hmmTime$uID)) {
+  x <- as.numeric(exp.info[exp.info$uID == i, ]$Time)
+  
+  hmmTime[hmmTime$uID == i & hmmTime$centroid_t > x, ]$cno <- 100
+}
 
 time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
-time.interval <- 0.5
-
-hmmTime$type <- "Stopping"
-hmmTime[hmmTime$live.cell.hmm.state.movement == 2, ]$type <- "Scanning"
-hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$type <- "Meandering"
 plotColours <- c("#ff1493", "#ffd700", "#4169e1")
+```
 
+
+```{r fig_states_time, fig.height = 5, fig.width = 3}
 ggplot(hmmTime,
        aes((centroid_t * time.interval), freq,
-           color = type,
-           fill = type,
+           color = hmm.type,
+           fill = hmm.type,
            )) +
+  geom_area(aes(y = cno), alpha = 0.2) +
   stat_smooth(span = 0.2) +
   # geom_line(size = 0.8) +
   theme_classic() +
@@ -187,51 +195,49 @@ ggplot(hmmTime,
   scale_color_manual(values = plotColours) +
   scale_fill_manual(values = plotColours) +
   xlab("Time (min)") + ylab("HMM (%)") +
-  # facet_grid(uID~.) +
-  ylim(0, 100) + 
+  facet_grid(uID~.) +
+  ylim(0, 100) +
   plotThemeDark(angle = 0) +
   theme(
     legend.title = element_blank(),
     legend.position = "bottom"
     ) +
   ggtitle("") +
-  scale_x_continuous(limits = c(0, 120), breaks = seq(0, 120, 20))
+  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 120, 20)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
 
-ggsave(file.path(anaDir, "hmm_time.pdf"), height = 3.5, width = 5)
-write.csv(hmmTime %>% mutate(
-  time = centroid_t * time.interval
-  ), file.path(anaDir, "hmm_time.csv"))
+ggsave(file.path(anaDir, "hmm_time.pdf"), height = 10, width = 5)
+
+# write.csv(hmmTime %>% mutate(
+#   time = centroid_t * time.interval
+#   ), file.path(anaDir, "hmm_time.csv"))
 ```
 
-```{r fig_states_time, fig.height = 3, fig.width = 4}
-# get steady state HMM proportions
-# then normalise frequencies to that
-timeSplit <- hmmTime %>%
-  arrange(uID, centroid_t) %>%
-  dplyr::filter(
-    live.cell.hmm.state.movement == 1,
-    freq > 0.6
-    ) %>%
-  group_by(uID, live.cell.hmm.state.movement) %>%
-  slice_head(n = 1)
+```{r fig_states_time, fig.height = 1.5, fig.width = 3}
+time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
 
-# first 15 minutes
-timeSplit$centroid_tA <- 30
-timeSplit$centroid_tB <- 100
-timeSplit$centroid_tC <- 120
+# +/- 2 minutes for 10 minutes?
+time.dist.A <- 1
+time.dist.B <- 1
+time.window <- 20
 
 # get average of range
 # go through and split off data
 baseList <- list()
 responseList <- list()
-for (i in timeSplit$uID) {
-  x <- timeSplit[timeSplit$uID == i,]
+for (i in exp.info[exp.info$Treatment == "CNO", ]$uID) {
+  x <- as.numeric(exp.info[exp.info$uID == i,]$Time)
   
-  baseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i &
-                                           hmmTime$centroid_t < x$centroid_tA,])
-  responseList[[i]] <- as.data.table(hmmTime[hmmTime$uID == i &
-                                               hmmTime$centroid_t >= x$centroid_tB &
-                                               hmmTime$centroid_t < x$centroid_tC,])
+  baseList[[i]] <- as.data.table(
+    hmmTime[hmmTime$uID == i &
+              hmmTime$centroid_t >= (x - time.dist.A) - time.window &
+              hmmTime$centroid_t < x - time.dist.A
+            ,])
+  responseList[[i]] <- as.data.table(
+    hmmTime[hmmTime$uID == i &
+              hmmTime$centroid_t <= (x + time.dist.B) + time.window &
+              hmmTime$centroid_t > x + time.dist.B
+            ,])
 }
 
 baseDT <- rbindlist(baseList) 
@@ -252,109 +258,26 @@ responseSummary <- responseDT %>%
     freq.base = sum.hmm/sum(sum.hmm)
     )
 
-# normalise to baseline
-# hmmTime <- hmmTime %>%
-#   left_join(baseSummary, by = c("uID", "live.cell.hmm.state.movement")) %>%
-#   mutate(freq.norm = freq/freq.base * 100)
-
-ggplot(baseSummary, aes(live.cell.hmm.state.movement, freq.base,
-                        fill = live.cell.hmm.state.movement)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(width = 0.2) +
-  ylim(0, 0.8) +
-  scale_fill_brewer(name = NULL, palette = "Set1") +
-  xlab("HMM state")
-
-ggsave(file.path(anaDir, "hmm_baseline.png"), height = 2, width = 2)
-
-write.csv(baseSummary %>% mutate(freq.base = freq.base * 100),
-          file.path(anaDir, "hmm_baseline.csv"))
-```
-
-```{r fig_base_freq, fig.height = 2, fig.width = 5}
 datToPlot <- rbind(
-  baseSummary %>% mutate(type = "basal"),
-  responseSummary %>% mutate(type = "response"))
+  baseSummary %>% mutate(type = "basal") %>% drop_na(),
+  responseSummary %>% mutate(type = "response") %>% drop_na())
   
 datToPlot$hmm.type <- "Immotile"
-datToPlot[datToPlot$live.cell.hmm.state.movement == 2, ]$hmm.type <- "Scanning"
+datToPlot[datToPlot$live.cell.hmm.state.movement == 1, ]$hmm.type <- "Scanning"
 datToPlot[datToPlot$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
-datToPlot$hmm.type <- factor(datToPlot$hmm.type, levels = c("Meandering", "Scanning", "Immotile"))
+datToPlot$hmm.type <- factor(datToPlot$hmm.type, levels = c("Immotile", "Scanning", "Meandering"))
 
 ggplot(datToPlot,
-  aes(1, freq.base, fill = hmm.type)) +
-  scale_fill_manual(values = plotColours) +
+       aes(type, freq.base,
+           fill = hmm.type)) +
   theme_classic() +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) +
-  xlim(0, 1.8) +
-  plotThemeDark() +
-  theme(
-    axis.text = element_text(size = 5),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.title = element_blank(),
-    legend.justification = "center",
-    legend.position = "bottom",
-    # legend.position = "none",
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    strip.background = element_blank(),
-    strip.text.x = element_blank()
-  ) +
-  facet_grid(.~type)
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  ylim(0, 1) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  xlab("")
 
 ggsave(file.path(anaDir, "base_freq.pdf"), width = 5, height = 4)
-```
 
-
-```{r fig_states_space, fig.height = 2, fig.width = 5}
-# get frequencies of hmm states at time points
-hmmSpaceAll <- copy(popDTs) %>%
-  dplyr::filter(!is.na(live.cell.hmm.state.movement))
-
-# use cut off as cells return
-hmmSpace <- rbind(
-  hmmSpaceAll[hmmSpaceAll$uID == "DjlCKS" & hmmSpaceAll$centroid_t >= 153, ],
-  hmmSpaceAll[hmmSpaceAll$uID == "SQKg4Y" & hmmSpaceAll$centroid_t >= 52, ]
-)
-
-# get density colours
-hmmSpace$density <- ""
-for (i in unique(hmmSpace$uID)) {
-  for (j in unique(hmmSpace$live.cell.hmm.state.movement)) {
-    x <- hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.movement == j,]
-    
-    hmmSpace[hmmSpace$uID == i & hmmSpace$live.cell.hmm.state.movement == j,]$density <- .flowColours(
-      x$centroid_x, x$centroid_y)
-  }
-}
-
-ggplot(hmmSpace, aes(centroid_x, -centroid_y)) +
-  theme_classic() +
-  plotThemeDark(
-    fontSize = 8,
-    legend.justification = "centre"
-    ) +
-  geom_point(color = hmmSpace$density, size = 0.3) +
-  scale_color_brewer(name = NULL, palette = "Set3") +
-  coord_fixed() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    legend.title = element_blank(),
-    legend.position = 'bottom'
-    ) +
-  facet_grid(uID~live.cell.hmm.state.movement)
-
-
-ggsave(file.path(anaDir, "hmm_space_after_drug.png"), height = 5, width = 12)
+write.csv(datToPlot, file.path(anaDir, "hmm_window.csv"))
 ```
