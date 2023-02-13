@@ -141,7 +141,7 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 hmmTime <- copy(popDTs)
 
 hmmTime$hmm.type <- "Immotile"
-hmmTime[hmmTime$live.cell.hmm.state.movement == 1, ]$hmm.type <- "Motile"
+hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(1, 2), ]$hmm.type <- "Motile"
 # hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
 hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile"))
 

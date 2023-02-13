@@ -210,9 +210,13 @@ CciaImage <- R6::R6Class(
         
         # read metadata from image / file
         if (endsWith(self$imFilepath(), ".zarr")) {
-          omeXMLFilepath <- file.path(
-            self$imFilepath(), "OME", "METADATA.ome.xml"
-          )
+          omeXMLFilepath <- file.path(self$imFilepath(), "METADATA.ome.xml")
+          
+          if (file.exists(omeXMLFilepath) == FALSE) {
+            omeXMLFilepath <- file.path(
+              self$imFilepath(), "OME", "METADATA.ome.xml"
+            )
+          }
           
           omeXML <- xml2::read_xml(omeXMLFilepath)
         } else {

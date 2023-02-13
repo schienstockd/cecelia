@@ -195,7 +195,10 @@ def parse_meta_from_zarr(zarr_path):
   # (I) at the moment, the XML is in the Zarr directory
   # https://github.com/zarr-developers/zarr-specs/issues/112
   # https://github.com/ome/ngff/issues/27
-  xml_path = os.path.join(zarr_path, "OME", "METADATA.ome.xml")
+  xml_path = os.path.join(zarr_path, "METADATA.ome.xml")
+  
+  if os.path.isfile(xml_path) is False:
+    xml_path = os.path.join(zarr_path, "OME", "METADATA.ome.xml")
   
   # https://codecap.org/typeerror-a-bytes-like-object-is-required-not-str/
   with open(xml_path, "rb") as f:

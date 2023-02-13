@@ -245,7 +245,7 @@ def create_multiscales(im_array, filepath, dim_utils = None,
   # add first scales
   if isinstance(im_array, dask.array.core.Array):
     im_array.to_zarr(
-      os.path.join(filepath, "0"),
+      os.path.join(filepath, '0'),
       # dimension_separator = "/"
     )
     
