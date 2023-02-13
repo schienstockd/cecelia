@@ -356,7 +356,7 @@ cciaBiocRequirements <- function(ncpus = 4, installProtobuf = TRUE, ...) {
     BiocManager::install(version = '3.14', ...)
   
   # downgrade reticulate; should be done in DESCRIPTION?
-  # The following is not solved
+  # The following is not solved 
   # https://github.com/rstudio/reticulate/issues/1155
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
