@@ -365,8 +365,8 @@ cciaBiocRequirements <- function(ncpus = 4, installProtobuf = TRUE, ...) {
     remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
   
   # install cytolib separately
-  remotes::install_github("rglab/cytolib", upgrade = "never", ...)
   remotes::install_github("rglab/flowCore", upgrade = "never", ...)
+  remotes::install_github("rglab/cytolib", upgrade = "never", ...)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
