@@ -142,8 +142,8 @@ hmmTime <- copy(popDTs)
 
 hmmTime$hmm.type <- "Motile"
 hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "Immotile"
-# hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
-hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile"))
+hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(3), ]$hmm.type <- "Other"
+hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile", "Other"))
 
 hmmTime <- hmmTime %>%
   dplyr::filter(

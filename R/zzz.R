@@ -356,13 +356,16 @@ cciaBiocRequirements <- function(ncpus = 4, installProtobuf = TRUE, ...) {
     BiocManager::install(version = '3.14', ...)
   
   # downgrade reticulate; should be done in DESCRIPTION?
-  # The following is not solved 
+  # The following is not solved
   # https://github.com/rstudio/reticulate/issues/1155
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
   if (installProtobuf == TRUE)
     remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
+  
+  # install cytolib separately
+  remotes::install_github("rglab/cytolib", upgrade = "never", ...)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
