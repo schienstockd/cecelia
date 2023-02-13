@@ -345,10 +345,9 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
 
 #' @description Install bioconductor requirements
 #' @param ncpus number of parallel processes
-#' @param installProtobuf boolean to install Protobuf from github
 #' @param ... passed to BiocManager::install
 #' @export
-cciaBiocRequirements <- function(ncpus = 4, installProtobuf = TRUE, ...) {
+cciaBiocRequirements <- function(ncpus = 4, ...) {
   # for R 4.2
   if (R.version$major == 4 && stringr::str_detect(R.version$minor, "^2\\."))
     BiocManager::install(version = '3.15', ...)
@@ -361,11 +360,10 @@ cciaBiocRequirements <- function(ncpus = 4, installProtobuf = TRUE, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  if (installProtobuf == TRUE)
-    remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
+  # remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
   
   # install cytolib separately
-  remotes::install_github("rglab/cytolib", upgrade = "never", ...)
+  # remotes::install_github("rglab/cytolib", upgrade = "never", ...)
   
   BiocManager::install(
     # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
