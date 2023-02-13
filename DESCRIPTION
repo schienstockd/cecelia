@@ -70,7 +70,8 @@ Imports:
     RSQLite,
     remotes,
     randomcoloR,
-    purrr
+    purrr,
+    htmltools
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1
