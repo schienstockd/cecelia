@@ -140,8 +140,8 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 # get frequencies of clusters at time points
 hmmTime <- copy(popDTs)
 
-hmmTime$hmm.type <- "Immotile"
-hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(1, 2), ]$hmm.type <- "Motile"
+hmmTime$hmm.type <- "Motile"
+hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "Immotile"
 # hmmTime[hmmTime$live.cell.hmm.state.movement == 3, ]$hmm.type <- "Meandering"
 hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile"))
 
@@ -187,7 +187,7 @@ ggplot(hmmTime,
            fill = hmm.type,
            )) +
   geom_area(aes(y = cno), alpha = 0.2) +
-  stat_smooth(span = 0.2) +
+  stat_smooth(span = 0.1) +
   # geom_line(size = 0.8) +
   theme_classic() +
   # scale_color_brewer(name = NULL, palette = "Set1") +
@@ -196,14 +196,13 @@ ggplot(hmmTime,
   scale_fill_manual(values = plotColours) +
   xlab("Time (min)") + ylab("HMM (%)") +
   facet_grid(uID~.) +
-  ylim(0, 100) +
   plotThemeDark(angle = 0) +
   theme(
     legend.title = element_blank(),
     legend.position = "bottom"
     ) +
   ggtitle("") +
-  scale_x_continuous(limits = c(0, 100), breaks = seq(0, 120, 20)) +
+  scale_x_continuous(limits = c(5, 100), breaks = seq(0, 120, 20)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
 
 ggsave(file.path(anaDir, "hmm_time.pdf"), height = 10, width = 5)
