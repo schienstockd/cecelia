@@ -360,7 +360,7 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
   # install protobuf separately
-  # remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
+  remotes::install_github("rglab/RProtoBufLib", upgrade = "always", ...)
   
   # install cytolib separately
   # remotes::install_github("rglab/cytolib", upgrade = "never", ...)
