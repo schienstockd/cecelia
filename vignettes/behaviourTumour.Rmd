@@ -187,8 +187,8 @@ ggplot(hmmTime,
            fill = hmm.type,
            )) +
   geom_area(aes(y = cno), alpha = 0.2) +
-  stat_smooth(span = 0.1) +
-  # geom_line(size = 0.8) +
+  # stat_smooth(span = 0.1) +
+  geom_line(size = 0.8) +
   theme_classic() +
   # scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_fill_brewer(name = NULL, palette = "Set1") +
