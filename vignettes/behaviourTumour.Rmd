@@ -140,10 +140,13 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 # get frequencies of clusters at time points
 hmmTime <- copy(popDTs)
 
-hmmTime$hmm.type <- "Motile"
-hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "Immotile"
-hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(3), ]$hmm.type <- "Other"
-hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("Immotile", "Motile", "Other"))
+hmmTime$hmm.type <- "1"
+# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "Immotile"
+# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(3), ]$hmm.type <- "Other"
+hmmTime[hmmTime$live.cell.track.clusters.default %in% c(2), ]$hmm.type <- "2"
+hmmTime[hmmTime$live.cell.track.clusters.default %in% c(3), ]$hmm.type <- "3"
+hmmTime[hmmTime$live.cell.track.clusters.default %in% c(4), ]$hmm.type <- "4"
+hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("1", "2", "3", "4"))
 
 hmmTime <- hmmTime %>%
   dplyr::filter(
@@ -187,13 +190,13 @@ ggplot(hmmTime,
            fill = hmm.type,
            )) +
   geom_area(aes(y = cno), alpha = 0.2) +
-  # stat_smooth(span = 0.1) +
-  geom_line(size = 0.8) +
+  stat_smooth(span = 0.1) +
+  # geom_line(size = 0.8) +
   theme_classic() +
-  # scale_color_brewer(name = NULL, palette = "Set1") +
-  # scale_fill_brewer(name = NULL, palette = "Set1") +
-  scale_color_manual(values = plotColours) +
-  scale_fill_manual(values = plotColours) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = plotColours) +
+  # scale_fill_manual(values = plotColours) +
   xlab("Time (min)") + ylab("HMM (%)") +
   facet_grid(uID~.) +
   plotThemeDark(angle = 0) +
