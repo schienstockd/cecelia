@@ -275,7 +275,7 @@ CciaImage <- R6::R6Class(
     
     #' @description pixel information
     #' @param reset boolean to reset value
-    omeXMLPixels = function(reset = FALSE) {
+    omeXMLPixels = function(reset = FALSE, omeXML = NULL) {
       # is content already set?
       if (is.null(private$getOmeXMLPixels()) || reset == TRUE) {
         pixelInfo <- as.list(unlist(xml2::xml_attrs(

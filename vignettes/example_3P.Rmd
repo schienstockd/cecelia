@@ -1,0 +1,63 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# group 3P data
+imDir <- "/Users/schiend/Downloads/test-3P-XCR1venus-Tomato-1340-333kHz-LN1a"
+imFiles.ori <- list.files(imDir, pattern = "*.tif")
+
+# rename files for bioformat import
+imFiles.mod <- stringr::str_replace(imFiles.ori, "Chan", "c")
+# https://stackoverflow.com/a/42873642
+imFiles.mod <- chartr("ABCDEFGHI", "1123456789", imFiles.mod)
+
+# add characters for ZT
+# TODO is there a better way to do this?
+# https://stackoverflow.com/a/31761642
+imFiles.mod <- sub("_([^_]+_[^_]+\\.tif$)", "_z\\1", imFiles.mod)
+imFiles.mod <- sub("_([^_]+\\.tif$)", "_t\\1", imFiles.mod)
+
+# rename
+file.rename(file.path(imDir, imFiles.ori), file.path(imDir, imFiles.mod))
+```
+
+
+```{r}
+# get OME information
+omeInfo <- tiff::readTIFF(file.path(imDir, imFiles.mod[[1]]), info = TRUE, payload = FALSE)
+descInfo <- xml2::as_xml_document(omeInfo$description)
+xml2::xml_ns_strip(descInfo)
+
+# get channel and pixel info
+pixelInfo <- as.list(unlist(xml2::xml_attrs(
+  xml2::xml_find_all(descInfo, "//Image//Pixels")
+)))
+
+# convert to numeric
+pixelContent <- suppressWarnings({
+  lapply(pixelInfo, function(x) {
+    if (!is.na(as.numeric(x)))
+      as.numeric(x)
+    else
+      x
+  })
+})
+
+# create pattern file for grouping
+# https://bio-formats.readthedocs.io/en/v6.12.0/formats/pattern-file.html
+# TODO need to fill these in once I know what the others are
+fileConn <- file(file.path(imDir, "ImageToImport.pattern"))
+writeLines(
+  sprintf("c<1-%d>_001_001_z<001-%03d>_t<001-%03d>.tif",
+        pixelContent$SizeC, pixelContent$SizeZ, pixelContent$SizeT), fileConn)
+close(fileConn)
+```

@@ -37,6 +37,19 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
+  pID = pID, uID = "iEzpp6", versionID = versionID, initReactivity = FALSE # Tumour
+)
+
+cciaObj$imFilepath()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
   pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE # Tumour
 )
 

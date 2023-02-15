@@ -46,9 +46,9 @@ Omezarr <- R6::R6Class(
       }
       
       # check whether image is a sequence
-      if (self$envParams()$dirs$isSequence) {
-        
-      }
+      # if (self$envParams()$dirs$isSequence) {
+      #   
+      # }
       
       self$writeLog(paste("Import", imPathIn))
       
