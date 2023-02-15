@@ -42,6 +42,7 @@ Cellpose <- R6::R6Class(
       
       if ("useGPU" %in% names(self$envParams()$conf))
         useGPU <- self$envParams()$conf$useGPU
+      
       self$writeLog(paste(">> Use GPU", useGPU))
       
       # convert channels names to numbers
@@ -72,7 +73,7 @@ Cellpose <- R6::R6Class(
         models = models,
         labelSuffixes = labelSuffixes,
         useOmni = FALSE,
-        useGPU = ,
+        useGPU = useGPU,
         matchThreshold = self$funParams()$matchThreshold,
         removeUnmatched = self$funParams()$removeUnmatched,
         minCellSize = self$funParams()$minCellSize,

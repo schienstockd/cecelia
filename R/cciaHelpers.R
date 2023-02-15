@@ -398,7 +398,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param taskHPCnumGPUperTask integer of number of HPC GPUs per task
 #' @param taskHPCmemory integer of HPC memory in 'GB'
 #' @param taskHPCwalltime character of walltime 'dd-hh:mm:ss'
-#' @param hpcUseGPU boolean to use GPUs
+#' @param useGPU boolean to use GPUs
 #' @examples
 #' TODO
 #' @export
@@ -406,9 +406,9 @@ createTaskVars <- function(uID, projectManager, taskEnv,
                            taskHPCnumNodes = 1, taskHPCnumTasks = 1,
                            taskHPCnumCPUperTask = 1, taskHPCnumGPUperTask = 1,
                            taskHPCmemory = 50, taskHPCwalltime = "00-01:00:00",
-                           hpcUseGPU = FALSE) {
+                           useGPU = FALSE) {
   # set HPC settings
-  if (hpcUseGPU == TRUE) {
+  if (useGPU == TRUE) {
     hpcProjectQos = projectManager$getProjectHPCqosGPU()
     hpcProjectPartitions = projectManager$getProjectHPCpartitionsGPU()
     hpcProjectID = projectManager$getProjectHPCprojectGPU()
@@ -433,6 +433,9 @@ createTaskVars <- function(uID, projectManager, taskEnv,
         dirs = list(
           task = projectManager$persistentObjectDirectory(uID),
           zero = projectManager$persistentObjectDirectory(uID, version = 0)
+        ),
+        conf = list(
+          useGPU = useGPU
         )
       ),
       hpc = list(
@@ -454,7 +457,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           projectQos = hpcProjectQos,
           projectPartitions = hpcProjectPartitions,
           projectID = hpcProjectID,
-          useGPU = hpcUseGPU
+          useGPU = useGPU
         )
       ),
       utils = list(

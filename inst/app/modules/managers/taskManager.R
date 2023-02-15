@@ -792,7 +792,7 @@ createTaskManager <- function(
       taskHPCnumGPUperTask = taskHPCnumGPUperTask(),
       taskHPCmemory = taskHPCmemory(),
       taskHPCwalltime = taskHPCwalltime(),
-      hpcUseGPU = useGPU()
+      useGPU = useGPU()
     )
   }
   

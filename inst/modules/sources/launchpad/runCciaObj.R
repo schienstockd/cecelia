@@ -43,7 +43,9 @@ RunCciaObj <- R6::R6Class(
           uploadSubmissionFiles = TRUE,
           runInplace = FALSE,
           pID = if ("pID" %in% names(self$funParams())) self$funParams()$pID else "000000",
-          pName = if ("pName" %in% names(self$funParams())) self$funParams()$pName else "NONE"
+          pName = if ("pName" %in% names(self$funParams())) self$funParams()$pName else "NONE",
+          # TODO this should be incorporated automatically
+          envConf = if ("conf" %in% names(self$envParams())) self$envParams()$conf else NULL
         )
         
         # wait for result

@@ -266,9 +266,11 @@ ReactivePersistentObject <- R6::R6Class(
     #' @param hpcDir character for HPC directory
     #' @param pID character for project ID
     #' @param pName character for project name
-    #' @param env character for environment name. One of c("local", "hpc").
+    #' @param env character for environment name; One of c("local", "hpc")
+    #' @param envConf list of configuration parameters
     taskConf = function(funParams, envVars = list(), hpcDir = NULL,
-                        pID = "000000", pName = "NONE", env = "local") {
+                        pID = "000000", pName = "NONE", env = "local",
+                        envConf = list()) {
       # build variables
       vars <- list(
         fun = funParams,
@@ -283,7 +285,8 @@ ReactivePersistentObject <- R6::R6Class(
             dirs = list(
               task = self$persistentObjectDirectory(),
               zero = self$persistentObjectDirectory(zero = TRUE)
-            )
+            ),
+            conf = envConf
           )
         )
       )

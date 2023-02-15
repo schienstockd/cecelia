@@ -131,6 +131,8 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 cciaObj <- initCciaObject(
   pID = pID, uID = "UEssFo", versionID = versionID, initReactivity = FALSE # Test
 )
+```
+
 ```{r}
 # segment
 devtools::load_all("../")
