@@ -44,6 +44,11 @@ class CellposeUtils(SegmentationUtils):
       if do_3D is True and stitch_threshold > 0.0:
         do_3D = False
         stitch_threshold = stitch_threshold
+        
+      # do not use stitching when not 3D
+      # otherwise the segmentation will not return masks
+      if do_3D is False:
+        stitch_threshold = 0.0
       
       if model_name in cfg.data['python']['cellpose']['models']:
         masks, flows, styles, diams = model.eval(
