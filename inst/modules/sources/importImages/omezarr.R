@@ -45,11 +45,6 @@ Omezarr <- R6::R6Class(
         }
       }
       
-      # check whether image is a sequence
-      # if (self$envParams()$dirs$isSequence) {
-      #   
-      # }
-      
       self$writeLog(paste("Import", imPathIn))
       
       imPathOut <- file.path(
@@ -68,40 +63,57 @@ Omezarr <- R6::R6Class(
         pyramidScaleStr <- sprintf("--resolutions %d", self$funParams()$pyramidScale)
       }
       
-      # use custom dimension order?
-      dimOrderStr <- ""
-      if (self$funParams()$dimOrder != "") {
-        dimOrderStr <- sprintf("--dimension-order %s", self$funParams()$dimOrder)
-      }
-      
-      cmd <- paste(
-        # sprintf("cd \"%s\";", self$envParams()$dirs$zero),
-        # go to file directory
-        sprintf("cd \"%s\";", dirname(imPathIn)),
-        file.path(sprintf("%s", cciaConf()$dirs$bioformats2raw), "bin", "bioformats2raw"),
-        sprintf(imPathInPattern, basename(imPathIn)),
-        sprintf("\"%s\"", imPathOut),
-        pyramidScaleStr,
-        dimOrderStr
-      )
-      
-      # add blosc library if needed
-      # https://github.com/glencoesoftware/bioformats2raw
-      if (cciaConf()$dirs$blosc != "") {
-        cmd <- paste(
-          c(
-            sprintf(
-              "export JAVA_OPTS='-Djna.library.path=%s'",
-              cciaConf()$dirs$blosc
-            ),
-            cmd
-          ),
-          collapse = "; "
+      # check whether image is a sequence
+      if (self$funParams()$isSequence) {
+        self$writeLog(">> Create image from sequence")
+        
+        # create params
+        params <- list(
+          imPath = imPathIn,
+          zarrPath = imPathOut,
+          isStacked = self$funParams()$isStacked,
+          nscales = self$funParams()$pyramidScale,
+          physicalZScale = self$funParams()$physicalZScale
         )
+        
+        # call python
+        self$pyScript("import_from_sequence", params)
+      } else {
+        # use custom dimension order?
+        dimOrderStr <- ""
+        if (self$funParams()$dimOrder != "") {
+          dimOrderStr <- sprintf("--dimension-order %s", self$funParams()$dimOrder)
+        }
+        
+        cmd <- paste(
+          # sprintf("cd \"%s\";", self$envParams()$dirs$zero),
+          # go to file directory
+          sprintf("cd \"%s\";", dirname(imPathIn)),
+          file.path(sprintf("%s", cciaConf()$dirs$bioformats2raw), "bin", "bioformats2raw"),
+          sprintf(imPathInPattern, basename(imPathIn)),
+          sprintf("\"%s\"", imPathOut),
+          pyramidScaleStr,
+          dimOrderStr
+        )
+        
+        # add blosc library if needed
+        # https://github.com/glencoesoftware/bioformats2raw
+        if (cciaConf()$dirs$blosc != "") {
+          cmd <- paste(
+            c(
+              sprintf(
+                "export JAVA_OPTS='-Djna.library.path=%s'",
+                cciaConf()$dirs$blosc
+              ),
+              cmd
+            ),
+            collapse = "; "
+          )
+        }
+        
+        self$writeLog(paste("EXEC", cmd))
+        handleSystem(.execSystem(cmd))
       }
-      
-      self$writeLog(paste("EXEC", cmd))
-      handleSystem(.execSystem(cmd))
       
       self$writeLog("Done")
       self$exitLog()

@@ -7,11 +7,13 @@ import bioformats
 save (changed) OME XML from previous image into zarr structure
 """
 def save_meta_in_zarr(
-  original_im_path, store_path,
+  store_path,
+  original_im_path = None, omexml = None,
   changed_shape = None, dim_utils = None,
   new_shape = None):
   # get previous metadata
-  omexml = parse_meta(original_im_path)
+  if omexml is None:
+    omexml = parse_meta(original_im_path)
   
   # add new dimensions
   # TZCYX
@@ -22,11 +24,16 @@ def save_meta_in_zarr(
   # omexml.images[0].pixels.size_y = changed_shape[dim_utils.dim_idx("Y")]
   # omexml.images[0].pixels.size_x = changed_shape[dim_utils.dim_idx("X")]
   if changed_shape is not None and dim_utils is not None:
-    omexml.image().Pixels.set_SizeT(changed_shape[dim_utils.dim_idx('T')])
-    omexml.image().Pixels.set_SizeZ(changed_shape[dim_utils.dim_idx('Z')])
-    omexml.image().Pixels.set_SizeC(changed_shape[dim_utils.dim_idx('C')])
-    omexml.image().Pixels.set_SizeY(changed_shape[dim_utils.dim_idx('Y')])
-    omexml.image().Pixels.set_SizeX(changed_shape[dim_utils.dim_idx('X')])
+    if dim_utils.dim_idx('T') is not None:
+      omexml.image().Pixels.set_SizeT(changed_shape[dim_utils.dim_idx('T')])
+    if dim_utils.dim_idx('Z') is not None:
+      omexml.image().Pixels.set_SizeZ(changed_shape[dim_utils.dim_idx('Z')])
+    if dim_utils.dim_idx('C') is not None:
+      omexml.image().Pixels.set_SizeC(changed_shape[dim_utils.dim_idx('C')])
+    if dim_utils.dim_idx('Y') is not None:
+      omexml.image().Pixels.set_SizeY(changed_shape[dim_utils.dim_idx('Y')])
+    if dim_utils.dim_idx('X') is not None:
+      omexml.image().Pixels.set_SizeX(changed_shape[dim_utils.dim_idx('X')])
   elif new_shape is not None:
     # reset shape
     omexml.image().Pixels.set_SizeT(1)
@@ -57,7 +64,7 @@ def save_meta_in_zarr(
   write_ome_xml(store_path, omexml)
   
 """
-get im size dict
+Get im size dict
 """
 def get_im_size_dict(omexml):
   im_dim_dict = dict()
@@ -67,23 +74,61 @@ def get_im_size_dict(omexml):
   
   # go through dimension order  
   for x in im_dim_order:
-    if x == "T":
+    if x == 'T':
       # im_dim_dict[x] = omexml.images[0].pixels.size_t
       im_dim_dict[x] = omexml.image().Pixels.get_SizeT()
-    if x == "Z":
+    if x == 'Z':
       # im_dim_dict[x] = omexml.images[0].pixels.size_z
       im_dim_dict[x] = omexml.image().Pixels.get_SizeZ()
-    if x == "C":
+    if x == 'C':
       # im_dim_dict[x] = omexml.images[0].pixels.size_c
       im_dim_dict[x] = omexml.image().Pixels.get_SizeC()
-    if x == "Y":
+    if x == 'Y':
       # im_dim_dict[x] = omexml.images[0].pixels.size_y
       im_dim_dict[x] = omexml.image().Pixels.get_SizeY()
-    if x == "X":
+    if x == 'X':
       # im_dim_dict[x] = omexml.images[0].pixels.size_x
       im_dim_dict[x] = omexml.image().Pixels.get_SizeX()
       
   return im_dim_dict
+
+"""
+Set physical size with dict
+"""
+def set_physical_size_with_dict(omexml, omedict):
+  # go through dimensions
+  for i, x in omedict.items():
+    if i == 'T':
+      omexml.image().Pixels.set_PhysicalSizeT(x)
+    if i == 'Z':
+      omexml.image().Pixels.set_PhysicalSizeZ(x)
+    if i == 'C':
+      omexml.image().Pixels.set_PhysicalSizeC(x)
+    if i == 'Y':
+      omexml.image().Pixels.set_PhysicalSizeY(x)
+    if i == 'X':
+      omexml.image().Pixels.set_PhysicalSizeX(x)
+      
+  return omexml
+
+"""
+Set im size with dict
+"""
+def set_im_size_with_dict(omexml, omedict):
+  # go through dimensions
+  for i, x in omedict.items():
+    if i == 'T':
+      omexml.image().Pixels.set_SizeT(x)
+    if i == 'Z':
+      omexml.image().Pixels.set_SizeZ(x)
+    if i == 'C':
+      omexml.image().Pixels.set_SizeC(x)
+    if i == 'Y':
+      omexml.image().Pixels.set_SizeY(x)
+    if i == 'X':
+      omexml.image().Pixels.set_SizeX(x)
+      
+  return omexml
 
 """
 Write OME-XML
@@ -100,7 +145,11 @@ def write_ome_xml(im_path, omexml):
     
     # write to file
     ome_xml_file = open(os.path.join(ome_path, 'METADATA.ome.xml'), 'w')
-    ome_xml_file.write(omexml.to_xml())
+    
+    if isinstance(omexml, str):
+      ome_xml_file.write(omexml)
+    else:
+      ome_xml_file.write(omexml.to_xml())
     
     # TODO use when ome_type 0.21 is released  
     # ome_xml_file.write(to_xml(omexml))
@@ -171,12 +220,9 @@ def parse_from_tiff(im_path):
   return tif.ome_metadata
 
 """
-Parse metadata from tiff
+Convert meta to ome xml
 """
-def parse_meta_from_tiff(im_path):
-  # get meta
-  meta = parse_from_tiff(im_path)
-  
+def convert_meta_to_ome_xml(meta):
   # extract image from metadata
   omexml = bioformats.omexml.OMEXML(meta)
   
@@ -186,6 +232,12 @@ def parse_meta_from_tiff(im_path):
   # omexml = from_tiff(im_path)
 
   return omexml
+
+"""
+Parse metadata from tiff
+"""
+def parse_meta_from_tiff(im_path):
+  return convert_meta_to_ome_xml(parse_from_tiff(im_path))
 
 """
 Parse metadata from zarr

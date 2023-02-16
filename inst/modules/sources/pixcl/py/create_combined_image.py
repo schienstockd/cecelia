@@ -140,7 +140,7 @@ def run(params):
   }
   
   ome_xml_utils.save_meta_in_zarr(
-    im_paths[0], im_path,
+    im_path, im_paths[0],
     new_shape = changed_shape
   )
 

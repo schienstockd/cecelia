@@ -40,7 +40,7 @@ def run(params):
 
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
-    params['imPath'], params['imCorrectionPath'],
+    params['imCorrectionPath'], params['imPath'],
     changed_shape = corrected_image.shape,
     dim_utils = dim_utils
   )

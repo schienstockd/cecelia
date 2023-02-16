@@ -168,7 +168,7 @@ def run(params):
   
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
-    fixed_im_path, im_reg_path,
+    im_reg_path, fixed_im_path,
     changed_shape = reg_im_shape,
     dim_utils = dim_utils[0]
   )

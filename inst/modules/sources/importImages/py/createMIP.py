@@ -22,7 +22,7 @@ def main():
   # get params
   params = script_utils.script_params()
 
-  # run donblo
+  # run
   run(params)
 
 if __name__ == "__main__":

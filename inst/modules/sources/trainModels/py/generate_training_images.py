@@ -106,7 +106,7 @@ def run(params):
 
       # add metadata
       ome_xml_utils.save_meta_in_zarr(
-        params['imPath'], x,
+        x, params['imPath'],
         changed_shape = [int(x) for x in slice_shape],
         dim_utils = dim_utils
       )
