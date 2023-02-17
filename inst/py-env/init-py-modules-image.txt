@@ -1,3 +1,4 @@
+blosc
 jupyter
 napari[all]
 napari-animation

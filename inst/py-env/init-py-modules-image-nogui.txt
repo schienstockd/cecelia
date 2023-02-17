@@ -1,3 +1,4 @@
+blosc
 h5py
 fsspec
 urllib3
