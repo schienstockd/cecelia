@@ -51,7 +51,7 @@ AfDriftCorrect <- R6::R6Class(
           self$envParams()$dirs$zero,
           "ccidCorrected.zarr"
         ),
-        driftNormalisation = elf$funParams()$driftNormalisation
+        driftNormalisation = self$funParams()$driftNormalisation
       )
       
       # call python
