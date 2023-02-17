@@ -11,6 +11,7 @@ Author: Dominik Schienstock
 Maintainer: Dominik Schienstock <schienstockd@student.unimelb.edu.au>
 Description: Set of core functions that are used to produce a shiny app for immunological image and flow cytometry analysis.
 License: GPL (>= 3)
+biocViews:
 Imports:
     Rcpp (>= 1.0.8),
     data.table (>= 1.14.2),
