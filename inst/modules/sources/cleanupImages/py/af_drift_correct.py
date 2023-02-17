@@ -50,6 +50,7 @@ def run(params):
       corrected_image, int(params['driftChannel']), dim_utils
       )
       
+    logfile_utils.log(shifts)
     logfile_utils.log('>> apply shifts')
     
     # do drift correction
