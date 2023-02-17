@@ -59,6 +59,11 @@
 				"type:boolean": {
 					"default": true
 				}
+			},
+			"driftNormalisation": {
+				"type:character": {
+					"default": "phase"
+				}
 			}
     },
     "outputs": {}
@@ -141,6 +146,18 @@
 				"label": "Apply gaussian to others",
 				"widget:checkbox": {
 				}
+			},
+			"driftNormalisation": {
+				"index": 5,
+				"label": "Drift normalisation",
+        "widget:selection": {
+          "items": {
+            "Phase": "phase",
+            "None": "none"
+          },
+          "multiple": false,
+          "size": 1
+        }
 			}
     },
     "outputs": {}

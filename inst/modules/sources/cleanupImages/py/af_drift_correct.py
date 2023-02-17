@@ -47,7 +47,8 @@ def run(params):
     
     # get shifts
     shifts = correction_utils.drift_correction_shifts(
-      corrected_image, int(params['driftChannel']), dim_utils
+      corrected_image, int(params['driftChannel']), dim_utils,
+      normalisation = params['driftNormalisation'] if params['driftNormalisation'] != 'none' else None
       )
       
     logfile_utils.log(shifts)
