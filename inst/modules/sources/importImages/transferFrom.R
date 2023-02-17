@@ -47,11 +47,14 @@ TransferFrom <- R6::R6Class(
       ), collapse = "; ")
       
       # create rename
-      cmdRename <- paste(sprintf(
-        "mv \\\"%s\\\" \\\"%s\\\"",
-        paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$files), sep = "/"),
-        paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$names), sep = "/")
-      ), collapse = "; ")
+      cmdRename <- ""
+      if (self$funParams()$isSequence == FALSE) {
+        cmdRename <- paste(sprintf(
+          "mv \\\"%s\\\" \\\"%s\\\"",
+          paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$files), sep = "/"),
+          paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$names), sep = "/")
+        ), collapse = "; ")
+      }
       
       self$writeLog(">> GET command")
       self$writeLog(sprintf(

@@ -17,7 +17,8 @@ CleanupTransferredImages <- R6::R6Class(
     
     # run
     run = function() {
-      # update libraries
+      # clean up images
+      # Renamed files
       self$sshConnection()$sshExecute(
         paste(
           sprintf("cd %s", dirname(self$envParams("hpc")$dirs$zero)),
@@ -26,6 +27,16 @@ CleanupTransferredImages <- R6::R6Class(
           sep = ";"
           # TODO this should output on console
           # but does not appear in sink(logfile)
+          ), intern = FALSE, outputFile = self$getTaskLogFile())
+      
+      # TIF files
+      # TODO should this include other file types?
+      self$sshConnection()$sshExecute(
+        paste(
+          sprintf("cd %s", dirname(self$envParams("hpc")$dirs$zero)),
+          # remove all transferred TIF images from user directory
+          "rm ./*/*.tif",
+          sep = ";"
           ), intern = FALSE, outputFile = self$getTaskLogFile())
     }
   )

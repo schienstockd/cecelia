@@ -1032,6 +1032,8 @@
         popCats <- list()
         
         if (!is.null(popType())) {
+          browser()
+          
           popTypePops <- unname(cciaObj()$popPaths(popType(), includeFiltered = TRUE))
           popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
         }

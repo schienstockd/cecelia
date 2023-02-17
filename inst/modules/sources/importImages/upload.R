@@ -30,20 +30,14 @@ Upload <- R6::R6Class(
       remoteDir <- self$envParams("hpc")$dirs$zero
       # if (self$funParams()$remoteEnv == "hpc")
       
-      filesToCopy <- cciaObj$oriFilepath()
-      
-      newFileNames <- list.files(dirname(oldFilename),
-                                 pattern = sprintf(".%s$", fileExt))
-        fileIMAGE_TO_IMPORT,
-        isSequence = self$funParams()$isSequence
-      )
-      
       # upload local files
       taskVars$fun <- list(
-        localFiles = filesToCopy$files,
+        localFiles = cciaObj$oriFilepath(),
+        newFilename = fileIMAGE_TO_IMPORT,
         localDir = dirname(cciaObj$oriFilepath()),
         remoteDir = remoteDir,
-        useCompression = FALSE
+        useCompression = FALSE,
+        isSequence = self$funParams()$isSequence
       )
       
       # run environment

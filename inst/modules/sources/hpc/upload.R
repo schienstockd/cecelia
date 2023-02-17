@@ -32,7 +32,9 @@ Upload <- R6::R6Class(
         useArchive = if ("useArchive" %in% names(self$funParams()))
           self$funParams()$useArchive else FALSE,
         removeFiles = if ("removeFiles" %in% names(self$funParams()))
-          self$funParams()$removeFiles else FALSE
+          self$funParams()$removeFiles else FALSE,
+        isSequence = if ("isSequence" %in% names(self$funParams()))
+          self$funParams()$isSequence else FALSE
         )
     }
   )

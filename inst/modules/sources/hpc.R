@@ -13,12 +13,13 @@ Hpc <- R6::R6Class(
     
     # upload files
     upload = function(localFiles, localDir, remoteDir, 
-                      newFilename = NULL, removeFiles = FALSE, ...) {
+                      newFilename = NULL, removeFiles = FALSE,
+                      isSequence = FALSE, ...) {
       newFilenames <- NULL
       
       # prepare file list 
       if (!is.null(newFilename)) {
-        filelist <- prepFilelistToSync(localFiles, newFilename)
+        filelist <- prepFilelistToSync(localFiles, newFilename, isSequence = isSequence)
         
         localFiles <- filelist$files
         newFilenames <- filelist$names
