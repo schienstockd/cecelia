@@ -21,8 +21,8 @@ Get drift correction shift
 """
 def drift_correction_shifts(
   image_array, phase_shift_channel, dim_utils,
-  # timepoints = None, upsample_factor = 100):
-  timepoints = None, upsample_factor = 1):
+  timepoints = None, upsample_factor = 100,
+  normalization = None):
   # get shifts
   shifts = list()
 
@@ -59,7 +59,8 @@ def drift_correction_shifts(
     shift, error, diffphase = phase_cross_correlation(
       np.squeeze(image_array[slices_a]),
       np.squeeze(image_array[slices_b]),
-      upsample_factor = upsample_factor
+      upsample_factor = upsample_factor,
+      normalization = normalization
     )
 
     # add shift
