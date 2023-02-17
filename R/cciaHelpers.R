@@ -954,18 +954,28 @@ adataMatFromPopDT <- function(popDT) {
 # TODO is there a better way to do this?
 #' @param oldFilename character of old filename
 #' @param newFilename character of new filename
+#' @param isSequence boolean if image is sequence
 #' @examples
 #' TODO
 #' @export
-prepFilelistToSync <- function(oldFilename, newFilename) {
+prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE) {
   # get new file name
-  fileExt <- file_ext(oldFilename)
+  fileExt <- xfun::file_ext(oldFilename)
   
   filesToCopy <- c(oldFilename)
   newFileNames <- c(sprintf("%s.%s", newFilename, fileExt))
   
-  # check for file extensions that save images in multiple files
-  if (fileExt %in% cciaConf()$images$splitFileFormats) {
+  # check whether image is sequence
+  if (isSequence == TRUE) {
+    # ingore new filename and use original names
+    # get files to copy
+    newFileNames <- list.files(dirname(oldFilename),
+                             pattern = sprintf(".%s$", fileExt))
+    
+    # add to files to copy
+    filesToCopy <- file.path(dirname(oldFilename), newFileNames)
+  } else if (fileExt %in% cciaConf()$images$splitFileFormats) {
+    # check for file extensions that save images in multiple files
     # get filename
     filename <- tools::file_path_sans_ext(basename(oldFilename))
     addedFiles <- c()

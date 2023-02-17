@@ -17,7 +17,12 @@
         "type:character": {
           "default": "hpc"
         }
-      }
+      },
+      "isSequence": {
+				"type:boolean": {
+					"default": false
+				}
+			}
     },
     "outputs": {}
   },
@@ -44,7 +49,13 @@
           "multiple": false,
           "size": 1
         }
-      }
+      },
+      "isSequence": {
+				"index": 2,
+				"label": "Image sequence",
+				"widget:checkbox": {
+				}
+			}
     },
     "outputs": {}
   }

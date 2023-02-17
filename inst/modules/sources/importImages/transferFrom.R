@@ -32,7 +32,8 @@ TransferFrom <- R6::R6Class(
       # get files to copy
       filesToCopy <- prepFilelistToSync(
         cciaObj$oriFilepath(),
-        fileIMAGE_TO_IMPORT
+        fileIMAGE_TO_IMPORT,
+        isSequence = self$funParams()$isSequence
       )
       
       self$writeLog(smbCmd)
