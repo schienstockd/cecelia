@@ -62,7 +62,7 @@
 			},
 			"driftNormalisation": {
 				"type:character": {
-					"default": "phase"
+					"default": "none"
 				}
 			}
     },

@@ -153,13 +153,14 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 # get frequencies of clusters at time points
 hmmTime <- copy(popDTs)
 
-# hmmTime$hmm.type <- "0"
-# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "1"
-# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(3), ]$hmm.type <- "2"
-# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(4), ]$hmm.type <- "3"
-# hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("0", "1", "2", "3"))
-hmmTime$hmm.type <- factor(hmmTime$live.cell.track.clusters.default,
-                           levels = unique(hmmTime$live.cell.track.clusters.default))
+hmmTime$hmm.type <- "NA"
+hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(1, 3), ]$hmm.type <- "1"
+# hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "2"
+hmmTime[hmmTime$live.cell.hmm.state.movement %in% c(2), ]$hmm.type <- "2"
+hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("1", "2"))
+# hmmTime$hmm.type <- factor(hmmTime$hmm.type, levels = c("1", "2"))
+# hmmTime$hmm.type <- factor(hmmTime$live.cell.track.clusters.default,
+#                            levels = unique(hmmTime$live.cell.track.clusters.default))
 
 hmmTime <- hmmTime %>%
   dplyr::filter(
@@ -206,14 +207,15 @@ ggplot(hmmTime,
            color = hmm.type,
            fill = hmm.type,
            )) +
-  # geom_area(aes(y = cno), alpha = 0.2) +
+  geom_area(data = hmmTime %>% dplyr::filter(hmm.type == "1"),
+            aes(y = cno), alpha = 0.2) +
   stat_smooth(span = 0.2) +
   # geom_line(size = 0.8) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
-  scale_fill_brewer(name = NULL, palette = "Set1") +
-  # scale_color_manual(values = plotColours) +
-  # scale_fill_manual(values = plotColours) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_fill_brewer(name = NULL, palette = "Set1") +
+  scale_color_manual(values = plotColours) +
+  scale_fill_manual(values = plotColours) +
   xlab("Time (min)") + ylab("Velocity (um/min)") +
   facet_grid(uID~.) +
   plotThemeDark(angle = 0) +
@@ -222,8 +224,8 @@ ggplot(hmmTime,
     legend.position = "bottom"
     ) +
   ggtitle("") +
-  scale_x_continuous(limits = c(5, 100), breaks = seq(0, 120, 20))
-  # scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
+  scale_x_continuous(limits = c(5, 100), breaks = seq(0, 120, 20)) +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
 
 ggsave(file.path(anaDir, "hmm_time.pdf"), height = 10, width = 5)
 

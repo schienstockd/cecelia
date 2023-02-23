@@ -122,14 +122,15 @@ NapariUtils <- R6::R6Class(
     #' @param channelColormaps list of character for channel colormaps
     #' @param napariModule character to add napari module
     #' @param asDask boolean to load image as dask
+    #' @param downsampleZ boolean to downsample image
     #' @param show3D boolean to show image in 3D
     #' @param multiscales integer for multiscales
     #' @param execInteractive boolean to execute interactive
     #' @param layersVisible boolean to make layers visible
     openImage = function(
       imPath, useChannelAxis = TRUE, imChannelNames = NULL, channelColormaps = NULL,
-      napariModule = NULL, asDask = TRUE, show3D = FALSE, multiscales = NULL,
-      execInteractive = TRUE, layersVisible = TRUE) {
+      napariModule = NULL, asDask = TRUE, downsampleZ = FALSE, show3D = FALSE,
+      multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE) {
       # map path
       imPath <- .dockerMapPathToHost(imPath)
       
@@ -151,6 +152,7 @@ NapariUtils <- R6::R6Class(
             "channel_colormaps=%s,",
             "multiscales=%s,",
             "as_dask=%s,",
+            "downsample_z=%s,",
             "show_3D=%s,",
             "visible=%s",
             ")"
@@ -164,6 +166,7 @@ NapariUtils <- R6::R6Class(
           reticulate::r_to_py(channelColormaps),
           reticulate::r_to_py(multiscales),
           reticulate::r_to_py(asDask),
+          reticulate::r_to_py(downsampleZ),
           reticulate::r_to_py(show3D),
           reticulate::r_to_py(layersVisible)
           ), execInteractive = execInteractive

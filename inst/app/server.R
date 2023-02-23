@@ -459,6 +459,13 @@ server <- function(input, output, session) {
       globalManagers$viewerManager()$setAsDask(FALSE)
     }
     
+    # Downsample Z?
+    if ("downsampleZ" %in% input$viewerParams) {
+      globalManagers$viewerManager()$setDownsampleZ(TRUE)
+    } else {
+      globalManagers$viewerManager()$setDownsampleZ(FALSE)
+    }
+    
     # show populations?
     if ("showPops" %in% input$viewerParams) {
       globalManagers$viewerManager()$setShowPops(TRUE)

@@ -35,7 +35,8 @@ ui <- function(request) {
               "Populations" = "showPops",
               "Neighbours" = "showNeighbours",
               "Shapes" = "showShapes",
-              "Lazy" = "asDask"
+              "Lazy" = "asDask",
+              "Downsample Z" = "downsampleZ"
               ),
             selected = c(
               "layersVisible", "showViewer", "showLabels", "showTracks",

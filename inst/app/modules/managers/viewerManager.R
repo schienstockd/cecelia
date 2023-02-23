@@ -33,6 +33,7 @@ ViewerManager <- R6::R6Class(
     showShapes = FALSE,
     showTracks = FALSE,
     asDask = TRUE,
+    downsampleZ = FALSE,
     multiscales = TRUE,
     
     # setters
@@ -139,6 +140,7 @@ ViewerManager <- R6::R6Class(
             imChannelNames = imChannelNames,
             napariModule = napariModule,
             asDask = self$getAsDask(),
+            downsampleZ = self$getDownsampleZ(),
             multiscales = self$getMultiscales(),
             show3D = self$getShow3D(),
             layersVisible = self$getLayersVisible()
@@ -304,6 +306,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setDownsampleZ = function(x, invalidate = TRUE) {
+      private$downsampleZ <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setShowPops = function(x, invalidate = TRUE) {
       private$showPops <- x
       private$invalidate(invalidate = invalidate)
@@ -368,6 +375,10 @@ ViewerManager <- R6::R6Class(
     
     getAsDask = function() {
       private$asDask
+    },
+    
+    getDownsampleZ = function() {
+      private$downsampleZ
     },
     
     getShowPops = function() {
