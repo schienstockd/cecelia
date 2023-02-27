@@ -940,6 +940,10 @@ server <- function(input, output, session) {
         icon = icon("chart-simple"),
         tabName = "plotCharts"),
       menuSubItem(
+        "Interaction heatmaps",
+        icon = icon("circle-nodes"),
+        tabName = "plotInteractionHeatmaps"),
+      menuSubItem(
         "Cluster heatmaps",
         icon = icon("fire"),
         tabName = "plotHeatmaps"),
@@ -994,6 +998,7 @@ server <- function(input, output, session) {
   # plot canvases
   .plotChartsServer("plotCharts", session, globalManagers)
   .plotHeatmapsServer("plotHeatmaps", session, globalManagers)
+  .plotInteractionHeatmapsServer("plotInteractionHeatmaps", session, globalManagers)
   .plotClustersUMAPServer("plotClustersUMAP", session, globalManagers)
   # .plotTrackClustersUMAPServer("plotTrackClustersUMAP", session, globalManagers)
   

@@ -5,7 +5,7 @@
 #' @param globalManagers list of global managers
 #' @examples
 #' TODO
-.plotClustersUMAPServer <- function(id, parent, globalManagers) {
+.plotInteractionHeatmapsServer <- function(id, parent, globalManagers) {
   moduleServer(
     id,
     ## Below is the module function
@@ -13,6 +13,7 @@
       ### Functions
       
       ### Reactive values
+      spatialDT <- reactiveVal()
       popDT <- reactiveVal()
       summaryDT <- reactiveVal()
       
@@ -53,6 +54,12 @@
       
       selectedUIDs <- reactive({
         moduleManagers()$selectionManager$selectedUIDs()
+      })
+      
+      # value name
+      valueName <- reactive({
+        # DEBUG - need a selection box for this
+        "default"
       })
       
       # pop type
@@ -155,10 +162,32 @@
       })
       
       # points data that is shown
-      pointsData <- reactive({
+      pointsData <- eventReactive(c(
+        input$plotOutputTabs,
+        popDT(),
+        pointsDT(),
+        expInfoUpdated(),
+        resultParamsPopsShow(),
+        resultParamsCatsShow()
+      ), {
+        req(input$plotOutputTabs)
         req(popDT())
+        req(pointsDT())
+        req(expInfo())
         
-        popDT()
+        # TODO version without copy
+        DT <- NULL
+        if (input$plotOutputTabs == "combined")
+          DT <- pointsDT()
+        else
+          DT <- popDT()[expInfo(), on = .(uID)]
+        
+        if (!is.null(resultParamsPopsShow()) && length(resultParamsPopsShow()) > 0)
+          DT <- DT %>% dplyr::filter(pop %in% resultParamsPopsShow())
+        if (!is.null(resultParamsCatsShow()) && length(resultParamsCatsShow()) > 0)
+          DT <- DT %>% dplyr::filter(get(resultSummaryAxisYCat()) %in% resultParamsCatsShow())
+        
+        DT
       })
       
       # points data that is shown
@@ -177,28 +206,30 @@
       
       # summary data for plot
       summaryPlotData <- reactive({
-        req(pointsData())
+        req(summaryData())
+        
+        groupA <- paste0(resultSummaryAxisX(), ".from")
+        groupB <- paste0(resultSummaryAxisX(), ".to")
         
         # generate plot layers
-        p1 <- ggplot(data = pointsData(), aes(UMAP_1, UMAP_2))
+        p1 <- ggplot(data = summaryData(),
+                     aes(x = as.factor(get(groupA)),
+                         y = as.factor(get(groupB))))
         
         xlabTitle <- ""
         ylabTitle <- ""
         
-        # main map
-        p1 <- p1 + geom_point(aes(color = get(resultSummaryAxisY())))
+        # main tiles
+        p1 <- p1 + geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+          viridis::scale_fill_viridis(
+            limits = c(0, 100),
+            breaks = c(0, 50, 100)
+            # labels = c(0, 50, 100)
+          )
         
         # format plot
-        p1 <- .formatSummaryPlotData(
+        .formatSummaryPlotData(
           p1, input, xlabTitle = xlabTitle, ylabTitle = ylabTitle)
-        
-        # add facet wrap for category?
-        # p1 <- p1 + facet_grid(.~cat) +
-        # p1 <- p1 + facet_wrap(.~cat, nrow = 1, scales = "free_x") +
-        #   theme(
-        #     strip.background = element_rect(fill = NA, color = "black", size = 2),
-        #     strip.text.x = element_text(color = "black")
-        #   )
       }) %>% debounce(cciaConf()$tasks$results$poll)
       
       ### Observers - RxAction
@@ -207,48 +238,74 @@
       # listen to image selection
       observeEvent(c(
         selectedUIDs(),
+        popType(),
         resultParamsPops()
       ), {
-        req(cciaSet())
         req(selectedUIDs())
+        req(popType())
         req(resultParamsPops())
         
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
+        # get population data
         DT <- cciaSet()$popDT(
           popType = popType(),
           uIDs = selectedUIDs(),
           includeFiltered = TRUE,
-          completeDT = TRUE,
+          completeDT = FALSE,
           replaceNA = TRUE,
-          pops = resultParamsPops()
+          pops = resultParamsPops(),
+          popCols = c("label", "pop")
         )
+        
+        # get interaction data
+        sDT <- cciaSet()$spatialDT(
+          valueName = valueName(), uIDs = selectedUIDs())
+        
+        # join pops
+        sDT[DT[, c("uID", "label", "pop")],
+            on = c("uID", "to" = "label"),
+            pop.to := pop]
+        sDT[DT[, c("uID", "label", "pop")],
+            on = c("uID", "from" = "label"),
+            pop.from := pop]
+        sDT[DT[, c("uID", "label", "clusters")],
+            on = c("uID", "to" = "label"),
+            clusters.to := clusters]
+        sDT[DT[, c("uID", "label", "clusters")],
+            on = c("uID", "from" = "label"),
+            clusters.from := clusters]
+        # exclude self interactions
+        # sDT <- sDT[clusters.to != clusters.from]
         
         progress$close()
         
         popDT(DT)
+        spatialDT(sDT)
       })
       
       # create summary DT
-      observeEvent(c(popDT(), resultSummaryAxisY()), {
-        req(popDT())
+      observeEvent(c(popDT(), resultSummaryAxisX(), resultSummaryAxisY()), {
+        req(nrow(popDT()) > 0)
+        req(resultSummaryAxisX())
         req(resultSummaryAxisY())
         
-        # make summary
-        # TODO data.table only
+        groupA <- paste0(resultSummaryAxisX(), ".from")
+        groupB <- paste0(resultSummaryAxisX(), ".to")
+        
         summaryDT(as.data.table(
-          popDT() %>%
-            # left_join(expInfo()) %>%
-            group_by(pop, get(resultSummaryAxisY())) %>%
+          spatialDT() %>%
+            # group_by(.dots = c("uID", groupA, groupB)) %>%
+            group_by(.dots = c(groupA, groupB)) %>%
             summarise(n = n()) %>%
-            dplyr::rename_with(
-              ~ c(paste0(resultSummaryAxisY(), ".cat")),
-              all_of(c("get(resultSummaryAxisY())"))
-            ) %>%
-            mutate(
-              freq = n/sum(n),
-            )
+            mutate(freq = n/sum(n) * 100) %>%
+            drop_na() %>%
+            ungroup() %>%
+            # TODO is there a better way?
+            # https://stackoverflow.com/a/67082584
+            # complete(uID, !!!syms(groupA), !!!syms(groupB), fill = list(freq = 0))
+            complete(!!!syms(groupA), !!!syms(groupB), fill = list(freq = 0))
         ))
       })
       
@@ -284,28 +341,21 @@
         
         if (!is.null(popType())) {
           popTypePops <- unname(cciaSet()$popPaths(
-            uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
-          popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
-          
-          # focus only on categorical
-          if (length(popTypeCols) > 0)
-            popTypeCols <- popTypeCols[sapply(popTypeCols, .cciaStatsTypeIsCategorical)]
+            uIDs = selectedUIDs(), popType = popType(),
+            includeFiltered = TRUE, filterMeasures = c("clusters")))
         }
         
         # get choices for categories
-        propCols <- c()
+        propCols <- list(
+          "Raw interactions" = "raw"
+        )
         
         # add pop and clustering to X-axis
         if (length(popDT()) > 0) {
-          propCols <- cciaObj()$labelPropsCols()
-          
           if ("clusters" %in% colnames(popDT()))
-            propCols <- c("clusters", propCols)
+            popTypeCols <- c("clusters", popTypeCols)
           if ("pop" %in% colnames(popDT()))
-            propCols <- c("pop", propCols)
-          
-          # make sure that columns exist
-          propCols <- propCols[propCols %in% colnames(popDT())]
+            popTypeCols <- c("pop", popTypeCols)
         }
         
         popTypeChoices <- cciaConf()$parameters$popTypes
@@ -338,15 +388,13 @@
           column(
             3,
             tags$label("Summary plots"),
-            # createSelectInput(
-            #   session$ns("resultSummaryAxisX"),
-            #   label = "X Axis",
-            #   choices = popTypeCols,
-            #   multiple = TRUE,
-            #   selected = isolate(resultSummaryAxisX())
-            #   # selected = c(
-            #   #   "live.cell.hmm.state.shape", "live.cell.hmm.state.movement")
-            # ),
+            createSelectInput(
+              session$ns("resultSummaryAxisX"),
+              label = "X Axis",
+              choices = popTypeCols,
+              multiple = FALSE,
+              selected = isolate(resultSummaryAxisX())
+            ),
             createSelectInput(
               session$ns("resultSummaryAxisY"),
               label = "Y Axis",

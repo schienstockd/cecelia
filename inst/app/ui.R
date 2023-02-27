@@ -183,6 +183,10 @@ ui <- function(request) {
         .plotChartsUI("plotCharts")
       ),
       tabItem(
+        tabName = "plotInteractionHeatmaps",
+        .plotChartsUI("plotInteractionHeatmaps")
+      ),
+      tabItem(
         tabName = "plotHeatmaps",
         .plotChartsUI("plotHeatmaps")
       ),

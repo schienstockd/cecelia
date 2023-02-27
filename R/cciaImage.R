@@ -1076,11 +1076,12 @@ CciaImage <- R6::R6Class(
     #' @param tracksOnly boolean to return tracks only
     #' @param cellsOnly boolean to return cells only
     #' @param parentPops list of character of parent populations
+    #' @param filterMeasures list of character to filter on filtering measures
     #' @param ... passed to self$popUtils
     popPaths = function(popType, includeFiltered = FALSE,
                         filteredOnly = FALSE, includeRoot = FALSE,
                         tracksOnly = FALSE, cellsOnly = TRUE,
-                        parentPops = NULL, ...) {
+                        parentPops = NULL, filterMeasures = NULL, ...) {
       popUtils <- self$popUtils(popType = popType, ...)
       
       popPaths <- list()
@@ -1111,7 +1112,7 @@ CciaImage <- R6::R6Class(
           
           # get filtered pops
           filteredPops <- sapply(
-            self$imPopMap(popType, popIDs = popIDs, includeFiltered = TRUE),
+            self$imPopMap(popType, popIDs = popIDs, includeFiltered = TRUE, filterMeasures = filterMeasures),
             function(x) if (any(c("filterMeasure", "filterMeasures") %in% names(x))) x$path
           )
           
