@@ -251,33 +251,8 @@ server <- function(input, output, session) {
         }
         
         # add facet wrap for category?
-        # p1 <- p1 + facet_grid(.~cat) +
-        p1 <- p1 + facet_wrap(.~cat, nrow = 1, scales = "free_x") +
-          theme(
-            strip.background = element_rect(fill = NA, color = "black", size = 2),
-            strip.text.x = element_text(color = "black")
-          )
         
-        # show titles?
-        if (input$showFacetTitles == FALSE) {
-          p1 <- p1 +
-            theme(
-              strip.text.x = element_blank()
-            )
-        }
-        
-        # add axis titles
-        p1 + xlab(xlabTitle) + ylab(ylabTitle) +
-          theme(
-            # hide legend title
-            legend.title = element_blank(),
-            legend.position = "right",
-            legend.direction = "vertical",
-            # line thickness
-            axis.line = element_line(colour = "black", size = 1),
-            panel.border = element_blank(),
-            axis.ticks = element_line(colour = "black", size = 1)
-            )
+        # add further details to p1
       }) %>% debounce(cciaConf()$tasks$results$poll)
       
       # selected ccia object
@@ -295,68 +270,6 @@ server <- function(input, output, session) {
       ### Observers - RxAction
       ## Event specific
       
-      # listen to image selection
-      # observeEvent(moduleManagers()$selectionManager$selectedUIDs(), {
-      observeEvent(c(
-        selectedUIDs(),
-        popType(),
-        resultParamsPops()
-        ), {
-        # req(moduleManagers()$selectionManager$selectedUIDs())
-        req(selectedUIDs())
-        req(popType())
-        req(resultParamsPops())
-        
-        progress <- Progress$new()
-        progress$set(message = "Get population data", value = 50)
-        
-        # popDT(moduleManagers()$imageSetManager$selectedSet()$popDT(
-        DT <- cciaSet()$popDT(
-          popType = popType(),
-          uIDs = selectedUIDs(),
-          includeFiltered = TRUE,
-          completeDT = TRUE,
-          replaceNA = TRUE,
-          pops = resultParamsPops()
-        )
-        
-        progress$close()
-        
-        popDT(DT)
-      })
-      
-      # create summary DT
-      observeEvent(c(popDT(), resultSummaryAxisX(), resultSummaryAxisY()), {
-        req(nrow(popDT()) > 0)
-        req(resultSummaryAxisX())
-        req(resultSummaryAxisY())
-        
-        # make summary
-        summaryDT(as.data.table(
-          popDT() %>%
-            # properties
-            pivot_longer(
-              cols = resultSummaryAxisY(),
-              names_to = "prop", values_to = "prop_value"
-            ) %>%
-            # X valus
-            pivot_longer(
-              cols = resultSummaryAxisX(),
-              names_to = "cat", values_to = "cat_value"
-            ) %>%
-            dplyr::filter(!is.na(cat_value)) %>%
-            group_by(cat, cat_value, prop) %>%
-            replace_na(list(prop_value = 0)) %>%
-            summarise(mean = mean(prop_value, rm.na = TRUE)) %>%
-            group_by(cat, prop) %>%
-            mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
-            # https://stackoverflow.com/q/56806184
-            mutate(across(freq, ~ replace(., is.nan(.), 0)))
-            # arrange(-prop) %>%
-            # left_join(expInfo())
-        ))
-      })
-      
       ## Generic
       
       ### UI Outputs
@@ -365,112 +278,7 @@ server <- function(input, output, session) {
       ## Plots
       
       # plot data
-      output$plotData <- renderUI({
-        # req(popType())
-        req(cciaObj())
-        
-        # get pop type columns
-        popTypePops <- list()
-        popTypeCols <- list()
-        popCats <- list()
-        
-        if (!is.null(popType())) {
-          popTypePops <- unname(cciaSet()$popPaths(
-            uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
-          popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
-          
-          # focus only on categorical
-          if (length(popTypeCols) > 0)
-            popTypeCols <- popTypeCols[sapply(popTypeCols, .cciaStatsTypeIsCategorical)]
-        }
-        
-        # get choices for categories
-        propCols <- cciaObj()$labelPropsCols()
-        
-        # add pop and clustering to X-axis
-        if (length(popDT()) > 0) {
-          if ("clusters" %in% colnames(popDT()))
-            popTypeCols <- c("clusters", popTypeCols)
-          if ("pop" %in% colnames(popDT()))
-            popTypeCols <- c("pop", popTypeCols)
-          
-          # make sure that columns exist
-          propCols <- propCols[propCols %in% colnames(popDT())]
-        }
-        
-        popTypeChoices <- cciaConf()$parameters$popTypes
-        
-        # create ui elements
-        tagList(fluidRow(
-          column(
-            3,
-            tags$label("Parameter plots"),
-            selectInput(
-              session$ns("resultParamsPopType"), "Population Type",
-              choices = .reverseNamedList(popTypeChoices),
-              # selected = isolate(popType())
-              # selected = "live"
-              selected = "clust"
-            ),
-            createSelectInput(
-              session$ns("resultParamsPops"),
-              label = "Populations to get",
-              choices = popTypePops,
-              multiple = TRUE,
-              # selected = isolate(resultParamsPops())
-              # selected = c("OTI/tracked", "gBT/tracked")
-              # selected = c("gBT+", "gBT+/clustered")
-              # selected = c("tcells.gBT/tracked", "dcs.all/tracked")
-              selected = if (is.null(popType()))
-                c("non.debris")
-              else
-                unname(cciaSet()$popPaths(
-                  uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
-            )
-            # createSelectInput(
-            #   session$ns("resultParamsCols"),
-            #   label = "Properties",
-            #   choices = unname(cciaObj()$labelPropsCols()),
-            #   multiple = TRUE,
-            #   selected = isolate(resultParamsCols())
-            # )
-          ),
-          column(
-            3,
-            tags$label("Summary plots"),
-            createSelectInput(
-              session$ns("resultSummaryAxisX"),
-              label = "X Axis",
-              choices = popTypeCols,
-              multiple = TRUE,
-              selected = isolate(resultSummaryAxisX())
-              # selected = c(
-              #   "live.cell.hmm.state.shape", "live.cell.hmm.state.movement")
-            ),
-            createSelectInput(
-              session$ns("resultSummaryAxisY"),
-              label = "Y Axis",
-              choices = propCols,
-              multiple = TRUE,
-              selected = isolate(resultSummaryAxisY())
-              # selected = "live.cell.hmm.state.movement"
-              # selected = "clust.cell.contact#clust.TRITC+"
-              # selected = c(
-              #   "live.cell.angle",
-              #   "live.cell.angle",
-              #   "compactness",
-              #   "extent",
-              #   "oblate",
-              #   "prolate",
-              #   "solidity",
-              #   "sphericity",
-              #   "surface_area",
-              #   "volume"
-              #   )
-            )
-          )
-        ))
-      })
+      output$plotData <- NULL
       
       # plot params
       output$plotParams <- renderUI({

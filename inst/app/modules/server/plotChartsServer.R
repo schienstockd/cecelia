@@ -13,25 +13,62 @@
       ### Functions
       
       ### Reactive values
-      popDT <- reactiveVal()
       multiplePops <- reactiveVal(FALSE)
       numUIDs <- reactiveVal(0)
       pointsDT <- reactiveVal()
-      summaryDT <- reactiveVal()
       expInfoUpdated <- reactiveVal()
+      popDT <- reactiveVal()
+      summaryDT <- reactiveVal()
       
       ### Reactive-like values
       
       ### Reactives - RxCalc
       ## Event specific
-      # update image automatically when populations are gated
-      updateImage <- eventReactive(c(
-        cciaObj()
-      ), {
-        req(cciaObj())
+      
+      ## Generic
+      # populations to get
+      resultParamsPops <- reactive({
+        input$resultParamsPops
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
+      # properties to show
+      resultParamsCols <- reactive({
+        input$resultParamsCols
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
+      # summary properties to show
+      resultSummaryAxisX <- reactive({
+        input$resultSummaryAxisX
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
+      resultSummaryAxisY <- reactive({
+        input$resultSummaryAxisY
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
+      # selected ccia object
+      cciaObj <- reactive({
+        moduleManagers()$imageViewerManager$shownImage()
+      })
+      
+      # selected ccia set
+      cciaSet <- reactive({
+        moduleManagers()$imageSetManager$selectedSet()
+      })
+      
+      selectedUIDs <- reactive({
+        moduleManagers()$selectionManager$selectedUIDs()
+      })
+      
+      # pop type
+      popType <- reactive({
+        input$resultParamsPopType
+      })
+      
+      # experimental info
+      expInfo <- reactive({
+        req(cciaSet())
         
-        # update image
-        runif(1)
+        as.data.table(cciaSet()$summary(withSelf = FALSE, fields = c("Attr")))
       })
       
       # generate dataframe from selected image list
@@ -44,39 +81,12 @@
           uIDs = moduleManagers()$imageSetManager$filteredUIDs())
       })
       
-      ## Generic
-      selectedUIDs <- reactive({
-        moduleManagers()$selectionManager$selectedUIDs()
-      })
-      
-      # pop type
-      popType <- reactive({
-        input$popType
-      })
-      
-      # experimental info
-      expInfo <- reactive({
-        req(cciaSet)
-        
-        as.data.table(cciaSet()$summary(withSelf = FALSE, fields = c("Attr")))
-      })
-      
       # confidence level
       confidencePercentage <- reactive({95})
       confidenceLevel <- reactive({
         req(confidencePercentage())
         confidencePercentage()/100
       })
-      
-      # populations to get
-      resultParamsPops <- reactive({
-        input$resultParamsPops
-      }) %>% debounce(cciaConf()$tasks$results$poll)
-      
-      # populations to show
-      resultParamsPopsShow <- reactive({
-        input$resultParamsPopsShow
-      }) %>% debounce(cciaConf()$tasks$results$poll)
       
       # categories from summary
       resultParamsCats <- reactive({
@@ -93,20 +103,15 @@
         paramCats
       })
       
+      # populations to show
+      resultParamsPopsShow <- reactive({
+        input$resultParamsPopsShow
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
       # categories to show
       resultParamsCatsShow <- reactive({
         input$resultParamsCatsShow
       }) %>% debounce(cciaConf()$tasks$results$poll)
-      
-      # properties to show
-      resultParamsCols <- reactive({
-        input$resultParamsCols
-      }) %>% debounce(cciaConf()$tasks$results$poll)
-      
-      # summary properties to show
-      resultSummaryAxisX <- reactive({
-        input$resultSummaryAxisX
-      })
       
       resultSummaryAxisXCompiled <- reactive({
         req(resultSummaryAxisX())
@@ -122,10 +127,6 @@
         req(resultSummaryAxisXCompiled())
         
         strsplit(resultSummaryAxisXCompiled(), "\\.")[[1]]
-      })
-      
-      resultSummaryAxisY <- reactive({
-        input$resultSummaryAxisY
       })
       
       resultSummaryAxisYCat <- reactive({
@@ -155,15 +156,6 @@
       
       resultSummaryInteraction <- reactive({
         input$resultSummaryInteraction
-      })
-      
-      # plot properties
-      plotWidth <- reactive({
-        input$plotWidth
-      })
-      
-      plotHeight <- reactive({
-        input$plotHeight
       })
       
       # points data that is shown
@@ -203,10 +195,15 @@
         
         # TODO version without copy
         DT <- NULL
-        if (input$plotOutputTabs == "combined")
+        if (input$plotOutputTabs == "combined") {
           DT <- summaryDT()
-        else
+        } else {
           DT <- pointsDT()
+          
+          # reset levels for uID
+          # DT[, uID := factor(as.character(uID), levels = unique(uID))]
+          DT[, uID := as.character(uID)]
+        }
         
         if (!is.null(resultParamsPopsShow()) && length(resultParamsPopsShow()) > 0)
           DT <- DT %>% dplyr::filter(pop %in% resultParamsPopsShow())
@@ -231,10 +228,12 @@
       
       # individual data for plot
       indvPlotData <- reactive({
+        req(input$plotOutputTabs == "individual")
         req(summaryPlotData())
         
         summaryPlotData() +
           facet_wrap(.~uID, ncol = 6) +
+          # facet_wrap(.~uID, ncol = 6, scales = "free_y") +
           theme(
             strip.background = element_rect(fill = NA, color = "black"),
             strip.text.x = element_text(color = "black")
@@ -312,6 +311,10 @@
         
         xlabTitle <- resultSummaryAxisXCompiled()
         ylabTitle <- "y"
+        
+        # format plot
+        p1 <- .formatSummaryPlotData(
+          p1, input, xlabTitle = xlabTitle, ylabTitle = ylabTitle)
         
         if (input$summaryInput %in% c("median", "box", "violin"))
           ylabTitle <- resultSummaryAxisYCompiled()$median
@@ -733,116 +736,23 @@
           }
         }
         
-        # format layout
-        p1 <- p1 + theme_light(base_size = 16)
-        if (input$darkTheme) {p1 <- p1 + theme_darker(base_size = 16)}
-        
-        # if log-scale checked specified
-        if (input$scaleLog10)
-          p1 <- p1 + scale_y_log10() 
-        
-        # adjust scale if range (min, max) is specified
-        if (input$range != "" &&  input$changeScale == TRUE) {
-          rng <- as.numeric(strsplit(input$range,",")[[1]])
-          
-          # if min > max invert the axis
-          if (rng[1] > rng[2]) {p1 <- p1 + scale_y_reverse()}
-          
-          # autoscale if rangeis NOT specified
-        } else if (input$range == "" || input$changeScale == FALSE) {
-          rng <- c(NULL, NULL)
-        }
-        
-        p1 <- p1 + coord_cartesian(ylim=c(rng[1],rng[2]))
-        
-        # If selected, rotate plot 90 degrees C
-        if (input$rotatePlot == TRUE) {
-          p1 <- p1 + coord_flip(ylim = c(rng[1], rng[2]))
-        }
-        
-        # if title specified
-        if (input$addTitle)
-          p1 <- p1 + ggtitle(input$title)
-        
-        # if tidy data, use the labels from selected columns
-        if (!is.null(input$labelAxes)) {
-          if (!is.null(input$tidyInput)) {
-            if (!input$labelAxes && input$tidyInput == TRUE) {
-              xlabTitle <- paste(input$labX)
-              ylabTitle <- paste(input$labY)
-            }
-          } else if (input$labelAxes) {
-            xlabTitle <- input$labX
-            ylabTitle <- input$labY
-          }
-        }
-        
-        # if font size is adjusted
-        if (input$adjFontSize == TRUE) {
-          p1 <- p1 + theme(axis.text = element_text(size = input$adjFontSizeAxLabels))
-          p1 <- p1 + theme(axis.title = element_text(size = input$adjFontSizeAxTitle))
-        }
-        
-        # remove legend (if selected)
-        if (input$addDescription == FALSE) {  
-          p1 <- p1 + theme(legend.position = "none")
-        }
-        
-        # remove gridlines (if selected)
-        if (input$noGrid == TRUE) {  
-          p1 <- p1 + theme(
-            panel.grid.major = element_blank(),
-            panel.grid.minor = element_blank()
-          )
-        }
-        
-        if (!is.null(input$adjustColors) && input$adjustColors > 1) {
-          p1 <- p1 + scale_color_manual(values = newColors)
-          p1 <- p1 + scale_fill_manual(values = newColors)
-        }
-        
-        # add facet wrap for category?
-        if (!is.null(resultSummaryAxisYCat())) {
-          p1 <- p1 + facet_grid(.~get(resultSummaryAxisYCat())) +
-            theme(
-              strip.background = element_rect(fill = NA, color = "black", size = 2),
-              strip.text.x = element_text(color = "black")
-            )
-          
-          # show titles?
-          if (input$showFacetTitles == FALSE) {
-            p1 <- p1 +
-              theme(
-                strip.text.x = element_blank()
-              )
-          }
-        }
-        
-        # add axis titles
-        p1 + xlab(xlabTitle) + ylab(ylabTitle) +
-          theme(
-            # hide legend title
-            legend.title = element_blank(),
-            legend.position = "bottom",
-            legend.direction = "horizontal",
-            # line thickness
-            axis.line = element_line(colour = "black", size = 1),
-            panel.border = element_blank(),
-            axis.ticks = element_line(colour = "black", size = 1)
-          )
+        # # add facet wrap for category?
+        # if (!is.null(resultSummaryAxisYCat())) {
+        #   p1 <- p1 + facet_grid(.~get(resultSummaryAxisYCat())) +
+        #     theme(
+        #       strip.background = element_rect(fill = NA, color = "black", size = 2),
+        #       strip.text.x = element_text(color = "black")
+        #     )
+        #   
+        #   # show titles?
+        #   if (input$showFacetTitles == FALSE) {
+        #     p1 <- p1 +
+        #       theme(
+        #         strip.text.x = element_blank()
+        #       )
+        #   }
+        # }
       }) %>% debounce(cciaConf()$tasks$results$poll)
-      
-      # selected ccia object
-      cciaObj <- reactive({
-        moduleManagers()$imageViewerManager$shownImage()
-        # initCciaObject(pID = pID, uID = selectedUIDs()[[1]], versionID = versionID)()
-      })
-      
-      # selected ccia set
-      cciaSet <- reactive({
-        moduleManagers()$imageSetManager$selectedSet()
-        # initCciaObject(pID = pID, uID = uID, versionID = versionID)()
-      })
       
       ### Observers - RxAction
       ## Event specific
@@ -883,7 +793,6 @@
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        # popDT(moduleManagers()$imageSetManager$selectedSet()$popDT(
         DT <- cciaSet()$popDT(
           popType = popType(),
           uIDs = selectedUIDs(),
@@ -1032,8 +941,6 @@
         popCats <- list()
         
         if (!is.null(popType())) {
-          browser()
-          
           popTypePops <- unname(cciaObj()$popPaths(popType(), includeFiltered = TRUE))
           popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
         }
@@ -1052,7 +959,7 @@
             3,
             tags$label("Parameter plots"),
             selectInput(
-              session$ns("popType"), "Population Type",
+              session$ns("resultParamsPopType"), "Population Type",
               choices = .reverseNamedList(popTypeChoices),
               selected = isolate(popType())
               # selected = "live"
@@ -1122,244 +1029,59 @@
       
       # plot params
       output$plotParams <- renderUI({
-        tagList(
-          radioButtons(session$ns("jitterType"), "Data offset", choices = list(
-            "Quasirandom" = "quasirandom", 
-            # "Sinaplot" = "sina",
-            "Random" = "random", 
-            # "None; stripes" = "stripes",
-            "None (for small n)" = "none"),
-            selected = "quasirandom"),
-          
-          sliderInput(session$ns("alphaInput"), "Visibility of data", 0, 1, 1.0),
-          
-          radioButtons(session$ns("summaryInput"), "Statistics", choices = list(
-            "Median" = "median",
-            "Mean" = "mean",
-            "Boxplot" = "box",
-            "Violin Plot" = "violin"),
-            selected = "violin"),
-          
-          checkboxInput(session$ns("addCI"),
-                        label = HTML("Add 95% CI <br/>"),
-                        value = TRUE),
-          
-          conditionalPanel(
-            condition = sprintf("input['%s'] == true && input['%s'] != 'box'",
-                                session$ns("addCI"), session$ns("summaryInput")),
-            checkboxInput(session$ns("errorBars"), label = "Classic error bars", value = FALSE)),
-          
-          conditionalPanel(
-            condition = sprintf("input['%1$s'] == 'median' || input['%1$s'] == 'mean'", session$ns("summaryInput")),
-            checkboxInput(session$ns("addBar"), label = HTML("Add a box that shows the range"), value = FALSE)),
-          
-          sliderInput(session$ns("alphaInputSum"), "Visibility of the statistics", 0, 1, 1),
-          
-          radioButtons(session$ns("ordered"), label = "Order of the conditions:", choices = list(
-            "As supplied" = "none",
-            "By median value" = "median",
-            "By alphabet/number" = "alphabet"),
-            selected = "none"),
-          
-          h4("Plot Layout"),      
-          
-          checkboxInput(session$ns("rotatePlot"),
-                        label = "Rotate plot 90 degrees",
-                        value = FALSE),
-          
-          checkboxInput(session$ns("noGrid"),
-                        label = "Remove gridlines",
-                        value = TRUE),
-          
-          checkboxInput(session$ns("changeScale"),
-                        label = "Change scale",
-                        value = FALSE),
-          conditionalPanel(condition = sprintf("input['%s'] == true", session$ns("changeScale")),
-                           checkboxInput(session$ns("scaleLog10"),
-                                         label = "Log scale",
-                                         value = FALSE),
-                           
-                           textInput(session$ns("range"), "Range of values (min,max)", value = "")),
-          
-          checkboxInput(session$ns("colorData"), "Use color for the data", value = FALSE),
-          checkboxInput(session$ns("colorStats"), "Use color for the stats", value = FALSE),
-          
-          conditionalPanel(
-            condition = sprintf("input['%s'] == true || input['%s'] == true",
-                                session$ns("colorData"), session$ns("colorStats")),
-            radioButtons("adjustColors", "Color palette:", choices = list(
-              "Standard" = 1,
-              "Okabe&Ito; CUD" = 6,
-              "Tol; bright" = 2,
-              "Tol; muted" = 3,
-              "Tol; light" = 4,
-              "User defined" = 5),
-              selected =  6),
+        append(
+          tagList(
+            radioButtons(session$ns("jitterType"), "Data offset", choices = list(
+              "Quasirandom" = "quasirandom", 
+              # "Sinaplot" = "sina",
+              "Random" = "random", 
+              # "None; stripes" = "stripes",
+              "None (for small n)" = "none"),
+              selected = "quasirandom"),
+            
+            sliderInput(session$ns("alphaInput"), "Visibility of data", 0, 1, 1.0),
+            
+            radioButtons(session$ns("summaryInput"), "Statistics", choices = list(
+              "Median" = "median",
+              "Mean" = "mean",
+              "Boxplot" = "box",
+              "Violin Plot" = "violin"),
+              selected = "violin"),
+            
+            checkboxInput(session$ns("addCI"),
+                          label = HTML("Add 95% CI <br/>"),
+                          value = TRUE),
             
             conditionalPanel(
-              condition = sprintf("input['%s'] == 5", session$ns("adjustColors")),
-              textInput(
-                session$ns("userColorList"),
-                "Names or hexadecimal codes separated by a comma (applied to conditions in alphabetical order):", 
-                value = "turquoise2,#FF2222,lawngreen"), 
-              
-              h5("", a("Click here for more info on color names",
-                       href = "https://r-charts.com/colors/", target = "_blank"))
-            )),
-          
-          checkboxInput(session$ns("darkTheme"), label = "Dark Theme", value = FALSE),
-          numericInput(session$ns("plotHeight"), "Height (# pixels): ", value = 480),
-          numericInput(session$ns("plotWidth"), "Width (# pixels):", value = 480),
-          
-          h4("Labels/captions"),
-          
-          checkboxInput(session$ns("addTitle"),
-                        label = "Add title",
-                        value = FALSE),
-          
-          conditionalPanel(
-            condition = sprintf("input['%s'] == true", session$ns("addTitle")),
-            textInput(session$ns("title"), "Title:", value = "")
+              condition = sprintf("input['%s'] == true && input['%s'] != 'box'",
+                                  session$ns("addCI"), session$ns("summaryInput")),
+              checkboxInput(session$ns("errorBars"), label = "Classic error bars", value = FALSE)),
+            
+            conditionalPanel(
+              condition = sprintf("input['%1$s'] == 'median' || input['%1$s'] == 'mean'", session$ns("summaryInput")),
+              checkboxInput(session$ns("addBar"), label = HTML("Add a box that shows the range"), value = FALSE)),
+            
+            sliderInput(session$ns("alphaInputSum"), "Visibility of the statistics", 0, 1, 1),
+            
+            radioButtons(session$ns("ordered"), label = "Order of the conditions:", choices = list(
+              "As supplied" = "none",
+              "By median value" = "median",
+              "By alphabet/number" = "alphabet"),
+              selected = "none")
           ),
-          
-          checkboxInput(session$ns("labelAxes"),
-                        label = "Change labels",
-                        value = FALSE),
-          
-          conditionalPanel(
-            condition = sprintf("input['%s'] == true", session$ns("labelAxes")),
-            textInput(session$ns("labX"), "X-axis:", value = ""),
-            textInput(session$ns("labY"), "Y-axis:", value = "")),
-          
-          checkboxInput(session$ns("adjFontSize"),
-                        label = "Change font size",
-                        value = FALSE),
-          
-          conditionalPanel(
-            condition = sprintf("input['%s'] == true", session$ns("adjFontSize")),
-            numericInput(session$ns("adjFontSizeAxTitle"), "Size axis titles:", value = 24),
-            numericInput(session$ns("adjFontSizeAxLabels"), "Size axis labels:", value = 18)),
-          checkboxInput(session$ns("addDescription"),
-                        label = "Add figure description",
-                        value = TRUE),
-          
-          checkboxInput(session$ns("showFacetTitles"),
-                        label = "Show facet titles",
-                        value = TRUE)
+          # get default inputs
+          .formatSummaryPlotDataInputs(session)
         )
-      })
-      
-      # plot output
-      output$plotOutput <- renderUI({
-        req(numUIDs() > 0)
-        
-        tagList(
-          fluidRow(
-            downloadButton(session$ns("downloadPlotPDF"), "Download pdf-file"),
-            downloadButton(session$ns("downloadPlotSVG"), "Download svg-file"), 
-            downloadButton(session$ns("downloadPlotEPS"), "Download eps-file"), 
-            downloadButton(session$ns("downloadPlotPNG"), "Download png-file"),
-            downloadButton(session$ns("downloadPlotCSV"), "Download csv-file")
-          ),
-          br(),
-          fluidRow(
-            tabsetPanel(
-              id = session$ns("plotOutputTabs"),
-              selected = "combined",
-              tabPanel(
-                "Combined", value = "combined",
-                plotOutput(session$ns("plotOutputCombined"), height = "400px")
-              ),
-              tabPanel(
-                "Individual", value = "individual",
-                plotOutput(session$ns("plotOutputIndv"),
-                           height = paste0(floor(numUIDs()/6) * 400, "px"))
-              )
-            )
-          )
-        )
-      })
-      
-      # combined plots
-      output$plotOutputCombined <- renderPlot(width = plotWidth, height = plotHeight, {
-        req(summaryPlotData())
-        
-        plot(summaryPlotData())
-      })
-      
-      # individual image plots
-      output$plotOutputIndv <- renderPlot(width = plotWidth, height = plotHeight, {
-        req(indvPlotData())
-        
-        plot(indvPlotData())
       })
       
       ## Buttons
-      output$downloadPlotPDF <- downloadHandler(
-        filename <- function() {
-          paste("cciaPlot", Sys.time(), ".pdf", sep = "")
-        },
-        content <- function(file) {
-          pdf(file, width = plotWidth()/72, height = plotHeight()/72)
-          plot(plotData())
-          dev.off()
-        },
-        contentType = "application/pdf" # MIME type of the file
-      )
-      
-      output$downloadPlotSVG <- downloadHandler(
-        filename <- function() {
-          paste("cciaPlot", Sys.time(), ".svg", sep = "")
-        },
-        content <- function(file) {
-          svg(file, width = plotWidth()/72, height = plotHeight()/72)
-          plot(plotData())
-          dev.off()
-        },
-        contentType = "application/svg" # MIME type of the file
-      )
-      
-      output$downloadPlotEPS <- downloadHandler(
-        filename <- function() {
-          paste("cciaPlot", Sys.time(), ".eps", sep = "")
-        },
-        content <- function(file) {
-          cairo_ps(file, width = plotWidth()/72, height = plotHeight()/72)
-          plot(plotData())
-          dev.off()
-          
-        },
-        contentType = "application/eps" # MIME type of the file
-      )
-      
-      output$downloadPlotPNG <- downloadHandler(
-        filename <- function() {
-          paste("cciaPlot", Sys.time(), ".png", sep = "")
-        },
-        content <- function(file) {
-          png(file, width = plotWidth()*4, height = plotHeight()*4, res = 300)
-          plot(plotData())
-          dev.off()
-        },
-        contentType = "application/png" # MIME type of the file
-      )
-      
-      output$downloadPlotCSV <- downloadHandler(
-        filename <- function() {
-          paste("cciaPlot", Sys.time(), ".csv", sep = "")
-        },
-        content <- function(file) {
-          write.csv(pointsData(), file)
-        },
-        contentType = "text/csv" # MIME type of the file
-      )
       
       ## Other
       
       ### Managers
       # init managers
       managerNames = c(
-        "ui", "input", "selection", "task", "imageSet", "imageViewer")
+        "ui", "input", "selection", "task", "imageSet", "imageViewer", "plotCharts")
       managerConf = list(
         moduleName = id,
         imageData = imageData,
@@ -1369,6 +1091,14 @@
         ),
         task = list(
           funLabel = "Chart method"
+        ),
+        plotCharts = list(
+          plotData = plotData,
+          indvPlotData = indvPlotData,
+          summaryData = summaryData,
+          summaryPlotData = summaryPlotData,
+          plotData = plotData,
+          numUIDs = numUIDs
         )
       )
       

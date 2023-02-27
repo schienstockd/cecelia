@@ -231,6 +231,40 @@ CciaImageSet <- R6::R6Class(
       spatialDTs
     },
     
+    #' @description pop paths for images
+    #' @param uIDs list of character for unique IDs
+    #' @param combinePaths boolean to compile paths into one list
+    #' @param ... passed to CciaImage$popPaths
+    popPaths = function(uIDs = NULL, combinePaths = TRUE, ...) {
+      # get paths from images
+      if (private$isReactive() == TRUE) {
+        popPaths <- lapply(
+          self$cciaObjects(uIDs = uIDs),
+          function(x) {
+            message(sprintf("[popDT] >> %s", x()$getUID()))
+            x()$popPaths(...)
+          }
+        )
+      } else {
+        # popPaths <- lapply(
+        popPaths <- parallel::mclapply(
+          self$cciaObjects(uIDs = uIDs),
+          function(x) {
+            message(sprintf("[popDT] >> %s", x$getUID()))
+            x$popPaths(...)
+            # }
+            # }, mc.cores = parallel::detectCores()
+          }, mc.cores = 3
+        )
+      }
+      
+      if (combinePaths == TRUE) {
+        popPaths <- unique(unname(unlist(popPaths)))
+      }
+      
+      popPaths
+    },
+    
     #' @description popDTs for images
     #' @param asDT boolean to convert to data.table
     #' @param removeNULL boolean to remove NULL

@@ -33,7 +33,7 @@ pID <- "pEdOoZ"
 versionID <- 2
 uID <- "diRenc"
 
-id <- "plotHeatmaps"
+id <- "plotTrackClustersUMAP"
 ns <- NS(id)
 
 ui <- fluidPage(
@@ -116,6 +116,11 @@ server <- function(input, output, session) {
         input$resultParamsPops
       }) %>% debounce(cciaConf()$tasks$results$poll)
       
+      # clustering to get
+      resultParamsPops <- reactive({
+        input$resultParamsPops
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
       # properties to show
       resultParamsCols <- reactive({
         input$resultParamsCols
@@ -140,6 +145,13 @@ server <- function(input, output, session) {
       })
       
       # points data that is shown
+      pointsData <- reactive({
+        req(popDT())
+        
+        popDT()
+      })
+      
+      # summary data that is shown
       summaryData <- reactive({
         req(summaryDT())
         
@@ -148,14 +160,14 @@ server <- function(input, output, session) {
       
       # plot data that is shown
       plotData <- reactive({
-        req(summaryPlotData())
+        req(pointsData())
         
-        summaryPlotData()
+        pointsData()
       })
       
       # summary data for plot
       summaryPlotData <- reactive({
-        req(summaryData())
+        req(pointsData())
         
         widthColumn <- 0.7
         
@@ -167,46 +179,21 @@ server <- function(input, output, session) {
         } 
         
         # generate plot layers
-        p1 <- ggplot(data = summaryData(),
-                     aes(x = as.factor(cat_value), y = prop))
+        p1 <- ggplot(data = pointsData(), aes(UMAP_1, UMAP_2))
         
         xlabTitle <- ""
         ylabTitle <- ""
         
-        # main tiles
-        p1 <- p1 + geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
-          viridis::scale_fill_viridis(
-            breaks = c(0, 1),
-            labels = c(0, 1)
-          )
+        # main map
+        p1 <- p1 + geom_point(aes(color = get(resultSummaryAxisY())))
         
         # format layout
         p1 <- p1 + theme_light(base_size = 16)
         if (input$darkTheme) {p1 <- p1 + theme_darker(base_size = 16)}
         
-        # adjust scale if range (min, max) is specified
-        if (input$range != "" &&  input$changeScale == TRUE) {
-          rng <- as.numeric(strsplit(input$range,",")[[1]])
-          
-          # if min > max invert the axis
-          if (rng[1] > rng[2]) {p1 <- p1 + scale_y_reverse()}
-          
-          # autoscale if rangeis NOT specified
-        } else if (input$range == "" || input$changeScale == FALSE) {
-          rng <- c(NULL, NULL)
-        }
-        
-        p1 <- p1 + coord_cartesian(ylim = c(rng[1], rng[2]))
-        
         # If selected, rotate plot 90 degrees C
         if (input$rotatePlot == TRUE) {
           p1 <- p1 + coord_flip(ylim = c(rng[1], rng[2]))
-        }
-        
-        # If selected, rotate x label by 45 degrees C
-        if (input$rotateXLabel == TRUE) {
-          p1 <- p1 + theme(axis.text.x = element_text(
-            angle = 45, hjust = 1, vjust = 1))
         }
         
         # if title specified
@@ -250,13 +237,12 @@ server <- function(input, output, session) {
           p1 <- p1 + scale_fill_manual(values = newColors)
         }
         
-        # add facet wrap for category?
+        # # add facet wrap for category?
         # p1 <- p1 + facet_grid(.~cat) +
-        p1 <- p1 + facet_wrap(.~cat, nrow = 1, scales = "free_x") +
-          theme(
-            strip.background = element_rect(fill = NA, color = "black", size = 2),
-            strip.text.x = element_text(color = "black")
-          )
+        #   theme(
+        #     strip.background = element_rect(fill = NA, color = "black", size = 2),
+        #     strip.text.x = element_text(color = "black")
+        #   )
         
         # show titles?
         if (input$showFacetTitles == FALSE) {
@@ -271,8 +257,8 @@ server <- function(input, output, session) {
           theme(
             # hide legend title
             legend.title = element_blank(),
-            legend.position = "right",
-            legend.direction = "vertical",
+            legend.position = "bottom",
+            legend.direction = "horizontal",
             # line thickness
             axis.line = element_line(colour = "black", size = 1),
             panel.border = element_blank(),
@@ -299,18 +285,16 @@ server <- function(input, output, session) {
       # observeEvent(moduleManagers()$selectionManager$selectedUIDs(), {
       observeEvent(c(
         selectedUIDs(),
-        popType(),
         resultParamsPops()
         ), {
         # req(moduleManagers()$selectionManager$selectedUIDs())
+        req(cciaSet())
         req(selectedUIDs())
-        req(popType())
         req(resultParamsPops())
         
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        # popDT(moduleManagers()$imageSetManager$selectedSet()$popDT(
         DT <- cciaSet()$popDT(
           popType = popType(),
           uIDs = selectedUIDs(),
@@ -326,34 +310,24 @@ server <- function(input, output, session) {
       })
       
       # create summary DT
-      observeEvent(c(popDT(), resultSummaryAxisX(), resultSummaryAxisY()), {
-        req(nrow(popDT()) > 0)
-        req(resultSummaryAxisX())
+      observeEvent(c(popDT(), resultSummaryAxisY()), {
+        req(popDT())
         req(resultSummaryAxisY())
         
         # make summary
+        # TODO data.table only
         summaryDT(as.data.table(
           popDT() %>%
-            # properties
-            pivot_longer(
-              cols = resultSummaryAxisY(),
-              names_to = "prop", values_to = "prop_value"
-            ) %>%
-            # X valus
-            pivot_longer(
-              cols = resultSummaryAxisX(),
-              names_to = "cat", values_to = "cat_value"
-            ) %>%
-            dplyr::filter(!is.na(cat_value)) %>%
-            group_by(cat, cat_value, prop) %>%
-            replace_na(list(prop_value = 0)) %>%
-            summarise(mean = mean(prop_value, rm.na = TRUE)) %>%
-            group_by(cat, prop) %>%
-            mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
-            # https://stackoverflow.com/q/56806184
-            mutate(across(freq, ~ replace(., is.nan(.), 0)))
-            # arrange(-prop) %>%
-            # left_join(expInfo())
+            # left_join(expInfo()) %>%
+            group_by(pop, get(resultSummaryAxisY())) %>%
+            summarise(n = n()) %>%
+            dplyr::rename_with(
+              ~ c(paste0(resultSummaryAxisY(), ".cat")),
+              all_of(c("get(resultSummaryAxisY())"))
+              ) %>%
+            mutate(
+              freq = n/sum(n),
+            )
         ))
       })
       
@@ -385,14 +359,16 @@ server <- function(input, output, session) {
         }
         
         # get choices for categories
-        propCols <- cciaObj()$labelPropsCols()
+        propCols <- c()
         
         # add pop and clustering to X-axis
         if (length(popDT()) > 0) {
+          propCols <- cciaObj()$labelPropsCols()
+          
           if ("clusters" %in% colnames(popDT()))
-            popTypeCols <- c("clusters", popTypeCols)
+            propCols <- c("clusters", propCols)
           if ("pop" %in% colnames(popDT()))
-            popTypeCols <- c("pop", popTypeCols)
+            propCols <- c("pop", propCols)
           
           # make sure that columns exist
           propCols <- propCols[propCols %in% colnames(popDT())]
@@ -438,21 +414,22 @@ server <- function(input, output, session) {
           column(
             3,
             tags$label("Summary plots"),
-            createSelectInput(
-              session$ns("resultSummaryAxisX"),
-              label = "X Axis",
-              choices = popTypeCols,
-              multiple = TRUE,
-              selected = isolate(resultSummaryAxisX())
-              # selected = c(
-              #   "live.cell.hmm.state.shape", "live.cell.hmm.state.movement")
-            ),
+            # createSelectInput(
+            #   session$ns("resultSummaryAxisX"),
+            #   label = "X Axis",
+            #   choices = popTypeCols,
+            #   multiple = TRUE,
+            #   selected = isolate(resultSummaryAxisX())
+            #   # selected = c(
+            #   #   "live.cell.hmm.state.shape", "live.cell.hmm.state.movement")
+            # ),
             createSelectInput(
               session$ns("resultSummaryAxisY"),
               label = "Y Axis",
               choices = propCols,
-              multiple = TRUE,
-              selected = isolate(resultSummaryAxisY())
+              multiple = FALSE,
+              # selected = isolate(resultSummaryAxisY())
+              selected = c("clusters")
               # selected = "live.cell.hmm.state.movement"
               # selected = "clust.cell.contact#clust.TRITC+"
               # selected = c(
@@ -480,10 +457,6 @@ server <- function(input, output, session) {
           checkboxInput(session$ns("rotatePlot"),
                         label = "Rotate plot 90 degrees",
                         value = FALSE),
-          
-          checkboxInput(session$ns("rotateXLabel"),
-                        label = "Rotate X axis 45 degrees",
-                        value = TRUE),
           
           checkboxInput(session$ns("noGrid"),
                         label = "Remove gridlines",

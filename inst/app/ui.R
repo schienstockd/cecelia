@@ -182,6 +182,18 @@ ui <- function(request) {
         tabName = "plotCharts",
         .plotChartsUI("plotCharts")
       ),
+      tabItem(
+        tabName = "plotHeatmaps",
+        .plotChartsUI("plotHeatmaps")
+      ),
+      tabItem(
+        tabName = "plotClustersUMAP",
+        .plotChartsUI("plotClustersUMAP")
+      ),
+      # tabItem(
+      #   tabName = "plotTrackClustersUMAP",
+      #   .plotChartsUI("plotTrackClustersUMAP")
+      # ),
       
       # settings
       tabItem(

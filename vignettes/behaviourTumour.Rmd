@@ -37,10 +37,10 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
-  pID = pID, uID = "iEzpp6", versionID = versionID, initReactivity = FALSE # Tumour
+  pID = pID, uID = "b8Gxip", versionID = versionID, initReactivity = FALSE # Tumour
 )
 
-cciaObj$imFilepath()
+cciaObj$omeXMLTimelapseInfo()
 ```
 
 ```{r}

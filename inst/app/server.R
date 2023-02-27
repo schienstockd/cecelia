@@ -935,10 +935,22 @@ server <- function(input, output, session) {
       icon = icon("clover"),
       tabName = "plotCanvas",
       menuSubItem(
-        "Comparison charts",
+        "Population plots",
         selected = TRUE,
         icon = icon("chart-simple"),
-        tabName = "plotCharts")
+        tabName = "plotCharts"),
+      menuSubItem(
+        "Cluster heatmaps",
+        icon = icon("fire"),
+        tabName = "plotHeatmaps"),
+      menuSubItem(
+        "Cluster UMAPs",
+        icon = icon("signs-post"),
+        tabName = "plotClustersUMAP")
+      # menuSubItem(
+      #   "Tracking Cluster UMAPs",
+      #   icon = icon("shuffle"),
+      #   tabName = "plotTrackClustersUMAP")
     )
   })
   
@@ -981,6 +993,9 @@ server <- function(input, output, session) {
   
   # plot canvases
   .plotChartsServer("plotCharts", session, globalManagers)
+  .plotHeatmapsServer("plotHeatmaps", session, globalManagers)
+  .plotClustersUMAPServer("plotClustersUMAP", session, globalManagers)
+  # .plotTrackClustersUMAPServer("plotTrackClustersUMAP", session, globalManagers)
   
   # specific to live?
   .cleanupImagesServer("cleanupImages", session, globalManagers)
