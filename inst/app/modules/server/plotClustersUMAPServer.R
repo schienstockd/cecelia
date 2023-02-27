@@ -27,6 +27,11 @@
         input$resultParamsPops
       }) %>% debounce(cciaConf()$tasks$results$poll)
       
+      # clustering to get
+      resultParamsClustering <- reactive({
+        input$resultParamsClustering
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
       # properties to show
       resultParamsCols <- reactive({
         input$resultParamsCols
@@ -207,7 +212,8 @@
       # listen to image selection
       observeEvent(c(
         selectedUIDs(),
-        resultParamsPops()
+        resultParamsPops(),
+        resultParamsClustering()
       ), {
         req(cciaSet())
         req(selectedUIDs())
@@ -216,14 +222,21 @@
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        DT <- cciaSet()$popDT(
-          popType = popType(),
-          uIDs = selectedUIDs(),
-          includeFiltered = TRUE,
-          completeDT = TRUE,
-          replaceNA = TRUE,
-          pops = resultParamsPops()
-        )
+        if (popType == "live") {
+          if (length(resultParamsClustering()) > 0)
+            DT <- as.data.table(cciaEnv()$LabelPropsUtils(
+              cciaSet()$persistentObjectDirectory(),
+              value_name = resultParamsClustering())$label_props_view()$as_df())
+        } else {
+          DT <- cciaSet()$popDT(
+            popType = popType(),
+            uIDs = selectedUIDs(),
+            includeFiltered = TRUE,
+            completeDT = TRUE,
+            replaceNA = TRUE,
+            pops = resultParamsPops()
+          )
+        }
         
         progress$close()
         
@@ -292,12 +305,24 @@
             popTypeCols <- popTypeCols[sapply(popTypeCols, .cciaStatsTypeIsCategorical)]
         }
         
+        # get clustering files if needed
+        clusteringFiles <- c()
+        if (popType() == "live") {
+          clusteringFiles <- list.files(
+            file.path(cciaSet()$persistentObjectDirectory(),
+                      cciaConf()$dirs$tasks$labelProps),
+            pattern = ".sc.")
+          clusteringFiles <- str_extract(clusteringFiles, "^.*[^.h5ad]")
+        }
+        
         # get choices for categories
         propCols <- c()
         
         # add pop and clustering to X-axis
         if (length(popDT()) > 0) {
-          propCols <- cciaObj()$labelPropsCols()
+          # this really only makes sense for live
+          if (popType() == "live")
+            propCols <- cciaObj()$labelPropsCols()
           
           if ("clusters" %in% colnames(popDT()))
             propCols <- c("clusters", propCols)
@@ -326,6 +351,13 @@
               choices = popTypePops,
               multiple = TRUE,
               selected = isolate(resultParamsPops())
+            ),
+            createSelectInput(
+              session$ns("resultParamsClustering"),
+              label = "Clustering to get",
+              choices = clusteringFiles,
+              multiple = FALSE,
+              selected = isolate(resultParamsClustering())
             )
             # createSelectInput(
             #   session$ns("resultParamsCols"),
