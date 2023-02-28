@@ -217,30 +217,28 @@
       ), {
         req(cciaSet())
         req(selectedUIDs())
-        req(resultParamsPops())
+        # req(resultParamsPops())
         
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        if (popType == "live") {
-          if (length(resultParamsClustering()) > 0)
-            DT <- as.data.table(cciaEnv()$LabelPropsUtils(
+        if (length(popType()) > 0 && popType() == "live") {
+          if (length(resultParamsClustering()) > 0 && resultParamsClustering() != "")
+            popDT(as.data.table(cciaEnv()$LabelPropsUtils(
               cciaSet()$persistentObjectDirectory(),
-              value_name = resultParamsClustering())$label_props_view()$as_df())
-        } else {
-          DT <- cciaSet()$popDT(
+              value_name = resultParamsClustering())$label_props_view()$as_df()))
+        } else if (length(resultParamsPops()) > 0) {
+          popDT(cciaSet()$popDT(
             popType = popType(),
             uIDs = selectedUIDs(),
             includeFiltered = TRUE,
             completeDT = TRUE,
             replaceNA = TRUE,
             pops = resultParamsPops()
-          )
+          ))
         }
         
         progress$close()
-        
-        popDT(DT)
       })
       
       # create summary DT
@@ -294,6 +292,7 @@
         popTypePops <- list()
         popTypeCols <- list()
         popCats <- list()
+        clusteringFiles <- c()
         
         if (!is.null(popType())) {
           popTypePops <- unname(cciaSet()$popPaths(
@@ -303,16 +302,15 @@
           # focus only on categorical
           if (length(popTypeCols) > 0)
             popTypeCols <- popTypeCols[sapply(popTypeCols, .cciaStatsTypeIsCategorical)]
-        }
-        
-        # get clustering files if needed
-        clusteringFiles <- c()
-        if (popType() == "live") {
-          clusteringFiles <- list.files(
-            file.path(cciaSet()$persistentObjectDirectory(),
-                      cciaConf()$dirs$tasks$labelProps),
-            pattern = ".sc.")
-          clusteringFiles <- str_extract(clusteringFiles, "^.*[^.h5ad]")
+          
+          # get clustering files if needed
+          if (popType() == "live") {
+            clusteringFiles <- list.files(
+              file.path(cciaSet()$persistentObjectDirectory(),
+                        cciaConf()$dirs$tasks$labelProps),
+              pattern = ".sc.")
+            clusteringFiles <- str_extract(clusteringFiles, "^.*[^.h5ad]")
+          }
         }
         
         # get choices for categories
