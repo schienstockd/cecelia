@@ -194,6 +194,10 @@ ui <- function(request) {
         tabName = "plotClustersUMAP",
         .plotChartsUI("plotClustersUMAP")
       ),
+      tabItem(
+        tabName = "plotFlowGating",
+        .plotChartsUI("plotFlowGating")
+      ),
       # tabItem(
       #   tabName = "plotTrackClustersUMAP",
       #   .plotChartsUI("plotTrackClustersUMAP")

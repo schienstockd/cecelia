@@ -322,9 +322,13 @@ FlowGatingSet <- R6::R6Class(
     },
     
     #' @description Leaves of population
+    #' @param directLeaves boolean for dorect leaves
     #' @param ... passed to .flowLeavesForPop
-    popLeaves = function(...) {
-      .flowLeavesForPop(self$getPopObj(), ...)
+    popLeaves = function(directLeaves = FALSE, ...) {
+      if (directLeaves == TRUE)
+        .flowDirectLeavesForPop(self$getPopObj(), ...)
+      else
+        .flowLeavesForPop(self$getPopObj(), ...)
     },
     
     #' @description Direct leaves of population

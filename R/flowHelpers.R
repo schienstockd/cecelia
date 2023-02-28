@@ -424,6 +424,7 @@
 #' @description Get leaves from population
 #' @param gs GatingSet
 #' @param pop character for population
+#' @param groupByParent boolean for grouping
 #' @examples
 #' TODO
 #' @export
@@ -894,13 +895,15 @@
 #' @param labelSize numeric for geom_label size
 #' @param labelPos list of coordinates for labels
 #' @param asContours boolean to use contours
+#' @param showPopColours boolean to show population colours
+#' @param directLeaves boolean for direct leaves
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
 #' @export
 .flowPlotGatedRaster <- function(cciaObj, popPath = "root", labelSize = 2,
                                  labelPos = list(), asContours = FALSE,
-                                 showPopColours = FALSE, ...) {
+                                 showPopColours = FALSE, directLeaves = FALSE, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -909,7 +912,13 @@
   #   popPaths <- fgs$popPaths()
   
   # get leaves
-  leaves <- fgs$popLeaves(popPath, groupByParent = TRUE)
+  # TODO that should be better
+  if (directLeaves == TRUE) {
+    leaves <- list()
+    leaves[[popPath]] <- fgs$popLeaves(popPath, directLeaves = TRUE)
+  } else {
+    leaves <- fgs$popLeaves(popPath, directLeaves = FALSE, groupByParent = TRUE)
+  }
   
   p1s <- list()
   for (xParent in names(leaves)) {
