@@ -319,10 +319,10 @@ default:
     address: "spartan.hpc.unimelb.edu.au"
     partitions:
       cpu: "physical"
-      gpu: "shortgpgpu,gpgpu"
+      gpu: "gpu-a100"
     qos:
       cpu: ""
-      gpu: "gpgpumdhs"
+      gpu: ""
     projects:
       cpu: 1124
       gpu: 1031
