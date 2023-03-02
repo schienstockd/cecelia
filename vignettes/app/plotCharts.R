@@ -28,15 +28,20 @@ confidenceLevel = confidencePercentage/100
 # versionID <- 2
 # uID <- "uxOpZJ"
 
-# BEHAVIOUR H2KB 3D+T
-pID <- "8BR53W"
-versionID <- 1
-uID <- "YJRfCW"
+# # BEHAVIOUR H2KB 3D+T
+# pID <- "8BR53W"
+# versionID <- 1
+# uID <- "YJRfCW"
 
 # # XCR1-venus vibratome 3D
 # pID <- "Lq0joh"
 # versionID <- 11
 # uID <- "VbS3EJ"
+
+# Arm Spleen
+pID <- "pEdOoZ"
+versionID <- 2
+uID <- "ktUu0n"
 
 id <- "plotCharts"
 ns <- NS(id)
@@ -105,6 +110,9 @@ server <- function(input, output, session) {
         # MILAS SPLEEN
         # expInfo()[dpi == "1-5" & Genotype != "zDC"]$uID
         
+        # Arm Spleen
+        c("TURHVv")
+        
         # # behaviour DTx
         # uIDs[!uIDs %in% c(
         #   "5N8Iip", "OWJrYz", "PxwhNn",
@@ -125,6 +133,18 @@ server <- function(input, output, session) {
         
         as.data.table(cciaSet()$summary(withSelf = FALSE, fields = c("Attr")))
       })
+      
+      # get all populations
+      popsAll <- reactive({
+        req(cciaObj())
+        
+        cciaObj()$popPathsAll(includeFiltered = TRUE, flattenPops = TRUE)
+      })
+      
+      # all populations
+      resultParamsPopsInt <- reactive({
+        input$resultParamsPopsInt
+      }) %>% debounce(cciaConf()$tasks$results$poll)
       
       # populations to get
       resultParamsPops <- reactive({
@@ -866,14 +886,20 @@ server <- function(input, output, session) {
               strip.background = element_rect(fill = NA, color = "black", size = 2),
               strip.text.x = element_text(color = "black")
             )
-          
-          # show titles?
-          if (input$showFacetTitles == FALSE) {
-            p1 <- p1 +
-              theme(
-                strip.text.x = element_blank()
-              )
-          }
+        }
+        
+        # facets for pop interaction?
+        if (length((resultParamsPopsInt())) > 0) {
+          p1 <- p1 + facet_grid(.~int.pop) +
+            theme(
+              strip.background = element_rect(fill = NA, color = "black", size = 2),
+              strip.text.x = element_text(color = "black")
+            )
+        }
+        
+        # show titles?
+        if (input$showFacetTitles == FALSE) {
+          p1 <- p1 + theme(strip.text.x = element_blank())
         }
         
         # add axis titles
@@ -931,7 +957,8 @@ server <- function(input, output, session) {
       observeEvent(c(
         selectedUIDs(),
         popType(),
-        resultParamsPops()
+        resultParamsPops(),
+        resultParamsPopsInt()
         ), {
         # req(moduleManagers()$selectionManager$selectedUIDs())
         req(selectedUIDs())
@@ -950,6 +977,43 @@ server <- function(input, output, session) {
           replaceNA = TRUE,
           pops = resultParamsPops()
         )
+        
+        # create population interactions
+        if (length(resultParamsPopsInt()) > 0) {
+          # get populations
+          intDTs <- list()
+            
+          for (x in resultParamsPopsInt()) {
+            # split population
+            intPop <- stringr::str_split_fixed(x, pattern = "\\.", n = 2)
+            
+            # get population
+            intDTs[[x]] <- cciaSet()$popDT(
+              popType = intPop[[1]],
+              uIDs = selectedUIDs(),
+              includeFiltered = TRUE,
+              completeDT = TRUE,
+              replaceNA = TRUE,
+              pops = intPop[[2]],
+              popCols = c("label")
+            )[, pop := NULL]
+          }
+          
+          # bind together
+          # TODO this assumes that each label has only one population
+          intDT <- rbindlist(intDTs, idcol = "pop")
+          
+          # create pop interactions
+          DT[intDT[, c("label", "pop")], on = c("label"),
+             int.pop := i.pop, nomatch = NULL]
+          
+          # drop na
+          # TODO should this be optional?
+          DT <-  DT[complete.cases(DT[, "int.pop"]),]
+        } else {
+          # create dummy for interaction
+          DT[, int.pop := NA]
+        }
         
         # set whether multiple pops
         if (length(unique(DT$pop)) > 1)
@@ -977,11 +1041,11 @@ server <- function(input, output, session) {
           # TODO data.table only version
           pointsDT(
             as.data.table(
-              popDT()[, .(n1 = .N), by = .(uID, pop)] %>%
+              popDT()[, .(n1 = .N), by = .(uID, int.pop, pop)] %>%
                 dplyr::group_by(uID) %>%
                 mutate(pop.freq = n1/sum(n1) * 100) %>%
                 ungroup() %>%
-                complete(uID, pop, fill = list(pop.freq = 0)) %>%
+                complete(uID, int.pop, pop, fill = list(pop.freq = 0)) %>%
                 dplyr::left_join(expInfo()))
           )
           
@@ -991,7 +1055,7 @@ server <- function(input, output, session) {
             # TODO data.table only version 
             pointsDT(as.data.table(
               popDT() %>%
-                dplyr::group_by(uID, pop, get(resultSummaryAxisY())) %>%
+                dplyr::group_by(uID, int.pop, pop, get(resultSummaryAxisY())) %>%
                 summarise(n1 = n()) %>%
                 mutate(freq = n1/sum(n1) * 100) %>%
                 dplyr::rename_with(
@@ -1017,7 +1081,7 @@ server <- function(input, output, session) {
                 sapply(.SD, function(x) list(medianCiLo = quantile(x, confidenceLevel, na.rm = TRUE))),
                 sapply(.SD, function(x) list(medianCiHi = quantile(x, (1 - confidenceLevel), na.rm = TRUE)))
               ),
-              .SDcols = resultSummaryAxisY(), by = .(uID, pop)] %>%
+              .SDcols = resultSummaryAxisY(), by = .(uID, int.pop, pop)] %>%
                 dplyr::left_join(expInfo())
             )
           }
@@ -1054,7 +1118,7 @@ server <- function(input, output, session) {
             ), 
             .SDcols = resultSummaryAxisY(),
             by = eval(c(
-              "pop", resultSummaryAxisXCompiled(), resultSummaryAxisYCat()
+              "int.pop", "pop", resultSummaryAxisXCompiled(), resultSummaryAxisYCat()
               ))]
         )
       })
@@ -1097,18 +1161,23 @@ server <- function(input, output, session) {
             selectInput(
               session$ns("resultParamsPopType"), "Population Type",
               choices = .reverseNamedList(popTypeChoices),
-              selected = isolate(popType())
+              # selected = isolate(popType())
               # selected = "live"
               # selected = "clust"
+              selected = "flow"
+              # selected = "region"
             ),
             createSelectInput(
               session$ns("resultParamsPops"),
               label = "Populations to get",
               choices = popTypePops,
               multiple = TRUE,
-              selected = isolate(resultParamsPops())
+              # selected = isolate(resultParamsPops())
               # selected = c("OTI/tracked", "gBT/tracked")
               # selected = c("gBT+", "gBT+/clustered")
+              selected = c("/nonDebris/P14/clustered",
+                           "/nonDebris/P14/non.clustered")
+              # selected = c("XCR1", "B", "O")
             ),
             createSelectInput(
               session$ns("resultParamsPopsShow"),
@@ -1116,6 +1185,16 @@ server <- function(input, output, session) {
               choices = popTypePops,
               multiple = TRUE,
               selected = isolate(resultParamsPopsShow())
+            ),
+            createSelectInput(
+              session$ns("resultParamsPopsInt"),
+              label = "Populations to interact",
+              choices = popsAll(),
+              multiple = TRUE,
+              # selected = isolate(resultParamsPopsInt())
+              selected = c("region.XCR1", "region.B", "region.O")
+              # selected = c("flow./nonDebris/P14/clustered",
+              #              "flow./nonDebris/P14/non.clustered")
             ),
             createSelectInput(
               session$ns("resultParamsCatsShow"),

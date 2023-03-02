@@ -1056,16 +1056,38 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description All population paths as list
+    #' @param flattenPops boolean to flatten pops
+    #' @param useNames boolean to use names instead of uIDs
     #' @param ... passed to self$popPaths
-    popPathsAll = function(...) {
+    popPathsAll = function(flattenPops = FALSE, useNames = FALSE, ...) {
       # go through all pop types and get paths
       popPaths <- names(cciaConf()$parameters$popTypes)
       names(popPaths) <- popPaths
       
-      lapply(
+      popResults <- lapply(
         popPaths, function(x) {
           self$popPaths(x, ...)
         })
+      
+      # flatten pops
+      if (flattenPops == TRUE) {
+        popResults <- popResults[lengths(popResults) > 0]
+        
+        # flatten down per pop type
+        popResults <- mapply(
+          function(x, i) {
+            x <- paste(i, unlist(x), sep = ".")
+            
+            # use names instead of uIDs
+            if (useNames == TRUE)
+              names(x) <- x
+            
+            as.list(x)
+          }, popResults, names(popResults), SIMPLIFY = FALSE
+        )
+      }
+      
+      popResults
     },
     
     #' @description Population paths

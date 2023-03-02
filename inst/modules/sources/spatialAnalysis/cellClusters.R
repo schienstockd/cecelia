@@ -19,7 +19,7 @@ CellClusters <- R6::R6Class(
     detectClusters = function(x) {
       if (nrow(x) >= self$funParams()$clustMinPts) {
         # get clustering
-        clusters <- dbscan(
+        clusters <- dbscan::dbscan(
           x, eps = self$funParams()$clustDiameter,
           minPts = self$funParams()$clustMinPts,
           borderPoints = self$funParams()$clustBorderPoints)
@@ -71,8 +71,7 @@ CellClusters <- R6::R6Class(
       
       # get root DT
       # rootDT <- popUtils$popDT()
-      rootDT <- cciaObj$popDT(self$funParams()$popType,
-                              includeFiltered = TRUE)
+      rootDT <- cciaObj$popDT(self$funParams()$popType, includeFiltered = TRUE)
       
       # init analysis column with NA
       rootDT[, c(clusterIDCol) := as.numeric(NA)]
@@ -148,7 +147,7 @@ CellClusters <- R6::R6Class(
         # add value name for pop
         # popValueNames[[i]] <- popDT[pop == i, c("value_name")][1]$value_name
         
-        # join
+        # join to root
         # https://stackoverflow.com/a/34600831/13766165
         rootDT[popClusters,
                on = mergeCols,
@@ -159,14 +158,20 @@ CellClusters <- R6::R6Class(
       }
       
       valueNames <- unique(rootDT$value_name)
+      obsCols <- c(clusterIDCol, isClusterCol)
       
       if (is.null(valueNames)) {
         # TODO this is specific to flow when no other gating is added
         labels <- cciaObj$labelProps()
         
+        # order DT
+        # TODO this should not be necessary?
+        # This might be due to multi-layered segmentation merged?
+        rootDT[, label := factor(label, levels = labels$values_obs()$label)]
+        setkey(rootDT, label)
+        
         if (!is.null(labels)) {
-          labels$add_obs(as.list(rootDT[, ..clusterIDCol]))
-          labels$add_obs(as.list(rootDT[, ..isClusterCol]))
+          labels$add_obs(reticulate::r_to_py(as.list(rootDT[, ..obsCols])))
           
           # save and close
           labels$save()
@@ -179,8 +184,7 @@ CellClusters <- R6::R6Class(
           labels <- cciaObj$labelProps(valueName = x)
           
           if (!is.null(labels)) {
-            labels$add_obs(as.list(rootDT[value_name == x, ..clusterIDCol]))
-            labels$add_obs(as.list(rootDT[value_name == x, ..isClusterCol]))
+            labels$add_obs(reticulate::r_to_py(as.list(rootDT[value_name == x, ..obsCols])))
             
             # save and close
             labels$save()

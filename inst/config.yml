@@ -278,6 +278,8 @@ default:
       clust.cell.is.clust: "logical"
       clust.cell.contact: "logical"
       clust.cell.min_distance: "numeric"
+      flow.cell.is.clust: "logical"
+      flow.cell.clust.id: "categorical"
   python:
     viewer:
       viewerPath: "viewer/"

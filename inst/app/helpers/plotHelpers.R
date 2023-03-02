@@ -200,8 +200,10 @@
     theme(
       # hide legend title
       legend.title = element_blank(),
-      legend.position = "right",
-      legend.direction = "vertical",
+      # legend.position = "right",
+      # legend.direction = "vertical",
+      legend.position = "bottom",
+      legend.direction = "horizontal",
       # line thickness
       axis.line = element_line(colour = "black", size = 1),
       panel.border = element_blank(),

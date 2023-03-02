@@ -839,22 +839,9 @@ InputManager <- R6::R6Class(
       popChoices <- NULL
       
       if ("showAll" %in% names(uiContent) && uiContent$showAll == TRUE) {
-        popChoices <- self$cciaObject()$popPathsAll(includeFiltered = TRUE)
-        popChoices <- popChoices[lengths(popChoices) > 0]
-        
-        # flatten down per pop type
-        popChoices <- mapply(
-          function(x, i) {
-            x <- paste(i, unlist(x), sep = ".")
-            
-            # use names instead of uIDs
-            if (!"useNames" %in% names(uiContent) || uiContent$useNames == FALSE) {
-              names(x) <- x
-            }
-            
-            as.list(x)
-          }, popChoices, names(popChoices), SIMPLIFY = FALSE
-        )
+        popChoices <- self$cciaObject()$popPathsAll(
+          includeFiltered = TRUE, flattenPops = TRUE,
+          useNames = !"useNames" %in% names(uiContent) || uiContent$useNames == FALSE)
       } else {
         # was a pop type specified?
         if ("popType" %in% names(uiContent))

@@ -111,6 +111,48 @@ task <- cciaObj$runTask(
 )
 ```
 
+```{r}
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TURHVv", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  popType = c("flow"),
+  popsToCluster = c("/nonDebris/P14"),
+  clustDiameter = 30,
+  clustMinPts = 3,
+  clustBorderPoints = TRUE,
+  combinePops = FALSE
+)
+
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellClusters",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TURHVv", versionID = versionID, initReactivity = FALSE 
+)
+
+cciaObj$popDT("flow", pops = c("/nonDebris/P14/clustered"), includeFiltered = TRUE)
+```
+
 
 ```{r}
 devtools::load_all("../")
