@@ -6,7 +6,7 @@
 #' @param globalManagers list of global managers
 #' @examples
 #' TODO
-.clustPopulationsServer <- function(id, parent, globalManagers) {
+.clustRegionsServer <- function(id, parent, globalManagers) {
   moduleServer(
     id,
     ## Below is the module function
@@ -26,81 +26,26 @@
           includeFiltered = TRUE
           )
       }
-      # get umap plot
-      plotUMAP <- function(umapCol, sourceID, plotType = "factor") {
-        if (umapCol %in% names(adataDT())) {
-          # get unique colours
-          colourPalette <- NULL
-          if (plotType == "factor") {
-            colourPalette <- randomcoloR::distinctColorPalette(
-              length(unique(adataDT()[[umapCol]]))
-            )
-          } else if (plotType == "pops") {
-            # get colours from populations
-            # use grey for root
-            colourPalette <- c("grey", unname(sapply(imPopMap(), function(x) x$colour)))
-            names(colourPalette) <- c("root", unname(sapply(imPopMap(), function(x) x$path)))
-            
-            # order by DT
-            colourPalette <- unlist(colourPalette[unique(adataDT()$pop)])
-          }
-          
-          p1 <- plot_ly(
-            adataDT(),
-            x = ~UMAP_1, y = ~UMAP_2,
-            type = "scatter", mode = "markers", source = sourceID,
-            # https://stackoverflow.com/questions/39859647/set-marker-size-in-plotly
-            # marker = list(sizeref = 0.1, sizemode="area")
-            # marker = list(size = 5),
-            marker = list(size = 2),
-            # size = 0.01,
-            color = ~get(umapCol), colors = colourPalette) %>%
-            layout(
-              legend = list(
-                title = list(text = NULL),
-                # show entries horizontally
-                orientation = "h",  
-                itemsizing = "constant"
-                # use center of legend as anchor
-                # xanchor = "center", 
-                # x = 0.5
-              ),
-              dragmode = "pan",
-              plot_bgcolor = "#222",
-              paper_bgcolor = "#222",
-              font = list(color = 'white'),
-              xaxis = plotlyAx,
-              yaxis = plotlyAx
-            ) %>% colorbar(
-              title = umapCol
-              # limits = datasetUMAPGeneExprLim()
-            )
-          # config(modeBarButtonsToRemove = plotlyModeBarButtonsToRemove)
-          
-          p1 %>%
-            toWebGL()
-        }
-      }
       
       # get adata DT
       getAdataDT <- function(flushCache = FALSE) {
-        if (!is.null(clusteringPartOf())) {
+        if (!is.null(regionPartOf())) {
           # get objects from selected set
           moduleManagers()$imageSetManager$selectedSet()$popDT(
             popType = popType(),
-            uIDs = clusteringPartOf(),
+            uIDs = regionPartOf(),
             includeFiltered = TRUE,
             completeDT = FALSE, replaceNA = TRUE,
             flushCache = flushCache,
             # only focus on clustered values
-            filterMeasures = c("clusters")
+            filterMeasures = c("regions")
           )
         } else {
           # anndata
           cciaObj()$popDT(popType(), includeFiltered = TRUE,
                           completeDT = FALSE, replaceNA = TRUE,
                           # only focus on clustered values
-                          filterMeasures = c("clusters"))
+                          filterMeasures = c("regions"))
         }
       }
       
@@ -119,7 +64,7 @@
       viewerUpdatePops <- reactiveVal()
       
       # population management
-      popType <- reactive("clust")
+      popType <- reactive("region")
       popTypeProcessing <- reactive({
         input$popType
       })
@@ -133,32 +78,17 @@
         )
       })
       
-      # marker selection for umap
-      umapMarkerSelection <- reactive({
-        req(input$umapMarkerSelection)
-        
-        input$umapMarkerSelection
-      })
-      
-      # attribute selection for umap
-      umapAttrSelection <- reactive({
-        req(input$umapAttrSelection)
-        
-        input$umapAttrSelection
-      })
-      
       # set clustering part of
-      clusteringPartOf <- reactive({
+      regionPartOf <- reactive({
         req(cciaObj())
         
-        # is the clustering a part of a set clustering?
         cciaObj()$valuePartOf("imAnndataFilepath")
       })
       
-      setClusterForPop <- reactive({
-        req(input$setClusterForPop)
+      setRegionForPop <- reactive({
+        req(input$setRegionForPop)
         
-        input$setClusterForPop
+        input$setRegionForPop
       }) %>% debounce(cciaConf()$fcs$gating$plots$poll)
       
       ### Reactive-like values
@@ -176,7 +106,7 @@
         ), {
         req(cciaObj())
         
-        cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c("clusters"))
+        cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c("regions"))
       })
       
       # population data
@@ -201,8 +131,8 @@
         popIDs <- rownames(popsDF)
         
         # for every column init a link to change
-        clusterCols <- list()
-        inputID <- "setClusterForPop"
+        regionCols <- list()
+        inputID <- "setRegionForPop"
         
         if (length(imPopMap()) > 0) {
           for (x in colnames(popsDF)) {
@@ -232,21 +162,20 @@
             )
             
             # add to list
-            clusterCols <- append(
-              clusterCols, curCol)
+            regionCols <- append(regionCols, curCol)
           }
         }
         
         # create dataframe
-        popsDFwithCLusters <- do.call(cbind, clusterCols)
+        popsDFwithRegions <- do.call(cbind, regionCols)
         
-        if (!is.null(popsDFwithCLusters)) {
-          names(popsDFwithCLusters) <- colnames(popsDF)
-          colnames(popsDFwithCLusters) <- colnames(popsDF)
-          rownames(popsDFwithCLusters) <- rownames(popsDF)
+        if (!is.null(popsDFwithRegions)) {
+          names(popsDFwithRegions) <- colnames(popsDF)
+          colnames(popsDFwithRegions) <- colnames(popsDF)
+          rownames(popsDFwithRegions) <- rownames(popsDF)
         }
         
-        popsDFwithCLusters
+        popsDFwithRegions
       })
       
       # selected ccia object
@@ -275,7 +204,7 @@
           uIDs = moduleManagers()$imageSetManager$filteredUIDs())
       })
       
-      # dendrograms for clusters
+      # dendrograms for regions
       adataColDendH <- reactive({
         req(adataMat())
         
@@ -292,7 +221,7 @@
         corMat <- cor(adataMat())
         corMat[is.na(corMat)] <- 0
         
-        # create dendrogram if only two clusters were found
+        # create dendrogram if only two regions were found
         if (ncol(corMat) == 2) {
           # https://stackoverflow.com/a/18895310
           tree <- list()
@@ -335,7 +264,7 @@
         input$heatmapType
       })
       
-      # cluster order for heatmap dendrogram
+      # region order for heatmap dendrogram
       adataColDendLabels <- reactive({
         req(adataColDend())
         
@@ -346,7 +275,7 @@
       adataColDendK <- reactive({
         req(adataColDendC())
         
-        # provide manual k if not enough clusters
+        # provide manual k if not enough regions
         if (attr(adataColDendC(), "members") <= 2)
           2
         else
@@ -437,38 +366,38 @@
         adataDT(getAdataDT())
         
         # create adata matrix
-        adataMat(adataMatFromPopDT(adataDT()))
+        adataMat(adataMatFromPopDT(adataDT(), popKey = "regions"))
         
         # collapse selection box
         js$collapseBox(session$ns("imageTableBox"))
       })
       
-      # set cluster for population
-      observeEvent(setClusterForPop(), {
-        req(setClusterForPop())
+      # set region for population
+      observeEvent(setRegionForPop(), {
+        req(setRegionForPop())
         req(cciaObj())
         
-        # set cluster for population
-        # split into population and cluster ID
+        # set region for population
+        # split into population and region ID
         params <- stringr::str_split(
-          setClusterForPop(), pattern = "\\.")[[1]]
+          setRegionForPop(), pattern = "\\.")[[1]]
         popID <- params[[1]]
         clustID <- as.numeric(params[[2]])
         
         popMap <- imPopMap()
         
-        # was the cluster already set?
+        # was the region already set?
         addClustID <- TRUE
         if (clustID %in% popMap[[popID]]$filterValues) {
           addClustID <- FALSE
         }
         
-        # remove cluster ID from list
+        # remove region ID from list
         changedPops <- list()
         for (i in names(popMap)) {
           x <- popMap[[i]]
           
-          # check whether cluster is set
+          # check whether region is set
           if (clustID %in% popMap[[i]]$filterValues) {
             changedPops[[i]] <- x$name
           }
@@ -503,7 +432,7 @@
         # go through all rows and disable, except chosen
         for (i in names(popMap)) {
           labelID <- sprintf(
-            "setClusterForPop_%s_%s", clustID, i)
+            "setRegionForPop_%s_%s", clustID, i)
           
           if ("filterValues" %in% names(popMap[[i]]) &&
             clustID %in% popMap[[i]]$filterValues) {
@@ -541,29 +470,6 @@
           which(channelSelection() == input$viewerShowChannelIntensity)[[1]]
         )
       }, ignoreInit = TRUE)
-      
-      # listen to viewer output
-      observeEvent(globalManagers$viewerManager()$viewerOutput(), {
-        req(cciaObj())
-        
-        viewerOutput <- globalManagers$viewerManager()$viewerOutput()
-        outputProcessed <- FALSE
-        
-        # check whether there is something to do
-        if ("clustPopulationsSelectPoints" %in% names(viewerOutput)) {
-          if (length(viewerOutput$clustPopulationsSelectPoints)) {
-            # set selected labels
-            viewerSelectedLabels(viewerOutput$clustPopulationsSelectPoints)
-            
-            outputProcessed <- TRUE
-          }
-        }
-        
-        # tell the viewer that the command was processed
-        if (outputProcessed == TRUE) {
-          globalManagers$viewerManager()$clearViewerOutput()
-        }
-      })
       
       # renamed population
       observeEvent(moduleManagers()$populationManager$renamedPops(), {
@@ -610,7 +516,7 @@
               # path = i,
               path = x$name,
               parent = "root",
-              filterMeasure = "clusters",
+              filterMeasure = "regions",
               filterFun = "eq",
               filterValues = list()
             ), includeFiltered = TRUE, invalidate = TRUE
@@ -643,32 +549,6 @@
         req(input$resetImageLabelSelection)
         
         viewerSelectedLabels(NULL)
-      })
-      
-      # update population umap
-      observeEvent(input$updateClustUMAPPops, {
-        req(cciaObj())
-        req(moduleManagers()$imageSetManager$selectedSet())
-        
-        # propagate cluster to associated images
-        if (!is.null(clusteringPartOf())) {
-          moduleManagers()$imageSetManager$selectedSet()$propagatePopMap(
-            popType(),
-            fromUID = cciaObj()$getUID(),
-            toUIDs = clusteringPartOf()
-          )
-        }
-        
-        progress <- Progress$new()
-        
-        progress$set(
-          message = "Update population map",
-          value = 50)
-        
-        # update adata DT
-        adataDT(getAdataDT(flushCache = TRUE))
-        
-        progress$close()
       })
       
       ## Generic
@@ -704,32 +584,6 @@
       })
       
       ## Other
-      
-      # selection for attributes in umap
-      output$umapAttrSelection <- renderUI({
-        req(attrSelection())
-        
-        createSelectInput(
-          session$ns("umapAttrSelection"),
-          "Select attribute",
-          choices = attrSelection()[attrSelection() %in% names(adataDT())],
-          selected = shinyInputValue("umapAttrSelection", input),
-          multiple = FALSE
-        )
-      })
-      
-      # selection for markers in umap
-      output$umapMarkerSelection <- renderUI({
-        req(channelSelection())
-        
-        createSelectInput(
-          session$ns("umapMarkerSelection"),
-          "Select marker",
-          choices = channelSelection()[channelSelection() %in% names(adataDT())],
-          selected = shinyInputValue("umapMarkerSelection", input),
-          multiple = FALSE
-        )
-      })
       
       # channel intensity selection
       output$viewerShowChannelIntensity <- renderUI({
@@ -825,40 +679,6 @@
         )
       })
       
-      # uamp plots
-      output$clustUMAPClusters <- renderPlotly({
-        req(adataDT())
-        
-        plotUMAP("clusters", "clustUMAPClusters")
-      })
-      
-      output$clustUMAPPops <- renderPlotly({
-        req(adataDT())
-        
-        # TODO Or do you want this to happen every time a population
-        # is changing?
-        isolate({
-          plotUMAP("pop", "clustUMAPPops",
-                   plotType = "pops")
-        })
-      })
-      
-      output$clustUMAPMarkers <- renderPlotly({
-        req(adataDT())
-        req(umapMarkerSelection())
-        
-        plotUMAP(umapMarkerSelection(), "clustUMAPMarkers",
-                 plotType = "intensity")
-      })
-      
-      output$clustUMAPAttrs <- renderPlotly({
-        req(adataDT())
-        req(umapAttrSelection())
-        
-        plotUMAP(umapAttrSelection(), "clustUMAPAttrs",
-                 plotType = "intensity")
-      })
-      
       # heatmap plot
       output$heatmapPlot <- renderPlotly({
         req(adataMat())
@@ -919,7 +739,7 @@
           sourceDirectory = file.path(cciaConf()$tasks$inputDefinitions, id)
         ),
         imageViewer = list(
-          napariModule = "clust_populations"
+          napariModule = "clust_regions"
         ),
         task = list(
           funLabel = "Mapping method",

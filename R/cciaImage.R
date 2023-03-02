@@ -1044,6 +1044,8 @@ CciaImage <- R6::R6Class(
         retVal <- self$flowGatingSet(...)
       } else if (popType == "clust") {
         retVal <- self$adataUtils(...)
+      } else if (popType == "region") {
+        retVal <- self$adataUtils(adataPath = self$imRegionsFilepath(), ...)
       } else if (popType == "live") {
         retVal <- self$livePopUtils(...)
       } else if (popType == "clsf") {
@@ -1912,14 +1914,18 @@ CciaImage <- R6::R6Class(
     #' @description Adata
     #' @param forceReload boolean to force reload data
     #' @param init boolean to init data
-    adataUtils = function(forceReload = FALSE, init = TRUE) {
+    #' @param adataPath character for filepath
+    adataUtils = function(forceReload = FALSE, init = TRUE, adataPath = NULL) {
+      if (is.null(adataPath))
+        adataPath <- self$imAnndataFilepath()
+      
       if (init == TRUE) {
-        if (!purrr::is_empty(self$imAnndataFilepath())) {
+        if (!purrr::is_empty(adataPath)) {
           if (is.null(private$anndataUtils) || forceReload == TRUE) {
-            if (file.exists(self$imAnndataFilepath())) {
+            if (file.exists(adataPath)) {
               # init object
               private$anndataUtils <- AnndataUtils$new(
-                self$imAnndataFilepath(), self$imChannelNames(includeTypes = TRUE)
+                adataPath, self$imChannelNames(includeTypes = TRUE)
               )
               
               # init reactivity
@@ -2455,6 +2461,8 @@ CciaImage <- R6::R6Class(
         return(self$valueNames("imGatingSetFilepath", ...))
       } else if (popType == "clust") {
         return(self$valueNames("imAnndataFilepath", ...))
+      } else if (popType == "region") {
+        return(self$valueNames("imRegionsFilepath", ...))
       } else if (popType == "live") {
         return(self$valueNames("imLabelPropsFilepath", valueType = "live", ...))
       } else if (popType == "clsf") {

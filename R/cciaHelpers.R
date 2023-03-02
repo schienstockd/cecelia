@@ -922,32 +922,41 @@ genUID <- function(uIDLength, numValues = 1){
 #' @description Create average matrix
 # TODO is there a better way to do this?
 #' @param popDT data.table of population
+#' @param popKey character to find population
 #' @examples
 #' TODO
 #' @export
-adataMatFromPopDT <- function(popDT) {
-  # convert chanels to matrix
-  # https://stackoverflow.com/a/43834005/13766165
-  adataSummary <- popDT[
-    order(clusters), sapply(.SD, function(x) list(mean = mean(x))),
-    .SDcols = colnames(popDT)[
-      !colnames(popDT) %in% c("uID", "label", "clusters", "pop", paste("UMAP", seq(2), sep = "_"))
-    ], by = clusters]
-  
-  # replace names with readable channel names
-  colnames(adataSummary) <- stringr::str_replace(colnames(adataSummary), ".mean", "")
-  
-  # remove clusters and transform matrix
-  anndataMat <- t(as.matrix(
-    adataSummary[, !c("clusters")]
-  ))
-  
-  # set names
-  colnames(anndataMat) <- adataSummary$clusters
-  
-  # remove na
-  # https://stackoverflow.com/a/6471927
-  anndataMat[rowSums(is.na(anndataMat)) != ncol(anndataMat), ]
+adataMatFromPopDT <- function(popDT, popKey = "clusters") {
+  if (nrow(popDT) > 0) {
+    # convert chanels to matrix
+    # https://stackoverflow.com/a/43834005/13766165
+    adataSummary <- popDT[
+      order(get(popKey)), sapply(.SD, function(x) list(mean = mean(x))),
+      .SDcols = colnames(popDT)[
+        !colnames(popDT) %in% c(
+          "uID", "label", popKey, "clusters", "region", "regions", "pop",
+          paste("UMAP", seq(2), sep = "_"))
+      ], by = get(popKey)]
+    setnames(adataSummary, "get", popKey)
+    
+    # replace names with readable channel names
+    colnames(adataSummary) <- stringr::str_replace(colnames(adataSummary), ".mean", "")
+    
+    # remove key and transform matrix
+    anndataMat <- t(as.matrix(adataSummary[, !c(..popKey)]))
+    
+    # set names
+    colnames(anndataMat) <- adataSummary[[popKey]]
+    
+    # replace inf
+    anndataMat[is.infinite(anndataMat)] = 0
+    
+    # remove na
+    # https://stackoverflow.com/a/6471927
+    anndataMat[rowSums(is.na(anndataMat)) != ncol(anndataMat), ]
+  } else {
+    NULL
+  }
 }
 
 #' @description Prep file list to sync

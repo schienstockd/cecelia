@@ -190,6 +190,7 @@ default:
       flow: "Histocytometry"
       live: "Live tracking"
       clust: "Clustered"
+      region: "Region"
       clsf: "Classifications"
     filterFuns:
       eq: "Any of"
@@ -246,6 +247,7 @@ default:
       compactness: "numeric"
       pop: "categorical"
       clusters: "categorical"
+      regions: "categorical"
       pop.freq: "numeric"
       live.cell.speed: "numeric"
       live.cell.angle: "numeric"

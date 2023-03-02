@@ -67,6 +67,52 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N051/ANALYSIS/IMAGE/CECELIA
 ```
 
 ```{r}
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TURHVv", versionID = versionID, initReactivity = FALSE # Set
+)
+
+cciaObj$popDT("region", includeFiltered = TRUE)
+```
+
+```{r}
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ktUu0n", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# run task
+funParams <- list(
+  uIDs = c("TURHVv"),
+  popType = c("flow"),
+  pops = c("/nonDebris"),
+  colName = "default",
+  valueName = "default",
+  excludeSelfConnections = FALSE,
+  useClusters = FALSE,
+  expandPops = TRUE,
+  numClusters = 3
+)
+
+task <- cciaObj$runTask(
+  funName = "clustRegions.kmeansClust",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 

@@ -831,6 +831,10 @@ server <- function(input, output, session) {
         icon = icon("map"),
         tabName = "clustPopulations"),
       menuSubItem(
+        "Region Clustering",
+        icon = icon("globe"),
+        tabName = "clustRegions"),
+      menuSubItem(
         "Pixel Classification",
         icon = icon("robot"),
         tabName = "pixelClassification"),
@@ -997,6 +1001,7 @@ server <- function(input, output, session) {
   
   # specific to static images?
   .clustPopulationsServer("clustPopulations", session, globalManagers)
+  .clustRegionsServer("clustRegions", session, globalManagers)
   .gatePopulationsServer("gatePopulations", session, globalManagers)
   
   # plot canvases

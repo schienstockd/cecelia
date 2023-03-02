@@ -145,6 +145,11 @@ ui <- function(request) {
       ),
       
       tabItem(
+        tabName = "clustRegions",
+        .clustRegionsUI("clustRegions")
+      ),
+      
+      tabItem(
         tabName = "spatialAnalysis",
         .spatialAnalysisUI("spatialAnalysis")
       ),
