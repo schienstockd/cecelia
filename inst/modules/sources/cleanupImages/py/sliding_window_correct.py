@@ -23,7 +23,8 @@ def run(params):
   sliding_window = script_utils.get_param(params, 'slidingWindow', default = 1)
 
   # load image
-  im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = True)
+  # im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = True)
+  im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = False)
 
   # get OME-XML
   omexml = ome_xml_utils.parse_meta(im_path)
@@ -72,6 +73,7 @@ def run(params):
       sum_slices[dim_utils.dim_idx('C')] = j
       sum_slices = tuple(sum_slices)
   
+      # TODO this is very slow
       sum_zarr[sum_slices] = np.squeeze(np.median(
         im_dat[0][im_slices],
         axis = dim_utils.dim_idx('T', ignore_channel = True),

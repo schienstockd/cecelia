@@ -84,6 +84,8 @@
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
+        browser()
+        
         p1s <- .flowPlotGatedRaster(
           cciaObj(),
           popPath = resultParamsPops(),
@@ -135,6 +137,9 @@
           popTypePops <- unname(cciaSet()$popPaths(
             uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
         }
+        
+        # add root
+        popTypePops <- c("root", popTypePops)
         
         # get pop type columns
         popTypeChoices <- cciaConf()$parameters$popTypes
