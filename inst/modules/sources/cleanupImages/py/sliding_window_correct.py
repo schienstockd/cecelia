@@ -43,7 +43,8 @@ def run(params):
   sum_zarr = zarr.create(
     im_dat[0].shape,
     dtype = im_dat[0].dtype,
-    chunks = im_dat[0].chunksize
+    # chunks = im_dat[0].chunksize
+    chunks = im_dat[0].chunks
     # store = im_correction_path
   )
   
