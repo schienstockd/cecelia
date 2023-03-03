@@ -74,7 +74,7 @@ def run(params):
       sum_slices[dim_utils.dim_idx('C')] = j
       sum_slices = tuple(sum_slices)
   
-      # TODO this is very slow
+      # TODO this is very slow with im_dat as dask
       sum_zarr[sum_slices] = np.squeeze(np.median(
         im_dat[0][im_slices],
         axis = dim_utils.dim_idx('T', ignore_channel = True),

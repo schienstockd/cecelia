@@ -13,7 +13,8 @@ import py.script_utils as script_utils
 def run(params):
   # load image
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(
-    params['imPath'], as_dask = True)
+    # params['imPath'], as_dask = True)
+    params['imPath'], as_dask = False)
 
   # get OME-XML
   omexml = ome_xml_utils.parse_meta(params['imPath'])
