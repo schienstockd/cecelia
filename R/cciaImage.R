@@ -2099,7 +2099,7 @@ CciaImage <- R6::R6Class(
       # get mapping from image
       popMap <- self$imPopMap(popType, includeFiltered = includeFiltered)
       
-      if (popID %in% names(popMap)) {
+      if (length(popID) > 0 && popID %in% names(popMap)) {
         # add attributes
         for (i in names(popAttr)) {
           x <- popAttr[[i]]
