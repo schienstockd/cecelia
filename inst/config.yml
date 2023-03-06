@@ -321,8 +321,8 @@ default:
       cpu: "physical"
       gpu: "gpu-a100"
     qos:
-      cpu: ""
-      gpu: ""
+      cpu: " "
+      gpu: " "
     projects:
       cpu: 1124
       gpu: 1031

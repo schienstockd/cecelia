@@ -212,7 +212,8 @@
           
           if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
             # save population
-            moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
+            # moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
+            moduleManagers()$flowPlotManager$flowSavePops(popPath, includeFiltered = FALSE, completeDT = FALSE)
             
             # save population map
             cciaObj()$savePopMap(popType())

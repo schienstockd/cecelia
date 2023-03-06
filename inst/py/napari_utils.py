@@ -953,7 +953,7 @@ class NapariUtils:
     pop_data = self.pop_utils.pop_data(self.task_dir, pop_type)
     
     # hide populations if they are not shown
-    # at the moment - this is how populations are renamed
+    # TODO at the moment - this is how populations are renamed
     if remove_previous is True:
       # pop_layer_names = [f'({pop_type}) {x["name"][0]}' for i, x in pop_map.items()]
       poplayers_to_remove = [i for i in [x.name for x in self.viewer.layers] if i.startswith(f'({pop_type})')]

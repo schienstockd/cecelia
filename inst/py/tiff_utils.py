@@ -4,7 +4,7 @@ import tifffile
 def save_as_tiff(im_path, im_data, dim_utils = None,
                  physical_sizes = {i: 1 for i in ['x', 'y', 'z']},
                  physical_units = {i: 'um' for i in ['x', 'y', 'z']},
-                 convert_sizes = True):
+                 convert_sizes = True, imagej = True):
   # get physical sizes
   if dim_utils is not None:
     physical_sizes = dim_utils.im_physical_sizes()
@@ -40,7 +40,7 @@ def save_as_tiff(im_path, im_data, dim_utils = None,
   
   tifffile.imwrite(
     im_path, im_data,
-    imagej = True,
+    imagej = imagej,
     resolution = resolution,
     # 'axes': "TZCYX", # gives error - not sure why
     metadata = metadata

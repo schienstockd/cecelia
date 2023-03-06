@@ -34,6 +34,7 @@ ViewerManager <- R6::R6Class(
     showTracks = FALSE,
     asDask = TRUE,
     downsampleZ = FALSE,
+    reloadImage = FALSE,
     multiscales = TRUE,
     
     # setters
@@ -132,7 +133,9 @@ ViewerManager <- R6::R6Class(
         
         # show image in napari if not already shown
         if (!is.null(self$viewer()) && (
-          is.null(self$shownImage()) || private$getShownUID() != imObj()$getUID()
+          is.null(self$shownImage()) ||
+          private$getShownUID() != imObj()$getUID() ||
+          self$getReloadImage() == TRUE
         )) {
           self$viewer()$openImage(
             imFilepath,
@@ -311,6 +314,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setReloadImage = function(x, invalidate = TRUE) {
+      private$reloadImage <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setShowPops = function(x, invalidate = TRUE) {
       private$showPops <- x
       private$invalidate(invalidate = invalidate)
@@ -379,6 +387,10 @@ ViewerManager <- R6::R6Class(
     
     getDownsampleZ = function() {
       private$downsampleZ
+    },
+    
+    getReloadImage = function() {
+      private$reloadImage
     },
     
     getShowPops = function() {

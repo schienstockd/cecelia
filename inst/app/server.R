@@ -466,6 +466,13 @@ server <- function(input, output, session) {
       globalManagers$viewerManager()$setDownsampleZ(FALSE)
     }
     
+    # Repload image?
+    if ("reloadImage" %in% input$viewerParams) {
+      globalManagers$viewerManager()$setReloadImage(TRUE)
+    } else {
+      globalManagers$viewerManager()$setReloadImage(FALSE)
+    }
+    
     # show populations?
     if ("showPops" %in% input$viewerParams) {
       globalManagers$viewerManager()$setShowPops(TRUE)

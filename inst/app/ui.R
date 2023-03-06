@@ -26,6 +26,7 @@ ui <- function(request) {
             c(
               # "Split channels" = "useChannelAxis",
               # "Viewer" = "showViewer",
+              "Reload Image" = "reloadImage",
               "Original" = "showOriginal",
               "Layers" = "layersVisible",
               "3D" = "show3D",
