@@ -359,7 +359,7 @@ createPopulationManager <- function(
   
   # update image
   observeEvent(c(
-    input$updateImage,
+    # input$updateImage,
     managerConf$population$updateImage(),
     moduleManagers()$imageViewerManager$imageShown()
     ), {

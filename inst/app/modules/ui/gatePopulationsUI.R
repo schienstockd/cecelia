@@ -61,7 +61,8 @@
                     6,
                     tags$label("Image"), tags$br(),
                     actionButton(ns("updateImage"), "Update Image"),
-                    checkboxInput(ns("autoUpdateImage"), "Auto Update"),
+                    checkboxInput(ns("autoUpdateImage"), "Auto Update", value = TRUE),
+                    checkboxInput(ns("includeFilteredPops"), "Filtered Pops", value = TRUE),
                     actionButton(ns("resetImageLabelSelection"), "Reset selection"),
                     tags$br(), tags$br(),
                     actionButton(ns("debugPlotsRendered"), "Plots rendered")

@@ -213,7 +213,10 @@
           if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
             # save population
             # moduleManagers()$flowPlotManager$flowSavePops(popPath, completeDT = FALSE)
-            moduleManagers()$flowPlotManager$flowSavePops(popPath, includeFiltered = FALSE, completeDT = FALSE)
+            moduleManagers()$flowPlotManager$flowSavePops(
+              popPath,
+              includeFiltered = isolate(input$includeFilteredPops),
+              completeDT = FALSE)
             
             # save population map
             cciaObj()$savePopMap(popType())
@@ -299,9 +302,10 @@
       updateImage <- eventReactive(c(
         # cciaObj()$flowGatingSet(),
         cciaObj(),
-        flowGatingPlotsGatesMissing()
+        flowGatingPlotsGatesMissing(),
+        input$updateImage
       ), {
-        req(moduleManagers()$populationManager$autoUpdateImage())
+        # req(moduleManagers()$populationManager$autoUpdateImage())
         req(cciaObj())
         req(moduleManagers()$flowPlotManager$flowAfterplot())
         req(length(flowGatingPlotsGatesMissing()) == 0)

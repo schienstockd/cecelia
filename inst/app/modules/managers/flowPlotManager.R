@@ -308,7 +308,8 @@ createFlowPlotManager <- function(
   }
 
   # save populations
-  flowSavePops <- function(pops = NULL, purge = FALSE, filteredOnly = FALSE, completeDT = TRUE) {
+  flowSavePops <- function(pops = NULL, purge = FALSE, filteredOnly = FALSE,
+                           includeFiltered = FALSE, completeDT = TRUE) {
     if (!is.null(cciaObj()$popUtils(popType()))) {
       # get only filtered pops
       if (filteredOnly == TRUE) {
@@ -317,7 +318,7 @@ createFlowPlotManager <- function(
 
       # save
       cciaObj()$savePops(popType(), pops = pops,
-                         includeFiltered = TRUE,
+                         includeFiltered = includeFiltered,
                          purge = purge, completeDT = completeDT)
     }
   }
