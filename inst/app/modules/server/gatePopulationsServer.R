@@ -269,6 +269,7 @@
       
       flowGatingPlotsLastShapes <- reactiveVal(0)
       flowNumGateUpdates <- reactiveVal(0)
+      flowUpdateImageN <- reactiveVal(0)
       
       # population management
       popType <- reactive("flow")
@@ -305,7 +306,11 @@
         flowGatingPlotsGatesMissing(),
         input$updateImage
       ), {
-        # req(moduleManagers()$populationManager$autoUpdateImage())
+        # check whether button pushed or autoupdate
+        if (input$updateImage > flowUpdateImageN())
+          flowUpdateImageN(input$updateImage)
+        else
+          req(moduleManagers()$populationManager$autoUpdateImage())
         req(cciaObj())
         req(moduleManagers()$flowPlotManager$flowAfterplot())
         req(length(flowGatingPlotsGatesMissing()) == 0)
