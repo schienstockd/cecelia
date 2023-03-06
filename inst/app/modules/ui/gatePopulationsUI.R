@@ -51,7 +51,6 @@
                 fluidRow(
                   column(
                     6,
-                    checkboxInput(ns("autoUpdateImage"), "Auto Update"),
                     sliderInput(ns("numFlowPlots"), "Plots", 2, 10, 
                                 cciaConf()$fcs$gating$plots$num),
                     checkboxInput(ns("useFlowColours"), "Density plot", TRUE),
@@ -61,6 +60,8 @@
                   column(
                     6,
                     tags$label("Image"), tags$br(),
+                    actionButton(ns("updateImage"), "Update Image"),
+                    checkboxInput(ns("autoUpdateImage"), "Auto Update"),
                     actionButton(ns("resetImageLabelSelection"), "Reset selection"),
                     tags$br(), tags$br(),
                     actionButton(ns("debugPlotsRendered"), "Plots rendered")
