@@ -84,8 +84,6 @@
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        browser()
-        
         p1s <- .flowPlotGatedRaster(
           cciaObj(),
           popPath = resultParamsPops(),
