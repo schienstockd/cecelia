@@ -183,16 +183,16 @@ createPopulationManager <- function(
   
   # should the image be updated automatically?
   autoUpdateImage <- reactive({
-    # updateImage <- FALSE
-    # 
-    # if (input$autoUpdateImage == TRUE &&
-    #     globalManagers$viewerManager()$getShowViewer() == TRUE) {
-    #   updateImage <- TRUE
-    # }
-    #   
-    # updateImage
+    updateImage <- FALSE
+
+    if (input$autoUpdateImage == TRUE &&
+        globalManagers$viewerManager()$getShowViewer() == TRUE) {
+      updateImage <- TRUE
+    }
+
+    updateImage
     
-    TRUE
+    # TRUE
   })
   
   # population stats
