@@ -73,12 +73,15 @@ ViewerManager <- R6::R6Class(
     # return viewer
     viewer = function(
       viewerOutputFile = file.path(
-        cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$outputFile),
+          cciaPath(), "app",
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$outputFile
+        ),
       viewerInputFile = file.path(
-        cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$inputFile)
-      ) {
+          cciaPath(), "app",
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$inputFile
+        )) {
       
       if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE && DEBUG_SHOW_VIEWER == TRUE) {
         # init viewer

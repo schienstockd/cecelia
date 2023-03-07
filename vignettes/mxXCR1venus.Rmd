@@ -1,0 +1,90 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "Bi2995"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N051/ANALYSIS/IMAGE/CECELIA"
+```
+
+```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+)
+
+paste(cciaObj$imChannelNames(), collapse = "', '")
+
+# cciaObj$editPopColour(
+#   popType = "flow", colour = "#ff1493",
+#   popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT+/CD69+"))
+
+# get raster contours
+p1s <- .flowPlotGatedRaster(
+  cciaObj, popPaths = "root", labelSize = 3, asContours = TRUE)
+
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
+ggsave(file.path(anaDir, "gating.pdf"), width = 8, height = 5)
+```
+
+```{r}
+# make regions
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  valueName = "default",
+  popType = c("flow"),
+  pops = c(
+    '/nonDebris', '/nonDebris/XCR1', '/nonDebris/P14', '/nonDebris/O/LCMV',
+    '/nonDebris/O/CD11b','/nonDebris/O/O1/CD11c', '/nonDebris/O/O1/CD3',
+    '/nonDebris/O/O1/O2/B'),
+  neighbourMethod = "radius",
+  neighbourRadius = 50,
+  nRings = 1,
+  savePops = TRUE
+)
+
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellNeighbours",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+

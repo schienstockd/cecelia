@@ -182,10 +182,11 @@ cciaModels <- function(dlModels = c(
 #' @param initJupyter boolean to init jupyter server
 #' @param jupyterLibDir character to define library for jupyter python source files
 #' @param sourceConda boolean to source conda files
+#' @param projectsDir character to define project directory of cecelia
 #' @export
 cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
                     jupyterConnectionFile = NULL, jupyterLibDir = NULL,
-                    sourceConda = TRUE) {
+                    sourceConda = TRUE, projectsDir = NULL) {
   # set path in environment
   pkg.env$path <- path
   
@@ -216,6 +217,11 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     
     # relist
     pkg.env$cfg <- list.as.numeric(bRelist)
+  }
+  
+  # add specified project directory
+  if (!is.null(projectsDir)) {
+    pkg.env$cfg$dirs$projects <- projectsDir
   }
   
   # check if there is a docker config

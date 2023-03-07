@@ -19,17 +19,17 @@ NapariUtils <- R6::R6Class(
     initNapari = function(viewerOutputFile = NULL, viewerInputFile = NULL, execInteractive = TRUE) {
       # check files
       if (is.null(viewerOutputFile))
-        viewerOutputFile <- system.file(
-          file.path("app",
-                    cciaConf()$python$viewer$viewerPath,
-                    cciaConf()$python$viewer$outputFile),
-          package = "cecelia")
+        viewerOutputFile <- file.path(
+          cciaPath(), "app",
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$outputFile
+        )
       if (is.null(viewerInputFile))
-        viewerInputFile <-           system.file(
-          file.path("app",
-                    cciaConf()$python$viewer$viewerPath,
-                    cciaConf()$python$viewer$inputFile),
-          package = "cecelia")
+        viewerInputFile <- file.path(
+          cciaPath(), "app",
+          cciaConf()$python$viewer$viewerPath,
+          cciaConf()$python$viewer$inputFile
+        )
       
       # import napari
       self$execute(paste(

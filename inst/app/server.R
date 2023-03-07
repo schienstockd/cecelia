@@ -360,8 +360,10 @@ server <- function(input, output, session) {
     cciaConf()$python$viewer$outputDelay, session,
     checkFunc = function() {
       outputFile <- file.path(
+        cciaPath(), "app",
         cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$outputFile)
+        cciaConf()$python$viewer$outputFile
+      )
       
       if (file.exists(outputFile)) {
         return(file.mtime(outputFile))
@@ -371,8 +373,10 @@ server <- function(input, output, session) {
     },
     valueFunc = function() {
       outputFile <- file.path(
+        cciaPath(), "app",
         cciaConf()$python$viewer$viewerPath,
-        cciaConf()$python$viewer$outputFile)
+        cciaConf()$python$viewer$outputFile
+      )
       
       retVal <- NULL
       

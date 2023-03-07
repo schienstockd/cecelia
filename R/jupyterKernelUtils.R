@@ -18,10 +18,11 @@ JupyterKernelUtils <- R6::R6Class(
                           libDir = NULL) {
       # check config
       if (is.null(connectionFile) && useConnectionFile == TRUE) {
-        connectionFile <- system.file(file.path(
-          "app",
+        connectionFile <- file.path(
+          cciaPath(), "app",
           cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile), package = "cecelia")
+          cciaConf()$python$viewer$connectionFile
+        )
       }
       
       # set working directory in jupyter
@@ -34,9 +35,10 @@ JupyterKernelUtils <- R6::R6Class(
         
         # get connection file
         connectionFile <- file.path(
-          system.file("app", package = "cecelia"),
+          cciaPath(), "app",
           cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$connectionFile)
+          cciaConf()$python$viewer$connectionFile
+        )
         
         # file.remove(connectionFile)
         f <- file(connectionFile)

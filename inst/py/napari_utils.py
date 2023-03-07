@@ -1017,7 +1017,7 @@ class NapariUtils:
           
           # show on viewer
           # if popLayer is None:
-          # always add points - to preserve the order of populations
+          # TODO always add points - to preserve the order of populations?
           self.viewer.add_points(
               label_points,
               face_color = pop_colour, name = pop_layer_name,
