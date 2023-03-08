@@ -186,7 +186,7 @@ cciaModels <- function(dlModels = c(
 #' @export
 cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
                     jupyterConnectionFile = NULL, jupyterLibDir = NULL,
-                    sourceConda = TRUE, projectsDir = NULL) {
+                    sourceConda = TRUE, projectsDir = NULL, localPath = TRUE) {
   # set path in environment
   pkg.env$path <- path
   
@@ -319,6 +319,7 @@ cciaCreateApp <- function() {
 }
 
 #' @description Run app with port
+#' @param localPath boolean to use local path
 #' @export
 cciaRunApp <- function(localPath = TRUE, ...) {
   if (localPath == TRUE)

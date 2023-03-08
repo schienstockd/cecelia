@@ -18,11 +18,11 @@ JupyterKernelUtils <- R6::R6Class(
                           libDir = NULL) {
       # check config
       if (is.null(connectionFile) && useConnectionFile == TRUE) {
-        connectionFile <- file.path(
+        connectionFile <- normalizePath(file.path(
           cciaPath(), "app",
           cciaConf()$python$viewer$viewerPath,
           cciaConf()$python$viewer$connectionFile
-        )
+        ))
       }
       
       # set working directory in jupyter
@@ -34,11 +34,11 @@ JupyterKernelUtils <- R6::R6Class(
         message(">> Start new Jupyter kernel process")
         
         # get connection file
-        connectionFile <- file.path(
+        connectionFile <- normalizePath(file.path(
           cciaPath(), "app",
           cciaConf()$python$viewer$viewerPath,
           cciaConf()$python$viewer$connectionFile
-        )
+        ))
         
         # file.remove(connectionFile)
         f <- file(connectionFile)
