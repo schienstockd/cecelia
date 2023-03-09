@@ -270,12 +270,14 @@
         sDT[DT[, c("uID", "label", "pop")],
             on = c("uID", "from" = "label"),
             pop.from := pop]
-        sDT[DT[, c("uID", "label", "clusters")],
-            on = c("uID", "to" = "label"),
-            clusters.to := clusters]
-        sDT[DT[, c("uID", "label", "clusters")],
-            on = c("uID", "from" = "label"),
-            clusters.from := clusters]
+        if ("clusters" %in% colnames(DT)) {
+          sDT[DT[, c("uID", "label", "clusters")],
+              on = c("uID", "to" = "label"),
+              clusters.to := clusters]
+          sDT[DT[, c("uID", "label", "clusters")],
+              on = c("uID", "from" = "label"),
+              clusters.from := clusters]
+        }
         # exclude self interactions
         # sDT <- sDT[clusters.to != clusters.from]
         
@@ -340,9 +342,15 @@
         popCats <- list()
         
         if (!is.null(popType())) {
-          popTypePops <- unname(cciaSet()$popPaths(
-            uIDs = selectedUIDs(), popType = popType(),
-            includeFiltered = TRUE, filterMeasures = c("clusters")))
+          if ("clusters" %in% colnames(popDT())) {
+            popTypePops <- unname(cciaSet()$popPaths(
+              uIDs = selectedUIDs(), popType = popType(),
+              includeFiltered = TRUE, filterMeasures = c("clusters")))
+          } else {
+            popTypePops <- unname(cciaSet()$popPaths(
+              uIDs = selectedUIDs(), popType = popType(),
+              includeFiltered = TRUE))
+          }
         }
         
         # get choices for categories

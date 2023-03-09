@@ -88,3 +88,97 @@ task <- cciaObj$runTask(
 )
 ```
 
+```{r}
+# can you generate maps to show XCR1, P14 and LCMV? Then,
+# a) Show whether P14 are more associated with XCR1 and P14
+# b) Show whether P14 are in T cell, B cell or other area
+
+# ie, showing direct interactions of cells and where these cells are in general
+# First generate maps with the actual populations to show distribution 
+# for all LCMV images; Also show actual image of P14 in XCR1 area or LCMV associated
+# To say that P14 also cluster around LCMV in presence of XCR1
+```
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# get populations and show maps
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# only get first LCMV samples
+uIDs <- exp.info$uID[1:3]
+
+pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs)
+
+# exclude 'O' pops
+pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
+pops <- pops[pops != "/nonDebris"]
+
+# get pops
+popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops)
+```
+
+```{r fig_maps, fig.height=3, fig.width=6}
+# show XCR1, LCMV and P14?
+ggplot(popDT,
+       aes(centroid_x, centroid_y)) +
+  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "magenta") +
+  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "green") +
+  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/P14"), color = "white") +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  coord_fixed() +
+  facet_grid(.~uID) +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "bottom"
+  )
+
+ggsave(file.path(anaDir, "pops.pdf"), width = 14, height = 6)
+```
+
+```{r}
+# show with which cells P14 are in contact
+# get regions
+spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
+regionsDT <- cciaObj$popDT(popType = "region", uIDs = uIDs, includeFiltered = TRUE)
+
+# join pops
+regionsDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "label"),
+          from.pop := i.pop]
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "to" = "label"),
+          pop.to := pop]
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "from" = "label"),
+          pop.from := pop]
+```
+
+```{r}
+# now .. how many P14 are in contact with XCR1 and LCMV?
+spatialDT %>%
+  dplyr::filter(
+    pop.from == "/nonDebris/P14",
+    pop.to %in% c("/nonDebris/XCR1", "/nonDebris/O/LCMV")
+    ) %>%
+  group_by(uID, pop.from, pop.to) %>%
+  dplyr::summarise(n = n())
+```
+
+
