@@ -8,13 +8,6 @@
   },
   "spec": {
     "inputs": {
-      "pyramidScale": {
-        "type:integer": {
-          "min": 1,
-          "max": 10,
-          "default": 4
-        }
-      },
       "filterValue": {
         "type:integer": {
           "min": 0,
@@ -27,13 +20,6 @@
   },
   "ui": {
     "inputs": {
-      "pyramidScale": {
-        "index": 0,
-        "label": "Pyramid scale",
-        "widget:slider": {
-          "step": 1
-        }
-      },
       "filterValue": {
         "index": 0,
         "label": "Filter value",

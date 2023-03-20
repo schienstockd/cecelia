@@ -28,7 +28,7 @@ def run(params):
   
   im_path_in = script_utils.get_param(params, 'imPathIn')
   ts_zarr_path = script_utils.get_param(params, 'imPathOut')
-  nscales = script_utils.get_param(params, 'pyramidScale')
+  # nscales = script_utils.get_param(params, 'pyramidScale')
   filter_value = script_utils.get_param(params, 'filterValue')
   base_dir = os.path.dirname(im_path_in)
   
@@ -47,6 +47,11 @@ def run(params):
   dim_utils = DimUtils(omexml)
   dim_utils.calc_image_dimensions(im_data[0].shape)
   pixel_sizes = dim_utils.im_physical_sizes()
+  
+  # get scales
+  nscales = len(im_data)
+  
+  logfile_utils.log(f'>> Read transcript data')
   
   # read transcript data
   ts_data = pd.read_csv(
@@ -100,7 +105,8 @@ def run(params):
       ts_zarr_path,
       mode = 'w',
       shape = zarr_shape,
-      chunks = (1, 512, 512),
+      # chunks = (1, 512, 512),
+      chunks = tuple([1] + list(im_data[0].chunks)),
       dtype = np.float16
   )
   

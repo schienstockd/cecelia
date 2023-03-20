@@ -61,7 +61,7 @@ TenxXenium <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         imPathIn = imPathIn,
         imPathOut = imPathOut,
-        pyramidScale = self$funParams()$pyramidScale,
+        # pyramidScale = self$funParams()$pyramidScale,
         filterValue = self$funParams()$filterValue
       )
       
