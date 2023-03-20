@@ -139,7 +139,7 @@ def run(params):
     # copy in with gaussian (and median?)
     # seq_image[i + 1, :, :] = skimage.filters.gaussian(y2, filter_value)
     # TODO can you use Dask for this?
-    seq_image[i, :, :] = skimage.filters.median(
+    seq_image[i + 1, :, :] = skimage.filters.median(
        skimage.filters.gaussian(y2, filter_value),
        skimage.morphology.disk(filter_value))
       
