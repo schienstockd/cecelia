@@ -106,7 +106,6 @@ def run(params):
   )
     
   seq_image = zarr.open(
-    # TODO hold everything in memory to speed up?
     ts_zarr_path,
     mode = 'w',
     shape = zarr_shape,
@@ -168,8 +167,8 @@ def run(params):
   o.image().Pixels.set_SizeC(zarr_shape[0])
   o.image().Pixels.set_SizeX(zarr_shape[2])
   o.image().Pixels.set_SizeY(zarr_shape[1])
-  o.image().Pixels.set_PhysicalSizeX(1)
-  o.image().Pixels.set_PhysicalSizeY(1)
+  o.image().Pixels.set_PhysicalSizeX(pixel_sizes['x'])
+  o.image().Pixels.set_PhysicalSizeY(pixel_sizes['y'])
   o.image().Pixels.set_PhysicalSizeXUnit('um')
   o.image().Pixels.set_PhysicalSizeYUnit('um')
   o.image().Pixels.set_PixelType('uint16')

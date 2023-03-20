@@ -307,6 +307,8 @@ class NapariUtils:
         # reset scale
         self.im_scale.pop(self.dim_utils.dim_idx('Z'))
       
+      print(len(self.im_data))
+      
       # open in viewer
       # 3D images will be shown with lowest resolution
       # https://forum.image.sc/t/viewing-a-volume-as-2d-pyramids/38383/2

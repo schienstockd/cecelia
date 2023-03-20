@@ -48,7 +48,7 @@ TenxXenium <- R6::R6Class(
       
       imPathOut <- file.path(
         self$envParams()$dirs$zero,
-        sprintf("%s.ome.zarr", fileIMAGE_CONVERTED)
+        sprintf("%s.zarr", fileIMAGE_CONVERTED)
       )
       
       self$writeLog(paste("Save as", imPathOut))
