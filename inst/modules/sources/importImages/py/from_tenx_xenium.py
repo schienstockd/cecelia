@@ -78,7 +78,7 @@ def run(params):
   
   # DEBUG only use defined ones for now
   # random sample
-  channel_names = random.sample(channel_names, 10)
+  channel_names = random.sample(channel_names, 3)
   
   # channel_names = [
   #     # B
