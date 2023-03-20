@@ -20,15 +20,19 @@ import py.zarr_utils as zarr_utils
 Get drift correction shift
 """
 def drift_correction_shifts(
-  image_array, phase_shift_channel, dim_utils,
+  image_array, phase_shift_channel, dim_utils = None,
   timepoints = None, upsample_factor = 100,
-  normalisation = None):
+  normalisation = None, time_idx = None,
+  channel_idx = None):
   # get shifts
   shifts = list()
 
   # get image dimension information
-  channel_idx = dim_utils.dim_idx('C')
-  time_idx = dim_utils.dim_idx('T')
+  if channel_idx is None:
+    channel_idx = dim_utils.dim_idx('C')
+  
+  if time_idx is None:
+    time_idx = dim_utils.dim_idx('T')
 
   # create slices for corrections
   slices = [slice(None) for x in range(len(image_array.shape))]
@@ -48,11 +52,11 @@ def drift_correction_shifts(
     slices_b = slices.copy()
     slices_a[time_idx] = slice(x - 1, x, 1)
     slices_b[time_idx] = slice(x, x + 1, 1)
-
+    
     # convert to tuple
     slices_a = tuple(slices_a)
     slices_b = tuple(slices_b)
-
+    
     # (sub)pixel precision
     # TODO There is a lot more correction you can do
     # https://scikit-image.org/docs/stable/auto_examples/registration/plot_register_rotation.html
@@ -123,7 +127,7 @@ drift correct image
 def drift_correct_im(
   input_array, dim_utils, phase_shift_channel,
   timepoints = None, drift_corrected_path = None,
-  upsample_factor = 100, shifts = None
+  upsample_factor = 100, shifts = None, chunk_size = None
   ):
   # get all timepoints if not specified
   if timepoints is None:
@@ -155,7 +159,9 @@ def drift_correct_im(
 
   # use new shape for chunking
   # TODO !! this assumes smaller images as we usually have for 2P
-  chunk_size = list(input_array.chunksize)
+  if chunk_size is None:
+    chunk_size = list(input_array.chunksize)
+  
   for x in ('Y', 'X'):
     chunk_size[dim_utils.dim_idx(x)] = drift_im_shape_round[dim_utils.dim_idx(x)]
   chunk_size = tuple(chunk_size)

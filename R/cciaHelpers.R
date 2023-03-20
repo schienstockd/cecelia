@@ -964,15 +964,20 @@ adataMatFromPopDT <- function(popDT, popKey = "clusters") {
 #' @param oldFilename character of old filename
 #' @param newFilename character of new filename
 #' @param isSequence boolean if image is sequence
+#' @param extraFiles list of additional files
 #' @examples
 #' TODO
 #' @export
-prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE) {
+prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE, 
+                               extraFiles = list()) {
   # get new file name
   fileExt <- xfun::file_ext(oldFilename)
   
   filesToCopy <- c(oldFilename)
   newFileNames <- c(sprintf("%s.%s", newFilename, fileExt))
+  
+  addedFiles <- c()
+  addedNames <- c()
   
   # check whether image is sequence
   if (isSequence == TRUE) {
@@ -987,9 +992,6 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE) {
     # check for file extensions that save images in multiple files
     # get filename
     filename <- tools::file_path_sans_ext(basename(oldFilename))
-    addedFiles <- c()
-    addedNames <- c()
-    
     # Olympus files
     if (fileExt == "oir") {
       # get other files within the same directory that start with that name
@@ -1024,6 +1026,13 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE) {
     # copy to list
     filesToCopy <- c(filesToCopy, addedFiles)
     newFileNames <- c(newFileNames, addedNames)
+  }
+  
+  # add extra files?
+  if (length(extraFiles) > 0) {
+    # add to files to copy
+    filesToCopy <- c(filesToCopy, file.path(dirname(oldFilename), extraFiles))
+    newFileNames <- c(newFileNames, extraFiles)
   }
   
   list(

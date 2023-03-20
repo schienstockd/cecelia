@@ -69,6 +69,7 @@ class DimUtils:
         # im_shape_order = [im_shape.index(x) for x in im_dim]
         # TODO is there a better way of doing this ..?
         im_shape_order = np.zeros(len(im_dim), dtype = np.int)
+        
         for i, x in enumerate(im_dim):
           idx = im_shape.index(x)
           

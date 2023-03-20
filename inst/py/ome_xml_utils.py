@@ -98,8 +98,9 @@ Set physical size with dict
 def set_physical_size_with_dict(omexml, omedict):
   # go through dimensions
   for i, x in omedict.items():
-    if i == 'T':
-      omexml.image().Pixels.set_PhysicalSizeT(x)
+    # TODO how to set time?
+    # if i == 'T':
+    #   omexml.image().Pixels.set_PhysicalSizeT(x)
     if i == 'Z':
       omexml.image().Pixels.set_PhysicalSizeZ(x)
     if i == 'C':

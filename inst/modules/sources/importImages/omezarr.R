@@ -75,7 +75,9 @@ Omezarr <- R6::R6Class(
           zarrPath = imPathOut,
           isStacked = self$funParams()$isStacked,
           nscales = self$funParams()$pyramidScale,
-          physicalZScale = self$funParams()$physicalZScale
+          skipTiles = self$funParams()$skipTiles,
+          physicalStackScale = self$funParams()$physicalStackScale,
+          stackDim = self$funParams()$stackDim
         )
         
         # call python

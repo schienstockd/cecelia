@@ -22,6 +22,11 @@
 				"type:boolean": {
 					"default": false
 				}
+			},
+			"specialType": {
+				"type:character": {
+					"default": "none"
+				}
 			}
     },
     "outputs": {}
@@ -55,7 +60,19 @@
 				"label": "Image sequence",
 				"widget:checkbox": {
 				}
-			}
+			},
+			"specialType": {
+        "index": 3,
+        "label": "Special type",
+        "widget:selection": {
+          "items": {
+            "NONE": "none",
+            "10x Xenium": "tenxXenium"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      }
     },
     "outputs": {}
   }

@@ -30,6 +30,11 @@ Upload <- R6::R6Class(
       remoteDir <- self$envParams("hpc")$dirs$zero
       # if (self$funParams()$remoteEnv == "hpc")
       
+      # add special type files
+      extraFiles <- c()
+      if (self$funParams()$specialType == "tenxXenium")
+        extraFiles <- c("transcripts.csv.gz")
+      
       # upload local files
       taskVars$fun <- list(
         localFiles = cciaObj$oriFilepath(),
@@ -37,7 +42,8 @@ Upload <- R6::R6Class(
         localDir = dirname(cciaObj$oriFilepath()),
         remoteDir = remoteDir,
         useCompression = FALSE,
-        isSequence = self$funParams()$isSequence
+        isSequence = self$funParams()$isSequence,
+        extraFiles = extraFiles
       )
       
       # run environment

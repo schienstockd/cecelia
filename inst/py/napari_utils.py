@@ -250,6 +250,8 @@ class NapariUtils:
       # set dimensions
       self.dim_utils = DimUtils(self.omexml, use_channel_axis)
       self.dim_utils.calc_image_dimensions(self.im_data[0].shape)
+      
+      print(self.dim_utils.im_dim)
 
       # force the image as 16 bit?
       if self.dim_utils.is_32_bit():
@@ -281,7 +283,7 @@ class NapariUtils:
           self.im_scale.pop(channel_axis)
       
       # TODO this is hard coded for SLIDE-SEQ
-      if self.im_data[0].dtype == np.float16:
+      if contrast_limits is None and self.im_data[0].dtype == np.float16:
         contrast_limits = [0, 10]
       
       # downsample to prevent replication of first frame

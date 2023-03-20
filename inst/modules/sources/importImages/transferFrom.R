@@ -29,11 +29,17 @@ TransferFrom <- R6::R6Class(
         "mkdir -p %s", self$envParams(remoteTo)$dirs$zero
       )
       
+      # add special type files
+      extraFiles <- c()
+      if (self$funParams()$specialType == "tenxXenium")
+        extraFiles <- c("transcripts.csv.gz")
+      
       # get files to copy
       filesToCopy <- prepFilelistToSync(
         cciaObj$oriFilepath(),
         fileIMAGE_TO_IMPORT,
-        isSequence = self$funParams()$isSequence
+        isSequence = self$funParams()$isSequence,
+        extraFiles = extraFiles
       )
       
       self$writeLog(smbCmd)

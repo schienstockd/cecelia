@@ -32,11 +32,16 @@
           "default": 1
         }
 			},
-			"physicalZScale": {
+			"physicalStackScale": {
         "type:double": {
           "min": 0,
           "max": 30,
-          "default": 10
+          "default": 1
+        }
+			},
+			"stackDim": {
+        "type:character": {
+          "default": "Z"
         }
 			},
 			"createMIP": {
@@ -85,27 +90,39 @@
           "step": 1
         }
       },
-			"physicalZScale": {
+			"physicalStackScale": {
         "index": 4,
-        "label": "Z Scale",
+        "label": "Stack Scale",
         "widget:slider": {
           "step": 0.01
         }
       },
+			"stackDim": {
+        "index": 5,
+        "label": "Stack Dimension",
+        "widget:selection": {
+          "items": {
+            "Depth": "Z",
+            "Time": "T"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
 			"createMIP": {
-				"index": 5,
+				"index": 6,
 				"label": "Create MIP",
 				"widget:checkbox": {
 				}
 			},
 			"rescaleImage": {
-				"index": 6,
+				"index": 7,
 				"label": "Rescale image",
 				"widget:checkbox": {
 				}
 			},
 			"dimOrder": {
-				"index": 6,
+				"index": 8,
 				"label": "Custom dimension order",
 				"widget:textInput": {
 				}

@@ -12,13 +12,49 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-pID <- "Bi2995"
+pID <- "5g6H4F"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N051/ANALYSIS/IMAGE/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/stomics/10x/ANALYSIS"
+```
+
+```{r}
+# HPC config
+HPC_CONF <-  list(
+  hpc = list(
+    conf = list(
+      email = "schienstockd@student.unimelb.edu.au",
+      emailOnBegin = FALSE,
+      emailOnEnd = FALSE,
+      emailOnFail = TRUE,
+      numNodes = 1,
+      numTasks = 1,
+      numCPUperTask = 1,
+      numGPUperTask = 1,
+      memory = 50,
+      walltime = "00-01:00:00",
+      projectPartitions = "physical",
+      # projectPartitions = "shortgpgpu,gpgpu",
+      projectID = "punim1124",
+      # projectID = "punim1031",
+      useGPU = FALSE
+      # useGPU = TRUE
+    )
+  ),
+  utils = list(
+    ssh = list(
+      username = "schienstockd",
+      address = "spartan.hpc.unimelb.edu.au",
+      keyfile = "/Users/schiend/.ssh/spartan_rsa"
+    ),
+    python = list(
+      condaEnv = cciaConf()$python$conda$source$env
+    )
+  )
+)
 ```
 
 ```{r}
@@ -30,57 +66,49 @@ library(ggplot2)
 library(tidyverse)
 ```
 
-```{r fig_gating, fig.height=3, fig.width=5}
-# Load cluster data
-devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
-)
-
-paste(cciaObj$imChannelNames(), collapse = "', '")
-
-# cciaObj$editPopColour(
-#   popType = "flow", colour = "#ff1493",
-#   popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT+/CD69+"))
-
-# get raster contours
-p1s <- .flowPlotGatedRaster(
-  cciaObj, popPaths = "root", labelSize = 3, asContours = TRUE)
-
-ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 3)
-ggsave(file.path(anaDir, "gating.pdf"), width = 8, height = 5)
-```
-
 ```{r}
-# make regions
-# get distances from lymphs to melano
+# upload STOMICS
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
 
 # run task
 funParams <- list(
-  valueName = "default",
-  popType = c("flow"),
-  pops = c(
-    '/nonDebris', '/nonDebris/XCR1', '/nonDebris/P14', '/nonDebris/O/LCMV',
-    '/nonDebris/O/CD11b','/nonDebris/O/O1/CD11c', '/nonDebris/O/O1/CD3',
-    '/nonDebris/O/O1/O2/B'),
-  neighbourMethod = "radius",
-  neighbourRadius = 50,
-  nRings = 1,
-  savePops = TRUE
+  specialType = "tenxXenium",
+  isSequence = FALSE
 )
 
 task <- cciaObj$runTask(
-  funName = "spatialAnalysis.cellNeighbours",
+  funName = "importImages.upload",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# import STOMICS
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  pyramidScale = 5,
+  filterValue = 1
+)
+
+task <- cciaObj$runTask(
+  funName = "importImages.tenxXenium",
   funParams = funParams,
   env = "local",
   runInplace = TRUE,
