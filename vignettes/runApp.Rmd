@@ -15,12 +15,12 @@ devtools::load_all("../")
 # library(cecelia)
 # cciaUse("~/Desktop/DOHERTY/cecelia")
 # cciaCreateApp()
-# cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
-cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = FALSE)
+cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = TRUE)
+# cciaUse("~/Desktop/DOHERTY/cecelia", initJupyter = FALSE)
 # cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 # cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, initJupyter = FALSE)
 
-cciaRunApp(port = 6874, localPath = FALSE)
+cciaRunApp(port = 6875, localPath = FALSE)
 # cciaRunApp(port = 6866)
 ```
 

@@ -107,7 +107,7 @@ def run(params):
     
   seq_image = zarr.open(
     # TODO hold everything in memory to speed up?
-    # ts_zarr_path,
+    ts_zarr_path,
     mode = 'w',
     shape = zarr_shape,
     # chunks = (1, 512, 512),
