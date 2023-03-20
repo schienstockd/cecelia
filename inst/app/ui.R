@@ -48,7 +48,7 @@ ui <- function(request) {
         column(
           6,
           selectInput("viewerMultiscales", "Pyramids",
-                      seq(1, 4), selected = 4),
+                      seq(1, 8), selected = 8),
           actionButton("viewerAddAnimationPane",
                        "Recorder"),
           tags$br(),
