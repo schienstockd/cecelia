@@ -9,6 +9,7 @@ import math
 import zarr
 import bioformats
 import shutil
+import random
 
 from scipy.sparse import coo_array
 import skimage.filters
