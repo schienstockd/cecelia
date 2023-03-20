@@ -106,12 +106,13 @@ def run(params):
   )
     
   seq_image = zarr.open(
-      # ts_zarr_path,
-      mode = 'w',
-      shape = zarr_shape,
-      # chunks = (1, 512, 512),
-      chunks = tuple([1] + list(im_data[0].chunks)),
-      dtype = np.float16
+    # TODO hold everything in memory to speed up?
+    # ts_zarr_path,
+    mode = 'w',
+    shape = zarr_shape,
+    # chunks = (1, 512, 512),
+    chunks = tuple([1] + list(im_data[0].chunks)),
+    dtype = np.float16
   )
   
   # remove previous image
@@ -155,7 +156,8 @@ def run(params):
     )
     
     # remove previous and rename multiscales
-    shutil.rmtree(ts_zarr_path)
+    if os.path.isdir(ts_zarr_path) is True:
+      shutil.rmtree(ts_zarr_path)
     os.rename(multiscales_file_path, ts_zarr_path)
   
   # build metadata
