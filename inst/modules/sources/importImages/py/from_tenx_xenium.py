@@ -111,7 +111,7 @@ def run(params):
   )
   
   # remove previous image
-  if os.path.isdir(ts_zarr_path) is True
+  if os.path.isdir(ts_zarr_path) is True:
     shutil.rmtree(ts_zarr_path)
   
   # copy in DAPI
