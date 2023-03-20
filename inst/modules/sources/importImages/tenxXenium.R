@@ -29,20 +29,20 @@ TenxXenium <- R6::R6Class(
       # define filepaths
       imPathIn <- cciaObj$oriFilepath(modified = TRUE, revertToOri = TRUE)
       
-      # if (self$callingEnv() == "hpc") {
-      #   # get basename of modified image
-      #   if ("modified" %in% attributes(imPathIn) && attr(imPathIn, "modified") == TRUE) {
-      #     imPathIn <- file.path(
-      #       self$envParams()$dirs$zero, basename(imPathIn))
-      #   } else {
-      #     # complete filepath
-      #     imPathIn <- unlist(list.files(
-      #       self$envParams()$dirs$zero,
-      #       pattern = "ImageToImport",
-      #       full.names = TRUE
-      #     ))
-      #   }
-      # }
+      if (self$callingEnv() == "hpc") {
+        # get basename of modified image
+        if ("modified" %in% attributes(imPathIn) && attr(imPathIn, "modified") == TRUE) {
+          imPathIn <- file.path(
+            self$envParams()$dirs$zero, basename(imPathIn))
+        } else {
+          # complete filepath
+          imPathIn <- unlist(list.files(
+            self$envParams()$dirs$zero,
+            pattern = "ImageToImport",
+            full.names = TRUE
+          ))
+        }
+      }
       
       self$writeLog(paste("Import", imPathIn))
       
