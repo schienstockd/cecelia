@@ -40,6 +40,8 @@ Retrieve <- R6::R6Class(
         syncExt <- ".ome.tiff"
       else if (self$funParams()$syncFile == "cell2location")
         syncExt <- ".zarr"
+      else if (self$funParams()$syncFile == "tenxXenium")
+        syncExt <- ".zarr"
       
       # retrieve
       taskVars$fun <- list(

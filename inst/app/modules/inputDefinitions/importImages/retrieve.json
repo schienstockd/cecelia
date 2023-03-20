@@ -41,7 +41,8 @@
           "items": {
             "OME ZARR": "omezarr",
             "OME TIFF": "ometiff",
-						"cell2location": "cell2location"
+						"cell2location": "cell2location",
+						"10X Xenium": "tenxXenium"
           },
           "multiple": false,
           "size": 1

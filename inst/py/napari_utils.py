@@ -284,7 +284,7 @@ class NapariUtils:
       
       # TODO this is hard coded for SLIDE-SEQ
       if contrast_limits is None and self.im_data[0].dtype == np.float16:
-        contrast_limits = [0, 10]
+        contrast_limits = [0, 1]
       
       # downsample to prevent replication of first frame
       if downsample_z is True:
@@ -306,8 +306,6 @@ class NapariUtils:
         
         # reset scale
         self.im_scale.pop(self.dim_utils.dim_idx('Z'))
-      
-      print(len(self.im_data))
       
       # open in viewer
       # 3D images will be shown with lowest resolution
