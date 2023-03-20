@@ -141,7 +141,8 @@ def run(params):
     # TODO can you use Dask for this?
     seq_image[i + 1, :, :] = skimage.filters.median(
        skimage.filters.gaussian(y2, filter_value),
-       skimage.morphology.disk(filter_value))
+       # skimage.morphology.disk(filter_value))
+       skimage.morphology.disk(1))
       
   # generate multiscales 
   # TODO is there a more elegant way to do this .. ?
