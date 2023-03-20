@@ -121,7 +121,7 @@ def run(params):
   # copy in DAPI
   logfile_utils.log(f'>> Copy image channels')
   im_data, _ = zarr_utils.open_as_zarr(im_path_in)
-  seq_image[0, :, :] = np.max(im_data[0]/im_data[0])
+  seq_image[0, :, :] = im_data[0]/np.max(im_data[0])
   
   # go through and create images
   for i, x in enumerate(channel_names):
