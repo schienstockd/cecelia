@@ -80,8 +80,8 @@ def run(params):
       # B
       'BANK1', 'CD79A', 'MS4A1',
       # T
-      'CCL5', 'CD4', 'CD8A', 'CXCR4', 'CYTIP',
-      'IL7R', 'LTB', 'TRAC',
+      'CCL5', 'CD4', 'CD8A','CXCR4'
+      # 'CYTIP', 'IL7R', 'LTB', 'TRAC',
       # # Mphage
       # 'APOC1', 'C15orf48', 'C1QA', 'C1QC', 'CD14', 
       # 'CD163', 'CD68', 'FGL2', 'ITGAX', 'MMP12',
@@ -102,7 +102,7 @@ def run(params):
   )
     
   seq_image = zarr.open(
-      ts_zarr_path,
+      # ts_zarr_path,
       mode = 'w',
       shape = zarr_shape,
       # chunks = (1, 512, 512),
@@ -114,12 +114,13 @@ def run(params):
   shutil.rmtree(ts_zarr_path)
   
   # copy in DAPI
+  logfile_utils.log(f'>> Copy image channels')
   im_data, _ = zarr_utils.open_as_zarr(im_path_in)
   seq_image[0, :, :] = im_data[0]
   
   # go through and create images
   for i, x in enumerate(channel_names):
-    logfile_utils.log(f'>> Process {x}')
+    logfile_utils.log(f'> Process {x}')
     
     y1 = ts_data.loc[ts_data['feature_name'] == x]
     
@@ -132,26 +133,25 @@ def run(params):
 
     # copy in with gaussian (and median?)
     # seq_image[i + 1, :, :] = skimage.filters.gaussian(y2, filter_value)
+    # TODO can you use Dask for this?
     seq_image[i, :, :] = skimage.filters.median(
        skimage.filters.gaussian(y2, filter_value),
        skimage.morphology.disk(filter_value))
       
   # generate multiscales 
-  nscales = 5
-  
   # TODO is there a more elegant way to do this .. ?
   if nscales > 1:
     multiscales_file_path = ts_zarr_path + ".multiscales"
   
-  zarr_utils.create_multiscales(
-    seq_image, multiscales_file_path,
-    x_idx = 1, y_idx = 2,
-    nscales = nscales
-  )
-  
-  # remove previous and rename multiscales
-  shutil.rmtree(ts_zarr_path)
-  os.rename(multiscales_file_path, ts_zarr_path)
+    zarr_utils.create_multiscales(
+      seq_image, multiscales_file_path,
+      x_idx = 1, y_idx = 2,
+      nscales = nscales
+    )
+    
+    # remove previous and rename multiscales
+    shutil.rmtree(ts_zarr_path)
+    os.rename(multiscales_file_path, ts_zarr_path)
   
   # build metadata
   o = bioformats.omexml.OMEXML()
