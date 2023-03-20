@@ -76,6 +76,9 @@ def run(params):
   channel_names = [x for x in channel_names if x.startswith(('BLANK', 'NegControl')) is False]
   
   # DEBUG only use defined ones for now
+  # random sample
+  channel_names = random.sample(channel_names, 10)
+  
   # channel_names = [
   #     # B
   #     'BANK1', 'CD79A', 'MS4A1',
