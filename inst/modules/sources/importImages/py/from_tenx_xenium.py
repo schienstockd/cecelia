@@ -111,7 +111,8 @@ def run(params):
   )
   
   # remove previous image
-  shutil.rmtree(ts_zarr_path)
+  if os.path.isdir(ts_zarr_path) is True
+    shutil.rmtree(ts_zarr_path)
   
   # copy in DAPI
   logfile_utils.log(f'>> Copy image channels')
