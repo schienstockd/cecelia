@@ -54,7 +54,7 @@ Import <- R6::R6Class(
       # unlink files in zero dir
       unlink(
         file.path(self$envParams("local")$dirs$zero,
-                  paste0(fileIMAGE_CONVERTED, c(".ome.tiff", ".ome.zarr"))),
+                  paste0(fileIMAGE_CONVERTED, c(".zarr", ".ome.tiff", ".ome.zarr"))),
         recursive = TRUE
         )
     },

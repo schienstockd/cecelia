@@ -22,6 +22,15 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/stomics/10x/ANALYSIS"
 ```
 
 ```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
 # HPC config
 HPC_CONF <-  list(
   hpc = list(
@@ -58,12 +67,14 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-# Load cluster data
+# upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
 
-library(ggplot2)
-library(tidyverse)
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
 ```
 
 ```{r}
