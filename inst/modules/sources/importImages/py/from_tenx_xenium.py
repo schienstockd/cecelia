@@ -32,6 +32,7 @@ def run(params):
   # nscales = script_utils.get_param(params, 'pyramidScale')
   sum_value = script_utils.get_param(params, 'sumValue')
   filter_value = script_utils.get_param(params, 'filterValue')
+  min_filter_value = script_utils.get_param(params, 'minFilterValue')
   base_dir = os.path.dirname(im_path_in)
   
   # define filepaths
@@ -153,7 +154,7 @@ def run(params):
     seq_image[i + 1, :, :] = (skimage.filters.gaussian(seq_image[i + 1, :, :],
       filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
     seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
-      skimage.morphology.disk(4))
+      skimage.morphology.disk(min_filter_value))
     seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
       skimage.morphology.disk(filter_value))
     

@@ -64,6 +64,7 @@ TenxXenium <- R6::R6Class(
         # pyramidScale = self$funParams()$pyramidScale,
         sumValue = self$funParams()$sumValue,
         filterValue = self$funParams()$filterValue
+        minFilterValue = self$funParams()$minFilterValue
       )
       
       # call python
