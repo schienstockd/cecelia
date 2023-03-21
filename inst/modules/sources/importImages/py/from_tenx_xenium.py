@@ -82,20 +82,21 @@ def run(params):
   # channel_names = random.sample(channel_names, 3)
   
   channel_names = [
-      # B
-      'BANK1', 'CD79A', 'MS4A1',
-      # T
-      'CCL5', 'CD4', 'CD8A','CXCR4'
+      # # B
+      # 'BANK1', 'CD79A', 'MS4A1',
+      # # T
+      # 'CCL5', 'CD4', 'CD8A','CXCR4'
       # 'CYTIP', 'IL7R', 'LTB', 'TRAC',
       # # Mphage
       # 'APOC1', 'C15orf48', 'C1QA', 'C1QC', 'CD14',
-      'CD163', 'CD68', 'FGL2', 'ITGAX', 'MMP12',
+      # 'CD163', 'CD68', 'FGL2', 'ITGAX', 'MMP12',
       # # DC
-      'CCR7', 'CD83', 'IL3RA', 'LILRA4', 'PLD4'
+      # 'CCR7', 'CD83', 'IL3RA', 'LILRA4', 'PLD4'
       # # Stroma
       # 'ALDH1A3', 'GJB2', 'LUM', 'MMP2', 'POSTN', 'SFRP4'
+      
       # FOR BRAIN
-      # 'Slc17a6', 'Nxph3'
+      'Slc17a6', 'Nxph3'
   ]
   
   num_channels = len(channel_names)
@@ -143,12 +144,12 @@ def run(params):
 
     # TODO use Dask?
     # sum
-    seq_image[i, :, :] = skimage.filters.rank.sum(
+    seq_image[i + 1, :, :] = skimage.filters.rank.sum(
         y2, skimage.morphology.disk(sum_value))
         
     # gaussian & median
-    seq_image[i, :, :] = (skimage.filters.median(
-        skimage.filters.gaussian(seq_image[i, :, :], filter_value, preserve_range = True),
+    seq_image[i + 1, :, :] = (skimage.filters.median(
+        skimage.filters.gaussian(seq_image[i + 1, :, :], filter_value, preserve_range = True),
         skimage.morphology.disk(filter_value)) * (2**8-1)).astype(np.uint16)
     
   # generate multiscales 
