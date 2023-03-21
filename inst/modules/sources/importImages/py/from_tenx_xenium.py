@@ -82,10 +82,10 @@ def run(params):
   # channel_names = random.sample(channel_names, 3)
   
   channel_names = [
-      # # B
-      # 'BANK1', 'CD79A', 'MS4A1',
-      # # T
-      # 'CCL5', 'CD4', 'CD8A','CXCR4'
+      # B
+      'BANK1', 'CD79A', 'MS4A1',
+      # T
+      'CCL5', 'CD4', 'CD8A','CXCR4'
       # 'CYTIP', 'IL7R', 'LTB', 'TRAC',
       # # Mphage
       # 'APOC1', 'C15orf48', 'C1QA', 'C1QC', 'CD14',
@@ -95,7 +95,7 @@ def run(params):
       # # Stroma
       # 'ALDH1A3', 'GJB2', 'LUM', 'MMP2', 'POSTN', 'SFRP4'
       # FOR BRAIN
-      'Slc17a6', 'Nxph3'
+      # 'Slc17a6', 'Nxph3'
   ]
   
   num_channels = len(channel_names)
