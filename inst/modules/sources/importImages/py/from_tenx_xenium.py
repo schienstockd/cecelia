@@ -95,7 +95,7 @@ def run(params):
       # DC
       'CCR7', 'CD83', 'IL3RA', 'LILRA4', 'PLD4',
       # Stroma
-      'ALDH1A3', 'GJB2', 'LUM', 'MMP2', 'POSTN', 'SFRP4'
+      'ALDH1 A3', 'GJB2', 'LUM', 'MMP2', 'POSTN', 'SFRP4'
       
       # FOR BRAIN
       # 'Slc17a6', 'Nxph3'
@@ -105,10 +105,11 @@ def run(params):
   
   # create zarr
   zarr_shape = (
-      num_channels + 1, # plus DAPI
-      im_dim[2] - im_dim[0],
-      im_dim[3] - im_dim[1],
-      #im_dim[5] - im_dim[2]
+    # TODO this will not always be the case
+    num_channels + 1, # plus DAPI
+    im_dim[2] - im_dim[0],
+    im_dim[3] - im_dim[1],
+    #im_dim[5] - im_dim[2]
   )
     
   seq_image = zarr.open(
@@ -153,8 +154,9 @@ def run(params):
     # enhance donuts
     seq_image[i + 1, :, :] = (skimage.filters.gaussian(seq_image[i + 1, :, :],
       filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
-    seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
-      skimage.morphology.disk(min_filter_value))
+    if len(min_filter_value) > 0:
+      seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
+        skimage.morphology.disk(min_filter_value))
     seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
       skimage.morphology.disk(filter_value))
     

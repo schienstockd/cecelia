@@ -75,6 +75,8 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDi
 cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
+
+cciaObj$imFilepath()
 ```
 
 ```{r}
