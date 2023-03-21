@@ -139,9 +139,10 @@ def run(params):
     # create sparse matrix
     row  = y1[dim_cols[0]].values / pixel_sizes['y']
     col  = y1[dim_cols[1]].values / pixel_sizes['x']
-    data = y1['qv'].values / max_values
+    # data = y1['qv'].values / max_values
+    data = np.repeat(1, len(y1.index))
 
-    y2 = coo_array((data, (row, col)), shape = zarr_shape[1:3]).toarray()
+    y2 = coo_array((data, (row, col)), shape = zarr_shape[1:3]).toarray().astype(np.uint8)
 
     # TODO use Dask?
     # sum
