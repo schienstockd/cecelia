@@ -103,7 +103,7 @@
 				"type:integer": {
 					"min": 0,
 					"max": 1000,
-					"default": 10
+					"default": 100
 				}
 			},
 			"labelExpansion": {
@@ -136,35 +136,35 @@
 				"type:integer": {
 					"min": -1,
 					"max": 2048,
-					"default": 512
+					"default": 2048
 				}
 			},
 			"overlap": {
 				"type:integer": {
 					"min": -1,
 					"max": 256,
-					"default": 64
+					"default": 120
 				}
 			},
 			"blockSizeZ": {
 				"type:integer": {
 					"min": -1,
 					"max": 1024,
-					"default": 100
+					"default": -1
 				}
 			},
 			"overlapZ": {
 				"type:integer": {
 					"min": -1,
 					"max": 64,
-					"default": 10
+					"default": -1
 				}
 			},
 			"context": {
 				"type:integer": {
 					"min": 1,
 					"max": 128,
-					"default": 52
+					"default": 40
 				}
 			},
 			"clearDepth": {
@@ -337,7 +337,7 @@
 				"index": 4,
 				"label": "Minimum cell size",
 				"widget:slider": {
-					"step": 1
+					"step": 10
 				}
 			},
 			"labelExpansion": {
