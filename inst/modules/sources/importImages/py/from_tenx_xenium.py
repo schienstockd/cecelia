@@ -150,9 +150,12 @@ def run(params):
         y2, skimage.morphology.disk(sum_value))
         
     # enhance donuts
-    im_filt = (skimage.filters.gaussian(seq_image[i + 1, :, :], filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
-    im_min = skimage.filters.rank.minimum(seq_image[i + 1, :, :], skimage.morphology.disk(filter_value))
-    im_filt = skimage.filters.median(seq_image[i + 1, :, :], skimage.morphology.disk(filter_value))
+    seq_image[i + 1, :, :] = (skimage.filters.gaussian(seq_image[i + 1, :, :],
+      filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
+    seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
+      skimage.morphology.disk(4))
+    seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
+      skimage.morphology.disk(filter_value))
     
   # generate multiscales 
   # TODO is there a more elegant way to do this .. ?
