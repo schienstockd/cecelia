@@ -63,7 +63,7 @@ TenxXenium <- R6::R6Class(
         imPathOut = imPathOut,
         # pyramidScale = self$funParams()$pyramidScale,
         sumValue = self$funParams()$sumValue,
-        filterValue = self$funParams()$filterValue
+        filterValue = self$funParams()$filterValue,
         minFilterValue = self$funParams()$minFilterValue
       )
       
