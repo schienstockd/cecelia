@@ -8,11 +8,18 @@
   },
   "spec": {
     "inputs": {
+      "sumValue": {
+        "type:integer": {
+          "min": 0,
+          "max": 10,
+          "default": 6
+        }
+      },
       "filterValue": {
         "type:integer": {
           "min": 0,
           "max": 10,
-          "default": 4
+          "default": 2
         }
       }
     },
@@ -20,8 +27,15 @@
   },
   "ui": {
     "inputs": {
-      "filterValue": {
+      "sumValue": {
         "index": 0,
+        "label": "Sum value",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "filterValue": {
+        "index": 1,
         "label": "Filter value",
         "widget:slider": {
           "step": 1

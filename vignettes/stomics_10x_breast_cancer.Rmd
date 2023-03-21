@@ -103,15 +103,15 @@ cciaObj <- initCciaObject(
 
 # run task
 funParams <- list(
-  pyramidScale = 5,
-  filterValue = 1
+  filterValue = 4
 )
 
 task <- cciaObj$runTask(
   funName = "importImages.tenxXenium",
+  HPC_CONF
   funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
+  env = "hpc",
+  runInplace = FALSE,
   taskID = 1
 )
 ```
