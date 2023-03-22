@@ -19,14 +19,14 @@
         "type:integer": {
           "min": 0,
           "max": 10,
-          "default": 2
+          "default": 4
         }
       },
       "minFilterValue": {
         "type:integer": {
           "min": 0,
           "max": 10,
-          "default": 4
+          "default": 2
         }
       }
     },
