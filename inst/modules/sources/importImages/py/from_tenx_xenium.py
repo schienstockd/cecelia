@@ -154,7 +154,7 @@ def run(params):
     # enhance donuts
     seq_image[i + 1, :, :] = (skimage.filters.gaussian(seq_image[i + 1, :, :],
       filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
-    if len(min_filter_value) > 0:
+    if min_filter_value > 0:
       seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
         skimage.morphology.disk(min_filter_value))
     seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
