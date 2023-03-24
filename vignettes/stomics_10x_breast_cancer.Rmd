@@ -44,13 +44,14 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      walltime = "00-01:00:00",
-      projectPartitions = "physical",
-      # projectPartitions = "shortgpgpu,gpgpu",
-      projectID = "punim1124",
-      # projectID = "punim1031",
-      useGPU = FALSE
-      # useGPU = TRUE
+      walltime = "00-04:00:00",
+      # walltime = "01-00:00:00",
+      # projectPartitions = "physical",
+      # projectID = "punim1124",
+      # useGPU = FALSE
+      projectPartitions = "gpu-a100",
+      projectID = "punim1031",
+      useGPU = TRUE
     )
   ),
   utils = list(
@@ -76,8 +77,156 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$imFilepath()
+# run cellpose
+# run task
+funParams <- list(
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "hpc.uploadCciaObj",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
+
+
+```{r}
+# upload STOMICS
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+# run cellpose
+# run task
+funParams <- list(
+  valueName = "default",
+  # valueName = "stroma",
+  models = list(
+    # "1" = list(
+    #   "model" = "ccia.fluo",
+    #   "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("ALDH1 A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 95,
+    #   "stitchThreshold" = 0.2,
+    #   # "mergeLabels" = FALSE,
+    #   "mergeLabels" = TRUE,
+    #   "threshold" = 1,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # )
+    # "1" = list(
+    #   "model" = "cyto2",
+    #   "matchAs" = "cyto",
+    #   # "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list(
+    #     "APOC1", "C15orf48", "C1QA", "C1QC", "CD14",
+    #     "CD163", "CD68", "FGL2", "ITGAX", "MMP12",
+    #     "CCR7", "CD83", "IL3RA", "LILRA4", "PLD4",
+    #     "BANK1", "CD79A", "MS4A1", "CCL5", "CD4",
+    #     "CD8A", "CXCR4", "CYTIP", "LTB", "TRAC"),
+    #   "nucChannels" = list("Hoechst"),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 1,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # ),
+    "1" = list(
+      "model" = "cyto2",
+      # "matchAs" = "nuc",
+      "matchAs" = "none",
+      "cellDiameter" = 10,
+      "cellChannels" = list("Hoechst"),
+      "nucChannels" = list(),
+      "normalise" = 99,
+      "stitchThreshold" = 0.2,
+      "mergeLabels" = FALSE,
+      "threshold" = 0,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "medianFilter" = 0
+    )
+  ),
+  clearDepth = FALSE,
+  clearTouchingBorder = FALSE,
+  # haloSize = 0,
+  # haloWholeCell = FALSE
+  haloSize = 5, # for nuclei expansion
+  haloWholeCell = TRUE,
+  blockSize = 2048,
+  overlap = 120,
+  blockSizeZ = -1,
+  overlapZ = -1,
+  context = 40,
+  segment = TRUE,
+  updateMeasures = FALSE,
+  # extendedMeasures = TRUE,
+  extendedMeasures = FALSE,
+  saveMeshes = FALSE,
+  labelExpansion = 0,
+  labelErosion = 0,
+  minCellSize = 50,
+  matchThreshold = 0.2,
+  removeUnmatched = TRUE
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.cellpose",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "hpc",
+  # env = "local",
+  runInplace = FALSE,
+  # runInplace = TRUE,
+  # taskID = 1
+  taskID = 2
+)
+```
+
+```{r}
+# upload STOMICS
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+# run cellpose
+# run task
+funParams <- list(
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "hpc.retrieveCciaObj",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
 
 ```{r}
 # upload STOMICS

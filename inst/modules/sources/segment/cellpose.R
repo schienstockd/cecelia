@@ -19,7 +19,7 @@ Cellpose <- R6::R6Class(
     # run
     run = function() {
       # check whether to use suffixes or not
-      labelSuffixes <- c()
+      labelSuffixes <- list()
       
       if (all(c("cyto", "nuc") %in% sapply(self$funParams()$models, function(x) x$matchAs))) {
         labelSuffixes <- c("cyto", "nuc")

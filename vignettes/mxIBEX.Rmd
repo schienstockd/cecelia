@@ -40,13 +40,15 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      walltime = "00-01:00:00",
-      projectPartitions = "physical",
-      # projectPartitions = "shortgpgpu,gpgpu",
-      projectID = "punim1124",
-      # projectID = "punim1031",
-      useGPU = FALSE
-      # useGPU = TRUE
+      # walltime = "01-00:00:00",
+      walltime = "00-04:00:00",
+      # walltime = "00-00:20:00",
+      # projectPartitions = "physical",
+      projectPartitions = "gpu-a100",
+      # projectID = "punim1124",
+      projectID = "punim1031",
+      # useGPU = FALSE
+      useGPU = TRUE
     )
   ),
   utils = list(
@@ -67,14 +69,240 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/IBEX/CECELIA"
 ```
 
 ```{r}
+# upload 
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
+)
+
+# run cellpose
+# run task
+funParams <- list(
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "hpc.uploadCciaObj",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE # Spleen
+)
+
+paste(cciaObj$imChannelNames(), collapse = "','")
+cciaObj$imFilepath()
+
+# run cellpose
+# run task
+funParams <- list(
+  # valueName = "default",
+  valueName = "stroma",
+  models = list(
+    "1" = list(
+      "model" = "ccia.fluo",
+      # "model" = "cyto2",
+      "matchAs" = "none",
+      # "matchAs" = "cyto",
+      "cellDiameter" = 5,
+      # "cellChannels" = list("Vimentin", "CD49a", "SMA", "Fibrinogen"),
+      "cellChannels" = list("Vimentin", "CD49a"),
+      "nucChannels" = list(),
+      # "nucChannels" = list("Hoechst"),
+      "normalise" = 98,
+      "stitchThreshold" = 0.2,
+      # "mergeLabels" = FALSE,
+      "mergeLabels" = TRUE,
+      "threshold" = 1,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "medianFilter" = 0
+    )
+    # "1" = list(
+    #   "model" = "cyto2",
+    #   "matchAs" = "cyto",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("CD31"),
+    #   "nucChannels" = list("Hoechst"),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # ),
+    # "2" = list(
+    #   "model" = "cyto2",
+    #   "matchAs" = "cyto",
+    #   "cellDiameter" = 15,
+    #   "cellChannels" = list("CD11c", "HLA-DR", "CD163", "CD68"),
+    #   "nucChannels" = list("Hoechst"),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # ),
+    # "3" = list(
+    #   "model" = "cyto2",
+    #   "matchAs" = "cyto",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("CD45", "CD15", "CD138", "CD54"),
+    #   "nucChannels" = list("Hoechst"),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # ),
+    # "4" = list(
+    #   "model" = "cyto2",
+    #   "matchAs" = "nuc",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("Hoechst"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # )
+  ),
+  clearDepth = FALSE,
+  clearTouchingBorder = FALSE,
+  haloSize = 0,
+  blockSize = 2048,
+  overlap = 120,
+  blockSizeZ = -1,
+  overlapZ = -1,
+  context = 40,
+  segment = TRUE,
+  updateMeasures = FALSE,
+  extendedMeasures = TRUE,
+  saveMeshes = FALSE,
+  labelExpansion = 0,
+  labelErosion = 0,
+  minCellSize = 50,
+  matchThreshold = 0.2,
+  removeUnmatched = TRUE
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.cellpose",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "hpc",
+  # env = "local",
+  runInplace = FALSE,
+  # runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# retrieve 
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
+)
+
+# run cellpose
+# run task
+funParams <- list(
+  # valueNames = c("default"),
+  valueNames = c("stroma"),
+  retrieveMeshesOnly = FALSE
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.retrieve",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get branching of stroma network
+branchingDT <- as.data.table(read.csv(file.path(anaDir, 'stroma', 'n22foC_branching.csv')))
+```
+
+```{r}
+branchingDT[, c("path.id", "coord.src.1", "coord.src.2"), `:=` c("coord.src.1" = "x", "coord.src.2" = "y")]
+```
+
+
+```{r}
+rbind(
+  branchingDT[, c("path.id", "coord.src.1", "coord.src.2"), `:=` c("coord.src.1" = "x", "coord.src.1")],
+  branchingDT[, c("path.id", "coord.dst.1", "coord.dst.2")]
+)
+```
+
+
+```{r}
+# TODO is there a better way?
+branchingDT[rbind(
+  branchingDT[, c("path.id", "coord.src.1", "coord.src.2")],
+  branchingDT[, c("path.id", "coord.dst.1", "coord.dst.2")]
+), on = "path_id"]
+```
+
+
+```{r fig_branching, fig.height=5, fig.width=8}
+# show branching of stroma network
+# ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = branch.distance)) +
+# ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = euclidean.distance)) +
+ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = as.factor(branch.type))) +
+  theme_classic() +
+  geom_point(size = 0.5) +
+  coord_fixed() +
+  # viridis::scale_color_viridis() +
+  scale_color_brewer(palette = "Set1") +
+  plotThemeDark()
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
-  pID = pID, uID = "SXejeM", versionID = versionID, initReactivity = FALSE # Liver
+  # pID = pID, uID = "SXejeM", versionID = versionID, initReactivity = FALSE # Liver
   # pID = pID, uID = "TyFwVs", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE # Spleen
 )
 
 # exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))

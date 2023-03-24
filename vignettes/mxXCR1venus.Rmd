@@ -124,6 +124,13 @@ pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
 popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
 ```
 
+```{r}
+# get channels
+lapply(cciaObj$cciaObjects(uIDs = uIDs),
+       function(x) paste(x$imChannelNames(), collapse = "','"))
+```
+
+
 ```{r fig_maps, fig.height=3, fig.width=6}
 # show XCR1, LCMV and P14?
 ggplot(popDT,
@@ -170,6 +177,12 @@ spatialDT[popDT[, c("uID", "label", "pop")],
           on = c("uID", "from" = "label"),
           pop.from := pop]
 
+# can you add on cells that are not in contact with anything?
+table(spatialDT[
+  popDT[!popDT$label %in% spatialDT$from, c("uID", "label", "pop")],
+  on = c("uID", "from" = "label")
+]$pop)
+
 unique(spatialDT$pop.to)
 ```
 
@@ -177,8 +190,12 @@ unique(spatialDT$pop.to)
 # now where are P14?
 summaryDT <- copy(spatialDT)
 summaryDT[pop.to %in% c(
-  "/nonDebris/O/B", "/nonDebris/O/O1/CD3", "/nonDebris"
+  # "/nonDebris/O/B", "/nonDebris/O/O1/CD3", "/nonDebris"
+  "/nonDebris/O/B", "/nonDebris"
 ), ]$pop.to <- "Other"
+summaryDT[pop.to %in% c(
+  "/nonDebris/O/O1/CD3"
+), ]$pop.to <- "T"
 
 summaryDT[pop.from == "/nonDebris/P14/clustered",]$pop.from <- "clustered"
 summaryDT[pop.from == "/nonDebris/P14/non.clustered",]$pop.from <- "non.clustered"
@@ -186,36 +203,43 @@ summaryDT[pop.to == "/nonDebris/P14/clustered",]$pop.to <- "clustered"
 summaryDT[pop.to == "/nonDebris/P14/non.clustered",]$pop.to <- "non.clustered"
 summaryDT[pop.to == "/nonDebris/O/LCMV",]$pop.to <- "LCMV"
 summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
+```
 
-summaryDT <- summaryDT %>%
+```{r fig_p14, fig.height=1, fig.width=2}
+summaryAssociation <- copy(summaryDT)
+summaryAssociation[pop.from %in% c("clustered", "non.clustered"), ]$pop.from <- "P14"
+
+summaryAssociation <- summaryAssociation %>%
   dplyr::filter(
-    pop.from %in% c("clustered", "non.clustered"),
-    !pop.to %in% c("clustered", "non.clustered")
+    pop.from %in% c("P14"),
+    !pop.to %in% c("clustered", "non.clustered", "Other", "T")
       # "/nonDebris/XCR1", "/nonDebris/O/LCMV"),
     # pop.to %in% c("/nonDebris", "/nonDebris/XCR1", "/nonDebris/O/LCMV")
     # !pop.to %in% c("/nonDebris/O/O1/O2/B")
     ) %>%
   group_by(uID, pop.from, pop.to) %>%
+  # group_by(uID, pop.to, pop.from) %>%
+  # group_by(pop.from, pop.to) %>%
   dplyr::summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   drop_na() %>%
   ungroup() %>%
   complete(uID, pop.from, pop.to, fill = list(freq = 0))
+  # complete(uID, pop.to, pop.from, fill = list(freq = 0))
+  # complete(pop.from, pop.to, fill = list(freq = 0))
   # mutate(pop.group = interaction(uID, pop.to))
-```
 
-
-```{r fig_clusters_heat, fig.height=1, fig.width=2}
-ggplot(data = summaryDT %>%
+ggplot(data = summaryAssociation %>%
          mutate(
-           pop.to = factor(pop.to, levels = c("XCR1", "LCMV", "Other")),
-           pop.from = factor(pop.from, levels = c("non.clustered", "clustered"))
+           # pop.to = factor(pop.to, levels = c("XCR1", "LCMV", "Other")),
+           # pop.from = factor(pop.from, levels = c("non.clustered", "clustered"))
            ),
        aes(
          # color = as.factor(pop.from),
          y = freq,
          # x = as.factor(pop.to))) +
-         x = pop.from)) +
+         # x = pop.from)) +
+         x = pop.to)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
@@ -228,12 +252,65 @@ ggplot(data = summaryDT %>%
     legend.title = element_blank(),
     axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1)
   ) +
-  geom_line(aes(group = interaction(uID, pop.to))) +
+  # geom_line(aes(group = interaction(uID, pop.to))) +
   xlab("") + ylab("Interaction (%)") +
-  facet_wrap(~pop.to, nrow = 1, scales = "free_y") +
+  # facet_wrap(~pop.to, nrow = 1, scales = "free_y") +
+  facet_wrap(~pop.from, nrow = 1) +
+  expand_limits(y = 0)
+```
+
+
+```{r fig_clusters_heat, fig.height=1, fig.width=2}
+summaryClust <- summaryDT %>%
+  dplyr::filter(
+    pop.from %in% c("clustered", "non.clustered"),
+    !pop.to %in% c("clustered", "non.clustered", "Other", "T")
+      # "/nonDebris/XCR1", "/nonDebris/O/LCMV"),
+    # pop.to %in% c("/nonDebris", "/nonDebris/XCR1", "/nonDebris/O/LCMV")
+    # !pop.to %in% c("/nonDebris/O/O1/O2/B")
+    ) %>%
+  # group_by(uID, pop.from, pop.to) %>%
+  group_by(uID, pop.to, pop.from) %>%
+  # group_by(pop.from, pop.to) %>%
+  dplyr::summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  drop_na() %>%
+  ungroup() %>%
+  # complete(uID, pop.from, pop.to, fill = list(freq = 0))
+  complete(uID, pop.to, pop.from, fill = list(freq = 0))
+  # complete(pop.from, pop.to, fill = list(freq = 0))
+  # mutate(pop.group = interaction(uID, pop.to))
+
+ggplot(data = summaryClust %>%
+         mutate(
+           # pop.to = factor(pop.to, levels = c("XCR1", "LCMV", "Other")),
+           # pop.from = factor(pop.from, levels = c("non.clustered", "clustered"))
+           ),
+       aes(
+         # color = as.factor(pop.from),
+         y = freq,
+         # x = as.factor(pop.to))) +
+         # x = pop.from)) +
+         x = pop.to)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  # geom_jitter(width = 0.3, alpha = 1.0) +
+  geom_point(alpha = 1.0) +
+  theme(
+    legend.justification = "center",
+    legend.direction = "horizontal",
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1)
+  ) +
+  # geom_line(aes(group = interaction(uID, pop.to))) +
+  xlab("") + ylab("Interaction (%)") +
+  # facet_wrap(~pop.to, nrow = 1, scales = "free_y") +
+  facet_wrap(~pop.from, nrow = 1) +
   expand_limits(y = 0)
 
-ggsave(file.path(anaDir, "P14_interactions.pdf"), width = 3, height = 2)
+# ggsave(file.path(anaDir, "P14_interactions.pdf"), width = 3, height = 2)
 ```
 
 

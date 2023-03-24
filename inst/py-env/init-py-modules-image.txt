@@ -39,3 +39,4 @@ squidpy
 deepcell
 SimpleITK
 SimpleITK-SimpleElastix
+skan
