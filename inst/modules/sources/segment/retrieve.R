@@ -18,7 +18,7 @@ Retrieve <- R6::R6Class(
     # run
     run = function() {
       # get object first
-      self$runTasks("hpc.retrieveCciaObj")
+      # self$runTasks("hpc.retrieveCciaObj")
       
       # get object
       cciaObj <- self$cciaTaskObject()
@@ -38,25 +38,25 @@ Retrieve <- R6::R6Class(
       labelFiles <- self$funParams()$valueNames
       
       # add suffixes
-      labelSuffixes <- unlist(lapply(
+      labelSuffixes <- unique(unlist(lapply(
         labelFiles,
-        function(x) cciaObj$valueSuffixes("imLabelsFilepath", valueName = x)))
+        function(x) cciaObj$valueSuffixes("imLabelsFilepath", valueName = x))))
       
-      if (!is.null(labelSuffixes)) {
+      if (length(labelSuffixes) > 0) {
         labelFiles <- c(
           labelFiles,
           paste(labelFiles, labelSuffixes, sep = "_")
         )
       }
       
-      filesToGet <- c()
+      filesToGet <- c(
+        taskDirFiles("labels", labelFiles),
+        taskDirFiles("labelProps", self$funParams()$valueNames)
+      )
+      
       if ("retrieveMeshesOnly" %in% names(self$funParams())) {
-        if (self$funParams()$retrieveMeshesOnly == FALSE) {
-          filesToGet <- c(
-            filesToGet,
-            taskDirFiles("labels", labelFiles),
-            taskDirFiles("labelProps", self$funParams()$valueNames)
-          )
+        if (self$funParams()$retrieveMeshesOnly == TRUE) {
+          filesToGet <- c()
         }
       }
       

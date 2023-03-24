@@ -46,12 +46,12 @@ HPC_CONF <-  list(
       memory = 50,
       walltime = "00-04:00:00",
       # walltime = "01-00:00:00",
-      # projectPartitions = "physical",
-      # projectID = "punim1124",
-      # useGPU = FALSE
-      projectPartitions = "gpu-a100",
-      projectID = "punim1031",
-      useGPU = TRUE
+      projectPartitions = "physical",
+      projectID = "punim1124",
+      useGPU = FALSE
+      # projectPartitions = "gpu-a100",
+      # projectID = "punim1031",
+      # useGPU = TRUE
     )
   ),
   utils = list(
@@ -165,19 +165,21 @@ funParams <- list(
   clearDepth = FALSE,
   clearTouchingBorder = FALSE,
   # haloSize = 0,
-  # haloWholeCell = FALSE
-  haloSize = 5, # for nuclei expansion
+  # haloWholeCell = FALSE,
+  haloSize = 20, # for nuclei expansion
   haloWholeCell = TRUE,
   blockSize = 2048,
   overlap = 120,
   blockSizeZ = -1,
   overlapZ = -1,
   context = 40,
-  segment = TRUE,
+  # segment = TRUE,
+  segment = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
   saveMeshes = FALSE,
+  saveMeasures = TRUE,
   labelExpansion = 0,
   labelErosion = 0,
   minCellSize = 50,
@@ -195,8 +197,8 @@ task <- cciaObj$runTask(
   # env = "local",
   runInplace = FALSE,
   # runInplace = TRUE,
-  # taskID = 1
-  taskID = 2
+  taskID = 1
+  # taskID = 2
 )
 ```
 
@@ -227,6 +229,11 @@ task <- cciaObj$runTask(
 )
 ```
 
+```{r}
+unique(unlist(lapply(
+        c("default", "stroma"),
+        function(x) cciaObj$valueSuffixes("imLabelsFilepath", valueName = x))))
+```
 
 ```{r}
 # upload STOMICS

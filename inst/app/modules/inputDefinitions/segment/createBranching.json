@@ -1,0 +1,46 @@
+{
+  "fun": {
+    "createBranching": {
+      "category": "Module functions",
+      "label": "Create Branching",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+				}
+			},
+			"dilationSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 1
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Segmentation",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelsFilepath"
+				}
+			},
+			"dilationSize": {
+				"index": 1,
+				"label": "Branch dilation",
+				"widget:slider": {
+					"step": 1
+				}
+			}
+    },
+    "outputs": {}
+  }
+}
