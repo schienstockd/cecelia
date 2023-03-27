@@ -230,12 +230,6 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
-unique(unlist(lapply(
-        c("default", "stroma"),
-        function(x) cciaObj$valueSuffixes("imLabelsFilepath", valueName = x))))
-```
-
-```{r}
 # upload STOMICS
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
@@ -277,7 +271,6 @@ funParams <- list(
 
 task <- cciaObj$runTask(
   funName = "importImages.tenxXenium",
-  HPC_CONF
   funParams = funParams,
   env = "hpc",
   runInplace = FALSE,
@@ -286,151 +279,99 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
-# can you generate maps to show XCR1, P14 and LCMV? Then,
-# a) Show whether P14 are more associated with XCR1 and P14
-# b) Show whether P14 are in T cell, B cell or other area
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
-# ie, showing direct interactions of cells and where these cells are in general
-# First generate maps with the actual populations to show distribution 
-# for all LCMV images; Also show actual image of P14 in XCR1 area or LCMV associated
-# To say that P14 also cluster around LCMV in presence of XCR1
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  valueName = "stroma",
+  dilationSize = 1
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.createBranching",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
-```{r fig_gating, fig.height=3, fig.width=5}
+```{r}
+# get branching of stroma network
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+branchingDT <- as.data.table(cciaObj$labelProps(valueName = "stroma.branch")$as_df())
+```
+
+```{r fig_branching, fig.height=5, fig.width=13}
+# show branching of stroma network
+ggplot(branchingDT, aes(`coord-dst-2`, `coord-dst-1`, color = as.factor(`branch-type`))) +
+  theme_classic() +
+  geom_point(size = 0.5) +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set1") +
+  plotThemeDark(angle = 0)
+
+ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
+```
+
+```{r}
 # get populations and show maps
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+# get label properties
+labelDT <- as.data.table(cciaObj$labelProps("stroma")$as_df())
 
-# only get first LCMV samples
-uIDs <- exp.info$uID[1:3]
-
-pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
-
-# exclude 'O' pops
-pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
-# pops <- pops[pops != "/nonDebris"]
-
-# get pops
-popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
-```
-
-```{r fig_maps, fig.height=3, fig.width=6}
-# show XCR1, LCMV and P14?
-ggplot(popDT,
-       aes(centroid_x, centroid_y)) +
-  # geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "magenta") +
-  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/O/O1/O2/B"), color = "cyan") +
-  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "green") +
-  geom_point(data = popDT %>% dplyr::filter(pop == "/nonDebris/P14"), color = "white") +
-  theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Dark2") +
-  coord_fixed() +
-  facet_grid(.~uID) +
-  plotThemeDark() +
-  theme(
-    axis.text = element_text(size = 15),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    legend.justification = "center",
-    legend.position = "bottom"
-  )
-
-ggsave(file.path(anaDir, "pops.pdf"), width = 14, height = 6)
+colnames(labelDT)
 ```
 
 ```{r}
-# show with which cells P14 are in contact
-# get regions
-spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
-# regionsDT <- cciaObj$popDT(popType = "region", uIDs = uIDs, includeFiltered = TRUE)
-
-# join pops
-# regionsDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "label"),
-#           from.pop := i.pop]
-spatialDT[popDT[, c("uID", "label", "pop")],
-          on = c("uID", "to" = "label"),
-          pop.to := pop]
-spatialDT[popDT[, c("uID", "label", "pop")],
-          on = c("uID", "from" = "label"),
-          pop.from := pop]
-
-unique(spatialDT$pop.to)
+# summaryDT <- labelDT %>% pivot_longer(
+#   cols = c(
+#     "eccentricity", "orientation", "extent", "solidity", "oblate",
+#     "prolate", "aspect_ratio", "fill", "solidity"),
+#   names_to = "measure",
+#   values_to = "value"
+# )
 ```
 
-```{r}
-# now where are P14?
-summaryDT <- copy(spatialDT)
-summaryDT[pop.to %in% c(
-  "/nonDebris/O/B", "/nonDebris/O/O1/CD3", "/nonDebris"
-), ]$pop.to <- "Other"
+```{r fig_stroma, fig.height=5, fig.width=8}
+# filter 
+summaryDT <- labelDT[eccentricity > quantile(labelDT$eccentricity, probs = 0.05)[[1]]]
 
-summaryDT[pop.from == "/nonDebris/P14/clustered",]$pop.from <- "clustered"
-summaryDT[pop.from == "/nonDebris/P14/non.clustered",]$pop.from <- "non.clustered"
-summaryDT[pop.to == "/nonDebris/P14/clustered",]$pop.to <- "clustered"
-summaryDT[pop.to == "/nonDebris/P14/non.clustered",]$pop.to <- "non.clustered"
-summaryDT[pop.to == "/nonDebris/O/LCMV",]$pop.to <- "LCMV"
-summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
-
-summaryDT <- summaryDT %>%
-  dplyr::filter(
-    pop.from %in% c("clustered", "non.clustered"),
-    !pop.to %in% c("clustered", "non.clustered")
-      # "/nonDebris/XCR1", "/nonDebris/O/LCMV"),
-    # pop.to %in% c("/nonDebris", "/nonDebris/XCR1", "/nonDebris/O/LCMV")
-    # !pop.to %in% c("/nonDebris/O/O1/O2/B")
-    ) %>%
-  group_by(uID, pop.from, pop.to) %>%
-  dplyr::summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  drop_na() %>%
-  ungroup() %>%
-  complete(uID, pop.from, pop.to, fill = list(freq = 0))
-  # mutate(pop.group = interaction(uID, pop.to))
+# plot shape of stroma
+for (x in c("eccentricity", "orientation", "extent", "solidity", "oblate",
+            "prolate", "aspect_ratio", "fill", "solidity", "aspect_ratio")) {
+  limY <- quantile(summaryDT[[x]], probs = 0.98)[[1]]
+  
+  p1 <- ggplot(summaryDT, aes(centroid_x, centroid_y, color = get(x))) +
+    theme_classic() +
+    plotThemeDark(angle = 0) +
+    geom_point(size = 0.5) +
+    coord_fixed() +
+    viridis::scale_colour_viridis(limits = c(0, limY)) +
+    ggtitle(x)
+  
+  print(p1)
+}
 ```
-
-
-```{r fig_clusters_heat, fig.height=1, fig.width=2}
-ggplot(data = summaryDT %>%
-         mutate(
-           pop.to = factor(pop.to, levels = c("XCR1", "LCMV", "Other")),
-           pop.from = factor(pop.from, levels = c("non.clustered", "clustered"))
-           ),
-       aes(
-         # color = as.factor(pop.from),
-         y = freq,
-         # x = as.factor(pop.to))) +
-         x = pop.from)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-  # geom_jitter(width = 0.3, alpha = 1.0) +
-  geom_point(alpha = 1.0) +
-  theme(
-    legend.justification = "center",
-    legend.direction = "horizontal",
-    legend.position = "bottom",
-    legend.title = element_blank(),
-    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1)
-  ) +
-  geom_line(aes(group = interaction(uID, pop.to))) +
-  xlab("") + ylab("Interaction (%)") +
-  facet_wrap(~pop.to, nrow = 1, scales = "free_y") +
-  expand_limits(y = 0)
-
-ggsave(file.path(anaDir, "P14_interactions.pdf"), width = 3, height = 2)
-```
-
 

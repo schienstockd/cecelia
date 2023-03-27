@@ -279,12 +279,20 @@ task <- cciaObj$runTask(
 
 ```{r}
 # get branching of stroma network
-branchingDT <- as.data.table(read.csv(file.path(anaDir, 'stroma', 'n22foC_branching.csv')))
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
+)
+
+branchingDT <- as.data.table(cciaObj$labelProps(valueName = "stroma.branch")$as_df())
 ```
 
 ```{r fig_branching, fig.height=5, fig.width=13}
 # show branching of stroma network
-ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = as.factor(branch.type))) +
+ggplot(branchingDT, aes(`coord-dst-2`, `coord-dst-1`, color = as.factor(`branch-type`))) +
   theme_classic() +
   geom_point(size = 0.5) +
   coord_fixed() +

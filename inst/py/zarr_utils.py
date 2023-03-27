@@ -232,7 +232,7 @@ def create_multiscales(im_array, filepath, dim_utils = None,
                        x_idx = None, y_idx = None,
                        nscales = 1, keyword = 'datasets',
                        ignore_channel = False, reference_zarr = None,
-                       mode = 'w'):
+                       mode = 'w', squeeze = False):
   # create multiscales
   multiscales_zarr = zarr.open(filepath, mode = mode)
   
@@ -265,7 +265,8 @@ def create_multiscales(im_array, filepath, dim_utils = None,
     slices = slice_utils.create_slices_multiscales(
       im_array.shape, dim_utils = dim_utils,
       x_idx = x_idx, y_idx = y_idx,
-      nscales = nscales - 1, ignore_channel = ignore_channel
+      nscales = nscales - 1, ignore_channel = ignore_channel,
+      squeeze = squeeze
     )
     
     # go through slices to build scales

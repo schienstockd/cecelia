@@ -42,7 +42,7 @@ CreateBranching <- R6::R6Class(
       
       # update image information
       cciaObj$setImLabelsFilepath(
-        paste0(valueName, cciaConf()$files$ext$labels),
+        paste0(branchingName, cciaConf()$files$ext$labels),
         valueName = branchingName
       )
       
@@ -50,7 +50,7 @@ CreateBranching <- R6::R6Class(
       # instead of pushing into object which makes it big
       # and slow to load
       cciaObj$setImLabelPropsFilepath(
-        paste0(valueName, cciaConf()$files$ext$labelProps),
+        paste0(branchingName, cciaConf()$files$ext$labelProps),
         valueName = branchingName
       )
       

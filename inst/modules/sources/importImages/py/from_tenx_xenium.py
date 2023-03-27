@@ -139,10 +139,17 @@ def run(params):
     y1 = ts_data.loc[ts_data['feature_name'] == x]
     
     # create sparse matrix
-    row  = y1[dim_cols[0]].values / pixel_sizes['y']
-    col  = y1[dim_cols[1]].values / pixel_sizes['x']
+    row = y1[dim_cols[0]].values / pixel_sizes['y']
+    col = y1[dim_cols[1]].values / pixel_sizes['x']
+    
+    # TODO rows and cols might be negative
+    value_idx = np.intersect1d(np.where(row >= 0), np.where(col >= 0))
+    row = row[value_idx]
+    col = col[value_idx]
+    
     # data = y1['qv'].values / max_values
-    data = np.repeat(1, len(y1.index))
+    # data = np.repeat(1, len(y1.index))
+    data = np.repeat(1, len(row))
 
     y2 = coo_array((data, (row, col)), shape = zarr_shape[1:3]).toarray().astype(np.uint8)
 
