@@ -41,6 +41,9 @@ CciaImage <- R6::R6Class(
     # classifications
     handleClsfPopUtils = NULL,
     
+    # branching
+    handleBranchPopUtils = NULL,
+    
     # spatial
     handleSpatialDT = NULL,
     handleSpatialGraph = NULL,
@@ -53,14 +56,19 @@ CciaImage <- R6::R6Class(
     #' @param includeX boolean to include 'X' from adata
     #' @param replaceX boolean to replace 'X' with 'X' from adata
     #' @param includeObs boolean to include 'obs' from adata
+    #' @param valueNames character to load label props
     completePopDT = function(popUtils, popDT, popCols = NULL,
                              uniqueLabels = TRUE, includeX = FALSE,
-                             replaceX = FALSE, includeObs = TRUE) {
+                             replaceX = FALSE, includeObs = TRUE,
+                             valueNames = c()) {
       # add columns from label properties that are
       # not in the popUtils DT
       if (popUtils$isLabelPropsStore() == FALSE) {
+        if (!length(valueNames) > 0)
+          valueNames <- popUtils$getValueNames()
+        
         # get value names for populations
-        for (i in popUtils$getValueNames()) {
+        for (i in valueNames) {
           labels <- self$labelProps(valueName = i)
           
           # focus on selected columns
@@ -99,7 +107,7 @@ CciaImage <- R6::R6Class(
             iColumns <- labelColumns
             iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
           } 
-            
+          
           # merge to population DT
           if ("value_name" %in% colnames(popDT)) {
             popDT[labelDT, on = .(value_name == i, label),
@@ -1036,20 +1044,25 @@ CciaImage <- R6::R6Class(
     
     #' @description Population object
     #' @param popType character for population type
+    #' @param valueName character for value name
     #' @param ... passed to population utils object
-    popUtils = function(popType, ...) {
+    popUtils = function(popType, valueName = NULL, ...) {
       retVal <- NULL
       
       if (popType == "flow") {
         retVal <- self$flowGatingSet(...)
       } else if (popType == "clust") {
-        retVal <- self$adataUtils(...)
+        retVal <- self$adataUtils(popType = popType, ...)
       } else if (popType == "region") {
-        retVal <- self$adataUtils(adataPath = self$imRegionsFilepath(), ...)
+        retVal <- self$adataUtils(
+          popType = popType,
+          adataPath = self$imRegionsFilepath(valueName = valueName), ...)
       } else if (popType == "live") {
         retVal <- self$livePopUtils(...)
       } else if (popType == "clsf") {
         retVal <- self$clsfPopUtils(...)
+      } else if (popType == "branch") {
+        retVal <- self$branchPopUtils(...)
       }
       
       retVal
@@ -1213,14 +1226,16 @@ CciaImage <- R6::R6Class(
     #' @param filterMeasures list of character to include filter measures
     #' @param includeX boolean to include 'X' from adata
     #' @param replaceX boolean to replace 'X' with 'X' from adata
-    #' @param variable boolean to include 'obs' from adata
+    #' @param includeObs boolean to include 'obs' from adata
+    #' @param completeValueNames character for value names to complete DT
     #' @param ... passed to self$popUtils
     popDT = function(popType, pops = NULL, popCols = NULL,
                      dropNA = FALSE, dropPop = FALSE, includeFiltered = FALSE,
                      forceReload = FALSE, uniqueLabels = TRUE,
                      flushCache = FALSE, replaceNA = FALSE,
                      completeDT = TRUE, filterMeasures = NULL,
-                     includeX = FALSE, replaceX = FALSE, includeObs = TRUE, ...) {
+                     includeX = FALSE, replaceX = FALSE, includeObs = TRUE, 
+                     completeValueNames = c(), ...) {
       # make sure label is in columns
       if (!is.null(popCols)) {
         if (!"label" %in% popCols)
@@ -1274,14 +1289,16 @@ CciaImage <- R6::R6Class(
       
       if (is.null(pops) || .flowPopIsRoot(pops)) {
         pops <- self$popPaths(popType, includeFiltered = includeFiltered,
-                              includeRoot = FALSE)
+                              includeRoot = FALSE, ...)
         
         # set non-filtered populations
-        nonFilteredPops <- self$popPaths(popType, includeFiltered = FALSE, includeRoot = TRUE)
+        nonFilteredPops <- self$popPaths(
+          popType, includeFiltered = FALSE, includeRoot = TRUE, ...)
       } else {
         # check that any pops are available
         # popsPresent <- all(pops %in% self$popPaths(popType, includeFiltered = includeFiltered))
-        popsPresent <- any(pops %in% self$popPaths(popType, includeFiltered = includeFiltered))
+        popsPresent <- any(pops %in% self$popPaths(
+          popType, includeFiltered = includeFiltered, ...))
       }
       
       if (popsPresent == TRUE) {
@@ -1297,7 +1314,7 @@ CciaImage <- R6::R6Class(
         # get non-filtered populations
         if (is.null(nonFilteredPops)) {
           nonFilteredPops <- self$popPaths(
-            popType, includeFiltered = FALSE, includeRoot = TRUE)
+            popType, includeFiltered = FALSE, includeRoot = TRUE, ...)
           
           # filter for selected pops
           nonFilteredPops <- nonFilteredPops[nonFilteredPops %in% pops]
@@ -1315,7 +1332,8 @@ CciaImage <- R6::R6Class(
           if (completeDT == TRUE)
             popDT <- private$completePopDT(
               popUtils, popDT, popCols = popCols, uniqueLabels = uniqueLabels,
-              includeX = includeX, replaceX = replaceX, includeObs = includeObs)
+              includeX = includeX, replaceX = replaceX, includeObs = includeObs,
+              valueNames = completeValueNames)
         }
         
         # build list
@@ -1397,7 +1415,8 @@ CciaImage <- R6::R6Class(
                 filteredPopDT <- private$completePopDT(
                   filteredPopUtils, filteredPopDT, popCols = popCols,
                   uniqueLabels = uniqueLabels,
-                  includeX = includeX, replaceX = replaceX, includeObs = includeObs)
+                  includeX = includeX, replaceX = replaceX, includeObs = includeObs,
+                  valueNames = completeValueNames)
             }
             
             # is the filter value present?
@@ -1908,6 +1927,33 @@ CciaImage <- R6::R6Class(
       private$handleClsfPopUtils
     },
     
+    #' @description Branching utils
+    #' @param forceReload boolean to force reload data
+    #' @param init boolean to init data
+    branchPopUtils = function(forceReload = FALSE, init = TRUE) {
+      if (init == TRUE) {
+        if (!is.null(self$valueNames("imLabelPropsFilepath"))) {
+          if (is.null(private$handleBranchPopUtils) || forceReload == TRUE) {
+            valueNames <- self$valueNames("imLabelPropsFilepath", valueType = "branch")
+            
+            # init object
+            private$handleBranchPopUtils <- MultifileLabelPopUtils$new(
+              self$persistentObjectDirectory(),
+              valueNames[!is.na(stringr::str_match(valueNames, "\\.branch$"))],
+              self$imChannelNames(includeTypes = TRUE)
+            )
+            
+            # init reactivity
+            if (private$isReactive()) {
+              private$handleBranchPopUtils$reactive()
+            }
+          }
+        }
+      }
+      
+      private$handleBranchPopUtils
+    },
+    
     #' @description Live population utils
     #' @param forceReload boolean to force reload data
     #' @param init boolean to init data
@@ -1934,32 +1980,41 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Adata
+    #' @param popType character for population type
     #' @param forceReload boolean to force reload data
     #' @param init boolean to init data
     #' @param adataPath character for filepath
-    adataUtils = function(forceReload = FALSE, init = TRUE, adataPath = NULL) {
+    adataUtils = function(popType, forceReload = FALSE, init = TRUE, adataPath = NULL) {
       if (is.null(adataPath))
         adataPath <- self$imAnndataFilepath()
       
+      # check whether utils is already set
+      adataUtils <- .getVersionedVar(private$anndataUtils, valueName = popType)
+      
       if (init == TRUE) {
         if (!purrr::is_empty(adataPath)) {
-          if (is.null(private$anndataUtils) || forceReload == TRUE) {
+          if (is.null(adataUtils) || forceReload == TRUE) {
             if (file.exists(adataPath)) {
               # init object
-              private$anndataUtils <- AnndataUtils$new(
+              adataUtils <- AnndataUtils$new(
                 adataPath, self$imChannelNames(includeTypes = TRUE)
               )
               
               # init reactivity
               if (private$isReactive()) {
-                private$anndataUtils$reactive()
+                adataUtils$reactive()
               }
+              
+              # set version
+              private$anndataUtils <- .setVersionedVar(
+                private$anndataUtils, adataUtils,
+                valueName = popType)
             }
           }
         }
       }
       
-      private$anndataUtils
+      adataUtils
     },
     
     #' @description Save pop map to file
@@ -2489,6 +2544,8 @@ CciaImage <- R6::R6Class(
         return(self$valueNames("imLabelPropsFilepath", valueType = "live", ...))
       } else if (popType == "clsf") {
         return(self$valueNames("imLabelPropsFilepath", valueType = "clsf", ...))
+      } else if (popType == "branch") {
+        return(self$valueNames("imLabelPropsFilepath", valueType = "branch", ...))
       }
     },
     
@@ -2513,10 +2570,18 @@ CciaImage <- R6::R6Class(
       
       # only return a specific value type?
       if (!is.null(valueType)) {
+        strReg <- NULL
+        
         if (valueType == "clsf")
-          retVal <- retVal[!is.na(stringr::str_match(retVal, "\\.cl$"))]
+          strReg <- "cl"
+        else if (valueType == "branch")
+          strReg <- "branch"
+        
+        # TODO this should be better
+        if (!is.null(strReg))
+          retVal <- retVal[!is.na(stringr::str_match(retVal, paste0("\\.", strReg,"$")))]
         else
-          retVal <- retVal[is.na(stringr::str_match(retVal, "\\.cl$"))]
+          retVal <- retVal[is.na(stringr::str_match(retVal, paste0("\\.", strReg,"$")))]
       }
       
       # return only default?

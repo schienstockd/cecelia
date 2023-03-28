@@ -230,6 +230,7 @@ NapariUtils <- R6::R6Class(
     #' @param valueNames list of character for value names
     #' @param showLabels boolean to show labels
     #' @param showPoints boolean to show points
+    #' @param showBranching boolean to show branching
     #' @param showTracks boolean to show tracks
     #' @param showPops boolean to show populations
     #' @param showNeighbours boolean to show neighbours
@@ -237,7 +238,7 @@ NapariUtils <- R6::R6Class(
     #' @param execInteractive boolean to execute interactive
     showLabelsAll = function(valueNames, showLabels = TRUE, showPoints = TRUE,
                              showTracks = TRUE, showPops = TRUE, showNeighbours = TRUE,
-                             asNpArray = FALSE, execInteractive = TRUE,
+                             showBranching = FALSE, asNpArray = FALSE, execInteractive = TRUE,
                              labelSuffixes = list()) {
       # show labels
       if (length(valueNames) > 0) {
@@ -249,6 +250,7 @@ NapariUtils <- R6::R6Class(
               "show_labels = %s,",
               "show_points = %s,",
               "show_tracks = %s,",
+              "show_branching = %s,",
               "as_np_array = %s,",
               "label_suffixes = %s",
               ")"
@@ -257,6 +259,7 @@ NapariUtils <- R6::R6Class(
             reticulate::r_to_py(showLabels),
             reticulate::r_to_py(showPoints),
             reticulate::r_to_py(showTracks),
+            reticulate::r_to_py(showBranching),
             reticulate::r_to_py(asNpArray),
             reticulate::r_to_py(labelSuffixes)
           ), execInteractive = execInteractive
@@ -268,6 +271,7 @@ NapariUtils <- R6::R6Class(
     #' @param showLabels boolean to show labels
     #' @param showPoints boolean to show points
     #' @param showTracks boolean to show tracks
+    #' @param showBranching boolean to show branching
     #' @param asNpArray boolean to load labels as numpy array for editing
     #' @param valueName character for value name
     #' @param labelSuffixes character for label suffixes
@@ -287,6 +291,7 @@ NapariUtils <- R6::R6Class(
             "show_labels = %s,",
             "show_points = %s,",
             "show_tracks = %s,",
+            "show_branching = %s,",
             paste0("value_name = ", valueNamePattern, ","),
             "as_np_array = %s,",
             "label_suffixes = %s",
@@ -295,6 +300,7 @@ NapariUtils <- R6::R6Class(
           reticulate::r_to_py(showLabels),
           reticulate::r_to_py(showPoints),
           reticulate::r_to_py(showTracks),
+          reticulate::r_to_py(showBranching),
           reticulate::r_to_py(valueName),
           reticulate::r_to_py(asNpArray),
           reticulate::r_to_py(labelSuffixes)

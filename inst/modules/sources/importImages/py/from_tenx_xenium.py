@@ -164,8 +164,8 @@ def run(params):
     if min_filter_value > 0:
       seq_image[i + 1, :, :] = skimage.filters.rank.minimum(seq_image[i + 1, :, :],
         skimage.morphology.disk(min_filter_value))
-    seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
-      skimage.morphology.disk(filter_value))
+    # seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
+    #   skimage.morphology.disk(filter_value))
     
   # generate multiscales 
   # TODO is there a more elegant way to do this .. ?

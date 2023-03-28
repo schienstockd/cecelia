@@ -242,7 +242,8 @@ task <- cciaObj$runTask(
   funName = "segment.createBranching",
   funParams = funParams,
   env = "local",
-  runInplace = TRUE,
+  # runInplace = TRUE,
+  runInplace = FALSE,
   taskID = 1
 )
 ```
@@ -302,28 +303,157 @@ ggplot(branchingDT, aes(`coord-dst-2`, `coord-dst-1`, color = as.factor(`branch-
 ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
 ```
 
-```{r fig_branching, fig.height=5, fig.width=13}
-# show branching of stroma network
-# ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = branch.distance)) +
-# ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = euclidean.distance)) +
-ggplot(branchingDT, aes(coord.dst.2, coord.dst.1, color = branch.distance)) +
-  theme_classic() +
-  # geom_point(size = 0.5) +
-  geom_density_2d_filled() +
-  coord_fixed() +
-  viridis::scale_color_viridis() +
-  # scale_color_brewer(palette = "Set1") +
-  plotThemeDark(angle = 0) +
-  facet_wrap(.~as.factor(branch.type), ncol = 2)
+```{r}
+# show regions of stroma
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
 
-ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_contour.png'), height = 20, width = 30)
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
+)
+
+regionDT <- cciaObj$popDT(
+  "region", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "stroma.branch", pops = c("root"))
+
+popDT <- cciaObj$popDT(
+  "clust", includeFiltered = TRUE, completeDT = TRUE,
+  popCols = c("pop", paste0("stroma.branch_type_", seq(0, 3))),
+  # pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE))),
+  pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))),
+  forceReload = TRUE)
 ```
 
+```{r fig_branching_regions, fig.height=5, fig.width=8}
+# plot out
+ggplot(popDT %>% filter(
+    pop != "root",
+    # centroid_x > 3000, centroid_x <= 7000,
+    # centroid_y > 2000, centroid_y <= 6000,
+  ), aes(centroid_x, centroid_y, color = as.factor(pop))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 4) +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set3") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_pops.png'), height = 20, width = 20)
+ggsave(file.path(anaDir, 'stroma', 'n22foC_pops_whole.png'), height = 20, width = 35)
+```
+
+```{r fig_branching_regions, fig.height=5, fig.width=8}
+# plot out
+ggplot(regionDT %>% filter(
+    # centroid_x > 3000, centroid_x <= 7000,
+    # centroid_y > 2000, centroid_y <= 6000,
+  ),  aes(centroid_x, centroid_y, color = as.factor(regions))) +
+# ggplot(regionDT, aes(centroid_x, centroid_y, color = as.factor(`branch-type`))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 2) +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_regions.png'), height = 20, width = 20)
+ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_regions_whole.png'), height = 20, width = 35)
+```
+
+```{r}
+# find nearest neighbours
+popNN <- dbscan::kNN(
+  as.matrix(regionDT[, c('centroid_z', 'centroid_y', 'centroid_x')]),
+  k = 1,
+  query = as.matrix(popDT[, c('centroid_z', 'centroid_y', 'centroid_x')]))
+
+# filter long distances
+regionVals <- regionDT[popNN$id, ]$regions
+# regionVals <- regionDT[popNN$id, ]$`branch-type`
+regionVals[popNN$dist > 50 * cciaObj$omeXMLPixelRes()$x] <- -1
+
+# assign regions to pops
+popDT[, regionsNN := as.factor(regionVals)]
+```
+
+```{r fig_pop_branching, fig.height=1, fig.width=2.5}
+summaryDT <- popDT %>%
+  # drop_na() %>%
+  # group_by(pop, regionsNN) %>%
+  group_by(clusters, regionsNN) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(regionsNN != "-1")
+  
+summaryDT$clusters <- recode(
+  summaryDT$clusters,
+  `0` = 'CD20+ B cell',
+  `1` = 'CD8+ T cell',
+  `2` = 'CD54+ 1',
+  `3` = 'Unspecified',
+  `4` = 'CD163+ Macro',
+  `5` = 'CD45+1',
+  `6` = 'CD4+ T cell',
+  `7` = 'CD54+ 2',
+  `8` = 'CD45+ 2',
+  `9` = 'CD54+ 3',
+  `10` = 'CD11c+ Macro',
+  `11` = 'CD15+ Macro',
+  `12` = 'CD54+ 4',
+  `13` = 'CD61+',
+  `14` = 'CD31+',
+  `15` = 'CD54+ 5',
+  `16` = 'Glyco.A+'
+)
+summaryDT$regionsNN <- recode(
+  summaryDT$regionsNN,
+  `1` = 'Loose',
+  `2` = 'Medium',
+  `3` = 'Dense'
+)
+
+# ggplot(summaryDT, aes(pop, freq, fill = regionsNN)) +
+# ggplot(summaryDT, aes(clusters, freq, fill = regionsNN)) +
+ggplot(summaryDT, aes(reorder(clusters, freq), freq, fill = regionsNN)) +
+  theme_classic() +
+  ylim(0, 100) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.justification = "left"
+  ) +
+  xlab("") + ylab("Stroma region (%)") +
+  coord_flip()
+
+ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_regions_clusters.png'), height = 4, width = 4)
+```
 
 ```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
@@ -331,18 +461,14 @@ cciaObj <- initCciaObject(
   # pID = pID, uID = "TyFwVs", versionID = versionID, initReactivity = FALSE # Set
   pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE # Spleen
 )
-
 # exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-
 # uIDs <- c("BNcZ2j")
-
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   pops = c("root"),
   # pops = c("T", "B", "macro.dc", "endothelial", "lymphatic", "lymphs"), # LN
   completeDT = TRUE, replaceX = TRUE)
-
 unique(popDT$clusters)
 ```
 
@@ -355,7 +481,6 @@ clust <- list(
   b = c("B"),
   t = c("T")
 )
-
 markers <- list(
   init = c("CD11c", "CD45", "CD68", "Lyve-1", "CD31"),
   macro.dc = c(
@@ -367,7 +492,6 @@ markers <- list(
     "TCR Va7.2", "CD25", "PD-1", "CD69", "ICOS", "nuc_Ki-67",
     "nuc_FOXP3", "CD44", "CD106", "CD38", "CD4", "CD8", "CD3")
 )
-
 groupVars <- list(
   init = "pop",
   macro.dc = "clusters",
@@ -375,7 +499,6 @@ groupVars <- list(
   b = "clusters",
   t = "clusters"
 )
-
 combinePops <- list(
   init = list(
     lymphs = c("T", "B", "lymphs")
@@ -385,7 +508,6 @@ combinePops <- list(
   b = list(),
   t = list()
 )
-
 plotSizes <- list(
   init = c(3, 4),
   macro.dc = c(4.5, 4.5),
@@ -486,9 +608,7 @@ for (i in names(clust)) {
 
 ```{r fig_pops_umap, fig.height=2, fig.width=2}
 library(tidyverse)
-
 dfToPlot <- copy(popDT[!clusters %in% c(melanoClusters, endothelialClusters)])
-
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
   group_by(clusters) %>%
@@ -496,10 +616,8 @@ meanClusterPos <- dfToPlot %>%
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
   )
-
 clustersPalette <- randomcoloR::distinctColorPalette(
   length(unique(dfToPlot$clusters)))
-
 # plot UMAP with paga connections
 ggplot(
   dfToPlot %>%
@@ -534,7 +652,6 @@ ggplot(
   #   label.size = 0.25,
   #   color = "black"
   #   )
-
 ggsave(file.path(anaDir, "cd45_umap.tiff"), width = 5, height = 6.5)
 ```
 
@@ -548,10 +665,8 @@ summaryDF <- popDT %>%
   ungroup() %>%
   complete(clusters, fill = list(freq = 0))
   # left_join(exp.info)
-
 summaryDF$clusters <- factor(
   summaryDF$clusters, levels = unique((summaryDF %>% arrange(-freq))$clusters))
-
 # plot
 ggplot(summaryDF,
        aes(clusters, freq)) +
@@ -562,7 +677,6 @@ ggplot(summaryDF,
   ) +
   ylab("Population (%)") + xlab("") +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
 # save as csv for plotting in Prism
 write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
@@ -570,15 +684,12 @@ write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "BNcZ2j", versionID = versionID, initReactivity = FALSE # LN
 )
-
 # get cluster information
 spatialDT <- cciaObj$spatialDT(valueName = "default")
-
 # join pops
 # spatialDT[popDT[, c("label", "pop")],
 #           on = c("to" = "label"),
@@ -592,7 +703,6 @@ spatialDT[popDT[, c("label", "clusters")],
 spatialDT[popDT[, c("label", "clusters")],
           on = c("from" = "label"),
           clusters.from := clusters]
-
 # filter same type associations
 spatialDT <- spatialDT[clusters.to != clusters.from]
 ```
@@ -632,7 +742,6 @@ ggplot(freqRegions %>%
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
-
 ggsave(file.path(anaDir, "interactions_heat.pdf"), width = 10, height = 10)
 ```
 
@@ -654,7 +763,6 @@ for (i in unique(freqRegions$clusters.from)) {
     # ylim(0, 1) +
     scale_fill_brewer(name = NULL, palette = "Set3") +
     ggtitle(i)
-
   print(p1)
   
   # save as csv for plotting in Prism
@@ -665,7 +773,6 @@ for (i in unique(freqRegions$clusters.from)) {
 ```{r fig_kmeans_clusters, fig.height=1.5, fig.width=2.5}
 # use K-Means to get clusters of regions
 normalit <- function(m) (m - min(m))/(max(m)-min(m))
-
 freqRegionsWider <- freqRegions %>%
   # ungroup() %>%
   # mutate(norm = normalit(freq)) %>%
@@ -681,7 +788,6 @@ freqRegionsWider <- freqRegions %>%
     values_from = freq,
     values_fill = 0
   )
-
 freqRegionsMat <- as.matrix(freqRegionsWider %>%
   ungroup() %>% 
   select(-c(from, clusters.from)))
@@ -690,9 +796,7 @@ rownames(freqRegionsMat) <- freqRegionsWider$from
 
 ```{r fig_kmeans_clusters, fig.height=1.5, fig.width=2.5}
 clustToFind <- 4
-
 library(mclust)
-
 # clusters <- kmeans(
 #   freqRegionsWider %>%
 #     ungroup() %>%
@@ -701,17 +805,13 @@ library(mclust)
 #   clustToFind)
 # mcl.model <- Mclust(freqRegionsMat)
 mcl.model <- Mclust(freqRegionsMat, clustToFind)
-
 # Plot our results.
 # plot(mcl.model, what = "classification", main = "Mclust Classification")
-
 # push back clusters
 # freqRegionsWider$cluster <- clusters$cluster
 freqRegionsWider$cluster <- mcl.model$classification
-
 popCols <- colnames(freqRegionsWider)[!colnames(freqRegionsWider) %in% c(
   "from", "to", "n", "cluster", "clusters.from", "clusters.to")]
-
 freqRegionsWiderSummary <- freqRegionsWider %>%
   group_by(cluster) %>%
   summarise(across(all_of(popCols), mean)) %>%
@@ -721,7 +821,6 @@ freqRegionsWiderSummary <- freqRegionsWider %>%
     values_to = "value"
     ) %>%
   mutate(norm = normalit(value))
-
 ggplot(
   freqRegionsWiderSummary, aes(as.factor(cluster), pop)) +
   geom_tile(aes(fill = norm)) +
@@ -734,7 +833,6 @@ ggplot(
 # plot out
 popDT[as.data.table(freqRegionsWider[, c("from", "cluster")]),
       on = list(label = from), spatial_cluster := cluster]
-
 ggplot(popDT %>% drop_na(),
        aes(centroid_x, -centroid_y, color = as.factor(spatial_cluster))) +
   theme_classic() +
@@ -763,7 +861,6 @@ summaryDF <- copy(freqRegionsWider) %>%
   ungroup() %>%
   complete(cluster, fill = list(freq = 0)) %>%
   left_join(exp.info)
-
 # plot
 ggplot(summaryDF,
        aes(as.factor(cluster), freq, fill = interaction(Cohort, Response))) +
@@ -776,10 +873,8 @@ ggplot(summaryDF,
   ylab("Population (%)") + xlab("") +
   # ylim(0, 1) +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
 summaryDF$Treatment <- 0
 summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
-
 # save as csv for plotting in Prism
 write.csv(summaryDF, file.path(anaDir, "cluster_regions.csv"))
 ```
@@ -788,24 +883,19 @@ write.csv(summaryDF, file.path(anaDir, "cluster_regions.csv"))
 # get distances from lymphs to melano
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
 )
-
 exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
-
 uIDs <- names(cciaObj$cciaObjects())
 uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
-
 # run task
 funParams <- list(
   popsA = c("clust.lymphs"),
   popsB = c("clust.melano"),
   maxContactDist = 5
 )
-
 task <- cciaObj$runTasks(
   funName = "spatialAnalysis.cellContactsMeshes",
   funParams = funParams,
@@ -820,20 +910,16 @@ task <- cciaObj$runTasks(
 # get pops for contact detection
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
-
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "U7LRc9", versionID = versionID, initReactivity = FALSE # Set
 )
-
 exp.info <- as.data.table(
   cciaObj$summary(withSelf = FALSE, fields = c("Attr")) %>%
     left_join(read.csv(file.path(anaDir, "sample.info.csv")))
   )
-
 uIDs <- names(cciaObj$cciaObjects())
 uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y", ]$uID]
-
 # get cluster information
 popDT <- cciaObj$popDT(
   # popType = "clust", pops = c("lymphs"), includeFiltered = TRUE, uIDs = uIDs)
@@ -870,11 +956,9 @@ ggplot(clusterDist, aes(clusters, mean.dist,
     # width = 0.3, alpha = 0.6) +
   ylab("Median distance to melano (um)") + xlab("") +
   scale_fill_brewer(name = NULL, palette = "Set3")
-
 clusterDist$Treatment <- 0
 clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "No",]$Treatment <- 1
 clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "Yes",]$Treatment <- 2
-
 # save as csv for plotting in Prism
 write.csv(clusterDist, file.path(anaDir, "cluster_dist.csv"))
 ```

@@ -333,7 +333,7 @@
             updateSelectInput(
               inputId = trimInputName(id, x),
               choices = if (!is.null(cciaObj$popUtils(popTypeProcessing())))
-                cciaObj$popUtils(popType())$popPaths()
+                cciaObj$popUtils(popTypeProcessing())$popPaths()
               else
                 c("")
             )

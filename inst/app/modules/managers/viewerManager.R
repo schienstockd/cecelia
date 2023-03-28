@@ -30,6 +30,7 @@ ViewerManager <- R6::R6Class(
     showPoints = FALSE,
     showPops = FALSE,
     showNeighbours = FALSE,
+    showBranching = FALSE,
     showShapes = FALSE,
     showTracks = FALSE,
     asDask = TRUE,
@@ -175,6 +176,7 @@ ViewerManager <- R6::R6Class(
             showLabels = self$getShowLabels(),
             showPoints = self$getShowPoints(),
             showTracks = self$getShowTracks(),
+            showBranching = self$getShowBranching(),
             asNpArray = showLabelsAsNpArray,
             labelSuffixes = labelSuffixes
           )
@@ -332,6 +334,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setShowBranching = function(x, invalidate = TRUE) {
+      private$showBranching <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setShowShapes = function(x, invalidate = TRUE) {
       private$showShapes <- x
       private$invalidate(invalidate = invalidate)
@@ -402,6 +409,10 @@ ViewerManager <- R6::R6Class(
     
     getShowNeighbours = function() {
       private$showNeighbours
+    },
+    
+    getShowBranching = function() {
+      private$showBranching
     },
     
     getShowShapes = function() {

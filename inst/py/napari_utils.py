@@ -392,7 +392,7 @@ class NapariUtils:
   """
   def show_labels_all(self, value_names, show_labels = True, show_points = True,
                       as_np_array = False, show_tracks = True, cache = True,
-                      label_suffixes = dict()):
+                      label_suffixes = dict(), show_branching = False):
     # get distinct colours for points
     points_colours = colour_utils.distinct_colours(len(value_names), as_hex = True)
     
@@ -405,7 +405,8 @@ class NapariUtils:
         show_labels = show_labels, show_points = show_points,
         as_np_array = as_np_array, show_tracks = show_tracks,
         value_name = x, points_colour = points_colours[i],
-        cache = cache, label_suffixes = value_name_suffixes
+        cache = cache, label_suffixes = value_name_suffixes,
+        show_branching = show_branching
       )
                     
   """
@@ -413,7 +414,8 @@ class NapariUtils:
   """
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   as_np_array = False, show_tracks = True,
-                  points_colour = "white", cache = True, label_suffixes = []):
+                  points_colour = "white", cache = True, label_suffixes = [],
+                  show_branching = False):
     # set label ids
     label_ids = self.label_ids(value_name = value_name)
 
@@ -496,7 +498,7 @@ class NapariUtils:
             self.im_labels = [np.amax(x, axis = self.dim_utils.dim_idx('Z', ignore_channel = True)) for x in self.im_labels]
           
           # show labels
-          self.labels_layer = self.viewer.add_labels(
+          labels_layer = self.viewer.add_labels(
               self.im_labels, properties = properties,
               # metadata = metadata,
               name = labels_layer,
@@ -507,7 +509,42 @@ class NapariUtils:
               # rendering = "translucent"
           )
           
-          self.labels_layer.contour = contour
+          labels_layer.contour = contour
+          
+          # add branching?
+          if show_branching is True and value_name.endswith('.branch'):
+            # get branching distance
+            #percentile = 99.8
+            percentile = 100
+            chnl_scale = 255
+            
+            paths_table = self.label_props_utils\
+              .label_props_view(value_name = value_name)\
+              .view_cols(['label', 'branch-type'])\
+              .values_obs()
+            
+            #branching_values = paths_table['branch-distance'].values
+            branching_values = paths_table['branch-type'].values
+            
+            # get max value from intensity
+            max_chnl_val = np.percentile(branching_values, percentile)
+            
+            # how to select a map.. ?
+            labels_cm = plt.cm.viridis(np.linspace(0, 1, num = chnl_scale))
+            
+            # insert background
+            labels_cm = np.insert(labels_cm, 0, 0, axis = 0)
+            
+            layer_chnl_colours = np.array(branching_values/max_chnl_val * chnl_scale - 1).astype(np.int)
+            layer_chnl_colours[layer_chnl_colours >= chnl_scale] = chnl_scale - 1
+            layer_chnl_colours[layer_chnl_colours <= 0] = 1
+            layer_chnl_colours = list(layer_chnl_colours)
+            
+            # insert background
+            layer_chnl_colours.insert(0, 0)
+            
+            # convert to dict
+            labels_layer.color = {x: labels_cm[layer_chnl_colours[i]] for i, x in enumerate(label_ids)}
     
     # show points
     if show_points is True:

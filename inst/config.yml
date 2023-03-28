@@ -183,7 +183,7 @@ default:
       - "Mariah"
       - "Pixie"
   populations:
-    multifile: ['live', 'clsf']
+    multifile: ['live', 'clsf', 'branch']
   parameters:
     channelSelectionSize: 5
     popTypes:
@@ -192,6 +192,7 @@ default:
       clust: "Clustered"
       region: "Region"
       clsf: "Classifications"
+      branch: "Branching"
     filterFuns:
       eq: "Any of"
       neq: "None of"

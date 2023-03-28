@@ -35,13 +35,15 @@ ui <- function(request) {
               "Tracks" = "showTracks",
               "Populations" = "showPops",
               "Neighbours" = "showNeighbours",
+              "Branching" = "showBranching",
               "Shapes" = "showShapes",
               "Lazy" = "asDask",
               "Downsample Z" = "downsampleZ"
               ),
             selected = c(
               "layersVisible", "showViewer", "showLabels", "showTracks",
-              "showPoints", "showPops", "showNeighbours", "showShapes", "asDask"
+              "showPoints", "showPops", "showNeighbours", "showShapes", "asDask",
+              "showBranching"
               )
             )
         ),

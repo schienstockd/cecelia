@@ -491,6 +491,13 @@ server <- function(input, output, session) {
       globalManagers$viewerManager()$setShowNeighbours(FALSE)
     }
     
+    # show branching?
+    if ("showBranching" %in% input$viewerParams) {
+      globalManagers$viewerManager()$setShowBranching(TRUE)
+    } else {
+      globalManagers$viewerManager()$setShowBranching(FALSE)
+    }
+    
     # show shapes?
     if ("showShapes" %in% input$viewerParams) {
       globalManagers$viewerManager()$setShowShapes(TRUE)

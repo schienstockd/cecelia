@@ -296,7 +296,8 @@
         
         if (!is.null(popType())) {
           popTypePops <- unname(cciaSet()$popPaths(
-            uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
+            uIDs = selectedUIDs(), popType = popType(),
+            includeFiltered = TRUE, includeRoot = TRUE))
           popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
           
           # focus only on categorical

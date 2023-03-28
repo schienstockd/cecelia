@@ -54,6 +54,40 @@ CreateBranching <- R6::R6Class(
         valueName = branchingName
       )
       
+      # create populations for branching
+      popType <- "branch"
+      
+      # create populations for branching types
+      # create classification populations
+      popDT <- cciaObj$popDT(popType, pops = c(branchingName),
+                             popCols = c("branching-type"))
+      
+      # add children
+      pops <- list()
+      parentPops <- branchingName
+      
+      for (i in unique(popDT$`branch-type`)) {
+        pops[[xfun::numbers_to_words(i)]] <- list(
+          filterMeasure = "branch-type",
+          filterValues = i,
+          filterFun = "eq"
+        )
+      }
+      
+      # remove populations
+      cciaObj$delPopsByPath(
+        popType,
+        pops = levels(interaction(parentPops, names(pops), sep = "/")),
+        includeFiltered = TRUE
+      )
+      
+      # add populations
+      cciaObj$addFilteredPops(popType, parentPops, pops,
+                              valueName = branchingName)
+      
+      # save to disk
+      cciaObj$savePops(popType, purge = TRUE, includeFiltered = TRUE)
+      
       # save object
       cciaObj$saveState()
     }

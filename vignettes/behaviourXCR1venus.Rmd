@@ -141,6 +141,7 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
 
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 4.5, height = 3)
 ```
+
 ```{r fig_umap, fig.height=3, fig.width=3}
 dfToPlot <- copy(types.sc) %>% left_join(exp.info)
 

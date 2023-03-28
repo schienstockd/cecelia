@@ -180,13 +180,13 @@ class DimUtils:
     im_scale = list(np.ones_like(self.im_dim))
     
     # add zscale
-    im_scale[self.dim_idx("X")] = size_x
-    im_scale[self.dim_idx("Y")] = size_y
+    im_scale[self.dim_idx('X')] = size_x
+    im_scale[self.dim_idx('Y')] = size_y
     
     # add z scale
     if self.is_3D():
       # add zscale
-      im_scale[self.dim_idx("Z")] = size_z
+      im_scale[self.dim_idx('Z')] = size_z
       
     # convert None to 1
     im_scale = [x if x is not None else 1 for x in im_scale]

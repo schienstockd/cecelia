@@ -38,34 +38,34 @@ def run(params):
   dim_utils = DimUtils(omexml)
   dim_utils.calc_image_dimensions(im_data[0].shape)
   
-  # # https://skeleton-analysis.org/stable/examples/visualizing_3d_skeletons.html
-  # logfile_utils.log(f'> create skeleton')
-  # 
-  # # create skeleton
-  # binary_skeleton = skimage.morphology.skeletonize(
-  #     (np.squeeze(labels_data[0]) > 0).astype(np.uint8))
-  # skeleton = skan.Skeleton(binary_skeleton)
-  # del(binary_skeleton)
-  # 
-  # # dilate
-  # logfile_utils.log(f'> dilate {dilation_size}')
-  # 
-  # if dilation_size > 0:
-  #   if dim_utils.is_3D() is True:
-  #     skeleton_labels = skimage.morphology.dilation(
-  #       np.asarray(skeleton), skimage.morphology.ball(dilation_size))
-  #   else:
-  #     skeleton_labels = skimage.morphology.dilation(
-  #       np.asarray(skeleton), skimage.morphology.disk(dilation_size))
-  # 
-  # logfile_utils.log(f'> expand dimension?')
-  # 
-  # # check that shape is matching
-  # # TODO this has to be done better and more generic
-  # if len(skeleton_labels.shape) != len(labels_data[0].shape):
-  #   logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[0].shape}')
-  # 
-  #   skeleton_labels = np.expand_dims(skeleton_labels, axis = 0)
+  # https://skeleton-analysis.org/stable/examples/visualizing_3d_skeletons.html
+  logfile_utils.log(f'> create skeleton')
+
+  # create skeleton
+  binary_skeleton = skimage.morphology.skeletonize(
+      (np.squeeze(labels_data[0]) > 0).astype(np.uint8))
+  skeleton = skan.Skeleton(binary_skeleton)
+  del(binary_skeleton)
+
+  # dilate
+  logfile_utils.log(f'> dilate {dilation_size}')
+
+  if dilation_size > 0:
+    if dim_utils.is_3D() is True:
+      skeleton_labels = skimage.morphology.dilation(
+        np.asarray(skeleton), skimage.morphology.ball(dilation_size))
+    else:
+      skeleton_labels = skimage.morphology.dilation(
+        np.asarray(skeleton), skimage.morphology.disk(dilation_size))
+
+  logfile_utils.log(f'> expand dimension?')
+
+  # check that shape is matching
+  # TODO this has to be done better and more generic
+  if len(skeleton_labels.shape) != len(labels_data[0].shape):
+    logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[0].shape}')
+
+    skeleton_labels = np.expand_dims(skeleton_labels, axis = 0)
   
   logfile_utils.log(f'> save zarr')
   
@@ -77,20 +77,13 @@ def run(params):
   # save as zarr
   skeleton_store = zarr.open(
     skeleton_path,
-    # mode = 'w',
-    mode = 'r',
+    mode = 'w',
     shape = labels_data[0].shape,
     chunks = labels_data[0].chunks,
     dtype = np.uint32)
   
   # copy data
-  # skeleton_store[:] = skeleton_labels
-  
-  logfile_utils.log(skeleton_store.shape)
-  logfile_utils.log(dim_utils.dim_idx('X', ignore_channel = True, squeeze = True))
-  logfile_utils.log(dim_utils.dim_idx('X', ignore_channel = False, squeeze = True))
-  logfile_utils.log(dim_utils.dim_idx('X', ignore_channel = True, squeeze = False))
-  logfile_utils.log(dim_utils.dim_idx('X', ignore_channel = False, squeeze = False))
+  skeleton_store[:] = skeleton_labels
   
   if nscales > 1:
     multiscales_file_path = skeleton_path + '.multiscales'
@@ -110,18 +103,51 @@ def run(params):
   
   # create properties
   paths_table = skan.summarize(skeleton)
-  paths_table['label'] = np.arange(skeleton.n_paths)
+  paths_table['path-id'] = np.arange(skeleton.n_paths)
+  paths_table['label'] = np.arange(skeleton.n_paths) + 1
   
   # save skeleton and table
   logfile_utils.log(f'> save dataset {branching_name}')
   
-  # save props
-  LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
+  # create props
+  label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
       paths_table,
-      save = True,
-      obs_cols = ['skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']
+      # save = True,
+      obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']
       )
+      
+  # create positions
+  # locations are ZYX
+  min_pos_idx = [label_view.adata.var_names.get_loc(i)
+    for i in label_view.adata.var_names if i.startswith('image-coord-src-')]
+  max_pos_idx = [label_view.adata.var_names.get_loc(i)
+    for i in label_view.adata.var_names if i.startswith('image-coord-dst-')]
+  
+  # get centre for coords
+  # https://stackoverflow.com/a/18461943
+  label_view.adata.obsm = {
+    'spatial': np.mean(
+      np.array([
+        # adjust for image scale
+        # label_view.adata.X[:, min_pos_idx] * dim_utils.im_scale(['z', 'x', 'y']),
+        # label_view.adata.X[:, max_pos_idx] * dim_utils.im_scale(['z', 'x', 'y'])
+        label_view.adata.X[:, min_pos_idx],
+        label_view.adata.X[:, max_pos_idx]
+        ]),
+      axis = 0)}
+      
+  # create column identifier
+  label_view.adata.uns = {
+      'spatial_cols': np.array(['centroid_z', 'centroid_y', 'centroid_x']),
+      # 'spatial_neighbors': {
+      #     'connectivities_key': 'spatial_connectivities',
+      #     'distances_key': 'spatial_distances'
+      # }
+  }
+      
+  # save props
+  label_view.save(label_view.adata_filepath())
       
 def main():
   # get params
