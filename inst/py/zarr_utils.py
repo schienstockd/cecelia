@@ -142,12 +142,15 @@ def zarr_data_to_list(zarr_store, multiscales = None, data_group = 'datasets',
   # get first image in ome zarr bundle
   if omezarr is True:
     zgroup = zgroup[0]
-  
+    
   # set info
   # https://github.com/zarr-developers/zarr-python/blob/master/zarr/util.py
   # are there different pyramid levels?
   if 'multiscales' in zgroup.attrs and type(zgroup) != zarr.core.Array:
-    zarr_group_info = [dict(zgroup[i].info.obj.info_items()) for i in range(len(zgroup))]
+    # TODO that takes a long time
+    # Do I need this .. ?
+    # zarr_group_info = [dict(zgroup[i].info.obj.info_items()) for i in range(len(zgroup))]
+    zarr_group_info = None
     
     # slice multiscales
     if multiscales is None:

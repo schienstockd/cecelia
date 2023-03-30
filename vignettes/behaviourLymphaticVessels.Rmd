@@ -88,9 +88,7 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
-  popType = "live", pops = c(
-    "T/tracked"
-    ),
+  popType = "live", pops = c("T/tracked", "DC/tracked"),
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
@@ -239,6 +237,87 @@ ggplot(dfToPlot,
   scale_fill_brewer(name = NULL, palette = "Set3")
 ```
 
+```{r fig_track_DC_contact, fig.height=1, fig.width=1}
+# show contact of T cells to DCs
+tracksInfo <- cciaObj$tracksInfo(
+  "live.cell.contact#live.DC/tracked",
+  parentPop = "T/tracked", uIDs = uIDs
+)
+
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+# plot individual tracks
+dfToPlot <- tracksInfo %>%
+  left_join(unique(popDTs[, c(
+    "uID", "live.cell.track.clusters.movement", "track_id")])) %>%
+  mutate(DC.contact = time.interval * `live.cell.contact#live.DC/tracked.TRUE.n`)
+  # group_by(uID, live.cell.track.clusters.movement) %>%
+  # summarise(mean.contact = time.interval * mean(`live.cell.contact#live.DC/tracked.TRUE.n`))
+
+write.csv(dfToPlot, file.path(anaDir, "tracks_contact_DC.csv"))
+
+ggplot(dfToPlot, aes(live.cell.track.clusters.movement, DC.contact)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.3, alpha = 0.6) +
+  geom_boxplot(outlier.alpha = 0) +
+  ylab("DC contact time (min)") + xlab("") +
+  # ylim(0, 5) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+```
+
+```{r}
+cciaObj$popPaths(popType = "live", includeFiltered = TRUE)
+```
+
+
+```{r}
+# now can you plot how much a DC is in contact with a T cell?
+# get all DC contact IDs and set for DC
+popDTs$has_contact <- FALSE
+popDTs$contact_label <- NA
+contactLabels <- unique(popDTs$`live.cell.contact_id#live.DC/tracked`)
+popDTs[value_name == "DC" & label %in% contactLabels, has_contact := TRUE]
+
+# merge which T cell type is contacting DCs
+popDC <- copy(popDTs[value_name == "DC", c("uID", "track_id", "label")])
+popDC[popDTs[value_name == "T", c("uID", "track_id", "label", "live.cell.contact_id#live.DC/tracked")],
+      on = c("label" = "live.cell.contact_id#live.DC/tracked"),
+      `:=` (T_label = i.label, T_track_id = i.track_id)]
+
+# now add T cell type
+popDC[tcells.sc[, c("uID", "track_id", "clusters")],
+      on = c("uID", "T_track_id" = "track_id"), clusters := clusters]
+```
+
+
+```{r}
+# get occupancy for DC tracks
+occupancyDT <- popDC %>%
+  group_by(uID, track_id, clusters) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, track_id, clusters, fill = list(freq = 0)) %>%
+  dplyr::filter(!is.na(clusters))
+```
+
+```{r fig_DC_occupancy, fig.height=1, fig.width=1}
+# plot out
+write.csv(occupancyDT, file.path(anaDir, "DC_occupancy.csv"))
+
+ggplot(occupancyDT, aes(clusters, freq)) +
+  theme_classic() +
+  geom_jitter(
+    width = 0.3, alpha = 0.6) +
+  ylab("DC occupancy (%)") + xlab("") +
+  ylim(0, 100) +
+  geom_boxplot(outlier.alpha = 0) 
+```
+
+
+
 ```{r fig_clusters_DC_contact, fig.height=1, fig.width=1}
 # show contact of T cells to DCs
 tracksInfo <- cciaObj$tracksInfo(
@@ -269,6 +348,7 @@ ggplot(dfToPlot,
   ylim(0, 5) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 ```
+
 ```{r}
 # get DCs for image
 DCs <- cciaObj$popDT(
@@ -306,7 +386,7 @@ dfToPlot <- tracksInfo %>%
       summarise(unique.contacts = length(unique(track_id_DC)))},
     by = c("uID", track_id = "track_id_T", "live.cell.track.clusters.movement")
   ) %>%
-  mutate(time.per.DC = (time.interval * `live.cell.contact#live.DC/tracked.TRUE.n`)/ unique.contacts) %>%
+  mutate(time.per.DC = (time.interval * `live.cell.contact#live.DC/tracked.TRUE.n`)/unique.contacts) %>%
   # replace_na(list(unique.contacts = 0)) %>%
   group_by(uID, live.cell.track.clusters.movement) %>%
   summarise(

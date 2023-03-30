@@ -193,7 +193,8 @@ for (i in unique(hmmTime$uID)) {
 }
 
 time.interval <- cciaObj$cciaObjects()[[1]]$omeXMLTimelapseInfo()$interval
-plotColours <- c("#ff1493", "#ffd700", "#4169e1")
+# plotColours <- c("#ff1493", "#ffd700", "#4169e1")
+plotColours <- c("#0080ff", "#f28500", "black")
 ```
 
 
@@ -202,13 +203,14 @@ plotColours <- c("#ff1493", "#ffd700", "#4169e1")
 #        aes((centroid_t * time.interval), live.cell.speed,
 #            color = live.cell.track.clusters.default,
 #            fill = live.cell.track.clusters.default,
-ggplot(hmmTime,
+# ggplot(hmmTime,
+# ggplot(hmmTime %>% dplyr::filter(uID == "tbh61I"),
+ggplot(hmmTime %>% dplyr::filter(uID == "dFQ1N7"),
        aes((centroid_t * time.interval), freq,
            color = hmm.type,
            fill = hmm.type,
            )) +
-  geom_area(data = hmmTime %>% dplyr::filter(hmm.type == "1"),
-            aes(y = cno), alpha = 0.2) +
+  # geom_area(data = hmmTime %>% dplyr::filter(hmm.type == "1"), aes(y = cno), alpha = 0.2) +
   stat_smooth(span = 0.2) +
   # geom_line(size = 0.8) +
   theme_classic() +
@@ -216,18 +218,22 @@ ggplot(hmmTime,
   # scale_fill_brewer(name = NULL, palette = "Set1") +
   scale_color_manual(values = plotColours) +
   scale_fill_manual(values = plotColours) +
-  xlab("Time (min)") + ylab("Velocity (um/min)") +
-  facet_grid(uID~.) +
-  plotThemeDark(angle = 0) +
+  xlab("Time (min)") + ylab("HMM (%)") +
+  # facet_grid(uID~.) +
+  # plotThemeDark(angle = 0) +
   theme(
     legend.title = element_blank(),
-    legend.position = "bottom"
+    # legend.position = "bottom"
+    legend.position = "none"
     ) +
   ggtitle("") +
-  scale_x_continuous(limits = c(5, 100), breaks = seq(0, 120, 20)) +
+  # scale_x_continuous(limits = c(5, 100), breaks = seq(0, 120, 20)) +
+  scale_x_continuous(limits = c(5, 40), breaks = seq(0, 120, 20)) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
 
-ggsave(file.path(anaDir, "hmm_time.pdf"), height = 10, width = 5)
+# ggsave(file.path(anaDir, "hmm_time.pdf"), height = 10, width = 5)
+# ggsave(file.path(anaDir, "tbh61I_hmm_time.pdf"), height = 2, width = 3)
+ggsave(file.path(anaDir, "dFQ1N7_hmm_time.pdf"), height = 2, width = 2)
 
 # write.csv(hmmTime %>% mutate(
 #   time = centroid_t * time.interval

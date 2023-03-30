@@ -44,15 +44,15 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      # walltime = "00-04:00:00",
+      walltime = "00-04:00:00",
       # walltime = "01-00:00:00",
-      walltime = "02-00:00:00",
-      projectPartitions = "physical",
-      projectID = "punim1124",
-      useGPU = FALSE
-      # projectPartitions = "gpu-a100",
-      # projectID = "punim1031",
-      # useGPU = TRUE
+      # walltime = "02-00:00:00",
+      # projectPartitions = "physical",
+      # projectID = "punim1124",
+      # useGPU = FALSE
+      projectPartitions = "gpu-a100",
+      projectID = "punim1031",
+      useGPU = TRUE
     )
   ),
   utils = list(
@@ -109,24 +109,24 @@ cciaObj <- initCciaObject(
 # run cellpose
 # run task
 funParams <- list(
-  valueName = "default",
-  # valueName = "stroma",
+  # valueName = "default",
+  valueName = "stroma",
   models = list(
-    # "1" = list(
-    #   "model" = "ccia.fluo",
-    #   "matchAs" = "none",
-    #   "cellDiameter" = 10,
-    #   "cellChannels" = list("ALDH1 A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
-    #   "nucChannels" = list(),
-    #   "normalise" = 95,
-    #   "stitchThreshold" = 0.2,
-    #   # "mergeLabels" = FALSE,
-    #   "mergeLabels" = TRUE,
-    #   "threshold" = 1,
-    #   "relTreshold" = 0,
-    #   "gaussianFilter" = 0,
-    #   "medianFilter" = 0
-    # )
+    "1" = list(
+      "model" = "ccia.fluo",
+      "matchAs" = "none",
+      "cellDiameter" = 10,
+      "cellChannels" = list("ALDH1 A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
+      "nucChannels" = list(),
+      "normalise" = 95,
+      "stitchThreshold" = 0.2,
+      # "mergeLabels" = FALSE,
+      "mergeLabels" = TRUE,
+      "threshold" = 1,
+      "relTreshold" = 0,
+      "gaussianFilter" = 2,
+      "medianFilter" = 0
+    )
     # "1" = list(
     #   "model" = "cyto2",
     #   "matchAs" = "cyto",
@@ -147,35 +147,35 @@ funParams <- list(
     #   "gaussianFilter" = 0,
     #   "medianFilter" = 0
     # ),
-    "1" = list(
-      "model" = "cyto2",
-      # "matchAs" = "nuc",
-      "matchAs" = "none",
-      "cellDiameter" = 10,
-      "cellChannels" = list("Hoechst"),
-      "nucChannels" = list(),
-      "normalise" = 99,
-      "stitchThreshold" = 0.2,
-      "mergeLabels" = FALSE,
-      "threshold" = 0,
-      "relTreshold" = 0,
-      "gaussianFilter" = 0,
-      "medianFilter" = 0
-    )
+    # "1" = list(
+    #   "model" = "cyto2",
+    #   # "matchAs" = "nuc",
+    #   "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("Hoechst"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 99,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # )
   ),
   clearDepth = FALSE,
   clearTouchingBorder = FALSE,
-  # haloSize = 0,
-  # haloWholeCell = FALSE,
-  haloSize = 20, # for nuclei expansion
-  haloWholeCell = TRUE,
+  haloSize = 0,
+  haloWholeCell = FALSE,
+  # haloSize = 20, # for nuclei expansion
+  # haloWholeCell = TRUE,
   blockSize = 2048,
   overlap = 120,
   blockSizeZ = -1,
   overlapZ = -1,
   context = 40,
-  # segment = TRUE,
-  segment = FALSE,
+  segment = TRUE,
+  # segment = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
