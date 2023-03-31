@@ -99,6 +99,16 @@ class CellposeUtils(SegmentationUtils):
     # im_to_predict = im
     im_to_predict = np.squeeze(im)
     
+    # apply sum?
+    if 'sumFilter' in model_params.keys() and model_params['sumFilter'][0] > 0:
+      if self.dim_utils.is_3D():
+        sum_selem = skimage.morphology.ball(model_params['sumFilter'][0])
+      else:
+        sum_selem = skimage.morphology.disk(model_params['sumFilter'][0])
+      
+      im_to_predict = skimage.filters.rank.sum(im_to_predict, sum_selem)
+    
+    # apply median?
     if model_params['medianFilter'][0] > 0:
       if self.dim_utils.is_3D():
         median_selem = skimage.morphology.ball(model_params['medianFilter'][0])
@@ -106,8 +116,10 @@ class CellposeUtils(SegmentationUtils):
         median_selem = skimage.morphology.disk(model_params['medianFilter'][0])
       
       im_to_predict = skimage.filters.median(im_to_predict, median_selem)
-    
-    im_to_predict = ndi.gaussian_filter(im_to_predict, model_params['gaussianFilter'][0])
+      
+    # apply gaussian?
+    if model_params['gaussianFilter'][0] > 0:
+      im_to_predict = ndi.gaussian_filter(im_to_predict, model_params['gaussianFilter'][0])
     
     # normalise image
     if normalise_percentile > 0:

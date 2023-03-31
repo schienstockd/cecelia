@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE)
 pID <- "5g6H4F"
 versionID <- 1
 projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
@@ -106,6 +107,20 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
 
+cciaObj$imChannelNames()[cciaObj$imChannelNames() == "POSTN"]
+```
+
+
+```{r}
+# upload STOMICS
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
 # run cellpose
 # run task
 funParams <- list(
@@ -125,6 +140,7 @@ funParams <- list(
       "threshold" = 1,
       "relTreshold" = 0,
       "gaussianFilter" = 2,
+      "sumFilter" = 4,
       "medianFilter" = 0
     )
     # "1" = list(
@@ -176,6 +192,7 @@ funParams <- list(
   context = 40,
   segment = TRUE,
   # segment = FALSE,
+  measure = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
@@ -198,8 +215,8 @@ task <- cciaObj$runTask(
   # env = "local",
   runInplace = FALSE,
   # runInplace = TRUE,
-  taskID = 1
-  # taskID = 2
+  # taskID = 1
+  taskID = 2
 )
 ```
 
@@ -280,6 +297,68 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
+# run population clustering
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
+)
+
+channelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
+channelNames <- unname(channelNames[channelNames != "Hoechst"])
+uIDs <- c("aSf5Rr")
+
+# run task
+funParams <- list(
+  popType = "flow",
+  popsToCluster = c(),
+  savePops = FALSE,
+  keepPops = FALSE,
+  resolution = 1.0,
+  mergeUmap = TRUE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  # transformation = "log",
+  transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(
+      channels = channelNames
+    )
+  )
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  # runInplace = TRUE,
+  runInplace = FALSE,
+  taskID = 1
+)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$popDT("branch", pops = c("stroma.branch"), popCols = c("branching-type"))
+```
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
@@ -326,7 +405,7 @@ ggplot(branchingDT, aes(`coord-dst-2`, `coord-dst-1`, color = as.factor(`branch-
   scale_color_brewer(palette = "Set1") +
   plotThemeDark(angle = 0)
 
-ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
 ```
 
 ```{r}

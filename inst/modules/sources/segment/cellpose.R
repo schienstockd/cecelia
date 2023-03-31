@@ -90,6 +90,7 @@ Cellpose <- R6::R6Class(
         clearTouchingBorder = self$funParams()$clearTouchingBorder,
         updateMeasures = self$funParams()$updateMeasures,
         segment = self$funParams()$segment,
+        measure = self$funParams()$measure,
         saveMeshes = self$funParams()$saveMeshes,
         saveMeasures = self$funParams()$saveMeasures,
         extendedMeasures = self$funParams()$extendedMeasures

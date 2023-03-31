@@ -5,7 +5,7 @@ import py.math_helpers as math_helpers
 import py.ome_xml_utils as ome_xml_utils
 
 class DimUtils:
-  def __init__(self, omexml, use_channel_axis = False):
+  def __init__(self, omexml, use_channel_axis = True):
     self.default_order = list("TZCYX")
     self.omexml = omexml
     self.use_channel_axis = use_channel_axis

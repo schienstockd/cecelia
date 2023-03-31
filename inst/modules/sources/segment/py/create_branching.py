@@ -136,10 +136,15 @@ def run(params):
         label_view.adata.X[:, max_pos_idx]
         ]),
       axis = 0)}
-      
+  
+  if dim_utils.is_3D() is True:
+    spatial_cols = np.array(['centroid_z', 'centroid_y', 'centroid_x'])
+  else:
+    spatial_cols = np.array(['centroid_y', 'centroid_x'])
+  
   # create column identifier
   label_view.adata.uns = {
-      'spatial_cols': np.array(['centroid_z', 'centroid_y', 'centroid_x']),
+      'spatial_cols': spatial_cols,
       # 'spatial_neighbors': {
       #     'connectivities_key': 'spatial_connectivities',
       #     'distances_key': 'spatial_distances'

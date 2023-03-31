@@ -32,7 +32,7 @@ def run(params):
     'task_dir': params['taskDir'],
     'im_path': params['imPath'],
     'segment': params['segment'] if 'segment' in params else True,
-    'measure': True,
+    'measure': params['measure'] if 'measure' in params else True,
     'update_measures': params['updateMeasures'] if 'updateMeasures' in params else False,
     'save_measures': params['saveMeasures'] if 'saveMeasures' in params else True,
     'save_meshes': params['saveMeshes'] if 'saveMeshes' in params else False,
