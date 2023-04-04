@@ -57,7 +57,8 @@
 				"label": "Populations",
 				"widget:popSelection": {
 					"size": 1,
-					"multiple": true
+					"multiple": true,
+					"includeRoot": true
 				}
 			},
 			"neighbourMethod": {

@@ -102,8 +102,7 @@ SpatialAnalysis <- R6::R6Class(
             self$funParams()$popsB,
             function(x) {
               list(
-                filterMeasure = sprintf(
-                  "%s.cell.contact#%s", popTypeA, x),
+                filterMeasure = sprintf("%s.cell.contact#%s", popTypeA, x),
                 filterValues = TRUE,
                 filterFun = "eq"
               )
@@ -122,8 +121,7 @@ SpatialAnalysis <- R6::R6Class(
           
           # get value name from parent
           popValueName <- cciaObj$popAttr(
-            popTypeA,
-            "valueName", popPath = i, includeFiltered = TRUE)[[1]]
+            popTypeA, "valueName", popPath = parentPops, includeFiltered = TRUE)[[1]]
           
           # add populations
           cciaObj$addFilteredPops(popTypeA, parentPops, pops,

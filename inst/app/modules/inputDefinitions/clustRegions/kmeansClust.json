@@ -16,6 +16,9 @@
       "pops": {
         "type:list": {}
       },
+      "objectMeasures": {
+        "type:list": {}
+      },
       "numClusters": {
 				"type:integer": {
 					"min": 1,
@@ -29,6 +32,16 @@
 				}
 			},
       "useClusters": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+      "includeCounts": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+      "includeTotalCount": {
 				"type:boolean": {
 					"default": false
 				}
@@ -57,30 +70,52 @@
 				"label": "Populations",
 				"widget:popSelection": {
 					"size": 1,
-					"multiple": true
+					"multiple": true,
+					"includeRoot": true
+				}
+			},
+			"objectMeasures": {
+				"index": 2,
+				"label": "Object measures",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true,
+					"includeChannels": false
 				}
 			},
 			"numClusters": {
-				"index": 2,
+				"index": 3,
 				"label": "Number of clusters",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"excludeSelfConnections": {
-				"index": 3,
+				"index": 4,
 				"label": "Exclude self connections",
 				"widget:checkbox": {
 				}
 			},
 			"useClusters": {
-				"index": 4,
+				"index": 5,
 				"label": "Use clusters",
 				"widget:checkbox": {
 				}
 			},
+			"includeCounts": {
+				"index": 6,
+				"label": "Include counts",
+				"widget:checkbox": {
+				}
+			},
+			"includeTotalCount": {
+				"index": 7,
+				"label": "Include total count",
+				"widget:checkbox": {
+				}
+			},
 			"expandPops": {
-				"index": 5,
+				"index": 8,
 				"label": "Expand populations",
 				"widget:checkbox": {
 				}

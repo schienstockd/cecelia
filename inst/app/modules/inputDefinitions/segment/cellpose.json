@@ -84,6 +84,13 @@
 							"max": 10,
 							"default": 0
 						}
+					},
+					"sumFilter": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 0
+						}
 					}
         }
       },
@@ -319,6 +326,13 @@
 					"gaussianFilter": {
 						"index": 11,
 						"label": "Gaussian filter",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"sumFilter": {
+						"index": 12,
+						"label": "Sum filter",
 						"widget:slider": {
 							"step": 1
 						}

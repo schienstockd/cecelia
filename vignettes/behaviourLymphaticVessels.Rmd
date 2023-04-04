@@ -94,6 +94,76 @@ popDTs <- cciaObj$popDT(
   uIDs = uIDs)
 ```
 
+```{r fig_hmm_props, fig.height=2, fig.width=2.5}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.movement"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+```
+
 ```{r fig_umap, fig.height=3, fig.width=3}
 dfToPlot <- copy(tcells.sc) %>% left_join(exp.info)
 

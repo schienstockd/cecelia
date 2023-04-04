@@ -95,21 +95,57 @@ KmeansClust <- R6::R6Class(
         group_by(.dots = c("uID", "from", groupFrom, groupTo)) %>%
         summarise(n = n()) %>%
         mutate(freq = n/sum(n) * 100) %>%
-        drop_na() %>%
-        ungroup() 
+        drop_na()
         # TODO do I need this .. ?
+        # ungroup() 
         # complete(uID, !!!syms(groupFrom), !!!syms(groupTo), fill = list(freq = 0))
       
       # use K-Means to get clusters of regions
       normalit <- function(m) (m - min(m))/(max(m)-min(m))
       
-      freqRegionsWider <- as.data.table(freqRegions %>%
-        pivot_wider(
-          id_cols = c(uID, from, sym(groupFrom)),
-          names_from = sym(groupTo),
-          values_from = freq,
-          values_fill = 0
-        ))
+      # include counts?
+      if (self$funParams()$includeCounts == TRUE) {
+        freqRegionsWider <- as.data.table(
+          freqRegions %>% pivot_wider(
+            id_cols = c(uID, from, sym(groupFrom)),
+            names_from = sym(groupTo),
+            values_from = c(freq, n),
+            values_fill = 0))
+      } else {
+        freqRegionsWider <- as.data.table(
+          freqRegions %>% pivot_wider(
+            id_cols = c(uID, from, sym(groupFrom)),
+            names_from = sym(groupTo),
+            values_from = freq,
+            values_fill = 0))
+      }
+      
+      # add total count?
+      if (self$funParams()$includeTotalCount > 0) {
+        freqRegionsWider <- freqRegionsWider[
+          as.data.table(spatialDT %>%
+            group_by(.dots = c("uID", "from")) %>%
+            summarise(sum = sum(n()))),
+          on = c("uID", "from")]
+      }
+      
+      # add object measurements?
+      if (length(self$funParams()$objectMeasures) > 0) {
+        popCols <- c("uID", "label", self$funParams()$objectMeasures)
+        
+        # TODO can you do this by reference assignment?
+        spatialDT <- spatialDT[popDT[, ..popCols], on = c("uID", "to" = "label")]
+        
+        # add to regions
+        freqRegionsWider <- freqRegionsWider[
+          as.data.table(spatialDT %>%
+            group_by(.dots = c("uID", "from")) %>%
+            summarise(across(self$funParams()$objectMeasures, ~ mean(.x, na.rm = TRUE)))),
+          on = c("uID", "from")]
+      }
+      
+      # drop na
+      freqRegionsWider <- freqRegionsWider[complete.cases(freqRegionsWider)]
       
       freqRegionsMat <- as.matrix(
         freqRegionsWider %>%

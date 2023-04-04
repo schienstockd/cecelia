@@ -23,7 +23,8 @@ def run(params):
   branching_name = script_utils.get_param(params, 'branchingName')
   
   im_path = script_utils.get_param(params, 'imPath')
-  dilation_size = script_utils.get_param(params, 'dilationSize')
+  pre_dilation_size = script_utils.get_param(params, 'preDilationSize')
+  post_dilation_size = script_utils.get_param(params, 'postDilationSize')
   
   # logging
   logfile_utils = script_utils.get_logfile_utils(params)
@@ -40,23 +41,36 @@ def run(params):
   
   # https://skeleton-analysis.org/stable/examples/visualizing_3d_skeletons.html
   logfile_utils.log(f'> create skeleton')
-
+  
+  # get image to process
+  im = (np.squeeze(labels_data[0]) > 0).astype(np.uint8)
+  
+  logfile_utils.log(f'> dilate pre {pre_dilation_size}')
+  
+  if pre_dilation_size > 0:
+    if dim_utils.is_3D() is True:
+      pre_selem = skimage.morphology.ball(pre_dilation_size)
+    else:
+      pre_selem = skimage.morphology.disk(pre_dilation_size)
+        
+    im = skimage.morphology.binary_closing(im, pre_selem)
+  
   # create skeleton
-  binary_skeleton = skimage.morphology.skeletonize(
-      (np.squeeze(labels_data[0]) > 0).astype(np.uint8))
+  logfile_utils.log(f'> skeletonize')
+  binary_skeleton = skimage.morphology.skeletonize(im)
   skeleton = skan.Skeleton(binary_skeleton)
   del(binary_skeleton)
 
   # dilate
-  logfile_utils.log(f'> dilate {dilation_size}')
+  logfile_utils.log(f'> dilate post {post_dilation_size}')
 
-  if dilation_size > 0:
+  if post_dilation_size > 0:
     if dim_utils.is_3D() is True:
-      skeleton_labels = skimage.morphology.dilation(
-        np.asarray(skeleton), skimage.morphology.ball(dilation_size))
+      post_selem = skimage.morphology.ball(post_dilation_size)
     else:
-      skeleton_labels = skimage.morphology.dilation(
-        np.asarray(skeleton), skimage.morphology.disk(dilation_size))
+      post_selem = skimage.morphology.disk(post_dilation_size)
+        
+    skeleton_labels = skimage.morphology.dilation(np.asarray(skeleton), post_selem)
 
   logfile_utils.log(f'> expand dimension?')
 

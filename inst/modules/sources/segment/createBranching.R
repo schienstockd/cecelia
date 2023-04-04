@@ -30,7 +30,8 @@ CreateBranching <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         imPath = cciaObj$imFilepath(),
         branchingName = branchingName,
-        dilationSize = self$funParams()$dilationSize
+        preDilationSize = self$funParams()$preDilationSize,
+        postDilationSize = self$funParams()$postDilationSize
       )
       
       # call python
@@ -43,7 +44,7 @@ CreateBranching <- R6::R6Class(
       # update image information
       cciaObj$setImLabelsFilepath(
         paste0(branchingName, cciaConf()$files$ext$labels),
-        valueName = branchingName
+        valueName = branchingName, setDefault = FALSE
       )
       
       # load data from disk when loading the object
@@ -51,7 +52,7 @@ CreateBranching <- R6::R6Class(
       # and slow to load
       cciaObj$setImLabelPropsFilepath(
         paste0(branchingName, cciaConf()$files$ext$labelProps),
-        valueName = branchingName
+        valueName = branchingName, setDefault = FALSE
       )
       
       # create populations for branching
@@ -60,7 +61,7 @@ CreateBranching <- R6::R6Class(
       # create populations for branching types
       # create classification populations
       popDT <- cciaObj$popDT(popType, pops = c(branchingName),
-                             popCols = c("branching-type"))
+                             popCols = c("branch-type"))
       
       # add children
       pops <- list()

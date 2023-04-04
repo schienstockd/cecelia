@@ -70,17 +70,13 @@ Segment <- R6::R6Class(
         labelsPath <- paste0(valueName, cciaConf()$files$ext$labels)
         attr(labelsPath, "suffixes") <- unlist(labelSuffixes)
         
-        cciaObj$setImLabelsFilepath(
-          labelsPath, valueName = valueName
-        )
+        cciaObj$setImLabelsFilepath(labelsPath, valueName = valueName)
         
         # set suffixes for channel names
         channelNames <- cciaObj$imChannelNames()
         attr(channelNames, "types") <- unlist(labelSuffixes)
         
-        cciaObj$setImChannelNames(
-          channelNames, valueName = valueName
-        )
+        cciaObj$setImChannelNames(channelNames, valueName = valueName)
       } else{
         cciaObj$setImLabelsFilepath(
           paste0(valueName, cciaConf()$files$ext$labels),

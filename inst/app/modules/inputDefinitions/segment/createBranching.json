@@ -12,11 +12,18 @@
 				"type:character": {
 				}
 			},
-			"dilationSize": {
+			"preDilationSize": {
 				"type:integer": {
 					"min": 0,
 					"max": 10,
-					"default": 1
+					"default": 2
+				}
+			},
+			"postDilationSize": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 2
 				}
 			}
     },
@@ -33,9 +40,16 @@
 					"field": "imLabelsFilepath"
 				}
 			},
-			"dilationSize": {
+			"preDilationSize": {
 				"index": 1,
-				"label": "Branch dilation",
+				"label": "Branch pre dilation",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"postDilationSize": {
+				"index": 2,
+				"label": "Branch post dilation",
 				"widget:slider": {
 					"step": 1
 				}

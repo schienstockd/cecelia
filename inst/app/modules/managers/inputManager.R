@@ -837,10 +837,14 @@ InputManager <- R6::R6Class(
     # build population choices
     buildPopChoices = function(uiContent) {
       popChoices <- NULL
+      includeRoot <- FALSE
+      
+      if ("includeRoot" %in% names(uiContent) && uiContent$includeRoot == TRUE)
+        includeRoot <- TRUE
       
       if ("showAll" %in% names(uiContent) && uiContent$showAll == TRUE) {
         popChoices <- self$cciaObject()$popPathsAll(
-          includeFiltered = TRUE, flattenPops = TRUE,
+          includeFiltered = TRUE, flattenPops = TRUE, includeRoot = includeRoot,
           useNames = !"useNames" %in% names(uiContent) || uiContent$useNames == FALSE)
       } else {
         # was a pop type specified?
@@ -851,7 +855,7 @@ InputManager <- R6::R6Class(
         
         if (!is.null(self$cciaObject()$popUtils(self$getPopType()))) {
           popChoices <- self$cciaObject()$popPaths(
-            popType, includeFiltered = TRUE)
+            popType, includeFiltered = TRUE, includeRoot = includeRoot)
           
           # use names instead of uIDs
           if (!"useNames" %in% names(uiContent) || uiContent$useNames == FALSE) {

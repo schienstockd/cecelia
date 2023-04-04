@@ -46,7 +46,8 @@ HPC_CONF <-  list(
       numGPUperTask = 1,
       memory = 50,
       walltime = "00-04:00:00",
-      # walltime = "01-00:00:00",
+      # walltime = "00-01:00:00",
+      # walltime = "00-00:10:00",
       # walltime = "02-00:00:00",
       # projectPartitions = "physical",
       # projectID = "punim1124",
@@ -106,8 +107,6 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDi
 cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
-
-cciaObj$imChannelNames()[cciaObj$imChannelNames() == "POSTN"]
 ```
 
 
@@ -124,25 +123,26 @@ cciaObj <- initCciaObject(
 # run cellpose
 # run task
 funParams <- list(
-  # valueName = "default",
-  valueName = "stroma",
+  valueName = "default",
+  # valueName = "stroma",
   models = list(
-    "1" = list(
-      "model" = "ccia.fluo",
-      "matchAs" = "none",
-      "cellDiameter" = 10,
-      "cellChannels" = list("ALDH1 A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
-      "nucChannels" = list(),
-      "normalise" = 95,
-      "stitchThreshold" = 0.2,
-      # "mergeLabels" = FALSE,
-      "mergeLabels" = TRUE,
-      "threshold" = 1,
-      "relTreshold" = 0,
-      "gaussianFilter" = 2,
-      "sumFilter" = 4,
-      "medianFilter" = 0
-    )
+    # "1" = list(
+    #   "model" = "ccia.fluo",
+    #   # "model" = "cyto2",
+    #   "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("ALDH1A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 98,
+    #   "stitchThreshold" = 0.2,
+    #   # "mergeLabels" = FALSE,
+    #   "mergeLabels" = TRUE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 4,
+    #   "sumFilter" = 0,
+    #   "medianFilter" = 0
+    # )
     # "1" = list(
     #   "model" = "cyto2",
     #   "matchAs" = "cyto",
@@ -163,36 +163,39 @@ funParams <- list(
     #   "gaussianFilter" = 0,
     #   "medianFilter" = 0
     # ),
-    # "1" = list(
-    #   "model" = "cyto2",
-    #   # "matchAs" = "nuc",
-    #   "matchAs" = "none",
-    #   "cellDiameter" = 10,
-    #   "cellChannels" = list("Hoechst"),
-    #   "nucChannels" = list(),
-    #   "normalise" = 99,
-    #   "stitchThreshold" = 0.2,
-    #   "mergeLabels" = FALSE,
-    #   "threshold" = 0,
-    #   "relTreshold" = 0,
-    #   "gaussianFilter" = 0,
-    #   "medianFilter" = 0
-    # )
+    "1" = list(
+      "model" = "cyto2",
+      # "matchAs" = "nuc",
+      "matchAs" = "none",
+      "cellDiameter" = 10,
+      "cellChannels" = list("Hoechst"),
+      "nucChannels" = list(),
+      "normalise" = 99,
+      "stitchThreshold" = 0.2,
+      "mergeLabels" = FALSE,
+      "threshold" = 0,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "medianFilter" = 0
+    )
   ),
   clearDepth = FALSE,
   clearTouchingBorder = FALSE,
-  haloSize = 0,
-  haloWholeCell = FALSE,
-  # haloSize = 20, # for nuclei expansion
-  # haloWholeCell = TRUE,
+  # haloSize = 0,
+  # haloWholeCell = FALSE,
+  haloSize = 20, # for nuclei expansion
+  haloWholeCell = TRUE,
   blockSize = 2048,
-  overlap = 120,
+  # overlap = 120, # for larger structures
+  # context = 40,
+  overlap = 64,
+  context = 52,
   blockSizeZ = -1,
   overlapZ = -1,
-  context = 40,
   segment = TRUE,
   # segment = FALSE,
-  measure = FALSE,
+  measure = TRUE,
+  # measure = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
@@ -215,8 +218,38 @@ task <- cciaObj$runTask(
   # env = "local",
   runInplace = FALSE,
   # runInplace = TRUE,
-  # taskID = 1
-  taskID = 2
+  taskID = 1
+  # taskID = 2
+)
+```
+
+```{r}
+# retrieve 
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+# run cellpose
+# run task
+funParams <- list(
+  # valueNames = c("default", "stroma"),
+  valueNames = c("stroma"),
+  retrieveMeshesOnly = FALSE
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.retrieve",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
 )
 ```
 
@@ -306,8 +339,6 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
 )
 
-channelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
-channelNames <- unname(channelNames[channelNames != "Hoechst"])
 uIDs <- c("aSf5Rr")
 
 # run task
@@ -315,6 +346,66 @@ funParams <- list(
   popType = "flow",
   popsToCluster = c(),
   savePops = FALSE,
+  keepPops = FALSE,
+  resolution = 0.1,
+  mergeUmap = FALSE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  # transformation = "log",
+  transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(
+      channels = c(0)
+    )
+  ),
+  objectMeasures = c("area", "perimeter")
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  # runInplace = TRUE,
+  runInplace = FALSE,
+  taskID = 1
+)
+```
+
+```{r}
+# run population clustering
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
+)
+
+allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
+channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
+
+# get numbers
+channelNames <- sapply(
+  channelNames, function(x) {
+    unname(which(allChannelNames == x)) - 1
+  }, USE.NAMES = FALSE
+)
+
+uIDs <- c("aSf5Rr")
+
+# run task
+funParams <- list(
+  popType = "clust",
+  popsToCluster = c(),
+  # savePops = TRUE,
+  savePops = FALSE,
+  # keepPops = TRUE,
   keepPops = FALSE,
   resolution = 1.0,
   mergeUmap = TRUE,
@@ -329,9 +420,17 @@ funParams <- list(
   valueName = "default",
   uIDs = uIDs,
   clusterChannels = list(
+    # halo = list(
+    #   channels = channelNames
+    # ),
     base = list(
       channels = channelNames
     )
+  ),
+  objectMeasures = c(
+    "area", "perimeter", "solidity",
+    "oblate", "prolate", "extent",
+    "fill", "eccentricity"
   )
 )
 
@@ -345,8 +444,107 @@ task <- cciaObj$runTask(
 )
 ```
 
+```{r}
+# create populations for branching
+popType <- "clust"
+valueName <- "default"
+
+# add children
+pops <- list(
+  "invasive" = list(
+    filterMeasure = "clusters",
+    filterValues = "0",
+    filterFun = "eq"
+  )
+)
+parentPops <- "root"
+
+# remove populations
+cciaObj$delPopsByPath(
+  popType,
+  pops = levels(interaction(parentPops, names(pops), sep = "/")),
+  includeFiltered = TRUE
+)
+
+# add populations
+cciaObj$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+
+# save to disk
+cciaObj$savePops(popType, purge = TRUE, includeFiltered = TRUE)
+
+# save object
+# cciaObj$saveState()
+```
 
 ```{r}
+# run population clustering
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
+)
+
+allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
+channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
+
+# get numbers
+channelNames <- sapply(
+  channelNames, function(x) {
+    unname(which(allChannelNames == x)) - 1
+  }, USE.NAMES = FALSE
+)
+
+uIDs <- c("aSf5Rr")
+
+# run task
+funParams <- list(
+  popType = "clust",
+  popsToCluster = c("invasive"),
+  # savePops = TRUE,
+  savePops = FALSE,
+  keepPops = TRUE,
+  # keepPops = FALSE,
+  resolution = 0.4,
+  mergeUmap = TRUE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  # transformation = "log",
+  transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    # halo = list(
+    #   channels = channelNames
+    # ),
+    base = list(
+      channels = channelNames
+    )
+  ),
+  objectMeasures = c(
+    "area", "perimeter", "solidity",
+    "oblate", "prolate", "extent",
+    "fill", "eccentricity"
+  )
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  # runInplace = TRUE,
+  runInplace = FALSE,
+  taskID = 1
+)
+```
+
+```{r}
+# plot out where the clusters are
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
@@ -355,7 +553,260 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$popDT("branch", pops = c("stroma.branch"), popCols = c("branching-type"))
+popDT <- cciaObj$popDT(
+  popType = "clust", includeFiltered = TRUE, includeX = FALSE, completeDT = TRUE)
+  # popCols = c("label", "clusters", "UMAP_1", "UMAP_2"))
+```
+
+```{r fig_clust_spatial, fig.height=5, fig.width=13}
+# plot out
+for (i in unique(popDT$clusters)) {
+  x <- popDT[clusters == i]
+  y <- popDT[clusters != i]
+
+  p1 <- ggplot(y, aes(centroid_x, centroid_y)) +
+    theme_classic() +
+    geom_point(data = y, size = 1, color = "#5B5B5B") +
+    # geom_point(data = x, size = 1, color = "#FFCD2E") +
+    geom_point(data = x, size = 1, color = .flowColours(x$centroid_x, x$centroid_y)) +
+    coord_fixed() +
+    plotThemeDark(angle = 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none"
+    )
+  
+  print(p1)
+  
+  ggsave(file.path(anaDir, "clusters", "indv", paste0("aSf5Rr_cluster_", i, ".png")), height = 10, width = 13)
+}
+```
+```{r fig_clust_spatial, fig.height=5, fig.width=13}
+# plot out
+x <- popDT[clusters %in% tumourClusters]
+y <- popDT[!clusters %in% tumourClusters]
+
+ggplot(popDT, aes(centroid_x, centroid_y)) +
+  theme_classic() +
+  geom_point(data = y, size = 1, color = "#5B5B5B") +
+  # geom_point(data = x, size = 1, color = "#FFCD2E") +
+  geom_point(data = x, size = 1, color = .flowColours(x$centroid_x, x$centroid_y)) +
+  coord_fixed() +
+  plotThemeDark(angle = 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+ggsave(file.path(anaDir, "clusters", "indv", paste0("aSf5Rr_tumour.png")), height = 10, width = 13)
+```
+
+```{r fig_clust_spatial, fig.height=5, fig.width=13}
+# plot out
+limY <- quantile(popDT$MKI67, probs = 0.99)[[1]]
+
+ggplot(popDT, aes(centroid_x, centroid_y, z = MKI67)) +
+  theme_classic() +
+  stat_summary_2d(bins = 128) +
+  viridis::scale_fill_viridis(limits = c(0, limY)) +
+  coord_fixed() +
+  plotThemeDark(angle = 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+ggsave(file.path(anaDir, "clusters", "markers", paste0("aSf5Rr_markers_MKI67.png")), height = 10, width = 13)
+```
+
+```{r}
+excludeCols <- c("label", "clusters", "pop", "UMAP_1", "UMAP_2", "centroid_x", "centroid_y")
+colsToShow <- colnames(popDT)[!colnames(popDT) %in% excludeCols]
+
+# show heatmap
+markersToPlot <- popDT %>%
+  pivot_longer(
+    cols = all_of(colsToShow), names_to = "marker", values_to = "value"
+    )
+markersToPlot$marker <- as.factor(markersToPlot$marker)
+
+# show heatmap for clusters
+markersSummary <- markersToPlot %>%
+  drop_na() %>%
+  group_by(marker, clusters) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
+  replace_na(list(norm = 0))
+
+# find order for clusters and markers
+markersMatrix <- markersSummary %>%
+  pivot_wider(names_from = marker, values_from = norm, id_cols = "clusters")
+
+hcClusters <- hclust(dist(as.matrix(markersMatrix %>% dplyr::select(-clusters))), "ave")
+hcMarkers <- hclust(dist(t(as.matrix(markersMatrix %>% dplyr::select(-clusters)))), "ave")
+
+clustersOrder <- markersMatrix$clusters[hcClusters$order]
+markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMarkers$order]
+
+markersSummary <- markersSummary %>%
+  mutate(
+    clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
+    marker = factor(marker, levels = markerOrder)
+  )
+```
+
+
+```{r fig_heat, fig.height=20, fig.width=20}
+p1 <- ggplot(markersSummary, aes(clusters, marker)) +
+  theme_classic() +
+  # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+  geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20),
+    legend.key.size = unit(10, "mm"),
+    # axis.text.y = element_text(size = 20),
+    # axis.text.x = element_text(size = 20),
+    axis.text.x = element_text(size = 10, angle = 90, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("") +
+  coord_flip()
+
+# ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_heat.pdf")), height = 49, width = 8)
+ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_heat.pdf")), plot = p1, height = 8, width = 49)
+```
+
+```{r}
+# define populations
+popMap <- list(
+  "Malignant.ESR-" = c("0", "4"),
+  "Malignant.ESR+" = c("3"),
+  "Malignant.KI67+" = c("9"),
+  "FoxP3+ T cells" = c("1"),
+  "Stroma" = c("2"),
+  # "Malignant.ESRlo" = c("4"),
+  "CD86+ Macro" = c("5"),
+  "Undefined" = c("6"),
+  "CD8+ T cells" = c("7"),
+  "CLEC14A+" = c("8")
+)
+```
+
+```{r fig_clust_spatial_pops, fig.height=5, fig.width=13}
+popDT$clusters.pop <- "NONE"
+
+for (i in names(popMap)) {
+  for (y in popMap[[i]])
+    popDT[clusters == y, clusters.pop := i]
+}
+
+# plot out
+p1 <- ggplot(popDT[clusters.pop %in% c(
+  "Malignant.ESR-", "Malignant.ESR+", "Malignant.KI67+", "FoxP3+ T cells",
+  "Macro", "CD8+ T cells", "CD86+ Macro"
+)], aes(centroid_x, centroid_y, color = clusters.pop)) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  theme_classic() +
+  geom_point(size = 0.2) +
+  coord_fixed() +
+  plotThemeDark(angle = 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "bottom",
+    legend.title = element_blank(),
+    legend.key.size = unit(5, "mm"),
+    legend.text = element_text(size = 18),
+  ) + guides(colour = guide_legend(override.aes = list(size = 4)))
+p2 <- p1 + theme(legend.position = "none")
+  
+ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_pops.png")), plot = p1, height = 10, width = 13)
+ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_pops_wo_legend.png")), plot = p2, height = 10, width = 13)
+```
+
+```{r fig_pops_umap, fig.height=2, fig.width=2}
+library(tidyverse)
+
+# datToPlot <- popDT[clusters != "7"]
+datToPlot <- popDT
+
+# get mean positions of clusters
+meanClusterPos <- datToPlot %>%
+  group_by(clusters) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+
+clustersPalette <- randomcoloR::distinctColorPalette(
+  length(unique(datToPlot$clusters)))
+
+# plot UMAP with paga connections
+ggplot(
+  datToPlot %>%
+    mutate(clusters = factor(clusters, levels = clustersOrder)),
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(aes(color = as.factor(clusters)), size = 0.5) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_manual(values = clustersPalette) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "center",
+    legend.direction = "horizontal",
+    legend.position = "bottom",
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.key.size = unit(5, "mm"),
+    legend.text = element_text(size = 18),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) +
+  guides(colour = guide_legend(override.aes = list(size = 4)))
+  # geom_label(
+  #   data = meanClusterPos,
+  #   aes(label = clusters),
+  #   label.size = 0.25,
+  #   color = "black"
+  #   )
+
+ggsave(file.path(anaDir, "clusters", "aSf5Rr_umap.tiff"), width = 5, height = 6.5)
 ```
 
 ```{r}
@@ -370,7 +821,8 @@ cciaObj <- initCciaObject(
 # run task
 funParams <- list(
   valueName = "stroma",
-  dilationSize = 1
+  preDilationSize = 20,
+  postDilationSize = 2
 )
 
 # run task
@@ -378,7 +830,7 @@ task <- cciaObj$runTask(
   funName = "segment.createBranching",
   funParams = funParams,
   env = "local",
-  runInplace = TRUE,
+  runInplace = FALSE,
   taskID = 1
 )
 ```
@@ -393,19 +845,347 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
 
-branchingDT <- as.data.table(cciaObj$labelProps(valueName = "stroma.branch")$as_df())
+pops <- unlist(unname(cciaObj$popPaths("branch", includeFiltered = TRUE)))
+
+# branchingDT <- as.data.table(cciaObj$labelProps(valueName = "stroma.branch")$as_df())
+branchingDT <- cciaObj$popDT("branch", pops = pops, popCols = c("branching-type"),
+                             includeFiltered = TRUE)
 ```
 
 ```{r fig_branching, fig.height=5, fig.width=13}
-# show branching of stroma network
-ggplot(branchingDT, aes(`coord-dst-2`, `coord-dst-1`, color = as.factor(`branch-type`))) +
+# can you show tumour and stroma network?
+limY <- quantile(branchingDT$`branch-distance`, probs = 0.98)[[1]]
+# limY <- quantile(branchingDT$`euclidean-distance`, probs = 0.98)[[1]]
+
+ggplot(branchingDT, aes(centroid_x, centroid_y, color = as.factor(`branch-type`))) +
+# ggplot(branchingDT, aes(centroid_x, centroid_y, color = `branch-distance`)) +
+# ggplot(branchingDT, aes(centroid_x, centroid_y, color = `euclidean-distance`)) +
   theme_classic() +
   geom_point(size = 0.5) +
   coord_fixed() +
   scale_color_brewer(palette = "Set1") +
-  plotThemeDark(angle = 0)
+  # viridis::scale_colour_viridis(limits = c(0, limY)) +
+  plotThemeDark(angle = 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
 
-# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type.png'), height = 20, width = 30)
+ggsave(file.path(anaDir, 'clusters', 'aSf5Rr_branching_type.png'), height = 20, width = 30)
+# ggsave(file.path(anaDir, 'clusters', 'aSf5Rr_branching_dist.png'), height = 20, width = 30)
+```
+
+```{r fig_branching_heat, fig.height=5, fig.width=13}
+# show heatplots
+branchingDT[, branch_pocket := 0]
+branchingDT[`branch-type` > 0, branch_pocket := 1]
+
+# for (i in unique(branchingDT$`branch-type`)) {
+for (i in unique(branchingDT$branch_pocket)) {
+  # xDT <- branchingDT[`branch-type` == i]
+  xDT <- branchingDT[branch_pocket == i]
+
+  p1 <- ggplot(xDT, aes(centroid_x, centroid_y)) +
+    theme_classic() +
+    geom_point(size = 0.5, color = .flowColours(xDT$centroid_x, xDT$centroid_y)) +
+    coord_fixed() +
+    viridis::scale_fill_viridis() +
+    plotThemeDark(angle = 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none"
+    )
+  
+  print(p1)
+  
+  # ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_branching_", i, ".png")), height = 5, width = 8)
+  ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_pocket_", i, ".png")), height = 5, width = 8)
+}
+```
+
+```{r}
+# show distance of tumour to stroma
+popNN <- dbscan::kNN(
+  as.matrix(branchingDT[`branch-type` > 0, c('centroid_y', 'centroid_x')]),
+  # as.matrix(branchingDT[, c('centroid_y', 'centroid_x')]),
+  k = 1,
+  query = as.matrix(popDT[, c('centroid_y', 'centroid_x')]))
+
+# assign dists to pops
+popDT[, stroma.dist := popNN$dist]
+```
+
+```{r fig_branching, fig.height=8, fig.width=13}
+tumourClusters <- c("0", "9", "22", "23", "24")
+
+limMax <- quantile(popDT[clusters %in% tumourClusters]$stroma.dist, probs = 0.999)[[1]]
+limMin <- quantile(popDT[clusters %in% tumourClusters]$stroma.dist, probs = 0.001)[[1]]
+
+x <- popDT[clusters %in% tumourClusters]
+y <- popDT[!clusters %in% tumourClusters]
+  
+ggplot(popDT, aes(centroid_x, centroid_y)) +
+  theme_classic() +
+  geom_point(size = 0.5) +
+  coord_fixed() +
+  geom_point(data = y, size = 1, color = "#5B5B5B") +
+  geom_point(data = x, size = 1, aes(color = stroma.dist)) +
+  viridis::scale_colour_viridis(limits = c(limMin, limMax), option = "inferno") +
+  plotThemeDark(angle = 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+ggsave(file.path(anaDir, 'clusters', 'aSf5Rr_stroma_dist.png'), height = 10, width = 15)
+```
+
+```{r fig_stroma_ki67, fig.height=1, fig.width=1}
+# can you show the distance of Ki67+ to stroma in contrast to other tumour?
+xDT <- popDT[clusters %in% tumourClusters]
+xDT[, is.prolif := FALSE]
+xDT[clusters == "9", is.prolif := TRUE]
+
+ggplot(xDT, aes(is.prolif, stroma.dist)) +
+  theme_classic() +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_jitter(width = 0.3, alpha = 1.0) +
+  geom_boxplot(outlier.alpha = 0) 
+```
+
+```{r}
+# can you cluster on numbers, freq and properties?
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# run task
+funParams <- list(
+  uIDs = c("aSf5Rr"),
+  popType = c("branch"),
+  pops = c("stroma.branch"),
+  objectMeasures = c(
+    # c("branch-distance", "euclidean-distance")
+  ),
+  includeCounts = FALSE,
+  includeTotalCount = TRUE,
+  colName = "default",
+  valueName = "stroma.branch",
+  excludeSelfConnections = FALSE,
+  useClusters = FALSE,
+  expandPops = TRUE,
+  numClusters = 3
+)
+
+task <- cciaObj$runTask(
+  funName = "clustRegions.kmeansClust",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# show regions of stroma
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+regionDT <- cciaObj$popDT(
+  "region", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "stroma.branch", pops = c("root"))
+
+# popDT <- cciaObj$popDT(
+#   "clust", includeFiltered = TRUE, completeDT = TRUE,
+#   popCols = c("pop", paste0("stroma.branch_type_", seq(0, 3))),
+#   # pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE))),
+#   pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))),
+#   forceReload = TRUE)
+```
+
+```{r fig_branching_regions, fig.height=5, fig.width=8}
+# plot out
+ggplot(regionDT, aes(centroid_x, centroid_y, color = as.factor(regions))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 1, alpha = 0.2) +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  )
+
+# ggsave(file.path(anaDir, 'clusters', 'aSf5Rr_branching_regions.png'), height = 20, width = 20)
+```
+
+```{r fig_regions_heat, fig.height=5, fig.width=13}
+# show heatplots
+for (i in unique(regionDT$regions)) {
+  xDT <- regionDT[regions == i]
+
+  p1 <- ggplot(xDT, aes(centroid_x, centroid_y)) +
+    theme_classic() +
+    geom_point(size = 0.5, color = .flowColours(xDT$centroid_x, xDT$centroid_y)) +
+    coord_fixed() +
+    # viridis::scale_colour_viridis(limits = c(0, limY)) +
+    plotThemeDark(angle = 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none"
+    )
+  
+  print(p1)
+  
+  ggsave(file.path(anaDir, "clusters", paste0("aSf5Rr_region_pockets_", i, ".png")), height = 5, width = 8)
+}
+```
+
+```{r fig_regions_heat, fig.height=1.5, fig.width=2}
+regionSummary <- regionDT %>% pivot_longer(
+  cols = c(
+    "stroma.branch/zero", "stroma.branch/three",
+    "stroma.branch/one", "stroma.branch/two",
+    # "sum", "branch-distance", "euclidean-distance"
+    # "branch-distance", "euclidean-distance"
+  ),
+  names_to = "measure",
+  values_to = "value"
+) %>%
+  group_by(measure, regions) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
+  replace_na(list(norm = 0))
+
+ggplot(regionSummary, aes(regions, measure)) +
+    theme_classic() +
+    # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+    geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
+    viridis::scale_fill_viridis(
+      breaks = c(0, 1),
+      labels = c(0, 1)
+    ) +
+    theme(
+      legend.position = "none",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 20),
+      legend.key.size = unit(10, "mm"),
+      axis.text.y = element_text(size = 20),
+      axis.text.x = element_text(size = 20),
+      # axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
+      strip.background = element_blank(),
+      strip.text.x = element_blank()
+      ) +
+    xlab("") + ylab("")
+```
+
+```{r}
+# find nearest neighbours
+popNN <- dbscan::kNN(
+  as.matrix(regionDT[, c('centroid_y', 'centroid_x')]),
+  k = 1,
+  query = as.matrix(popDT[, c('centroid_y', 'centroid_x')]))
+
+# filter long distances
+regionVals <- regionDT[popNN$id, ]$regions
+# regionVals <- regionDT[popNN$id, ]$`branch-type`
+regionVals[popNN$dist > 100 * cciaObj$omeXMLPixelRes()$x] <- -1
+
+# assign regions to pops
+popDT[, regionsNN := as.factor(regionVals)]
+```
+
+```{r fig_pop_branching, fig.height=3, fig.width=2.5}
+summaryDT <- popDT %>%
+  dplyr::filter(clusters != "2") %>%
+  # drop_na() %>%
+  # group_by(pop, regionsNN) %>%
+  group_by(clusters, regionsNN) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(regionsNN != "-1")
+  
+# summaryDT$clusters <- recode(
+#   summaryDT$clusters,
+#   `0` = 'CD20+ B cell',
+#   `1` = 'CD8+ T cell',
+#   `2` = 'CD54+ 1',
+#   `3` = 'Unspecified',
+#   `4` = 'CD163+ Macro',
+#   `5` = 'CD45+1',
+#   `6` = 'CD4+ T cell',
+#   `7` = 'CD54+ 2',
+#   `8` = 'CD45+ 2',
+#   `9` = 'CD54+ 3',
+#   `10` = 'CD11c+ Macro',
+#   `11` = 'CD15+ Macro',
+#   `12` = 'CD54+ 4',
+#   `13` = 'CD61+',
+#   `14` = 'CD31+',
+#   `15` = 'CD54+ 5',
+#   `16` = 'Glyco.A+'
+# )
+# summaryDT$regionsNN <- recode(
+#   summaryDT$regionsNN,
+#   `1` = 'Loose',
+#   `2` = 'Medium',
+#   `3` = 'Dense'
+# )
+
+# ggplot(summaryDT, aes(pop, freq, fill = regionsNN)) +
+# ggplot(summaryDT, aes(clusters, freq, fill = regionsNN)) +
+ggplot(summaryDT, aes(reorder(clusters, freq), freq, fill = regionsNN)) +
+  theme_classic() +
+  # ylim(0, 100) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.justification = "left"
+  ) +
+  xlab("") + ylab("Stroma region (%)") +
+  coord_flip()
 ```
 
 ```{r}
@@ -420,8 +1200,6 @@ cciaObj <- initCciaObject(
 
 # get label properties
 labelDT <- as.data.table(cciaObj$labelProps("stroma")$as_df())
-
-colnames(labelDT)
 ```
 
 ```{r}
@@ -440,7 +1218,8 @@ summaryDT <- labelDT[eccentricity > quantile(labelDT$eccentricity, probs = 0.05)
 
 # plot shape of stroma
 for (x in c("eccentricity", "orientation", "extent", "solidity", "oblate",
-            "prolate", "aspect_ratio", "fill", "solidity", "aspect_ratio")) {
+            "prolate", "aspect_ratio", "fill", "solidity", "aspect_ratio",
+            "feret_diameter_max", "equivalent_diameter", "perimeter_to_area")) {
   limY <- quantile(summaryDT[[x]], probs = 0.98)[[1]]
   
   p1 <- ggplot(summaryDT, aes(centroid_x, centroid_y, color = get(x))) +
@@ -449,7 +1228,17 @@ for (x in c("eccentricity", "orientation", "extent", "solidity", "oblate",
     geom_point(size = 0.5) +
     coord_fixed() +
     viridis::scale_colour_viridis(limits = c(0, limY)) +
-    ggtitle(x)
+    ggtitle(x) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none"
+    )
   
   print(p1)
 }
