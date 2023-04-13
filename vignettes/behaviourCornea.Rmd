@@ -1,0 +1,48 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "oWCeZZ", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "Bf68An", versionID = versionID, initReactivity = FALSE
+)
+
+# cciaObj$setImLabelPropsFilepath("default.h5ad", valueName = "default", setDefault = FALSE)
+# cciaObj$saveState()
+cciaObj$savePops("live", pops = c("default/tracked"), includeFiltered = TRUE)
+cciaObj$savePopMap("live", includeFiltered = TRUE)
+```
+

@@ -13,8 +13,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 # set test variables
 pID <- "Bi2995"
+# pID <- "rMeKCv"
 versionID <- 1
 projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
@@ -50,8 +52,9 @@ paste(cciaObj$imChannelNames(), collapse = "', '")
 p1s <- .flowPlotGatedRaster(
   cciaObj, popPaths = "root", labelSize = 3, asContours = TRUE)
 
-ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 4)
-ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 12, height = 3)
+ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
+# ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 5, height = 5)
+ggsave(file.path(anaDir, "TK5dex_gating.pdf"), width = 5, height = 5)
 ```
 
 ```{r}

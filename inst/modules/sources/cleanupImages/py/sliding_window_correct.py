@@ -67,11 +67,16 @@ def run(params):
       im_slices = [slice(None) for _ in range(len(im_dat[0].shape))]
       im_slices[dim_utils.dim_idx('T')] = slice(w_start, w_end, 1)
       im_slices[dim_utils.dim_idx('C')] = j
-      im_slices = tuple(im_slices)
   
       sum_slices = [slice(None) for _ in range(len(sum_zarr.shape))]
       sum_slices[dim_utils.dim_idx('T')] = i
       sum_slices[dim_utils.dim_idx('C')] = j
+      
+      # set z slices
+      if dim_utils.is_3D() is False and dim_utils.dim_idx('Z') is not None:
+        sum_slices[dim_utils.dim_idx('Z')] = 0
+        
+      im_slices = tuple(im_slices)
       sum_slices = tuple(sum_slices)
   
       # TODO this is very slow with im_dat as dask

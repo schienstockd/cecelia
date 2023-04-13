@@ -25,10 +25,11 @@ class DimUtils:
   """
   calc image dimensions
   """
-  def calc_image_dimensions(self, im_shape):
+  def calc_image_dimensions(self, im_shape, im_dim_dict = None):
     # get internal dimensions
-    im_dim_dict = ome_xml_utils.get_im_size_dict(self.omexml)
-      
+    if im_dim_dict is None:
+      im_dim_dict = ome_xml_utils.get_im_size_dict(self.omexml)
+    
     # remove '1' dimensions if the length differs
     if len(im_dim_dict) != len(im_shape):
       for x in im_dim_dict.copy().items():
@@ -47,9 +48,9 @@ class DimUtils:
     
     # if they don't match - reverse or reshuffle
     # reverse first in case X and Y are a square
-    # print(im_shape)
-    # print(im_dim)
-    # print(im_dim_order)
+    print(im_shape)
+    print(im_dim)
+    print(im_dim_order)
     
     if im_shape != im_dim:
       im_shape.reverse() 

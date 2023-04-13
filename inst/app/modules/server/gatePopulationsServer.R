@@ -190,8 +190,11 @@
             popType(), list(
               parent = .flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = "root"),
               gateID = gateID,
-              xChannel = flowPlot()$getPlotXchannel(flowName = TRUE),
-              yChannel = flowPlot()$getPlotYchannel(flowName = TRUE)
+              # xChannel = flowPlot()$getPlotXchannel(flowName = TRUE),
+              # yChannel = flowPlot()$getPlotYchannel(flowName = TRUE)
+              channels = c(
+                flowPlot()$getPlotXchannel(flowName = TRUE),
+                flowPlot()$getPlotYchannel(flowName = TRUE))
             )
           )
           

@@ -2280,8 +2280,21 @@ CciaImage <- R6::R6Class(
       for (i in names(popAttrList)) {
         x <- popAttrList[[i]]
         
-        listOfIDs[[i]] <- self$popIDsByAttr(popType, i, x, compareFun = compareFun,
-                                            includeFiltered = includeFiltered)
+        # expand channels
+        if (i == "channels") {
+          popIDs.x <- self$popIDsByAttr(
+            popType, "xChannel", x, compareFun = "in",
+            includeFiltered = includeFiltered)
+          popIDs.y <- self$popIDsByAttr(
+            popType, "yChannel", x, compareFun = "in",
+            includeFiltered = includeFiltered)
+          
+          listOfIDs[[i]] <- Reduce(intersect, list(popIDs.x, popIDs.y))
+        } else {
+          listOfIDs[[i]] <- self$popIDsByAttr(
+            popType, i, x, compareFun = compareFun,
+            includeFiltered = includeFiltered)
+        }
       }
       
       # combine by logic

@@ -97,7 +97,8 @@ createSelectInput <- function(
 
 # define default value
 shinyInputValue <- function(id, input, value = NULL, ignoreInput = FALSE) {
-  if (ignoreInput == FALSE && !is.null(input[[id]]))
+  # print(sprintf(">> %s - %d", id, id %in% names(input)))
+  if (ignoreInput == FALSE && id %in% names(input) && !is.null(input[[id]]))
     input[[id]]
   else
     value

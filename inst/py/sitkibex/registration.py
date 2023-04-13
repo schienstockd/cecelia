@@ -151,9 +151,14 @@ def register_as_2d_affine(fixed_image,
 
     _logger.info("Initializing projected registration...")
     _logger.info("Sigma Base: {0}".format(sigma_base))
-
-    fixed_2d = imgf.project(fixed_image)
-    moving_2d = imgf.project(moving_image)
+    
+    # project
+    if len(fixed_image.GetSize()) > 2:
+      fixed_2d = imgf.project(fixed_image)
+      moving_2d = imgf.project(moving_image)
+    else:
+      fixed_2d = fixed_image
+      moving_2d = moving_image
 
     if fixed_image_mask:
         fixed_mask_2d = imgf.project(fixed_image_mask, projection_func=sitk.MedianProjection)
@@ -270,32 +275,34 @@ def register_as_2d_affine(fixed_image,
     R2_callbacks.add_command_callbacks(print_position=True, verbose=verbose)
 
     if do_affine:
-        affine_result = R2.Execute(fixed_2d, moving_2d)
+        result = R2.Execute(fixed_2d, moving_2d)
     else:
-        affine_result = affine
+        result = affine
 
-    # Do explicit casting
-    affine_result = sitk.AffineTransform(affine_result)
+    if len(moving_image.GetSize()) > 2:
+      # Do explicit casting
+      result = sitk.AffineTransformresult
+      
+      idx_2d = moving_2d.TransformPhysicalPointToContinuousIndex(result.GetCenter())
+      idx_3d = idx_2d + (moving_image.GetSize()[2]/2.0, )
+    
+      center_3d = moving_image.TransformContinuousIndexToPhysicalPoint(idx_3d)
 
-    #
-    # Convert 2d matrix into 3d
-    #
-    matrix_3d = np.identity(3)
-    matrix_3d[:2, :2] = np.asarray(affine_result.GetMatrix()).reshape(2, 2)
+      # The 2d projected images preserve the image spacing but have the direction matrix set to the identity.
+      _logger.info("center 2d->3d: {0}->{1}".format(affine_result.GetCenter(), center_3d))
+    
+      #
+      # Convert 2d matrix into 3d
+      #
+      matrix_3d = np.identity(3)
+      matrix_3d[:2, :2] = np.asarray(result.GetMatrix()).reshape(2, 2)
+      
+      result = sitk.AffineTransform(3)
+      result.SetTranslation(result.GetTranslation()+(0,))
+      result.SetMatrix(matrix_3d.flatten())
+      result.SetCenter(center_3d)
 
-    idx_2d = moving_2d.TransformPhysicalPointToContinuousIndex(affine_result.GetCenter())
-    idx_3d = idx_2d + (moving_image.GetSize()[2]/2.0, )
-    center_3d = moving_image.TransformContinuousIndexToPhysicalPoint(idx_3d)
-
-    # The 2d projected images preserve the image spacing but have the direction matrix set to the identity.
-    _logger.info("center 2d->3d: {0}->{1}".format(affine_result.GetCenter(), center_3d))
-
-    result_3d = sitk.AffineTransform(3)
-    result_3d.SetTranslation(affine_result.GetTranslation()+(0,))
-    result_3d.SetMatrix(matrix_3d.flatten())
-    result_3d.SetCenter(center_3d)
-
-    return result_3d
+    return result
 
 
 def registration(fixed_image: sitk.Image,     # noqa: C901

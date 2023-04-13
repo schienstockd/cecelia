@@ -36,7 +36,9 @@ def drift_correction_shifts(
 
   # create slices for corrections
   slices = [slice(None) for x in range(len(image_array.shape))]
-  slices[channel_idx] = slice(phase_shift_channel, phase_shift_channel + 1, 1)
+  
+  if channel_idx is not None:
+    slices[channel_idx] = slice(phase_shift_channel, phase_shift_channel + 1, 1)
 
   # get all timepoints if not specified
   if timepoints is None:
@@ -76,10 +78,12 @@ def drift_correction_shifts(
 """
 get max, min and sum shift
 """
-def shifts_summary(shifts, cumulative = True):
-  max_shifts = np.zeros((3))
-  min_shifts = np.zeros((3))
-  cur_shifts = np.zeros((3))
+def shifts_summary(shifts, cumulative = True, is_3D = True):
+  shift_size = 3 if is_3D is True else 2
+  
+  max_shifts = np.zeros((shift_size))
+  min_shifts = np.zeros((shift_size))
+  cur_shifts = np.zeros((shift_size))
 
   # get maximum shifts for left and right
   for x in shifts:
@@ -110,9 +114,13 @@ def correction_im_shape(image_array, dim_utils, shifts_sum):
   new_shape = list(image_array.shape)
 
   # assuming shifts are Z, Y, X
-  new_shape[dim_utils.dim_idx('Z')] += abs(shifts_sum['sum'][0])
-  new_shape[dim_utils.dim_idx('Y')] += abs(shifts_sum['sum'][1])
-  new_shape[dim_utils.dim_idx('X')] += abs(shifts_sum['sum'][2])
+  if dim_utils.is_3D():
+    new_shape[dim_utils.dim_idx('Z')] += abs(shifts_sum['sum'][0])
+    new_shape[dim_utils.dim_idx('Y')] += abs(shifts_sum['sum'][1])
+    new_shape[dim_utils.dim_idx('X')] += abs(shifts_sum['sum'][2])
+  else:
+    new_shape[dim_utils.dim_idx('Y')] += abs(shifts_sum['sum'][0])
+    new_shape[dim_utils.dim_idx('X')] += abs(shifts_sum['sum'][1])
 
   # round new shape for new array
   new_shape_round = tuple([
@@ -145,7 +153,7 @@ def drift_correct_im(
       )
 
   # get shifts summary
-  shifts_sum = shifts_summary(shifts)
+  shifts_sum = shifts_summary(shifts, is_3D = dim_utils.is_3D())
 
   # get new image dimensions
   drift_im_shape, drift_im_shape_round = correction_im_shape(
@@ -213,7 +221,7 @@ def drift_correct_im(
     im_slices = [slice(None) for _ in range(len(drift_im_shape_round))]
 
     # set Z, X, Y for new slices
-    for j, y in enumerate(('Z', 'Y', 'X')):
+    for j, y in enumerate(dim_utils.spatial_axis()):
       new_slices[dim_utils.dim_idx(y)] =  slice(round(slices[j].start), round(slices[j].stop), 1)
 
     # set time for image slice
@@ -275,17 +283,26 @@ def drift_correct_im(
 get position of first image for correction
 """
 def correction_first_im_pos(drift_im_shape, dim_utils, shifts_sum):
-  # get new position
-  new_pos = np.take(
-    drift_im_shape,
-    [dim_utils.dim_idx('Z'), dim_utils.dim_idx('Y'), dim_utils.dim_idx('X')]
-    )
-
   # place the first image
+  if dim_utils.is_3D():
+    new_pos = np.take(
+      drift_im_shape,
+      [dim_utils.dim_idx('Z'), dim_utils.dim_idx('Y'), dim_utils.dim_idx('X')]
+      )
+
+    shift_size = 3
+  else:
+    new_pos = np.take(
+      drift_im_shape,
+      [dim_utils.dim_idx('Y'), dim_utils.dim_idx('X')]
+      )
+
+    shift_size = 2
+    
   first_pos = tuple(
     [slice(shifts_sum['min'][i],
            new_pos[i] - shifts_sum['max'][i],
-           1) for i in range(3)]
+           1) for i in range(shift_size)]
   )
 
   return first_pos

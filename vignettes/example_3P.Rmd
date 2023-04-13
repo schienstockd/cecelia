@@ -81,6 +81,23 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "Qc0tHr", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# show filepaths
+for (x in cciaObj$cciaObjects()) {
+  print(x$oriFilepath())
+}
+```
+
+
+```{r}
+# run clustering
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "CIMecC", versionID = versionID, initReactivity = FALSE # Set
 )
 

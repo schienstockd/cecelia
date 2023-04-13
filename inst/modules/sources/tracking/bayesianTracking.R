@@ -55,7 +55,6 @@ BayesianTracking <- R6::R6Class(
       
       if (self$funParams()$calcTrackingStats == TRUE) {
         self$writeLog("Calculate tracking stats")
-        
         self$writeLog(self$funParams()$valueName)
         
         # get tracks
@@ -111,6 +110,8 @@ BayesianTracking <- R6::R6Class(
         # push back to labels
         labels <- cciaObj$labelProps(valueName = self$funParams()$valueName)
         
+        self$writeLog(self$funParams()$valueName)
+        
         # get cell state information
         mergedDT <- tracks.DT[, c(
           "track_id", "cell_id", "live.cell.speed", "live.cell.angle"
@@ -130,7 +131,7 @@ BayesianTracking <- R6::R6Class(
         labels$add_obs(
           as.list(mergedDT[, .(track_id, live.cell.speed, live.cell.angle)])
         )
-  
+        
         # save
         labels$save()
         labels$close()
