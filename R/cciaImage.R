@@ -1686,12 +1686,12 @@ CciaImage <- R6::R6Class(
       popDT <- self$popDT(pops = pops, ...)
       
       # filter on populations to use
-      if (!is.null(usePops) && length(usePops) > 0) {
+      if (length(usePops) > 0) {
         popDT <- popDT[pop %in% usePops]
       }
       
       # get convex hull population
-      if (!is.null(windowPops) && length(windowPops) > 0)
+      if (length(windowPops) > 0)
         popWindow <- self$popDT(pops = windowPops, ...)
       else
         popWindow <- popDT

@@ -690,6 +690,9 @@ class LabelPropsView:
     if type(filter_by) is not list: 
       filter_by = [filter_by]
       
+    if type(filter_vals) is not list: 
+      filter_vals = [filter_vals]
+      
     # check whether the value is obs or vars
     if self.has_cols(filter_by, dat_type = 'obs'):
       # get percentile for value

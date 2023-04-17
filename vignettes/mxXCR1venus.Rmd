@@ -32,6 +32,61 @@ library(ggplot2)
 library(tidyverse)
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "oKjACa", versionID = versionID, initReactivity = FALSE
+)
+
+# cciaObj$setImLabelPropsFilepath("default.h5ad", valueName = "default")
+# cciaObj$saveState()
+
+cciaObj$runTask(
+  funName = "gatePopulations.createGatingSet",
+  funParams = list(
+    compensateZ = FALSE,
+    polyDegree = 0,
+    applyReversedLog = FALSE,
+    transformation = "logicle",
+    transChannels = unlist(cciaObj$imChannelNames())
+  ),
+  runInplace = TRUE
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "oKjACa", versionID = versionID, initReactivity = FALSE
+)
+
+valueName <- "default"
+labelSuffixes <- c("nuc", "cyto")
+
+# set combined labels
+labelsPath <- paste0(valueName, cciaConf()$files$ext$labels)
+attr(labelsPath, "suffixes") <- unlist(labelSuffixes)
+
+cciaObj$setImLabelsFilepath(labelsPath, valueName = valueName)
+
+# set suffixes for channel names
+channelNames <- cciaObj$imChannelNames()
+attr(channelNames, "types") <- unlist(labelSuffixes)
+
+cciaObj$setImChannelNames(channelNames, valueName = valueName)
+
+cciaObj$valueSuffixes("imLabelsFilepath", valueName = valueName)
+cciaObj$saveState()
+```
+
+--- XCR1-venus
+
 ```{r fig_gating, fig.height=3, fig.width=5}
 # Load cluster data
 devtools::load_all("../")
@@ -39,7 +94,8 @@ cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDi
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
 )
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
@@ -50,11 +106,13 @@ paste(cciaObj$imChannelNames(), collapse = "', '")
 
 # get raster contours
 p1s <- .flowPlotGatedRaster(
-  cciaObj, popPaths = "root", labelSize = 3, asContours = TRUE)
+  cciaObj, popPaths = "root", labelSize = 5, asContours = TRUE)
+  # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
-# ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 5, height = 5)
-ggsave(file.path(anaDir, "TK5dex_gating.pdf"), width = 5, height = 5)
+
+ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
+# ggsave(file.path(anaDir, "TK5dex_gating.pdf"), width = 8, height = 8)
 ```
 
 ```{r}
@@ -118,16 +176,18 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # uIDs <- exp.info$uID[1:3]
 uIDs <- exp.info$uID
 
-pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
-# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
+# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
+pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
 
 # exclude 'O' pops
 pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
 # pops <- pops[pops != "/nonDebris"]
 
 # get pops
-popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
-# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
+# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
+
+unique(popDT$pop)
 ```
 
 ```{r fig_maps, fig.height=3, fig.width=6}
@@ -138,11 +198,14 @@ nonDT <- popDT %>% dplyr::filter(uID == "XBAokO", pop != "/nonDebris/O/LCMV")
 infDT <- popDT %>% dplyr::filter(uID == "NjumBK")
 
 ggplot(nonDT,
-       aes(centroid_x, centroid_y), size = 0.2) +
-  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/B"), color = "magenta", alpha = 0.05) +
-  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#2A52BE", alpha = 0.2) +
+       aes(centroid_x, centroid_y), size = 0.3) +
+  # geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/B"), color = "magenta", alpha = 0.05) +
+  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/B220"), color = "orange", alpha = 0.05) +
+  # geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#2A52BE", alpha = 0.2) +
+  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#66A266", alpha = 0.2) +
   geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "red") +
-  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/P14"), color = "yellow") +
+  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/P14/non.clustered"), color = "white") +
+  geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/P14/clustered"), color = "#4169e1") +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Dark2") +
   coord_fixed() +
@@ -163,11 +226,12 @@ ggplot(nonDT,
 ggsave(file.path(anaDir, "non_pops.png"), width = 6, height = 6)
 
 ggplot(infDT,
-       aes(centroid_x, centroid_y), size = 0.2) +
-  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/B"), color = "magenta", alpha = 0.01) +
-  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#2A52BE", alpha = 0.2) +
+       aes(centroid_x, centroid_y), size = 0.3) +
+  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/B220"), color = "orange", alpha = 0.01) +
+  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#66A266", alpha = 0.2) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "red") +
-  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/P14"), color = "yellow") +
+  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/P14/non.clustered"), color = "white") +
+  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/P14/clustered"), color = "#4169e1") +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Dark2") +
   coord_fixed() +
@@ -186,6 +250,162 @@ ggplot(infDT,
   )
 
 ggsave(file.path(anaDir, "inf_pops.png"), width = 6, height = 6)
+```
+```{r fig_maps, fig.height=3, fig.width=6}
+# show XCR1, LCMV and P14?
+# nonDT <- popDT %>% dplyr::filter(uID == "XBAokO")
+# there are three dots
+ggplot(popDT.spatial %>%
+         dplyr::filter(uID == "NjumBK", startsWith(pop, "/nonDebris/P14")),
+       aes(centroid_x, centroid_y), size = 0.3) +
+  geom_point(aes(color = pop.to)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  coord_fixed() +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "bottom"
+  ) +
+  facet_wrap(.~uID, nrow = 1)
+
+ggsave(file.path(anaDir, "contact_pops.png"), width = 6, height = 6)
+```
+
+```{r fig_clusters, fig.height = 1.5, fig.width = 1.5}
+# clusters
+dataToPlot <- popDT %>%
+  dplyr::filter(startsWith(pop, "/nonDebris/P14")) %>%
+  group_by(uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = (n / sum(n) * 100)) %>%
+  dplyr::filter(pop == "/nonDebris/P14/clustered") %>%
+  left_join(exp.info)
+
+ggplot(dataToPlot, aes(Treatment, freq)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0) +
+  ylim(0, 100)
+```
+
+
+```{r}
+# get spatial distribution
+pops <- c("/nonDebris", "/nonDebris/P14", "/nonDebris/XCR1")
+popsWindow <- c("/nonDebris")
+popsPP1 <- c("/nonDebris/P14")
+popsPP2 <- c("/nonDebris/XCR1")
+
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+)
+
+pp1 <- cciaObj$ppp(
+  windowPops = popsWindow,
+  popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
+  pops = pops, usePops = popsPP1)
+# pp2 <- cciaObj$ppp(
+#   windowPops = popsWindow,
+#   popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
+#   pops = pops, usePops = popsPP2)
+
+# exclude 'O' pops
+# pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
+# pops <- pops[pops != "/nonDebris"]
+
+# get pops
+# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+```
+
+```{r}
+library(spatstat)
+
+for (i in names(pp1)) {
+  x <- pp1[[i]]
+  
+  exp.info[uID == i]
+  
+  message(paste(">> Test CSR for", i))
+  # test for randomness
+  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+  ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
+  
+  # push back
+  exp.info[uID == i,
+           `:=`(
+             pp1.hopskel.p = ppHK.result$p.value,
+             pp1.hopskel.A = ppHK.result$statistic,
+             pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+             pp1.clarkevans.p = ppCE.result$p.value,
+             pp1.clarkevans.R = ppCE.result$statistic
+           )]
+}
+
+# for (i in names(pp2)) {
+#   x <- pp2[[i]]
+#   
+#   exp.info[uID == i]
+#   
+#   message(paste(">> Test CSR for", i))
+#   # test for randomness
+#   ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+#   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
+#   
+#   # push back
+#   exp.info[uID == i,
+#            `:=`(
+#              pp2.hopskel.p = ppHK.result$p.value,
+#              pp2.hopskel.A = ppHK.result$statistic,
+#              pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+#              pp2.clarkevans.p = ppCE.result$p.value,
+#              pp2.clarkevans.R = ppCE.result$statistic
+#            )]
+# }
+```
+
+```{r fig_spatial_stats, fig.height = 1.5, fig.width = 1.5}
+# plot out clark evans
+dataToPlot <- exp.info %>%
+  drop_na(pp1.clarkevans.R) %>%
+  pivot_longer(
+    # cols = c("pp1.clarkevans.R", "pp2.clarkevans.R"),
+    cols = c("pp1.clarkevans.R"),
+    names_to = "spatial",
+    values_to = "value"
+  )
+
+ggplot(dataToPlot, aes(
+  spatial, value,
+  fill = Treatment)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  scale_fill_brewer(name = NULL, palette = "Set3") +
+  theme(
+    legend.position = "top"
+    ) +
+  ylim(0, 1.5)
+  # ylim(0, 1)
+
+write.csv(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
+# ggsave(file.path(anaDir, "spatial_stats.tiff"), height = 2, width = 3)
 ```
 
 ```{r}
@@ -211,19 +431,33 @@ table(spatialDT[
   on = c("uID", "from" = "label")
 ]$pop)
 
-unique(spatialDT$pop.to)
+unique(spatialDT$pop.from)
+```
+
+```{r}
+popDT.spatial <- copy(popDT)
+
+# then join closest contact if present
+popDT.spatial[
+  spatialDT[
+    pop.from %in% c("/nonDebris/P14/clustered", "/nonDebris/P14/non.clustered") &
+    !pop.to %in% c("/nonDebris/P14/clustered", "/nonDebris/P14/non.clustered"),
+    .SD[which.min(dist)], by = c("uID", "from")][, c("from", "pop.to")],
+  on = c("label" = "from"), pop.to := pop.to
+]
+
+popDT.spatial[is.na(pop.to), pop.to := "NONE"]
 ```
 
 ```{r}
 # now where are P14?
 summaryDT <- copy(spatialDT)
+
 summaryDT[pop.to %in% c(
-  # "/nonDebris/O/B", "/nonDebris/O/O1/CD3", "/nonDebris"
-  "/nonDebris/O/B", "/nonDebris"
+  # "/nonDebris/O/B20", "/nonDebris/O/O1/CD3", "/nonDebris"
+  # "/nonDebris/O/B220", "/nonDebris"
 ), ]$pop.to <- "Other"
-summaryDT[pop.to %in% c(
-  "/nonDebris/O/O1/CD3"
-), ]$pop.to <- "T"
+summaryDT[pop.to %in% c("/nonDebris/O/O1/CD3"), ]$pop.to <- "T"
 
 summaryDT[pop.from == "/nonDebris/P14/clustered",]$pop.from <- "clustered"
 summaryDT[pop.from == "/nonDebris/P14/non.clustered",]$pop.from <- "non.clustered"
@@ -231,31 +465,25 @@ summaryDT[pop.to == "/nonDebris/P14/clustered",]$pop.to <- "clustered"
 summaryDT[pop.to == "/nonDebris/P14/non.clustered",]$pop.to <- "non.clustered"
 summaryDT[pop.to == "/nonDebris/O/LCMV",]$pop.to <- "LCMV"
 summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
+summaryDT[pop.to == "/nonDebris",]$pop.to <- "Other"
+summaryDT[pop.to == "/nonDebris/O/B220",]$pop.to <- "B"
+summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
 ```
 
-```{r fig_p14, fig.height=1, fig.width=2}
-summaryAssociation <- copy(summaryDT)
-summaryAssociation[pop.from %in% c("clustered", "non.clustered"), ]$pop.from <- "P14"
+```{r fig_p14, fig.height=1.5, fig.width=2}
+# summaryAssociation <- summaryAssociation %>%
+summaryAssociation <- copy(popDT.spatial)
+summaryAssociation[startsWith(pop, "/nonDebris/P14"), pop := "/nonDebris/P14"]
 
 summaryAssociation <- summaryAssociation %>%
-  dplyr::filter(
-    pop.from %in% c("P14"),
-    !pop.to %in% c("clustered", "non.clustered", "Other", "T")
-      # "/nonDebris/XCR1", "/nonDebris/O/LCMV"),
-    # pop.to %in% c("/nonDebris", "/nonDebris/XCR1", "/nonDebris/O/LCMV")
-    # !pop.to %in% c("/nonDebris/O/O1/O2/B")
-    ) %>%
-  group_by(uID, pop.from, pop.to) %>%
-  # group_by(uID, pop.to, pop.from) %>%
-  # group_by(pop.from, pop.to) %>%
+  dplyr::filter(startsWith(pop, "/nonDebris/P14")) %>%
+  group_by(uID, pop, pop.to) %>%
   dplyr::summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   drop_na() %>%
   ungroup() %>%
-  complete(uID, pop.from, pop.to, fill = list(freq = 0))
-  # complete(uID, pop.to, pop.from, fill = list(freq = 0))
-  # complete(pop.from, pop.to, fill = list(freq = 0))
-  # mutate(pop.group = interaction(uID, pop.to))
+  complete(uID, pop, pop.to, fill = list(freq = 0)) %>%
+  left_join(exp.info)
 
 ggplot(data = summaryAssociation %>%
          mutate(
@@ -267,12 +495,13 @@ ggplot(data = summaryAssociation %>%
          y = freq,
          # x = as.factor(pop.to))) +
          # x = pop.from)) +
-         x = pop.to)) +
+         x = pop.to,
+         color = Treatment)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
   # geom_jitter(width = 0.3, alpha = 1.0) +
-  geom_point(alpha = 1.0) +
+  # geom_point(alpha = 1.0) +
   theme(
     legend.justification = "center",
     legend.direction = "horizontal",
@@ -283,8 +512,11 @@ ggplot(data = summaryAssociation %>%
   # geom_line(aes(group = interaction(uID, pop.to))) +
   xlab("") + ylab("Interaction (%)") +
   # facet_wrap(~pop.to, nrow = 1, scales = "free_y") +
-  facet_wrap(~pop.from, nrow = 1) +
+  facet_wrap(~pop, nrow = 1) +
   expand_limits(y = 0)
+
+# write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions.csv"))
+write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions_bin.csv"))
 ```
 
 

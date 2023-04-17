@@ -14,16 +14,18 @@
 #' @description Generate colours for flow plots
 #' @param x list of numeric for 'X'-values
 #' @param y list of numeric for 'Y'-values
+#' @param colramp color palette
 #' @examples
 #' TODO
 #' @export
-.flowColours <- function(x, y, nbin = 128) {
+.flowColours <- function(x, y, nbin = 128, colramp = NULL) {
   retVal <- NULL
   
+  if (is.null(colramp))
+    colramp <- flowViz::flowViz.par.get("argcolramp")
+  
   if (all(length(x) > 0, length(y) > 0)) {
-    retVal <- densCols(
-      x, y, nbin = nbin,
-      colramp = flowViz::flowViz.par.get("argcolramp"))
+    retVal <- densCols(x, y, nbin = nbin, colramp = colramp)
   }
   
   retVal
@@ -976,7 +978,7 @@
           } else {
             # close path
             gateDTs[[j]] <- as.data.table(xGate@boundaries)
-            gateDTs[[j]] <- rbind(gateDTs[[1]], gateDTs[[1]][1])
+            gateDTs[[j]] <- rbind(gateDTs[[j]], gateDTs[[j]][1])
           }
         }
         
@@ -999,7 +1001,10 @@
         nameDTs <- list()
         for (j in names(popGates)) {
           nameDTs[[j]] <- as.data.frame(list(
-            x = mean(gateDT[pop == j, ][[xLabel]]),
+            # x = mean(gateDT[pop == j, ][[xLabel]]),
+            # x = min(gateDT[pop == j, ][[xLabel]]),
+            # x = max(gateDT[pop == j, ][[xLabel]]),
+            x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
             y = max(gateDT[pop == j, ][[yLabel]])
           ))
           
@@ -1019,7 +1024,7 @@
           popStats <- fgs$getPopStats(j, type = "percent")
           nameDTs[[j]]$label <- paste(
             nameDTs[[j]]$label, paste0(
-              sprintf("%0.1f", popStats$percent * 100), "%"))
+              sprintf("%0.2f", popStats$percent * 100), "%"))
         }
         
         # bind together
@@ -1150,7 +1155,8 @@
           ggtitle(xParent) +
           theme(
             legend.position = "none",
-            plot.title = element_text(size = 8)
+            # plot.title = element_text(size = 8)
+            plot.title = element_text(size = 14)
           )
         
         p1s[[xParent]] <<- p1

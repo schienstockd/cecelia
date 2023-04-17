@@ -295,9 +295,9 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
 )
 
-popDT.flow <- cciaObj$popDT(
-  "flow", includeFiltered = TRUE, completeDT = TRUE,
-  pops = unlist(unname(cciaObj$popPaths("flow", includeFiltered = TRUE, includeRoot = FALSE))))
+# popDT.flow <- cciaObj$popDT(
+#   "flow", includeFiltered = TRUE, completeDT = TRUE,
+#   pops = unlist(unname(cciaObj$popPaths("flow", includeFiltered = TRUE, includeRoot = FALSE))))
 popDT.clust <- cciaObj$popDT(
   "clust", includeFiltered = TRUE, completeDT = TRUE,
   pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))))
@@ -366,9 +366,9 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE 
 )
 
-# regionDT <- cciaObj$popDT(
-#   "region", includeFiltered = TRUE, completeDT = TRUE,
-#   completeValueNames = "stroma.branch", pops = c("root"))
+regionDT <- cciaObj$popDT(
+  "region", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "default", pops = c("region.A", "region.B", "region.C"))
 
 branchDT <- cciaObj$popDT(
   "branch", includeFiltered = TRUE, completeDT = TRUE,
@@ -377,7 +377,6 @@ branchDT <- cciaObj$popDT(
 
 popDT <- cciaObj$popDT(
   "clust", includeFiltered = TRUE, completeDT = TRUE,
-  popCols = c("pop", paste0("stroma.branch_type_", seq(0, 3))),
   # pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE))),
   pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))),
   forceReload = TRUE)
@@ -408,6 +407,33 @@ ggplot(popDT %>% filter(
 
 # ggsave(file.path(anaDir, 'stroma', 'n22foC_pops.png'), height = 20, width = 20)
 ggsave(file.path(anaDir, 'stroma', 'n22foC_pops_whole.png'), height = 20, width = 35)
+```
+
+```{r fig_branching_regions, fig.height=5, fig.width=8}
+# plot out
+ggplot(regionDT %>% filter(
+    pop != "root",
+    # centroid_x > 3000, centroid_x <= 7000,
+    # centroid_y > 2000, centroid_y <= 6000,
+  ), aes(centroid_x, centroid_y, color = as.factor(pop))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 2) +
+  coord_fixed() +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_pops.png'), height = 20, width = 20)
+ggsave(file.path(anaDir, 'stroma', 'n22foC_regions_whole.png'), height = 20, width = 35)
 ```
 
 ```{r fig_branching_regions, fig.height=5, fig.width=8}
@@ -457,39 +483,6 @@ cciaObj <- initCciaObject(
 ```
 
 ```{r}
-popDT <- cciaObj$popDT(
-  "clust", includeFiltered = TRUE, completeDT = TRUE,
-  popCols = c("pop", "clusters"), pops = c("root"), forceReload = TRUE)
-
-x <- as.matrix(branchDT[`branch-type` < 3, c('centroid_z', 'centroid_y', 'centroid_x')])
-rownames(x) <- branchDT[`branch-type` < 3]$label
-
-# find nearest neighbours
-popNN <- dbscan::kNN(
-  # as.matrix(regionDT[, c('centroid_z', 'centroid_y', 'centroid_x')]),
-  x, k = 1, query = as.matrix(popDT[, c('centroid_z', 'centroid_y', 'centroid_x')]))
-
-# filter long distances
-# regionVals <- regionDT[popNN$id, ]$regions
-# regionVals <- branchDT[popNN$id, ]$`branch-type`
-popDT[, branch.id := popNN$id]
-popDT[, branch.dist := popNN$dist]
-popDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
-      `branch-type` := `branch-type`]
-```
-
-```{r fig_pop_branching, fig.height=1, fig.width=2.5}
-summaryDT <- copy(popDT)
-summaryDT[branch.dist > 20, `branch-type` := -1]
-
-summaryDT <- summaryDT %>%
-  # drop_na() %>%
-  # group_by(pop, regionsNN) %>%
-  group_by(clusters, `branch-type`) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(`branch-type` != "-1")
-  
 summaryDT$clusters <- recode(
   summaryDT$clusters,
   `0` = 'CD20+ B cell',
@@ -510,6 +503,38 @@ summaryDT$clusters <- recode(
   `15` = 'CD54+ 5',
   `16` = 'Glyco.A+'
 )
+```
+
+
+```{r}
+x <- as.matrix(branchDT[`branch-type` < 3, c('centroid_z', 'centroid_y', 'centroid_x')])
+rownames(x) <- branchDT[`branch-type` < 3]$label
+
+# find nearest neighbours
+popNN <- dbscan::kNN(
+  x, k = 1, query = as.matrix(regionDT[, c('centroid_z', 'centroid_y', 'centroid_x')]))
+
+# filter long distances
+# regionVals <- regionDT[popNN$id, ]$regions
+# regionVals <- branchDT[popNN$id, ]$`branch-type`
+regionDT[, branch.id := popNN$id]
+regionDT[, branch.dist := popNN$dist]
+regionDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
+      `branch-type` := `branch-type`]
+```
+
+```{r fig_pop_branching, fig.height=1, fig.width=2.5}
+summaryDT <- copy(regionDT)
+summaryDT[branch.dist > 20, `branch-type` := -1]
+
+summaryDT <- summaryDT %>%
+  # drop_na() %>%
+  # group_by(pop, regionsNN) %>%
+  group_by(pop, `branch-type`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(`branch-type` != "-1")
+  
 summaryDT$`branch-type` <- recode(
   summaryDT$`branch-type`,
   `0` = 'Loose',
@@ -521,7 +546,7 @@ summaryDT$`branch-type` <- factor(
 
 # ggplot(summaryDT, aes(pop, freq, fill = regionsNN)) +
 # ggplot(summaryDT, aes(clusters, freq, fill = regionsNN)) +
-p1 <- ggplot(summaryDT, aes(reorder(clusters, freq), freq, fill = `branch-type`)) +
+ggplot(summaryDT %>% drop_na(), aes(reorder(pop, freq), freq, fill = `branch-type`)) +
   theme_classic() +
   ylim(0, 100) +
   geom_col() +
@@ -532,11 +557,13 @@ p1 <- ggplot(summaryDT, aes(reorder(clusters, freq), freq, fill = `branch-type`)
     legend.position = "bottom",
     legend.justification = "left"
   ) +
-  xlab("") + ylab("Stroma region (%)") +
+  xlab("") + ylab("Stroma contact (%)") +
   coord_flip()
 
-# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_regions_clusters.png'), height = 4, width = 4)
-ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_type_clusters.png'), plot = p1, height = 4, width = 4)
+# ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_and_regions.png'), plot = p1, height = 4, width = 4)
+ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_and_regions.png'), height = 4, width = 4)
+
+write.csv(summaryDT, file.path(anaDir, "stroma", "stroma_and_regions.csv"))
 ```
 
 ```{r}
@@ -917,6 +944,7 @@ ggplot(
   theme(legend.title=element_blank()) +
   xlab("") + ylab("")
 ```
+
 ```{r fig_kmeans_clusters_map, fig.height=3, fig.width=4}
 # plot out
 popDT[as.data.table(freqRegionsWider[, c("from", "cluster")]),

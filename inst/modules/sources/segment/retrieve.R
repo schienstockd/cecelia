@@ -18,7 +18,7 @@ Retrieve <- R6::R6Class(
     # run
     run = function() {
       # get object first
-      # self$runTasks("hpc.retrieveCciaObj")
+      self$runTasks("hpc.retrieveCciaObj")
       
       # get object
       cciaObj <- self$cciaTaskObject()
