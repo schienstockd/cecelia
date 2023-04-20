@@ -40,42 +40,45 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
   # TODO does that make a difference to init?
   # if (file.exists(typePath)) {
   # determine which classes to initialise
-  curClass <- readLines(typePath, warn = FALSE)
-  
-  # create init object expression
-  initObjectStr <- sprintf(
-    "cciaObj <- %s$new(\"%s\", initReactivity = %s, initTransaction = %s, retrieveState = %s)",
-    curClass, statePath, initReactivity, initTransaction, retrieveState
-  )
-  
-  # prepare init
-  curInit <- paste(
-    initObjectStr,
-    # was the object initialised?
-    sprintf("if (%s == FALSE && is.null(cciaObj$getUID())) return(NULL)", waitForRelease),
-    # wait for release?
-    sprintf("if (%s == TRUE && is.null(cciaObj$getUID())) {", waitForRelease),
+  if (file.exists(typePath)) {
+    curClass <- readLines(typePath, warn = FALSE)
+    
+    # create init object expression
+    initObjectStr <- sprintf(
+      "cciaObj <- %s$new(\"%s\", initReactivity = %s, initTransaction = %s, retrieveState = %s)",
+      curClass, statePath, initReactivity, initTransaction, retrieveState
+    )
+    
+    # prepare init
+    curInit <- paste(
+      initObjectStr,
+      # was the object initialised?
+      sprintf("if (%s == FALSE && is.null(cciaObj$getUID())) return(NULL)", waitForRelease),
+      # wait for release?
+      sprintf("if (%s == TRUE && is.null(cciaObj$getUID())) {", waitForRelease),
       "message('>> Waiting for lock release')",
       "while(is.null(cciaObj$getUID())) {",
-        "Sys.sleep(1/10)",
-        initObjectStr,
-    "}}",
-    sep = "\n"
-  )
-  
-  # init reactivity
-  if (initReactivity == TRUE) {
-    curInit <- paste(curInit,"cciaObj$reactive()",sep = "\n")
+      "Sys.sleep(1/10)",
+      initObjectStr,
+      "}}",
+      sep = "\n"
+    )
+    
+    # init reactivity
+    if (initReactivity == TRUE) {
+      curInit <- paste(curInit,"cciaObj$reactive()",sep = "\n")
+    } else {
+      # return object
+      curInit <- paste(curInit, "cciaObj", sep = "\n")
+    }
+    
+    # message(sprintf(">> Init [%s]", cciaObjDir))
+    
+    # create class
+    eval(parse(text = curInit))
   } else {
-    # return object
-    curInit <- paste(curInit, "cciaObj", sep = "\n")
+    NULL
   }
-  
-  # message(sprintf(">> Init [%s]", cciaObjDir))
-  
-  # create class
-  eval(parse(text = curInit))
-  # }
 }
 
 #' @description Stats type of measure

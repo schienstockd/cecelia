@@ -104,15 +104,15 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
       envname = envName, packages = "python-javabridge",
-      channel = c("conda-forge")
+      # channel = c("conda-forge")
+      pip = TRUE, pip_options = pipOptions
     )
   }
   
   reticulate::conda_install(
     envname = envName, packages = pyModules,
     # channel = c("conda-forge", "anaconda")
-    pip = TRUE,
-    pip_options = pipOptions
+    pip = TRUE, pip_options = pipOptions
     )
     
   # install OME bioformats

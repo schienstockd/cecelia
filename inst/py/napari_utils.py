@@ -236,7 +236,7 @@ class NapariUtils:
     channel_colormaps = None, as_dask = True, show_3D = False,
     multiscales = None, compute_dask = False,
     contrast_limits = None, visible = True, squeeze = False,
-    downsample_z = False, as_mip = False):
+    downsample_z = False, as_mip = False, slices = None):
       self.im_path = im_path
       self.as_dask = as_dask
       
@@ -252,6 +252,12 @@ class NapariUtils:
       self.dim_utils.calc_image_dimensions(self.im_data[0].shape)
       
       print(self.dim_utils.im_dim)
+      
+      # slice data?
+      # TODO this only works when multiscales is set to '1'
+      # you would need to cycle through scales and set slices .. ?
+      if multiscales == 1 and slices is not None:
+        self.im_data[0] = self.im_data[0][slices]
 
       # force the image as 16 bit?
       if self.dim_utils.is_32_bit():
@@ -392,7 +398,7 @@ class NapariUtils:
   """
   def show_labels_all(self, value_names, show_labels = True, show_points = True,
                       as_np_array = False, show_tracks = True, cache = True,
-                      label_suffixes = dict(), show_branching = False):
+                      label_suffixes = dict(), show_branching = False, slices = None):
     # get distinct colours for points
     points_colours = colour_utils.distinct_colours(len(value_names), as_hex = True)
     
@@ -406,7 +412,7 @@ class NapariUtils:
         as_np_array = as_np_array, show_tracks = show_tracks,
         value_name = x, points_colour = points_colours[i],
         cache = cache, label_suffixes = value_name_suffixes,
-        show_branching = show_branching
+        show_branching = show_branching, slices = slices
       )
                     
   """
@@ -415,7 +421,7 @@ class NapariUtils:
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   as_np_array = False, show_tracks = True,
                   points_colour = "white", cache = True, label_suffixes = [],
-                  show_branching = False):
+                  show_branching = False, slices = None):
     # set label ids
     label_ids = self.label_ids(value_name = value_name)
 
@@ -457,12 +463,17 @@ class NapariUtils:
         if os.path.exists(x):
           if self.as_dask is True:
             self.im_labels, group_info = zarr_utils.open_labels_as_dask(
-              x,
-              multiscales = len(self.im_data))
+              x, multiscales = len(self.im_data))
           else:
             self.im_labels, group_info = zarr_utils.open_labels_as_zarr(
-              x,
-              multiscales = len(self.im_data))
+              x, multiscales = len(self.im_data))
+              
+          # slice data?
+          # TODO this only works when multiscales is set to '1'
+          # you would need to cycle through scales and set slices .. ?
+          if len(self.im_data) == 1 and slices is not None:
+            print(self.im_labels[0].shape)
+            self.im_labels[0] = self.im_labels[0][slices]
           
           # TODO Do we need to convert to numpy array to edit labels?
           if as_np_array is True:

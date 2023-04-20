@@ -134,8 +134,8 @@ funParams <- list(
     '/nonDebris', '/nonDebris/XCR1', '/nonDebris/P14', '/nonDebris/O/LCMV',
     '/nonDebris/O/CD11b','/nonDebris/O/O1/CD11c', '/nonDebris/O/O1/CD3',
     '/nonDebris/O/O1/O2/B'),
-  neighbourMethod = "radius",
-  neighbourRadius = 50,
+  neighbourMethod = "delaunay",
+  neighbourRadius = 30,
   nRings = 1,
   savePops = TRUE
 )
@@ -174,6 +174,7 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 # only get first LCMV samples
 # uIDs <- exp.info$uID[1:3]
+# uIDs <- exp.info$uID[!exp.info$uID %in% c()]
 uIDs <- exp.info$uID
 
 # pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
@@ -299,14 +300,8 @@ ggplot(dataToPlot, aes(Treatment, freq)) +
   ylim(0, 100)
 ```
 
-
 ```{r}
-# get spatial distribution
-pops <- c("/nonDebris", "/nonDebris/P14", "/nonDebris/XCR1")
-popsWindow <- c("/nonDebris")
-popsPP1 <- c("/nonDebris/P14")
-popsPP2 <- c("/nonDebris/XCR1")
-
+# show with which cells P14 are in contact
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
 
@@ -315,101 +310,6 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
 )
 
-pp1 <- cciaObj$ppp(
-  windowPops = popsWindow,
-  popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-  pops = pops, usePops = popsPP1)
-# pp2 <- cciaObj$ppp(
-#   windowPops = popsWindow,
-#   popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-#   pops = pops, usePops = popsPP2)
-
-# exclude 'O' pops
-# pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
-# pops <- pops[pops != "/nonDebris"]
-
-# get pops
-# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
-```
-
-```{r}
-library(spatstat)
-
-for (i in names(pp1)) {
-  x <- pp1[[i]]
-  
-  exp.info[uID == i]
-  
-  message(paste(">> Test CSR for", i))
-  # test for randomness
-  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
-  ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
-  
-  # push back
-  exp.info[uID == i,
-           `:=`(
-             pp1.hopskel.p = ppHK.result$p.value,
-             pp1.hopskel.A = ppHK.result$statistic,
-             pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
-             pp1.clarkevans.p = ppCE.result$p.value,
-             pp1.clarkevans.R = ppCE.result$statistic
-           )]
-}
-
-# for (i in names(pp2)) {
-#   x <- pp2[[i]]
-#   
-#   exp.info[uID == i]
-#   
-#   message(paste(">> Test CSR for", i))
-#   # test for randomness
-#   ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
-#   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
-#   
-#   # push back
-#   exp.info[uID == i,
-#            `:=`(
-#              pp2.hopskel.p = ppHK.result$p.value,
-#              pp2.hopskel.A = ppHK.result$statistic,
-#              pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
-#              pp2.clarkevans.p = ppCE.result$p.value,
-#              pp2.clarkevans.R = ppCE.result$statistic
-#            )]
-# }
-```
-
-```{r fig_spatial_stats, fig.height = 1.5, fig.width = 1.5}
-# plot out clark evans
-dataToPlot <- exp.info %>%
-  drop_na(pp1.clarkevans.R) %>%
-  pivot_longer(
-    # cols = c("pp1.clarkevans.R", "pp2.clarkevans.R"),
-    cols = c("pp1.clarkevans.R"),
-    names_to = "spatial",
-    values_to = "value"
-  )
-
-ggplot(dataToPlot, aes(
-  spatial, value,
-  fill = Treatment)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    # width = 0.2, alpha = 1.0) +
-  scale_fill_brewer(name = NULL, palette = "Set3") +
-  theme(
-    legend.position = "top"
-    ) +
-  ylim(0, 1.5)
-  # ylim(0, 1)
-
-write.csv(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
-# ggsave(file.path(anaDir, "spatial_stats.tiff"), height = 2, width = 3)
-```
-
-```{r}
-# show with which cells P14 are in contact
 # get regions
 spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
 # regionsDT <- cciaObj$popDT(popType = "region", uIDs = uIDs, includeFiltered = TRUE)
@@ -442,6 +342,7 @@ popDT.spatial[
   spatialDT[
     pop.from %in% c("/nonDebris/P14/clustered", "/nonDebris/P14/non.clustered") &
     !pop.to %in% c("/nonDebris/P14/clustered", "/nonDebris/P14/non.clustered"),
+    # [!] this will only select the cells in closest proximity
     .SD[which.min(dist)], by = c("uID", "from")][, c("from", "pop.to")],
   on = c("label" = "from"), pop.to := pop.to
 ]
@@ -449,31 +350,10 @@ popDT.spatial[
 popDT.spatial[is.na(pop.to), pop.to := "NONE"]
 ```
 
-```{r}
-# now where are P14?
-summaryDT <- copy(spatialDT)
-
-summaryDT[pop.to %in% c(
-  # "/nonDebris/O/B20", "/nonDebris/O/O1/CD3", "/nonDebris"
-  # "/nonDebris/O/B220", "/nonDebris"
-), ]$pop.to <- "Other"
-summaryDT[pop.to %in% c("/nonDebris/O/O1/CD3"), ]$pop.to <- "T"
-
-summaryDT[pop.from == "/nonDebris/P14/clustered",]$pop.from <- "clustered"
-summaryDT[pop.from == "/nonDebris/P14/non.clustered",]$pop.from <- "non.clustered"
-summaryDT[pop.to == "/nonDebris/P14/clustered",]$pop.to <- "clustered"
-summaryDT[pop.to == "/nonDebris/P14/non.clustered",]$pop.to <- "non.clustered"
-summaryDT[pop.to == "/nonDebris/O/LCMV",]$pop.to <- "LCMV"
-summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
-summaryDT[pop.to == "/nonDebris",]$pop.to <- "Other"
-summaryDT[pop.to == "/nonDebris/O/B220",]$pop.to <- "B"
-summaryDT[pop.to == "/nonDebris/XCR1",]$pop.to <- "XCR1"
-```
-
 ```{r fig_p14, fig.height=1.5, fig.width=2}
 # summaryAssociation <- summaryAssociation %>%
 summaryAssociation <- copy(popDT.spatial)
-summaryAssociation[startsWith(pop, "/nonDebris/P14"), pop := "/nonDebris/P14"]
+# summaryAssociation[startsWith(pop, "/nonDebris/P14"), pop := "/nonDebris/P14"]
 
 summaryAssociation <- summaryAssociation %>%
   dplyr::filter(startsWith(pop, "/nonDebris/P14")) %>%
@@ -515,8 +395,8 @@ ggplot(data = summaryAssociation %>%
   facet_wrap(~pop, nrow = 1) +
   expand_limits(y = 0)
 
-# write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions.csv"))
-write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions_bin.csv"))
+write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions.csv"))
+# write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions_bin.csv"))
 ```
 
 
