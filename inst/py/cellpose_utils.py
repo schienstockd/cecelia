@@ -36,7 +36,8 @@ class CellposeUtils(SegmentationUtils):
     # check which GPU to use
     # Apple M1
     if torch.backends.mps.is_available():
-      self.gpu_device = 'mps'
+      # self.gpu_device = 'mps'
+      self.gpu_device = torch.device('mps')
 
   """
   get masks from model
