@@ -71,6 +71,11 @@ cciaBiocRequirements()
 # setup cecelia directory
 cciaSetup("~/path/to/cecelia")
 
+# install miniconda
+# (i) this is important for M1
+# https://github.com/rstudio/reticulate/issues/1298#issuecomment-1310660021
+reticulate::install_miniconda()
+
 # create conda environment
 cciaCondaCreate()
 # cciaCondaCreate(envType = "image-nogui") # to use without gui
@@ -82,6 +87,38 @@ cciaModels()
 # create app
 cciaCreateApp()
 ```
+
+# Troubleshooting for M1
+
+- PyQt5 did not install successfully
+
+Install Qt5 on MacOS - follow [‘SO
+answer’](https://stackoverflow.com/a/71669996). In Terminal:
+
+`brew install qt5`
+
+`brew link qt5 --force`
+
+- OMP: Error \#15: Initializing libiomp5.dylib, but found libomp.dylib
+  already initialized.
+
+See [‘github
+answer’](https://github.com/dmlc/xgboost/issues/1715#issuecomment-438924721).
+Add `nomkl` to the `r-cecelia-env` via:
+
+``` bash
+conda info --envs
+# conda environments:
+#
+                         /Users/username/Library/r-miniconda
+                         /Users/username/Library/r-miniconda/envs/r-cecelia-env
+                         /Users/username/Library/r-miniconda/envs/r-reticulate
+base                  *  /Users/username/opt/anaconda3
+conda activate /Users/username/Library/r-miniconda/envs/r-cecelia-env
+conda install nomkl
+```
+
+# Other tools
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:

@@ -135,8 +135,8 @@ funParams <- list(
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,
-  # postFiltering = 5,
-  postFiltering = 2,
+  postFiltering = 10,
+  postIterations = 4,
   numStates = 3,
   uIDs = uIDs
 )
