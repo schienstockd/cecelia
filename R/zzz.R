@@ -104,7 +104,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
       envname = envName, packages = c("openjdk"),
-      channel = c("conda-forge")
+      channel = c("anaconda")
     )
     
     reticulate::conda_install(
