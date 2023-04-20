@@ -78,6 +78,8 @@ reticulate::install_miniconda()
 
 # create conda environment
 cciaCondaCreate()
+# Use this for Apple M1 if the previous fails on PyQt5
+cciaCondaCreate(preinstallNapari = TRUE)
 # cciaCondaCreate(envType = "image-nogui") # to use without gui
 # cciaCondaCreate(envType = "flow") # for flow based only
 
