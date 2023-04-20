@@ -1,6 +1,6 @@
 blosc
 jupyter
-napari[all]
+napari[pyside2]
 napari-animation
 napari-accelerated-pixel-and-object-classification
 apoc

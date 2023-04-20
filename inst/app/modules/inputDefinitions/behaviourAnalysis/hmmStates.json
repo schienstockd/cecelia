@@ -33,6 +33,13 @@
           "default": 5
         }
       },
+      "postFiltering": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 0
+        }
+      },
 			"skipTimesteps": {
 				"type:integer": {
 					"min": 0,
@@ -86,15 +93,22 @@
           "step": 1
         }
       },
+      "postFiltering": {
+        "index": 5,
+        "label": "Post filtering",
+        "widget:slider": {
+          "step": 1
+        }
+      },
 			"skipTimesteps": {
-				"index": 5,
+				"index": 6,
 				"label": "Skip timesteps",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"subtrackOverlap": {
-				"index": 6,
+				"index": 7,
 				"label": "Subtrack Overlap",
 				"widget:checkbox": {
 				}

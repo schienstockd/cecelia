@@ -90,6 +90,17 @@ cciaModels()
 cciaCreateApp()
 ```
 
+# Troubleshooting
+
+- PyQt5 did not install successfully
+
+Install Qt5 on MacOS - follow ['SO answer'](https://stackoverflow.com/a/71669996).
+In Terminal:
+
+`brew install qt5`
+
+`brew link qt5 --force`
+
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to your system.
 You need download/install:
 

@@ -164,6 +164,18 @@ HmmStates <- R6::R6Class(
       # add to tracks
       tracks.DT[, hmm.state := hmm_predict$state]
       
+      # smooth states
+      browser()
+      if (self$funParams()$postFiltering > 0) {
+        # for every timepoint, take the value that is most frequent around this window
+        tracks.DT[
+          , hmm.state := caTools::runmean(
+            .SD[[x]],
+            k = self$funParams()$postFiltering
+            ), by = .(pop, uID, track_id)
+        ]
+      }
+      
       # go through objects
       for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
         self$writeLog(sprintf("save %s", x$getUID()))
