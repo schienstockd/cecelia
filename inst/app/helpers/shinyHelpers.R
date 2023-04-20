@@ -236,11 +236,12 @@ getShinyAppPath <- function(root = FALSE, superroot = FALSE) {
 getShinyBookmarkStatePath <- function(stateID, bookmarkStateDir = NULL) {
   # get bookmark directory
   if (is.null(bookmarkStateDir)) {
-    bookmarkStateDir <- getShinyAppPath()
+    bookmarkStateDir <- file.path(getShinyAppPath(), "shiny_bookmarks")
   }
   
   # search for the state file
-  curDirs <- list.dirs(bookmarkStateDir, recursive = TRUE)
+  # curDirs <- list.dirs(bookmarkStateDir, recursive = TRUE)
+  curDirs <- list.dirs(bookmarkStateDir, recursive = FALSE)
   
   # check which matches the stateID
   curFile <- curDirs[!is.na(stringr::str_match(curDirs, stateID))]
