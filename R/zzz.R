@@ -103,8 +103,12 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # pip install fails on Apple M1
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
-      envname = envName, packages = c("python-javabridge", "openjdk"),
-      # channel = c("conda-forge")
+      envname = envName, packages = c("openjdk"),
+      channel = c("conda-forge")
+    )
+    
+    reticulate::conda_install(
+      envname = envName, packages = c("python-javabridge"),
       pip = TRUE, pip_options = pipOptions
     )
   }
