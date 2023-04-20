@@ -58,9 +58,11 @@ cciaSetup <- function(path = "~/cecelia") {
 #' @description Create conda environment for cecelia
 #' @param envName character for environment name
 #' @param envType character for environment type. Any of c("image", "flow")
+#' @param rebuild boolean to rebuild environment
+#' @param preinstallNapari boolean to 'dummy' install napari for M1
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
-                            rebuild = FALSE) {
+                            rebuild = FALSE, preinstallNapari = FALSE) {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
@@ -123,6 +125,14 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       envname = envName, packages = c("cvxopt", "numcodecs"),
       channel = c("conda-forge")
     )
+    
+    # dummy install napari for M1
+    if (preinstallNapari == TRUE) {
+      reticulate::conda_install(
+        envname = envName, packages = c("napari"),
+        pip = TRUE, pip_options = pipOptions
+      )
+    }
   }
   
   reticulate::conda_install(
