@@ -32,7 +32,6 @@ torchvision
 torchaudio
 leidenalg
 squidpy
-deepcell
 SimpleITK
 SimpleITK-SimpleElastix
 skan
