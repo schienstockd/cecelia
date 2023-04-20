@@ -26,7 +26,7 @@ cciaPath <- function() {
 #' @export
 cciaCondaPath <- function() {
   file.path(reticulate::miniconda_path(),
-            pkg.env$cfg$python$conda$env)
+            "envs", pkg.env$cfg$python$conda$env)
 }
 
 #' @description Expose environment, eg/ for python classes
