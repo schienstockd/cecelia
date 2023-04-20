@@ -5,6 +5,7 @@ default:
     pathToJS: "www/JS"
   dirs:
     analysis: "ANALYSIS"
+    bioformats2raw: "/path/to/bioformats2raw"
     blosc: ""
     database: "db/"
     projects: "/path/to/projects/"
