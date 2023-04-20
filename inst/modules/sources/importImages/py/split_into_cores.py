@@ -32,6 +32,8 @@ def run(params):
   closing_filter = script_utils.get_param(params, 'closingFilter', default = 5)
   small_objects_size = script_utils.get_param(params, 'smallObjectsSize', default = 1000)
   label_expansion = script_utils.get_param(params, 'labelExpansion', default = 5)
+  label_expansion = script_utils.get_param(params, 'labelExpansion', default = 5)
+  conda_env_path = script_utils.get_param(params, 'condaEnvPath', default = '')
   
   # load the image
   im_dat, _ = zarr_utils.open_image_as_zarr(ori_path, as_dask = True)
@@ -51,7 +53,9 @@ def run(params):
     )
   
   # get pixel resolution for new images
-  showinf_path = os.path.join(cfg.data['dirs']['bftools'], 'showinf')
+  # TODO this will fail
+  # showinf_path = os.path.join(cfg.data['dirs']['bftools'], 'showinf')
+  showinf_path = os.path.join(conda_env_path, 'bin', 'showinf')
   
   im_info = subprocess.check_output([showinf_path, '-nopix', ori_path])
   im_info = im_info.decode().split('\n')

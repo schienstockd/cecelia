@@ -118,14 +118,13 @@ conda activate /Users/username/Library/r-miniconda/envs/r-cecelia-env
 conda install nomkl
 ```
 
+Otherwise add `export KMP_DUPLICATE_LIB_OK=TRUE` into
+`cecelia-macOSX.sh` before the line `echo $R_CALL`.
+
 # Other tools
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:
-
-- [`bftools`](https://downloads.openmicroscopy.org/bio-formats/6.7.0/artifacts/bftools.zip)
-
-- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
 
 - [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
   using Spot segmentation
@@ -141,8 +140,6 @@ For `ImageJ`, activate the following update sites:
 ``` yml
 default:
   dirs:
-    bftools: "/Applications/BFTools"
-    bioformats2raw: "/Applications/glencoe/bioformats2raw-0.3.0"
     projects: "/your/project/directory/"
   volumes:
     SSD: "/your/ssd/directory/"

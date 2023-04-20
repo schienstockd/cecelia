@@ -3,8 +3,6 @@ default:
     gating:
       defaultPlotType: "raster"
   dirs:
-    bftools: "/Applications/BFTools"
-    bioformats2raw: "/Applications/glencoe/bioformats2raw-0.3.0"
     projects: "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
   volumes:
     SSD: "/Volumes/Analysis_SSD/Dominik/cecelia/"

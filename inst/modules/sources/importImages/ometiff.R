@@ -66,7 +66,8 @@ Ometiff <- R6::R6Class(
       
       cmd <- paste(
         sprintf("cd \"%s\";", self$envParams()$dirs$zero),
-        file.path(sprintf("%s", cciaConf()$dirs$bftools), "bfconvert"),
+        # file.path(sprintf("%s", cciaConf()$dirs$bftools), "bfconvert"),
+        file.path(sprintf("%s", cciaCondaPath()), "bin", "bfconvert"),
         paste(pyramidScaleStr, collapse = " "),
         "-bigtiff",
         "-overwrite",

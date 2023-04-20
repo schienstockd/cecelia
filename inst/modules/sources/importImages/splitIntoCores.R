@@ -34,7 +34,8 @@ SplitIntoCores <- R6::R6Class(
         otsuAdjust = self$funParams()$otsuAdjust,
         closingFilter = self$funParams()$closingFilter,
         smallObjectsSize = self$funParams()$smallObjectsSize,
-        labelExpansion = self$funParams()$labelExpansion
+        labelExpansion = self$funParams()$labelExpansion,
+        condaEnvPath = cciaCondaPath()
       )
       
       # call python
