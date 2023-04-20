@@ -236,7 +236,8 @@ getShinyAppPath <- function(root = FALSE, superroot = FALSE) {
 getShinyBookmarkStatePath <- function(stateID, bookmarkStateDir = NULL) {
   # get bookmark directory
   if (is.null(bookmarkStateDir)) {
-    bookmarkStateDir <- getShinyAppPath(superroot = TRUE)
+    # bookmarkStateDir <- getShinyAppPath(superroot = TRUE)
+    bookmarkStateDir <- getShinyAppPath()
   }
   
   # search for the state file
