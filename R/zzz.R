@@ -126,7 +126,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       channel = c("conda-forge")
     )
     
-    # dummy install napari for M1
+    # TODO dummy install napari for M1 otherwise PyQt5 will stall on install
     if (preinstallNapari == TRUE) {
       reticulate::conda_install(
         envname = envName, packages = c("napari"),
@@ -144,7 +144,8 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # install OME bioformats
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
-      envname = envName, packages = c("bioformats2raw<0.5"), channel = "ome")
+      # TODO Otherwise H5 is default - I don't know how to change that
+      envname = envName, packages = c("bioformats2raw"), channel = "ome")
     reticulate::conda_install(
       envname = envName, packages = c("bftools"), channel = "bioconda")
   }
