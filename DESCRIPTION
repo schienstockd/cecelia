@@ -74,7 +74,8 @@ Imports:
     purrr,
     flowViz,
     S4Vectors,
-    ggpubr
+    ggpubr,
+    DescTools
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1

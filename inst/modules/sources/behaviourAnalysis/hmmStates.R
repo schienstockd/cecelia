@@ -165,15 +165,22 @@ HmmStates <- R6::R6Class(
       tracks.DT[, hmm.state := hmm_predict$state]
       
       # smooth states
-      browser()
       if (self$funParams()$postFiltering > 0) {
+        find.freq <- function(x) {
+          browser()
+          
+          # get most frequent value
+          y <- DescTools::Mode(x)
+          
+          if (length(y > 1))
+            
+        }
+        
         # for every timepoint, take the value that is most frequent around this window
-        tracks.DT[
-          , hmm.state := caTools::runmean(
-            .SD[[x]],
-            k = self$funParams()$postFiltering
-            ), by = .(pop, uID, track_id)
-        ]
+        tracks.DT[, hmm.state.max := frollapply(
+          x = .SD[, hmm.state], n = self$funParams()$postFiltering,
+          find.freq, fill = NA, align = "right", na.rm = TRUE),
+          by = by = .(pop, uID, track_id)]
       }
       
       # go through objects
