@@ -28,6 +28,14 @@ class CellposeUtils(SegmentationUtils):
     self.models = params['models']
     self.match_threshold = script_utils.get_param(params, 'match_threshold', default = 0.8)
     self.remove_unmatched = script_utils.get_param(params, 'remove_unmatched', default = True)
+    
+    self.gpu_device = None
+    
+    # TODO is there a better way?
+    # check which GPU to use
+    # Apple M1
+    if torch.backends.mps.is_available():
+      self.gpu_device = 'mps'
 
   """
   get masks from model
@@ -302,7 +310,8 @@ class CellposeUtils(SegmentationUtils):
         # init model
         if cp_model in cfg.data['python']['cellpose']['models']:
           model = models.Cellpose(
-            gpu = self.use_gpu, model_type = cp_model
+            gpu = self.use_gpu, model_type = cp_model,
+            device = self.gpu_device
             # omni = self.use_omni
             )
         else:

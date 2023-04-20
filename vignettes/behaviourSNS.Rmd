@@ -131,6 +131,7 @@ funParams <- list(
   popType = "live",
   pops = c("T.A/tracked", "T.B/tracked"),
   modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  colName = "movement",
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,

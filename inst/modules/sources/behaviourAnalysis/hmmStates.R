@@ -167,20 +167,26 @@ HmmStates <- R6::R6Class(
       # smooth states
       if (self$funParams()$postFiltering > 0) {
         find.freq <- function(x) {
-          browser()
-          
           # get most frequent value
-          y <- DescTools::Mode(x)
+          y <- DescTools::Mode(x, na.rm = TRUE)
           
-          if (length(y > 1))
-            
+          # TODO take first occurence value if more than one
+          if (length(y > 1)) {
+            names(y) <- y
+            minPos <- sapply(y, function(z) min(which(x == z)))
+            y <- as.numeric(names(y)[which(minPos == min(minPos))])
+          }
+          
+          y
         }
         
         # for every timepoint, take the value that is most frequent around this window
         tracks.DT[, hmm.state.max := frollapply(
           x = .SD[, hmm.state], n = self$funParams()$postFiltering,
-          find.freq, fill = NA, align = "right", na.rm = TRUE),
-          by = by = .(pop, uID, track_id)]
+          find.freq, fill = NA, align = "right"),
+          by = .(pop, uID, track_id)]
+        
+        browser()
       }
       
       # go through objects
