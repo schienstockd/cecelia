@@ -93,8 +93,10 @@ Omezarr <- R6::R6Class(
           # sprintf("cd \"%s\";", self$envParams()$dirs$zero),
           # go to file directory
           sprintf("cd \"%s\";", dirname(imPathIn)),
-          # file.path(sprintf("%s", cciaConf()$dirs$bioformats2raw), "bin", "bioformats2raw"),
-          file.path(sprintf("%s", cciaCondaPath()), "bin", "bioformats2raw"),
+          if ("bioformats2raw" %in% names(cciaConf()$dirs))
+            file.path(sprintf("%s", cciaConf()$dirs$bioformats2raw), "bin", "bioformats2raw")
+          else
+            file.path(sprintf("%s", cciaCondaPath()), "bin", "bioformats2raw"),
           sprintf(imPathInPattern, basename(imPathIn)),
           sprintf("\"%s\"", imPathOut),
           pyramidScaleStr,

@@ -144,7 +144,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # install OME bioformats
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
-      # TODO Otherwise H5 is default - I don't know how to change that
       envname = envName, packages = c("bioformats2raw"), channel = "ome")
     reticulate::conda_install(
       envname = envName, packages = c("bftools"), channel = "bioconda")

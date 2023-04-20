@@ -106,6 +106,8 @@ answer’](https://stackoverflow.com/a/71669996). In Terminal:
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:
 
+-   [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
+
 -   [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
     using Spot segmentation
 
@@ -120,6 +122,7 @@ For `ImageJ`, activate the following update sites:
 ``` yml
 default:
   dirs:
+    bioformats2raw: "/path/to/bioformats2raw"
     projects: "/your/project/directory/"
   volumes:
     SSD: "/your/ssd/directory/"
