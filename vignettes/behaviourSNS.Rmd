@@ -135,7 +135,8 @@ funParams <- list(
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,
-  postFiltering = 5,
+  # postFiltering = 5,
+  postFiltering = 2,
   numStates = 3,
   uIDs = uIDs
 )
@@ -185,7 +186,8 @@ popDTs <- cciaObj$popDT(
 
 ```{r fig_tracks_hmm, fig.height=8, fig.width=8}
 # plot tracks for each and HMM time
-datToPlot <- popDTs[uID == "uZv4t8"] %>%
+datToPlot <- popDTs[uID == "uZv4t8"]
+datToPlot <- datToPlot %>%
   left_join(
     datToPlot %>%
       group_by(uID, value_name, track_id) %>%

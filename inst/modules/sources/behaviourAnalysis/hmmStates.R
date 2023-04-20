@@ -181,12 +181,11 @@ HmmStates <- R6::R6Class(
         }
         
         # for every timepoint, take the value that is most frequent around this window
-        tracks.DT[, hmm.state.max := frollapply(
+        tracks.DT[, hmm.state := frollapply(
           x = .SD[, hmm.state], n = self$funParams()$postFiltering,
-          find.freq, fill = NA, align = "right"),
+          # find.freq, fill = NA, align = "right"),
+          max, fill = NA, align = "right"),
           by = .(pop, uID, track_id)]
-        
-        browser()
       }
       
       # go through objects
