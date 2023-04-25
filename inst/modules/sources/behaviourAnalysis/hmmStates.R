@@ -176,7 +176,9 @@ HmmStates <- R6::R6Class(
             # names(y) <- y
             # minPos <- sapply(y, function(z) min(which(x == z)))
             # y <- as.numeric(names(y)[which(minPos == min(minPos))])
-            y <- x[[round(length(x)/2)]]
+            # y <- x[[round(length(x)/2)]]
+            # take the first one
+            y <- y[[1]]
           }
           
           y

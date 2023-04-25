@@ -120,9 +120,10 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       pip = TRUE, pip_options = pipOptions
     )
     
-    # cvxopt
+    # cvxopt and others
+    # https://github.com/civisanalytics/python-glmnet/issues/45#issuecomment-421094649
     reticulate::conda_install(
-      envname = envName, packages = c("cvxopt", "numcodecs"),
+      envname = envName, packages = c("cvxopt", "numcodecs", "glmnet"),
       channel = c("conda-forge")
     )
     
