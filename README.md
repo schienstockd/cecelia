@@ -52,11 +52,11 @@ depends on a python environment which needs to be created. There are
 multiple options available depending on how you would like to use the
 app:
 
--   `image` For image analysis on Desktop
+- `image` For image analysis on Desktop
 
--   `image-nogui` For image processing without GUI
+- `image-nogui` For image processing without GUI
 
--   `flow` For flow cytometry analysis
+- `flow` For flow cytometry analysis
 
 ``` r
 library(cecelia)
@@ -79,7 +79,7 @@ reticulate::install_miniconda()
 # create conda environment
 cciaCondaCreate()
 # Use this for Apple M1 if the previous fails on PyQt5
-cciaCondaCreate(preinstallNapari = TRUE)
+# cciaCondaCreate(preinstallNapari = TRUE)
 # cciaCondaCreate(envType = "image-nogui") # to use without gui
 # cciaCondaCreate(envType = "flow") # for flow based only
 
@@ -92,7 +92,7 @@ cciaCreateApp()
 
 # Troubleshooting for M1
 
--   PyQt5 did not install successfully
+- PyQt5 did not install successfully
 
 Install Qt5 on MacOS - follow [‘SO
 answer’](https://stackoverflow.com/a/71669996). In Terminal:
@@ -106,18 +106,18 @@ answer’](https://stackoverflow.com/a/71669996). In Terminal:
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to
 your system. You need download/install:
 
--   [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
+- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
 
--   [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
-    using Spot segmentation
+- [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if
+  using Spot segmentation
 
 For `ImageJ`, activate the following update sites:
 
--   IJPB-plugins
+- IJPB-plugins
 
--   3D-ImageJ-Suite
+- 3D-ImageJ-Suite
 
--   Bio-Formats
+- Bio-Formats
 
 ``` yml
 default:
@@ -230,7 +230,7 @@ cciaObj$runTask(
 
 ## 2D static image analysis - Spleen example
 
--   [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
+- [`Download 2D spleen example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=WT2a-A-3-TCRb-421-CD169-FITC-33D1-PE-XCR1-APC.czi)
 
 1.  Create project
 
@@ -258,21 +258,21 @@ check whether `cellpose` or a sequence of morphological filters which
 segments donut- and blob-like objects (`donblo`) works for a partiular
 image.
 
--   `cellpose` is a good choice for most cases. We use `cellpose` to
-    segment a single merged image. We can create a sequence of merged
-    images to create individual segmentations if necessary.
+- `cellpose` is a good choice for most cases. We use `cellpose` to
+  segment a single merged image. We can create a sequence of merged
+  images to create individual segmentations if necessary.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose_params.png" height="300"/>
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_cellpose.png" height="300"/>
 </p>
 
--   In this case, `cellpose` did not capture some of the more dense and
-    noisy cells. We have implemented a simple sequence of morphological
-    filters with subsequent spot detection and segmentation in `ImageJ`
-    using `TrackMate` and the `3D Image Suite`. The quality of the
-    segmentation is lower than `cellpose` but it will capture more
-    cells, such as the `yellow XCR1+ DCs` within the `T cell zone`.
+- In this case, `cellpose` did not capture some of the more dense and
+  noisy cells. We have implemented a simple sequence of morphological
+  filters with subsequent spot detection and segmentation in `ImageJ`
+  using `TrackMate` and the `3D Image Suite`. The quality of the
+  segmentation is lower than `cellpose` but it will capture more cells,
+  such as the `yellow XCR1+ DCs` within the `T cell zone`.
 
 <p float="left">
 <img src="https://github.com/schienstockd/cecelia/raw/master/im/examples/2D_spleen/4_seg_donblo_params.png" height="300"/>
@@ -403,7 +403,7 @@ sequential clusters, please tick that box.**
 
 ## 3D static image analysis - Lymph node example
 
--   [`Download 3D lymph node example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=M4-v1%20CTRL%20z_100um%20tile_10x7_stitch%20COMPED%20WORKING%20GATED%20DOWNSAMPLED%204C-scaled.tif)
+- [`Download 3D lymph node example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M/download?path=%2F&files=M4-v1%20CTRL%20z_100um%20tile_10x7_stitch%20COMPED%20WORKING%20GATED%20DOWNSAMPLED%204C-scaled.tif)
 
 1.  Create project
 
@@ -535,7 +535,7 @@ ggplot(summaryToPlot) +
 
 ## 3D live image analysis - Two-photon lymph node example
 
--   [`Download 2P example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M)
+- [`Download 2P example`](https://cloudstor.aarnet.edu.au/plus/s/cJsQOyk6d1Fsg4M)
 
 1.  Create project
 
