@@ -39,3 +39,4 @@ squidpy
 SimpleITK
 SimpleITK-SimpleElastix
 skan
+pstree
