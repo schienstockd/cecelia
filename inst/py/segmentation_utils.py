@@ -8,6 +8,7 @@ from pathlib import Path
 
 # utils
 import py.script_utils as script_utils
+import py.label_utils as label_utils
 import py.zarr_utils as zarr_utils
 import py.slice_utils as slice_utils
 import py.measure_utils as measure_utils
@@ -58,6 +59,7 @@ class SegmentationUtils:
     self.overlap = script_utils.get_param(params, 'overlap', default = 0)
     self.block_size_z = script_utils.get_param(params, 'block_size_z', default = None)
     self.overlap_z = script_utils.get_param(params, 'overlap_z', default = None)
+    self.label_overlap = script_utils.get_param(params, 'label_overlap', default = 0.2)
     
     # TODO does that make sense .. ?
     self.context = script_utils.get_param(params, 'context', default = round(self.overlap * 3/4))
@@ -338,7 +340,15 @@ class SegmentationUtils:
             y[y > 0] = y[y > 0] + cur_max_labels
             
             # merge with exisiting labels
-            labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
+            # this will lead to artefacts
+            # labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
+            # TODO merge masks - is there a better way?
+            matched_masks = label_utils.match_masks(
+              [labels[j][cur_slices], y]
+              stitch_threshold = self.label_overlap,
+              remove_unmatched = False
+              )
+            labels[j][cur_slices] = np.maximum(matched_masks[0], matched_masks[1])
             
             y_max_label = y.max()
             
