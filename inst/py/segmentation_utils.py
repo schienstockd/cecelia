@@ -346,7 +346,7 @@ class SegmentationUtils:
               # TODO merge masks - is there a better way?
               labels[j][cur_slices] = np.amax(np.stack(
                 label_utils.match_masks(
-                  [y, np.squeeze(labels[j][cur_slices]]),
+                  [y, np.squeeze(labels[j][cur_slices])],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
