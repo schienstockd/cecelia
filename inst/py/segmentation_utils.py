@@ -341,6 +341,8 @@ class SegmentationUtils:
             
             # merge with exisiting labels
             if self.label_overlap > 0:
+              self.logfile_utils.log(f'> Merge labels by overlap {self.label_overlap}')
+              
               # TODO merge masks - is there a better way?
               labels[j][cur_slices] = np.maximum(
                 labels[j][cur_slices],
@@ -352,6 +354,7 @@ class SegmentationUtils:
                   )[0]
                 )
             else:
+              self.logfile_utils.log(f'> Merge labels by maximum')
               # this will lead to artefacts - but is fast
               labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
             
