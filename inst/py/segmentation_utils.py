@@ -342,12 +342,15 @@ class SegmentationUtils:
             # merge with exisiting labels
             if self.label_overlap > 0:
               # TODO merge masks - is there a better way?
-              matched_masks = label_utils.match_masks(
-                [labels[j][cur_slices], y],
-                stitch_threshold = self.label_overlap,
-                remove_unmatched = False
+              labels[j][cur_slices] = np.maximum(
+                labels[j][cur_slices],
+                label_utils.match_masks(
+                  # [labels[j][cur_slices], y],
+                  [y, labels[j][cur_slices]],
+                  stitch_threshold = self.label_overlap,
+                  remove_unmatched = False
+                  )[0]
                 )
-              labels[j][cur_slices] = np.maximum(matched_masks[0], matched_masks[1])
             else:
               # this will lead to artefacts - but is fast
               labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
