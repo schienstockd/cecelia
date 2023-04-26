@@ -347,8 +347,8 @@ class SegmentationUtils:
               labels[j][cur_slices] = np.maximum(
                 labels[j][cur_slices],
                 label_utils.match_masks(
-                  # [labels[j][cur_slices], y],
-                  [y, labels[j][cur_slices]],
+                  [labels[j][cur_slices], y],
+                  # [y, labels[j][cur_slices]],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )[0]
