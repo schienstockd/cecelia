@@ -349,3 +349,80 @@ write.csv(summaryDF %>%
             dplyr::filter(Treatment.DTx == 2),
           file.path(anaDir, "gcamp_behaviour_DTx.csv"))
 ```
+
+```{r fig_hmm_state_in_clusters, fig.height=1, fig.width=4}
+# plot plot GCAMP for behaviour
+stainingCombinations <- stack(sapply(
+  cciaObj$cciaObjects(uIDs = uIDs),
+  function(x) paste(x$imChannelNames(), collapse = ",")
+))
+setnames(stainingCombinations, "values", "staining")
+setnames(stainingCombinations, "ind", "uID")
+
+# get track clusters for tracks with at least >= x GCAMP+
+summaryDF <- popDTs %>%
+# popDTs %>%
+  group_by(uID, pop, live.cell.track.clusters.skip3, live.cell.hmm.state.gcamp) %>%
+  summarise(n.clust = n()) %>%
+  mutate(freq.clust = n.clust/sum(n.clust) * 100) %>%
+  ungroup() %>%
+  complete(
+    uID, pop, live.cell.track.clusters.skip3, live.cell.hmm.state.gcamp,
+    fill = list(freq.clust = 0)
+    ) %>%
+  dplyr::filter(
+    !live.cell.track.clusters.skip3 %in% c("NA", NA),
+    live.cell.hmm.state.gcamp == 3,
+    live.cell.track.clusters.skip3 != 3
+    ) %>%
+  left_join(exp.info) %>%
+  left_join(stainingCombinations)
+
+summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
+summaryDF$stain <- str_extract(
+  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
+  )
+# drop NA stain
+summaryDF <- summaryDF %>% drop_na(stain)
+
+# summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
+
+# summaryDF[summaryDF$Treatment == "Uninfected",]$DTx <- ""
+summaryDF[summaryDF$Treatment == "Uninfected",]$Treatment <- "PBS"
+
+summaryDF$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+
+summaryDF$Stain.ID <- 0
+summaryDF[summaryDF$stain == "OTI-CTV",]$Stain.ID <- 2
+summaryDF[summaryDF$stain == "gBT-CTDR",]$Stain.ID <- 1
+
+# plot
+ggplot(summaryDF,
+       aes(
+         interaction(Treatment, DTx, stain), freq.clust,
+         fill = as.factor(live.cell.track.clusters.skip3)
+         )) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Frequency GCAMP+") + xlab("") +
+  # ylim(0, 1) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 0),
+          file.path(anaDir, "Mea_gcamp.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 1),
+          file.path(anaDir, "Dir_gcamp.csv"))
+write.csv(summaryDF %>%
+            dplyr::filter(live.cell.track.clusters.skip3 == 2),
+          file.path(anaDir, "Sca_gcamp.csv"))
+```
+

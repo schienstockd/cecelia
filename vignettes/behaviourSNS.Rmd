@@ -151,6 +151,119 @@ task <- cciaObj$runTask(
 )
 ```
 
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "LUw0Nx", versionID = versionID, initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+uIDs <- exp.info[exp.info$Include == "Y",]$uID
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("T.A/tracked", "T.B/tracked"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  colName = "movement",
+  hmmStates = c("movement"),
+  includeStart = FALSE,
+  includeSelfTransitions = TRUE,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmTransitions",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "LUw0Nx", versionID = versionID, initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+uIDs <- exp.info[exp.info$Include == "Y",]$uID
+
+# run task
+funParams <- list(
+  popType = "live",
+  popsToCluster = c("T.A/tracked", "T.B/tracked"),
+  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  clusterColName = "hmm_transitions_movement",
+  resolution = 0.20,
+  percentile = 99.5,
+  trackMeasures = c(
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
+  ),
+  objectMeasures = c(
+    # "extent",
+    # "solidity",
+    # "integral_mean_curvature",
+    # "ellipticity_oblate",
+    # "ellipticity_prolate",
+    # "ellipticity_interm_oblate",
+    # "ellipticity_interm_prolate",
+    # "sphericity",
+    # HMM states
+    # "live.cell.hmm.state.movement"
+    "live.cell.hmm.transitions.movement"
+    ),
+  nMeasures = c(
+    ),
+  sumMeasures = c(
+    ),
+  calcMeasures = list(
+  ),
+  addPops = c(
+    ),
+  calcLabelProps = TRUE,
+  usePaga = FALSE,
+  # minTracklength = 6,
+  minTracklength = 50,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
 
 ```{r}
 devtools::load_all("../")
@@ -194,10 +307,16 @@ datToPlot <- datToPlot %>%
       summarise(n = n(), min_t = min(centroid_t))
   )
 
-ggplot(datToPlot %>% filter(n > 100, min_t <= 20),
+ggplot(datToPlot %>% filter(n > 50, min_t <= 20),
        aes(as.factor(centroid_t), as.factor(track_id))) +
   theme_classic() +
   geom_tile(aes(fill = as.factor(live.cell.hmm.state.movement))) +
+  scale_fill_brewer(palette = "Set1")
+
+ggplot(datToPlot %>% filter(n > 50, min_t <= 20),
+       aes(as.factor(centroid_t), as.factor(track_id))) +
+  theme_classic() +
+  geom_tile(aes(fill = as.factor(live.cell.track.clusters.hmm_transitions_movement))) +
   scale_fill_brewer(palette = "Set1")
   # viridis::scale_fill_viridis(
   #   breaks = c(0, 1),
@@ -216,6 +335,134 @@ ggplot(datToPlot %>% filter(n > 100, min_t <= 20),
   # xlab("") + ylab("")
 ```
 
+```{r fig_total_transitions, fig.height=1, fig.width=5}
+library(ggplot2)
+library(ggraph)
+
+freqThr <- 0.001
+
+pList <- list()
+
+stateOrder <- list(
+  "M" = "2",
+  "S" = "3",
+  "A" = "1"
+)
+
+summaryDF <- popDTs %>%
+  left_join(exp.info)
+
+summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
+summaryDF$stain <- str_extract(
+  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
+  )
+summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
+
+
+for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
+  # plot heatmap of transitions
+  DF <- summaryDF %>%
+    dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
+    group_by(live.cell.hmm.transitions.movement) %>%
+    summarise(n = n()) %>%
+    separate(live.cell.hmm.transitions.movement,
+             into = c("from", "to"),
+             sep = "_", convert = TRUE) %>%
+    mutate(across(c(from, to), as.character)) %>%
+    replace_na(list(from = "0"))
+  
+  # edges for non-self transitions
+  edges <- DF %>%
+    dplyr::filter(from != to) %>%
+    mutate(freq = n/sum(n)) %>%
+    complete(from, to, fill = list(freq = 0)) %>%
+    drop_na() %>%
+    dplyr::filter(freq > freqThr) %>%
+    mutate(non.self = (freq - min(freq)) / (max(freq) - min(freq))) %>%
+    arrange(freq)
+  
+  # get number of self transitions
+  nodes <- DF %>%
+    dplyr::filter(from == to) %>%
+    mutate(freq = n/sum(n)) %>%
+    complete(from = unlist(stateOrder), fill = list(freq = 0)) %>%
+    replace_na(list(to = "0")) %>%
+    select(from, freq) %>%
+    dplyr::rename(node = from) %>%
+    add_row(node = "0", freq = 0) %>%
+    mutate(nodeName = node) %>%
+    dplyr::filter(node %in% unique(c(edges$from, edges$to))) %>%
+    mutate(self = (freq - min(freq)) / (max(freq) - min(freq)))
+  
+  # add names for nodes
+  for (i in names(stateOrder)) {
+    nodes[nodes$nodeName == stateOrder[[i]], ]$nodeName <- i
+  }
+  
+  # add state order
+  counter <- 0
+  nodes$order <- 0
+  for (y in stateOrder) {
+    nodes[nodes$node == y,]$order <- counter
+
+    counter <- counter + 1
+  }
+  
+  # https://www.hydrogenwaterusa.com/visualizing-large-directed-networks-with-ggraph-in-r/
+  g <- igraph::graph_from_data_frame(d = edges,
+                                     vertices = nodes %>% arrange(order),
+                                     directed = TRUE)
+  
+  # pList[[x]] <- ggraph(g, layout = "auto") +
+  # pList[[x]] <- ggraph(g, layout = "igraph", algorithm = "circle") +
+  # pList[[x]] <- ggraph(g, layout = "linear") +
+  # ggraph(g, layout = "igraph", algorithm = "circle") +
+  # ggraph(g, layout = "auto") +
+  ggraph(g, layout = "linear") +
+    # ggtitle(sprintf("%s", x)) +
+    geom_edge_fan2(aes(width = non.self, color = non.self),
+                   arrow = arrow(length = unit(5, 'mm'), type = "closed"),
+                   end_cap = circle(3, 'mm')) +
+    scale_edge_width(range = c(1, 2)) +
+    scale_edge_color_gradient2(
+      # low = "#D1D1D1",
+      low = "#dadada",
+      high = "black",
+      mid = "#616161",
+      midpoint = .5
+    ) +
+    geom_node_label(aes(label = nodeName, fill = self),
+                    color = "white", repel = FALSE, size=5,
+                    label.padding = unit(0.25, "lines")) +
+    scale_fill_gradient2(
+      # low = "blue",
+      low = "#009fe3",
+      mid = "black",
+      # high = "red",
+      high = "#e71d73",
+      midpoint = .5
+    ) +
+    theme_graph(
+      plot_margin = margin(0, 0, 0, 0)
+    ) +
+    theme(
+      legend.position = "none",
+      plot.title = element_text(size = 6, family = "Arial")
+    )
+
+  ggsave(file = file.path(anaDir, paste0("network_", x, ".pdf")),
+         width = 3, height = 1, dpi = 400)
+}
+
+# ggpubr::ggarrange(plotlist = pList, nrow = 1)
+
+# https://stackoverflow.com/a/17075381
+# ggsave(file = file.path(anaDir, "total_networks.tiff"),
+# ggsave(file = file.path(anaDir, "total_networks_GCAMP.tiff"),
+  # width = 7, height = 2)
+  # width = 20, height = 3.5)
+  # width = 25, height = 2)
+```
 
 ```{r fig_hmm_props, fig.height=2, fig.width=2.5}
 # show measurements of clusters to compare
