@@ -51,6 +51,7 @@ def run(params):
     'block_size_z': params['blockSizeZ'] if 'blockSizeZ' in params else 100,
     'overlap_z': params['overlapZ'] if 'overlapZ' in params else 10,
     'context': params['context'] if 'context' in params else 52,
+    'label_overlap': params['labelOverlap'] if 'labelOverlap' in params else 0,
     # post-processing parameters
     'extended_measures': params['extendedMeasures'] if 'extendedMeasures' in params else False,
     'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,

@@ -340,15 +340,17 @@ class SegmentationUtils:
             y[y > 0] = y[y > 0] + cur_max_labels
             
             # merge with exisiting labels
-            # this will lead to artefacts
-            # labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
-            # TODO merge masks - is there a better way?
-            matched_masks = label_utils.match_masks(
-              [labels[j][cur_slices], y],
-              stitch_threshold = self.label_overlap,
-              remove_unmatched = False
-              )
-            labels[j][cur_slices] = np.maximum(matched_masks[0], matched_masks[1])
+            if self.label_overlap > 0:
+              # TODO merge masks - is there a better way?
+              matched_masks = label_utils.match_masks(
+                [labels[j][cur_slices], y],
+                stitch_threshold = self.label_overlap,
+                remove_unmatched = False
+                )
+              labels[j][cur_slices] = np.maximum(matched_masks[0], matched_masks[1])
+            else:
+              # this will lead to artefacts - but is fast
+              labels[j][cur_slices] = np.maximum(labels[j][cur_slices], y)
             
             y_max_label = y.max()
             

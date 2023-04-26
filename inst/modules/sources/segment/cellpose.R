@@ -86,6 +86,7 @@ Cellpose <- R6::R6Class(
         blockSizeZ = self$funParams()$blockSizeZ,
         overlapZ = self$funParams()$overlapZ,
         context = self$funParams()$context,
+        labelOverlap = self$funParams()$labelOverlap,
         clearDepth = self$funParams()$clearDepth,
         clearTouchingBorder = self$funParams()$clearTouchingBorder,
         updateMeasures = self$funParams()$updateMeasures,
