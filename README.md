@@ -105,15 +105,15 @@ brew link qt5 --force
 -   MPS for Cellpose works but some adjustment are not in the main
     branch yet:
 
-You make the changes from this [pull
+You can make the changes from this [pull
 request](https://github.com/MouseLand/cellpose/pull/668) or you can
 replace
 `~/Library/r-miniconda/envs/r-cecelia-env/lib/python3.9/site-packages/cellpose/core.py`
 with this [core.py](inst/patches/cellpose/core.py).
 
 You need at least Ventura 13.2 and XCode 13.2 for pyTorch to work with
-MPS GPU in this case. ([Github
-issue](https://github.com/pytorch/pytorch/issues/97606#issuecomment-1483901814))
+MPS GPU in this case ([Github
+issue](https://github.com/pytorch/pytorch/issues/97606#issuecomment-1483901814)).
 
 # Other tools
 
