@@ -213,7 +213,7 @@ ReactivePersistentObject <- R6::R6Class(
           stateRDS <- readRDS(private$getStateFile())
           
           if (any(is.na(stringr::str_match(private$getStateFile(), "bUXBMD"))))
-            warning(sprintf(">> init ccia obj from %s", statePath))
+            warning(sprintf(">> init ccia obj from %s", private$getStateFile()))
           
           # restore values
           for (i in names(stateRDS)) {
