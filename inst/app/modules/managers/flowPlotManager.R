@@ -1314,7 +1314,7 @@ createFlowPlotManager <- function(
         curInput <- input[[curInputID]]
         curVal <- x()$getPlotType()
 
-        if (curInput != curVal) {
+        if (length(curVal) == 0 | curInput != curVal) {
           x()$setPlotType(curInput)
 
           # save to image
