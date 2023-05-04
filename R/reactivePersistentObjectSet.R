@@ -436,6 +436,8 @@ ReactivePersistentObjectSet <- R6::R6Class(
       
       # load objects from directory
       for (uID in uIDs) {
+        warning(uID)
+        
         # create class
         objsToAdd[[uID]] <- initCciaObject(
           file.path(objDir, uID),
