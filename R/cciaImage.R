@@ -339,18 +339,23 @@ CciaImage <- R6::R6Class(
               self$omeXML(), self$omeXMLPath("//StructuredAnnotations//Value")))
             
             # get timelapse axis information
-            timelapseAxisNodes <- valueChildren[!is.na(stringr::str_match(valueChildren, "TIMELAPSE"))]
+            timelapseAxisNodes <- valueChildren[!is.na(
+              stringr::str_match(as.character(valueChildren), "TIMELAPSE"))]
+            
             axisNum <- as.numeric(
-              stringr::str_extract(xml2::xml_contents(xml2::xml_contents(timelapseAxisNodes)), "(?<=axis #)[0-9]$")
+              stringr::str_extract(
+                as.character(xml2::xml_contents(xml2::xml_contents(timelapseAxisNodes))), "(?<=axis #)[0-9]$")
             )
             axisNum <- axisNum[!is.na(axisNum)]
             
             # get interval
-            axisValue <- valueChildren[!is.na(stringr::str_match(valueChildren, sprintf("step #%s", axisNum)))]
+            axisValue <- valueChildren[!is.na(stringr::str_match(as.character(valueChildren), sprintf("step #%s", axisNum)))]
             
             # put information into list
             tInfo <- list(
-              interval = as.numeric(stringr::str_extract(xml2::xml_contents(xml2::xml_contents(axisValue)[2]), "[0-9]+\\.[0-9]+")) / 60
+              interval = as.numeric(stringr::str_extract(
+                as.character(xml2::xml_contents(xml2::xml_contents(axisValue)[2])),
+                "[0-9]+\\.[0-9]+")) / 60
             )
           })
         } else if (endsWith(basenameOriFilepath, ".lsm")) {

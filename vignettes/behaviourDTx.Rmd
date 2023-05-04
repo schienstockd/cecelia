@@ -67,13 +67,17 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTra
 ```
 
 ```{r}
-initCciaObject(
-  file.path("/Volumes/Analysis_SSD/Dominik/cecelia/projects/8BR53W/ANALYSIS/1/", "bUXBMD"),
-  initReactivity = TRUE,
-  initTransaction = FALSE
-)
-```
+# rename
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "AiqZey", versionID = versionID, initReactivity = FALSE # DTx
+)
+
+cciaObj$omeXMLTimelapseInfo()
+```
 
 ```{r}
 # rename
