@@ -27,8 +27,219 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
+# HPC config
+HPC_CONF <-  list(
+  hpc = list(
+    conf = list(
+      email = "schienstockd@student.unimelb.edu.au",
+      emailOnBegin = FALSE,
+      emailOnEnd = FALSE,
+      emailOnFail = TRUE,
+      numNodes = 1,
+      numTasks = 1,
+      numCPUperTask = 1,
+      numGPUperTask = 1,
+      memory = 50,
+      walltime = "00-06:00:00",
+      projectPartitions = "physical",
+      # projectPartitions = "gpu-a100",
+      projectID = "punim1124",
+      # projectID = "punim1031",
+      useGPU = FALSE
+      # useGPU = TRUE
+    )
+  ),
+  utils = list(
+    ssh = list(
+      username = "schienstockd",
+      address = "spartan.hpc.unimelb.edu.au",
+      keyfile = "/Users/schiend/.ssh/spartan_rsa"
+    ),
+    python = list(
+      condaEnv = cciaConf()$python$conda$source$env
+    )
+  )
+)
+```
+
+```{r}
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
 ```
+
+```{r}
+# rename
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE # DTx
+)
+
+for (x in cciaObj$cciaObjects()) {
+  if (!file.exists(x$oriFilepath())) {
+    print(x$getUID())
+    print(x$oriFilepath())
+    # x$setOriFilepath(str_replace(x$oriFilepath(), "\\.ims$", " drift_corrected.ims"))
+    # x$saveState()
+  }
+  # str_replace(x$oriFilepath(), "\\.lsm$", ".ims"))
+  # x$setCciaName(str_replace(x$getCciaName(), "\\.lsm$", ".ims"))
+  # x$saveState()
+}
+```
+
+
+```{r}
+# segment images
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
+  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+)
+
+# not useable
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c(
+  "5N8Iip", "OWJrYz", "PxwhNn",
+  "CzR7ZQ", "zqrpfq",
+  "NbaQvC", "ypUN8d", "oPmJg0",
+  "o0auGO", "TxTL0a"
+)]
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr"),
+  uIDs = uIDs
+)
+
+# run task
+funParams <- list(
+  # valueName = "tcells.gBT",
+  # valueName = "tcells.gDT",
+  valueName = "dcs.TRITC",
+  models = list(
+    # "1" = list(
+    #   "model" = "fluo",
+    #   "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("gBT"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 99.9,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # )
+    # "1" = list(
+    #   "model" = "fluo",
+    #   "matchAs" = "none",
+    #   "cellDiameter" = 10,
+    #   "cellChannels" = list("gDT"),
+    #   "nucChannels" = list(),
+    #   "normalise" = 99.9,
+    #   "stitchThreshold" = 0.2,
+    #   "mergeLabels" = FALSE,
+    #   "threshold" = 0,
+    #   "relTreshold" = 0,
+    #   "gaussianFilter" = 0,
+    #   "medianFilter" = 0
+    # )
+    "1" = list(
+      "model" = "fluo",
+      "matchAs" = "none",
+      "cellDiameter" = 10,
+      "cellChannels" = list("TRITC"),
+      "nucChannels" = list(),
+      "normalise" = 99.9,
+      "stitchThreshold" = 0.2,
+      "mergeLabels" = FALSE,
+      "threshold" = 0,
+      "relTreshold" = 0,
+      "gaussianFilter" = 0,
+      "medianFilter" = 0
+    )
+  ),
+  clearDepth = FALSE,
+  clearTouchingBorder = FALSE,
+  haloSize = 0,
+  blockSize = -1,
+  overlap = -1,
+  blockSizeZ = -1,
+  overlapZ = -1,
+  context = 1,
+  # segment = TRUE,
+  segment = FALSE,
+  measure = TRUE,
+  updateMeasures = FALSE,
+  extendedMeasures = TRUE,
+  saveMeshes = TRUE,
+  saveMeasures = TRUE,
+  labelExpansion = 0,
+  labelErosion = 0,
+  minCellSize = 50,
+  matchThreshold = 0.2,
+  removeUnmatched = TRUE,
+  labelOverlap = 0.2
+)
+
+# run task
+task <- cciaObj$runTasks(
+# task <- cciaObj$runTask(
+  funName = "segment.cellpose",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "hpc",
+  runInplace = FALSE,
+  taskID = 3,
+  uIDs = uIDs
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
+  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+)
+
+# not useable
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c(
+  "5N8Iip", "OWJrYz", "PxwhNn",
+  "CzR7ZQ", "zqrpfq",
+  "NbaQvC", "ypUN8d", "oPmJg0",
+  "o0auGO", "TxTL0a"
+)]
+
+funParams <- list(
+  valueNames = c("tcells.gBT", "tcells.gDT", "dcs.TRITC"),
+  retrieveMeshesOnly = FALSE
+)
+
+# run task
+task <- cciaObj$runTasks(
+  funName = "segment.retrieve",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = uIDs
+)
+```
+
+
 
 ```{r}
 devtools::load_all("../")
@@ -39,7 +250,7 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
 )
 
-# GCAMP
+# not useable
 uIDs <- names(cciaObj$cciaObjects())
 uIDs <- uIDs[!uIDs %in% c(
   "5N8Iip", "OWJrYz", "PxwhNn",

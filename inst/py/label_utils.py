@@ -30,7 +30,7 @@ def label_overlap(x, y):
   # pixels, then the resulting overlap is P
   # len(x)=len(y), the number of pixels in the whole image 
   for i in range(len(x)):
-      overlap[x[i],y[i]] += 1
+    overlap[x[i],y[i]] += 1
       
   return overlap
 

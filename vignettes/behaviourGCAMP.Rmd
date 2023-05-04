@@ -89,7 +89,7 @@ exp.info %>% group_by(Treatment, DTx) %>%
   summarise(movies = n()) %>%
   group_by(interaction(Treatment, DTx)) %>%
   summarise(
-    # mice = n(),
+    mice = n(),
     sum_movies = sum(movies)
     ) 
   # mutate(movies_per_mouse = sum_movies/mice)
@@ -443,7 +443,9 @@ summaryDF <- popDTs %>%
   summarise(
     n = n(),
     first = min(centroid_t),
-    last = max(centroid_t)
+    last = max(centroid_t),
+    median.diff = median(diff(centroid_t), na.rm = TRUE),
+    mean.diff = mean(diff(centroid_t), na.rm = TRUE)
   ) %>%
   mutate(
     time = last - first,
@@ -457,7 +459,6 @@ summaryDF <- popDTs %>%
     ) %>%
   left_join(exp.info) %>%
   left_join(stainingCombinations)
-
 
 summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
 summaryDF$stain <- str_extract(
@@ -483,16 +484,20 @@ summaryDF[summaryDF$stain == "gBT-CTDR",]$Stain.ID <- 1
 # plot
 ggplot(summaryDF,
        aes(
-         interaction(Treatment, DTx, stain), freq,
+         # interaction(Treatment, DTx, stain), freq,
+         # interaction(Treatment, DTx, stain), median.diff,
+         # interaction(Treatment, DTx, stain), n,
+         interaction(Treatment, DTx, stain), time,
          fill = as.factor(live.cell.track.clusters.skip3)
          )) +
   theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
+  # geom_boxplot(outlier.alpha = 0) +
+  geom_violin(scale = "width") +
   geom_jitter(
     position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
     # width = 0.3, alpha = 0.6) +
   # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
   ylab("Frequency GCAMP+") + xlab("") +
-  # ylim(0, 1) +
+  # ylim(0, 100) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 ```

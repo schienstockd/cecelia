@@ -52,6 +52,7 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "settingsManager",
   # exclude passwords
   "global-labServerSmbPwd", "global-projectHPCpwd",
+  "global-runHPCTask",
   # exclude buttons
   "loadProject", "saveProject",
   "loadVersion", "createVersion",
