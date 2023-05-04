@@ -70,21 +70,24 @@ SshUtils <- R6::R6Class(
       
       # TODO that should probably be more elegant to handle errors
       try({
-        # build ssh string to execute slurm
-        # https://stackoverflow.com/questions/30469813/running-a-program-through-ssh-fails-with-error-opening-terminal-unknown
-        # https://stackoverflow.com/questions/7114990/pseudo-terminal-will-not-be-allocated-because-stdin-is-not-a-terminal
-        # https://askubuntu.com/a/1091554
-        sshCmd <- sprintf(
-          "export TERM=linux && ssh -tt -o ConnectTimeout=%d -o StrictHostKeyChecking=no -i \"%s\" %s@%s \"%s\" %s",
-          cciaConf()$hpc$connectTimeout,
-          private$sshKeyfile,
-          private$sshUsername,
-          private$sshAddress,
-          expr,
-          outputExpr
-        )
-        
-        retVal <- private$execCmd(sshCmd, ...)
+        # check that keyfile exists
+        if (file.exists(private$sshKeyfile)) {
+          # build ssh string to execute slurm
+          # https://stackoverflow.com/questions/30469813/running-a-program-through-ssh-fails-with-error-opening-terminal-unknown
+          # https://stackoverflow.com/questions/7114990/pseudo-terminal-will-not-be-allocated-because-stdin-is-not-a-terminal
+          # https://askubuntu.com/a/1091554
+          sshCmd <- sprintf(
+            "export TERM=linux && ssh -tt -o ConnectTimeout=%d -o StrictHostKeyChecking=no -i \"%s\" %s@%s \"%s\" %s",
+            cciaConf()$hpc$connectTimeout,
+            private$sshKeyfile,
+            private$sshUsername,
+            private$sshAddress,
+            expr,
+            outputExpr
+          )
+          
+          retVal <- private$execCmd(sshCmd, ...)
+        }
       })
       
       return(retVal)

@@ -43,6 +43,8 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
   if (file.exists(typePath)) {
     curClass <- readLines(typePath, warn = FALSE)
     
+    warning(sprintf(">> init ccia obj from %s", statePath))
+    
     # create init object expression
     initObjectStr <- sprintf(
       "cciaObj <- %s$new(\"%s\", initReactivity = %s, initTransaction = %s, retrieveState = %s)",
