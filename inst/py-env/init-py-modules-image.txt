@@ -24,7 +24,7 @@ pyopencl
 pandas
 cellpose
 anndata
-python-bioformats
+python-bioformats==4.0.0
 dask_image
 python-fcl
 cpython

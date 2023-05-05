@@ -56,6 +56,9 @@ module load miniconda3/4.9.2
 # otherwise rJava does not work
 export LD_LIBRARY_PATH=~/.conda/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
+# use different conda env path
+# export CONDA_ENVS_PATH=/data/gpfs/projects/punim1124/cecelia/envs/
+
 # need to activate conda environment for R to work
 . /usr/local/easybuild-2019/easybuild/software/core/miniconda3/4.9.2/bin/activate
 conda activate 'r-cecelia-env'

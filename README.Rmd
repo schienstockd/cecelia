@@ -117,6 +117,14 @@ or you can replace `~/Library/r-miniconda/envs/r-cecelia-env/lib/python3.9/site-
 You need at least Ventura 13.2 and XCode 13.2 for pyTorch to work with MPS GPU in this case
 ([Github issue](https://github.com/pytorch/pytorch/issues/97606#issuecomment-1483901814)).
 
+# Python troubleshooting
+
+- `GLIBCXX_3.4.30` not found - [SO answer](https://stackoverflow.com/a/74533050)
+
+```bash
+conda install -c conda-forge libstdcxx-ng=12
+```
+
 # Other tools
 
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to your system.
