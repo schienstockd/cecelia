@@ -222,7 +222,7 @@ def drift_correct_im(
 
     # set Z, X, Y for new slices
     for j, y in enumerate(dim_utils.spatial_axis()):
-      new_slices[dim_utils.dim_idx(y)] =  slice(round(slices[j].start), round(slices[j].stop), 1)
+      new_slices[dim_utils.dim_idx(y)] = slice(round(slices[j].start), round(slices[j].stop), 1)
 
     # set time for image slice
     im_slices[dim_utils.dim_idx('T')] = slice(i, i + 1, 1)
@@ -249,6 +249,7 @@ def drift_correct_im(
       new_slices = list(new_slices)
       
       logfile_utils.log('BEFORE')
+      logfile_utils.log(dif_dim)
       logfile_utils.log(new_slices)
       
       for j, y in enumerate(dif_dim):
@@ -257,6 +258,7 @@ def drift_correct_im(
           new_slices[j] = slice(
               new_slices[j].start + y,
               new_slices[j].stop, 1)
+        logfile_utils.log('A')
         logfile_utils.log(new_slices)
 
         if y < 0:
@@ -271,6 +273,7 @@ def drift_correct_im(
             new_slices[j] = slice(
               new_slices[j].start,
               new_slices[j].stop + y, 1)
+        logfile_utils.log('B')
         logfile_utils.log(new_slices)
 
       new_slices = tuple(new_slices)
