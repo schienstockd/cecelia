@@ -237,7 +237,10 @@ def drift_correct_im(
 
     # add to image list
     new_image = np.zeros(tp_shape)
-
+    
+    logfile_utils.log(new_slices)
+    logfile_utils.log(im_slices)
+    
     # check that slices match dimension
     if new_image[new_slices].shape != input_array[im_slices].shape:
       # get wrong dimensions
