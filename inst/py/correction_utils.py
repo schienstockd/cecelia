@@ -196,6 +196,7 @@ def drift_correct_im(
   tp_shape = drift_correction_zarr[tp_slice].shape
 
   logfile_utils.log('>> Apply shifts')
+  logfile_utils.log(drift_im_shape_round)
 
   # go through timepoints and add images
   for i in timepoints:
