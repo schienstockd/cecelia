@@ -134,7 +134,7 @@ drift correct image
 """
 def drift_correct_im(
   input_array, dim_utils, phase_shift_channel,
-  logfile_utils, timepoints = None, drift_corrected_path = None,
+  timepoints = None, drift_corrected_path = None,
   upsample_factor = 100, shifts = None, chunk_size = None
   ):
   # get all timepoints if not specified
@@ -143,8 +143,6 @@ def drift_correct_im(
 
   # get shifts
   if shifts is None:
-    logfile_utils.log('>> Get shifts')
-
     shifts = drift_correction_shifts(
       input_array, phase_shift_channel, dim_utils,
       # check that the first timepoint is not used
@@ -195,9 +193,6 @@ def drift_correct_im(
   tp_slice = tuple(tp_slice)
   tp_shape = drift_correction_zarr[tp_slice].shape
 
-  logfile_utils.log('>> Apply shifts')
-  logfile_utils.log(drift_im_shape_round)
-
   # go through timepoints and add images
   for i in timepoints:
     # create slice
@@ -223,11 +218,6 @@ def drift_correct_im(
 
     # set Z, X, Y for new slices
     for j, y in enumerate(dim_utils.spatial_axis()):
-      logfile_utils.log('--')
-      logfile_utils.log(y)
-      logfile_utils.log(j)
-      logfile_utils.log(dim_utils.dim_idx(y))
-      
       new_slices[dim_utils.dim_idx(y)] = slice(round(slices[j].start), round(slices[j].stop), 1)
 
     # set time for image slice
@@ -243,10 +233,6 @@ def drift_correct_im(
     # add to image list
     new_image = np.zeros(tp_shape)
     
-    logfile_utils.log(first_im_pos)
-    logfile_utils.log(new_slices)
-    logfile_utils.log(im_slices)
-    
     # check that slices match dimension
     if new_image[new_slices].shape != input_array[im_slices].shape:
       # get wrong dimensions
@@ -258,18 +244,12 @@ def drift_correct_im(
       # adjust dimensions
       new_slices = list(new_slices)
       
-      logfile_utils.log('BEFORE')
-      logfile_utils.log(dif_dim)
-      logfile_utils.log(new_slices)
-      
       for j, y in enumerate(dif_dim):
         if y > 0:
           # add?
           new_slices[j] = slice(
               new_slices[j].start + y,
               new_slices[j].stop, 1)
-        logfile_utils.log('A')
-        logfile_utils.log(new_slices)
 
         if y < 0:
           # add?
@@ -283,8 +263,6 @@ def drift_correct_im(
             new_slices[j] = slice(
               new_slices[j].start,
               new_slices[j].stop + y, 1)
-        logfile_utils.log('B')
-        logfile_utils.log(new_slices)
 
       new_slices = tuple(new_slices)
 

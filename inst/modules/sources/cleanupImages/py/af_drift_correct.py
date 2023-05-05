@@ -59,7 +59,6 @@ def run(params):
     drift_image = correction_utils.drift_correct_im(
       corrected_image, dim_utils,
       params['driftChannel'],
-      logfile_utils,
       shifts = shifts
     )
   else:
