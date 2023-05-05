@@ -223,6 +223,11 @@ def drift_correct_im(
 
     # set Z, X, Y for new slices
     for j, y in enumerate(dim_utils.spatial_axis()):
+      logfile_utils.log('--')
+      logfile_utils.log(y)
+      logfile_utils.log(j)
+      logfile_utils.log(dim_utils.dim_idx(y))
+      
       new_slices[dim_utils.dim_idx(y)] = slice(round(slices[j].start), round(slices[j].stop), 1)
 
     # set time for image slice
