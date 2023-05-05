@@ -325,7 +325,7 @@ class DimUtils:
     # if processing a timeseries but only use one frame
     if ignore_time is True:
       if self.is_timeseries(ignore_one = False) is True:
-        dim_order.pop(self.dim_idx("T"))
+        dim_order.pop(self.dim_idx('T'))
     
     # return values
     return [self.dim_val(x) for x in dim_order]
@@ -356,9 +356,10 @@ class DimUtils:
   """
   def spatial_axis(self):
     if self.is_3D():
-      return ['X', 'Y', 'Z']
+      # return ['X', 'Y', 'Z']
+      return ['Z', 'Y', 'X']
     else:
-      return ['X', 'Y']
+      return ['Y', 'X']
       
   """
   Is image 3D
@@ -455,8 +456,8 @@ class DimUtils:
       if 'C' in ref_order: ref_order.remove('C')
       
     if ignore_time_axis is True:
-      if "T" in array_order: array_order.remove("T")
-      if "T" in ref_order: ref_order.remove("T")
+      if 'T' in array_order: array_order.remove('T')
+      if 'T' in ref_order: ref_order.remove('T')
     
     array_data = self.transpose_array_axis(array_data, array_order, ref_order)
     
