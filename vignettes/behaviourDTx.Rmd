@@ -102,7 +102,6 @@ for (x in cciaObj$cciaObjects()) {
 }
 ```
 
-
 ```{r}
 # segment images
 devtools::load_all("../")
