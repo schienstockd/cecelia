@@ -12,6 +12,7 @@ echo 'Create R/python conda environment'
 conda create -y -n r-cecelia-env -c r r-openssl r-base=4.1.3
 conda activate r-cecelia-env
 conda install -y -c conda-forge python=3.9
+pip install cmake
 
 # install cecelia
 echo 'Install Cecelia'
