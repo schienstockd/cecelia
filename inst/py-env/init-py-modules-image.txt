@@ -37,6 +37,5 @@ torchaudio
 leidenalg
 squidpy
 SimpleITK
-SimpleITK-SimpleElastix
 skan
 pstree
