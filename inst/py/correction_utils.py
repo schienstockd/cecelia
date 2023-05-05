@@ -238,6 +238,7 @@ def drift_correct_im(
     # add to image list
     new_image = np.zeros(tp_shape)
     
+    logfile_utils.log(first_im_pos)
     logfile_utils.log(new_slices)
     logfile_utils.log(im_slices)
     
