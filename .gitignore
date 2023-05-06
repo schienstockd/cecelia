@@ -11,3 +11,4 @@ update_hpc.sh
 update_mac_workstation.sh
 .Rproj.user
 vignettes/PlotsOfData
+**.DS_Store
