@@ -258,7 +258,7 @@ def run(params):
       # Above error raised while writing key 'live.cell.contact#live.tcells.gBT/tracked' of <class 'h5py._hl.group.Group'> to /
       label_props_utils.label_props_view()\
         .del_obs(contact_dict.keys())\
-        .save(close)
+        .save()
       label_props_utils = LabelPropsUtils(task_dir, value_name = pop_value_name_a)
       
       # add to obs and save
