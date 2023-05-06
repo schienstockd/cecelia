@@ -124,7 +124,7 @@ class LabelPropsView:
     # TypeError: Incompatible object (Dataset) already exists
     # Above error raised while writing key 'live.cell.contact#live.tcells.gBT/tracked' of <class 'h5py._hl.group.Group'> to /
     if remove_previous is True:
-      self.del_obs(obs_to_add)
+      self.del_obs(obs_to_add.keys())
     
     # go through names of dict
     for i, x in obs_to_add.items():
