@@ -131,8 +131,7 @@ def run(params):
         contact_n = dict()
         contact_ids = dict()
         
-        # for i, t in tqdm(enumerate(timepoints)):
-        for i, t in tqdm(enumerate([0, 1])):
+        for i, t in tqdm(enumerate(timepoints)):
           # load meshes
           meshes_a = morpho_utils.df_to_meshes(
             task_dir,
