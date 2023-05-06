@@ -105,8 +105,9 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     "-U",
     # for A100 support?
     # https://pytorch.org/get-started/locally/
-    "--extra-index-url https://download.pytorch.org/whl/cu116"
+    # "--extra-index-url https://download.pytorch.org/whl/cu116"
     # "--extra-index-url https://download.pytorch.org/whl/cu118"
+    "--extra-index-url ttps://download.pytorch.org/whl/nightly/cpu"
   )
   
   # some install fail on Apple M1
