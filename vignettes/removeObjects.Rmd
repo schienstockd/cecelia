@@ -66,12 +66,58 @@ HPC_CONF <-  list(
 devtools::load_all("../")
 cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
 
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "LGk0Oc", versionID = versionID, initReactivity = FALSE # Test
+sshUtil <- SshUtils$new(
+  username = HPC_CONF$utils$ssh$username,
+  address = HPC_CONF$utils$ssh$address,
+  keyfile = HPC_CONF$utils$ssh$keyfile
+  )
+
+hpcPath  <- paste(
+  cciaConf()$hpc$dirs$base,
+  cciaConf()$hpc$dirs$users,
+  # include username
+  HPC_CONF$utils$ssh$username,
+  pID,
+  cciaConf()$hpc$dirs$analysis,
+  sep = "/"
 )
 
-  for (curObj in selectedSet()$cciaObjects()) {
+# for (i in c("LGk0Oc", "9g5v0b", "73d2Y7", "i37o6P", "fD6yGF")) {
+for (i in c("73d2Y7", "i37o6P", "fD6yGF")) {
+  # init ccia object
+  cciaObj <- initCciaObject(
+    pID = pID, uID = i, versionID = versionID, initReactivity = FALSE # Skin
+  )
+
+  for (x in cciaObj$cciaObjects()) {
+    print(x$getUID())
+  
+    # remove '0'
+    handleSystem(sshUtil$sshExecute(
+      sprintf(
+        "rm -fr \"%s\"",
+        paste(hpcPath, "0", x$getUID(), sep = "/")
+      )
+    ), silent = FALSE)
+  
+    # task directory
+    handleSystem(sshUtil$sshExecute(
+      sprintf(
+        "rm -fr \"%s\"",
+        paste(hpcPath, versionID, x$getUID(), sep = "/")
+      )
+    ), silent = FALSE)
+  }
+  
+  # remove local
+  cciaObj$removeCciaObjects(removeZero = TRUE)
+  cciaObj$deleteObjectDirectory()
+}
+```
+
+
+```{r}
+for (curObj in selectedSet()$cciaObjects()) {
     globalManagers$projectManager()$deleteHPCpersistentObjectDirectory(
       curObj()$getUID()
     )

@@ -151,6 +151,8 @@ ReactivePersistentObjectSet <- R6::R6Class(
       # remove content
       if (removeContent == TRUE && length(objectsToRemove) > 0) {
         for (curObj in self$cciaObjectsByUIDs(objectsToRemove)) {
+          print(paste(">> Removing", curObj$getUID()))
+          
           if (private$initReactivity() == TRUE)
             curObj()$deleteObjectDirectory(...)
           else
