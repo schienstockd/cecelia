@@ -22,7 +22,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N031/CECELIA"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)

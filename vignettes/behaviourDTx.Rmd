@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -69,7 +69,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTra
 ```{r}
 # rename
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -82,7 +82,7 @@ cciaObj$omeXMLTimelapseInfo()
 ```{r}
 # rename
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -105,7 +105,7 @@ for (x in cciaObj$cciaObjects()) {
 ```{r}
 # segment images
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -216,7 +216,7 @@ task <- cciaObj$runTasks(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -230,7 +230,7 @@ uIDs <- uIDs[!uIDs %in% c(
   "5N8Iip", "OWJrYz", "PxwhNn",
   "CzR7ZQ", "zqrpfq",
   "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a"
+  "o0auGO", "TxTL0a", "xyHt1U"
 )]
 
 funParams <- list(
@@ -251,11 +251,54 @@ task <- cciaObj$runTasks(
 )
 ```
 
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
+  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+)
+
+# not useable
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c(
+  "5N8Iip", "OWJrYz", "PxwhNn",
+  "CzR7ZQ", "zqrpfq",
+  "NbaQvC", "ypUN8d", "oPmJg0",
+  "o0auGO", "TxTL0a", "xyHt1U"
+)]
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells.gBT/tracked/non.clustered", "tcells.gDT/tracked"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  colName = "movement",
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  noiseFilterMeasurements = 5,
+  postFiltering = 2,
+  postIterations = 2,
+  numStates = 3,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -268,7 +311,7 @@ uIDs <- uIDs[!uIDs %in% c(
   "5N8Iip", "OWJrYz", "PxwhNn",
   "CzR7ZQ", "zqrpfq",
   "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a"
+  "o0auGO", "TxTL0a", "xyHt1U"
 )]
 
 # get experimental info
@@ -278,14 +321,17 @@ exp.info <- cciaObj$summary(
 )
 
 # get clustering
-tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(),
-  value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
-    "tcells.gBT/tracked"
+    # "tcells.gBT/tracked"
+    "tcells.gBT/tracked/clustered",
+    "tcells.gBT/tracked/non.clustered",
+    "tcells.gDT/tracked"
     ),
   includeFiltered = TRUE,
   flushCache = TRUE,

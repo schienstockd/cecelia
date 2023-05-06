@@ -60,7 +60,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/IAE"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -69,7 +69,7 @@ library(tidyverse)
 ```{r}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -82,7 +82,7 @@ cciaObj$popDT("flow", popCols = c("TRITC", "gBT-CTDR"))
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -122,7 +122,7 @@ cciaObj$runTasks(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -153,7 +153,7 @@ cciaObj$runTasks(
 ```{r}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

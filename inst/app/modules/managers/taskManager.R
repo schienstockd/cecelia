@@ -42,7 +42,7 @@ createTaskManager <- function(
     # compare with previous states
     if (length(prevTaskStates()) > 0) {
       mapply(
-        function(x, y, i) {
+        function(x, i) {
           x[!x %in% prevTaskStates()[[i]]]
         }, curTaskStates(), names(curTaskStates()), SIMPLIFY = FALSE
       )

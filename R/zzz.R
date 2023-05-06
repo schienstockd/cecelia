@@ -60,9 +60,11 @@ cciaSetup <- function(path = "~/cecelia") {
 #' @param envType character for environment type. Any of c("image", "flow")
 #' @param rebuild boolean to rebuild environment
 #' @param preinstallNapari boolean to 'dummy' install napari for M1
+#' @param extraIndexUrl character extra index url for pip install
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
-                            rebuild = FALSE, preinstallNapari = FALSE) {
+                            rebuild = FALSE, preinstallNapari = FALSE,
+                            extraIndexUrl = "https://download.pytorch.org/whl/nightly/cpu") {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
@@ -107,7 +109,8 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # https://pytorch.org/get-started/locally/
     # "--extra-index-url https://download.pytorch.org/whl/cu116"
     # "--extra-index-url https://download.pytorch.org/whl/cu118"
-    "--extra-index-url ttps://download.pytorch.org/whl/nightly/cpu"
+    # "--extra-index-url https://download.pytorch.org/whl/nightly/cpu"
+    paste("--extra-index-url", extraIndexUrl)
   )
   
   # some install fail on Apple M1

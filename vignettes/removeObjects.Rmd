@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -64,7 +64,7 @@ HPC_CONF <-  list(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 sshUtil <- SshUtils$new(
   username = HPC_CONF$utils$ssh$username,

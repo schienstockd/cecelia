@@ -65,7 +65,7 @@ cciaRequirements()
 # devtools::load_all("../")
 # 
 # # setup cecelia directory
-# cciaSetup("~/Desktop/DOHERTY/cecelia")
+# cciaSetup("~/cecelia/dev")
 # 
 # # create conda environment
 # cciaCondaCreate()
@@ -78,12 +78,12 @@ cciaRequirements()
 devtools::load_all("../")
 
 # load cecelia directory and then it should work from here
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 ```
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -111,7 +111,7 @@ cciaObj$runTask(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

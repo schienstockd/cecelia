@@ -25,7 +25,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/stomics/10x/ANALYSIS"
 ```{r}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -73,7 +73,7 @@ HPC_CONF <-  list(
 ```{r}
 # upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -101,7 +101,7 @@ task <- cciaObj$runTask(
 ```{r}
 # upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -113,7 +113,7 @@ cciaObj <- initCciaObject(
 ```{r}
 # upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -226,7 +226,7 @@ task <- cciaObj$runTask(
 ```{r}
 # retrieve 
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -256,7 +256,7 @@ task <- cciaObj$runTask(
 ```{r}
 # upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -283,7 +283,7 @@ task <- cciaObj$runTask(
 ```{r}
 # upload STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -308,7 +308,7 @@ task <- cciaObj$runTask(
 ```{r}
 # import STOMICS
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -332,7 +332,7 @@ task <- cciaObj$runTask(
 ```{r}
 # run population clustering
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -380,7 +380,7 @@ task <- cciaObj$runTask(
 ```{r}
 # run population clustering
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -479,7 +479,7 @@ cciaObj$savePops(popType, purge = TRUE, includeFiltered = TRUE)
 ```{r}
 # run population clustering
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -546,7 +546,7 @@ task <- cciaObj$runTask(
 ```{r}
 # plot out where the clusters are
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -830,7 +830,7 @@ ggsave(file.path(anaDir, "clusters", "aSf5Rr_umap.tiff"), width = 5, height = 6.
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -857,7 +857,7 @@ task <- cciaObj$runTask(
 ```{r}
 # get branching of stroma network
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -1118,7 +1118,7 @@ ggplot(xDT, aes(is.prolif, stroma.dist)) +
 ```{r}
 # can you cluster on numbers, freq and properties?
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -1155,7 +1155,7 @@ task <- cciaObj$runTask(
 ```{r}
 # show regions of stroma
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -1335,7 +1335,7 @@ ggplot(summaryDT, aes(reorder(clusters, freq), freq, fill = regionsNN)) +
 ```{r}
 # get populations and show maps
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(

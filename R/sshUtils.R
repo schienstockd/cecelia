@@ -164,7 +164,7 @@ SshUtils <- R6::R6Class(
       ))
       
       # if syncing files between task v HPC directory
-      if (length(toDirs) > 0 && !is.na(toDirs)){
+      if (length(toDirs) > 0){
         toDirs <- paste(toDir, toDirs, sep = "/")
       } else {
         toDirs <- rep(toDir, length(filesToCopy))

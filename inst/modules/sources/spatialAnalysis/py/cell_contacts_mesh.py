@@ -251,10 +251,10 @@ def run(params):
       logfile_utils.log(
         "> Save to " + str(label_props_utils.label_props_view()\
           .adata_filepath()))
-  
-      # # add to obs and save
+      
+      # add to obs and save
       label_props_utils.label_props_view()\
-          .add_obs(contact_dict)\
+          .add_obs(contact_dict, remove_previous = True)\
           .save()
 
 def main():

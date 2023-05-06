@@ -24,7 +24,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N036/ANALYSIS/CECELIA"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -33,7 +33,7 @@ library(tidyverse)
 ```{r}
 # combine DTx samples
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaA <- initCciaObject(
@@ -54,7 +54,7 @@ cciaC$saveState()
 ```{r}
 # get population DT to compare CTV-
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -116,7 +116,7 @@ write.csv(datToPlot, file.path(anaDir, "freq_measures.csv"))
 ```{r}
 # calculate compensation matric
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -140,7 +140,7 @@ cciaObj$saveState()
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -248,7 +248,7 @@ ggsave(file.path(anaDir, "gating_contours.pdf"), width = 5, height = 2.5)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -307,7 +307,7 @@ ggsave(file.path(anaDir, paste0("gating_CD69_", cciaObj$getUID(), ".pdf")), widt
 ```{r}
 # show treatments on UMAP
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -356,7 +356,7 @@ write.csv(datToPlot %>% mutate(freq = freq * 100), file.path(anaDir, "freq_pops.
 
 ```{r fig_CTV, fig.height=3, fig.width=12}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

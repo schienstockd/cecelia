@@ -24,7 +24,7 @@ anaDir <- "/Users/schiend/Desktop/DOHERTY/R-workspace/cecelia/im/examples/3D_LN"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -33,7 +33,7 @@ library(tidyverse)
 ```{r}
 # get population DT to compare CTV-
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

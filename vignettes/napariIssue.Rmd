@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE, initJupyter = TRUE)
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
 ```
 
 

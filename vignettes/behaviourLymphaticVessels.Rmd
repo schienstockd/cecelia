@@ -12,7 +12,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -33,7 +33,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Immunemap_expID_49/CECELIA"
 ```{r}
 # # add positive LV pop
 # devtools::load_all("../")
-# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+# cciaUse("~/cecelia/dev", initConda = FALSE)
 # 
 # # init ccia object
 # cciaObj <- initCciaObject(
@@ -67,7 +67,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Immunemap_expID_49/CECELIA"
 ```{r}
 # adjust segmentation names
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

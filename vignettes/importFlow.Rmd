@@ -20,13 +20,13 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 ```
 
 ```{r}
 # calculate compensation matric
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = TRUE)
+cciaUse("~/cecelia/dev", initConda = TRUE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -56,7 +56,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N036/ANALYSIS/CECELIA"
 ```{r}
 # visualise compensation
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 library(ggplot2)
 
 # init ccia object
@@ -182,7 +182,7 @@ for (i in names(p1s)) {
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -209,7 +209,7 @@ cciaObj$runTasks(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -233,7 +233,7 @@ flowWorkspace::cf_append_cols()
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -340,7 +340,7 @@ ggsave(file.path(anaDir, "gating_contours.pdf"), width = 10, height = 6)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -459,7 +459,7 @@ ggsave(file.path(anaDir, "gating_overlays.pdf"), width = 10, height = 6)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -594,7 +594,7 @@ ggsave(file.path(anaDir, "gating_contours_overlay.pdf"), width = 10, height = 6)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -695,7 +695,7 @@ ggsave(file.path(anaDir, "gating.pdf"), width = 10, height = 6)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # propagate gating to other objects
 # propagateFlowGating in CciaImageSet
@@ -725,7 +725,7 @@ devtools::install_github("DillonHammill/CytoExploreR")
 library(CytoExploreR)
 
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -741,7 +741,7 @@ cyto_plot_gating_scheme(
 ```{r}
 # cluster Va2+
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -788,7 +788,7 @@ cciaObj$runTask(
 ```{r}
 # show treatments on UMAP
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "etxWEx", versionID = versionID, initReactivity = FALSE

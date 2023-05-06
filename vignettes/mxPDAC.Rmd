@@ -26,7 +26,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/PDAC_Aleynick2023/CECELIA"
 ```{r}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -34,7 +34,7 @@ library(tidyverse)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -59,7 +59,7 @@ cciaObj$runTask(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -88,7 +88,7 @@ cciaObj$saveState()
 ```{r fig_gating, fig.height=3, fig.width=5}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -115,7 +115,7 @@ ggsave(file.path(anaDir, "gating.pdf"), width = 6.5, height = 6.5)
 # get spatial interactions and check CD8 and PDL1
 # get populations and show maps
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(

@@ -24,7 +24,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/vib/RESULTS/OUT"
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -33,7 +33,7 @@ library(tidyverse)
 ```{r}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -176,7 +176,7 @@ write.csv(summaryDF, file.path(anaDir, "TRITC-contact.csv"))
 ```{r fig_gating, fig.height=2, fig.width=2}
 # show gating of CD69 populations
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

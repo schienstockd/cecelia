@@ -24,7 +24,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_FACS/ANALYSIS/CEC
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
+cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
@@ -33,7 +33,7 @@ library(tidyverse)
 ```{r}
 # run population clustering
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -97,7 +97,7 @@ task <- cciaObj$runTask(
 ```{r}
 # compare clusters across treatments
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -248,7 +248,7 @@ ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 9, height = 6)
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(

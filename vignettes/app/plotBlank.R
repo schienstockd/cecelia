@@ -4,8 +4,8 @@ library(ggplot2)
 library(ggbeeswarm)
 
 devtools::load_all("../../")
-cciaUse("~/Desktop/DOHERTY/cecelia")
-# cciaUse("~/Desktop/DOHERTY/cecelia", initConda = FALSE)
+cciaUse("~/cecelia/dev")
+# cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # source all files from subdirectories
 # TODO is there a better way of doing this?

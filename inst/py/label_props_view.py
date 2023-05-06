@@ -119,7 +119,13 @@ class LabelPropsView:
   """
   Add data to obs
   """
-  def add_obs(self, obs_to_add):
+  def add_obs(self, obs_to_add, remove_previous = False):
+    # TODO sometimes I get this:
+    # TypeError: Incompatible object (Dataset) already exists
+    # Above error raised while writing key 'live.cell.contact#live.tcells.gBT/tracked' of <class 'h5py._hl.group.Group'> to /
+    if remove_previous is True:
+      self.del_obs(obs_to_add)
+    
     # go through names of dict
     for i, x in obs_to_add.items():
       self.adata.obs[i] = x
@@ -130,6 +136,9 @@ class LabelPropsView:
   Delete data from obs
   """
   def del_obs(self, obs_to_del):
+    # make sure cols are in obs
+    obs_to_del = [x for x in obs_to_del if x in self.col_names('obs')]
+    
     # drop columns
     self.adata.obs.drop(obs_to_del, axis = 1, inplace = True)
     

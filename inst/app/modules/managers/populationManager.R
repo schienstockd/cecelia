@@ -732,7 +732,7 @@ createPopulationManager <- function(
     
     # set pop table columns
     if (!is.null(popTableDF)) {
-      if (is.null(popTableColumns()) || !(popTableColumns() %in% colnames(popTableDF))) {
+      if (is.null(popTableColumns()) || !any(colnames(popTableColumns()) %in% colnames(popTableDF))) {
         cols <- as.data.frame(
           rep(list(""), length(colnames(popTableDF))))
         colnames(cols) <- colnames(popTableDF)
