@@ -131,7 +131,8 @@ def run(params):
         contact_n = dict()
         contact_ids = dict()
         
-        for i, t in tqdm(enumerate(timepoints)):
+        # for i, t in tqdm(enumerate(timepoints)):
+        for i, t in tqdm(enumerate([0, 1])):
           # load meshes
           meshes_a = morpho_utils.df_to_meshes(
             task_dir,
@@ -256,13 +257,14 @@ def run(params):
       # TODO TypeError: Incompatible object (Dataset) already exists
       # Above error raised while writing key 'live.cell.contact#live.tcells.gBT/tracked' of <class 'h5py._hl.group.Group'> to /
       label_props_utils.label_props_view()\
-          .del_obs(contact_dict.keys())\
-          .save(close = False)
-          
+        .del_obs(contact_dict.keys())\
+        .save(close)
+      label_props_utils = LabelPropsUtils(task_dir, value_name = pop_value_name_a)
+      
       # add to obs and save
       label_props_utils.label_props_view()\
-          .add_obs(contact_dict)\
-          .save()
+        .add_obs(contact_dict)\
+        .save()
 
 def main():
   # get params
