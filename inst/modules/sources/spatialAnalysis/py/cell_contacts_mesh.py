@@ -252,9 +252,16 @@ def run(params):
         "> Save to " + str(label_props_utils.label_props_view()\
           .adata_filepath()))
       
+      # remove obs first
+      # TODO TypeError: Incompatible object (Dataset) already exists
+      # Above error raised while writing key 'live.cell.contact#live.tcells.gBT/tracked' of <class 'h5py._hl.group.Group'> to /
+      label_props_utils.label_props_view()\
+          .del_obs(contact_dict.keys())\
+          .save(close = False)
+          
       # add to obs and save
       label_props_utils.label_props_view()\
-          .add_obs(contact_dict, remove_previous = True)\
+          .add_obs(contact_dict)\
           .save()
 
 def main():
