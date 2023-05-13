@@ -47,7 +47,7 @@ FindSignalPeaks <- R6::R6Class(
       
       # define columns for joining
       joinCols <- c(
-        signalNormCol,
+        # signalNormCol,
         signalRatioCol,
         signalBooleanCol,
         signalAccCol,
@@ -118,10 +118,9 @@ FindSignalPeaks <- R6::R6Class(
         
         self$writeLog(sprintf("> Mean signal ratio %0.2f", meanSignalRatioCol))
         
-        # normalise by running window
-        # popDT[, c(signalNormCol) :=
-        #         get(signalRatioCol) - min(.SD[[signalRatioCol]]),
-        #       by = track_id]
+        # normalise by minimum
+        popDT[, c(signalNormCol) := get(signalRatioCol) - min(.SD[[signalRatioCol]]),
+              by = track_id]
         
         # popDT[, c(signalNormCol) :=
         #         get(signalRatioCol) / runmed(.SD[[signalRatioCol]], k = self$funParams()$normOrder),
@@ -135,11 +134,13 @@ FindSignalPeaks <- R6::R6Class(
           
           # take into account extra channel, eg/ AF
           popDT[, c(signalNormCol) := get(signalNormCol) * (1 - tmp.channel.norm)]
+          # popDT[, c(signalRatioCol) := get(signalRatioCol) * (1 - tmp.channel.norm)]
         } 
         
         # get rolling sum
         popDT[, c(signalAccCol) := frollsum(.SD, n = self$funParams()$normOrder, fill = 0),
-              by = track_id, .SDcols = c(signalNormCol)]
+              # by = track_id, .SDcols = c(signalNormCol)]
+              by = track_id, .SDcols = c(signalRatioCol)]
         
         # # binarise based on relative pixel values
         popDT[, c(signalBooleanCol) := get(signalAccCol) >= self$funParams()$peakThreshold]

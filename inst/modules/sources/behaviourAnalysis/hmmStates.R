@@ -164,36 +164,6 @@ HmmStates <- R6::R6Class(
       # add to tracks
       tracks.DT[, hmm.state := hmm_predict$state]
       
-      # smooth states
-      if (self$funParams()$postFiltering > 0) {
-        find.freq <- function(x) {
-          # get most frequent value
-          y <- DescTools::Mode(x, na.rm = TRUE)
-          
-          # TODO take mid occurence value if more than one
-          # assume centre for window
-          if (length(y > 1)) {
-            # names(y) <- y
-            # minPos <- sapply(y, function(z) min(which(x == z)))
-            # y <- as.numeric(names(y)[which(minPos == min(minPos))])
-            # y <- x[[round(length(x)/2)]]
-            # take the first one
-            y <- y[[1]]
-          }
-          
-          y
-        }
-        
-        # TODO is there a better way?
-        for (i in seq(self$funParams()$postIterations)) {
-          # for every timepoint, take the value that is most frequent around this window
-          tracks.DT[, hmm.state := frollapply(
-            x = .SD[, hmm.state], n = self$funParams()$postFiltering,
-            find.freq, fill = NA, align = "center"),
-            by = .(pop, uID, track_id)]
-        }
-      }
-      
       # go through objects
       for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
         self$writeLog(sprintf("save %s", x$getUID()))
@@ -225,6 +195,40 @@ HmmStates <- R6::R6Class(
                          hmm.state := self$funParams()$numStates + counter]
               
               counter <- counter + 1
+            }
+          }
+          
+          # smooth states
+          if (self$funParams()$postFiltering > 0) {
+            self$writeLog("Post filtering")
+            
+            find.freq <- function(x) {
+              # get most frequent value
+              y <- DescTools::Mode(x, na.rm = TRUE)
+              
+              # TODO take mid occurence value if more than one
+              # assume centre for window
+              if (length(y > 1)) {
+                # names(y) <- y
+                # minPos <- sapply(y, function(z) min(which(x == z)))
+                # y <- as.numeric(names(y)[which(minPos == min(minPos))])
+                # y <- x[[round(length(x)/2)]]
+                # take the first one
+                y <- y[[1]]
+              }
+              
+              y
+            }
+            
+            # TODO is there a better way?
+            for (i in seq(self$funParams()$postIterations)) {
+              # for every timepoint, take the value that is most frequent around this window
+              # tracks.DT[, hmm.state := frollapply(
+              mergedDT[, hmm.state := frollapply(
+                x = .SD[, hmm.state], n = self$funParams()$postFiltering,
+                find.freq, fill = NA, align = "center"),
+                # by = .(pop, uID, track_id)]
+                by = .(track_id)]
             }
           }
           

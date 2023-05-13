@@ -972,7 +972,7 @@ createFlowPlotManager <- function(
         y <- savedPlots$y
         xScale <- savedPlots$xScale
         yScale <- savedPlots$yScale
-        plotType <- savedPlots$plotType
+        plotType <- if (!is.null(savedPlots$plotType)) savedPlots$plotType else cciaConf()$fcs$gating$defaultPlotType
       } else {
         popPath <- shinyInputValue(
           boxIDs$popPath, input, "root",
@@ -1002,7 +1002,7 @@ createFlowPlotManager <- function(
           boxIDs$plotType, input, cciaConf()$fcs$gating$defaultPlotType,
           ignoreInput = initGatingBoxPlots())
       }
-
+      
       # add names if root
       if (popPath == "root") names(popPath) <- "root"
 

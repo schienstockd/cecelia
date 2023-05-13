@@ -27,7 +27,8 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N052/ANALYSIS/IMAGE/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N052/ANALYSIS/IMAGE/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N052/ANALYSIS/IMAGE/CECELIA/transitions"
 ```
 
 ```{r}
@@ -55,7 +56,7 @@ HPC_CONF <-  list(
     ssh = list(
       username = "schienstockd",
       address = "spartan.hpc.unimelb.edu.au",
-      keyfile = "/Users/schiend/.ssh/spartan_rsa"
+      keyfile = "/Users/Dominik/.ssh/spartan_rsa"
     ),
     python = list(
       condaEnv = cciaConf()$python$conda$source$env,
@@ -65,6 +66,149 @@ HPC_CONF <-  list(
 )
 ```
 
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "YJRfCW", versionID = versionID, initReactivity = FALSE # H2Kb
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% "1wZMND"]
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("gBT/tracked", "OTI/tracked"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  colName = "movement",
+  appendStates = list(live.cell.is.clust = TRUE),
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  noiseFilterMeasurements = 5,
+  postFiltering = 2,
+  postIterations = 2,
+  numStates = 3,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "YJRfCW", versionID = versionID, initReactivity = FALSE # H2Kb
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% "1wZMND"]
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("gBT/tracked", "OTI/tracked"),
+  colName = "movement",
+  hmmStates = c("movement"),
+  includeStart = FALSE,
+  includeSelfTransitions = TRUE,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmTransitions",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "YJRfCW", versionID = versionID, initReactivity = FALSE # H2Kb
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% "1wZMND"]
+
+# run task
+funParams <- list(
+  popType = "live",
+  popsToCluster = c("gBT/tracked", "OTI/tracked"),
+  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  clusterColName = "hmm_transitions_movement",
+  resolution = 0.20,
+  percentile = 99.5,
+  trackMeasures = c(
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
+  ),
+  objectMeasures = c(
+    # "extent",
+    # "solidity",
+    # "integral_mean_curvature",
+    # "ellipticity_oblate",
+    # "ellipticity_prolate",
+    # "ellipticity_interm_oblate",
+    # "ellipticity_interm_prolate",
+    # "sphericity",
+    # HMM states
+    # "live.cell.hmm.state.movement"
+    "live.cell.hmm.transitions.movement"
+    ),
+  nMeasures = c(
+    ),
+  sumMeasures = c(
+    ),
+  calcMeasures = list(
+  ),
+  addPops = c(
+    ),
+  calcLabelProps = TRUE,
+  usePaga = FALSE,
+  minTracklength = 6,
+  # minTracklength = 50,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
 
 ```{r}
 devtools::load_all("../")
@@ -83,10 +227,10 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-# # get clustering
-# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-#   cciaObj$persistentObjectDirectory(),
-#   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+# get clustering
+tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(),
+  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -97,6 +241,263 @@ popDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
+```
+
+```{r fig_hmm_props, fig.height=3, fig.width=3}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.movement"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+```
+
+```{r fig_umap, fig.height=8, fig.width=8}
+dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
+
+dfToPlot$clusters.name <- "NONE"
+dfToPlot[dfToPlot$clusters %in% c(1,2,4,5), ]$clusters.name <- "Directed"
+dfToPlot[dfToPlot$clusters %in% c(3), ]$clusters.name <- "Meandering"
+dfToPlot[dfToPlot$clusters %in% c(0,6), ]$clusters.name <- "Scanning"
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  # group_by(clusters) %>%
+  group_by(clusters.name) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+dfToPlot$clusters <- factor(dfToPlot$clusters)
+
+colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+
+# plot UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = clusters.name)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = colPal) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    # aes(label = clusters),
+    aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    )
+
+ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(tcells.sc)
+
+# propsToPlot <- propsToPlot %>%
+#   dplyr::rename(
+#     "Movement HMM 1" = "live.cell.hmm.state.movement.1",
+#     "Movement HMM 2" = "live.cell.hmm.state.movement.2",
+#     "Movement HMM 3" = "live.cell.hmm.state.movement.3",
+#     "Movement HMM 4" = "live.cell.hmm.state.movement.4",
+#   )
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+propsToPlot$clusters.name <- "NONE"
+propsToPlot[propsToPlot$clusters %in% c(1,2,4,5), ]$clusters.name <- "Directed"
+propsToPlot[propsToPlot$clusters %in% c(3), ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters %in% c(0,6), ]$clusters.name <- "Scanning"
+
+# propsList <- c(
+#   'Movement HMM 1',
+#   'Movement HMM 2',
+#   'Movement HMM 3',
+#   'Movement HMM 4',
+#   'asphericity',
+#   'displacement',
+#   'displacementRatio',
+#   'duration',
+#   'meanTurningAngle',
+#   'outreachRatio',
+#   'overallAngle',
+#   'speed',
+#   'straightness',
+#   'trackLength'
+# )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  dplyr::filter(
+    # clusters.name != "NONE",
+    # prop %in% propsList
+    ) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+# propsSummary$prop <- factor(
+#   propsSummary$prop, levels = rev(propsList))
+# propsSummary$clusters.name <- factor(
+#   propsSummary$clusters.name, levels = c(
+#     "Directed", "Meandering", "Scanning", "Clustering"
+#   ))
+
+ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 8)
+```
+
+```{r fig_clusters_freq, fig.height=4, fig.width=15}
+# save frequencies of track clusters
+summaryDF <- copy(tcells.sc)
+
+summaryDF$clusters.name <- "NONE"
+summaryDF[summaryDF$clusters %in% c(1,2,4,5), ]$clusters.name <- "Directed"
+summaryDF[summaryDF$clusters %in% c(3), ]$clusters.name <- "Meandering"
+summaryDF[summaryDF$clusters %in% c(0,6), ]$clusters.name <- "Scanning"
+
+# show frequency of clusters
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+  droplevels() %>%
+  group_by(uID, pop) %>%
+  mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
+  ungroup() %>%
+  # complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
+  complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Genotype))) +
+ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Genotype))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = "Treatment", palette = "Set1") +
+  facet_grid(.~pop)
+
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 10, height = 3)
+
+summaryDF$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+
+write.csv(
+  summaryDF,
+  file = file.path(anaDir, "freq_clusters.csv")
+)
 ```
 
 ```{r fig_hmm_props, fig.height=2, fig.width=2.5}

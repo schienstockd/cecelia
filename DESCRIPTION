@@ -75,7 +75,8 @@ Imports:
     flowViz,
     S4Vectors,
     ggpubr,
-    DescTools
+    DescTools,
+    depmixS4
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1

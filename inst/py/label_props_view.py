@@ -119,9 +119,9 @@ class LabelPropsView:
   """
   Add data to obs
   """
-  def add_obs(self, obs_to_add, remove_previous = False):
-    if remove_previous is True:
-      self.del_obs(obs_to_add.keys())
+  def add_obs(self, obs_to_add):
+    # if remove_previous is True:
+    #   self.del_obs(obs_to_add.keys())
     
     # go through names of dict
     for i, x in obs_to_add.items():
@@ -205,7 +205,7 @@ class LabelPropsView:
           self.adata = ad.read_h5ad(
             self.adata_filepath(), backed = "r" if read_only is True else "r+")
         except OSError as e:
-          print('>> Anndata locked - retry in 500ms')
+          print(f'>> {self.adata_filepath()} locked - retry in 500ms')
           print(f'>> {e}')
           time.sleep(1/2)
           
@@ -264,6 +264,10 @@ class LabelPropsView:
       self.change_channel_names(numeric_channels)
     
     # save file
+    # remove if exists otherwise there will be:
+    # Error: OSError: Unable to open file (bad object header version number)
+    if os.path.exists(filename):
+      os.remove(filename) 
     self.adata.write_h5ad(filename)
     
     # remove old one and rename

@@ -63,7 +63,7 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/PUBRe/clusterTracks/movement"
 ```
 
 ```{r}
@@ -73,201 +73,109 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE # PUB Re
+  # pID = pID, uID = "7FUptF", versionID = versionID, initReactivity = FALSE 
+  # pID = pID, uID = "qwlRcf", versionID = versionID, initReactivity = FALSE 
 )
 
-paste(names(cciaObj$cciaObjects()), collapse = "','")
-```
-
-```{r}
-# rename
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  # pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  pID = pID, uID = "wGqPEx", versionID = versionID, initReactivity = FALSE # DTx
-)
-
-# cciaObj$propagatePopMap("live", "iTfSUG")
-# cciaObj$saveState()
-
-cciaObj$popPaths("live", includeFiltered = TRUE)
-```
-
-```{r}
-# rename
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE # DTx
-)
-
+# go through and correct paths
 for (x in cciaObj$cciaObjects()) {
-  if (!file.exists(x$oriFilepath())) {
-    print(x$getUID())
-    print(x$oriFilepath())
-    # x$setOriFilepath(str_replace(x$oriFilepath(), "\\.ims$", " drift_corrected.ims"))
-    # x$saveState()
+  for (i in x$valueNames("imLabelPropsFilepath")) {
+      # if (!any(is.na(stringr::str_match(x$imLabelPropsFilepath(valueName = i), "\\.zarr")))) {
+      if (!any(is.na(stringr::str_match(x$imLabelPropsFilepath(valueName = i), "SPACEHOLDER")))) {
+        print(paste(x$getUID(), "-", i))
+
+        x$setImLabelPropsFilepath(paste0(i, ".h5ad"), valueName = i, setDefault = FALSE)
+        x$setImLabelsFilepath(paste0(i, ".zarr"), valueName = i, setDefault = FALSE)
+
+        x$saveState()
+      }
   }
-  # str_replace(x$oriFilepath(), "\\.lsm$", ".ims"))
-  # x$setCciaName(str_replace(x$getCciaName(), "\\.lsm$", ".ims"))
-  # x$saveState()
 }
 ```
 
 ```{r}
-# segment images
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
-)
-
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
-
-# get experimental info
-exp.info <- cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr"),
-  uIDs = uIDs
-)
-
-# run task
-funParams <- list(
-  # valueName = "tcells.gBT",
-  # valueName = "tcells.gDT",
-  valueName = "dcs.TRITC",
-  models = list(
-    # "1" = list(
-    #   "model" = "fluo",
-    #   "matchAs" = "none",
-    #   "cellDiameter" = 10,
-    #   "cellChannels" = list("gBT"),
-    #   "nucChannels" = list(),
-    #   "normalise" = 99.9,
-    #   "stitchThreshold" = 0.2,
-    #   "mergeLabels" = FALSE,
-    #   "threshold" = 0,
-    #   "relTreshold" = 0,
-    #   "gaussianFilter" = 0,
-    #   "medianFilter" = 0
-    # )
-    # "1" = list(
-    #   "model" = "fluo",
-    #   "matchAs" = "none",
-    #   "cellDiameter" = 10,
-    #   "cellChannels" = list("gDT"),
-    #   "nucChannels" = list(),
-    #   "normalise" = 99.9,
-    #   "stitchThreshold" = 0.2,
-    #   "mergeLabels" = FALSE,
-    #   "threshold" = 0,
-    #   "relTreshold" = 0,
-    #   "gaussianFilter" = 0,
-    #   "medianFilter" = 0
-    # )
-    "1" = list(
-      "model" = "fluo",
-      "matchAs" = "none",
-      "cellDiameter" = 10,
-      "cellChannels" = list("TRITC"),
-      "nucChannels" = list(),
-      "normalise" = 99.9,
-      "stitchThreshold" = 0.2,
-      "mergeLabels" = FALSE,
-      "threshold" = 0,
-      "relTreshold" = 0,
-      "gaussianFilter" = 0,
-      "medianFilter" = 0
-    )
-  ),
-  clearDepth = FALSE,
-  clearTouchingBorder = FALSE,
-  haloSize = 0,
-  blockSize = -1,
-  overlap = -1,
-  blockSizeZ = -1,
-  overlapZ = -1,
-  context = 1,
-  # segment = TRUE,
-  segment = FALSE,
-  measure = TRUE,
-  updateMeasures = FALSE,
-  extendedMeasures = TRUE,
-  saveMeshes = TRUE,
-  saveMeasures = TRUE,
-  labelExpansion = 0,
-  labelErosion = 0,
-  minCellSize = 50,
-  matchThreshold = 0.2,
-  removeUnmatched = TRUE,
-  labelOverlap = 0.2
-)
-
-# run task
-task <- cciaObj$runTasks(
-# task <- cciaObj$runTask(
-  funName = "segment.cellpose",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  runInplace = FALSE,
-  taskID = 3,
-  uIDs = uIDs
-)
+# reloadSources()
+# 
+# # upload local files
+# funVars <- list(
+#    # valueName = "tcells.gBT",
+#    # valueName = "tcells.P14",
+#    valueName = "tcells.OTI",
+#    # valueName = "dcs.TRITC",
+#    maxSearchRadius = 20,
+#    maxLost = 3,
+#    accuracy = 0.8,
+#    probToAssign = 0.8,
+#    noiseInital = 300,
+#    noiseProcessing = 100,
+#    noiseMeasurements = 100,
+#    distThresh = 10,
+#    timeThresh = 5,
+#    segmentationMissRate = 0.1,
+#    lambdaLink = 5,
+#    lambdaTime = 5,
+#    lambdaDist = 5,
+#    thetaTime = 5,
+#    thetaDist = 5,
+#    minTimepoints = 5,
+#    minDisplacement = 10,
+#    maxMeanTurningAngle = 0,
+#    filters = list(
+#      a = list(
+#        # measure = c("gBT.CTDR"),
+#        measure = c("OTI.CTV"),
+#        values = c("20"),
+#        fun = c("gt")
+#      ),
+#      b = list(
+#        measure = c("surface_to_volume"),
+#        values = c("1.2"),
+#        fun = c("lte")
+#      )
+#      # b = list(
+#      #   measure = c("TRITC"),
+#      #   # values = c("20"),
+#      #   values = c("50"),
+#      #   fun = c("gt")
+#      # )
+#    ),
+#    calcTrackingStats = TRUE
+# )
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#    file.path(
+#      projectsDir, pID, "ANALYSIS", versionID, "BeddcR" # GCAMP set
+#      # projectsDir, pID, "ANALYSIS", versionID, "ZXcUMO" # DTx
+#    ),
+#    initReactivity = FALSE
+# )
+# 
+# uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- uIDs[!uIDs %in% c(
+#    "eSfB5I", "O3IRaQ", "a60Xzu",
+#    "aLtS86", # does not work
+#    # no TRITC cells
+#    "5rIRkE", "HLCoCr", "34Ow8s",
+#    "jAndy6", "RH7IVY"
+# )]
+# # uIDs <- uIDs[!uIDs %in% c(
+# #   "1SVENE"
+# # )]
+# # uIDs <- uIDs[1:which(uIDs == "X2Thus")]
+# # uIDs <- uIDs[which(uIDs == "eqGfqA"):length(uIDs)]
+# uIDs <- c("63XQHh")
+# 
+# cciaObj$runTasks(
+# # cciaObj$runTask(
+#    funName = "tracking.bayesianTracking",
+#    funVars = funVars,
+#    uIDs = uIDs,
+#    runInplace = TRUE
+# )
 ```
 
-```{r}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
-)
-
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
-
-funParams <- list(
-  valueNames = c("tcells.gBT", "tcells.gDT", "dcs.TRITC"),
-  retrieveMeshesOnly = FALSE
-)
-
-# run task
-task <- cciaObj$runTasks(
-  funName = "segment.retrieve",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1,
-  uIDs = uIDs,
-  mc.cores = 3
-)
-```
 
 ```{r}
 # HMM
@@ -276,23 +184,20 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE
 )
 
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y" & Include == "Y"]$uID
 
 # run task
 funParams <- list(
   popType = "live",
-  pops = c("tcells.gBT/tracked/non.clustered", "tcells.gDT/tracked/non.clustered"),
+  pops = c("gBT/tracked", "gDT/tracked"),
   modelMeasurements = c("live.cell.speed", "live.cell.angle"),
   colName = "movement",
   appendStates = list(live.cell.is.clust = TRUE),
@@ -322,23 +227,20 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE
 )
 
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 
 # run task
 funParams <- list(
   popType = "live",
-  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
+  pops = c("gBT/tracked", "gDT/tracked"),
   colName = "movement",
   hmmStates = c("movement"),
   includeStart = FALSE,
@@ -363,23 +265,20 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE
 )
 
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 
 # run task
 funParams <- list(
   popType = "live",
-  popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
+  popsToCluster = c("gBT/tracked", "gDT/tracked"),
   valueName = "tracks.clusters.tcells.hmm_transitions_movement",
   clusterColName = "hmm_transitions_movement",
   resolution = 0.20,
@@ -440,23 +339,15 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE # DTx
 )
-
-# not useable
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c(
-  "5N8Iip", "OWJrYz", "PxwhNn",
-  "CzR7ZQ", "zqrpfq",
-  "NbaQvC", "ypUN8d", "oPmJg0",
-  "o0auGO", "TxTL0a", "xyHt1U"
-)]
 
 # get experimental info
-exp.info <- cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr"),
-  uIDs = uIDs
-)
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
@@ -466,8 +357,8 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
 # get popDTs for set
 popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
-    "tcells.gBT/tracked",
-    "tcells.gDT/tracked"
+    "gBT/tracked",
+    "gDT/tracked"
     ),
   includeFiltered = TRUE,
   flushCache = TRUE,
@@ -486,42 +377,6 @@ exp.info %>% group_by(Treatment, DTx, Date) %>%
     ) %>%
   mutate(movies_per_mouse = sum_movies/mice)
 ```
-
-
-```{r fig_TRITC_contact, fig.height=5, fig.width=8}
-# plot out TRTIC contact
-datToPlot <- popDTs %>%
-  dplyr::filter(value_name == "tcells.gBT") %>%
-  group_by(uID, live.cell.is.clust, `live.cell.contact#live.dcs.TRITC/tracked`) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  # drop_na() %>%
-  ungroup() %>%
-  complete(uID, live.cell.is.clust,
-           `live.cell.contact#live.dcs.TRITC/tracked`, fill = list(freq = 0)) %>%
-  left_join(exp.info) %>%
-  dplyr::filter(
-    Treatment != "Uninfected",
-    `live.cell.contact#live.dcs.TRITC/tracked` == TRUE
-    ) 
-
-ggplot(datToPlot, aes(live.cell.is.clust, freq,
-                      color = interaction(Treatment, DTx))) +
-    theme_classic() +
-    geom_boxplot(outlier.alpha = 0) +
-    geom_jitter(
-      position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    scale_color_brewer(name = "Treatment", palette = "Set1")
-
-datToPlot$Treatment.ID <- 0
-datToPlot[datToPlot$DTx == "DTx",]$Treatment.ID <- 1
-
-datToPlot$pop.ID <- 0
-datToPlot[datToPlot$live.cell.is.clust == TRUE,]$pop.ID <- 1
-
-# write.csv(datToPlot, file.path(anaDir, "TRITC_contact.csv"))
-```
-
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
@@ -597,10 +452,10 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
 dfToPlot$clusters.name <- "NONE"
-dfToPlot[dfToPlot$clusters %in% c(1,7), ]$clusters.name <- "Directed"
-dfToPlot[dfToPlot$clusters %in% c(3), ]$clusters.name <- "Clustering"
-dfToPlot[dfToPlot$clusters %in% c(2,5,6), ]$clusters.name <- "Meandering"
+dfToPlot[dfToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
+dfToPlot[dfToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
 dfToPlot[dfToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+dfToPlot[dfToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -672,10 +527,10 @@ propsToPlot <- propsToPlot %>%
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
 propsToPlot$clusters.name <- "NONE"
-propsToPlot[propsToPlot$clusters %in% c(1,7), ]$clusters.name <- "Directed"
-propsToPlot[propsToPlot$clusters %in% c(3), ]$clusters.name <- "Clustering"
-propsToPlot[propsToPlot$clusters %in% c(2,5,6), ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
+propsToPlot[propsToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
 propsToPlot[propsToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -741,158 +596,19 @@ ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 8)
 ```
 
-```{r fig_total_transitions, fig.height=1, fig.width=5}
-library(ggplot2)
-library(ggraph)
-
-freqThr <- 0.0001
-
-pList <- list()
-
-stateOrder <- list(
-  "D" = "2",
-  "M" = "3",
-  "S" = "1",
-  "C" = "4"
-)
-
-summaryDF <- popDTs %>%
-  left_join(exp.info)
-
-summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
-summaryDF$stain <- str_extract(
-  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
-  )
-summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
-
-summaryDF$clusters.name <- "NONE"
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement %in% c(1,7), ]$clusters.name <- "Directed"
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement %in% c(3), ]$clusters.name <- "Clustering"
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement %in% c(2,5,6), ]$clusters.name <- "Meandering"
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement %in% c(0,4), ]$clusters.name <- "Scanning"
-
-
-# for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
-for (x in unique(summaryDF$clusters.name)) {
-  # plot heatmap of transitions
-  DF <- summaryDF %>%
-    # dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
-    dplyr::filter(clusters.name == x) %>%
-    group_by(live.cell.hmm.transitions.movement) %>%
-    summarise(n = n()) %>%
-    separate(live.cell.hmm.transitions.movement,
-             into = c("from", "to"),
-             sep = "_", convert = TRUE) %>%
-    mutate(across(c(from, to), as.character)) %>%
-    replace_na(list(from = "0"))
-  
-  # edges for non-self transitions
-  edges <- DF %>%
-    dplyr::filter(from != to) %>%
-    mutate(freq = n/sum(n)) %>%
-    complete(from, to, fill = list(freq = 0)) %>%
-    drop_na() %>%
-    dplyr::filter(freq > freqThr) %>%
-    mutate(non.self = (freq - min(freq)) / (max(freq) - min(freq))) %>%
-    arrange(freq)
-  
-  # get number of self transitions
-  nodes <- DF %>%
-    dplyr::filter(from == to) %>%
-    mutate(freq = n/sum(n)) %>%
-    complete(from = unlist(stateOrder), fill = list(freq = 0)) %>%
-    replace_na(list(to = "0")) %>%
-    select(from, freq) %>%
-    dplyr::rename(node = from) %>%
-    add_row(node = "0", freq = 0) %>%
-    mutate(nodeName = node) %>%
-    dplyr::filter(node %in% unique(c(edges$from, edges$to))) %>%
-    mutate(self = (freq - min(freq)) / (max(freq) - min(freq)))
-  
-  # add names for nodes
-  for (i in names(stateOrder)) {
-    nodes[nodes$nodeName == stateOrder[[i]], ]$nodeName <- i
-  }
-  
-  # add state order
-  counter <- 0
-  nodes$order <- 0
-  for (y in stateOrder) {
-    nodes[nodes$node == y,]$order <- counter
-
-    counter <- counter + 1
-  }
-  
-  # https://www.hydrogenwaterusa.com/visualizing-large-directed-networks-with-ggraph-in-r/
-  g <- igraph::graph_from_data_frame(d = edges,
-                                     vertices = nodes %>% arrange(order),
-                                     directed = TRUE)
-  
-  # pList[[x]] <- ggraph(g, layout = "auto") +
-  # pList[[x]] <- ggraph(g, layout = "igraph", algorithm = "circle") +
-  # pList[[x]] <- ggraph(g, layout = "linear") +
-  # ggraph(g, layout = "igraph", algorithm = "circle") +
-  # ggraph(g, layout = "auto") +
-  ggraph(g, layout = "linear") +
-    # ggtitle(sprintf("%s", x)) +
-    geom_edge_fan2(aes(width = non.self, color = non.self),
-                   arrow = arrow(length = unit(5, 'mm'), type = "closed"),
-                   end_cap = circle(3, 'mm')) +
-    scale_edge_width(range = c(1, 2)) +
-    scale_edge_color_gradient2(
-      # low = "#D1D1D1",
-      low = "#dadada",
-      high = "black",
-      mid = "#616161",
-      midpoint = .5
-    ) +
-    geom_node_label(aes(label = nodeName, fill = self),
-                    color = "white", repel = FALSE, size=5,
-                    label.padding = unit(0.25, "lines")) +
-    scale_fill_gradient2(
-      # low = "blue",
-      low = "#009fe3",
-      mid = "black",
-      # high = "red",
-      high = "#e71d73",
-      midpoint = .5
-    ) +
-    theme_graph(
-      plot_margin = margin(0, 0, 0, 0)
-    ) +
-    theme(
-      legend.position = "none",
-      plot.title = element_text(size = 6, family = "Arial")
-    )
-
-  ggsave(file = file.path(anaDir, "networks", paste0("network_", x, ".pdf")),
-         width = 3, height = 1, dpi = 400)
-}
-
-# ggpubr::ggarrange(plotlist = pList, nrow = 1)
-
-# https://stackoverflow.com/a/17075381
-# ggsave(file = file.path(anaDir, "total_networks.tiff"),
-# ggsave(file = file.path(anaDir, "total_networks_GCAMP.tiff"),
-  # width = 7, height = 2)
-  # width = 20, height = 3.5)
-  # width = 25, height = 2)
-```
-
 ```{r fig_clusters_freq, fig.height=4, fig.width=15}
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 
 summaryDF$clusters.name <- "NONE"
-summaryDF[summaryDF$clusters %in% c(1,7), ]$clusters.name <- "Directed"
-summaryDF[summaryDF$clusters %in% c(3), ]$clusters.name <- "Clustering"
-summaryDF[summaryDF$clusters %in% c(2,5,6), ]$clusters.name <- "Meandering"
+summaryDF[summaryDF$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
+summaryDF[summaryDF$clusters %in% c(5), ]$clusters.name <- "Meandering"
 summaryDF[summaryDF$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+summaryDF[summaryDF$clusters %in% c(1), ]$clusters.name <- "Clustering"
 
 # show frequency of clusters
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
-summaryDF <- summaryDF[clusters.name != "Clustering", .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
@@ -901,8 +617,8 @@ summaryDF <- summaryDF[clusters.name != "Clustering", .(n.clusters = .N), by = .
   complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
   left_join(exp.info)
 
-# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, DTx))) +
-ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, dpi))) +
+ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, dpi))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -952,10 +668,10 @@ freqClustContact <- clusterContacts %>%
 clusterContacts <- copy(tcells.sc)
 
 clusterContacts$clusters.name <- "NONE"
-clusterContacts[clusterContacts$clusters %in% c(1,7), ]$clusters.name <- "Directed"
-clusterContacts[clusterContacts$clusters %in% c(3), ]$clusters.name <- "Clustering"
-clusterContacts[clusterContacts$clusters %in% c(2,5,6), ]$clusters.name <- "Meandering"
-clusterContacts[clusterContacts$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters %in% c(2,3,7,8), ]$clusters.name <- "Directed"
+propsToPlot[propsToPlot$clusters %in% c(4), ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters %in% c(0,5,6), ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 
 clusterContacts <- clusterContacts %>%
   dplyr::filter(clusters.name != "NONE", pop == "tcells.gDT/tracked") %>%
@@ -966,21 +682,18 @@ clusterContacts[clusterContacts$freq.non.contact.cell.cluster < 100, ]$contact.c
 
 clusterContacts <- clusterContacts %>%
   # group_by(uID, pop, clusters, contact.clusters) %>%
-  # group_by(uID, pop, contact.cell.cluster, clusters) %>%
-  group_by(uID, pop, contact.cell.cluster, clusters.name) %>%
+  group_by(uID, pop, contact.cell.cluster, clusters) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
   complete(
-    # uID, contact.cell.cluster, clusters,
-    uID, contact.cell.cluster, clusters.name,
+    uID, contact.cell.cluster, clusters,
     fill = list(freq = 0)) %>%
   left_join(exp.info)
 
 ggplot(clusterContacts, 
        # aes(as.factor(clusters), freq.contact.clusters,
-       # aes(as.factor(clusters), freq, color = interaction(Treatment, DTx))) +
-       aes(as.factor(clusters.name), freq, color = interaction(Treatment, DTx))) +
+       aes(as.factor(clusters), freq, color = interaction(Treatment, DTx))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
@@ -990,4 +703,3 @@ ggplot(clusterContacts,
 
 ggsave(file.path(anaDir, "gDT_behaviour_visiting_gBT_cluster.png"), height = 2, width = 12)
 ```
-

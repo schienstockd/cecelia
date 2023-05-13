@@ -27,7 +27,168 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+# GCAMP
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  # modelMeasurements = c(
+  #   "surface_area", "volume", "extent", "solidity",
+  #   "ellipticity_interm_oblate", "ellipticity_interm_prolate",
+  #   "compactness", "sphericity"
+  # ),
+  colName = "movement",
+  # colName = "shape",
+  # appendStates = list(live.cell.is.clust = TRUE),
+  appendStates = list(),
+  # appendStates = list(),
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  noiseFilterMeasurements = 5,
+  postFiltering = 2,
+  postIterations = 2,
+  # numStates = 3, # movement with injection
+  numStates = 4, # movement
+  # numStates = 4, # shape
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+# GCAMP
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  colName = "movement",
+  hmmStates = c("movement"),
+  # colName = "shape",
+  # hmmStates = c("shape"),
+  includeStart = FALSE,
+  includeSelfTransitions = TRUE,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmTransitions",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+# GCAMP
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  # valueName = "tracks.clusters.tcells.hmm_transitions",
+  # clusterColName = "hmm_transitions",
+  valueName = "tracks.clusters.tcells.hmm_transitions_hi",
+  clusterColName = "hmm_transitions_hi",
+  # resolution = 0.20, # low
+  resolution = 0.30, # hi
+  percentile = 99.5,
+  trackMeasures = c(
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
+  ),
+  objectMeasures = c(
+    "extent",
+    "solidity",
+    "integral_mean_curvature",
+    "ellipticity_oblate",
+    "ellipticity_prolate",
+    "ellipticity_interm_oblate",
+    "ellipticity_interm_prolate",
+    "sphericity",
+    # HMM states
+    # "live.cell.hmm.state.movement"
+    # "live.cell.hmm.state.shape"
+    "live.cell.hmm.transitions.movement",
+    "live.cell.hmm.transitions.shape"
+    ),
+  nMeasures = c(
+    ),
+  sumMeasures = c(
+    ),
+  calcMeasures = list(
+  ),
+  addPops = c(
+    ),
+  calcLabelProps = TRUE,
+  usePaga = FALSE,
+  minTracklength = 6,
+  # minTracklength = 50,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 ```{r}
@@ -49,16 +210,20 @@ exp.info <- cciaObj$summary(
 
 # get clustering
 types.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(), value_name = "tracks.clusters.types.all.sc")$label_props_view()$as_df())
+  # cciaObj$persistentObjectDirectory(),
+  # value_name = "tracks.clusters.types.all.sc")$label_props_view()$as_df())
+  cciaObj$persistentObjectDirectory(),
+  # value_name = "tracks.clusters.tcells.hmm_transitions.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm_transitions_hi.sc")$label_props_view()$as_df())
 
-# get clustering
-types.tests.sc <- sapply(
-  c("all", "wo_tracks", "wo_hmm", "wo_shape", "wo_movement"), function(x) {
-    as.data.table(cciaEnv()$LabelPropsUtils(
-      cciaObj$persistentObjectDirectory(),
-      value_name = paste0("tracks.clusters.types.", x,".sc"))$label_props_view()$as_df())
-  }
-)
+# # get clustering
+# types.tests.sc <- sapply(
+#   c("all", "wo_tracks", "wo_hmm", "wo_shape", "wo_movement"), function(x) {
+#     as.data.table(cciaEnv()$LabelPropsUtils(
+#       cciaObj$persistentObjectDirectory(),
+#       value_name = paste0("tracks.clusters.types.", x,".sc"))$label_props_view()$as_df())
+#   }
+# )
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -162,9 +327,9 @@ ggplot(
     axis.ticks.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom"
-    legend.position = "none",
+    legend.position = "bottom",
+    # legend.position = "none",
+    legend.title = element_blank(),
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
@@ -198,9 +363,9 @@ ggplot(
     axis.ticks.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom"
-    legend.position = "none",
+    legend.position = "bottom",
+    # legend.position = "none",
+    legend.title = element_blank(),
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank(),
@@ -234,9 +399,9 @@ ggplot(sumPlot,
     axis.ticks.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom"
-    legend.position = "none",
+    legend.position = "bottom",
+    # legend.position = "none",
+    legend.title = element_blank(),
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank(),
@@ -244,7 +409,100 @@ ggplot(sumPlot,
     strip.text.x = element_blank()
   )
 
-ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 10, height = 2)
+ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 4, height = 2)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(types.sc)
+
+# propsToPlot <- propsToPlot %>%
+#   dplyr::rename(
+#     "Movement HMM 1" = "live.cell.hmm.state.movement.1",
+#     "Movement HMM 2" = "live.cell.hmm.state.movement.2",
+#     "Movement HMM 3" = "live.cell.hmm.state.movement.3",
+#     "Movement HMM 4" = "live.cell.hmm.state.movement.4",
+#   )
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+propsToPlot$clusters.name <- "NONE"
+propsToPlot[propsToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
+propsToPlot[propsToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
+propsToPlot[propsToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
+
+# propsList <- c(
+#   'Movement HMM 1',
+#   'Movement HMM 2',
+#   'Movement HMM 3',
+#   'Movement HMM 4',
+#   'asphericity',
+#   'displacement',
+#   'displacementRatio',
+#   'duration',
+#   'meanTurningAngle',
+#   'outreachRatio',
+#   'overallAngle',
+#   'speed',
+#   'straightness',
+#   'trackLength'
+# )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  dplyr::filter(
+    # clusters.name != "NONE",
+    # prop %in% propsList
+    ) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+# propsSummary$prop <- factor(
+#   propsSummary$prop, levels = rev(propsList))
+# propsSummary$clusters.name <- factor(
+#   propsSummary$clusters.name, levels = c(
+#     "Directed", "Meandering", "Scanning", "Clustering"
+#   ))
+
+# ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 16)
 ```
 
 ```{r fig_umap_tests, fig.height=3, fig.width=3}

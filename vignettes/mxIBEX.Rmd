@@ -55,7 +55,7 @@ HPC_CONF <-  list(
     ssh = list(
       username = "schienstockd",
       address = "spartan.hpc.unimelb.edu.au",
-      keyfile = "/Users/schiend/.ssh/spartan_rsa"
+      keyfile = "/Users/Dominik/.ssh/spartan_rsa"
     ),
     python = list(
       condaEnv = cciaConf()$python$conda$source$env

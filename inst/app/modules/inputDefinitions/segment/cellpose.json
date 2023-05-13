@@ -42,7 +42,7 @@
 						"type:double": {
 							"min": 80,
 							"max": 100,
-							"default": 99.9
+							"default": 99.8
 						}
 					},
 					"stitchThreshold": {

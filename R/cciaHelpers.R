@@ -674,9 +674,11 @@ renameChannelColumns <- function(channelList, channelNames, channelPattern = "me
     DT[[col]], 1 - percentile, na.rm = TRUE)
   
   # adjust column
-  DT[, c(normCol) := (
-    (get(col) - minSubtract) / (maxSubtract - minSubtract)
-  )]
+  DT[, c(normCol) := ((get(col) - minSubtract) / (maxSubtract - minSubtract))]
+  
+  # check NaN
+  DT[is.nan(get(normCol)), c(normCol) := 0]
+  
   DT[get(normCol) < 0, c(normCol) := 0]
   DT[get(normCol) > 1, c(normCol) := 1]
 }
@@ -1042,4 +1044,25 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
     files = filesToCopy,
     names = newFileNames
   )
+}
+
+#' @description Map cluster names to list
+#' @param DF data.frame to add cluster name
+#' @param clusterMapping list of cluster IDs to names
+#' @param clustCol character of column id
+#' @param nameCol character of column name
+#' @param defaultName character of default name
+#' @examples
+#' TODO
+#' @export
+.mapClustNames <- function(DF, clusterMapping, clustCol = "clusters", nameCol = "clusters.name",
+                           defaultName = "NONE") {
+  # set default name
+  DF[[nameCol]] <- defaultName
+  
+  # go through
+  for (i in names(clusterMapping))
+    DF[DF[[clustCol]] %in% clusterMapping[[i]], ][[nameCol]] <- i
+  
+  DF
 }

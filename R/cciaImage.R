@@ -371,11 +371,15 @@ CciaImage <- R6::R6Class(
               self$omeXML(), self$omeXMLPath("//StructuredAnnotations//Value")))
             
             # get time step information
-            timeStepNode <- valueChildren[!is.na(stringr::str_match(valueChildren, "Time_Step")[,1])]
+            timeStepNode <- valueChildren[!is.na(stringr::str_match(as.character(valueChildren), "Time_Step")[,1])]
+            
+            if (length(timeStepNode) == 0) {
+              timeStepNode <- valueChildren[!is.na(stringr::str_match(as.character(valueChildren), "Time_Interval_\\[s\\]")[,1])]
+            }
             
             # put information into list
             tInfo <- list(
-              interval = as.numeric(stringr::str_extract(xml2::xml_contents(xml2::xml_contents(timeStepNode)[2]), "[0-9]+\\.[0-9]+")) / 60
+              interval = as.numeric(stringr::str_extract(as.character(xml2::xml_contents(xml2::xml_contents(timeStepNode)[2])), "[0-9]+\\.[0-9]+")) / 60
             )
           })
         }
