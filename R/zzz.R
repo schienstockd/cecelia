@@ -150,9 +150,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # install OME bioformats
   if (envType %in% c("image", "image-nogui")) {
     reticulate::conda_install(
-      # envname = envName, packages = c("c-blosc2"), channel = "conda-forge")
-      envname = envName, packages = c("blosc"), channel = "anaconda")
-    reticulate::conda_install(
       envname = envName, packages = c("bioformats2raw"), channel = "ome")
     reticulate::conda_install(
       envname = envName, packages = c("bftools"), channel = "bioconda")

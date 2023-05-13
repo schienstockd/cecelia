@@ -1,4 +1,5 @@
 numpy==1.22.3
+blosc==1.11.1
 jupyter
 napari[all]
 napari-animation
