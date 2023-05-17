@@ -180,15 +180,15 @@ funParams <- list(
   # ),
   colName = "movement",
   # colName = "shape",
-  # appendStates = list(live.cell.is.clust = TRUE),
-  appendStates = list(),
+  appendStates = list(live.cell.is.clust = TRUE),
+  # appendStates = list(),
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,
   postFiltering = 2,
   postIterations = 2,
-  # numStates = 3, # movement with injection
-  numStates = 4, # movement
+  numStates = 3, # movement with injection
+  # numStates = 4, # movement
   # numStates = 3, # shape
   uIDs = uIDs
 )

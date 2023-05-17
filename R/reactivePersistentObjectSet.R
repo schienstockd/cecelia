@@ -244,8 +244,12 @@ ReactivePersistentObjectSet <- R6::R6Class(
       # go through objects
       if (length(cciaObjects) > 0) {
         for (curObjName in names(cciaObjects)) {
-          cciaObjects[[curObjName]]()$editCciaAttr(
-            objAttrName, objAttrVals[[curObjName]], invalidate = invalidate)
+          if (private$initReactivity() == TRUE)
+            cciaObjects[[curObjName]]()$editCciaAttr(
+              objAttrName, objAttrVals[[curObjName]], invalidate = invalidate)
+          else
+            cciaObjects[[curObjName]]$editCciaAttr(
+              objAttrName, objAttrVals[[curObjName]], invalidate = invalidate)
         }
       }
     },

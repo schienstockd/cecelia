@@ -155,14 +155,14 @@ funParams <- list(
   popType = "live",
   # pops = c("tcells.gBT/tracked", "tcells.OTI/tracked"),
   pops = c("tcells.gBT/tracked"),
-  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
-  # modelMeasurements = c(
-  #   "surface_area", "volume", "extent", "solidity",
-  #   "ellipticity_interm_oblate", "ellipticity_interm_prolate",
-  #   "compactness", "sphericity"
-  # ),
-  colName = "movement",
-  # colName = "shape",
+  # modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  modelMeasurements = c(
+    "surface_area", "volume", "extent", "solidity",
+    "ellipticity_interm_oblate", "ellipticity_interm_prolate",
+    "compactness", "sphericity"
+  ),
+  # colName = "movement",
+  colName = "shape",
   # appendStates = list(live.cell.is.clust = TRUE),
   appendStates = list(),
   skipTimesteps = 0,
@@ -170,9 +170,8 @@ funParams <- list(
   noiseFilterMeasurements = 5,
   postFiltering = 2,
   postIterations = 2,
-  # numStates = 3, # movement with injection
-  numStates = 4, # movement
-  # numStates = 3, # shape
+  # numStates = 4, # movement with injection
+  numStates = 4, # shape
   uIDs = uIDs
 )
 
@@ -251,10 +250,10 @@ funParams <- list(
   popType = "live",
   # pops = c("tcells.gBT/tracked", "tcells.OTI/tracked"),
   pops = c("tcells.gBT/tracked"),
-  colName = "movement",
-  hmmStates = c("movement"),
-  # colName = "shape",
-  # hmmStates = c("shape"),
+  # colName = "movement",
+  # hmmStates = c("movement"),
+  colName = "shape",
+  hmmStates = c("shape"),
   includeStart = FALSE,
   includeSelfTransitions = TRUE,
   uIDs = uIDs
@@ -294,14 +293,15 @@ funParams <- list(
   popType = "live",
   # popsToCluster = c("tcells.gBT/tracked", "tcells.OTI/tracked"),
   popsToCluster = c("tcells.gBT/tracked"),
-  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  # valueName = "tracks.clusters.tcells.hmm_movement",
-  clusterColName = "hmm_transitions_movement",
-  # clusterColName = "hmm_movement",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  valueName = "tracks.clusters.tcells.hmm_movement",
+  # clusterColName = "hmm_transitions_movement",
+  clusterColName = "hmm_movement",
   resolution = 0.30,
   # resolution = 0.40,
+  # resolution = 0.50,
   # resolution = 0.35,
-  percentile = 99.2,
+  percentile = 99.5,
   trackMeasures = c(
     "speed",
     "duration",
@@ -324,11 +324,11 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
-    # "live.cell.hmm.state.movement",
+    "live.cell.hmm.state.movement"
     # "live.cell.hmm.state.gcamp",
-    "live.cell.peak.ratio.GCAMP",
-    "live.cell.hmm.transitions.movement",
-    "live.cell.hmm.transitions.gcamp"
+    # "live.cell.peak.ratio.GCAMP",
+    # "live.cell.hmm.transitions.movement"
+    # "live.cell.hmm.transitions.gcamp"
     # "live.cell.hmm.transitions.shape"
     ),
   nMeasures = c(
@@ -376,8 +376,8 @@ uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
   # value_name = "tracks.clusters.tcells.skip3.sc")$label_props_view()$as_df())
-  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
-  # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -388,30 +388,6 @@ popDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
-```
-
-```{r}
-clusterMapping <- list(
-  Directed = c(4,0,5,6),
-  Meandering = c(2),
-  # Patrolling = c(0,5,6),
-  Scanning = c(1),
-  "GCAMP+" = c(3)
-)
-```
-
-
-```{r}
-# move background GCAMP+ cluster to scanning
-tracks.info <- cciaObj$tracksInfo(
-  c("live.cell.hmm.state.gcamp"),
-  parentPop = "tcells.gBT/tracked",
-  uIDs = uIDs
-)
-
-tcells.sc.info <- as.data.table(copy(tcells.sc) %>% left_join(tracks.info))
-tcells.sc.info[, clusters := as.character(clusters)]
-tcells.sc.info[clusters %in% clusterMapping$`GCAMP+` & live.cell.hmm.state.gcamp.3.n < 2, clusters := clusterMapping$Scanning[[1]]]
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
@@ -502,6 +478,7 @@ propsToPlot <- popDTs[exp.info, on = "uID"] %>%
   pivot_longer(
     cols = c(
       "live.cell.hmm.state.movement"
+      # "live.cell.hmm.state.shape"
     ), names_to = "hmm_type", values_to = "hmm_value"
     )
 
@@ -541,15 +518,22 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 ```
 
 ```{r fig_umap, fig.height=8, fig.width=8}
-# dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
-dfToPlot <- copy(tcells.sc.info) %>% drop_na(clusters) %>% left_join(exp.info)
+dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
+# dfToPlot <- copy(tcells.sc.info) %>% drop_na(clusters) %>% left_join(exp.info)
+
+clusterMapping <- list(
+  Directed = c(1,2,3,8),
+  Meandering = c(4,7),
+  Scanning = c(0,5),
+  Clustering = c(6)
+)
 
 dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  # group_by(clusters) %>%
-  group_by(clusters.name) %>%
+  group_by(clusters) %>%
+  # group_by(clusters.name) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -563,8 +547,8 @@ ggplot(
   dfToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
-  # geom_point(aes(color = clusters)) +
-  geom_point(aes(color = clusters.name)) +
+  geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = clusters.name)) +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
@@ -583,19 +567,120 @@ ggplot(
     ) +
   geom_label(
     data = meanClusterPos,
-    # aes(label = clusters),
-    aes(label = clusters.name),
+    aes(label = clusters),
+    # aes(label = clusters.name),
     label.size = 0.25,
     color = "black"
     )
 
 ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
 ```
+```{r fig_umap, fig.height=8, fig.width=8}
+# show contact of T cells to DCs
+tracksInfo <- cciaObj$tracksInfo(
+  "live.cell.hmm.state.gcamp",
+  parentPop = "tcells.gBT/tracked", uIDs = uIDs
+)
+
+dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(tracksInfo)
+dfToPlot$gcamp.track <- FALSE
+dfToPlot[dfToPlot$live.cell.hmm.state.gcamp.3.n >= 2, ]$gcamp.track <- TRUE
+
+datToPlot <- dfToPlot %>% left_join(exp.info)
+
+# plot UMAP
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(data = datToPlot %>% dplyr::filter(gcamp.track == FALSE),
+             color = "#B3BCC2", size = 2) +
+  geom_point(data = datToPlot %>% dplyr::filter(gcamp.track == TRUE),
+             color = "#AA1F5E", size = 2, alpha = 1) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_GCAMP.tiff")), width = 5, height = 5)
+```
+
+```{r fig_GCAMP_freq, fig.height=3, fig.width=4}
+# in total - what is the frequency of GCAMP+?
+datToPlot <- dfToPlot %>%
+  group_by(uID, gcamp.track) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  dplyr::filter(gcamp.track == TRUE) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot,
+       aes(interaction(Treatment, DTx), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 2, alpha = 1.0) +
+  scale_color_brewer(name = "Treatment", palette = "Set1")
+
+ggsave(file.path(anaDir, paste0("GCAMP_freq.tiff")), width = 4, height = 2)
+write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
+```
+
+
+```{r fig_GCAMP_behaviour, fig.height=3, fig.width=8}
+# in total - what is the behaviour of GCAMP+?
+datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+# datToPlot <- datToPlot %>%
+#   group_by(gcamp.track, clusters) %>%
+#   # group_by(gcamp.track, clusters.name) %>%
+#   summarise(n = n()) %>%
+#   mutate(freq = n / sum(n) * 100) %>%
+#   dplyr::filter(gcamp.track == TRUE) 
+# 
+# datToPlot
+
+datToPlot <- datToPlot %>%
+  group_by(uID, gcamp.track, clusters) %>%
+  # group_by(uID, gcamp.track, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, gcamp.track, clusters, fill = list(freq = 0)) %>%
+  dplyr::filter(gcamp.track == TRUE) %>% 
+  left_join(exp.info)
+
+# ggplot(dfToPlot %>% left_join(exp.info),
+ggplot(datToPlot,
+       aes(clusters, freq, color = interaction(Treatment, DTx))) +
+       # aes(clusters, live.cell.hmm.state.gcamp.3.n, color = interaction(Treatment, DTx))) +
+       # aes(clusters, live.cell.hmm.state.gcamp.3, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 2, alpha = 1.0) +
+  scale_color_brewer(name = "Treatment", palette = "Set1")
+
+ggsave(file.path(anaDir, paste0("GCAMP_behaviour.tiff")), width = 8, height = 2)
+write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour.csv"))
+```
 
 ```{r}
 # show measurements of clusters to compare
-# propsToPlot <- copy(tcells.sc)
-propsToPlot <- copy(tcells.sc.info)
+propsToPlot <- copy(tcells.sc)
 
 # propsToPlot <- propsToPlot %>%
 #   dplyr::rename(
@@ -641,8 +726,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  # group_by(clusters, prop) %>%
-  group_by(clusters.name, prop) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -656,9 +741,9 @@ propsSummary <- propsToPlot %>%
 #   propsSummary$clusters.name, levels = c(
 #     "Directed", "Meandering", "Scanning", "Clustering"
 #   ))
-c
-ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
-# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+
+# ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+ggplot(propsSummary, aes(as.factor(clusters), prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -678,22 +763,23 @@ ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 8)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 4)
 ```
 
 ```{r fig_total_transitions, fig.height=1, fig.width=5}
 library(ggplot2)
 library(ggraph)
 
-freqThr <- 0.0001
+freqThr <- 0.001
 
 pList <- list()
 
 stateOrder <- list(
-  "D" = "3",
-  "P" = "1",
-  "M" = "2",
-  "S" = "4"
+  "D" = "2",
+  "P" = "4",
+  "M" = "3",
+  "S" = "1",
+  "C" = "5"
 )
 
 summaryDF <- popDTs %>%
@@ -709,12 +795,14 @@ summaryDF$Treatment_DTx <- interaction(summaryDF$Treatment, summaryDF$DTx)
 summaryDF <- .mapClustNames(summaryDF, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
 
 # for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
-for (x in unique(summaryDF$clusters.name)) {
+for (x in unique(summaryDF$live.cell.track.clusters.hmm_movement)) {
+# for (x in unique(summaryDF$clusters.name)) {
 # for (x in unique(summaryDF$Treatment_DTx)) {
   # plot heatmap of transitions
   DF <- summaryDF %>%
     # dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
-    dplyr::filter(clusters.name == x) %>%
+    dplyr::filter(live.cell.track.clusters.hmm_movement == x) %>%
+    # dplyr::filter(clusters.name == x) %>%
     # dplyr::filter(Treatment_DTx == x, live.cell.track.clusters.hmm_transitions_movement == 3) %>%
     group_by(live.cell.hmm.transitions.movement) %>%
     summarise(n = n()) %>%
@@ -819,26 +907,25 @@ for (x in unique(summaryDF$clusters.name)) {
 
 ```{r fig_clusters_freq, fig.height=4, fig.width=15}
 # save frequencies of track clusters
-# summaryDF <- copy(tcells.sc)
-summaryDF <- copy(tcells.sc.info)
+summaryDF <- copy(tcells.sc)
 
 summaryDF <- .mapClustNames(summaryDF, clusterMapping)
 
 # show frequency of clusters - exclude clusters
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
   ungroup() %>%
-  # complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
-  complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
+  complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
+  # complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
   left_join(exp.info)
 
 # ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, DTx))) +
 # ggplot(summaryDF %>% dplyr::filter(pop == "tcells.gBT/tracked"),
-# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, DTx))) +
-ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
+ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, DTx))) +
+# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
