@@ -498,8 +498,7 @@ cciaObj <- initCciaObject(
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr"),
-  uIDs = uIDs
+  withSelf = FALSE, fields = c("Attr")
 ))
 
 uIDs <- exp.info[Include == "Y"]$uID
@@ -700,18 +699,25 @@ ggplot(
 ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
 ```
 
-```{r fig_umap, fig.height=8, fig.width=8}
-datToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
+```{r fig_umap, fig.height=4, fig.width=4}
+datToPlot <- copy(tcells.sc) %>%
+  drop_na(clusters) %>%
+  left_join(exp.info) %>%
+  dplyr::filter(clusters != 8)
 
 # plot UMAP
+curDatToPlot <- datToPlot[datToPlot$Treatment != "HSV",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
+
 ggplot(
   datToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
   theme_classic() +
-  geom_point(color = "#B3BCC2", size = 2) +
-  geom_point(data = datToPlot %>% dplyr::filter(Treatment != "HSV"),
-             color = "#AA1F5E", size = 2, alpha = 1) +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -726,16 +732,20 @@ ggplot(
     axis.title.y = element_blank()
     )
 
-ggsave(file.path(anaDir, paste0("umap_Uninf.tiff")), width = 5, height = 5)
+ggsave(file.path(anaDir, paste0("umap_Uninf.tiff")), width = 2, height = 2)
+
+curDatToPlot <- datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "PBS",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
 
 ggplot(
   datToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
   theme_classic() +
-  geom_point(color = "#B3BCC2", size = 2) +
-  geom_point(data = datToPlot %>% dplyr::filter(Treatment == "HSV", DTx == "PBS"),
-             color = "#AA1F5E", size = 2, alpha = 1) +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -750,16 +760,20 @@ ggplot(
     axis.title.y = element_blank()
     )
 
-ggsave(file.path(anaDir, paste0("umap_HSV_PBS.tiff")), width = 5, height = 5)
+ggsave(file.path(anaDir, paste0("umap_HSV_PBS.tiff")), width = 2, height = 2)
+
+curDatToPlot <- datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "DTx",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
 
 ggplot(
   datToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
   theme_classic() +
-  geom_point(color = "#B3BCC2", size = 2) +
-  geom_point(data = datToPlot %>% dplyr::filter(Treatment == "HSV", DTx != "PBS"),
-             color = "#AA1F5E", size = 2, alpha = 1) +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -774,7 +788,48 @@ ggplot(
     axis.title.y = element_blank()
     )
 
-ggsave(file.path(anaDir, paste0("umap_HSV_DTx.tiff")), width = 5, height = 5)
+ggsave(file.path(anaDir, paste0("umap_HSV_DTx.tiff")), width = 2, height = 2)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+# can you show the progression of behaviour clusters from infected to uninfected?
+clusterOrder <- c(1,3,6,0,7,2,5,4)
+clusterColours <- c("grey", viridisLite::viridis(length(clusterOrder) - 1))
+
+dfToPlot <- as.data.table(copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info))
+dfToPlot <- dfToPlot[clusters %in% clusterOrder]
+dfToPlot[, clusters := factor(clusters, levels = clusterOrder)]
+
+# show progression on UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = clusters)) +
+  theme_classic() +
+  scale_color_manual(values = clusterColours) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_Progression.tiff")), width = 2, height = 2)
+```
+
+```{r fig_hmm_over_clusters, fig.height=4, fig.width=4}
+# get frequencies of HMM for each cluster
+# and plot as bar graphs
+
+clusterOrder
 ```
 
 ```{r}
@@ -1011,13 +1066,8 @@ for (x in unique(summaryDF$live.cell.track.clusters.hmm_movement)) {
 
 ```{r fig_clusters_freq, fig.height=4, fig.width=15}
 # save frequencies of track clusters
-summaryDF <- copy(tcells.sc)
-
-summaryDF$clusters.name <- "NONE"
-summaryDF[summaryDF$clusters %in% c(1,7), ]$clusters.name <- "Directed"
-summaryDF[summaryDF$clusters %in% c(3), ]$clusters.name <- "Clustering"
-summaryDF[summaryDF$clusters %in% c(2,5,6), ]$clusters.name <- "Meandering"
-summaryDF[summaryDF$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+summaryDF <- copy(tcells.sc) %>%
+  dplyr::filter(clusters != 8)
 
 # show frequency of clusters
 summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
@@ -1050,6 +1100,9 @@ summaryDF$Treatment.DTx <- 0
 summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+
+summaryDF$cell_id <- 0
+summaryDF[summaryDF$pop == "tcells.gDT/tracked",]$cell_id <- 1
 
 write.csv(
   summaryDF,

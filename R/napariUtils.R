@@ -127,10 +127,12 @@ NapariUtils <- R6::R6Class(
     #' @param multiscales integer for multiscales
     #' @param execInteractive boolean to execute interactive
     #' @param layersVisible boolean to make layers visible
+    #' @param asNpArray boolean to load image as squeezed numpy array
     openImage = function(
       imPath, useChannelAxis = TRUE, imChannelNames = NULL, channelColormaps = NULL,
       napariModule = NULL, asDask = TRUE, downsampleZ = FALSE, show3D = FALSE,
-      multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE) {
+      multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE,
+      asNpArray = FALSE) {
       # map path
       imPath <- .dockerMapPathToHost(imPath)
       
