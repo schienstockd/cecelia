@@ -605,7 +605,7 @@ clusterMapping <- list(
 ```{r fig_umap, fig.height=8, fig.width=8}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
-dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -628,9 +628,9 @@ ggplot(
   geom_point(aes(color = clusters)) +
   # geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
-  scale_color_manual(values = viridisLite::viridis(4)) +
+  # scale_color_manual(values = viridisLite::viridis(4)) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -643,7 +643,7 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) 
+    ) +
   geom_label(
     data = meanClusterPos,
     aes(label = clusters),
@@ -679,7 +679,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+# propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -704,8 +704,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  # group_by(clusters, prop) %>%
-  group_by(clusters.name, prop) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -720,8 +720,8 @@ propsSummary <- propsToPlot %>%
 #     "Directed", "Meandering", "Scanning", "Clustering"
 #   ))
 
-ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
-# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+ggplot(propsSummary, aes(as.factor(clusters), prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
