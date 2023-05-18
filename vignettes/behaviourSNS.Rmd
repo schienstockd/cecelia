@@ -227,8 +227,10 @@ uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 funParams <- list(
   popType = "live",
   popsToCluster = c("T.A/tracked", "T.B/tracked"),
-  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  clusterColName = "hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  # clusterColName = "hmm_transitions_movement",
+  valueName = "tracks.clusters.tcells.hmm_movement",
+  clusterColName = "hmm_movement",
   resolution = 0.20,
   percentile = 99.5,
   trackMeasures = c(
@@ -253,8 +255,8 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
-    # "live.cell.hmm.state.movement"
-    "live.cell.hmm.transitions.movement"
+    "live.cell.hmm.state.movement"
+    # "live.cell.hmm.transitions.movement"
     ),
   nMeasures = c(
     ),
@@ -302,7 +304,8 @@ uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
-  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -317,7 +320,7 @@ popDTs <- cciaObj$popDT(
 
 ```{r fig_cluster_freq, fig.height=2, fig.width=5}
 # can you show the frequencies of behaviour clusters?
-summaryDF <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+# summaryDF <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
 
 summaryDF <- summaryDF %>% group_by(uID, clusters.name) %>%
   dplyr::filter(clusters.name != "NONE") %>%
@@ -750,7 +753,7 @@ speedTime <- popDTs %>%
   dplyr::filter(
     # uID %in% c("O5H6Yx", "uyHGX5", "wTL5w8"),
     # uID %in% c("O5H6Yx", "wTL5w8"),
-    live.cell.track.clusters.hmm_transitions_movement != "NA"
+    live.cell.track.clusters.hmm_movement != "4"
     ) %>%
   group_by(uID, centroid_t) %>%
   summarise(mean.speed = mean(live.cell.speed, na.rm = TRUE)) %>%
@@ -760,29 +763,29 @@ speedTimeClusters <- popDTs %>%
   dplyr::filter(
     # uID %in% c("O5H6Yx", "uyHGX5", "wTL5w8"),
     # uID %in% c("O5H6Yx", "wTL5w8"),
-    live.cell.track.clusters.hmm_transitions_movement != "NA",
-    # live.cell.track.clusters.hmm_transitions_movement %in% c("0", "1")
+    live.cell.track.clusters.hmm_movement != "4",
+    # live.cell.track.clusters.hmm_movement %in% c("0", "1")
     ) %>%
   group_by(uID, centroid_t) %>%
-  group_by(uID, live.cell.track.clusters.hmm_transitions_movement, centroid_t) %>%
+  group_by(uID, live.cell.track.clusters.hmm_movement, centroid_t) %>%
   summarise(mean.speed = mean(live.cell.speed, na.rm = TRUE)) %>%
   left_join(exp.info)
 
 speedTimeClusters$clusters.name <- "NONE"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement %in% c(1), ]$clusters.name <- "Directed"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement %in% c(0,3,5), ]$clusters.name <- "Meandering"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement %in% c(2), ]$clusters.name <- "Stopping"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement %in% c(4), ]$clusters.name <- "Arrested"
+speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(1), ]$clusters.name <- "Directed"
+speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(0,3,5), ]$clusters.name <- "Meandering"
+speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(2), ]$clusters.name <- "Stopping"
+speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(4), ]$clusters.name <- "Arrested"
 
 time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
 
 # remove the few unaffected
 # speedTimeClusters[
-#   speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement == 2 &
+#   speedTimeClusters$live.cell.track.clusters.hmm_movement == 2 &
 #     speedTimeClusters$uID == "O5H6Yx", ]$mean.speed <- NA
 
 colPal <- randomcoloR::distinctColorPalette(
-  length(unique(speedTimeClusters$live.cell.track.clusters.hmm_transitions_movement))
+  length(unique(speedTimeClusters$live.cell.track.clusters.hmm_movement))
 )
 
 speedTimeClusters$uID_Treat <- paste(speedTimeClusters$uID, speedTimeClusters$Treatment)
@@ -793,8 +796,8 @@ ggplot(speedTimeClusters %>%
          dplyr::filter(clusters.name != "NONE", !is.na(clusters.name)) %>%
          mutate(uID = as.factor(uID)),
        aes((centroid_t * time.interval), mean.speed,
-           color = as.factor(live.cell.track.clusters.hmm_transitions_movement),
-           fill = as.factor(live.cell.track.clusters.hmm_transitions_movement)
+           color = as.factor(live.cell.track.clusters.hmm_movement),
+           fill = as.factor(live.cell.track.clusters.hmm_movement)
            # color = as.factor(clusters.name),
            # fill = as.factor(clusters.name)
            )) +
@@ -817,13 +820,13 @@ ggplot(speedTimeClusters %>%
   xlab("Time (min)") + ylab("Velocity (μm/min)") +
   # ylim(0, 15) +
   # facet_wrap(.~uID, scales = "free_x")
-  facet_wrap(.~uID_Treat, scales = "free_x")
+  facet_wrap(.~uID_Treat, scales = "free_x", nrow = 1)
   # expand_limits(y = 0)
 
 # ggsave(file.path(anaDir, "speed_time_combined.png"), height = 2, width = 12)
 # ggsave(file.path(anaDir, "speed_time.png"), height = 8, width = 3)
 # ggsave(file.path(anaDir, "speed_time_clusters.png"), height = 8, width = 8)
-ggsave(file.path(anaDir, "speed_time_clusters_treat.png"), height = 6, width = 10)
+ggsave(file.path(anaDir, "speed_time_clusters_treat.png"), height = 2, width = 10)
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 4}

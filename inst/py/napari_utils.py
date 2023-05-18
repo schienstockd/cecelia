@@ -481,10 +481,12 @@ class NapariUtils:
           # TODO Do we need to convert to numpy array to edit labels?
           if as_np_array is True:
             if self.as_dask is True:
-              self.im_labels = self.im_labels[0].compute()
+              self.im_labels[0] = self.im_labels[0].compute()
             else:
-              self.im_labels = self.im_labels[0][:]
-    
+              self.im_labels[0] = self.im_labels[0][:]
+          
+          print(self.im_labels[0].shape)
+          
           # remove layer if shown
           labels_layer = 'Labels' if value_name is None else f'({value_name}) {i} Labels'
           self.remove_layer_by_name(labels_layer)
@@ -500,16 +502,16 @@ class NapariUtils:
           visible = True
           if i in ['cyto']:
             visible = False
-          
-          # create MIP for viewing
-          if self.im_scale is not None and len(self.im_scale) < len(
-            self.dim_utils.default_dim_order(ignore_channel = True)):
-            # fortify
-            # TODO do I have to do that .. ?
-            self.im_labels = [zarr_utils.fortify(x) for x in self.im_labels]
             
-            # create mip
-            self.im_labels = [np.amax(x, axis = self.dim_utils.dim_idx('Z', ignore_channel = True)) for x in self.im_labels]
+          # # create MIP for viewing
+          # if self.im_scale is not None and len(self.im_scale) < len(
+          #   self.dim_utils.default_dim_order(ignore_channel = True)):
+          #   # fortify
+          #   # TODO do I have to do that .. ?
+          #   self.im_labels = [zarr_utils.fortify(x) for x in self.im_labels]
+          #   
+          #   # create mip
+          #   self.im_labels = [np.amax(x, axis = self.dim_utils.dim_idx('Z', ignore_channel = True)) for x in self.im_labels]
           
           # show labels
           labels_layer = self.viewer.add_labels(
