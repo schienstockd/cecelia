@@ -153,7 +153,7 @@ funParams <- list(
   noiseFilterMeasurements = 5,
   postFiltering = 2,
   postIterations = 2,
-  numStates = 3,
+  numStates = 4,
   uIDs = uIDs
 )
 
@@ -265,7 +265,9 @@ funParams <- list(
   addPops = c(
     ),
   calcLabelProps = TRUE,
-  usePaga = FALSE,
+  # usePaga = FALSE,
+  usePaga = TRUE,
+  pagaThreshold = 0.1,
   minTracklength = 6,
   # minTracklength = 50,
   uIDs = uIDs
@@ -313,17 +315,24 @@ popDTs <- cciaObj$popDT(
   uIDs = uIDs)
 ```
 
-```{r fig_cluster_freq, fig.height=2, fig.width=2}
+```{r fig_cluster_freq, fig.height=2, fig.width=5}
 # can you show the frequencies of behaviour clusters?
-summaryDF <- popDTs %>% group_by(uID, live.cell.track.clusters.hmm_transitions_movement) %>%
-  dplyr::filter(live.cell.track.clusters.hmm_transitions_movement != "NA") %>%
+summaryDF <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+summaryDF <- summaryDF %>% group_by(uID, clusters.name) %>%
+  dplyr::filter(clusters.name != "NONE") %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
-  ungroup()
+  ungroup() %>%
+  complete(uID, clusters.name, fill = list(freq = 0)) %>%
+  left_join(exp.info) %>%
+  dplyr::filter(Treatment == "Sal")
 
 # plot
-ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
-         fill = as.factor(live.cell.track.clusters.hmm_transitions_movement))) +
+# ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
+#          fill = as.factor(live.cell.track.clusters.hmm_transitions_movement))) +
+ggplot(summaryDF, aes(clusters.name, freq,
+         fill = as.factor(clusters.name))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -335,10 +344,12 @@ ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
   scale_fill_brewer(name = NULL, palette = "Set3")
 
 summaryDF$cluster.ID <- 0
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement == "0", ]$cluster.ID <- 1
-summaryDF[summaryDF$live.cell.track.clusters.hmm_transitions_movement == "1", ]$cluster.ID <- 2
+summaryDF[summaryDF$clusters.name == "Arrested", ]$cluster.ID <- 1
+summaryDF[summaryDF$clusters.name == "Stopping", ]$cluster.ID <- 2
+summaryDF[summaryDF$clusters.name == "Meandering", ]$cluster.ID <- 3
+summaryDF[summaryDF$clusters.name == "Directed", ]$cluster.ID <- 4
 
-write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+write.csv(summaryDF %>% arrange(cluster.ID), file.path(anaDir, "clusters_freq.csv"))
 ```
 
 
@@ -403,11 +414,14 @@ summaryDF$stain <- str_extract(
   )
 summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
 
+summaryDF <- .mapClustNames(summaryDF, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
 
-for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
+# for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
+for (x in unique(summaryDF$clusters.name)) {
   # plot heatmap of transitions
   DF <- summaryDF %>%
-    dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
+    # dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
+    dplyr::filter(clusters.name == x) %>%
     group_by(live.cell.hmm.transitions.movement) %>%
     summarise(n = n()) %>%
     separate(live.cell.hmm.transitions.movement,
@@ -579,19 +593,24 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 ```
 
+```{r}
+clusterMapping <- list(
+  Arrested = c(4),
+  Stopping = c(2),
+  Meandering = c(0,3,5),
+  Directed = c(1)
+)
+```
+
 ```{r fig_umap, fig.height=8, fig.width=8}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
-dfToPlot$clusters.name <- "NONE"
-dfToPlot[dfToPlot$clusters %in% c(1), ]$clusters.name <- "Directed"
-dfToPlot[dfToPlot$clusters %in% c(0,3,5), ]$clusters.name <- "Meandering"
-dfToPlot[dfToPlot$clusters %in% c(2), ]$clusters.name <- "Stopping"
-dfToPlot[dfToPlot$clusters %in% c(4), ]$clusters.name <- "Arrested"
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  # group_by(clusters) %>%
-  group_by(clusters.name) %>%
+  group_by(clusters) %>%
+  # group_by(clusters.name) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -603,13 +622,15 @@ colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
 # plot UMAP
 ggplot(
   dfToPlot,
+  # dfToPlot %>% dplyr::filter(clusters.name != "NONE"),
   aes(UMAP_1, UMAP_2)
   ) +
-  # geom_point(aes(color = clusters)) +
-  geom_point(aes(color = clusters.name)) +
+  geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
+  scale_color_manual(values = viridisLite::viridis(4)) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -622,16 +643,17 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) +
+    ) 
   geom_label(
     data = meanClusterPos,
-    # aes(label = clusters),
-    aes(label = clusters.name),
+    aes(label = clusters),
+    # aes(label = clusters.name),
     label.size = 0.25,
     color = "black"
     )
 
 ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+# ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
 ```
 
 ```{r}
@@ -657,11 +679,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot$clusters.name <- "NONE"
-propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Directed"
-propsToPlot[propsToPlot$clusters %in% c(0,3,5), ]$clusters.name <- "Meandering"
-propsToPlot[propsToPlot$clusters %in% c(2), ]$clusters.name <- "Stopping"
-propsToPlot[propsToPlot$clusters %in% c(4), ]$clusters.name <- "Arrested"
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',

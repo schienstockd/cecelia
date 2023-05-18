@@ -38,6 +38,7 @@ ui <- function(request) {
               "Branching" = "showBranching",
               "Shapes" = "showShapes",
               "Lazy" = "asDask",
+              "Squeeze" = "squeeze",
               "Downsample Z" = "downsampleZ"
               ),
             selected = c(

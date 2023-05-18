@@ -463,6 +463,13 @@ server <- function(input, output, session) {
       globalManagers$viewerManager()$setAsDask(FALSE)
     }
     
+    # squeeze image?
+    if ("squeeze" %in% input$viewerParams) {
+      globalManagers$viewerManager()$setSqueezeImage(TRUE)
+    } else {
+      globalManagers$viewerManager()$setSqueezeImage(FALSE)
+    }
+    
     # Downsample Z?
     if ("downsampleZ" %in% input$viewerParams) {
       globalManagers$viewerManager()$setDownsampleZ(TRUE)

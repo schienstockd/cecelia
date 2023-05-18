@@ -340,7 +340,9 @@ funParams <- list(
   addPops = c(
     ),
   calcLabelProps = TRUE,
-  usePaga = FALSE,
+  # usePaga = FALSE,
+  usePaga = TRUE,
+  pagaThreshold = 0.1,
   minTracklength = 6,
   # minTracklength = 18,
   # minTracklength = 50,
@@ -350,6 +352,43 @@ funParams <- list(
 # run task
 task <- cciaObj$runTask(
   funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "BeddcR", versionID = versionID, initReactivity = FALSE #  GCAMP
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+# GCAMP
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
+# uIDs <- exp.info[Focus == "non-clustering"]$uID
+
+# run task
+funParams <- list(
+  popType = "live",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  valueName = "tracks.clusters.tcells.hmm_movement",
+  initRoot = "4"
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.createPseudotime",
   funParams = funParams,
   env = "local",
   runInplace = TRUE,
@@ -494,7 +533,16 @@ propsSummary <- propsToPlot %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
   arrange(-prop)
 
-ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+propsSummary$hmm_value <- factor(dplyr::case_match(
+  as.character(propsSummary$hmm_value),
+  c("5") ~ "Clustering",
+  c("1") ~ "Arrested",
+  c("3") ~ "Scanning",
+  c("4") ~ "Meandering",
+  c("2") ~ "Directed"
+), levels = c("Directed", "Meandering", "Scanning", "Arrested", "Clustering"))
+
+ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(hmm_value, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -502,19 +550,19 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
     labels = c(0, 1)
   ) +
   theme(
-    # legend.position = "none",
+    legend.position = "none",
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
     strip.background = element_blank(),
     strip.text.x = element_blank(),
-    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1)
     ) +
   xlab("") + ylab("") +
   facet_grid(.~hmm_type)
 
-ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
 ```
 
 ```{r fig_umap, fig.height=8, fig.width=8}
@@ -528,7 +576,7 @@ clusterMapping <- list(
   Clustering = c(6)
 )
 
-dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -574,30 +622,20 @@ ggplot(
     )
 
 ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+# ggsave(file.path(anaDir, "umap_wo_label.tiff"), width = 2, height = 2)
 ```
-```{r fig_umap, fig.height=8, fig.width=8}
-# show contact of T cells to DCs
-tracksInfo <- cciaObj$tracksInfo(
-  "live.cell.hmm.state.gcamp",
-  parentPop = "tcells.gBT/tracked", uIDs = uIDs
-)
 
-dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(tracksInfo)
-dfToPlot$gcamp.track <- FALSE
-dfToPlot[dfToPlot$live.cell.hmm.state.gcamp.3.n >= 2, ]$gcamp.track <- TRUE
-
-datToPlot <- dfToPlot %>% left_join(exp.info)
+```{r fig_umap_props, fig.height=4, fig.width=4}
+datToPlot <- copy(tcells.sc) %>%
+  drop_na(clusters) %>%
+  left_join(exp.info)
 
 # plot UMAP
-ggplot(
-  datToPlot,
-  aes(UMAP_1, UMAP_2)
-  ) +
+ggplot(datToPlot, aes(UMAP_1, UMAP_2)) +
   theme_classic() +
-  geom_point(data = datToPlot %>% dplyr::filter(gcamp.track == FALSE),
-             color = "#B3BCC2", size = 2) +
-  geom_point(data = datToPlot %>% dplyr::filter(gcamp.track == TRUE),
-             color = "#AA1F5E", size = 2, alpha = 1) +
+  # geom_point(aes(color = speed), size = 1, alpha = 1) +
+  geom_point(aes(color = meanTurningAngle), size = 1, alpha = 1) +
+  viridis::scale_color_viridis() +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -612,7 +650,220 @@ ggplot(
     axis.title.y = element_blank()
     )
 
-ggsave(file.path(anaDir, paste0("umap_GCAMP.tiff")), width = 5, height = 5)
+# ggsave(file.path(anaDir, paste0("umap_Velocity.tiff")), width = 2, height = 2)
+ggsave(file.path(anaDir, paste0("umap_Angle.tiff")), width = 2, height = 2)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+dfToPlot <- as.data.table(copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info))
+
+# show progression on UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = dpt_pseudotime)) +
+  theme_classic() +
+  viridis::scale_color_viridis() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_Pseudotime.tiff")), width = 2, height = 2)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+# can you show the progression of behaviour clusters from infected to uninfected?
+clusterOrder <- c(6,4,1,5,2,0,3)
+clusterColours <- c("grey", viridisLite::viridis(length(clusterOrder) - 1))
+
+dfToPlot <- as.data.table(copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info))
+dfToPlot <- dfToPlot[clusters %in% clusterOrder]
+dfToPlot[, clusters := factor(clusters, levels = clusterOrder)]
+
+# show progression on UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = clusters)) +
+  theme_classic() +
+  scale_color_manual(values = clusterColours) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_Progression.tiff")), width = 2, height = 2)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+datToPlot <- copy(tcells.sc) %>%
+  drop_na(clusters) %>%
+  left_join(exp.info)
+
+# plot UMAP
+curDatToPlot <- datToPlot[datToPlot$Treatment != "HSV",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
+
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_Uninf.tiff")), width = 2, height = 2)
+
+curDatToPlot <- datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "PBS",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
+
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_HSV_PBS.tiff")), width = 2, height = 2)
+
+curDatToPlot <- datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "DTx",]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
+
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(color = "black", size = 1) +
+  geom_point(data = curDatToPlot,
+             # color = "#AA1F5E", size = 2, alpha = 1) +
+             color = plotCols, size = 1, alpha = 1) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_HSV_DTx.tiff")), width = 2, height = 2)
+```
+
+```{r fig_treatment_pseudotime, fig.height=3, fig.width=6}
+dfToPlot <- as.data.table(copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info))
+
+ggplot(dfToPlot,
+       aes(interaction(Treatment, DTx), dpt_pseudotime, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 0) +
+  geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 1), alpha = 0.1) 
+    # width = 2, alpha = 1.0) 
+  # scale_color_brewer(name = "Treatment", palette = "Set1")
+
+# ggsave(file.path(anaDir, paste0("GCAMP_behaviour.tiff")), width = 8, height = 2)
+# write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour.csv"))
+```
+
+```{r fig_umap, fig.height=8, fig.width=8}
+# show contact of T cells to DCs
+tracksInfo <- cciaObj$tracksInfo(
+  "live.cell.hmm.state.gcamp",
+  parentPop = "tcells.gBT/tracked", uIDs = uIDs
+)
+
+dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(tracksInfo)
+dfToPlot$gcamp.track <- FALSE
+dfToPlot[dfToPlot$live.cell.hmm.state.gcamp.3.n >= 2, ]$gcamp.track <- TRUE
+
+datToPlot <- dfToPlot %>% left_join(exp.info)
+
+# plot UMAP
+curDatToPlot <- datToPlot[datToPlot$gcamp.track == TRUE,]
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::mako)
+
+# plot UMAP
+ggplot(
+  datToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(data = datToPlot, color = "black", size = 1) +
+  geom_point(data = curDatToPlot, color = plotCols, size = 1, alpha = 1) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, paste0("umap_GCAMP.tiff")), width = 2, height = 2)
 ```
 
 ```{r fig_GCAMP_freq, fig.height=3, fig.width=4}
@@ -633,14 +884,40 @@ ggplot(datToPlot,
     # width = 2, alpha = 1.0) +
   scale_color_brewer(name = "Treatment", palette = "Set1")
 
+datToPlot$Treatment.DTx <- 0
+datToPlot[datToPlot$Treatment == "PBS" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 0
+datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 1
+datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "DTx",]$Treatment.DTx <- 2
+
 ggsave(file.path(anaDir, paste0("GCAMP_freq.tiff")), width = 4, height = 2)
 write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
 ```
+```{r fig_GCAMP_behaviour, fig.height=3, fig.width=8}
+# in total - what is the behaviour of GCAMP+?
+# datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
+datToPlot <- dfToPlot %>%
+  left_join(exp.info) %>%
+  dplyr::filter(clusters != 6) %>%
+  group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(gcamp.track, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  dplyr::filter(gcamp.track == TRUE) %>%
+  ungroup() %>%
+  complete(Treatment, DTx, gcamp.track, clusters, fill = list(freq = 0))
+
+datToPlot$Treatment.DTx <- -1
+datToPlot[datToPlot$Treatment == "PBS" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 0
+datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 1
+datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "DTx",]$Treatment.DTx <- 2
+
+write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour_total.csv"))
+```
 
 ```{r fig_GCAMP_behaviour, fig.height=3, fig.width=8}
 # in total - what is the behaviour of GCAMP+?
-datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+# datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # datToPlot <- datToPlot %>%
 #   group_by(gcamp.track, clusters) %>%
@@ -652,7 +929,8 @@ datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 # datToPlot
 
 datToPlot <- datToPlot %>%
-  group_by(uID, gcamp.track, clusters) %>%
+  # group_by(uID, gcamp.track, clusters) %>%
+  group_by(uID, clusters, gcamp.track) %>%
   # group_by(uID, gcamp.track, clusters.name) %>%
   summarise(n = n()) %>%
   mutate(freq = n / sum(n) * 100) %>%
@@ -734,7 +1012,7 @@ propsSummary <- propsToPlot %>%
   arrange(-prop)
 ```
 
-```{r fig_clusters_heat, fig.height=14, fig.width=6}
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
 # propsSummary$prop <- factor(
 #   propsSummary$prop, levels = rev(propsList))
 # propsSummary$clusters.name <- factor(
@@ -742,8 +1020,25 @@ propsSummary <- propsToPlot %>%
 #     "Directed", "Meandering", "Scanning", "Clustering"
 #   ))
 
+# sort states
+propsSummary[!propsSummary$clusters %in% clusterOrder[clusterOrder != 6],]$clusters <- NA
+# propsSummary$clusters <- factor(propsSummary$clusters, levels = clusterOrder)
+propsSummary$clusters <- case_match(
+  as.character(propsSummary$clusters),
+  c("4") ~ "1",
+  c("2") ~ "2",
+  c("1") ~ "3",
+  c("5") ~ "4",
+  c("0") ~ "5",
+  c("3") ~ "6",
+)
+
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
-ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+ggplot(propsSummary %>%
+         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         drop_na(clusters)
+         , aes(clusters, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -751,19 +1046,38 @@ ggplot(propsSummary, aes(as.factor(clusters), prop)) +
     labels = c(0, 1)
   ) +
   theme(
-    # legend.position = "none",
+    legend.position = "none",
     legend.key.size = unit(8, "mm"),
     legend.title = element_blank(),
-    legend.text = element_text(size = 14),
-    axis.text.y = element_text(size = 14),
-    # axis.text.x = element_text(size = 12),
-    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 4)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+```
+
+```{r fig_hmm_over_clusters, fig.height=4, fig.width=4}
+# get frequencies of HMM for each cluster
+# and plot as bar graphs
+datToPlot <- popDTs %>%
+  mutate(live.cell.track.clusters.hmm_movement = as.numeric(as.character(
+    live.cell.track.clusters.hmm_movement))) %>%
+  dplyr::filter(!live.cell.track.clusters.hmm_movement %in% c(6)) %>%
+  dplyr::filter(!live.cell.hmm.state.movement %in% c(5)) %>%
+  drop_na(live.cell.track.clusters.hmm_movement) %>%
+  drop_na(live.cell.hmm.state.movement) %>%
+  group_by(live.cell.track.clusters.hmm_movement, live.cell.hmm.state.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  ungroup() %>%
+  complete(live.cell.track.clusters.hmm_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
+
+write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 ```
 
 ```{r fig_total_transitions, fig.height=1, fig.width=5}
@@ -909,10 +1223,11 @@ for (x in unique(summaryDF$live.cell.track.clusters.hmm_movement)) {
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 
-summaryDF <- .mapClustNames(summaryDF, clusterMapping)
+# summaryDF <- .mapClustNames(summaryDF, clusterMapping)
 
 # show frequency of clusters - exclude clusters
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[clusters != 6, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
@@ -940,10 +1255,8 @@ summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx 
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
-write.csv(
-  summaryDF,
-  file = file.path(anaDir, "freq_clusters.csv")
-)
+# write.csv(summaryDF, file = file.path(anaDir, "freq_clusters.csv"))
+write.csv(summaryDF, file = file.path(anaDir, "freq_clusters_wo_clusters.csv"))
 ```
 
 ```{r}

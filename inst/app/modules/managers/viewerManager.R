@@ -34,6 +34,7 @@ ViewerManager <- R6::R6Class(
     showShapes = FALSE,
     showTracks = FALSE,
     asDask = TRUE,
+    squeezeImage = FALSE,
     downsampleZ = FALSE,
     reloadImage = FALSE,
     multiscales = TRUE,
@@ -147,6 +148,7 @@ ViewerManager <- R6::R6Class(
             imChannelNames = imChannelNames,
             napariModule = napariModule,
             asDask = self$getAsDask(),
+            squeeze = self$getSqueezeImage(),
             downsampleZ = self$getDownsampleZ(),
             multiscales = self$getMultiscales(),
             show3D = self$getShow3D(),
@@ -314,6 +316,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setSqueezeImage = function(x, invalidate = TRUE) {
+      private$squeezeImage <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setDownsampleZ = function(x, invalidate = TRUE) {
       private$downsampleZ <- x
       private$invalidate(invalidate = invalidate)
@@ -393,6 +400,10 @@ ViewerManager <- R6::R6Class(
     
     getAsDask = function() {
       private$asDask
+    },
+    
+    getSqueezeImage = function() {
+      private$squeezeImage
     },
     
     getDownsampleZ = function() {

@@ -127,12 +127,12 @@ NapariUtils <- R6::R6Class(
     #' @param multiscales integer for multiscales
     #' @param execInteractive boolean to execute interactive
     #' @param layersVisible boolean to make layers visible
-    #' @param asNpArray boolean to load image as squeezed numpy array
+    #' @param squeeze boolean to load image as squeezed numpy array
     openImage = function(
       imPath, useChannelAxis = TRUE, imChannelNames = NULL, channelColormaps = NULL,
       napariModule = NULL, asDask = TRUE, downsampleZ = FALSE, show3D = FALSE,
       multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE,
-      asNpArray = FALSE) {
+      squeeze = FALSE) {
       # map path
       imPath <- .dockerMapPathToHost(imPath)
       
@@ -156,7 +156,8 @@ NapariUtils <- R6::R6Class(
             "as_dask=%s,",
             "downsample_z=%s,",
             "show_3D=%s,",
-            "visible=%s",
+            "visible=%s,",
+            "squeeze=%s",
             ")"
           ),
           imPath,
@@ -170,7 +171,8 @@ NapariUtils <- R6::R6Class(
           reticulate::r_to_py(asDask),
           reticulate::r_to_py(downsampleZ),
           reticulate::r_to_py(show3D),
-          reticulate::r_to_py(layersVisible)
+          reticulate::r_to_py(layersVisible),
+          reticulate::r_to_py(squeeze)
           ), execInteractive = execInteractive
         )
       

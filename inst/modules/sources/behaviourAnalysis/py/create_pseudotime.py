@@ -28,17 +28,17 @@ def run(params):
   # get data for pseudotime
   label_view = LabelPropsUtils(task_dir, value_name = f'{value_name}.sc').label_props_view(read_only = False)
   adata = label_view.as_adata()
-  
+
   # gte diffmaps
   sc.tl.diffmap(adata)
-  
+
   # define root and get pseudotime
   # https://scanpy.readthedocs.io/en/stable/generated/scanpy.tl.dpt.html
   # We recommend, however, to only use dpt() for computing pseudotime
   # (n_branchings=0) and to detect branchings via paga()
   adata.uns['iroot'] = np.flatnonzero(adata.obs[clusters_col] == init_root)[0]
   sc.tl.dpt(adata, n_branchings = 0, n_dcs = 10)
-  
+
   logfile_utils.log(f'>> Write results back')
 
   # save back

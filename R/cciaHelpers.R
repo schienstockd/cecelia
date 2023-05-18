@@ -1064,5 +1064,8 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
   for (i in names(clusterMapping))
     DF[DF[[clustCol]] %in% clusterMapping[[i]], ][[nameCol]] <- i
   
+  # set as factor
+  DF[[nameCol]] <- factor(DF[[nameCol]], levels = names(clusterMapping))
+  
   DF
 }
