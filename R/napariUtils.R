@@ -224,8 +224,11 @@ NapariUtils <- R6::R6Class(
             sprintf("notify_module_id = %s,", if (!is.null(notifyModuleID)) "'%s'" else "%s"),
             ")"
           ),
-          reticulate::r_to_py(pathToFile), reticulate::r_to_py(layerName),
-          reticulate::r_to_py(excludeNames), reticulate::r_to_py(notifyModuleID)
+          # reticulate::r_to_py(pathToFile),
+          reticulate::r_to_py(.dockerMapPathToHost(pathToFile)),
+          reticulate::r_to_py(layerName),
+          reticulate::r_to_py(excludeNames),
+          reticulate::r_to_py(notifyModuleID)
         ), execInteractive = execInteractive
       )
     },

@@ -102,7 +102,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_SNS_2P/CECELIA"
 #   withSelf = FALSE, fields = c("Attr")
 # )
 # 
-# uIDs <- exp.info[exp.info$Include == "Y",]$uID
+# uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 # 
 # for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
 #   x$savePopMap("live", includeFiltered = TRUE)
@@ -140,7 +140,7 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-uIDs <- exp.info[exp.info$Include == "Y",]$uID
+uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 
 # run task
 funParams <- list(
@@ -182,7 +182,7 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-uIDs <- exp.info[exp.info$Include == "Y",]$uID
+uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 
 # run task
 funParams <- list(
@@ -221,7 +221,7 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-uIDs <- exp.info[exp.info$Include == "Y",]$uID
+uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 
 # run task
 funParams <- list(
@@ -297,7 +297,7 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-uIDs <- exp.info[exp.info$Include == "Y",]$uID
+uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
@@ -793,10 +793,10 @@ ggplot(speedTimeClusters %>%
          dplyr::filter(clusters.name != "NONE", !is.na(clusters.name)) %>%
          mutate(uID = as.factor(uID)),
        aes((centroid_t * time.interval), mean.speed,
-           # color = as.factor(live.cell.track.clusters.hmm_transitions_movement),
-           # fill = as.factor(live.cell.track.clusters.hmm_transitions_movement)
-           color = as.factor(clusters.name),
-           fill = as.factor(clusters.name)
+           color = as.factor(live.cell.track.clusters.hmm_transitions_movement),
+           fill = as.factor(live.cell.track.clusters.hmm_transitions_movement)
+           # color = as.factor(clusters.name),
+           # fill = as.factor(clusters.name)
            )) +
   theme_classic() +
   # scale_color_manual(values = c("#31688E", "#35B779", "#FDE725", "black")) +
