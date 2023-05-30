@@ -153,7 +153,7 @@ funParams <- list(
   noiseFilterMeasurements = 5,
   postFiltering = 2,
   postIterations = 2,
-  numStates = 4,
+  numStates = 3,
   uIDs = uIDs
 )
 
@@ -227,12 +227,12 @@ uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 funParams <- list(
   popType = "live",
   popsToCluster = c("T.A/tracked", "T.B/tracked"),
-  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  # clusterColName = "hmm_transitions_movement",
-  valueName = "tracks.clusters.tcells.hmm_movement",
-  clusterColName = "hmm_movement",
-  resolution = 0.20,
-  percentile = 99.5,
+  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  clusterColName = "hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_movement",
+  # clusterColName = "hmm_movement",
+  resolution = 0.25,
+  percentile = 99.9,
   trackMeasures = c(
     "speed",
     "duration",
@@ -255,8 +255,8 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
-    "live.cell.hmm.state.movement"
-    # "live.cell.hmm.transitions.movement"
+    "live.cell.hmm.state.movement",
+    "live.cell.hmm.transitions.movement"
     ),
   nMeasures = c(
     ),
@@ -271,6 +271,7 @@ funParams <- list(
   usePaga = TRUE,
   pagaThreshold = 0.1,
   minTracklength = 6,
+  # minTracklength = 12,
   # minTracklength = 50,
   uIDs = uIDs
 )
@@ -304,8 +305,8 @@ uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
-  # value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
-  value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -322,20 +323,22 @@ popDTs <- cciaObj$popDT(
 # can you show the frequencies of behaviour clusters?
 # summaryDF <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
 
-summaryDF <- summaryDF %>% group_by(uID, clusters.name) %>%
-  dplyr::filter(clusters.name != "NONE") %>%
+# summaryDF <- summaryDF %>% group_by(uID, clusters.name) %>%
+summaryDF <- popDTs %>% group_by(uID, live.cell.track.clusters.hmm_transitions_movement) %>%
+  dplyr::filter(!live.cell.track.clusters.hmm_transitions_movement %in% c("NA")) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
-  complete(uID, clusters.name, fill = list(freq = 0)) %>%
+  # complete(uID, clusters.name, fill = list(freq = 0)) %>%
+  complete(uID, live.cell.track.clusters.hmm_transitions_movement, fill = list(freq = 0)) %>%
   left_join(exp.info) %>%
-  dplyr::filter(Treatment == "Sal")
+  dplyr::filter(!live.cell.track.clusters.hmm_transitions_movement %in% c("NA"))
 
 # plot
-# ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
-#          fill = as.factor(live.cell.track.clusters.hmm_transitions_movement))) +
-ggplot(summaryDF, aes(clusters.name, freq,
-         fill = as.factor(clusters.name))) +
+ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
+         fill = as.factor(live.cell.track.clusters.hmm_transitions_movement))) +
+# ggplot(summaryDF, aes(clusters.name, freq,
+#          fill = as.factor(clusters.name))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -346,13 +349,14 @@ ggplot(summaryDF, aes(clusters.name, freq,
   # ylim(0, 1) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 
-summaryDF$cluster.ID <- 0
-summaryDF[summaryDF$clusters.name == "Arrested", ]$cluster.ID <- 1
-summaryDF[summaryDF$clusters.name == "Stopping", ]$cluster.ID <- 2
-summaryDF[summaryDF$clusters.name == "Meandering", ]$cluster.ID <- 3
-summaryDF[summaryDF$clusters.name == "Directed", ]$cluster.ID <- 4
+# summaryDF$cluster.ID <- 0
+# summaryDF[summaryDF$clusters.name == "Arrested", ]$cluster.ID <- 1
+# summaryDF[summaryDF$clusters.name == "Stopping", ]$cluster.ID <- 2
+# summaryDF[summaryDF$clusters.name == "Meandering", ]$cluster.ID <- 3
+# summaryDF[summaryDF$clusters.name == "Directed", ]$cluster.ID <- 4
 
-write.csv(summaryDF %>% arrange(cluster.ID), file.path(anaDir, "clusters_freq.csv"))
+write.csv(summaryDF %>% arrange(live.cell.track.clusters.hmm_transitions_movement),
+          file.path(anaDir, "clusters_freq.csv"))
 ```
 
 
@@ -526,7 +530,7 @@ for (x in unique(summaryDF$clusters.name)) {
   # width = 25, height = 2)
 ```
 
-```{r fig_hmm_props, fig.height=5, fig.width=4}
+```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
 colsToPlot <- rev(c(
   "angle",
@@ -558,6 +562,7 @@ propsToPlot <- popDTs[exp.info, on = "uID"] %>%
   pivot_longer(
     cols = c(
       "live.cell.hmm.state.movement"
+      # "live.cell.hmm.state.shape"
     ), names_to = "hmm_type", values_to = "hmm_value"
     )
 
@@ -573,7 +578,7 @@ propsSummary <- propsToPlot %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
   arrange(-prop)
 
-ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(hmm_value), prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -581,39 +586,39 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
     labels = c(0, 1)
   ) +
   theme(
-    # legend.position = "none",
+    legend.position = "none",
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
     axis.text.x = element_text(size = 12),
     strip.background = element_blank(),
     strip.text.x = element_blank(),
-    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1)
     ) +
   xlab("") + ylab("") +
   facet_grid(.~hmm_type)
 
-ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.1, height = 3)
 ```
 
 ```{r}
 clusterMapping <- list(
-  Arrested = c(4),
-  Stopping = c(2),
-  Meandering = c(0,3,5),
-  Directed = c(1)
+  "0" = c(0),
+  "1" = c(2,3,5),
+  # "2" = c(3),
+  "2" = c(1,4)
 )
 ```
 
-```{r fig_umap, fig.height=8, fig.width=8}
+```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
-# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  group_by(clusters) %>%
-  # group_by(clusters.name) %>%
+  # group_by(clusters) %>%
+  group_by(clusters.name) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -628,8 +633,8 @@ ggplot(
   # dfToPlot %>% dplyr::filter(clusters.name != "NONE"),
   aes(UMAP_1, UMAP_2)
   ) +
-  geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = clusters.name)) +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = clusters.name)) +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
@@ -649,14 +654,77 @@ ggplot(
     ) +
   geom_label(
     data = meanClusterPos,
-    aes(label = clusters),
-    # aes(label = clusters.name),
+    # aes(label = clusters),
+    aes(label = clusters.name),
     label.size = 0.25,
     color = "black"
     )
 
-ggsave(file.path(anaDir, "umap.tiff"), width = 5, height = 5)
+ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+```
+
+```{r fig_umap_props, fig.height=4, fig.width=4}
+datToPlot <- copy(tcells.sc) %>%
+  drop_na(clusters) %>%
+  left_join(exp.info) 
+
+# plot UMAP
+ggplot(datToPlot, aes(UMAP_1, UMAP_2)) +
+  theme_classic() +
+  # geom_point(aes(color = speed), size = 1, alpha = 1) +
+  geom_point(aes(color = meanTurningAngle), size = 1, alpha = 1) +
+  viridis::scale_color_viridis() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+# ggsave(file.path(anaDir, paste0("umap_Velocity.tiff")), width = 2, height = 2)
+ggsave(file.path(anaDir, paste0("umap_Angle.tiff")), width = 2, height = 2)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+plot.p1 <- function(df.all, df.subset) {
+  plot.colours <- .flowColours(df.subset$UMAP_1, df.subset$UMAP_2, colramp = viridisLite::inferno)
+  
+  ggplot(df.all, aes(UMAP_1, UMAP_2)) +
+    theme_classic() +
+    geom_point(color = "black", size = 1) +
+    geom_point(data = df.subset, color = plot.colours, size = 1, alpha = 1) +
+    theme(
+      axis.text = element_text(size = 15),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.justification = "right",
+      # legend.position = "bottom"
+      legend.position = "none",
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank()
+      )
+}
+
+datToPlot <- copy(tcells.sc) %>%
+  drop_na(clusters) %>%
+  left_join(exp.info)
+
+# plot UMAP
+for (i in unique(datToPlot$uID)) {
+  plot.p1(datToPlot, datToPlot %>% dplyr::filter(uID == i))
+  ggsave(file.path(anaDir, paste0("umap_", i, ".tiff")), width = 2, height = 2)
+}
 ```
 
 ```{r}
@@ -682,7 +750,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-# propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -707,8 +775,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -723,8 +791,26 @@ propsSummary <- propsToPlot %>%
 #     "Directed", "Meandering", "Scanning", "Clustering"
 #   ))
 
+# # sort states
+# propsSummary[!propsSummary$clusters %in% clusterOrder[clusterOrder != 1],]$clusters <- NA
+# # propsSummary$clusters <- factor(propsSummary$clusters, levels = clusterOrder)
+# propsSummary$clusters <- case_match(
+#   as.character(propsSummary$clusters),
+#   c("3") ~ "1",
+#   c("6") ~ "2",
+#   c("0") ~ "3",
+#   c("7") ~ "4",
+#   c("2") ~ "5",
+#   c("5") ~ "6",
+#   c("4") ~ "7",
+# )
+
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
-ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+ggplot(propsSummary %>%
+         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -732,60 +818,158 @@ ggplot(propsSummary, aes(as.factor(clusters), prop)) +
     labels = c(0, 1)
   ) +
   theme(
-    # legend.position = "none",
+    legend.position = "none",
     legend.key.size = unit(8, "mm"),
     legend.title = element_blank(),
-    legend.text = element_text(size = 14),
-    axis.text.y = element_text(size = 14),
-    # axis.text.x = element_text(size = 12),
-    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 6, height = 8)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.5, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 
-```{r fig_speed_time, fig.height = 10, fig.width = 14}
+```{r fig_clusters_heat, fig.height=2, fig.width=6}
+# get frequencies of HMM for each cluster
+# and plot as bar graphs
+datToPlot <- copy(popDTs)
+datToPlot <- .mapClustNames(datToPlot, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+datToPlot <- datToPlot %>%
+  drop_na(clusters.name) %>%
+  drop_na(live.cell.hmm.state.movement) %>%
+  group_by(clusters.name, live.cell.hmm.state.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 1) %>%
+  ungroup() %>%
+  complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
+
+write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+
+ggplot(datToPlot, aes(as.factor(clusters.name), freq,
+                      fill = as.factor(live.cell.hmm.state.movement))) +
+  theme_classic() +
+  # scale_fill_brewer(palette = "Accent") +
+  scale_fill_manual(values = wesanderson::wes_palette(name = "Darjeeling2")) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
+  theme(
+    # legend.position = "none",
+    legend.position = "right",
+    legend.key.size = unit(6, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    # strip.text.x = element_blank()
+    strip.text.x = element_text(size = 12)
+    ) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  # scale_fill_discrete(name = "HMM State") +
+  xlab("") + ylab("") 
+
+ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 2.5, height = 1.5)
+```
+
+```{r fig_clusters_heat, fig.height=3, fig.width=8}
+# get frequencies of HMM for each cluster
+# and plot as bar graphs
+datToPlot <- copy(popDTs)
+datToPlot <- .mapClustNames(datToPlot, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+datToPlot <- datToPlot %>%
+  mutate(
+    live.cell.hmm.transitions.movement = as.character(
+      live.cell.hmm.transitions.movement)
+    ) %>%
+  drop_na(clusters.name) %>%
+  dplyr::filter(live.cell.hmm.transitions.movement != "NA") %>%
+  # group_by(clusters.name, from, to) %>%
+  # dplyr::filter(!live.cell.hmm.transitions.movement %in% paste0(seq(4), "_", seq(4))) %>%
+  group_by(clusters.name, live.cell.hmm.transitions.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 1) %>%
+  separate_wider_delim(
+    live.cell.hmm.transitions.movement, delim = "_", names = c("from", "to"))
+  # ungroup() %>%
+  # complete(clusters.name, from, to, fill = list(freq = 0))
+
+ggplot(datToPlot, aes(as.factor(from), as.factor(to), size = freq * 2, fill = freq)) +
+  theme_classic() +
+  # scale_fill_brewer(palette = "Accent") +
+  # scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  geom_vline(xintercept = as.factor(1:4), color = "#d3d3d3") +
+  geom_hline(yintercept = as.factor(1:4), color = "#d3d3d3") +
+  geom_point(pch = 21, color = "black") +
+  # viridis::scale_fill_viridis() +
+  scale_fill_gradient2(
+    midpoint = 0.5, low="blue", mid="white", high="red", space ="Lab") +
+  theme(
+    legend.position = "none",
+    # legend.position = "right",
+    legend.key.size = unit(6, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    # strip.text.x = element_blank()
+    strip.text.x = element_text(size = 12)
+    ) +
+  # scale_fill_discrete(name = "HMM State") +
+  xlab("From state") + ylab("To state") +
+  facet_wrap(.~clusters.name, nrow = 1)
+
+ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 3, height = 1.5)
+```
+
+```{r fig_speed_time, fig.height = 3, fig.width = 14}
 # get frequencies of clusters at time points
-speedTime <- popDTs %>%
+speedTime <- copy(popDTs)
+speedTime <- .mapClustNames(speedTime, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+speedTime <- speedTime %>%
   dplyr::filter(
     # uID %in% c("O5H6Yx", "uyHGX5", "wTL5w8"),
     # uID %in% c("O5H6Yx", "wTL5w8"),
-    live.cell.track.clusters.hmm_movement != "4"
+    clusters.name != "NA"
     ) %>%
   group_by(uID, centroid_t) %>%
   summarise(mean.speed = mean(live.cell.speed, na.rm = TRUE)) %>%
   left_join(exp.info)
 
-speedTimeClusters <- popDTs %>%
+speedTimeClusters <- copy(popDTs)
+speedTimeClusters <- .mapClustNames(speedTimeClusters, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+speedTimeClusters <- speedTimeClusters %>%
   dplyr::filter(
     # uID %in% c("O5H6Yx", "uyHGX5", "wTL5w8"),
     # uID %in% c("O5H6Yx", "wTL5w8"),
-    live.cell.track.clusters.hmm_movement != "4",
-    # live.cell.track.clusters.hmm_movement %in% c("0", "1")
+    clusters.name != "NA",
+    # !clusters.name %in% c("3")
     ) %>%
   group_by(uID, centroid_t) %>%
-  group_by(uID, live.cell.track.clusters.hmm_movement, centroid_t) %>%
+  group_by(uID, clusters.name, centroid_t) %>%
   summarise(mean.speed = mean(live.cell.speed, na.rm = TRUE)) %>%
   left_join(exp.info)
-
-speedTimeClusters$clusters.name <- "NONE"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(1), ]$clusters.name <- "Directed"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(0,3,5), ]$clusters.name <- "Meandering"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(2), ]$clusters.name <- "Stopping"
-speedTimeClusters[speedTimeClusters$live.cell.track.clusters.hmm_movement %in% c(4), ]$clusters.name <- "Arrested"
 
 time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
 
 # remove the few unaffected
 # speedTimeClusters[
-#   speedTimeClusters$live.cell.track.clusters.hmm_movement == 2 &
+#   speedTimeClusters$clusters.name == 2 &
 #     speedTimeClusters$uID == "O5H6Yx", ]$mean.speed <- NA
 
 colPal <- randomcoloR::distinctColorPalette(
-  length(unique(speedTimeClusters$live.cell.track.clusters.hmm_movement))
+  length(unique(speedTimeClusters$clusters.name))
 )
 
 speedTimeClusters$uID_Treat <- paste(speedTimeClusters$uID, speedTimeClusters$Treatment)
@@ -793,11 +977,11 @@ speedTime$uID_Treat <- paste(speedTime$uID, speedTime$Treatment)
 
 ggplot(speedTimeClusters %>%
          drop_na(mean.speed) %>%
-         dplyr::filter(clusters.name != "NONE", !is.na(clusters.name)) %>%
+         # dplyr::filter(clusters.name != "NONE", !is.na(clusters.name)) %>%
          mutate(uID = as.factor(uID)),
        aes((centroid_t * time.interval), mean.speed,
-           color = as.factor(live.cell.track.clusters.hmm_movement),
-           fill = as.factor(live.cell.track.clusters.hmm_movement)
+           color = as.factor(clusters.name),
+           fill = as.factor(clusters.name)
            # color = as.factor(clusters.name),
            # fill = as.factor(clusters.name)
            )) +
@@ -810,12 +994,12 @@ ggplot(speedTimeClusters %>%
   scale_fill_brewer(palette = "Set1") +
   # stat_smooth(data = speedTime, span = 0.4, color = "#ff048e", fill = "#ff048e") +
   stat_smooth(data = speedTime, span = 0.4, color = "black", fill = "black") +
-  stat_smooth(span = 0.4) +
+  stat_smooth(span = 0.8, alpha = 0.2) +
   theme(
     legend.title = element_blank(),
-    # legend.position = "None",
+    legend.position = "None",
     strip.background = element_blank(),
-    # strip.text.x = element_blank()
+    strip.text.x = element_blank()
     ) +
   xlab("Time (min)") + ylab("Velocity (μm/min)") +
   # ylim(0, 15) +
@@ -823,68 +1007,68 @@ ggplot(speedTimeClusters %>%
   facet_wrap(.~uID_Treat, scales = "free_x", nrow = 1)
   # expand_limits(y = 0)
 
-# ggsave(file.path(anaDir, "speed_time_combined.png"), height = 2, width = 12)
-# ggsave(file.path(anaDir, "speed_time.png"), height = 8, width = 3)
-# ggsave(file.path(anaDir, "speed_time_clusters.png"), height = 8, width = 8)
-ggsave(file.path(anaDir, "speed_time_clusters_treat.png"), height = 2, width = 10)
+# ggsave(file.path(anaDir, "speed_time.png"), height = 2, width = 10)
+ggsave(file.path(anaDir, "speed_time_clusters.png"), height = 2, width = 10)
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 4}
 # get frequencies of clusters at time points
-hmmTime <- popDTs %>%
+hmmTime <- copy(popDTs)
+hmmTime <- .mapClustNames(hmmTime, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+hmmTime <- hmmTime %>%
   dplyr::filter(
-    !is.na(live.cell.hmm.state.movement),
+    !is.na(clusters.name),
+    clusters.name != "NA"
     ) %>%
-  group_by(
-    uID, centroid_t, live.cell.hmm.state.movement
-    ) %>%
+  group_by(uID, centroid_t, clusters.name) %>%
   summarise(n = n()) %>%
   mutate(
-    live.cell.hmm.state.movement = as.factor(live.cell.hmm.state.movement),
+    clusters.name = as.factor(clusters.name),
     freq = n/sum(n)
-    ) %>%
-  ungroup() %>%
-  complete(uID, centroid_t, live.cell.hmm.state.movement, fill = list(
-    freq = 0
-  ))
+    ) 
+  # ungroup() %>%
+  # complete(uID, centroid_t, clusters.name,
+  #          fill = list(freq = 0)) %>%
+  # dplyr::filter(
+  #   clusters.name != "NA"
+  #   ) 
 
-# TODO this is not nice
-# set NA for each object after completion with 0
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  hmmTime[hmmTime$uID == x$getUID() &
-            hmmTime$centroid_t > x$omeXMLPixels()$SizeT, ]$freq = NA
-}
+# # TODO this is not nice
+# # set NA for each object after completion with 0
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   hmmTime[hmmTime$uID == x$getUID() &
+#             hmmTime$centroid_t > x$omeXMLPixels()$SizeT, ]$freq = NA
+# }
 ```
 
-```{r fig_states_time, fig.height = 1.5, fig.width = 2}
+```{r fig_states_time, fig.height = 3, fig.width = 14}
 time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
 
-for (i in unique(hmmTime$uID)) {
-  p1 <- ggplot(hmmTime[hmmTime$uID == i,],
-         aes((centroid_t * time.interval), freq,
-             color = live.cell.hmm.state.movement,
-             fill = live.cell.hmm.state.movement,
-             )) +
-    stat_smooth(span = 0.2) +
-    # geom_line(size = 0.8) +
-    theme_classic() +
-    # scale_color_brewer(name = NULL, palette = "Set1") +
-    # scale_fill_brewer(name = NULL, palette = "Set1") +
-    scale_color_manual(values = c("black", "#f28500", "#0080ff")) +
-    scale_fill_manual(values = c("black", "#f28500", "#0080ff")) +
-    theme(
-      legend.title = element_blank(),
-      # legend.position = "bottom"
-      legend.position = "none"
-      ) +
-    xlab("Time (min)") + ylab("HMM frequency")
-    # ylim(0, 1) +
-    # facet_grid(uID~.)
-  print(p1)
+# ggplot(hmmTime[hmmTime$uID == i,],
+ggplot(hmmTime,
+       aes((centroid_t * time.interval), freq,
+           color = clusters.name,
+           fill = clusters.name
+           )) +
+  stat_smooth(size = 1, span = 0.2, alpha = 0.2) +
+  # geom_line(size = 0.8) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = c("black", "#f28500", "#0080ff")) +
+  # scale_fill_manual(values = c("black", "#f28500", "#0080ff")) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "None",
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("Time (min)") + ylab("HMM frequency") +
+  facet_wrap(.~uID, scales = "free_x", nrow = 1) +
+  ylim(0, 1) + scale_y_continuous(breaks = c(0, 0.5, 1))
   
-  # ggsave(file.path(anaDir, "hmm_time.png"), height = 4, width = 3)
-  ggsave(file.path(anaDir, paste0("hmm_time_", i, ".tiff")), height = 2, width = 3)
-}
+ggsave(file.path(anaDir, "hmm_time.png"), height = 2, width = 10)
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 4}

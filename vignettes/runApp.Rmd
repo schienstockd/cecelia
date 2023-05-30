@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Run app
 
 ```{r}
-Sys.setenv(KMP_DUPLICATE_LIB_OK = 'TRUE')
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 # library(cecelia)
 # cciaSetup("~/cecelia/dev")

@@ -33,6 +33,7 @@ NapariUtils <- R6::R6Class(
       
       # import napari
       self$execute(paste(
+        "import numpy as np",
         sprintf(
           "from %s import NapariUtils", "py.napari_utils"
           ),
@@ -243,10 +244,13 @@ NapariUtils <- R6::R6Class(
     #' @param showNeighbours boolean to show neighbours
     #' @param asNpArray boolean to load labels as numpy array for editing
     #' @param execInteractive boolean to execute interactive
-    showLabelsAll = function(valueNames, showLabels = TRUE, showPoints = TRUE,
-                             showTracks = TRUE, showPops = TRUE, showNeighbours = TRUE,
+    #' @param splitTracks list to split tracks by properties
+    #' @param tracksBlending character to set blending for tracks
+    showLabelsAll = function(valueNames, showLabels = FALSE, showPoints = FALSE,
+                             showTracks = FALSE, showPops = FALSE, showNeighbours = FALSE,
                              showBranching = FALSE, asNpArray = FALSE, execInteractive = TRUE,
-                             labelSuffixes = list()) {
+                             labelSuffixes = list(), splitTracks = NULL,
+                             tracksBlending = "additive") {
       # show labels
       if (length(valueNames) > 0) {
         self$execute(
@@ -259,7 +263,9 @@ NapariUtils <- R6::R6Class(
               "show_tracks = %s,",
               "show_branching = %s,",
               "as_np_array = %s,",
-              "label_suffixes = %s",
+              "label_suffixes = %s,",
+              "split_tracks = %s,",
+              "tracks_blending = '%s'",
               ")"
             ),
             reticulate::r_to_py(valueNames),
@@ -268,7 +274,9 @@ NapariUtils <- R6::R6Class(
             reticulate::r_to_py(showTracks),
             reticulate::r_to_py(showBranching),
             reticulate::r_to_py(asNpArray),
-            reticulate::r_to_py(labelSuffixes)
+            reticulate::r_to_py(labelSuffixes),
+            reticulate::r_to_py(splitTracks),
+            tracksBlending
           ), execInteractive = execInteractive
         )
       }
@@ -328,6 +336,48 @@ NapariUtils <- R6::R6Class(
           valueName,
           sprintf("[%s]", paste(trackIDs, collapse = ",")),
           name
+        ), execInteractive = execInteractive
+      )
+    },
+    
+    #' @description Save animation
+    #' @param moviePath character to save animation
+    #' @param fps integer frames per second
+    #' @param windowSizeX integer to set napari window size
+    #' @param windowSizeXY integer to set napari window size
+    #' @param canvasOnly boolean to save only canvas
+    #' @param execInteractive boolean to execute interactive
+    saveTimeAnimation = function(moviePath, fps = 10, windowSizeX = 1200,
+                                 windowSizeY = 1000, canvasOnly = TRUE,
+                                 execInteractive = TRUE) {
+      # save animation
+      self$execute(
+        paste(
+          "from napari_animation import Animation",
+          "from napari_animation.easing import Easing",
+          
+          # resize window
+          sprintf("napari_utils.viewer.window.resize(%i, %i)",
+                  windowSizeX, windowSizeY),
+          "napari_utils.viewer.reset_view()",
+          
+          "animation = Animation(napari_utils.viewer)",
+          
+          # first
+          "dim_array = np.zeros_like(napari_utils.dim_utils.dim_vals(ignore_channel = True))",
+          "t_val = napari_utils.dim_utils.dim_val('T')",
+          "napari_utils.viewer.dims.current_step = list(dim_array)",
+          "animation.capture_keyframe(steps = 0)",
+  
+          # last
+          "dim_array[napari_utils.dim_utils.dim_idx('T', ignore_channel = True)] = t_val - 1",
+          "napari_utils.viewer.dims.current_step = list(dim_array)",
+          "animation.capture_keyframe(steps = t_val - 2)",
+          
+          # save back
+          sprintf("animation.animate(r'%s', canvas_only = %s, fps = %i)",
+                  moviePath, reticulate::r_to_py(canvasOnly), fps),
+          sep = "\n"
         ), execInteractive = execInteractive
       )
     },
@@ -413,24 +463,28 @@ NapariUtils <- R6::R6Class(
     showPopMapping = function(popType, valueName = NULL,
                               removePrevious = TRUE,
                               filteredFromValueName = FALSE,
-                              pointsSize = 6,
-                              execInteractive = FALSE) {
+                              pointsSize = 8, pops = list(),
+                              execInteractive = TRUE) {
       self$execute(
         # show mapping
-        paste(
-          sprintf("napari_utils.show_pop_mapping('%s',", popType),
-          if (is.null(valueName))
-            sprintf("value_name = %s,", reticulate::r_to_py(valueName))
-          else
-            sprintf("value_name = '%s',", reticulate::r_to_py(valueName)),
-          sprintf("remove_previous = %s,",
-                  reticulate::r_to_py(removePrevious)),
-          sprintf("filtered_from_value_name = %s,",
-                  reticulate::r_to_py(filteredFromValueName)),
-          sprintf("points_size = %s", reticulate::r_to_py(pointsSize)),
-          ")",
-          sep = "\n"),
-        execInteractive = execInteractive
+        sprintf(
+          paste(
+            "napari_utils.show_pop_mapping('%s',",
+            if (is.null(valueName)) "value_name = %s," else "value_name = '%s',",
+            "remove_previous = %s,",
+            "filtered_from_value_name = %s,",
+            "pops = %s,",
+            "points_size = %s",
+            ")",
+            sep = "\n"
+          ),
+          popType,
+          reticulate::r_to_py(valueName),
+          reticulate::r_to_py(removePrevious),
+          reticulate::r_to_py(filteredFromValueName),
+          reticulate::r_to_py(pops),
+          reticulate::r_to_py(pointsSize)
+        ), execInteractive = execInteractive
       )
     },
     

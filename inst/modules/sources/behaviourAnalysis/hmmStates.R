@@ -133,6 +133,41 @@ HmmStates <- R6::R6Class(
         ]
       }
       
+      # normalise measurements
+      if ("normMeasurements" %in% names(self$funParams()) && length(self$funParams()$normMeasurements) > 0) {
+        # get norm values
+        normVals <- mapply(
+          function(x, i) {
+            if (x == "min") min(tracks.DT[[i]], na.rm = TRUE)
+            else if (x == "max") max(tracks.DT[[i]], na.rm = TRUE)
+            else if (x == "median") median(tracks.DT[[i]], na.rm = TRUE)
+            else mean(tracks.DT[[i]], na.rm = TRUE)
+          },
+          self$funParams()$normMeasurements,
+          names(self$funParams()$normMeasurements),
+          SIMPLIFY = FALSE
+        )
+        
+        tracks.DT[,
+                  (names(self$funParams()$normMeasurements)) := mapply(
+                    function(i, v) .SD[[i]]/v,
+                    names(self$funParams()$normMeasurements),
+                    normVals,
+                    SIMPLIFY = FALSE
+                  )
+        ]
+      }
+      
+      # scale measurements
+      if ("scaleMeasurements" %in% names(self$funParams()) && length(self$funParams()$scaleMeasurements) > 0) {
+        tracks.DT[,
+                  (self$funParams()$scaleMeasurements) := lapply(
+                    self$funParams()$scaleMeasurements,
+                    function(x) scale(.SD[[x]], center = FALSE)
+                  )
+        ]
+      }
+      
       # build model
       hmm_model <- depmixS4::depmix(
         lapply(

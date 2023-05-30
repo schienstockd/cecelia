@@ -474,10 +474,11 @@ CciaImage <- R6::R6Class(
     #' @param quantiles list of N=2 to define quantiles
     #' @param colsToNormalise list of character to define columns to normalise
     #' @param normPercentile numeric to define normalisation percentile 0-1
+    #' @param addPop boolean to add population to DT
     tracksInfo = function(trackStatsNames, parentPop, pop = NULL,
                           addPops = NULL, forceReload = FALSE, flushCache = FALSE,
                           replaceNA = TRUE, quantiles = c(0.95, 0.05),
-                          colsToNormalise = c(), normPercentile = 0.998) {
+                          colsToNormalise = c(), normPercentile = 0.998, addPop = FALSE) {
       versionedVarName <- if (!is.null(pop)) pop else parentPop
       if (!is.null(trackStatsNames)) {
         versionedVarName <- paste(
@@ -529,7 +530,10 @@ CciaImage <- R6::R6Class(
           names(trackStats) <- trackStatsNames
           
           # get columns for stats
-          tracksInfo <- popDT[, .(num_cells = .N), by = .(track_id)]
+          if (addPop == TRUE)
+            tracksInfo <- popDT[, .(num_cells = .N), by = .(pop, track_id)]
+          else
+            tracksInfo <- popDT[, .(num_cells = .N), by = .(track_id)]
           
           obsCols <- c()
           
@@ -629,7 +633,10 @@ CciaImage <- R6::R6Class(
           }
           
           # trim dataset
-          tracksInfo <- tracksInfo[, mget(c("track_id", obsCols))]
+          if (addPop == TRUE)
+            tracksInfo <- tracksInfo[, mget(c("track_id", "pop", obsCols))]
+          else
+            tracksInfo <- tracksInfo[, mget(c("track_id", obsCols))]
           
           # replace NA
           if (replaceNA == TRUE)

@@ -144,9 +144,9 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
-    # "live.cell.hmm.state.movement",
-    "live.cell.hmm.transitions.movement"
-    # "live.cell.min_distance#live.dcs.CD11c/tracked"
+    "live.cell.hmm.state.movement",
+    "live.cell.hmm.transitions.movement",
+    "live.cell.min_distance#live.dcs.CD11c/tracked"
     ),
   nMeasures = c(
     ),
@@ -295,7 +295,7 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3, height = 3)
 ```{r fig_umap, fig.height=8, fig.width=8}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
-dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -366,7 +366,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+# propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -399,14 +399,14 @@ propsSummary <- propsToPlot %>%
   arrange(-prop)
 ```
 
-```{r fig_clusters_heat, fig.height=14, fig.width=6}
+```{r fig_clusters_heat, fig.height=14, fig.width=7}
 # propsSummary$prop <- factor(
 #   propsSummary$prop, levels = rev(propsList))
 # propsSummary$clusters.name <- factor(
 #   propsSummary$clusters.name, levels = c(
 #     "Directed", "Meandering", "Scanning", "Clustering"
 #   ))
-c
+
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 ggplot(propsSummary, aes(as.factor(clusters), prop)) +
   theme_classic() +
@@ -571,7 +571,7 @@ for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 
-summaryDF <- .mapClustNames(summaryDF, clusterMapping)
+# summaryDF <- .mapClustNames(summaryDF, clusterMapping)
 
 # show frequency of clusters - exclude clusters
 summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
@@ -621,7 +621,7 @@ tracks.info <- cciaObj$tracksInfo(
 
 summaryDF <- copy(tcells.sc) %>% left_join(tracks.info)
 
-ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.median`, color = clusters)) +
+ggplot(summaryDF, aes(clusters, log(`live.cell.min_distance#live.dcs.CD11c/tracked.median`), color = clusters)) +
 # ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.mean`, color = clusters)) +
   theme_classic() +
   geom_violin(scale = "width") +

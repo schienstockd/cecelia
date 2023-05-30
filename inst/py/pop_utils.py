@@ -146,7 +146,7 @@ class PopUtils:
           reload_pop_data.append(i)
     else:
       reload_pop_data = pop_map.keys()
-      
+    
     # load populations
     for i in reload_pop_data:
       if os.path.exists(self.pop_data_filepath(i)):

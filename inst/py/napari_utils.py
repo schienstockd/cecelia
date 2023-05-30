@@ -27,6 +27,7 @@ import py.ome_xml_utils as ome_xml_utils
 import py.tiff_utils as tiff_utils
 import py.morpho_utils as morpho_utils
 import py.points_utils as points_utils
+import py.colormap_utils as cmap_utils
 
 import py.config_utils as cfg
 
@@ -337,7 +338,7 @@ class NapariUtils:
       # go through channels and adjust contrast once
       if contrast_limits is None and not self.dim_utils.is_32_bit():
         for x in self.viewer.layers:
-          x.reset_contrast_limits()
+          if x.visible > 0: x.reset_contrast_limits() 
 
       # show scalebar
       self.viewer.scale_bar.unit = 'um'
@@ -399,9 +400,7 @@ class NapariUtils:
   """
   Show labels for multiple value names
   """
-  def show_labels_all(self, value_names, show_labels = True, show_points = True,
-                      as_np_array = False, show_tracks = True, cache = True,
-                      label_suffixes = dict(), show_branching = False, slices = None):
+  def show_labels_all(self, value_names, label_suffixes = dict(), **kwargs):
     # get distinct colours for points
     points_colours = colour_utils.distinct_colours(len(value_names), as_hex = True)
     
@@ -410,13 +409,7 @@ class NapariUtils:
       # get suffixes for value name
       value_name_suffixes = label_suffixes[x] if x in label_suffixes else []
       
-      self.show_labels(
-        show_labels = show_labels, show_points = show_points,
-        as_np_array = as_np_array, show_tracks = show_tracks,
-        value_name = x, points_colour = points_colours[i],
-        cache = cache, label_suffixes = value_name_suffixes,
-        show_branching = show_branching, slices = slices
-      )
+      self.show_labels(x, label_suffixes = value_name_suffixes, **kwargs)
                     
   """
   Show labels
@@ -424,7 +417,8 @@ class NapariUtils:
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   as_np_array = False, show_tracks = True,
                   points_colour = "white", cache = True, label_suffixes = [],
-                  show_branching = False, slices = None):
+                  show_branching = False, slices = None, split_tracks = None,
+                  tracks_blending = 'additive'):
     # set label ids
     label_ids = self.label_ids(value_name = value_name)
 
@@ -592,8 +586,11 @@ class NapariUtils:
           visible = True,
           # n_dimensional = True,
           scale = self.im_scale,
-          face_color = points_colour
+          face_color = points_colour,
+          edge_color = 'black'
           )
+        
+        labels_view.close()
     
     # show tracks
     if show_tracks is True:
@@ -602,16 +599,16 @@ class NapariUtils:
       if labels_view is not None:
         if labels_view.has_cols(['track_id'], dat_type = 'obs'):
           # get tracks
-          tracks = self.label_props_utils.label_props_view(value_name = value_name)\
-            .view_centroid_cols(self.dim_utils.im_dim_order)\
+          tracks = labels_view.view_centroid_cols(self.dim_utils.im_dim_order)\
             .view_obs_cols(['track_id'])\
-            .as_df(close = False)\
+            .as_df()\
             .dropna()\
             .to_numpy()
+            
+          labels_view.close()
           
           # prepare properties
-          properties = self.label_props_utils.label_props_view(value_name = value_name)\
-            .exclude_centroid_cols()\
+          prop_df = self.label_props_utils.label_props_view(value_name = value_name).exclude_centroid_cols()\
             .exclude_obs_cols(['label'])\
             .as_df()\
             .dropna(subset=['track_id'])\
@@ -622,22 +619,59 @@ class NapariUtils:
           
           # convert categories to numeric
           # https://stackoverflow.com/a/36107995/13766165
-          cat_columns = properties.select_dtypes(['category']).columns
-          properties[cat_columns] = properties[cat_columns].apply(
+          cat_columns = prop_df.select_dtypes(['category']).columns
+          prop_df[cat_columns] = prop_df[cat_columns].apply(
             lambda x: pd.to_numeric(x, errors = 'coerce'))
-          properties = properties.fillna(-1).to_dict(orient = 'list')
-          
-          # remove layer if shown
-          tracks_layer = 'Tracks' if value_name is None else f'({value_name}) Tracks'
-          self.remove_layer_by_name(tracks_layer)
-          
-          # add to napari
-          self.viewer.add_tracks(
-              tracks,
-              properties = properties,
-              name = tracks_layer,
-              scale = self.im_scale
-          )
+            
+          if split_tracks is not None:
+            # go through props and split tracks
+            for i, x in split_tracks.items():
+              for j, y in x.items():
+                # remove layer if shown
+                tracks_layer = f'Tracks {j}' if value_name is None else f'({value_name}) Tracks {j}'
+                self.remove_layer_by_name(tracks_layer)
+                
+                # get binary mask
+                bin_mask = prop_df[i].isin(y['values']).values
+                
+                # get cmap
+                cmap = cmap_utils.cmap_single(['#000000'] + [y['colour']])
+                
+                # value list
+                prop_list = prop_df[bin_mask].fillna(-1).to_dict(orient = 'list')
+                
+                # make sure that clustering starts at one
+                # otherwise 0 will not be shown as colour
+                if i.find('.clusters.') > 0:
+                  prop_list[i] = np.array(prop_list[i]) + 1
+                  
+                # add to napari
+                if len(np.unique(bin_mask)) > 1:
+                  self.viewer.add_tracks(
+                      tracks[bin_mask, ::],
+                      properties = prop_list,
+                      name = tracks_layer,
+                      scale = self.im_scale,
+                      color_by = i,
+                      colormaps_dict = {i: cmap},
+                      tail_width = 4,
+                      blending = tracks_blending
+                  )
+            
+          else:
+            # remove layer if shown
+            tracks_layer = 'Tracks' if value_name is None else f'({value_name}) Tracks'
+            self.remove_layer_by_name(tracks_layer)
+            
+            # add to napari
+            self.viewer.add_tracks(
+                tracks,
+                properties = prop_df.fillna(-1).to_dict(orient = 'list'),
+                name = tracks_layer,
+                scale = self.im_scale,
+                tail_width = 4,
+                blending = tracks_blending
+            )
     
     # define dimension order for napari
     self.viewer.dims.order = self.dim_utils.default_dim_order(ignore_channel = True)
@@ -818,7 +852,9 @@ class NapariUtils:
     self.viewer.add_points(
         label_points, size = 6,
         properties = properties,
-        face_color = 'magenta', name = 'selection',
+        face_color = 'magenta',
+        edge_color = 'black',
+        name = 'selection',
         n_dimensional = False if self.dim_utils.is_timeseries() else True,
         scale = self.im_scale
     )
@@ -1002,7 +1038,7 @@ class NapariUtils:
   """
   def show_pop_mapping(self, pop_type, remove_previous = True,
                        value_name = None, filtered_from_value_name = False,
-                       points_size = 6):
+                       points_size = 6, pops = None):
     # get data for populations
     pop_map = self.pop_utils.pop_map(self.task_dir, pop_type)
     pop_data = self.pop_utils.pop_data(self.task_dir, pop_type)
@@ -1016,7 +1052,11 @@ class NapariUtils:
       
       for x in poplayers_to_remove:
         self.viewer.layers.remove(x)
-      
+    
+    # filter on pops
+    if pops is not None and len(pops) > 0:
+      pop_map = {i: x for i, x in pop_map.items() if x['path'][0] in pops}
+    
     # show populations as individual points layers
     # use pop map - in case there are still old
     # populations in pop_data dict
@@ -1036,8 +1076,6 @@ class NapariUtils:
         pop_layer_name = self.pop_layer_name(pop_type, pop)
         
         show_pop = True
-        
-        print(pop_layer_name)
         
         # if a population is filterd from a dataset,
         # then take only the relevant populations
@@ -1075,7 +1113,9 @@ class NapariUtils:
           # TODO always add points - to preserve the order of populations?
           self.viewer.add_points(
               label_points,
-              face_color = pop_colour, name = pop_layer_name,
+              face_color = pop_colour,
+              edge_color = 'black',
+              name = pop_layer_name,
               visible = pop_show,
               n_dimensional = False if self.dim_utils.is_timeseries() else True,
               scale = self.im_scale,

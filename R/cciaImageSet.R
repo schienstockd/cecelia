@@ -272,10 +272,11 @@ CciaImageSet <- R6::R6Class(
     #' @param colsToNormalise list of character for columns to normalise
     #' @param batchGroup character to identify batch groups
     #' @param normPercentile numeric for percentile to normalise
+    #' @param mc.cores numeric for workers
     #' @param ... passed to CciaImage$popDT
     popDT = function(asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
                      colsToNormalise = c(), batchGroup = "uID", normPercentile = 0.998,
-                     ...) {
+                     mc.cores = 2, ...) {
       # get DTs from images
       if (private$isReactive() == TRUE) {
         popDTs <- lapply(
@@ -294,7 +295,7 @@ CciaImageSet <- R6::R6Class(
             x$popDT(...)
           # }
           # }, mc.cores = parallel::detectCores() - 2
-          }, mc.cores = 3
+          }, mc.cores = mc.cores
         )
       }
       
