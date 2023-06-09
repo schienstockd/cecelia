@@ -285,6 +285,22 @@ task <- cciaObj$runTask(
   taskID = 1
 )
 ```
+```{r}
+# get populations from clustering
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "oPZZCg", versionID = versionID, initReactivity = FALSE # SNS
+)
+
+popType <- "clust"
+pops <- cciaObj$popPaths(popType, includeFiltered = TRUE)
+
+cciaObj$savePops(popType, pops, includeFiltered = TRUE)
+```
+
 
 ```{r}
 devtools::load_all("../")

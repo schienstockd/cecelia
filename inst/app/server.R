@@ -913,9 +913,13 @@ server <- function(input, output, session) {
         icon = icon("rocket"),
         tabName = "behaviourAnalysis"),
       menuSubItem(
-        "Cell Mapping",
+        "Population Clustering",
         icon = icon("map"),
-        tabName = "liveMapping"),
+        tabName = "clustPopulations"),
+      # menuSubItem(
+      #   "Cell Mapping",
+      #   icon = icon("map"),
+      #   tabName = "liveMapping"),
       menuSubItem(
         "Spatial analysis",
         icon = icon("chart-pie"),

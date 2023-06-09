@@ -16,7 +16,7 @@ class ImagejUtils:
     # https://imagej.github.io/scripting/headless
     script_params_string = ', '.join('{} = {}'.format(key, value) for key, value in script_params.items())
     # script_params_string = f"'{script_params_string}'"
-
+    
     # call fiji
     # https://stackoverflow.com/a/28319191/13766165
     with subprocess.Popen([

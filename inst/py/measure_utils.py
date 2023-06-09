@@ -431,6 +431,8 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
                   cfg.value_dir(value_name, 'mesh', file_name = label, value_as_dir = True)
                   ))
             
+            # TODO don't need this anymore?
+            # https://forum.image.sc/t/scaling-regionprops-for-non-isotropic-images/61971/5
             # get shape descriptors
             shape_descriptors.append(morpho_utils.mesh_shape_descriptors(volume_mesh))
             

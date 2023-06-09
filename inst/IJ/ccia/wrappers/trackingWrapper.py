@@ -19,9 +19,11 @@ from ij import ImageStack, ImagePlus, IJ
 from fiji.plugin.trackmate import Model, Settings, TrackMate, SelectionModel, Logger, Spot
 from fiji.plugin.trackmate.detection import LogDetectorFactory
 from fiji.plugin.trackmate.providers import EdgeAnalyzerProvider, TrackAnalyzerProvider, SpotAnalyzerProvider
-from fiji.plugin.trackmate.tracking import LAPUtils
+# from fiji.plugin.trackmate.tracking import LAPUtils
+from fiji.plugin.trackmate.tracking.jaqaman import LAPUtils
 from fiji.plugin.trackmate.tracking.kalman import KalmanTrackerFactory
-from fiji.plugin.trackmate.tracking.sparselap import SparseLAPTrackerFactory
+# from fiji.plugin.trackmate.tracking.sparselap import SparseLAPTrackerFactory
+from fiji.plugin.trackmate.tracking.jaqaman import SparseLAPTrackerFactory
 
 import fiji.plugin.trackmate.util.TMUtils as TMUtils
 import fiji.plugin.trackmate.features.FeatureFilter as FeatureFilter
@@ -75,7 +77,10 @@ def cellDetection3D(
 
 	# prepare Trackmate
 	settings.trackerFactory = SparseLAPTrackerFactory()
-	settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+	settings.trackerSettings = LAPUtils.getDefaultSegmentSettingsMap()
+	
+	# no linking
+	settings.trackerSettings['LINKING_MAX_DISTANCE'] = 0.0
 
 	# init TM
 	trackmate = TrackMate(model, settings)
@@ -116,7 +121,7 @@ def cellDetection3D(
 		    print(str(trackmate.getErrorMessage()))
 		else:
 			spots = model.getSpots()
-
+	
 	return spots, spotsTresh
 
 def writeSpotsToImage(imp, detectedSpots):
@@ -248,7 +253,7 @@ def trackSpots(imp, rad, thresh = 0., doMedian = False, downsampling = 4,
 	# Configure tracker
 	if trackingType == "brownian":
 		settings.trackerFactory = SparseLAPTrackerFactory()
-		settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+		settings.trackerSettings = LAPUtils.getDefaultSegmentSettingsMap()
 		settings.trackerSettings['ALLOW_TRACK_SPLITTING'] = False
 		settings.trackerSettings['ALLOW_TRACK_MERGING'] = False
 		settings.trackerSettings['LINKING_MAX_DISTANCE'] = linkingDist

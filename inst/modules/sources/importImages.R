@@ -119,6 +119,9 @@ Import <- R6::R6Class(
         )
       }
       
+      # get metadata
+      curObj$resetMetaFromFile()
+      
       # save object
       cciaObj$saveState()
     }

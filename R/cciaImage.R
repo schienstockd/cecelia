@@ -71,50 +71,52 @@ CciaImage <- R6::R6Class(
         for (i in valueNames) {
           labels <- self$labelProps(valueName = i)
           
-          # focus on selected columns
-          if (!is.null(popCols)) {
-            labels$view_cols(popCols)
-          }
-          
-          # filter on labels to reduce reading
-          if ("value_name" %in% colnames(popDT)) {
-            # TODO not sure how to do this for this case
-          } else {
-            labels$filter_rows(popDT$label)
-          }
-          
-          # set include 'X'
-          if (replaceX == TRUE)
-            includeX <- TRUE
-          
-          # only complete obs
-          # TODO is that OK? - not always
-          labelDT <- as.data.table(labels$as_df(
-            include_x = includeX, add_obs = includeObs))
-          # labelDT <- as.data.table(labels$values_obs())
-          # labels$close()
-          
-          # prepare column names
-          # exclude channel names
-          labelColumns <- colnames(labelDT)
-          if (replaceX == FALSE) {
-            labelColumns <- labelColumns[!labelColumns %in% self$imChannelNames(
-              correctChannelNames = TRUE, includeTypes = TRUE)]
-            iColumns <- labelColumns
-          } else {
-            jColumns <- labelColumns[labelColumns %in% colnames(popDT)]
-            jColumns <- jColumns[jColumns != "label"]
-            iColumns <- labelColumns
-            iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
-          } 
-          
-          # merge to population DT
-          if ("value_name" %in% colnames(popDT)) {
-            popDT[labelDT, on = .(value_name == i, label),
-                  (labelColumns) := mget(iColumns)]
-          } else {
-            popDT[labelDT, on = .(label),
-                  (labelColumns) := mget(iColumns)]
+          if (!is.null(labels)) {
+            # focus on selected columns
+            if (!is.null(popCols)) {
+              labels$view_cols(popCols)
+            }
+            
+            # filter on labels to reduce reading
+            if ("value_name" %in% colnames(popDT)) {
+              # TODO not sure how to do this for this case
+            } else {
+              labels$filter_rows(popDT$label)
+            }
+            
+            # set include 'X'
+            if (replaceX == TRUE)
+              includeX <- TRUE
+            
+            # only complete obs
+            # TODO is that OK? - not always
+            labelDT <- as.data.table(labels$as_df(
+              include_x = includeX, add_obs = includeObs))
+            # labelDT <- as.data.table(labels$values_obs())
+            # labels$close()
+            
+            # prepare column names
+            # exclude channel names
+            labelColumns <- colnames(labelDT)
+            if (replaceX == FALSE) {
+              labelColumns <- labelColumns[!labelColumns %in% self$imChannelNames(
+                correctChannelNames = TRUE, includeTypes = TRUE)]
+              iColumns <- labelColumns
+            } else {
+              jColumns <- labelColumns[labelColumns %in% colnames(popDT)]
+              jColumns <- jColumns[jColumns != "label"]
+              iColumns <- labelColumns
+              iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
+            } 
+            
+            # merge to population DT
+            if ("value_name" %in% colnames(popDT)) {
+              popDT[labelDT, on = .(value_name == i, label),
+                    (labelColumns) := mget(iColumns)]
+            } else {
+              popDT[labelDT, on = .(label),
+                    (labelColumns) := mget(iColumns)]
+            }
           }
         }
       }
@@ -890,8 +892,9 @@ CciaImage <- R6::R6Class(
     #' @param valueNames list of character to define value names
     #' @param dataTypes list of character to define data types from adata
     #' @param popType character for population type
+    #' @param colsStartsWith character to filter for values starting with
     labelPropsCols = function(valueNames = NULL, dataTypes = c("vars", "obs"),
-                              popType = NULL) {
+                              popType = NULL, colsStartsWith = NULL) {
       # get value names
       if (is.null(valueNames)) {
         valueNames <- self$valueNames("imLabelPropsFilepath")
@@ -918,9 +921,12 @@ CciaImage <- R6::R6Class(
       
       # filter for population type
       if (!is.null(popType)) {
-        propCols <- propCols[
-          startsWith(propCols, paste0(popType, "."))
-        ]
+        propCols <- propCols[startsWith(propCols, paste0(popType, "."))]
+      }
+      
+      # filter for cols starting with
+      if (!is.null(colsStartsWith)) {
+        propCols <- propCols[startsWith(propCols, colsStartsWith)]
       }
       
       propCols
@@ -3034,13 +3040,21 @@ CciaImage <- R6::R6Class(
       retVal <- .getVersionedVarInList(
         self$getCciaMeta(), "imAnndataFilepath", valueName = valueName)
       
+      savedIn <- NULL
+      if ("savedIn" %in% names(attributes(retVal)))
+        savedIn <- attr(retVal, "savedIn")
+      
       # add task directory
       retVal <- file.path(cciaConf()$dirs$tasks$labelProps, retVal)
       
       # get absolute path?
       if (!is.null(retVal)) {
         if (absolutePath == TRUE) {
-          retVal <- self$persistentObjectDirectoryFile(retVal)
+          if (!is.null(savedIn))
+            retVal <- file.path(
+              dirname(self$persistentObjectDirectory()), savedIn, retVal)
+          else
+            retVal <- self$persistentObjectDirectoryFile(retVal)
         }
       }
       

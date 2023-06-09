@@ -23,9 +23,9 @@
         cciaObj()$savePops(
           popType(), pops,
           purge = purge,
-          includeFiltered = TRUE
-          )
+          includeFiltered = TRUE)
       }
+      
       # get umap plot
       plotUMAP <- function(umapCol, sourceID, plotType = "factor") {
         if (umapCol %in% names(adataDT())) {
@@ -93,14 +93,14 @@
             completeDT = FALSE, replaceNA = TRUE,
             flushCache = flushCache,
             # only focus on clustered values
-            filterMeasures = c("clusters")
+            filterMeasures = c(clusterColName())
           )
         } else {
           # anndata
           cciaObj()$popDT(popType(), includeFiltered = TRUE,
                           completeDT = FALSE, replaceNA = TRUE,
                           # only focus on clustered values
-                          filterMeasures = c("clusters"))
+                          filterMeasures = c(clusterColName()))
         }
       }
       
@@ -120,10 +120,10 @@
       
       # population management
       popType <- reactive("clust")
-      popTypeProcessing <- reactive({
-        input$popType
-      })
-      
+      popTypeProcessing <- reactive(input$popType)
+      valueName <- reactive(input$valueName)
+      clusterColName <- reactive(input$clusterColName)
+
       # add pop type to task variables
       taskVarsToAdd <- reactive({
         req(popTypeProcessing())
@@ -172,11 +172,12 @@
       # imPopMap <- reactive({
       imPopMap <- eventReactive(c(
         moduleManagers()$imageViewerManager$imageSelected(),
-        cciaObj()
+        cciaObj(),
+        clusterColName()
         ), {
         req(cciaObj())
         
-        cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c("clusters"))
+        cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c(clusterColName()))
       })
       
       # population data
@@ -606,11 +607,12 @@
           cciaObj()$setPopAttr(
             popType(), i, list(
               # TODO this does not work when there are multiple adata files
-              valueName = attr(cciaObj()$valueNamesForPopType(popType()), "default"),
+              # valueName = attr(cciaObj()$valueNamesForPopType(popType()), "default"),
+              valueName = valueName(),
               # path = i,
               path = x$name,
               parent = "root",
-              filterMeasure = "clusters",
+              filterMeasure = clusterColName(),
               filterFun = "eq",
               filterValues = list()
             ), includeFiltered = TRUE, invalidate = TRUE
@@ -700,6 +702,40 @@
           session$ns("popType"), "Population Type",
           choices = .reverseNamedList(choices),
           selected = choices[[globalManagers$projectManager()$getProjectType()]]
+        )
+      })
+      
+      output$valueName <- renderUI({
+        req(cciaObj())
+        req(popType())
+        
+        choices <- cciaObj()$valueNamesForPopType(popType())
+        
+        selectInput(
+          session$ns("valueName"), "Value name",
+          choices = choices,
+          selected = attr(choices, "default"),
+          multiple = FALSE
+        )
+      })
+      
+      output$clusterColName <- renderUI({
+        req(cciaObj())
+        req(popType())
+        
+        if (popType() == "live") {
+          # this is only relevant for tracking
+          choices <- cciaObj()$labelPropsCols(
+            valueNames = c(valueName()),
+            colsStartsWith = paste0(popType(), ".cell.track.clusters"))
+        } else {
+          choices <- c("clusters")
+        }
+        
+        selectInput(
+          session$ns("clusterColName"), "Cluster column",
+          choices = choices,
+          multiple = FALSE
         )
       })
       
@@ -829,7 +865,7 @@
       output$clustUMAPClusters <- renderPlotly({
         req(adataDT())
         
-        plotUMAP("clusters", "clustUMAPClusters")
+        plotUMAP(clusterColName(), "clustUMAPClusters")
       })
       
       output$clustUMAPPops <- renderPlotly({

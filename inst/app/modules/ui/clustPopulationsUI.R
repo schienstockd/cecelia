@@ -155,6 +155,8 @@
                 actionButton(ns("resetImageLabelSelection"), "Reset selection"),
                 tags$hr(),
                 uiOutput(ns("popType")),
+                uiOutput(ns("valueName")),
+                uiOutput(ns("clusterColName")),
                 uiOutput(ns("taskFunction"))
               )
             ),

@@ -136,6 +136,11 @@
 					"default": true
 				}
 			},
+			"measure": {
+				"type:boolean": {
+					"default": true
+				}
+			},
 			"updateMeasures": {
 				"type:boolean": {
 					"default": false
@@ -308,26 +313,32 @@
 				"widget:checkbox": {
 				}
 			},
-			"updateMeasures": {
+			"measure": {
 				"index": 14,
+				"label": "Measure objects",
+				"widget:checkbox": {
+				}
+			},
+			"updateMeasures": {
+				"index": 15,
 				"label": "Update properties",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeasures": {
-				"index": 15,
+				"index": 16,
 				"label": "Save Measures",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeshes": {
-				"index": 16,
+				"index": 17,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 17,
+				"index": 18,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}

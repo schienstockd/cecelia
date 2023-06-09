@@ -20,7 +20,7 @@ Mesmer <- R6::R6Class(
     # run
     run = function() {
       # reset image information
-      self$resetImageInfo(suffixes = c("cyto", "nuc"))
+      self$resetImageInfo(labelSuffixes = c("cyto", "nuc"))
       
       self$initLog()
       self$writeLog("Start Mesmer segmentation")
@@ -68,6 +68,7 @@ Mesmer <- R6::R6Class(
         clearTouchingBorder = self$funParams()$clearTouchingBorder,
         updateMeasures = self$funParams()$updateMeasures,
         segment = self$funParams()$segment,
+        measure = self$funParams()$measure,
         saveMeshes = self$funParams()$saveMeshes,
         saveMeasures = self$funParams()$saveMeasures,
         extendedMeasures = self$funParams()$extendedMeasures

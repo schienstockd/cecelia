@@ -66,7 +66,6 @@ HPC_CONF <-  list(
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/Moldoveanu2022_IMC/CECELIA"
 ```
 
-
 ```{r}
 # # run clustering
 # devtools::load_all("../")
@@ -134,7 +133,6 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Moldoveanu2022_IMC/CECELIA"
 #   taskID = 1
 # )
 ```
-
 
 ```{r}
 devtools::load_all("../")
@@ -412,12 +410,12 @@ uIDs <- uIDs[uIDs %in% exp.info[exp.info$Include == "Y",]$uID]
 spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
 
 # join pops
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "to" = "label"),
-#           pop.to := pop]
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "from" = "label"),
-#           pop.from := pop]
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "to" = "label"),
+          pop.to := pop]
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "from" = "label"),
+          pop.from := pop]
 spatialDT[popDT[, c("uID", "label", "clusters")],
           on = c("uID", "to" = "label"),
           clusters.to := clusters]
