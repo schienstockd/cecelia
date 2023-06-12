@@ -68,7 +68,7 @@ def run(params):
       pops = [pop_a]
     )
     
-    if pop_df_a is not None and len(pop_df_a.index) > 0
+    if pop_df_a is not None and len(pop_df_a.index) > 0:
       # same value for all within a population
       pop_value_name_a = pop_df_a['value_name'][0]
       
