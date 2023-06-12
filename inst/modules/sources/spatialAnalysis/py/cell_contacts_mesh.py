@@ -68,194 +68,195 @@ def run(params):
       pops = [pop_a]
     )
     
-    # same value for all within a population
-    pop_value_name_a = pop_df_a['value_name'][0]
-    
-    # get label props
-    label_props_utils = LabelPropsUtils(task_dir, value_name = pop_value_name_a)
-
-    # save back to labels
-    labels_ids = label_props_utils.label_props_view()\
-      .view_label_col()\
-      .values_obs()
-    
-    # go through pops B
-    for pop_b in pops_b:
-      # get pop name and type
-      pop_split = pop_b.split('.', 1)
-      pop_type_b = pop_split[0]
-      pop_b = pop_split[1]
+    if pop_df_a is not None and len(pop_df_a.index) > 0
+      # same value for all within a population
+      pop_value_name_a = pop_df_a['value_name'][0]
       
-      # get contact populations
-      pop_df_b = pop_utils.pop_df(
-        task_dir,
-        LabelPropsUtils(task_dir),
-        pop_type_b,
-        cols = prop_cols,
-        pops = [pop_b]
-        )
-      
-      # define columns
-      if invert_pops_a is True:
-        dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
-        contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
-        contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
-        contains_n_col = f'{pop_type_a}.cell.contains_n.inv#{pop_type_b}.{pop_b}'
-        contact_n_col = f'{pop_type_a}.cell.contact_n.inv#{pop_type_b}.{pop_b}'
-        contact_id_col = f'{pop_type_a}.cell.contact_id.inv#{pop_type_b}.{pop_b}'
-      else:
-        dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
-        contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
-        contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
-        contains_n_col = f'{pop_type_a}.cell.contains_n#{pop_type_b}.{pop_b}'
-        contact_n_col = f'{pop_type_a}.cell.contact_n#{pop_type_b}.{pop_b}'
-        contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
-        
-      if pop_df_b is not None and len(pop_df_b.index) > 0:
-        # same value for all within a population
-        pop_value_name_b = pop_df_b['value_name'][0]
-    
-        # get timepoints
-        timepoints = [-1]
-        
-        if is_timecourse is True:
-          timepoints = script_utils.get_param(params, 'timepoints', default = None)
-    
-          if timepoints is None:
-            timepoints = pop_df_a['centroid_t'].unique()
-        
-        # go through timepoints and get contacts
-        contacts = dict()
-        contained = dict()
-        contains_n = dict()
-        contact_n = dict()
-        contact_ids = dict()
-        
-        for i, t in tqdm(enumerate(timepoints)):
-          # load meshes
-          meshes_a = morpho_utils.df_to_meshes(
-            task_dir,
-            pop_df_a, pop_value_name_a,
-            'centroid_t' if t >= 0 else 'NONE',
-            [t] if t >= 0 else ['NONE'],
-            im_res = im_res, is_3D = is_3D,
-            add_value_name_to_name = False)
-          meshes_b = morpho_utils.df_to_meshes(
-            task_dir,
-            pop_df_b, pop_value_name_b,
-            'centroid_t' if t >= 0 else 'NONE',
-            [t] if t >= 0 else ['NONE'],
-            im_res = im_res, is_3D = is_3D,
-            add_value_name_to_name = False)
-    
-          logfile_utils.log(f'>> (t {t}) {pop_a} loaded {len(meshes_a)} meshes')
-          logfile_utils.log(f'>> (t {t}) {pop_b} loaded {len(meshes_b)} meshes')
-    
-          if len(meshes_b) > 0:
-            # add pop B to collision manager
-            m = trimesh.collision.CollisionManager()
-            
-            for j, y in meshes_b.items():
-              m.add_object(j, y)
-            
-            # go through pop A and get minimum distances to pop B
-            meshes_dist = {j: m.min_distance_single(y, return_name = True) for j, y in meshes_a.items()}
-            
-            # update contacts
-            contacts.update({j: y[0] for j, y in meshes_dist.items()})
-            contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
-              
-            # check whether B contains A
-            contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
-            
-            # check how many B are contained in A
-            contains_n.update({
-              j: y.contains([z.center_mass for z in meshes_b.values()]).sum()
-              for j, y in meshes_a.items()
-              })
-              
-            # check how many B contact A
-            for j, y in meshes_a.items():
-              has_contact = True
-              removed_objects = dict()
-              
-              while has_contact is True:
-                min_dist = [max_contact_dist + 1]
-                
-                try:
-                  # get distance to nearest object
-                  min_dist = m.min_distance_single(y, return_name = True)
-                except TypeError:
-                  # TypeError: 'reversed' object is not subscriptable
-                  # this happens if there is no mesh in CollisionManager
-                  # TODO is there a way to get the number of meshes
-                  # in the collision manager?
-                  pass
-                
-                # is below threshold?
-                if min_dist[0] > max_contact_dist:
-                  has_contact = False
-                else:
-                  m.remove_object(min_dist[1])
-                  removed_objects[min_dist[1]] = meshes_b[min_dist[1]]
-            
-              contact_n.update({j: len(removed_objects)})
-              
-              # add objects back
-              for k, z in removed_objects.items():
-                m.add_object(k, z)
-            
-        logfile_utils.log(f'>> Add distances back')
-        
-        # convert to dataframe
-        contact_df = pd.DataFrame.from_dict({
-          'label_id': contacts.keys(),
-          dist_col: contacts.values(),
-          contact_col: [x <= max_contact_dist for x in contacts.values()],
-          contained_col: contained.values(),
-          contains_n_col: contains_n.values(),
-          contact_n_col: contact_n.values(),
-          contact_id_col: contact_ids.values()
-        })
-        
-        # merge contacts to labels
-        merged_contacts_ids = labels_ids.join(contact_df.set_index('label_id'), on = 'label')
-      else:
-        # fill with NaN
-        merged_contacts_ids = labels_ids.copy()
-        merged_contacts_ids[dist_col] = np.NaN
-        merged_contacts_ids[contact_col] = np.NaN
-        merged_contacts_ids[contained_col] = np.NaN
-        merged_contacts_ids[contains_n_col] = np.NaN
-        merged_contacts_ids[contact_n_col] = np.NaN
-        merged_contacts_ids[contact_id_col] = np.NaN
-        
-      # set NaN to False
-      merged_contacts_ids[dist_col].replace(np.NaN, -1, inplace = True)
-      merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
-      merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
-      merged_contacts_ids[contains_n_col].replace(np.NaN, 0, inplace = True)
-      merged_contacts_ids[contact_n_col].replace(np.NaN, 0, inplace = True)
-      merged_contacts_ids[contact_id_col].replace(np.NaN, -1, inplace = True)
+      # get label props
+      label_props_utils = LabelPropsUtils(task_dir, value_name = pop_value_name_a)
   
-      # convert column to dict
-      contact_dict = {
-        dist_col: merged_contacts_ids[dist_col],
-        contact_col: merged_contacts_ids[contact_col],
-        contained_col: merged_contacts_ids[contained_col],
-        contains_n_col: merged_contacts_ids[contains_n_col],
-        contact_n_col: merged_contacts_ids[contact_n_col],
-        contact_id_col: merged_contacts_ids[contact_id_col]
-      }
-  
-      logfile_utils.log(
-        "> Save to " + str(label_props_utils.label_props_view()\
-          .adata_filepath()))
+      # save back to labels
+      labels_ids = label_props_utils.label_props_view()\
+        .view_label_col()\
+        .values_obs()
       
-      # add to obs and save
-      label_props_utils.label_props_view()\
-        .add_obs(contact_dict)\
-        .save()
+      # go through pops B
+      for pop_b in pops_b:
+        # get pop name and type
+        pop_split = pop_b.split('.', 1)
+        pop_type_b = pop_split[0]
+        pop_b = pop_split[1]
+        
+        # get contact populations
+        pop_df_b = pop_utils.pop_df(
+          task_dir,
+          LabelPropsUtils(task_dir),
+          pop_type_b,
+          cols = prop_cols,
+          pops = [pop_b]
+          )
+        
+        # define columns
+        if invert_pops_a is True:
+          dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
+          contact_col = f'{pop_type_a}.cell.contact.inv#{pop_type_b}.{pop_b}'
+          contained_col = f'{pop_type_a}.cell.contained_by.inv#{pop_type_b}.{pop_b}'
+          contains_n_col = f'{pop_type_a}.cell.contains_n.inv#{pop_type_b}.{pop_b}'
+          contact_n_col = f'{pop_type_a}.cell.contact_n.inv#{pop_type_b}.{pop_b}'
+          contact_id_col = f'{pop_type_a}.cell.contact_id.inv#{pop_type_b}.{pop_b}'
+        else:
+          dist_col = f'{pop_type_a}.cell.min_distance#{pop_type_b}.{pop_b}'
+          contact_col = f'{pop_type_a}.cell.contact#{pop_type_b}.{pop_b}'
+          contained_col = f'{pop_type_a}.cell.contained_by#{pop_type_b}.{pop_b}'
+          contains_n_col = f'{pop_type_a}.cell.contains_n#{pop_type_b}.{pop_b}'
+          contact_n_col = f'{pop_type_a}.cell.contact_n#{pop_type_b}.{pop_b}'
+          contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
+          
+        if pop_df_b is not None and len(pop_df_b.index) > 0:
+          # same value for all within a population
+          pop_value_name_b = pop_df_b['value_name'][0]
+      
+          # get timepoints
+          timepoints = [-1]
+          
+          if is_timecourse is True:
+            timepoints = script_utils.get_param(params, 'timepoints', default = None)
+      
+            if timepoints is None:
+              timepoints = pop_df_a['centroid_t'].unique()
+          
+          # go through timepoints and get contacts
+          contacts = dict()
+          contained = dict()
+          contains_n = dict()
+          contact_n = dict()
+          contact_ids = dict()
+          
+          for i, t in tqdm(enumerate(timepoints)):
+            # load meshes
+            meshes_a = morpho_utils.df_to_meshes(
+              task_dir,
+              pop_df_a, pop_value_name_a,
+              'centroid_t' if t >= 0 else 'NONE',
+              [t] if t >= 0 else ['NONE'],
+              im_res = im_res, is_3D = is_3D,
+              add_value_name_to_name = False)
+            meshes_b = morpho_utils.df_to_meshes(
+              task_dir,
+              pop_df_b, pop_value_name_b,
+              'centroid_t' if t >= 0 else 'NONE',
+              [t] if t >= 0 else ['NONE'],
+              im_res = im_res, is_3D = is_3D,
+              add_value_name_to_name = False)
+      
+            logfile_utils.log(f'>> (t {t}) {pop_a} loaded {len(meshes_a)} meshes')
+            logfile_utils.log(f'>> (t {t}) {pop_b} loaded {len(meshes_b)} meshes')
+      
+            if len(meshes_b) > 0:
+              # add pop B to collision manager
+              m = trimesh.collision.CollisionManager()
+              
+              for j, y in meshes_b.items():
+                m.add_object(j, y)
+              
+              # go through pop A and get minimum distances to pop B
+              meshes_dist = {j: m.min_distance_single(y, return_name = True) for j, y in meshes_a.items()}
+              
+              # update contacts
+              contacts.update({j: y[0] for j, y in meshes_dist.items()})
+              contact_ids.update({j: y[1] for j, y in meshes_dist.items()})
+                
+              # check whether B contains A
+              contained.update({j: meshes_b[contact_ids[j]].contains([y.center_mass]).all() for j, y in meshes_a.items()})
+              
+              # check how many B are contained in A
+              contains_n.update({
+                j: y.contains([z.center_mass for z in meshes_b.values()]).sum()
+                for j, y in meshes_a.items()
+                })
+                
+              # check how many B contact A
+              for j, y in meshes_a.items():
+                has_contact = True
+                removed_objects = dict()
+                
+                while has_contact is True:
+                  min_dist = [max_contact_dist + 1]
+                  
+                  try:
+                    # get distance to nearest object
+                    min_dist = m.min_distance_single(y, return_name = True)
+                  except TypeError:
+                    # TypeError: 'reversed' object is not subscriptable
+                    # this happens if there is no mesh in CollisionManager
+                    # TODO is there a way to get the number of meshes
+                    # in the collision manager?
+                    pass
+                  
+                  # is below threshold?
+                  if min_dist[0] > max_contact_dist:
+                    has_contact = False
+                  else:
+                    m.remove_object(min_dist[1])
+                    removed_objects[min_dist[1]] = meshes_b[min_dist[1]]
+              
+                contact_n.update({j: len(removed_objects)})
+                
+                # add objects back
+                for k, z in removed_objects.items():
+                  m.add_object(k, z)
+              
+          logfile_utils.log(f'>> Add distances back')
+          
+          # convert to dataframe
+          contact_df = pd.DataFrame.from_dict({
+            'label_id': contacts.keys(),
+            dist_col: contacts.values(),
+            contact_col: [x <= max_contact_dist for x in contacts.values()],
+            contained_col: contained.values(),
+            contains_n_col: contains_n.values(),
+            contact_n_col: contact_n.values(),
+            contact_id_col: contact_ids.values()
+          })
+          
+          # merge contacts to labels
+          merged_contacts_ids = labels_ids.join(contact_df.set_index('label_id'), on = 'label')
+        else:
+          # fill with NaN
+          merged_contacts_ids = labels_ids.copy()
+          merged_contacts_ids[dist_col] = np.NaN
+          merged_contacts_ids[contact_col] = np.NaN
+          merged_contacts_ids[contained_col] = np.NaN
+          merged_contacts_ids[contains_n_col] = np.NaN
+          merged_contacts_ids[contact_n_col] = np.NaN
+          merged_contacts_ids[contact_id_col] = np.NaN
+          
+        # set NaN to False
+        merged_contacts_ids[dist_col].replace(np.NaN, -1, inplace = True)
+        merged_contacts_ids[contact_col].replace(np.NaN, False, inplace = True)
+        merged_contacts_ids[contained_col].replace(np.NaN, False, inplace = True)
+        merged_contacts_ids[contains_n_col].replace(np.NaN, 0, inplace = True)
+        merged_contacts_ids[contact_n_col].replace(np.NaN, 0, inplace = True)
+        merged_contacts_ids[contact_id_col].replace(np.NaN, -1, inplace = True)
+    
+        # convert column to dict
+        contact_dict = {
+          dist_col: merged_contacts_ids[dist_col],
+          contact_col: merged_contacts_ids[contact_col],
+          contained_col: merged_contacts_ids[contained_col],
+          contains_n_col: merged_contacts_ids[contains_n_col],
+          contact_n_col: merged_contacts_ids[contact_n_col],
+          contact_id_col: merged_contacts_ids[contact_id_col]
+        }
+    
+        logfile_utils.log(
+          "> Save to " + str(label_props_utils.label_props_view()\
+            .adata_filepath()))
+        
+        # add to obs and save
+        label_props_utils.label_props_view()\
+          .add_obs(contact_dict)\
+          .save()
 
 def main():
   # get params
