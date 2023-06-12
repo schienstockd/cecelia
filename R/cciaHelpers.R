@@ -936,7 +936,7 @@ adataMatFromPopDT <- function(popDT, popKey = "clusters") {
     # convert chanels to matrix
     # https://stackoverflow.com/a/43834005/13766165
     adataSummary <- popDT[
-      order(get(popKey)), sapply(.SD, function(x) list(mean = mean(x))),
+      order(get(popKey)), sapply(.SD, function(x) list(mean = mean(as.numeric(x), na.rm = TRUE))),
       .SDcols = colnames(popDT)[
         !colnames(popDT) %in% c(
           "uID", "label", popKey, "clusters", "region", "regions", "pop",

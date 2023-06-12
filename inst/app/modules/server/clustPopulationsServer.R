@@ -419,6 +419,7 @@
       # shown - the image shown
       observeEvent(moduleManagers()$imageViewerManager$imageSelected(), {
         req(cciaObj())
+        req(clusterColName())
         
         # label properties
         labelProps(cciaObj()$labelProps()$as_df())
@@ -438,7 +439,7 @@
         adataDT(getAdataDT())
         
         # create adata matrix
-        adataMat(adataMatFromPopDT(adataDT()))
+        adataMat(adataMatFromPopDT(adataDT(), popKey = clusterColName()))
         
         # collapse selection box
         js$collapseBox(session$ns("imageTableBox"))

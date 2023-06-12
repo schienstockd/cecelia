@@ -67,17 +67,86 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
 ```
 
 ```{r}
+# get cluster channels
+baseChannels <- c(
+  'CD164','MUC-1','p53','Vimentin','Cytokeratin',
+  'PD-L1','CD15','CD30','CD2','GranzymeB',
+  'CD5','MMP-9','CD4','LAG-3','CD25','CD56',
+  'CD20','PD-1','CD11c','CD162','CD16',
+  'CD11b','CD194','IDO-1','EGFR','VISTA',
+  'HLA-DR','ICOS','BCL-2','CD3','CD69',
+  'CD8','CD7','CD45RA','CD45','CD1a',
+  'CD57','B-catenin','CD45RO','CD71','CD34',
+  'CD68','CD38','Collagen-IV','CD31',
+  'Podoplanin','CD138','CD163',
+  'Mast-cell-tryptase','MMP-12'
+)
+nucChannels <- c(
+  # 'Hoechst', 'DRAQ5', 'FOXP3', 'GATA3', 'T-bet', 'Ki-67'
+  'FOXP3', 'GATA3', 'T-bet', 'Ki-67'
+)
+objectMeasures <- c(
+  # 'orientation','asymmetry',
+  'prolate', 'oblate', 'nuc_area', 'area',
+  'solidity', 'eccentricity','extent'
+  # 'nc_ratio','aspect_ratio','fill'
+  # 'perimeter', 'convex_area','equivalent_diameter',
+  # 'feret_diameter_max','major_axis_length', 'minor_axis_length',
+  # 'perimeter_to_area'
+)
+```
+
+
+```{r}
+# run clustering
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "llofh1", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
 )
 
-y <- cciaObj$getCciaMeta()
+uIDs <- names(cciaObj$cciaObjects())
+imChannels <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imChannelNames()
+
+# run task
+funParams <- list(
+  popType = "clust",
+  # popsToCluster = c("lymphs", "macro.mono"),
+  popsToCluster = c(),
+  # savePops = TRUE,
+  savePops = FALSE,
+  # keepPops = TRUE,
+  keepPops = FALSE,
+  resolution = 0.8,
+  mergeUmap = TRUE,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0,
+  normaliseAxis = "channels",
+  normaliseToMedian = FALSE,
+  normaliseIndividually = FALSE,
+  transformation = "log",
+  # transformation = "NONE",
+  logBase = 0,
+  valueName = "default",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(channels = unname(sapply(baseChannels, function(x) which(imChannels == x))) - 1),
+    nuc = list(channels = unname(sapply(nucChannels, function(x) which(imChannels == x))) - 1)
+  ),
+  objectMeasures = objectMeasures
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
+
 
 ```{r}
 devtools::load_all("../")
@@ -105,7 +174,8 @@ uIDs <- names(cciaObj$cciaObjects())
 # get cluster information
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs,
+  # pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs,
+  pops = c("root"), uIDs = uIDs,
   completeDT = TRUE, replaceX = TRUE)
   # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
@@ -117,41 +187,25 @@ unique(popDT$clusters)
 ```{r}
 # define populations
 clust <- list(
-  init = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"),
-  hoechst = c("non.debris", "Th.ae", "Th.malignant", "Treg")
+  init = c("root")
 )
 
 markers <- list(
-  init = c("nuc_Hoechst", "nuc_DRAQ5", "nuc_area"),
-  hoechst = c(
-    "CD2", "CD3", "CD4", "CD5", "CD7", "CD25", "CD30", "CD69",
-    "MMP-12", "MMP-9", "CD45", "CD45RA", "CD45RO", "GranzymeB", 
-    "ICOS", "LAG-3", "PD-1", "PD-L1", "CD11b", "CD163", "CD68", 
-    "CD16", "CD56", "CD57", "CD138", "CD20", "CD38", "CD15",
-    "Mast-cell-tryptase", "CD1a", "CD11c", "BCL-2", "B-catenin", 
-    "CD71", "EGFR", "HLA-DR", "IDO-1", "Cytokeratin", "MUC-1",
-    "CD31", "CD34", "Podoplanin", "Collagen-IV", "Vimentin", "VISTA", 
-    "CD164", "p53", "CD162", "CD194", "CD8", "nuc_FOXP3", "nuc_GATA3", 
-    "nuc_T-bet", "nuc_Ki-67", "nuc_area", "oblate", "extent", "solidity"
+  init = c(
+    baseChannels, paste0("nuc_", nucChannels), objectMeasures
   )
 )
 
 groupVars <- list(
-  init = "pop",
-  hoechst = "clusters"
+  init = "clusters"
 )
 
 combinePops <- list(
-  init = list(
-    debris = c("root"),
-    non.debris = c("non.debris", "Th.ae", "Th.malignant", "Treg")
-  ),
-  hoechst = list()
+  init = list()
 )
 
 plotSizes <- list(
-  init = c(3, 3),
-  hoechst = c(12, 16)
+  init = c(10, 20)
 )
 ```
 
@@ -169,7 +223,8 @@ for (i in names(clust)) {
   colsToShow <- colsToShow[colsToShow %in% colnames(popDT)]
   
   # show heatmap
-  popLymphs <- popDT[pop %in% popsToShow, ..colsToShow]
+  # popLymphs <- popDT[pop %in% popsToShow, ..colsToShow]
+  popLymphs <- popDT[, ..colsToShow]
   
   # combine pops
   if (length(popsToCombine) > 0) {
@@ -236,13 +291,13 @@ for (i in names(clust)) {
 }
 ```
 
-```{r fig_pops_umap, fig.height=2, fig.width=2}
+```{r fig_pops_umap, fig.height=5, fig.width=5}
 library(tidyverse)
 
 dfToPlot <- popDT %>%
   mutate(clusters = as.character(clusters)) %>%
-  mutate(clusters = as.numeric(clusters)) %>%
-  dplyr::filter(clusters >= 21)
+  mutate(clusters = as.numeric(clusters))
+  # dplyr::filter(clusters >= 21)
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -257,8 +312,8 @@ clustersPalette <- randomcoloR::distinctColorPalette(
 
 # plot UMAP with paga connections
 ggplot(
-  dfToPlot %>%
-    mutate(clusters = factor(clusters, levels = clustersOrder)),
+  dfToPlot,
+    # mutate(clusters = factor(clusters, levels = clustersOrder)),
   aes(UMAP_1, UMAP_2)
   ) +
   theme_classic() +
@@ -273,8 +328,8 @@ ggplot(
     axis.ticks.y = element_blank(),
     legend.justification = "center",
     legend.direction = "horizontal",
-    legend.position = "bottom",
-    # legend.position = "none",
+    # legend.position = "bottom",
+    legend.position = "none",
     legend.title = element_blank(),
     legend.key.size = unit(5, "mm"),
     legend.text = element_text(size = 18),
@@ -282,22 +337,63 @@ ggplot(
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
     ) +
-  guides(colour = guide_legend(override.aes = list(size = 4)))
-  # geom_label(
-  #   data = meanClusterPos,
-  #   aes(label = clusters),
-  #   label.size = 0.25,
-  #   color = "black"
-  #   )
+  # guides(colour = guide_legend(override.aes = list(size = 4))) +
+  geom_label(
+    data = meanClusterPos,
+    aes(label = clusters),
+    label.size = 0.25,
+    color = "black"
+    )
 
-ggsave(file.path(anaDir, "T_umap.tiff"), width = 5, height = 6.5)
+ggsave(file.path(anaDir, "T_umap.tiff"), width = 5, height = 5)
+```
+
+```{r}
+# can you cluster and check if there is a difference in R and N?
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get pops
+pops <- cciaObj$popPaths(uIDs = uIDs, popType = "clust", includeFiltered = TRUE)
+pops <- pops[!pops %in% c("none", "other")]
+
+# run task
+funParams <- list(
+  uIDs = names(cciaObj$cciaObjects()),
+  popType = c("clust"),
+  # pops = c("root"),
+  pops = pops,
+  objectMeasures = c(),
+  includeCounts = FALSE,
+  includeTotalCount = FALSE,
+  colName = "default",
+  valueName = "default",
+  excludeSelfConnections = FALSE,
+  # useClusters = TRUE,
+  useClusters = FALSE,
+  expandPops = FALSE,
+  numClusters = 6
+)
+
+task <- cciaObj$runTask(
+  funName = "clustRegions.kmeansClust",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 ```{r fig_pops_freq, fig.height=4, fig.width=8}
 # show frequency of populations for treatments
 summaryDF <- popDT %>%
-  dplyr::filter(
-  ) %>%
+  # dplyr::filter(clusters %in% c(5,11)) %>%
+  # dplyr::filter(!clusters %in% c(0,6)) %>%
   group_by(uID, clusters) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
@@ -329,6 +425,62 @@ summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <
 
 # save as csv for plotting in Prism
 write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get objects from selected set
+regionsDT <- cciaObj$popDT(
+  popType = "region",
+  uIDs = names(cciaObj$cciaObjects()),
+  includeFiltered = TRUE,
+  completeDT = FALSE, replaceNA = TRUE,
+  filterMeasures = c("regions")
+)
+```
+
+
+```{r fig_pops_freq, fig.height=4, fig.width=8}
+# show frequency of regions for treatments
+summaryDF <- regionsDT %>%
+  dplyr::filter(regions != 3) %>%
+  group_by(uID, regions) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, regions, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# plot
+ggplot(summaryDF,
+       aes(interaction(Biopsy, Response), freq, fill = interaction(Biopsy, Response))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  theme(
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+  ) +
+  ylab("Region (%)") + xlab("") +
+  facet_wrap(.~regions, ncol = 10) +
+  scale_fill_brewer(name = NULL, palette = "Set3")
+
+summaryDF$Response.ID <- 0
+summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "n",]$Response.ID <- 1
+summaryDF[summaryDF$Biopsy == "Pre" & summaryDF$Response == "y",]$Response.ID <- 2
+summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <- 3
+
+# save as csv for plotting in Prism
+# write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}

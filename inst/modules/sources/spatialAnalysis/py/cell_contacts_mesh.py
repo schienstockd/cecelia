@@ -111,7 +111,7 @@ def run(params):
         contact_n_col = f'{pop_type_a}.cell.contact_n#{pop_type_b}.{pop_b}'
         contact_id_col = f'{pop_type_a}.cell.contact_id#{pop_type_b}.{pop_b}'
         
-      if pop_df_b is not None:
+      if pop_df_b is not None and len(df.index) > 0:
         # same value for all within a population
         pop_value_name_b = pop_df_b['value_name'][0]
     

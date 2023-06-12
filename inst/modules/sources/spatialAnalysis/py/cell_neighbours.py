@@ -39,7 +39,7 @@ def run(params):
   pop_data = pop_utils.pop_data(task_dir, pop_type, pops = pops)
   
   # get data for neigbour detection
-  if len(pops) > 0:
+  if len(pops) > 0 and not pops == ['root']:
     adata = LabelPropsUtils(task_dir, value_name = value_name).label_props_view(read_only = False)\
       .filter_by_obs([x for y in [x for x in pop_data.values()] for x in y])\
       .view_label_col()\
@@ -48,6 +48,8 @@ def run(params):
     adata = LabelPropsUtils(task_dir, value_name = value_name).label_props_view(read_only = False)\
       .view_label_col()\
       .as_adata()
+      
+  logfile_utils.log(adata)
       
   # add population information
   adata.obs['pop'] = 'NONE'
