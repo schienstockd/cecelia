@@ -95,13 +95,13 @@ KmeansClust <- R6::R6Class(
         group_by(.dots = c("uID", "from", groupFrom, groupTo)) %>%
         summarise(n = n()) %>%
         mutate(freq = n/sum(n) * 100) %>%
-        drop_na()
+        drop_na() %>%
         # TODO do I need this .. ?
-        # ungroup() 
-        # complete(uID, !!!syms(groupFrom), !!!syms(groupTo), fill = list(freq = 0))
+        ungroup() %>%
+        complete(uID, !!!syms(groupFrom), !!!syms(groupTo), fill = list(freq = 0))
       
       # use K-Means to get clusters of regions
-      normalit <- function(m) (m - min(m))/(max(m)-min(m))
+      # normalit <- function(m) (m - min(m))/(max(m)-min(m))
       
       # include counts?
       if (self$funParams()$includeCounts == TRUE) {

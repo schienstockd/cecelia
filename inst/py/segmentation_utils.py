@@ -346,6 +346,8 @@ class SegmentationUtils:
               # TODO expand dims - is there a better way?
               diff_shape = len(labels[j][cur_slices].shape) - len(y.shape)
               if diff_shape > 0:
+                self.logfile_utils.log(f'> Expand dims {diff_shape}')
+                
                 y = np.expand_dims(y, tuple(range(diff_shape)))
               
               # TODO merge masks - is there a better way?
@@ -356,7 +358,7 @@ class SegmentationUtils:
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
-                ), axis = 0)
+                ), axis = 0, dtype = y.dtype)
             else:
               self.logfile_utils.log(f'> Merge labels by maximum')
               # this will lead to artefacts - but is fast

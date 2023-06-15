@@ -15,8 +15,8 @@ knitr::opts_chunk$set(echo = TRUE)
 pID <- "Bi2995"
 # pID <- "rMeKCv"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
@@ -30,6 +30,23 @@ cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
+```
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+)
+
+# a <- cciaObj$imPopMap("flow", includeFiltered = TRUE)
+cciaObj$setImPopMap("flow", a)
+cciaObj$setImGatingSetFilepath("default.gs")
+cciaObj$saveState()
 ```
 
 ```{r}
@@ -87,15 +104,15 @@ cciaObj$saveState()
 
 --- XCR1-venus
 
-```{r fig_gating, fig.height=3, fig.width=5}
+```{r fig_gating, fig.height=6, fig.width=6}
 # Load cluster data
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
-  # pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
 )
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
@@ -106,13 +123,15 @@ paste(cciaObj$imChannelNames(), collapse = "', '")
 
 # get raster contours
 p1s <- .flowPlotGatedRaster(
-  cciaObj, popPaths = "root", labelSize = 5, asContours = TRUE)
+  cciaObj, popPaths = "root", labelSize = 8, labelBorder = 1.1,
+  xTitleSize = 16, yTitleSize = 16,
+  asContours = TRUE, plotTitleSize = 0)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
 
-ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
-# ggsave(file.path(anaDir, "TK5dex_gating.pdf"), width = 8, height = 8)
+# ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
+ggsave(file.path(anaDir, "TK5dex_gating.png"), width = 8, height = 8)
 ```
 
 ```{r}
@@ -252,6 +271,7 @@ ggplot(infDT,
 
 ggsave(file.path(anaDir, "inf_pops.png"), width = 6, height = 6)
 ```
+
 ```{r fig_maps, fig.height=3, fig.width=6}
 # show XCR1, LCMV and P14?
 # nonDT <- popDT %>% dplyr::filter(uID == "XBAokO")

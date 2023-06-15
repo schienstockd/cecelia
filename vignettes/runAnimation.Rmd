@@ -220,7 +220,8 @@ channelsToShow <- list(
 popsToShow <- c("T.A", "T.B")
 fileAttrs <- c("Treatment")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitTracks = splitTracks, fps = 20)
 ```
 
 ```{r}

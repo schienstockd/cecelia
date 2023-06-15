@@ -76,7 +76,8 @@ Imports:
     S4Vectors,
     ggpubr,
     DescTools,
-    depmixS4
+    depmixS4,
+    ggrepel
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1

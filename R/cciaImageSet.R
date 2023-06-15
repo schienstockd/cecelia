@@ -254,7 +254,7 @@ CciaImageSet <- R6::R6Class(
             x$popPaths(...)
             # }
             # }, mc.cores = parallel::detectCores()
-          }, mc.cores = 3
+          }, mc.cores = 2
         )
       }
       

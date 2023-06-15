@@ -895,17 +895,26 @@
 #' @param cciaObj CciaImage to retrieve populations from
 #' @param popPaths list of character for population paths
 #' @param labelSize numeric for geom_label size
+#' @param xTitleSize numeric for x title size
+#' @param yTitleSize numeric for y title size
+#' @param xAxisSize numeric for x axis size
+#' @param yAxisSize numeric for y axis size
+#' @param labelBorder numeric for geom_label border size
 #' @param labelPos list of coordinates for labels
 #' @param asContours boolean to use contours
 #' @param showPopColours boolean to show population colours
 #' @param directLeaves boolean for direct leaves
+#' @param plotTitleSize numeric for title size
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
 #' @export
 .flowPlotGatedRaster <- function(cciaObj, popPath = "root", labelSize = 2,
+                                 labelBorder = 1, xTitleSize = 12, yTitleSize = 12,
+                                 xAxisSize = 12, yAxisSize = 12,
                                  labelPos = list(), asContours = FALSE,
-                                 showPopColours = FALSE, directLeaves = FALSE, ...) {
+                                 showPopColours = FALSE, directLeaves = FALSE,
+                                 plotTitleSize = 14, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -999,13 +1008,15 @@
         # add label
         # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
         nameDTs <- list()
+        
         for (j in names(popGates)) {
           nameDTs[[j]] <- as.data.frame(list(
-            # x = mean(gateDT[pop == j, ][[xLabel]]),
+            x = mean(gateDT[pop == j, ][[xLabel]]),
             # x = min(gateDT[pop == j, ][[xLabel]]),
             # x = max(gateDT[pop == j, ][[xLabel]]),
-            x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
-            y = max(gateDT[pop == j, ][[yLabel]])
+            # x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
+            # y = max(gateDT[pop == j, ][[yLabel]])
+            y = mean(gateDT[pop == j, ][[yLabel]])
           ))
           
           if (j %in% names(labelPos)) {
@@ -1140,7 +1151,8 @@
           ), size = 0.5, color = "black",
           # fill = "#23aeff", alpha = 0.2) +
           alpha = 0.0) +
-          ggplot2::geom_label(
+          # ggplot2::geom_label(
+          ggrepel::geom_label_repel(
             data = nameDT,
             aes(
               label = label,
@@ -1149,14 +1161,18 @@
               group = pop,
               color = pop),
             # size = labelSize, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
-            size = labelSize
+            size = labelSize, label.size = labelBorder, alpha = 0.95
           ) +
           scale_color_manual(values = popColors) +
           ggtitle(xParent) +
           theme(
             legend.position = "none",
             # plot.title = element_text(size = 8)
-            plot.title = element_text(size = 14)
+            plot.title = element_text(size = plotTitleSize),
+            axis.title.x = element_text(size = xTitleSize),
+            axis.title.y = element_text(size = yTitleSize),
+            axis.text.x = element_text(size = xAxisSize),
+            axis.text.y = element_text(size = yAxisSize),
           )
         
         p1s[[xParent]] <<- p1
