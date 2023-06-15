@@ -341,14 +341,14 @@ class SegmentationUtils:
             
             # merge with exisiting labels
             if self.label_overlap > 0:
-              self.logfile_utils.log(f'> Merge labels by overlap {self.label_overlap}')
-              
               # TODO expand dims - is there a better way?
               diff_shape = len(labels[j][cur_slices].shape) - len(y.shape)
               if diff_shape > 0:
                 self.logfile_utils.log(f'> Expand dims {diff_shape}')
                 
                 y = np.expand_dims(y, tuple(range(diff_shape)))
+                
+              self.logfile_utils.log(f'> Merge labels by overlap {self.label_overlap}')
               
               # TODO merge masks - is there a better way?
               labels[j][cur_slices] = np.amax(np.stack(
