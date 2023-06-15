@@ -358,7 +358,7 @@ class SegmentationUtils:
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
-                ), axis = 0, dtype = alg_labels[j].dtype)
+                ), axis = 0)
             else:
               self.logfile_utils.log(f'> Merge labels by maximum')
               # this will lead to artefacts - but is fast

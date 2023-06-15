@@ -230,7 +230,8 @@ clust <- list(
   init = c(
     'T','Tumor','Mphages','NK','B','Granulocytes','DC','Epithelia','BV',
     'Lymphatics','Stroma','CD4','CD8','Neutrophils','Vasculature',
-    'Plasma cells','Other','Langerhans cells'),
+    'Plasma cells','Other','Langerhans cells',
+    "CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+"),
   CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
 )
 
@@ -249,7 +250,9 @@ groupVars <- list(
 )
 
 combinePops <- list(
-  init = list(),
+  init = list(
+    CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
+  ),
   CD4 = list()
 )
 
