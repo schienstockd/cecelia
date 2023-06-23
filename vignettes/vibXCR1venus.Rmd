@@ -40,6 +40,24 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "VbS3EJ", versionID = versionID, initReactivity = FALSE
 )
 
+x <- cciaObj$cciaObjects()[[1]]
+
+y <- x$getCciaMeta()
+
+y$funParams.spatialAnalysis.cellClustersMeshes
+```
+
+
+```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "VbS3EJ", versionID = versionID, initReactivity = FALSE
+)
+
 # define uIDs
 uIDs <- names(cciaObj$cciaObjects())
 
@@ -96,6 +114,54 @@ ggplot(
 
 ggsave(file.path(anaDir, "uamp.tiff"), width = 5, height = 5)
 ```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(popDT)
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "label", "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  group_by(pop, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) 
+  # arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+ggplot(propsSummary, aes(pop, prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+```
+
 
 ```{r}
 # plot frequency of contact from clustering cells

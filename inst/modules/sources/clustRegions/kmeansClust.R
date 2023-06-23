@@ -163,10 +163,18 @@ KmeansClust <- R6::R6Class(
           select(-c(exclCols, sym(groupFrom))),
         self$funParams()$numClusters)
       # mcl.model <- mclust::Mclust(freqRegionsMat)
-      # mcl.model <- mclust::Mclust(freqRegionsMat, clustToFind)
+      
+      # # https://mclust-org.github.io/mclust/articles/mclust.html
+      # X <- freqRegionsWider %>%
+      #   ungroup() %>%
+      #   select(-c(exclCols, sym(groupFrom)))
+      library(mclust)
+      # BIC <- mclustBIC(X, self$funParams()$numClusters)
+      # mod1 <- Mclust(X, x = BIC)
       
       # push back to label properties
       freqRegionsWider$regions <- clusters$cluster
+      # freqRegionsWider$regions <- mod1$classification
       
       # rename from to label
       freqRegionsWider <- freqRegionsWider %>%

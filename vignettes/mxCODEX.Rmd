@@ -89,29 +89,32 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
 # get cluster channels
 baseChannels <- list(
   init = c(
-    'CD45','CD11b','CD16','CD138','CD15','CD1a',
-    'Cytokeratin','CD31','Podoplanin','Collagen-IV',
-    'Vimentin','CD45RA','CD163','CD56','CD20',
-    'Mast-cell-tryptase','CD11c','MUC-1','CD34',
-    'CD45RO','CD68','CD57','CD38','CD3','CD4','CD8'
-  ),
-  CD4 = c(
-    'GranzymeB','ICOS','MMP-9',
-    'LAG-3','PD-1','PD-L1','VISTA',
-    'CD2','CD5','CD7','CD25','CD30','CD69',
-    'CD162','CD164','CD194','MMP-12','p53',
-    'CD45RO', 'CD45RA'
+    'CD2','CD3','CD4','CD5','CD7','CD25','CD30','CD69','MMP-12',
+    'MMP-9','CD45','CD45RA','CD45RO','GranzymeB','ICOS','LAG-3',
+    'PD-1','PD-L1','CD11b','CD163','CD68','CD16','CD56','CD57',
+    'CD138','CD20','CD38','CD15','Mast-cell-tryptase','CD1a',
+    'CD11c','BCL-2','B-catenin','CD71','EGFR','HLA-DR','IDO-1',
+    'Cytokeratin','MUC-1','CD31','CD34','Podoplanin','Collagen-IV',
+    'Vimentin','VISTA','CD164','p53','CD162','CD194','CD8'
   )
+  # CD4 = c(
+  #   'GranzymeB','ICOS','MMP-9',
+  #   'LAG-3','PD-1','PD-L1','VISTA',
+  #   'CD2','CD5','CD7','CD25','CD30','CD69',
+  #   'CD162','CD164','CD194','MMP-12','p53',
+  #   'CD45RO', 'CD45RA'
+  # )
 )
 
 nucChannels <- list(
-  init = c('Hoechst', 'DRAQ5'),
-  CD4 = c('FOXP3','GATA3','T-bet','Ki-67')
+  # init = c('Hoechst', 'DRAQ5','FOXP3','GATA3','T-bet','Ki-67')
+  init = c('Hoechst', 'DRAQ5')
+  # CD4 = c('FOXP3','GATA3','T-bet','Ki-67')
 )
 
 objectMeasures <- list(
-  init = c('prolate','oblate','nuc_area','area','solidity','eccentricity','extent'),
-  CD4 = c('prolate','oblate','nuc_area','area','solidity','eccentricity','extent')
+  init = c('prolate','oblate','nuc_area','area','solidity','eccentricity','extent')
+  # CD4 = c('prolate','oblate','nuc_area','area','solidity','eccentricity','extent')
   # 'orientation','asymmetry',
   # 'nc_ratio','aspect_ratio','fill'
   # 'perimeter', 'convex_area','equivalent_diameter',
@@ -120,8 +123,8 @@ objectMeasures <- list(
 )
 
 clusterRes <- list(
-  init = 0.4,
-  CD4 = 0.4
+  init = 0.4
+  # CD4 = 0.8
   )
 ```
 
@@ -142,17 +145,17 @@ imChannels <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$imChannelNames()
 # run task
 funParams <- list(
   popType = "clust",
-  # popsToCluster = c(),
-  popsToCluster = c("CD4"),
-  # savePops = FALSE,
-  savePops = TRUE,
-  # keepPops = FALSE,
-  keepPops = TRUE,
-  # resolution = clusterRes$init,
-  resolution = clusterRes$CD4,
+  popsToCluster = c(),
+  # popsToCluster = c("CD4"),
+  savePops = FALSE,
+  # savePops = TRUE,
+  keepPops = FALSE,
+  # keepPops = TRUE,
+  resolution = clusterRes$init,
+  # resolution = clusterRes$CD4,
   mergeUmap = TRUE,
-  # normalisePercentile = 99.5,
-  normalisePercentile = 99.0,
+  normalisePercentile = 99.5,
+  # normalisePercentile = 99.0,
   normalisePercentileBottom = 0,
   normaliseAxis = "channels",
   normaliseToMedian = FALSE,
@@ -164,12 +167,13 @@ funParams <- list(
   uIDs = uIDs,
   clusterChannels = list(
     # base = list(channels = unname(sapply(baseChannels$init, function(x) which(imChannels == x))) - 1),
-    # nuc = list(channels = unname(sapply(nucChannels$init, function(x) which(imChannels == x))) - 1)
-    base = list(channels = unname(sapply(baseChannels$CD4, function(x) which(imChannels == x))) - 1),
-    nuc = list(channels = unname(sapply(nucChannels$CD4, function(x) which(imChannels == x))) - 1)
+    base = list(channels = list()),
+    nuc = list(channels = unname(sapply(nucChannels$init, function(x) which(imChannels == x))) - 1)
+    # base = list(channels = unname(sapply(baseChannels$CD4, function(x) which(imChannels == x))) - 1),
+    # nuc = list(channels = unname(sapply(nucChannels$CD4, function(x) which(imChannels == x))) - 1)
   ),
-  # objectMeasures = objectMeasures$init
-  objectMeasures = objectMeasures$CD4
+  objectMeasures = objectMeasures$init
+  # objectMeasures = objectMeasures$CD4
 )
 
 task <- cciaObj$runTask(
@@ -212,57 +216,55 @@ pops <- pops[is.na(stringr::str_match(pops, "/"))]
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
   # pops = c("root", "non.debris", "Th.ae", "Th.malignant", "Treg"), uIDs = uIDs,
-  # pops = c("root"),
-  pops = pops,
+  pops = c("root"), completePops = FALSE,
+  # pops = pops,
   # uIDs = uIDs,
-  # completeDT = FALSE, replaceX = FALSE)
-  completeDT = TRUE, replaceX = TRUE)
+  completeDT = FALSE, replaceX = FALSE)
+  # completeDT = TRUE, replaceX = TRUE)
   # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
 popDT[, clusters := as.numeric(as.character(clusters))]
-# unique(popDT$clusters)
+unique(popDT$clusters)
 unique(popDT$pop)
 ```
 
 ```{r}
 # define populations
 clust <- list(
-  init = c(
-    'T','Tumor','Mphages','NK','B','Granulocytes','DC','Epithelia','BV',
-    'Lymphatics','Stroma','CD4','CD8','Neutrophils','Vasculature',
-    'Plasma cells','Other','Langerhans cells',
-    "CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+"),
-  CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
+  init = c("root")
+  # CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
+  # CD4 = c("CD4")
 )
 
 markers <- list(
   init = c(
-    baseChannels$init, paste0("nuc_", nucChannels$init), objectMeasures$init
-  ),
-  CD4 = c(
-    baseChannels$CD4, paste0("nuc_", nucChannels$CD4), objectMeasures$CD4
+    # baseChannels$init, paste0("nuc_", nucChannels$init), objectMeasures$init
+    paste0("nuc_", nucChannels$init), objectMeasures$init
   )
+  # CD4 = c(
+  #   baseChannels$CD4, paste0("nuc_", nucChannels$CD4), objectMeasures$CD4
+  # )
 )
 
 groupVars <- list(
-  init = "pop",
-  CD4 = "pop"
+  init = "clusters"
+  # CD4 = "clusters"
 )
 
 combinePops <- list(
   init = list(
-    CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
-  ),
-  CD4 = list()
+    # CD4 = c("CD4.Tumor", "CD4.ae", "CD4.Treg", "CD4.naive", "CD4.GrB+", "CD4.ICOS+")
+  )
+  # CD4 = list()
 )
 
 plotSizes <- list(
-  init = c(10, 20),
-  CD4 = c(5, 12)
+  init = c(12, 20)
+  # CD4 = c(4.5, 12)
 )
 ```
 
-```{r fig_clusters_heat, fig.height=5, fig.width=8}
+```{r fig_clusters_heat, fig.height=4, fig.width=4}
 for (i in names(clust)) {
   popsToShow <- clust[[i]]
   markersToShow <- .flowCorrectChannelNames(markers[[i]])
@@ -350,13 +352,13 @@ library(tidyverse)
 dfToPlot <- popDT %>%
   mutate(clusters = as.character(clusters)) %>%
   mutate(clusters = as.numeric(clusters)) %>%
-  dplyr::filter(clusters >= 14) %>%
+  # dplyr::filter(clusters >= 14) %>%
   left_join(exp.info)
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  # group_by(clusters) %>%
-  group_by(pop) %>%
+  group_by(clusters) %>%
+  # group_by(pop) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -372,11 +374,11 @@ ggplot(
   aes(UMAP_1, UMAP_2)
   ) +
   theme_classic() +
-  # geom_point(aes(color = as.factor(clusters)), size = 0.5) +
-  geom_point(aes(color = as.factor(pop)), size = 0.5) +
+  geom_point(aes(color = as.factor(clusters)), size = 0.5) +
+  # geom_point(aes(color = as.factor(pop)), size = 0.5) +
   # geom_point(aes(color = interaction(Biopsy, Response)), size = 0.5) +
-  scale_color_brewer(name = NULL, palette = "Set2") +
-  # scale_color_manual(values = clustersPalette) +
+  # scale_color_brewer(name = NULL, palette = "Set2") +
+  scale_color_manual(values = clustersPalette) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -394,22 +396,23 @@ ggplot(
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
     ) +
-  # guides(colour = guide_legend(override.aes = list(size = 4))) +
+  guides(colour = guide_legend(override.aes = list(size = 4))) +
   geom_label(
     data = meanClusterPos,
-    # aes(label = clusters),
-    aes(label = pop),
+    aes(label = clusters),
+    # aes(label = pop),
     label.size = 0.25,
     color = "black"
     )
 
 ggsave(file.path(anaDir, "T_umap.tiff"), width = 5, height = 5)
+# ggsave(file.path(anaDir, "T_umap_wo_labels.tiff"), width = 5, height = 5)
 ```
 
 ```{r fig_umap_props, fig.height=4, fig.width=4}
 datToPlot <- popDT %>%
   # dplyr::filter(pop == "CD4") %>%
-  dplyr::filter(pop %in% clust$CD4) %>%
+  # dplyr::filter(pop %in% clust$CD4) %>%
   left_join(exp.info)
 
 channels <- c("nuc_FOXP3", "nuc_Ki.67", "ICOS", "CD45RA",
@@ -466,7 +469,7 @@ plot.p1 <- function(df.all, df.subset) {
 }
 
 datToPlot <- popDT %>%
-  dplyr::filter(pop %in% clust$CD4) %>%
+  # dplyr::filter(pop %in% clust$CD4) %>%
   left_join(exp.info)
 
 # plot UMAP
@@ -483,13 +486,13 @@ for (i in unique(unique(datToPlot$Biopsy))) {
 summaryDF <- popDT %>%
   # dplyr::filter(pop == "CD4") %>%
   # dplyr::filter(!clusters %in% c(0,6)) %>%
-  # group_by(uID, clusters) %>%
-  group_by(uID, pop) %>%
+  group_by(uID, clusters) %>%
+  # group_by(uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
-  # complete(uID, clusters, fill = list(freq = 0)) %>%
-  complete(uID, pop, fill = list(freq = 0)) %>%
+  complete(uID, clusters, fill = list(freq = 0)) %>%
+  # complete(uID, pop, fill = list(freq = 0)) %>%
   left_join(exp.info)
 
 # plot
@@ -505,9 +508,9 @@ ggplot(summaryDF,
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
   ) +
   ylab("Population (%)") + xlab("") +
-  # facet_wrap(.~clusters, ncol = 10, scales = "free_y") +
+  facet_wrap(.~clusters, ncol = 10, scales = "free_y") +
   # facet_wrap(.~clusters, ncol = 10) +
-  facet_wrap(.~pop, ncol = 10, scales = "free_y") +
+  # facet_wrap(.~pop, ncol = 10, scales = "free_y") +
   scale_fill_brewer(name = NULL, palette = "Set2")
 
 summaryDF$Response.ID <- 0
@@ -532,6 +535,7 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 cciaObj <- initCciaObject(
   pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
 )
+
 regionUIDs <- names(cciaObj$cciaObjects())
 regionUIDs <- regionUIDs[!regionUIDs %in% c(
   # "84kEUg", "LQFVZD", "6zeSiS"
@@ -539,7 +543,7 @@ regionUIDs <- regionUIDs[!regionUIDs %in% c(
 )]
 
 # get pops
-pops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "clust", includeFiltered = TRUE)
+pops <- cciaObj$popPaths(uIDs = regionUIDs[[1]], popType = "clust", includeFiltered = TRUE)
 pops <- pops[is.na(stringr::str_match(pops, "/"))]
 # pops <- pops[!pops %in% c("none", "other")]
 
@@ -547,9 +551,9 @@ pops <- pops[is.na(stringr::str_match(pops, "/"))]
 funParams <- list(
   uIDs = names(cciaObj$cciaObjects()),
   popType = c("clust"),
-  # pops = c("root"),
+  pops = c("root"),
   # pops = c("CD4"),
-  pops = pops,
+  # pops = pops,
   objectMeasures = c(),
   # objectMeasures = c("nuc_Ki.67"),
   includeCounts = FALSE,
@@ -559,8 +563,8 @@ funParams <- list(
   colName = "default",
   valueName = "default",
   excludeSelfConnections = FALSE,
-  # useClusters = TRUE,
-  useClusters = FALSE,
+  useClusters = TRUE,
+  # useClusters = FALSE,
   expandPops = FALSE,
   numClusters = 10,
   uIDs = regionUIDs
@@ -627,7 +631,7 @@ ggplot(summaryDF,
     axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
   ) +
   ylab("Region (%)") + xlab("") +
-  facet_wrap(.~regions, ncol = 10, scales = "free_y") +
+  facet_wrap(.~regions, ncol = 10, scales = "free_y") + ylim(0,100) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 
 summaryDF$Response.ID <- 0
@@ -697,7 +701,7 @@ p1 <- ggplot(colsSummary %>%
   xlab("") + ylab("")
 plot(p1)
 
-ggsave(file.path(anaDir, "regions_heat.pdf"), width = 8, height = 4)
+ggsave(file.path(anaDir, "regions_heat.pdf"), width = 8, height = 6)
 ```
 
 ```{r}

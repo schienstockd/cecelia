@@ -1250,6 +1250,7 @@ CciaImage <- R6::R6Class(
     #' @param replaceX boolean to replace 'X' with 'X' from adata
     #' @param includeObs boolean to include 'obs' from adata
     #' @param completeValueNames character for value names to complete DT
+    #' @param completePops boolean to complete pops
     #' @param ... passed to self$popUtils
     popDT = function(popType, pops = NULL, popCols = NULL,
                      dropNA = FALSE, dropPop = FALSE, includeFiltered = FALSE,
@@ -1257,7 +1258,7 @@ CciaImage <- R6::R6Class(
                      flushCache = FALSE, replaceNA = FALSE,
                      completeDT = TRUE, filterMeasures = NULL,
                      includeX = FALSE, replaceX = FALSE, includeObs = TRUE, 
-                     completeValueNames = c(), ...) {
+                     completeValueNames = c(), completePops = TRUE, ...) {
       # make sure label is in columns
       if (!is.null(popCols)) {
         if (!"label" %in% popCols)
@@ -1309,7 +1310,7 @@ CciaImage <- R6::R6Class(
       # get all populations if not set
       nonFilteredPops <- NULL
       
-      if (is.null(pops) || .flowPopIsRoot(pops)) {
+      if (completePops == TRUE && (is.null(pops) || .flowPopIsRoot(pops))) {
         pops <- self$popPaths(popType, includeFiltered = includeFiltered,
                               includeRoot = FALSE, ...)
         
@@ -1320,7 +1321,7 @@ CciaImage <- R6::R6Class(
         # check that any pops are available
         # popsPresent <- all(pops %in% self$popPaths(popType, includeFiltered = includeFiltered))
         popsPresent <- any(pops %in% self$popPaths(
-          popType, includeFiltered = includeFiltered, ...))
+          popType, includeFiltered = includeFiltered, includeRoot = TRUE, ...))
       }
       
       if (popsPresent == TRUE) {

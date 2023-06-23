@@ -61,8 +61,8 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "U43kOT", versionID = versionID, initReactivity = FALSE
 )
 
-# actChannels <- c('CD69.BV605','XCL1.TEAL','CD71.PE','CD25.APC','CD98.PE.Cy7')
-actChannels <- c('CD71.PE','CD25.APC','CD98.PE.Cy7')
+actChannels <- c('CD69.BV605','XCL1.TEAL','CD71.PE','CD25.APC','CD98.PE.Cy7')
+# actChannels <- c('CD71.PE','CD25.APC','CD98.PE.Cy7')
 
 popDT <- cciaObj$popDT(
   popType = "clust", popCols = actChannels,
@@ -70,13 +70,55 @@ popDT <- cciaObj$popDT(
 exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 ```
 
+```{r fig_act, fig.height=3, fig.width=8}
+datToPlot <- popDT %>%
+  dplyr::filter(pop %in% c("CTV+CD69-", "CTV+CD69+")) %>%
+  group_by(uID) %>%
+  summarise(
+    mean.CD69.BV605 = mean(CD69.BV605),
+    mean.XCL1.TEAL = mean(XCL1.TEAL),
+    mean.CD71.PE = mean(CD71.PE),
+    mean.CD25.APC = mean(CD25.APC),
+    mean.CD98.PE.Cy7 = mean(CD98.PE.Cy7)
+  ) %>%
+  tidyr::pivot_longer(
+    cols = paste("mean", actChannels, sep = "."),
+    names_to = "measure",
+    values_to = "value"
+  ) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(Treatment, value)) +
+    theme_classic() +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_jitter(
+      # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+      width = 0.3, alpha = 1.0) +
+    scale_color_brewer(name = "To", palette = "Set1") +
+  facet_grid(.~measure) +
+  xlab("") + ylab("MFI (AU)") +
+  expand_limits(y = 0)
+
+datToPlot$Treatment.ID <- 0
+datToPlot[datToPlot$Treatment == "DTx",]$Treatment.ID <- 1
+
+datToPlot$measure.ID <- 0
+counter <- 0
+for (x in unique(datToPlot$measure)) {
+  datToPlot[datToPlot$measure == x, ]$measure.ID <- counter
+  counter <- counter + 1
+}
+
+write.csv(datToPlot, file.path(anaDir, "freq_measures_CTVpos.csv"))
+```
+
 ```{r fig_act, fig.height=1.5, fig.width=5}
 datToPlot <- popDT %>%
   dplyr::filter(pop == "CTV-") %>%
   group_by(uID) %>%
   summarise(
-    # mean.CD69.BV605 = mean(CD69.BV605),
-    # mean.XCL1.TEAL = mean(XCL1.TEAL),
+    mean.CD69.BV605 = mean(CD69.BV605),
+    mean.XCL1.TEAL = mean(XCL1.TEAL),
     mean.CD71.PE = mean(CD71.PE),
     mean.CD25.APC = mean(CD25.APC),
     mean.CD98.PE.Cy7 = mean(CD98.PE.Cy7)

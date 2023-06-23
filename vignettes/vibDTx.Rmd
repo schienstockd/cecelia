@@ -131,17 +131,135 @@ cciaObj$runTasks(
 )
 ```
 
+```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "RkujX3", versionID = versionID, initReactivity = FALSE
+)
+
+# define uIDs
+uIDs <- names(cciaObj$cciaObjects())
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr"), uIDs = uIDs
+)
+
+pops <- cciaObj$popPaths(
+  popType = "clust", includeFiltered = TRUE, uIDs = uIDs[1])
+
+# get pops
+popDT <- cciaObj$popDT(
+  popType = "clust",
+  pops = pops,
+  includeFiltered = TRUE,
+  completeDT = TRUE,
+  replaceNA = TRUE
+  # filterMeasures = c("clusters")
+)
+```
+
+```{r fig_pops_umap, fig.height=2, fig.width=2}
+library(tidyverse)
+
+dfToPlot <- copy(popDT)
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  group_by(pop) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+
+# plot UMAP with paga connections
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  theme_classic() +
+  geom_point(aes(color = pop), size = 0.5) +
+  # scale_color_brewer(name = NULL, palette = "Set3") +
+  scale_color_manual(values = c("black", "#00ccff", "#e10f21", "#33cc00")) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom",
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    )
+
+ggsave(file.path(anaDir, "uamp.tiff"), width = 5, height = 5)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(popDT)
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "label", "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  group_by(pop, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) 
+  # arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+ggplot(propsSummary, aes(pop, prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.3, height = 2)
+```
+
 ```{r fig_clusters, fig.height=2, fig.width=1.5}
 summaryDF <- popDT %>%
   group_by(uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   dplyr::filter(
-    pop == "/gBT+/clustered"
+    pop == "gBT+/clustered"
   ) %>%
   left_join(exp.info)
 
-ggplot(summaryDF, aes(Genotype, freq)) +
+ggplot(summaryDF, aes(interaction(Treatment, DTx), freq)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(

@@ -258,6 +258,94 @@ popDTs <- cciaObj$popDT(
   # flushCache = TRUE,
   uIDs = uIDs)
 ```
+
+```{r}
+# show star plots
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "QJYqa7", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+tracks.list <- lapply(list(
+  OTI = "tcells.OTI", gBT = "tcells.gBT", P14 = "tcells.P14"
+), function(x) cciaObj$tracks(pop = x))
+
+# get normalised tracks to plot
+tracks.DT.norm <- tracks.combine.dt(lapply(
+  tracks.list, function(x) tracks.apply.fun(x, celltrackR::normalizeTracks)
+))
+```
+
+
+```{r fig_stars, fig.height=4, fig.width=5}
+# focus spcific images
+plot.uIDs <- c("LYDmWE", "UKrauQ")
+
+unique(tracks.DT.norm[uID %in% plot.uIDs]$track_id)
+
+ggplot(tracks.DT.norm[uID %in% plot.uIDs],
+       aes(x, y, colour = track_id, group = track_id)) +
+  geom_point(size = 0.5) +
+  geom_path(size = 0.5) +
+  theme_classic() +
+  facet_wrap(uID~cell_type, nrow = 2) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    axis.line = element_blank()
+  ) + xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "stars.png"), width = 6, height = 4)
+```
+
+```{r}
+# compare msd on plot
+tracks.DT.msd <- tracks.combine.dt(lapply(
+  tracks.list, function(x) tracks.aggregate.fun(
+    x, celltrackR::squareDisplacement,
+    summary.FUN = "mean.se", add.time.delta = TRUE,
+    subtracks.i = 10
+    )
+))
+```
+
+
+```{r fig_msd, fig.height=3, fig.width=8}
+# focus spcific images
+plot.uIDs <- c("LYDmWE", "UKrauQ")
+
+# plot
+ggplot(tracks.DT.msd[uID %in% plot.uIDs],
+       aes(x = i, y = mean, color = cell_type, fill = cell_type)) +
+  geom_ribbon(aes(ymin = lower, ymax = upper),
+              alpha = 0.2) +
+  geom_line() +
+  labs(
+    x = expression(paste(Delta, "t (steps)")),
+    y = "MSD"
+  ) +
+  theme_classic() +
+  facet_wrap(~uID, scales = "free") +
+  scale_color_brewer(palette = "Set2") +
+  scale_fill_brewer(palette = "Set2") +
+  theme(
+    legend.title = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+  )
+
+ggsave(file.path(anaDir, "msd.png"), width = 6, height = 2)
+```
+
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
 colsToPlot <- rev(c(

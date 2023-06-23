@@ -428,10 +428,12 @@ funParams <- list(
   popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
   # valueName = "tracks.clusters.tcells.movement",
   # clusterColName = "movement",
+  valueName = "tracks.clusters.tcells.hmm",
+  clusterColName = "hmm",
   # valueName = "tracks.clusters.tcells.hmm_movement",
   # clusterColName = "hmm_movement",
-  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  clusterColName = "hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  # clusterColName = "hmm_transitions_movement",
   # valueName = "tracks.clusters.tcells.hmm_movement",
   # clusterColName = "hmm_movement",
   # valueName = "tracks.clusters.tcells.hmm_transitions_movement_shape",
@@ -439,16 +441,16 @@ funParams <- list(
   resolution = 0.25,
   percentile = 99.5,
   trackMeasures = c(
-    "speed",
-    "duration",
-    "trackLength",
-    "meanTurningAngle",
-    "displacement",
-    "straightness",
-    "displacementRatio",
-    "outreachRatio",
-    "asphericity",
-    "overallAngle"
+    # "speed",
+    # "duration",
+    # "trackLength",
+    # "meanTurningAngle",
+    # "displacement",
+    # "straightness",
+    # "displacementRatio",
+    # "outreachRatio",
+    # "asphericity",
+    # "overallAngle"
   ),
   objectMeasures = c(
     # "surface_area",
@@ -460,8 +462,8 @@ funParams <- list(
     # "compactness",
     # "sphericity",
     # HMM states
-    "live.cell.hmm.state.movement",
-    "live.cell.hmm.transitions.movement"
+    "live.cell.hmm.state.movement"
+    # "live.cell.hmm.transitions.movement"
     # "live.cell.hmm.state.shape",
     # "live.cell.hmm.transitions.shape"
     ),
@@ -511,8 +513,9 @@ uIDs <- exp.info[Include == "Y"]$uID
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
   # value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm.sc")$label_props_view()$as_df())
   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
-  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
   # value_name = "tracks.clusters.tcells.hmm_transitions_movement_shape.sc")$label_props_view()$as_df())
 
 # get popDTs for set
@@ -702,7 +705,8 @@ ggplot(
   #   )
 
 # ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_hmm.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_shape_wo_labels.tiff"), width = 2, height = 2)
@@ -914,6 +918,7 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
          dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         dplyr::filter(!clusters %in% c(7)) %>%
          drop_na(clusters)
          , aes(clusters, prop)) +
   theme_classic() +
@@ -935,7 +940,8 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3.2, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3.2, height = 2.5)
+ggsave(file.path(anaDir, "clusters_heat_crop.pdf"), width = 3.2, height = 2.5)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 

@@ -24,7 +24,8 @@ viewer$initNapari()
 
 ```{r}
 generateMovies <- function(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-                           splitTracks = NULL, matchChannels = FALSE, fps = 10) {
+                           splitTracks = NULL, matchChannels = FALSE, fps = 10,
+                           generateMovie = TRUE, tracksBlending = "additive") {
   # go through images and save movies
   for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     i <- x$getUID()
@@ -64,7 +65,7 @@ generateMovies <- function(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
       # showLabels = TRUE,
       showTracks = TRUE,
       splitTracks = splitTracks,
-      tracksBlending = "additive"
+      tracksBlending = tracksBlending
     )
     
     # add populations
@@ -119,10 +120,12 @@ generateMovies <- function(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
     }
   
     # save animation
-    viewer$saveTimeAnimation(
-      file.path(anaDir, "movies", paste0(
-        paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
-      windowSizeX = 1200, windowSizeY = 1000, fps = fps)
+    if (generateMovie == TRUE) {
+      viewer$saveTimeAnimation(
+        file.path(anaDir, "movies", paste0(
+          paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
+        windowSizeX = 1200, windowSizeY = 1000, fps = fps)
+    }
   }
 }
 ```
@@ -139,14 +142,19 @@ cciaObj <- initCciaObject(
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
-uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Include == "Y"]$uID
+
+uIDs <- c("iTfSUG") # PBS
+# uIDs <- c("m87rLx") # DTx
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
-    others = list(values = list(1,3,5,6,7), colour = "#B3BCC2"),
+    # others = list(values = list(1,3,5,6,7), colour = "#B3BCC2"),
+    meandering = list(values = list(1), colour = "#B3BCC2"),
+    clustering = list(values = list(3), colour = "#ebd441"),
     scanning = list(values = list(2), colour = "#4682b4"),
-    arresting = list(values = list(4), colour = "#ebd441"),
     directed = list(values = list(0), colour = "#AA1F5E")
+    # arrested = list(values = list(4), colour = "#008000")
     )
   )
 
@@ -158,7 +166,7 @@ channelsToShow <- list(
 popsToShow <- c("tcells.gBT", "tcells.gDT")
 fileAttrs <- c("Treatment", "DTx")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = FALSE)
 ```
 
 ```{r}
@@ -171,6 +179,8 @@ cciaObj <- initCciaObject(
 
 uIDs <- names(cciaObj$cciaObjects())
 uIDs <- uIDs[!uIDs %in% "1wZMND"]
+# uIDs <- c("rF9J6a") # B6
+uIDs <- c("WOJjrl") # H2KB
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
@@ -187,7 +197,8 @@ channelsToShow <- list(
 popsToShow <- c("gBT", "OTI")
 fileAttrs <- c("Genotype")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitTracks = splitTracks, generateMovie = FALSE, tracksBlending = "opaque")
 ```
 
 ```{r}
@@ -204,6 +215,7 @@ exp.info <- cciaObj$summary(
 )
 
 uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
+uIDs <- c("oPZZCg")
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
@@ -266,7 +278,7 @@ cciaObj <- initCciaObject(
   pID = "8BR53W", uID = "mrMpi5", versionID = 1, initReactivity = FALSE # Immunemap
 )
 
-uIDs <- names(cciaObj$cciaObjects())
+uIDs <- names(cciaObj$cciaObjects())[[1]]
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
@@ -286,7 +298,10 @@ channelsToShow <- list(
 popsToShow <- list("T")
 fileAttrs <- list()
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks,
+               generateMovie = FALSE)
+
+viewer$showLabelsAll(showLabels = TRUE, valueNames = list("T", "LV"))
 ```
 
 ```{r}
@@ -333,15 +348,17 @@ cciaObj <- initCciaObject(
 )
 
 # GCAMP
-uIDs <- names(cciaObj$cciaObjects())
+uIDs <- names(cciaObj$cciaObjects())[[8]]
+# uIDs <- c("ZmxDlj")
 
 splitTracks <- list(
-  live.cell.track.clusters.hmm_transitions = list(
+  live.cell.track.clusters.hmm_transitions_alt = list(
     zero = list(values = list(0), colour = "#E42328"),
     one = list(values = list(1), colour = "#327EBA"),
     two = list(values = list(2), colour = "#4CAF48"),
     three = list(values = list(3), colour = "#974D9E"),
-    four = list(values = list(4), colour = "#F47F20")
+    four = list(values = list(4), colour = "#F47F20"),
+    five = list(values = list(5), colour = "#ffff00")
     )
   )
 

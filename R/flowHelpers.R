@@ -1015,8 +1015,8 @@
             # x = min(gateDT[pop == j, ][[xLabel]]),
             # x = max(gateDT[pop == j, ][[xLabel]]),
             # x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
-            # y = max(gateDT[pop == j, ][[yLabel]])
-            y = mean(gateDT[pop == j, ][[yLabel]])
+            y = max(gateDT[pop == j, ][[yLabel]])
+            # y = mean(gateDT[pop == j, ][[yLabel]])
           ))
           
           if (j %in% names(labelPos)) {

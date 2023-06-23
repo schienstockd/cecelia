@@ -132,7 +132,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
           
           # add extra information
           if (add.time.delta == TRUE) {
-            DT$dt <- DT$i * timeStep(i)
+            DT$dt <- DT$i * celltrackR::timeStep(i)
           }
           
           DT

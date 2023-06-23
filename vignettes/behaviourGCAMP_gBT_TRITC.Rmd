@@ -602,8 +602,8 @@ ggplot(
   geom_point(aes(color = clusters)) +
   # geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  # scale_color_brewer(name = NULL, palette = "Set1") +
-  scale_color_manual(values = colPal) +
+  scale_color_brewer(name = NULL, palette = "Set3") +
+  # scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -832,9 +832,10 @@ write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
 
 datToPlot <- dfToPlot %>%
   left_join(exp.info) %>%
+  dplyr::filter(Treatment != "PBS") %>%
   # dplyr::filter(clusters != 5) %>%
-  # group_by(Treatment, DTx, gcamp.track, clusters) %>%
-  group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
+  group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters.name) %>%
   summarise(n = n()) %>%
@@ -844,21 +845,22 @@ datToPlot <- dfToPlot %>%
   # complete(Treatment, DTx, gcamp.track, clusters, fill = list(freq = 0))
 
 datToPlot$gcamp.track <- case_match(
-  datToPlot$gcamp.track, c(TRUE) ~ ">= 2", c(FALSE) ~ "0")
+  datToPlot$gcamp.track, c(TRUE) ~ ">= 2", c(FALSE) ~ "< 2")
 
 colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
 
 # ggplot(datToPlot, aes(interaction(Treatment, DTx), freq,
-ggplot(datToPlot, aes(gcamp.track, freq, fill = clusters)) +
+# ggplot(datToPlot, aes(gcamp.track, freq, fill = clusters)) +
+ggplot(datToPlot, aes(interaction(Treatment, DTx), freq, fill = clusters)) +
   theme_classic() +
-  scale_fill_manual(values = colPal) +
-  # scale_fill_brewer(palette = "Set3") +
+  # scale_fill_manual(values = colPal) +
+  scale_fill_brewer(palette = "Set3") +
   # scale_fill_manual(values = wesanderson::wes_palette(name = "Darjeeling2")) +
   theme_classic() +
   geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
   theme(
     # legend.position = "none",
-    legend.position = "right",
+    legend.position = "bottom",
     legend.key.size = unit(6, "mm"),
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
@@ -866,16 +868,20 @@ ggplot(datToPlot, aes(gcamp.track, freq, fill = clusters)) +
     axis.text.x = element_text(size = 12),
     # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
-    # strip.text.x = element_blank()
-    strip.text.x = element_text(size = 12)
+    strip.text.x = element_blank(),
+    strip.text.y = element_blank()
+    # strip.text.x = element_text(size = 12)
     ) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   # scale_fill_discrete(name = "HMM State") +
-  xlab("GCAMP peaks") + ylab("") +
-  facet_grid(.~interaction(uID, Treatment, DTx)) +
-  guides(fill = guide_legend(ncol = 2))
+  xlab("") + ylab("") +
+  # facet_grid(.~interaction(uID, Treatment, DTx)) +
+  # facet_grid(.~interaction(Treatment, DTx)) +
+  facet_grid(gcamp.track~.) +
+  guides(fill = guide_legend(nrow = 1)) +
+  coord_flip()
 
-ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 5, height = 2.5)
+ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 5, height = 3)
 
 # datToPlot$Treatment.DTx <- -1
 # datToPlot[datToPlot$Treatment == "PBS" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 0

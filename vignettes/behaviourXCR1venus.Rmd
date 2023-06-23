@@ -133,11 +133,14 @@ uIDs <- names(cciaObj$cciaObjects())
 funParams <- list(
   popType = "live",
   popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
-  valueName = "tracks.clusters.tcells.hmm_transitions",
-  clusterColName = "hmm_transitions",
+  # valueName = "tracks.clusters.tcells.hmm_transitions",
+  # clusterColName = "hmm_transitions",
+  valueName = "tracks.clusters.tcells.hmm_transitions_alt",
+  clusterColName = "hmm_transitions_alt",
   # valueName = "tracks.clusters.tcells.hmm_transitions_hi",
   # clusterColName = "hmm_transitions_hi",
-  resolution = 0.30, 
+  # resolution = 0.30,
+  resolution = 0.25,
   percentile = 99.5,
   trackMeasures = c(
     "speed",
@@ -152,19 +155,19 @@ funParams <- list(
     "overallAngle"
   ),
   objectMeasures = c(
-    "surface_area",
-    "volume",
-    "extent",
-    "solidity",
-    "ellipticity_interm_oblate",
-    "ellipticity_interm_prolate",
-    "compactness",
-    "sphericity",
+    # "surface_area",
+    # "volume",
+    # "extent",
+    # "solidity",
+    # "ellipticity_interm_oblate",
+    # "ellipticity_interm_prolate",
+    # "compactness",
+    # "sphericity",
     # HMM states
     "live.cell.hmm.state.movement",
     "live.cell.hmm.state.shape",
-    "live.cell.hmm.transitions.movement",
-    "live.cell.hmm.transitions.shape"
+    "live.cell.hmm.transitions.movement"
+    # "live.cell.hmm.transitions.shape"
     ),
   nMeasures = c(
     ),
@@ -215,7 +218,8 @@ types.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   # cciaObj$persistentObjectDirectory(),
   # value_name = "tracks.clusters.types.all.sc")$label_props_view()$as_df())
   cciaObj$persistentObjectDirectory(),
-  value_name = "tracks.clusters.tcells.hmm_transitions.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tcells.hmm_transitions_alt.sc")$label_props_view()$as_df())
 
 # # get clustering
 # types.tests.sc <- sapply(
@@ -237,6 +241,38 @@ popDTs <- cciaObj$popDT(
   flushCache = TRUE,
   uIDs = uIDs)
 ```
+
+```{r}
+paramsToGet <- c(
+  "solidity", "live.cell.speed", "volume")
+
+tracksInfo <- rbindlist(list(
+  gBT = cciaObj$tracksInfo(paramsToGet, parentPop = "tcells.gBT/tracked", uIDs = uIDs),
+  gDT = cciaObj$tracksInfo(paramsToGet, parentPop = "tcells.gDT/tracked", uIDs = uIDs),
+  DCs = cciaObj$tracksInfo(paramsToGet, parentPop = "dcs.all/tracked", uIDs = uIDs)
+), idcol = "pop")
+```
+
+
+```{r}
+# plot speed and percentage of clustering cells
+summaryDF <- tracksInfo %>%
+  group_by(uID, pop) %>%
+  summarise(
+    mean.speed = mean(live.cell.speed.mean, na.rm = TRUE),
+    mean.solidity = mean(solidity.mean, na.rm = TRUE),
+    mean.volume = mean(volume.mean, na.rm = TRUE)
+    ) %>%
+  left_join(exp.info)
+
+summaryDF$cell_ID <- 0
+summaryDF[summaryDF$pop == "gBT",]$cell_ID <- 0
+summaryDF[summaryDF$pop == "gDT",]$cell_ID <- 1
+summaryDF[summaryDF$pop == "DCs",]$cell_ID <- 2
+
+write.csv(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
+```
+
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
@@ -309,7 +345,7 @@ ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3.5, height = 3)
 ```
 
-```{r fig_umap, fig.height=8, fig.width=8}
+```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(types.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
 clusterMapping <- list(
@@ -377,38 +413,33 @@ datToPlot <- copy(types.sc) %>%
   drop_na(clusters) %>%
   left_join(exp.info) 
 
-# plot UMAP
-ggplot(datToPlot, aes(UMAP_1, UMAP_2)) +
-  theme_classic() +
-  # geom_point(aes(color = speed), size = 1, alpha = 1) +
-  # geom_point(aes(color = meanTurningAngle), size = 1, alpha = 1) +
-  # geom_point(aes(color = volume.mean), size = 1, alpha = 1) +
-  # geom_point(aes(color = sphericity.mean), size = 1, alpha = 1) +
-  # geom_point(aes(color = ellipticity_interm_oblate.mean), size = 1, alpha = 1) +
-  # geom_point(aes(color = ellipticity_interm_prolate.mean), size = 1, alpha = 1) +
-  geom_point(aes(color = compactness.mean), size = 1, alpha = 1) +
-  viridis::scale_color_viridis() +
-  theme(
-    axis.text = element_text(size = 15),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom"
-    legend.position = "none",
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
-    )
+channels <- c("speed", "meanTurningAngle",
+              paste0("live.cell.hmm.state.movement.", seq(1,4)),
+              paste0("live.cell.hmm.state.shape.", seq(1,4)))
 
-# ggsave(file.path(anaDir, paste0("umap_Velocity.tiff")), width = 2, height = 2)
-# ggsave(file.path(anaDir, paste0("umap_Angle.tiff")), width = 2, height = 2)
-# ggsave(file.path(anaDir, paste0("umap_Volume.tiff")), width = 2, height = 2)
-# ggsave(file.path(anaDir, paste0("umap_Sphericity.tiff")), width = 2, height = 2)
-# ggsave(file.path(anaDir, paste0("umap_Oblate.tiff")), width = 2, height = 2)
-# ggsave(file.path(anaDir, paste0("umap_Prolate.tiff")), width = 2, height = 2)
-ggsave(file.path(anaDir, paste0("umap_Compact.tiff")), width = 2, height = 2)
+for (i in channels) {
+  # plot UMAP
+  p1 <- ggplot(datToPlot, aes(UMAP_1, UMAP_2)) +
+    theme_classic() +
+    geom_point(aes(color = get(i)), size = 0.5, alpha = 1) +
+    viridis::scale_color_viridis() +
+    theme(
+      axis.text = element_text(size = 15),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.justification = "right",
+      # legend.position = "bottom"
+      legend.position = "none",
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank()
+      )
+  
+  print(p1)
+  ggsave(file.path(anaDir, paste0("umap_", i ,".tiff")), width = 2, height = 2)
+}
 ```
 
 ```{r fig_umap, fig.height=4, fig.width=4}
@@ -459,11 +490,11 @@ ggplot(
         c("tcells.gBT/tracked") ~ "gBT-I",
         c("tcells.gDT/tracked") ~ "gDT-II",
         c("dcs.all/tracked") ~ "Dendritic cells",
-      ),levels = c("Dendritic cells", "gDT-II", "gBT-I"))) %>%
+      ),levels = c("gBT-I", "gDT-II", "Dendritic cells"))) %>%
     group_by(pop, clusters) %>%
     summarise(n = n()) %>%
     mutate(freq = n/sum(n),),
-  aes(x = pop, y = freq, fill = clusters)) +
+  aes(x = 1, y = freq, fill = clusters)) +
   scale_fill_brewer(name = NULL, palette = "Set1") +
   theme_classic() +
   geom_bar(stat = "identity", width = 0.8) +
@@ -477,19 +508,21 @@ ggplot(
     legend.text = element_text(size = 12),
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
-    # axis.text.y = element_blank(),
+    axis.title.x = element_blank(),
+    axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    legend.position = "right",
+    axis.title.y = element_blank(),
+    legend.position = "bottom",
     # legend.position = "none",
     legend.title = element_blank(),
     axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
     strip.background = element_blank(),
-    # strip.text.x = element_blank()
-  ) + coord_flip()
+    strip.text.x = element_blank()
+  ) + coord_flip() + facet_grid(.~pop) +
+  scale_y_continuous(breaks = c(0, 0.5, 1)) +
+  guides(fill = guide_legend(nrow = 1))
 
-ggsave(file.path(anaDir, "pop_clusters_freq.tiff"), width = 4, height = 1.5)
+ggsave(file.path(anaDir, "pop_clusters_freq.tiff"), width = 5, height = 1.2)
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
@@ -513,15 +546,15 @@ ggplot(sumPlot,
   geom_bar(stat = "identity", width = 1) +
   coord_polar("y", start = 0) +
   xlim(0, 1.8) +
-  facet_wrap(.~clusters, ncol = 5) +
+  facet_wrap(.~clusters, nrow = 1) +
   theme(
     axis.text = element_text(size = 5),
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
-    legend.position = "bottom",
-    # legend.position = "none",
+    # legend.position = "bottom",
+    legend.position = "none",
     legend.title = element_blank(),
     axis.line = element_blank(),
     axis.title.x = element_blank(),
@@ -530,7 +563,7 @@ ggplot(sumPlot,
     strip.text.x = element_blank()
   )
 
-ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 6, height = 2)
+ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 8, height = 1.5)
 ```
 
 ```{r}
@@ -650,9 +683,9 @@ ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.8, height = 2.5)
 # get frequencies of HMM for each cluster
 # and plot as bar graphs
 datToPlot <- popDTs %>%
-  mutate(live.cell.track.clusters.hmm_transitions = as.numeric(as.character(
-    live.cell.track.clusters.hmm_transitions))) %>%
-  drop_na(live.cell.track.clusters.hmm_transitions) %>%
+  mutate(live.cell.track.clusters.hmm_transitions_alt = as.numeric(as.character(
+    live.cell.track.clusters.hmm_transitions_alt))) %>%
+  drop_na(live.cell.track.clusters.hmm_transitions_alt) %>%
   drop_na(live.cell.hmm.state.movement) %>%
   drop_na(live.cell.hmm.state.shape) %>%
   pivot_longer(
@@ -660,15 +693,15 @@ datToPlot <- popDTs %>%
     names_to = "hmm_type",
     values_to = "hmm_value"
   ) %>%
-  group_by(live.cell.track.clusters.hmm_transitions, hmm_type, hmm_value) %>%
+  group_by(live.cell.track.clusters.hmm_transitions_alt, hmm_type, hmm_value) %>%
   summarise(n = n()) %>%
   mutate(freq = n / sum(n) * 1) %>%
   ungroup() %>%
-  complete(live.cell.track.clusters.hmm_transitions, hmm_type, hmm_value, fill = list(freq = 0))
+  complete(live.cell.track.clusters.hmm_transitions_alt, hmm_type, hmm_value, fill = list(freq = 0))
 
 write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
-ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions), freq,
+ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_alt), freq,
                       fill = as.factor(hmm_value))) +
   theme_classic() +
   # scale_fill_brewer(palette = "Accent") +
@@ -693,7 +726,7 @@ ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions), freq,
   xlab("") + ylab("") +
   facet_grid(.~hmm_type)
 
-ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 4, height = 1.5)
+ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 6, height = 1.8)
 ```
 
 ```{r fig_clusters_heat, fig.height=3, fig.width=8}
@@ -701,31 +734,32 @@ ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 4, height = 1.5)
 # and plot as bar graphs
 datToPlot <- popDTs %>%
   mutate(
-    live.cell.track.clusters.hmm_transitions = as.numeric(as.character(
-      live.cell.track.clusters.hmm_transitions)),
+    live.cell.track.clusters.hmm_transitions_alt = as.numeric(as.character(
+      live.cell.track.clusters.hmm_transitions_alt)),
     live.cell.hmm.transitions.movement = as.character(
       live.cell.hmm.transitions.movement),
     live.cell.hmm.transitions.shape = as.character(
       live.cell.hmm.transitions.shape)
     ) %>%
-  drop_na(live.cell.track.clusters.hmm_transitions) %>%
+  drop_na(live.cell.track.clusters.hmm_transitions_alt) %>%
   dplyr::filter(
     live.cell.hmm.transitions.movement != "NA",
     live.cell.hmm.transitions.shape != "NA"
     ) %>%
-  # group_by(live.cell.track.clusters.hmm_transitions, from, to) %>%
+  # group_by(live.cell.track.clusters.hmm_transitions_alt, from, to) %>%
   # dplyr::filter(!live.cell.hmm.transitions.movement %in% paste0(seq(4), "_", seq(4))) %>%
   pivot_longer(
-    cols = c("live.cell.hmm.transitions.movement", "live.cell.hmm.transitions.shape"),
+    # cols = c("live.cell.hmm.transitions.movement", "live.cell.hmm.transitions.shape"),
+    cols = c("live.cell.hmm.transitions.movement"),
     names_to = "hmm_type",
     values_to = "hmm_value"
   ) %>%
-  group_by(live.cell.track.clusters.hmm_transitions, hmm_type, hmm_value) %>%
+  group_by(live.cell.track.clusters.hmm_transitions_alt, hmm_type, hmm_value) %>%
   summarise(n = n()) %>%
   mutate(freq = n / sum(n) * 1) %>%
   separate_wider_delim(hmm_value, delim = "_", names = c("from", "to"))
   # ungroup() %>%
-  # complete(live.cell.track.clusters.hmm_transitions, from, to, fill = list(freq = 0))
+  # complete(live.cell.track.clusters.hmm_transitions_alt, from, to, fill = list(freq = 0))
 
 ggplot(datToPlot, aes(as.factor(from), as.factor(to), size = freq * 2, fill = freq)) +
   theme_classic() +
@@ -752,9 +786,9 @@ ggplot(datToPlot, aes(as.factor(from), as.factor(to), size = freq * 2, fill = fr
     ) +
   # scale_fill_discrete(name = "HMM State") +
   xlab("From state") + ylab("To state") +
-  facet_grid(live.cell.track.clusters.hmm_transitions~hmm_type)
+  facet_wrap(~live.cell.track.clusters.hmm_transitions_alt, nrow = 2)
 
-ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 4, height = 8)
+ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 8, height = 4)
 ```
 
 ```{r fig_umap_tests, fig.height=3, fig.width=3}

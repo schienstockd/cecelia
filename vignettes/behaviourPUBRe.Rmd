@@ -276,9 +276,16 @@ uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 funParams <- list(
   popType = "live",
   pops = c("gBT/tracked", "gDT/tracked"),
-  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
-  colName = "movement",
-  appendStates = list(live.cell.is.clust = TRUE),
+  # modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  # colName = "movement",
+  modelMeasurements = c(
+    "surface_area", "volume", "extent", "solidity",
+    "ellipticity_interm_oblate", "ellipticity_interm_prolate",
+    "compactness", "sphericity"
+  ),
+  colName = "shape",
+  # appendStates = list(live.cell.is.clust = TRUE),
+  appendStates = list(),
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,
@@ -319,8 +326,10 @@ uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 funParams <- list(
   popType = "live",
   pops = c("gBT/tracked", "gDT/tracked"),
-  colName = "movement",
-  hmmStates = c("movement"),
+  # colName = "movement",
+  # hmmStates = c("movement"),
+  colName = "shape",
+  hmmStates = c("shape"),
   includeStart = FALSE,
   includeSelfTransitions = TRUE,
   uIDs = uIDs
@@ -359,6 +368,8 @@ funParams <- list(
   popsToCluster = c("gBT/tracked", "gDT/tracked"),
   valueName = "tracks.clusters.tcells.hmm_transitions_movement",
   clusterColName = "hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement_shape",
+  # clusterColName = "hmm_transitions_movement_shape",
   # valueName = "tracks.clusters.tcells.hmm_movement",
   # clusterColName = "hmm_movement",
   resolution = 0.2,
@@ -387,6 +398,8 @@ funParams <- list(
     # HMM states
     "live.cell.hmm.state.movement",
     "live.cell.hmm.transitions.movement"
+    # "live.cell.hmm.state.shape",
+    # "live.cell.hmm.transitions.shape"
     ),
   nMeasures = c(
     ),
@@ -433,6 +446,7 @@ uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions_movement_shape.sc")$label_props_view()$as_df())
   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
@@ -458,6 +472,56 @@ exp.info %>% group_by(Treatment, DTx, Date) %>%
     ) %>%
   mutate(movies_per_mouse = sum_movies/mice)
 ```
+
+```{r fig_speed, fig.height=3, fig.width=3}
+# plot speed and percentage of clustering cells
+summaryDF <- popDTs %>%
+  group_by(uID, pop, live.cell.is.clust) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(live.cell.is.clust == FALSE) %>%
+  mutate(freq = 100 - freq) %>%
+  left_join(exp.info)
+
+summaryDF$Treatment.dpi <- 0
+summaryDF[summaryDF$Treatment != "HSV",]$Treatment.dpi <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$dpi == "1",]$Treatment.dpi <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$dpi == "2",]$Treatment.dpi <- 2
+
+summaryDF$cell_ID <- 0
+summaryDF[summaryDF$pop == "gBT/tracked",]$cell_ID <- 0
+summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
+
+write.csv(summaryDF, file = file.path(anaDir, "freq_clust.csv"))
+```
+
+```{r}
+tracksInfo <- rbindlist(list(
+  gBT = cciaObj$tracksInfo("live.cell.speed", parentPop = "gBT/tracked", uIDs = uIDs),
+  gDT = cciaObj$tracksInfo("live.cell.speed", parentPop = "gDT/tracked", uIDs = uIDs)
+), idcol = "pop")
+```
+
+
+```{r}
+# plot speed and percentage of clustering cells
+summaryDF <- tracksInfo %>%
+  group_by(uID, pop) %>%
+  summarise(mean.speed = mean(live.cell.speed.mean, na.rm = TRUE)) %>%
+  left_join(exp.info)
+
+summaryDF$Treatment.dpi <- 0
+summaryDF[summaryDF$Treatment != "HSV",]$Treatment.dpi <- 0
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$dpi == "1",]$Treatment.dpi <- 1
+summaryDF[summaryDF$Treatment == "HSV" & summaryDF$dpi == "2",]$Treatment.dpi <- 2
+
+summaryDF$cell_ID <- 0
+summaryDF[summaryDF$pop == "gBT/tracked",]$cell_ID <- 0
+summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
+
+write.csv(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
+```
+
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
@@ -528,6 +592,7 @@ ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(
   facet_grid(.~hmm_type)
 
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
+# ggsave(file.path(anaDir, "HMM_heat_shape.pdf"), width = 2.3, height = 3)
 ```
 
 ```{r fig_umap, fig.height=8, fig.width=8}
@@ -573,17 +638,19 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) 
-  # geom_label(
-  #   data = meanClusterPos,
-  #   aes(label = clusters),
-  #   # aes(label = clusters.name),
-  #   label.size = 0.25,
-  #   color = "black"
-  #   )
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    aes(label = clusters),
+    # aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    )
 
-# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+# # ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_shape.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_shape_wo_labels.tiff"), width = 2, height = 2)
 ```
 
 ```{r fig_umap_props, fig.height=4, fig.width=4}
