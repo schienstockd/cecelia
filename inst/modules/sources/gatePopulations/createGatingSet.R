@@ -57,6 +57,7 @@ CreateGatingSet <- R6::R6Class(
             x$flowFrame(
               valueName = valueName,
               compensateZ = self$funParams()$compensateZ,
+              cropDataBySD = self$funParams()$cropDataBySD,
               polyDegree = self$funParams()$polyDegree,
               applyReversedLog = self$funParams()$applyReversedLog,
               reversedLogBase = self$funParams()$reversedLogBase
@@ -106,6 +107,7 @@ CreateGatingSet <- R6::R6Class(
           cciaObj$flowFrame(
             valueName = valueName,
             compensateZ = self$funParams()$compensateZ,
+            cropDataBySD = self$funParams()$cropDataBySD,
             polyDegree = self$funParams()$polyDegree,
             applyReversedLog = self$funParams()$applyReversedLog,
             reversedLogBase = self$funParams()$reversedLogBase

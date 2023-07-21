@@ -44,10 +44,10 @@ HPC_CONF <-  list(
       username = "schienstockd",
       address = "spartan.hpc.unimelb.edu.au",
       keyfile = "/Users/Dominik/.ssh/spartan_rsa"
-    ),
-    python = list(
-      condaEnv = cciaConf()$python$conda$source$env
     )
+    # python = list(
+    #   condaEnv = cciaConf()$python$conda$source$env
+    # )
   )
 )
 ```
@@ -79,14 +79,15 @@ paste(cciaObj$imChannelNames(), collapse = "', '")
 
 # cciaObj$editPopColour(
 #   popType = "flow", colour = "#ff1493",
-#   popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT+/CD69+"))
+#   popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT/CD69+"))
 
 # get raster contours
 p1s <- .flowPlotGatedRaster(
-  cciaObj, popPath = "/gBT+", labelSize = 4, labelBorder = 1.1,
+  cciaObj, popPath = "/gBT", labelSize = 4, labelBorder = 1.1,
   xTitleSize = 12, yTitleSize = 12,
   xAxisSize = 0, yAxisSize = 0,
-  asContours = FALSE, plotTitleSize = 0, plot_width = 92, plot_height = 92)
+  asContours = FALSE, plotTitleSize = 0, plot_width = 92, plot_height = 92,
+  showPopName = FALSE)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
@@ -113,19 +114,20 @@ cciaObj$popPaths(popType = "flow", includeRoot = TRUE, includeFiltered = TRUE)
 ```{r}
 # define pops
 pops <- c(
-  "/gBT+",
-  # "/gDT+",
-  "/gBT+/CD69+",
-  "/gBT+/clustered"
+  "/gBT",
+  # "/gDT",
+  "/gBT/CD69+"
+  # "/gBT/clustered"
+  # "/O/TRITC"
 )
 popsWindow <- c(
-  "/gBT+"
+  "/gBT"
 )
 popsPP1 <- c(
-  "/gBT+/CD69+"
+  "/gBT/CD69+"
 )
 popsPP2 <- c(
-  "/gBT+"
+  "/gBT"
 )
 ```
 
@@ -133,80 +135,30 @@ popsPP2 <- c(
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-# JL
 
 # init ccia object
 cciaObj <- initCciaObject(
-  file.path(
-    projectsDir, pID, "ANALYSIS", versionID, "8UdLBC"
-  ),
-  initReactivity = FALSE
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
 )
 
 exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 ))
 
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[1:which(uIDs == "MwByx9")]
+uIDs <- names(cciaObj$cciaObjects)
 
 # get ppp
 popDT <- cciaObj$popDT(
-  popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-  pops = pops)
-pp1 <- cciaObj$ppp(
-  windowPops = popsWindow,
-  popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-  pops = pops, usePops = popsPP1)
-pp2 <- cciaObj$ppp(
-  windowPops = popsWindow,
-  popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-  pops = pops, usePops = popsPP2)
-```
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-# DS
-
-# init ccia object
-cciaObj <- initCciaObject(
-  file.path(
-    projectsDir, pID, "ANALYSIS", versionID, "A2ULe2"
-  ),
-  initReactivity = FALSE
-)
-
-exp.info <- rbind(
-  exp.info,
-  as.data.table(cciaObj$summary(
-    withSelf = FALSE, fields = c("Attr")
-    )),
-  fill = TRUE
-)
-
-uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c("BvaIEx")]
-
-# get ppp
-popDT <- rbind(
-  popDT, cciaObj$popDT(
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    pops = pops),
-  fill = TRUE
-)
-pp1 <- append(
-  pp1, cciaObj$ppp(
+    pops = pops)
+pp1 <- cciaObj$ppp(
     windowPops = popsWindow,
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
     pops = pops, usePops = popsPP1)
-)
-pp2 <- append(
-  pp2, cciaObj$ppp(
+pp2 <- cciaObj$ppp(
     windowPops = popsWindow,
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
     pops = pops, usePops = popsPP2)
-)
 ```
 
 ```{r}
@@ -253,15 +205,15 @@ for (i in names(pp1)) {
   
   message(paste(">> Test CSR for", i))
   # test for randomness
-  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+  # ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
   
   # push back
   exp.info[uID == i,
            `:=`(
-             pp1.hopskel.p = ppHK.result$p.value,
-             pp1.hopskel.A = ppHK.result$statistic,
-             pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+             # pp1.hopskel.p = ppHK.result$p.value,
+             # pp1.hopskel.A = ppHK.result$statistic,
+             # pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
              pp1.clarkevans.p = ppCE.result$p.value,
              pp1.clarkevans.R = ppCE.result$statistic
            )]
@@ -274,15 +226,15 @@ for (i in names(pp2)) {
   
   message(paste(">> Test CSR for", i))
   # test for randomness
-  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+  # ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
   
   # push back
   exp.info[uID == i,
            `:=`(
-             pp2.hopskel.p = ppHK.result$p.value,
-             pp2.hopskel.A = ppHK.result$statistic,
-             pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+             # pp2.hopskel.p = ppHK.result$p.value,
+             # pp2.hopskel.A = ppHK.result$statistic,
+             # pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
              pp2.clarkevans.p = ppCE.result$p.value,
              pp2.clarkevans.R = ppCE.result$statistic
            )]
@@ -304,14 +256,15 @@ ggplot(dataToPlot,
     fontSize = 8,
     legend.justification = "centre"
     ) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+"), fill = "#4069E1", shape = 21, size = 2) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"), fill = "#01FF01", shape = 21, size = 2) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/clustered"), fill = "yellow", shape = 21, size = 2) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+"), fill = "#4069E1", shape = 21, size = 0) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"), fill = "#01FF01", shape = 21, size = 0) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/clustered"), fill = "yellow", shape = 21, size = 0) +
+  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 2) +
+  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 2) +
+  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 2) +
+  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 0) +
+  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 0) +
+  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/O/TRITC"), fill = "red", shape = 21, size = 2) +
+  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 0) +
   geom_density_2d(
-    data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"),
+    data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
     contour_var = "ndensity", bins = 6,
     colour = "white") + 
     # aes(fill = ..level..), geom = "polygon", colour = "white") +
@@ -330,8 +283,10 @@ ggplot(dataToPlot,
   scale_color_brewer(palette = "Set1")
 
 # ggsave(file.path(anaDir, "clusters_15SFzg.tiff"), height = 3, width = 4)
+ggsave(file.path(anaDir, "clusters_15SFzg_TRITC.tiff"), height = 3, width = 4)
 # ggsave(file.path(anaDir, "clusters_QS9obm.tiff"), height = 3, width = 4)
-ggsave(file.path(anaDir, "clusters_15SFzg_density.svg"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "clusters_QS9obm_TRITC.tiff"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "clusters_15SFzg_density.svg"), height = 3, width = 4)
 # ggsave(file.path(anaDir, "clusters_QS9obm_density.svg"), height = 3, width = 4)
 ```
 
@@ -347,11 +302,11 @@ ggplot(dataToPlot,
     fontSize = 8,
     legend.justification = "centre"
     ) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+"), color = "darkgrey") +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"), color = "#ff048e") +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT+/clustered"), color = "#ffb804") +
+  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), color = "darkgrey") +
+  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), color = "#ff048e") +
+  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), color = "#ffb804") +
   geom_density_2d(
-    data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"),
+    data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
     contour_var = "ndensity", bins = 6,
     colour = "white") + 
     # aes(fill = ..level..), geom = "polygon", colour = "white") +
@@ -386,11 +341,11 @@ ggplot(dataToPlot,
     legend.justification = "centre"
     ) +
   geom_density_2d_filled(
-    data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"),
+    data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
     contour_var = "ndensity", bins = 6,
   ) +
   geom_density_2d(
-    data = dataToPlot %>% dplyr::filter(pop == "/gBT+/CD69+"),
+    data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
     contour_var = "ndensity", bins = 6,
     colour = "white") + 
     # aes(fill = ..level..), geom = "polygon", colour = "white") +
@@ -411,19 +366,18 @@ ggplot(dataToPlot,
 ggsave(file.path(anaDir, "clusters_density.tiff"), height = 10, width = 22)
 ```
 
-```{r fig_spatial_stats, fig.height = 1.5, fig.width = 1.5}
+```{r fig_spatial_stats, fig.height = 3, fig.width = 3}
 # plot out clark evans
 dataToPlot <- exp.info %>%
   drop_na(pp1.clarkevans.R) %>%
   pivot_longer(
     cols = c("pp1.clarkevans.R", "pp2.clarkevans.R"),
+    # cols = c("pp1.hopskel.H", "pp2.hopskel.H"),
     names_to = "spatial",
     values_to = "value"
   )
 
-ggplot(dataToPlot, aes(
-  Treatment, value,
-  fill = spatial)) +
+ggplot(dataToPlot, aes(Treatment, value, fill = spatial)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -432,8 +386,8 @@ ggplot(dataToPlot, aes(
   scale_fill_brewer(name = NULL, palette = "Set3") +
   theme(
     legend.position = "top"
-    ) +
-  ylim(0, 1.5)
+    ) 
+  # ylim(0, 1.5)
   # ylim(0, 1)
 
 write.csv(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
@@ -441,7 +395,8 @@ write.csv(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
 ```
 
 ```{r}
-reloadSources()
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 # JL
 
 # init ccia object
@@ -462,48 +417,36 @@ exp.info <- as.data.table(cciaObj$summary(
 # get ppp
 popDT.CD69 <- cciaObj$popDT(
   popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-  pops = c("/gBT+", "/gBT+/CD69+"))
+  pops = c("/gBT", "/gBT/CD69+"))
 ```
 
 ```{r}
-reloadSources()
-# DS
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
-# init ccia object
 cciaObj <- initCciaObject(
-  file.path(
-    projectsDir, pID, "ANALYSIS", versionID, "A2ULe2"
-  ),
-  initReactivity = FALSE
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
 )
 
 uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[!uIDs %in% c("BvaIEx")]
 
-exp.info <- rbind(
-  exp.info,
-  as.data.table(cciaObj$summary(
+exp.info <- as.data.table(cciaObj$summary(
     withSelf = FALSE, fields = c("Attr")
-    )),
-  fill = TRUE
-)
+    ))
 
 # get ppp
-popDT.CD69 <- rbind(
-  popDT.CD69, cciaObj$popDT(
+popDT.CD69 <- cciaObj$popDT(
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    pops = c("/gBT+", "/gBT+/CD69+")),
-  fill = TRUE
-)
+    pops = c("/gBT", "/gBT/CD69+"))
 ```
 
-```{r fig_CD69_stats, fig.height = 1, fig.width = 1}
+```{r fig_CD69_stats, fig.height = 3, fig.width = 3}
 summaryToPlot <- popDT.CD69 %>%
   group_by(uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n)) %>%
   left_join(exp.info) %>%
-  dplyr::filter(pop == "/gBT+/CD69+")
+  dplyr::filter(pop == "/gBT/CD69+")
 
 ggplot(summaryToPlot, aes(
   Treatment, freq,
@@ -529,7 +472,7 @@ summaryToPlot <- popDT.CD69 %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n)) %>%
   left_join(exp.info) %>%
-  dplyr::filter(pop == "/gBT+/CD69+", flow.cell.is.clust == FALSE)
+  dplyr::filter(pop == "/gBT/CD69+", flow.cell.is.clust == FALSE)
 
 ggplot(summaryToPlot, aes(
   Treatment, freq,
@@ -547,4 +490,47 @@ summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 
 write.csv(summaryToPlot, file.path(anaDir, "CD69_non-clustered.csv"))
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# get ppp
+popDT.clustered <- cciaObj$popDT(
+    popType = "flow", includeFiltered = TRUE,
+    pops = c("/gBT", "/gBT/clustered"))
+```
+
+```{r fig_CD69_stats, fig.height = 3, fig.width = 3}
+summaryToPlot <- popDT.clustered %>%
+  group_by(uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  left_join(exp.info) %>%
+  dplyr::filter(pop == "/gBT/clustered")
+
+ggplot(summaryToPlot, aes(
+  Treatment, freq,
+  fill = Treatment)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0) +
+  scale_fill_brewer(name = NULL, palette = "Set3") +
+  theme(legend.position = "none") +
+  ylim(0, 1)
+
+summaryToPlot$Treatment.ID <- 1
+summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
+
+write.csv(summaryToPlot, file.path(anaDir, "gBT_clusters.csv"))
 ```

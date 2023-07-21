@@ -75,7 +75,7 @@ FlowGatingSet <- R6::R6Class(
     
     #' @description Gated populations paths
     #' @param includeRoot boolean to include root
-    popPaths = function (includeRoot = FALSE, popOrder = 'tsort') {
+    popPaths = function (includeRoot = FALSE, popOrder = "tsort") {
       pops <- flowWorkspace::gs_get_pop_paths(self$getPopObj(), order = popOrder)
       
       if (includeRoot == FALSE) {
@@ -186,9 +186,10 @@ FlowGatingSet <- R6::R6Class(
       }
       
       # add pop to set
-      gs_pop_add(self$getPopObj(), flist,
-                 name = popName,
-                 parent = parentPop)
+      flowWorkspace::gs_pop_add(
+        self$getPopObj(), flist,
+        name = popName,
+        parent = parentPop)
       
       # how many gates are there for this specific axis combination?
       gateID <- self$popGateNum(parentPop, c(x, y))
@@ -240,7 +241,7 @@ FlowGatingSet <- R6::R6Class(
       # remove from gating set
       tryCatch(
         expr = {
-          gs_pop_remove(self$getPopObj(), popPath)
+          flowWorkspace::gs_pop_remove(self$getPopObj(), popPath)
           private$invalidate(invalidate = invalidate)
         },
         error = function(e){ 
@@ -478,7 +479,7 @@ FlowGatingSet <- R6::R6Class(
       }
       
       # add pops
-      for (x in gsFrom$popPaths()) {
+      for (x in gsFrom$popPaths(popOrder = "regular")) {
         self$addPop(popName = .flowTrimPath(x, pathLevels = 0),
                     parentPop = .flowPopParent(x, root = "root"),
                     flist = gsFrom$getPopGate(x),

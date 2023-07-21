@@ -13,6 +13,11 @@
           "default": false
         }
       },
+      "cropDataBySD": {
+        "type:boolean": {
+          "default": false
+        }
+      },
       "polyDegree": {
         "type:integer": {
           "min": 1,
@@ -51,28 +56,34 @@
         "widget:checkbox": {
         }
       },
-      "polyDegree": {
+      "cropDataBySD": {
         "index": 1,
+        "label": "Crop data by SD",
+        "widget:checkbox": {
+        }
+      },
+      "polyDegree": {
+        "index": 2,
         "label": "Poly Degree",
         "widget:slider": {
           "step": 1
         }
       },
       "applyReversedLog": {
-        "index": 2,
+        "index": 3,
         "label": "Reversed log",
         "widget:checkbox": {
         }
       },
       "reversedLogBase": {
-        "index": 3,
+        "index": 4,
         "label": "Log base",
         "widget:slider": {
           "step": 1
         }
       },
       "transformation": {
-        "index": 4,
+        "index": 5,
         "label": "Transform",
         "widget:selection": {
           "items": {
@@ -92,7 +103,7 @@
         }
       },
       "transChannels": {
-        "index": 5,
+        "index": 6,
         "label": "Channels",
         "widget:channelSelection": {
           "size": 1,

@@ -1829,12 +1829,12 @@ CciaImage <- R6::R6Class(
     #' @description FlowFrame
     #' @param valueName character for value name
     #' @param compensateZ boolean to compensate depth
-    #' @param polyDegree integer for plynomial compensation
     #' @param applyReversedLog boolean to apply reverse log
     #' @param reversedLogBase integer for base of reverse log
+    #' @param ... passed to .flowCompensatePoly
     flowFrame = function(
-      valueName, compensateZ = FALSE, polyDegree = 4,
-      applyReversedLog = FALSE, reversedLogBase = 0) {
+      valueName, compensateZ = FALSE, applyReversedLog = FALSE,
+      reversedLogBase = 0, ...) {
       # forceRelaoad = FALSE, init = TRUE) {
       # get label properties
       labelsView <- self$labelProps(valueName = valueName)
@@ -1853,8 +1853,7 @@ CciaImage <- R6::R6Class(
       if (compensateZ == TRUE) {
         labelProps <- .flowCompensatePoly(
           labelProps, self$imChannelNames(includeTypes = TRUE),
-          "centroid_z", replaceValues = TRUE,
-          polyDegree = polyDegree)
+          "centroid_z", replaceValues = TRUE, ...)
       }
       
       # take reversed log

@@ -45,13 +45,29 @@ Upload <- R6::R6Class(
       
       # add histocytometry data
       if (self$funParams()$popType == "flow") {
-        localFiles <- c(
-          localFiles,
-          file.path(cciaConf()$dirs$tasks$data, sapply(
-            self$funParams()$valueNames,
-            function(x) basename(cciaObj$imGatingSetFilepath(x))
-          ))
+        gsFiles <- sapply(
+          self$funParams()$valueNames,
+          function(x) basename(cciaObj$imGatingSetFilepath(x))
         )
+        
+        localFiles <- c(localFiles, file.path(cciaConf()$dirs$tasks$data, gsFiles))
+        
+        # remove gs before upload
+        taskVars$fun <- list(
+          dirs = paste0(remoteDir, "/", cciaConf()$dirs$tasks$data, "/", gsFiles)
+        )
+        
+        # run environment
+        taskVars$env$global$env <- "local"
+        
+        self$writeLog(paste(
+          "Remove", paste(paste0(remoteDir, "/", cciaConf()$dirs$tasks$data, "/", gsFiles), collapse = ":")))
+        
+        # run task
+        taskLauncher$initTask("hpc.rmDirs", taskVars, inplace = TRUE)
+        taskLauncher$prepRun()
+        taskLauncher$run()
+        taskLauncher$result(TRUE)
       }
       
       # upload local files
@@ -67,17 +83,11 @@ Upload <- R6::R6Class(
       
       # run environment
       taskVars$env$global$env <- "local"
-      runInplace <- TRUE
-      
-      taskLauncher$initTask(
-        "hpc.upload", taskVars, inplace = runInplace)
-      
-      # prep run
-      taskLauncher$prepRun()
       
       # run task
+      taskLauncher$initTask("hpc.upload", taskVars, inplace = TRUE)
+      taskLauncher$prepRun()
       taskLauncher$run()
-      
       taskLauncher$result(TRUE)
       
       self$writeLog("Done")

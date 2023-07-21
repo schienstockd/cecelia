@@ -343,12 +343,14 @@
 #' @param suffix character for column suffix
 #' @param replaceValues boolean to replace previous values
 #' @param flowNames boolean to use "flow-names"
+#' @param cropDataBySD boolean to crop data by SD
 #' @examples
 #' TODO
 #' @export
 .flowCompensatePoly <- function(df, channelNames, refAxis,
                                polyDegree = 4, suffix = ".corr",
-                               replaceValues = FALSE, flowNames = TRUE) {
+                               replaceValues = FALSE, flowNames = TRUE,
+                               cropDataBySD = FALSE) {
   # correct channel names before selecting
   if (flowNames == TRUE) {
     # correct channel names
@@ -359,10 +361,14 @@
   for (x in channelNames) {
     # get sd to limit data
     medianIntensity <- median(df[[x]], na.rm = TRUE)
-    dfSD <- sd(df[[x]], na.rm = TRUE)
     
-    dataDF <- df[df[[x]] >=  medianIntensity - dfSD &
-                   df[[x]] <= medianIntensity + dfSD,]
+    if (cropDataBySD == TRUE) {
+      # TODO is there a better way - this is a bit arbitrary
+      dfSD <- sd(df[[x]], na.rm = TRUE) * 2
+      dataDF <- df[df[[x]] >= medianIntensity - dfSD & df[[x]] <= medianIntensity + dfSD,]
+    } else {
+      dataDF <- copy(df)
+    }
     
     # fit model
     # https://stackoverflow.com/a/3822706/13766165
@@ -900,21 +906,24 @@
 #' @param xAxisSize numeric for x axis size
 #' @param yAxisSize numeric for y axis size
 #' @param labelBorder numeric for geom_label border size
+#' @param labelAlpha numeric for geom_label alpha
 #' @param labelPos list of coordinates for labels
 #' @param asContours boolean to use contours
 #' @param showPopColours boolean to show population colours
 #' @param directLeaves boolean for direct leaves
+#' @param showPopName boolean to show pop name in gate
 #' @param plotTitleSize numeric for title size
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
 #' @export
 .flowPlotGatedRaster <- function(cciaObj, popPath = "root", labelSize = 2,
-                                 labelBorder = 1, xTitleSize = 12, yTitleSize = 12,
+                                 labelBorder = 1, labelAlpha = 1.00,
+                                 xTitleSize = 12, yTitleSize = 12,
                                  xAxisSize = 12, yAxisSize = 12,
                                  labelPos = list(), asContours = FALSE,
                                  showPopColours = FALSE, directLeaves = FALSE,
-                                 plotTitleSize = 14, ...) {
+                                 showPopName = TRUE, plotTitleSize = 14, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -1029,7 +1038,12 @@
           }
           
           colnames(nameDTs[[j]]) <- c(xLabel, yLabel)
-          nameDTs[[j]]$label <- .flowTrimPath(j, pathLevels = 0)
+          
+          # add pop name
+          if (showPopName == TRUE)
+            nameDTs[[j]]$label <- .flowTrimPath(j, pathLevels = 0)
+          else
+            nameDTs[[j]]$label <- ""
           
           # add percentage
           popStats <- fgs$getPopStats(j, type = "percent")
@@ -1159,11 +1173,15 @@
               x = get(xLabel),
               y = get(yLabel),
               group = pop,
-              color = pop),
+              fill = pop
+              ),
+            color = "black",
+            fontface = "bold",
             # size = labelSize, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
-            size = labelSize, label.size = labelBorder, alpha = 0.95
+            size = labelSize, label.size = labelBorder, alpha = labelAlpha
           ) +
-          scale_color_manual(values = popColors) +
+          # scale_color_manual(values = popColors) +
+          scale_fill_manual(values = popColors) +
           ggtitle(xParent) +
           theme(
             legend.position = "none",

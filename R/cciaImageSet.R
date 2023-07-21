@@ -76,9 +76,10 @@ CciaImageSet <- R6::R6Class(
     #' @param toUIDs character for unique ID to
     #' @param invalidate boolean to invalidate object
     #' @param saveState boolean to save state
+    #' @param saveData boolean to save data
     #' @param ... passed to FlowGatingSet$copyGatesFrom
     propagateFlowGating = function(fromUID, toUIDs = NULL, invalidate = FALSE,
-                                   saveState = FALSE, ...) {
+                                   saveState = FALSE, saveData = FALSE, ...) {
       # get reference object
       refObj <- self$cciaObjects()[[fromUID]]
       
@@ -104,13 +105,13 @@ CciaImageSet <- R6::R6Class(
             gsFrom, invalidate = invalidate, ...)
           
           if (saveState == TRUE)
-            x()$saveState(saveData = FALSE)
+            x()$saveState(saveData = saveData)
         } else {
           x$flowGatingSet()$copyGatesFrom(
             gsFrom, invalidate = invalidate, ...)
           
           if (saveState == TRUE)
-            x$saveState(saveData = FALSE)
+            x$saveState(saveData = saveData)
         }
       }
     },
