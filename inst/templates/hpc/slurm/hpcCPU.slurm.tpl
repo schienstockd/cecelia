@@ -54,7 +54,7 @@ module load miniconda3/4.9.2
 #module load cgal/4.14.1-python-3.7.4
 
 # otherwise rJava does not work
-export LD_LIBRARY_PATH=~/.conda/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
+export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
 # use different conda env path
 export CONDA_ENVS_PATH=/data/gpfs/projects/punim1124/cecelia/envs/

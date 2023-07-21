@@ -121,7 +121,7 @@ pops <- c(
   # "/O/TRITC"
 )
 popsWindow <- c(
-  "/gBT"
+  "/gBT", "/gDT", "/O/TRITC"
 )
 popsPP1 <- c(
   "/gBT/CD69+"
@@ -154,11 +154,13 @@ popDT <- cciaObj$popDT(
 pp1 <- cciaObj$ppp(
     windowPops = popsWindow,
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    pops = pops, usePops = popsPP1)
+    # pops = pops, usePops = popsPP1)
+    pops = popsPP1, usePops = popsPP1)
 pp2 <- cciaObj$ppp(
     windowPops = popsWindow,
     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    pops = pops, usePops = popsPP2)
+    # pops = pops, usePops = popsPP2)
+    pops = popsPP2, usePops = popsPP2)
 ```
 
 ```{r}

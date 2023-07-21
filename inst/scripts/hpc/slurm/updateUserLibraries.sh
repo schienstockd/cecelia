@@ -31,3 +31,6 @@ else
   sbatch --wait -o ~/cciaConda.log -e ~/cciaConda.log ./scripts/hpc/slurm/installConda.slurm
   echo "OK"
 fi
+
+# `GLIBCXX_3.4.30` not found
+conda install -c conda-forge libstdcxx-ng=12

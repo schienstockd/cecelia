@@ -59,7 +59,7 @@ module load miniconda3/4.9.2
 # module load cgal/4.14.1-python-3.7.4
 
 # otherwise rJava does not work
-export LD_LIBRARY_PATH=$JAVA_HOME/jre/lib/amd64/server/
+export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
 # otherwise cudnn libraries are not found
 export LD_LIBRARY_PATH=/usr/local/easybuild-2019/easybuild/software/core/cudnn/8.0.4.30-cuda-11.1.1/lib64\
