@@ -205,15 +205,15 @@ for (i in names(pp1)) {
   
   message(paste(">> Test CSR for", i))
   # test for randomness
-  # ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
   
   # push back
   exp.info[uID == i,
            `:=`(
-             # pp1.hopskel.p = ppHK.result$p.value,
-             # pp1.hopskel.A = ppHK.result$statistic,
-             # pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+             pp1.hopskel.p = ppHK.result$p.value,
+             pp1.hopskel.A = ppHK.result$statistic,
+             pp1.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
              pp1.clarkevans.p = ppCE.result$p.value,
              pp1.clarkevans.R = ppCE.result$statistic
            )]
@@ -226,15 +226,15 @@ for (i in names(pp2)) {
   
   message(paste(">> Test CSR for", i))
   # test for randomness
-  # ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
+  ppHK.result <- hopskel.test(x, method = "MonteCarlo", nsim = 999)
   ppCE.result <- clarkevans.test(x, method = "MonteCarlo", nsim = 999)
   
   # push back
   exp.info[uID == i,
            `:=`(
-             # pp2.hopskel.p = ppHK.result$p.value,
-             # pp2.hopskel.A = ppHK.result$statistic,
-             # pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
+             pp2.hopskel.p = ppHK.result$p.value,
+             pp2.hopskel.A = ppHK.result$statistic,
+             pp2.hopskel.H = ppHK.result$statistic/(1 + ppHK.result$statistic),
              pp2.clarkevans.p = ppCE.result$p.value,
              pp2.clarkevans.R = ppCE.result$statistic
            )]
