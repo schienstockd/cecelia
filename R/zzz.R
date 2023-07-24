@@ -64,7 +64,7 @@ cciaSetup <- function(path = "~/cecelia") {
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
                             rebuild = FALSE, preinstallNapari = FALSE,
-                            extraIndexUrl = "https://download.pytorch.org/whl/nightly/cpu") {
+                            extraIndexUrl = "https://download.pytorch.org/whl/nightly/cu118") {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
