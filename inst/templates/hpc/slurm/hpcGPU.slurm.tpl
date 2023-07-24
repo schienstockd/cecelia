@@ -45,7 +45,7 @@ fi
 # https://www.tensorflow.org/install/source#gpu
 # module load fosscuda/2020b
 # module load openblas/0.3.18
-# module load cudnn/8.1.0.77-cuda-11.2.1
+module load cudnn/8.0.4.30-cuda-11.1.1
 # compiled with gcccore/10.2.0; 'module av python/'
 # module load python/3.9.6
 # module load r/4.2.0

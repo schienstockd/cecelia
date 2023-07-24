@@ -912,6 +912,7 @@
 #' @param showPopColours boolean to show population colours
 #' @param directLeaves boolean for direct leaves
 #' @param showPopName boolean to show pop name in gate
+#' @param showGatePopColours boolean to use population colours for gate
 #' @param plotTitleSize numeric for title size
 #' @param ... passed to .flowRasterBuild
 #' @examples
@@ -922,8 +923,9 @@
                                  xTitleSize = 12, yTitleSize = 12,
                                  xAxisSize = 12, yAxisSize = 12,
                                  labelPos = list(), asContours = FALSE,
-                                 showPopColours = FALSE, directLeaves = FALSE,
-                                 showPopName = TRUE, plotTitleSize = 14, ...) {
+                                 showPopColours = FALSE, showGatePopColours = TRUE,
+                                 directLeaves = FALSE, showPopName = TRUE,
+                                 plotTitleSize = 14, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -1152,8 +1154,12 @@
         }
         
         # get population colors
-        popColors <- sapply(
-          pops, function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]])
+        if (showGatePopColours == TRUE) {
+          popColors <- sapply(
+            pops, function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]])
+        } else {
+          popColors <- "white"
+        }
         
         # add gates
         p1 <- p1 + ggplot2::geom_polygon(

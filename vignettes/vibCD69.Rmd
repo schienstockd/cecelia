@@ -71,8 +71,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "15SFzg", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "QS9obm", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "15SFzg", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "QS9obm", versionID = versionID, initReactivity = FALSE
 )
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
@@ -87,13 +87,13 @@ p1s <- .flowPlotGatedRaster(
   xTitleSize = 12, yTitleSize = 12,
   xAxisSize = 0, yAxisSize = 0,
   asContours = FALSE, plotTitleSize = 0, plot_width = 92, plot_height = 92,
-  showPopName = FALSE)
+  showPopName = FALSE, showGatePopColours = FALSE)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
 
-# ggsave(file.path(anaDir, "15SFzg_gating.png"), width = 2, height = 2)
-ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
+ggsave(file.path(anaDir, "15SFzg_gating.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
 ```
 
 ```{r}
@@ -494,6 +494,38 @@ summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 write.csv(summaryToPlot, file.path(anaDir, "CD69_non-clustered.csv"))
 ```
 
+```{r fig_CD69_TRITC_stats, fig.height = 3, fig.width = 5}
+# can you show distance of gBT CD69+/- to TRITC cells?
+summaryToPlot <- popDT.CD69 %>%
+  group_by(uID, pop, `flow.cell.contact#flow./O/TRITC`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  left_join(exp.info) %>%
+  dplyr::filter(`flow.cell.contact#flow./O/TRITC` == FALSE) %>%
+  mutate(freq = 100 - freq)
+  # group_by(uID, pop) %>%
+  # summarise(freq = median(`flow.cell.min_distance#flow./O/TRITC`, rm.na = TRUE)) %>%
+  # left_join(exp.info)
+
+# ggplot(popDT.CD69 %>% left_join(exp.info),
+#        aes(Treatment, `flow.cell.min_distance#flow./O/TRITC`, colour = pop)) +
+ggplot(summaryToPlot, aes(Treatment, freq, colour = pop)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.20), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  # geom_violin(outlier.alpha = 0, scale = "width") +
+  scale_colour_brewer(name = NULL, palette = "Set1") +
+  # theme(legend.position = "none") 
+  ylim(0, 100)
+
+summaryToPlot$Treatment.ID <- 1
+summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
+
+write.csv(summaryToPlot, file.path(anaDir, "TRITC_contact.csv"))
+```
+
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
@@ -529,7 +561,7 @@ ggplot(summaryToPlot, aes(
     width = 0.2, alpha = 1.0) +
   scale_fill_brewer(name = NULL, palette = "Set3") +
   theme(legend.position = "none") +
-  ylim(0, 1)
+  ylim(0, 100)
 
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2

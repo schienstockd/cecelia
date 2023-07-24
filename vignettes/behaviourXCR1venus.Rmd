@@ -675,7 +675,7 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.8, height = 2.5)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 
