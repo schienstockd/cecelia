@@ -192,6 +192,7 @@ default:
       region: "Region"
       clsf: "Classifications"
       branch: "Branching"
+      labels: "Labels"
     filterFuns:
       eq: "Any of"
       neq: "None of"

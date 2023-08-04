@@ -44,6 +44,9 @@ CciaImage <- R6::R6Class(
     # branching
     handleBranchPopUtils = NULL,
     
+    # labels
+    handleLabelsPopUtils = NULL,
+    
     # spatial
     handleSpatialDT = NULL,
     handleSpatialGraph = NULL,
@@ -1085,6 +1088,8 @@ CciaImage <- R6::R6Class(
         retVal <- self$clsfPopUtils(...)
       } else if (popType == "branch") {
         retVal <- self$branchPopUtils(...)
+      } else if (popType == "labels") {
+        retVal <- self$labelsPopUtils(...)
       }
       
       retVal
@@ -1949,6 +1954,31 @@ CciaImage <- R6::R6Class(
       private$handleClsfPopUtils
     },
     
+    #' @description Labels utils
+    #' @param forceReload boolean to force reload data
+    #' @param init boolean to init data
+    labelsPopUtils = function(forceReload = FALSE, init = TRUE) {
+      if (init == TRUE) {
+        if (!is.null(self$valueNames("imLabelPropsFilepath"))) {
+          if (is.null(private$handleBranchPopUtils) || forceReload == TRUE) {
+            # init object
+            private$handleLabelsPopUtils <- MultifileLabelPopUtils$new(
+              self$persistentObjectDirectory(),
+              self$valueNames("imLabelPropsFilepath", valueType = "labels"),
+              self$imChannelNames(includeTypes = TRUE)
+            )
+            
+            # init reactivity
+            if (private$isReactive()) {
+              private$handleLabelsPopUtils$reactive()
+            }
+          }
+        }
+      }
+      
+      private$handleLabelsPopUtils
+    },
+    
     #' @description Branching utils
     #' @param forceReload boolean to force reload data
     #' @param init boolean to init data
@@ -2581,6 +2611,8 @@ CciaImage <- R6::R6Class(
         return(self$valueNames("imLabelPropsFilepath", valueType = "clsf", ...))
       } else if (popType == "branch") {
         return(self$valueNames("imLabelPropsFilepath", valueType = "branch", ...))
+      } else if (popType == "labels") {
+        return(self$valueNames("imLabelPropsFilepath", valueType = "labels", ...))
       }
     },
     

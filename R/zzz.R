@@ -64,7 +64,7 @@ cciaSetup <- function(path = "~/cecelia") {
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
                             rebuild = FALSE, preinstallNapari = FALSE,
-                            extraIndexUrl = "https://download.pytorch.org/whl/nightly/cu118") {
+                            extraIndexUrl = "https://download.pytorch.org/whl/cu117") {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
@@ -104,14 +104,17 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # create pip options
   pipOptions <- c(
     # "--user",
-    "-U",
+    "-U"
     # for A100 support?
     # https://pytorch.org/get-started/locally/
     # "--extra-index-url https://download.pytorch.org/whl/cu116"
     # "--extra-index-url https://download.pytorch.org/whl/cu118"
     # "--extra-index-url https://download.pytorch.org/whl/nightly/cpu"
-    paste("--extra-index-url", extraIndexUrl)
   )
+  
+  if (extraIndexUrl != "") {
+    pipOptions <- c(pipOptions, paste("--extra-index-url", extraIndexUrl))
+  }
   
   # some install fail on Apple M1
   if (envType %in% c("image", "image-nogui")) {

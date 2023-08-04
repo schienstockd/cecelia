@@ -14,6 +14,11 @@ taskMANAGER_HPC_SLURM_OUT_TPL <- "templates/hpc/slurm/hpcWatchJob.tpl"
 fileIMAGE_CONVERTED <- "ccidImage"
 fileIMAGE_TO_IMPORT <- "ImageToImport"
 
+# helper functions
+# https://stackoverflow.com/a/39611375
+floor_dec <- function(x, level=1) round(x - 5*10^(-level-1), level)
+ceiling_dec <- function(x, level=1) round(x + 5*10^(-level-1), level)
+
 #' @description Init ccia object
 #' @param cciaObjDir character of object directory
 #' @param initReactivity boolean to init reactivity

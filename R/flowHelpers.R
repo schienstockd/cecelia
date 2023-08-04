@@ -1010,10 +1010,10 @@
         yRangeGate <- range(gateDT[, ..yLabel])
         
         # combine with data range
-        xRange <- c(min(xRange[[1]], xRangeGate[[1]]),
-                    max(xRange[[2]], xRangeGate[[2]]))
-        yRange <- c(min(yRange[[1]], yRangeGate[[1]]),
-                    max(yRange[[2]], yRangeGate[[2]]))
+        xRange <- c(floor_dec(min(xRange[[1]], xRangeGate[[1]]), level = 4),
+                    ceiling_dec(max(xRange[[2]], xRangeGate[[2]]), level = 4))
+        yRange <- c(floor_dec(min(yRange[[1]], yRangeGate[[1]]), level = 4),
+                    ceiling_dec(max(yRange[[2]], yRangeGate[[2]]), level = 4))
         
         # add label
         # add label
@@ -1158,7 +1158,7 @@
           popColors <- sapply(
             pops, function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]])
         } else {
-          popColors <- "white"
+          popColors <- rep("white", length(pops))
         }
         
         # add gates

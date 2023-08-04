@@ -17,7 +17,8 @@ def convert_coords_to_slices(coords):
 Create slices from image dimensions
 """
 def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
-                  block_size_z = None, overlap_z = None, timepoints = None):
+                  block_size_z = None, overlap_z = None, timepoints = None,
+                  slice_default = None):
   slices = None
   
   # 3D timeseries
@@ -43,9 +44,10 @@ def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
   elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is False:
     gen_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap)
     
-  slices = np.array([[slice(None) for _ in range(len(im_dim))]] * len(gen_slices['slices']))
+  # create zero slices
+  slices = np.array([[slice(slice_default) for _ in range(len(im_dim))]] * len(gen_slices['slices']))
   
-  # add slices
+  # add slices in
   for i, x in enumerate(gen_slices['slices']):
     for j, y in enumerate(gen_slices['order']):
       slices[i, dim_utils.dim_idx(y, ignore_channel = True)] = x[j]

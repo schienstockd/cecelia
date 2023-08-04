@@ -239,7 +239,7 @@ class SegmentationUtils:
     slices = slice_utils.create_slices(
       labels[list(labels.keys())[0]].shape, self.dim_utils, self.block_size, self.overlap,
       block_size_z = self.block_size_z, overlap_z = self.overlap_z,
-      timepoints = self.timepoints)
+      timepoints = self.timepoints, slice_default = 0)
       
     # cur_max_labels = {i: 0 for i in labels.keys()}
     cur_max_labels = 0
@@ -341,20 +341,13 @@ class SegmentationUtils:
             
             # merge with exisiting labels
             if self.label_overlap > 0:
-              # TODO expand dims - is there a better way?
-              diff_shape = len(labels[j][cur_slices].shape) - len(alg_labels[j].shape)
-              if diff_shape > 0:
-                self.logfile_utils.log(f'> Expand dims {diff_shape}')
-                
-                alg_labels[j] = np.expand_dims(alg_labels[j], tuple(range(diff_shape)))
-                
               self.logfile_utils.log(f'> Merge labels by overlap {self.label_overlap}')
               
               # TODO merge masks - is there a better way?
               labels[j][cur_slices] = np.amax(np.stack(
                 label_utils.match_masks(
                   # [alg_labels[j], labels[j][cur_slices]],
-                  [labels[j][cur_slices], alg_labels[j]],
+                  [np.squeeze(labels[j][cur_slices]), alg_labels[j]],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )

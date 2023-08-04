@@ -602,8 +602,8 @@ ggplot(
   geom_point(aes(color = clusters)) +
   # geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set3") +
-  # scale_color_manual(values = colPal) +
+  # scale_color_brewer(name = NULL, palette = "Set3") +
+  scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -830,11 +830,23 @@ write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
 # in total - what is the behaviour of GCAMP+?
 # datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
+# combine clusters
+clusterMapping <- list(
+  "directed (2)" = c(2),
+  "scanning (3)" = c(3),
+  "stop-n-go (0,6)" = c(0,6),
+  "meandering (1,4)" = c(1,4),
+  "clustering (5)" = c(5)
+)
+
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping)
+
 datToPlot <- dfToPlot %>%
   left_join(exp.info) %>%
   dplyr::filter(Treatment != "PBS") %>%
   # dplyr::filter(clusters != 5) %>%
-  group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  group_by(Treatment, DTx, gcamp.track, clusters.name) %>%
   # group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters.name) %>%
@@ -851,7 +863,8 @@ colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
 
 # ggplot(datToPlot, aes(interaction(Treatment, DTx), freq,
 # ggplot(datToPlot, aes(gcamp.track, freq, fill = clusters)) +
-ggplot(datToPlot, aes(interaction(Treatment, DTx), freq, fill = clusters)) +
+# ggplot(datToPlot, aes(interaction(Treatment, DTx), freq, fill = clusters)) +
+ggplot(datToPlot, aes(paste(Treatment, DTx), freq, fill = clusters.name)) +
   theme_classic() +
   # scale_fill_manual(values = colPal) +
   scale_fill_brewer(palette = "Set3") +
@@ -860,13 +873,13 @@ ggplot(datToPlot, aes(interaction(Treatment, DTx), freq, fill = clusters)) +
   geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
   theme(
     # legend.position = "none",
-    legend.position = "bottom",
-    legend.key.size = unit(6, "mm"),
+    legend.position = "right",
+    legend.key.size = unit(8, "mm"),
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
-    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 30, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank(),
     strip.text.y = element_blank()
@@ -877,11 +890,11 @@ ggplot(datToPlot, aes(interaction(Treatment, DTx), freq, fill = clusters)) +
   xlab("") + ylab("") +
   # facet_grid(.~interaction(uID, Treatment, DTx)) +
   # facet_grid(.~interaction(Treatment, DTx)) +
-  facet_grid(gcamp.track~.) +
-  guides(fill = guide_legend(nrow = 1)) +
-  coord_flip()
+  facet_grid(.~gcamp.track) +
+  guides(fill = guide_legend(ncol = 1))
+  # coord_flip()
 
-ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 5, height = 3)
+ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 4, height = 2.5)
 
 # datToPlot$Treatment.DTx <- -1
 # datToPlot[datToPlot$Treatment == "PBS" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 0
@@ -1065,19 +1078,22 @@ ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movemen
     legend.position = "right",
     legend.key.size = unit(6, "mm"),
     legend.title = element_blank(),
-    legend.text = element_text(size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
+    legend.text = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16),
     # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     # strip.text.x = element_blank()
-    strip.text.x = element_text(size = 12)
+    strip.text.x = element_text(size = 16)
     ) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   # scale_fill_discrete(name = "HMM State") +
-  xlab("") + ylab("") 
+  xlab("Clusters") + ylab("HMM proportion") +
+  coord_flip()
 
-ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 1.5)
+ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 3)
 ```
 
 ```{r fig_clusters_heat, fig.height=3, fig.width=8}

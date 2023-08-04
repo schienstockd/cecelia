@@ -121,6 +121,8 @@ You need at least Ventura 13.2 and XCode 13.2 for pyTorch to work with MPS GPU i
 
 - `GLIBCXX_3.4.30` not found - [SO answer](https://stackoverflow.com/a/74533050)
 
+- `RuntimeError: GET was unable to find an engine to execute this computation` - [Github issue](https://github.com/haotian-liu/LLaVA/issues/123#issuecomment-1539434115)
+
 ```bash
 conda install -c conda-forge libstdcxx-ng=12
 ```

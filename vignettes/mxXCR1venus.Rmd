@@ -179,6 +179,20 @@ task <- cciaObj$runTask(
 # To say that P14 also cluster around LCMV in presence of XCR1
 ```
 
+```{r}
+# get populations and show maps
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$popDT(popType = "labels")
+```
+
+
 ```{r fig_gating, fig.height=3, fig.width=5}
 # get populations and show maps
 devtools::load_all("../")

@@ -973,19 +973,22 @@ ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movemen
     legend.position = "right",
     legend.key.size = unit(6, "mm"),
     legend.title = element_blank(),
-    legend.text = element_text(size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
+    legend.text = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    axis.title.x = element_text(size = 16),
+    axis.text.y = element_text(size = 16),
+    axis.text.x = element_text(size = 16),
     # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     # strip.text.x = element_blank()
-    strip.text.x = element_text(size = 12)
+    strip.text.x = element_text(size = 16)
     ) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   # scale_fill_discrete(name = "HMM State") +
-  xlab("") + ylab("") 
+  xlab("Clusters") + ylab("HMM proportion") +
+  coord_flip()
 
-ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 1.5)
+ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 3)
 ```
 
 ```{r fig_clusters_heat, fig.height=3, fig.width=8}
