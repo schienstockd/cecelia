@@ -256,7 +256,7 @@ class SegmentationUtils:
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
       
-      label_slices = [0 if x == slice(None) else x for x in cur_slices]
+      label_slices = tuple([0 if x == slice(None) else x for x in cur_slices])
       
       # add channel back for slice prediction
       dat_slices = cur_slices
