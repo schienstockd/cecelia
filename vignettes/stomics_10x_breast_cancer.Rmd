@@ -205,7 +205,8 @@ funParams <- list(
   labelErosion = 0,
   minCellSize = 50,
   matchThreshold = 0.2,
-  removeUnmatched = TRUE
+  removeUnmatched = TRUE,
+  labelOverlap = 0.2
 )
 
 # run task
@@ -401,14 +402,16 @@ uIDs <- c("aSf5Rr")
 
 # run task
 funParams <- list(
-  popType = "clust",
-  popsToCluster = c(),
-  # savePops = TRUE,
-  savePops = FALSE,
+  popType = "flow",
+  # popsToCluster = c(),
+  popsToCluster = c("/CD3"),
+  savePops = TRUE,
+  # savePops = FALSE,
   # keepPops = TRUE,
   keepPops = FALSE,
   resolution = 1.0,
   mergeUmap = TRUE,
+  # mergeUmap = FALSE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0,
   normaliseAxis = "channels",
@@ -442,6 +445,8 @@ task <- cciaObj$runTask(
   runInplace = FALSE,
   taskID = 1
 )
+
+task$result(wait = TRUE)
 ```
 
 ```{r}
@@ -555,7 +560,8 @@ cciaObj <- initCciaObject(
 
 # get pops
 popDT <- cciaObj$popDT(
-  popType = "clust", includeFiltered = TRUE, includeX = FALSE, completeDT = TRUE)
+  # popType = "clust", includeFiltered = TRUE, includeX = FALSE, completeDT = TRUE)
+  popType = "flow")
   # popCols = c("label", "clusters", "UMAP_1", "UMAP_2"))
 ```
 
