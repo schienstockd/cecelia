@@ -239,7 +239,7 @@ class SegmentationUtils:
     slices = slice_utils.create_slices(
       labels[list(labels.keys())[0]].shape, self.dim_utils, self.block_size, self.overlap,
       block_size_z = self.block_size_z, overlap_z = self.overlap_z,
-      timepoints = self.timepoints, slice_default = 0)
+      timepoints = self.timepoints)
       
     # cur_max_labels = {i: 0 for i in labels.keys()}
     cur_max_labels = 0
@@ -256,7 +256,10 @@ class SegmentationUtils:
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
       
+      label_slices = [0 if x == slice(None) else x for x in cur_slices]
+      
       # add channel back for slice prediction
+      dat_slices = cur_slices
       if len(cur_slices) < len(im_dat.shape):
         dat_slices = list(cur_slices)
         dat_slices.insert(self.dim_utils.dim_idx('C'), slice(None))
@@ -344,7 +347,8 @@ class SegmentationUtils:
               self.logfile_utils.log(f'> Merge labels by overlap {self.label_overlap}')
               
               # TODO merge masks - is there a better way?
-              labels[j][cur_slices] = np.amax(np.stack(
+              # labels[j][cur_slices] = np.amax(np.stack(
+              labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
                   # [alg_labels[j], labels[j][cur_slices]],
                   [np.squeeze(labels[j][cur_slices]), alg_labels[j]],
