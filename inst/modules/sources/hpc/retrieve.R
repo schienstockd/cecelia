@@ -31,6 +31,8 @@ Retrieve <- R6::R6Class(
           self$funParams()$useCompression else FALSE,
         useArchive = if ("useArchive" %in% names(self$funParams()))
           self$funParams()$useArchive else FALSE
+        # removeLocalFiles = if ("removeLocalFiles" %in% names(self$funParams()))
+        #   self$funParams()$removeLocalFiles else FALSE
       )
     }
   )

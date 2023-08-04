@@ -146,7 +146,7 @@ SshUtils <- R6::R6Class(
       createDir = TRUE, toHPC = FALSE,
       fileNames = NULL, silent = FALSE,
       useCompression = FALSE, useArchive = FALSE,
-      ...) {
+      removeLocalFiles = FALSE, ...) {
       # set files to copy if NULL
       if (is.null(filesToCopy)) {
         filesToCopy <- list.files(

@@ -20,6 +20,9 @@ Retrieve <- R6::R6Class(
       # get object first
       self$runTasks("hpc.retrieveCciaObj")
       
+      self$initLog()
+      self$writeLog("Retrieve")
+      
       # get object
       cciaObj <- self$cciaTaskObject()
       
@@ -49,8 +52,16 @@ Retrieve <- R6::R6Class(
         )
       }
       
+      labelFilepaths <- taskDirFiles("labels", labelFiles)
+      
+      # remove labels first
+      # otherwise, this can lead to problems if a segmentation
+      # is half finished and has no pyramid yet
+      self$writeLog("Remove previous labels")
+      unlink(file.path(localDir, labelFilepaths), recursive = TRUE)
+      
       filesToGet <- c(
-        taskDirFiles("labels", labelFiles),
+        labelFilepaths,
         taskDirFiles("labelProps", self$funParams()$valueNames)
       )
       
@@ -80,14 +91,13 @@ Retrieve <- R6::R6Class(
         remoteDir = remoteDir,
         useCompression = TRUE,
         useArchive = TRUE
+        # removeLocalFiles = TRUE
       )
       
       # run environment
       taskVars$env$global$env <- "local"
       runInplace <- TRUE
       
-      self$initLog()
-      self$writeLog("Retrieve")
       self$writeLog(paste(filesToGet, collapse = "\n"))
       
       taskLauncher$initTask(
