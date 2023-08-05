@@ -44,7 +44,7 @@ HPC_CONF <-  list(
       numTasks = 1,
       numCPUperTask = 1,
       numGPUperTask = 1,
-      memory = 200,
+      memory = 50,
       walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
       # walltime = "00-00:10:00",
@@ -107,6 +107,31 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
 )
+```
+
+```{r}
+genes <- list(
+  tumour_general = c("ABCC11", "ARG3", "DSP", "ERBB2", "FOXA1",
+                     "GATA3", "S100A14", "SERPINA3", "TACSTD2"),
+  tumour_dcis = c("ARG3", "CEACM6", "MZB1", "SERPINA3"),
+  tumour_invasive = c("FASN"),
+  proliferative = c("MKI67", "TOP2A"),
+  myoepithelium_1 = c("ACTA2", "DST", "KRT14", "KRT5", "MYLK"),
+  myoepithelium_2 = c("KRT15", "KRT23", "PTN", "SFRP1"),
+  stroma = c("ALDH1A3", "GJB2", "LUM", "MMP2", "POSTN", "SFRP4"),
+  endothelial = c("AQP1", "EGFL7", "PECAM1", "VWF"),
+  b_cells = c("BANK1", "CD79A", "MS4A1"),
+  t_cells = c("CCL5", "CD4", "CD8A", "CXCR4", "CYTIP",
+              "IL7R", "LTB", "TRAC"),
+  macrophages = c("APOC1", "C15orf48", "C1QA", "C1QC", "CD14", "CD163",
+                  "CD68", "FGL2", "ITGAX", "MMP12"),
+  dendritic_cells = c("CCR7", "CD83", "IL3RA", "LILRA4", "PLD4"),
+  mast_cells = c("CPA3", "CTSG", "KIT")
+)
+```
+
+```{r}
+unique(unlist(unname(genes)))
 ```
 
 
@@ -399,6 +424,12 @@ channelNames <- sapply(
 )
 
 uIDs <- c("aSf5Rr")
+
+# Can you try to get tumour cells and others
+# Then, make regions and see whether there are different
+# cellular make ups in invasive and DCIS
+# ie/ this section could be after IMC to show
+# sequential Leiden clustering
 
 # run task
 funParams <- list(

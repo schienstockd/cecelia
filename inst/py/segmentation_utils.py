@@ -230,12 +230,14 @@ class SegmentationUtils:
         shutil.rmtree(x)
       
       # does it mak a difference to open as dask?
-      labels[i] = da.from_zarr(zarr.open(
+      # TODO that takes ages with dask
+      # labels[i] = da.from_zarr(zarr.open(
+      labels[i] = zarr.open(
         x,
         mode = 'w',
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
-        dtype = np.uint32))
+        dtype = np.uint32)
 
     # get slices
     slices = slice_utils.create_slices(
@@ -353,7 +355,10 @@ class SegmentationUtils:
               labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
                   # [alg_labels[j], labels[j][cur_slices]],
-                  [np.squeeze(labels[j][cur_slices]), alg_labels[j]],
+                  [
+                    np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
+                    zarr_utils.fortify(alg_labels[j])
+                  ],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
