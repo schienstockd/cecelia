@@ -111,9 +111,9 @@ cciaObj <- initCciaObject(
 
 ```{r}
 genes <- list(
-  tumour_general = c("ABCC11", "ARG3", "DSP", "ERBB2", "FOXA1",
+  tumour_general = c("ABCC11", "AGR3", "DSP", "ERBB2", "FOXA1",
                      "GATA3", "S100A14", "SERPINA3", "TACSTD2"),
-  tumour_dcis = c("ARG3", "CEACM6", "MZB1", "SERPINA3"),
+  tumour_dcis = c("AGR3", "CEACAM6", "MZB1", "SERPINA3"),
   tumour_invasive = c("FASN"),
   proliferative = c("MKI67", "TOP2A"),
   myoepithelium_1 = c("ACTA2", "DST", "KRT14", "KRT5", "MYLK"),
@@ -129,11 +129,6 @@ genes <- list(
   mast_cells = c("CPA3", "CTSG", "KIT")
 )
 ```
-
-```{r}
-unique(unlist(unname(genes)))
-```
-
 
 ```{r}
 # upload STOMICS
@@ -231,7 +226,8 @@ funParams <- list(
   minCellSize = 50,
   matchThreshold = 0.2,
   removeUnmatched = TRUE,
-  labelOverlap = 0.2
+  # labelOverlap = 0.2
+  labelOverlap = 0
 )
 
 # run task
@@ -414,7 +410,8 @@ cciaObj <- initCciaObject(
 )
 
 allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
-channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
+# channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
+channelNames <- unique(unlist(unname(genes[names(genes) != "proliferative"])))
 
 # get numbers
 channelNames <- sapply(
@@ -434,13 +431,14 @@ uIDs <- c("aSf5Rr")
 # run task
 funParams <- list(
   popType = "flow",
-  # popsToCluster = c(),
-  popsToCluster = c("/CD3"),
-  savePops = TRUE,
-  # savePops = FALSE,
+  popsToCluster = c(),
+  # popsToCluster = c("/CD3"),
+  # savePops = TRUE,
+  savePops = FALSE,
   # keepPops = TRUE,
   keepPops = FALSE,
-  resolution = 1.0,
+  # resolution = 1.0,
+  resolution = 0.6,
   mergeUmap = TRUE,
   # mergeUmap = FALSE,
   normalisePercentile = 99.8,
