@@ -4,6 +4,7 @@ import zarr
 import os
 import json
 import shutil
+import dask.array as da
 from pathlib import Path
 
 # utils
@@ -228,12 +229,13 @@ class SegmentationUtils:
       if os.path.exists(x):
         shutil.rmtree(x)
       
-      labels[i] = zarr.open(
+      # does it mak a difference to open as dask?
+      labels[i] = da.from_zarr(zarr.open(
         x,
         mode = 'w',
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
-        dtype = np.uint32)
+        dtype = np.uint32))
 
     # get slices
     slices = slice_utils.create_slices(
