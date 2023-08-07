@@ -355,11 +355,15 @@ class SegmentationUtils:
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
+              self.logfile_utils.log(labels[j][label_slices].dtype)
+              
               # get matches
               matched_masks = label_utils.match_masks(
                 [labels[j][label_slices], alg_labels[j]],
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
+              
+              self.logfile_utils.log(matched_masks.dtype)
               
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
