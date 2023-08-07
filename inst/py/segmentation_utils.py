@@ -28,6 +28,7 @@ class SegmentationUtils:
     self.subtract_edges = script_utils.get_param(params, 'subtract_edges', default = False)
     self.segment = script_utils.get_param(params, 'segment', default = True)
     self.measure = script_utils.get_param(params, 'measure', default = False)
+    # TODO not used
     self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     self.update_measures = script_utils.get_param(params, 'update_measures', default = False)
     self.save_measures = script_utils.get_param(params, 'save_measures', default = True)
@@ -40,6 +41,7 @@ class SegmentationUtils:
     self.halo_whole_cell = script_utils.get_param(params, 'halo_whole_cell', default = False)
     self.rank_labels = script_utils.get_param(params, 'rank_labels', default = False)
     self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
+    self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -230,9 +232,12 @@ class SegmentationUtils:
       if os.path.exists(x):
         shutil.rmtree(x)
       
-      # init array
-      # labels[i] = zarr.open(
-      zarr.open(
+      # does it mak a difference to open as dask?
+      # TODO How do I create labels in dask and write as dask?
+      # OR is there a better way to do this?
+      # https://stackoverflow.com/a/56562554
+      # labels[i] = da.from_zarr(zarr.open(
+      labels[i] = zarr.open(
         x,
         mode = 'w',
         shape = tuple(zarr_shape),
@@ -340,30 +345,27 @@ class SegmentationUtils:
         alg_labels = self.post_processing(alg_labels)
         next_max_labels = list()
         
-        for j, x in self.labels_paths.items():
+        for j in alg_labels.keys():
           if alg_labels[j] is not None:
             # increase numbering
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
             alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
             
-            # open labels
-            if self.use_dask is True:
-              cur_labels = da.from_zarr(zarr.open(x, mode = 'r+'))
-            else:
-              cur_labels = zarr.open(x, mode = 'r+')
-            
             # merge with exisiting labels
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
+              labels_list = [
+                np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
+                zarr_utils.fortify(alg_labels[j])
+                ]
+              
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
-              
-              cur_labels[label_slices] = np.amax(np.stack(
+              # labels[j][label_slices] = np.amax(np.stack(
+              labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
-                  # [alg_labels[j], labels[j][cur_slices]],
-                  [np.squeeze(cur_labels[cur_slices]),
-                  zarr_utils.fortify(alg_labels[j])],
+                  labels_list,
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
@@ -371,17 +373,13 @@ class SegmentationUtils:
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
-              cur_labels[cur_slices] = np.maximum(cur_labels[cur_slices], alg_labels[j])
-            
-            # TODO there must be a better way to use dask
-            if self.use_dask is True:
-              cur_labels.to_zarr(x, overwrite = True)
+              labels[j][cur_slices] = np.maximum(labels[j][cur_slices], alg_labels[j])
             
             y_max_label = alg_labels[j].max()
             
             if y_max_label > 0:
               next_max_labels.append(y_max_label)
-          
+              
         # set current maximum from base
         # TODO is this a fair assumption? - No
         # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
