@@ -236,27 +236,26 @@ class SegmentationUtils:
       # OR is there a better way to do this?
       # https://stackoverflow.com/a/56562554
       # labels[i] = da.from_zarr(zarr.open(
-      labels[i] = zarr.open(
-        x,
-        mode = 'w',
-        shape = tuple(zarr_shape),
-        chunks = tuple(zarr_chunks),
-        dtype = np.uint32)
         
       # init dask
       if self.use_dask is True:
-        labels_da[i] = da.zeros(
+        zarr.create(
+          store = x,
+          overwrite = True,
           shape = tuple(zarr_shape),
           chunks = tuple(zarr_chunks),
           dtype = np.uint32)
-    
-    if self.use_dask is True:    
-      self.logfile_utils.log("> DASK")
-      self.logfile_utils.log(labels_da.keys())
+      else:
+        labels[i] = zarr.open(
+          x,
+          mode = 'w',
+          shape = tuple(zarr_shape),
+          chunks = tuple(zarr_chunks),
+          dtype = np.uint32)
 
     # get slices
     slices = slice_utils.create_slices(
-      labels[list(labels.keys())[0]].shape, self.dim_utils, self.block_size, self.overlap,
+      zarr_shape, self.dim_utils, self.block_size, self.overlap,
       block_size_z = self.block_size_z, overlap_z = self.overlap_z,
       timepoints = self.timepoints)
       
@@ -355,7 +354,7 @@ class SegmentationUtils:
         alg_labels = self.post_processing(alg_labels)
         next_max_labels = list()
         
-        for j in alg_labels.keys():
+        for j, x in self.labels_paths.items():
           if alg_labels[j] is not None:
             # increase numbering
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
@@ -369,10 +368,13 @@ class SegmentationUtils:
               # labels[j][cur_slices] = np.amax(np.stack(
               
               if self.use_dask is True:
-                labels_da[j][label_slices] = np.amax(np.stack(
+                # open labels
+                cur_labels = zarr.open(x, mode = 'r+')
+                
+                cur_labels[label_slices] = np.amax(np.stack(
                   label_utils.match_masks(
                     # [alg_labels[j], labels[j][cur_slices]],
-                    [np.squeeze(zarr_utils.fortify(labels_da[j][cur_slices])),
+                    [np.squeeze(cur_labels[cur_slices]),
                     zarr_utils.fortify(alg_labels[j])],
                     stitch_threshold = self.label_overlap,
                     remove_unmatched = False
@@ -397,11 +399,6 @@ class SegmentationUtils:
             
             if y_max_label > 0:
               next_max_labels.append(y_max_label)
-              
-        # save dask back
-        if self.use_dask is True:
-          for i, x in labels_da.items():
-            x.to_zarr(labels[i])
           
         # set current maximum from base
         # TODO is this a fair assumption? - No
