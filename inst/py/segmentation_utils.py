@@ -362,9 +362,8 @@ class SegmentationUtils:
                 remove_unmatched = False)
               
               # TODO merge masks - is there a better way?
-              # labels[j][cur_slices] = np.amax(np.stack(
-              # labels[j][label_slices] = np.amax(np.stack(
-              labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+              labels[j][label_slices] = np.maximum(
+                matched_masks[0], matched_masks[1], dtype = np.uint32)
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
