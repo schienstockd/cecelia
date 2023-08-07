@@ -355,20 +355,16 @@ class SegmentationUtils:
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
-              label_list = [labels[j][label_slices], alg_labels[j]]
-              
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
               # labels[j][label_slices] = np.amax(np.stack(
               labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
-                  label_list,
+                  [labels[j][label_slices], alg_labels[j]],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
                 ), axis = 0)
-                
-              del label_list
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
