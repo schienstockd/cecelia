@@ -355,17 +355,12 @@ class SegmentationUtils:
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
-              labels_list = [
-                np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
-                zarr_utils.fortify(alg_labels[j])
-                ]
-              
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
               # labels[j][label_slices] = np.amax(np.stack(
               labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
-                  labels_list,
+                  [labels[j][label_slices], alg_labels[j]],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )
@@ -373,7 +368,7 @@ class SegmentationUtils:
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
-              labels[j][cur_slices] = np.maximum(labels[j][cur_slices], alg_labels[j])
+              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
             y_max_label = alg_labels[j].max()
             

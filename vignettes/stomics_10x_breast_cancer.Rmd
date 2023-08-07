@@ -216,7 +216,6 @@ funParams <- list(
   # segment = FALSE,
   measure = TRUE,
   # measure = FALSE,
-  useDask = TRUE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
