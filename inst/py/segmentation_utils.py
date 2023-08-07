@@ -28,7 +28,7 @@ class SegmentationUtils:
     self.subtract_edges = script_utils.get_param(params, 'subtract_edges', default = False)
     self.segment = script_utils.get_param(params, 'segment', default = True)
     self.measure = script_utils.get_param(params, 'measure', default = False)
-    self.use_dask = script_utils.get_param(params, 'use_dask', default = True)
+    self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     self.update_measures = script_utils.get_param(params, 'update_measures', default = False)
     self.save_measures = script_utils.get_param(params, 'save_measures', default = True)
     self.save_meshes = script_utils.get_param(params, 'save_meshes', default = False)
