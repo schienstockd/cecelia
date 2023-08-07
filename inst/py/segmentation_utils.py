@@ -225,6 +225,7 @@ class SegmentationUtils:
     
     # create empty zarr file
     labels = dict()
+    labels_da = dict()
     for i, x in self.labels_paths.items():
       # remove directory if present
       if os.path.exists(x):
@@ -242,14 +243,16 @@ class SegmentationUtils:
         chunks = tuple(zarr_chunks),
         dtype = np.uint32)
         
-    # init dask
-    if self.use_dask is True:
-      labels_da = dict()
-      
-      labels_da[i] = da.zeros(
-        shape = tuple(zarr_shape),
-        chunks = tuple(zarr_chunks),
-        dtype = np.uint32)
+      # init dask
+      if self.use_dask is True:
+        labels_da[i] = da.zeros(
+          shape = tuple(zarr_shape),
+          chunks = tuple(zarr_chunks),
+          dtype = np.uint32)
+    
+    if self.use_dask is True:    
+      self.logfile_utils.log("> DASK")
+      self.logfile_utils.log(labels_da.keys())
 
     # get slices
     slices = slice_utils.create_slices(
@@ -369,7 +372,7 @@ class SegmentationUtils:
                 labels_da[j][label_slices] = np.amax(np.stack(
                   label_utils.match_masks(
                     # [alg_labels[j], labels[j][cur_slices]],
-                    [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
+                    [np.squeeze(zarr_utils.fortify(labels_da[j][cur_slices])),
                     zarr_utils.fortify(alg_labels[j])],
                     stitch_threshold = self.label_overlap,
                     remove_unmatched = False
