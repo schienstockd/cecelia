@@ -232,9 +232,9 @@ class SegmentationUtils:
       
       # init array
       # labels[i] = zarr.open(
-      zarr.create(
+      zarr.open(
         store = x,
-        overwrite = True,
+        mode = 'w',
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
         dtype = np.uint32)
