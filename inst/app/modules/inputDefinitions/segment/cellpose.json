@@ -196,6 +196,11 @@
 					"default": true
 				}
 			},
+			"useDask": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"measure": {
 				"type:boolean": {
 					"default": true
@@ -453,32 +458,38 @@
 				"widget:checkbox": {
 				}
 			},
-			"measure": {
+			"useDask": {
 				"index": 18,
+				"label": "Lazy segmentation",
+				"widget:checkbox": {
+				}
+			},
+			"measure": {
+				"index": 19,
 				"label": "Measure objects",
 				"widget:checkbox": {
 				}
 			},
 			"updateMeasures": {
-				"index": 19,
+				"index": 20,
 				"label": "Update properties",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeasures": {
-				"index": 20,
+				"index": 21,
 				"label": "Save Measures",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeshes": {
-				"index": 21,
+				"index": 22,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 22,
+				"index": 23,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}
