@@ -373,6 +373,10 @@ class SegmentationUtils:
               # this will lead to artefacts - but is fast
               cur_labels[cur_slices] = np.maximum(cur_labels[cur_slices], alg_labels[j])
             
+            # TODO there must be a better way to use dask
+            if self.use_dask is True:
+              cur_labels.to_zarr(x, overwrite = True)
+            
             y_max_label = alg_labels[j].max()
             
             if y_max_label > 0:
