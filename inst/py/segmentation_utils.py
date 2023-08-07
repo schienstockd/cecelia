@@ -255,7 +255,7 @@ class SegmentationUtils:
       clear_borders = len(slices) > 1
     
     # go through slices
-    for i, cur_slices in enumerate(slices[1:4]):
+    for i, cur_slices in enumerate(slices):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
