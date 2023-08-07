@@ -44,10 +44,10 @@ HPC_CONF <-  list(
       numTasks = 1,
       numCPUperTask = 1,
       numGPUperTask = 1,
-      memory = 500,
-      walltime = "00-12:00:00",
+      memory = 50,
+      # walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
-      # walltime = "00-00:30:00",
+      walltime = "00-00:30:00",
       # walltime = "02-00:00:00",
       # projectPartitions = "physical",
       # projectID = "punim1124",
@@ -226,8 +226,8 @@ funParams <- list(
   minCellSize = 50,
   matchThreshold = 0.2,
   removeUnmatched = TRUE,
-  labelOverlap = 0.2
-  # labelOverlap = 0
+  # labelOverlap = 0.2
+  labelOverlap = 0
 )
 
 # run task

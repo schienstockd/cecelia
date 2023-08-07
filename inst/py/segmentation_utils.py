@@ -237,8 +237,7 @@ class SegmentationUtils:
       # OR is there a better way to do this?
       # https://stackoverflow.com/a/56562554
       # labels[i] = da.from_zarr(zarr.open(
-      # labels[i] = zarr.open(
-      zarr.open(
+      labels[i] = zarr.open(
         x,
         mode = 'w',
         shape = tuple(zarr_shape),
@@ -346,33 +345,30 @@ class SegmentationUtils:
         alg_labels = self.post_processing(alg_labels)
         next_max_labels = list()
         
-        for j, x in self.labels_paths.items():
+        for j in alg_labels.keys():
           if alg_labels[j] is not None:
             # increase numbering
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
             alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
             
-            # open labels
-            cur_labels = zarr.open(x, mode = 'r+')
-            
             # merge with exisiting labels
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
+              # get matches
+              matched_masks = label_utils.match_masks(
+                [labels[j][label_slices], alg_labels[j]],
+                stitch_threshold = self.label_overlap,
+                remove_unmatched = False)
+              
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
               # labels[j][label_slices] = np.amax(np.stack(
-              cur_labels[label_slices] = np.amax(np.stack(
-                label_utils.match_masks(
-                  [cur_labels[label_slices], alg_labels[j]],
-                  stitch_threshold = self.label_overlap,
-                  remove_unmatched = False
-                  )
-                ), axis = 0)
+              labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
-              cur_labels[label_slices] = np.maximum(cur_labels[label_slices], alg_labels[j])
+              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
             y_max_label = alg_labels[j].max()
             
