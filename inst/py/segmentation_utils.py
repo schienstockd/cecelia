@@ -363,11 +363,13 @@ class SegmentationUtils:
               
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(
-                matched_masks[0], matched_masks[1], dtype = np.uint32)
+                matched_masks[0], matched_masks[1],
+                casting = 'unsafe', dtype = np.uint32)
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
-              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
+              labels[j][label_slices] = np.maximum(
+                casting = 'unsafe', labels[j][label_slices], alg_labels[j], dtype = np.uint32)
             
             y_max_label = alg_labels[j].max()
             
