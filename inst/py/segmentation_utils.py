@@ -39,6 +39,7 @@ class SegmentationUtils:
     self.halo_whole_cell = script_utils.get_param(params, 'halo_whole_cell', default = False)
     self.rank_labels = script_utils.get_param(params, 'rank_labels', default = False)
     self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
+    self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -230,11 +231,22 @@ class SegmentationUtils:
         shutil.rmtree(x)
       
       # does it mak a difference to open as dask?
-      # TODO that takes ages with dask
+      # TODO How do I create labels in dask and write as dask?
+      # OR is there a better way to do this?
+      # https://stackoverflow.com/a/56562554
       # labels[i] = da.from_zarr(zarr.open(
       labels[i] = zarr.open(
         x,
         mode = 'w',
+        shape = tuple(zarr_shape),
+        chunks = tuple(zarr_chunks),
+        dtype = np.uint32)
+        
+    # init dask
+    if self.use_dask is True:
+      labels_da = dict()
+      
+      labels_da[i] = da.zeros(
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
         dtype = np.uint32)
@@ -352,15 +364,27 @@ class SegmentationUtils:
               
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
-              labels[j][label_slices] = np.amax(np.stack(
-                label_utils.match_masks(
-                  # [alg_labels[j], labels[j][cur_slices]],
-                  [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
-                  zarr_utils.fortify(alg_labels[j])],
-                  stitch_threshold = self.label_overlap,
-                  remove_unmatched = False
-                  )
-                ), axis = 0)
+              
+              if self.use_dask is True:
+                labels_da[j][label_slices] = np.amax(np.stack(
+                  label_utils.match_masks(
+                    # [alg_labels[j], labels[j][cur_slices]],
+                    [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
+                    zarr_utils.fortify(alg_labels[j])],
+                    stitch_threshold = self.label_overlap,
+                    remove_unmatched = False
+                    )
+                  ), axis = 0)
+              else:
+                labels[j][label_slices] = np.amax(np.stack(
+                  label_utils.match_masks(
+                    # [alg_labels[j], labels[j][cur_slices]],
+                    [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
+                    zarr_utils.fortify(alg_labels[j])],
+                    stitch_threshold = self.label_overlap,
+                    remove_unmatched = False
+                    )
+                  ), axis = 0)
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
@@ -370,6 +394,11 @@ class SegmentationUtils:
             
             if y_max_label > 0:
               next_max_labels.append(y_max_label)
+              
+        # save dask back
+        if self.use_dask is True:
+          for i, x in labels_da.items():
+            x.to_zarr(labels[i])
           
         # set current maximum from base
         # TODO is this a fair assumption? - No

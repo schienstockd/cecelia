@@ -44,7 +44,7 @@ HPC_CONF <-  list(
       numTasks = 1,
       numCPUperTask = 1,
       numGPUperTask = 1,
-      memory = 50,
+      memory = 400,
       # walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
       walltime = "00-00:30:00",
@@ -205,8 +205,7 @@ funParams <- list(
   # haloWholeCell = FALSE,
   haloSize = 20, # for nuclei expansion
   haloWholeCell = TRUE,
-  # blockSize = 2048,
-  blockSize = 512,
+  blockSize = 2048,
   # overlap = 120, # for larger structures
   # context = 40,
   overlap = 64,
@@ -217,6 +216,7 @@ funParams <- list(
   # segment = FALSE,
   measure = TRUE,
   # measure = FALSE,
+  useDask = TRUE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
