@@ -44,6 +44,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
   mmax = masks[0].max()
   empty = 0
   
+  # preserve dtype
+  dtype = masks[0].dtype
+  
   for i in range(len(masks)-1):
     # limit signal if no unmatched labels should be found
     if remove_unmatched is True:
@@ -87,4 +90,4 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
 
-  return masks
+  return masks.astype(dtype)
