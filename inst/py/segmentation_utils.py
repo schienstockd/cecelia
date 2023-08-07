@@ -363,7 +363,7 @@ class SegmentationUtils:
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
               
-              self.logfile_utils.log(matched_masks.dtype)
+              self.logfile_utils.log(matched_masks[0].dtype)
               
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
