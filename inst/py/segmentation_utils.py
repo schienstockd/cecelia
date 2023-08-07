@@ -364,7 +364,7 @@ class SegmentationUtils:
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
-              labels[j][cur_slices][:] = np.maximum(labels[j][cur_slices], alg_labels[j])
+              labels[j][cur_slices] = np.maximum(labels[j][cur_slices], alg_labels[j])
             
             y_max_label = alg_labels[j].max()
             
