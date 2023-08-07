@@ -1,3 +1,5 @@
+import sys
+
 class LogfileUtils():
   def __init__(self, filepath = None, create_file = True):
     self._filepath = filepath
@@ -17,6 +19,26 @@ class LogfileUtils():
     if self.filepath is not None:
       with open(self.filepath, 'a') as f:
         print(log_message, file = f)
+  
+  """
+  Print size of variable
+  original: https://stackoverflow.com/a/1094933/1870254
+  modified: https://stackoverflow.com/a/51046503
+  """
+  def sizeof_fmt(self, num, suffix = 'B'):
+    for unit in ['', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
+  
+  """
+  Get memory usage
+  """
+  def log_mem_usage(self, context, num_vars = 10):
+    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(
+                          context.items())), key = lambda x: -x[1])[:num_vars]:
+        self.log("{:>30}: {:>8}".format(name, self.sizeof_fmt(size)))
   
   """
   Getters
