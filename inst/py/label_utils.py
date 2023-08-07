@@ -44,7 +44,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
   mmax = masks[0].max()
   empty = 0
   
-  # preserve dtype
+  # preserve dtype - use first image as reference
   dtype = masks[0].dtype
   
   for i in range(len(masks)-1):
