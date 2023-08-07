@@ -352,7 +352,7 @@ class SegmentationUtils:
               
               # TODO merge masks - is there a better way?
               # labels[j][cur_slices] = np.amax(np.stack(
-              labels[j][label_slices][:] = np.amax(np.stack(
+              labels[j][label_slices] = np.amax(np.stack(
                 label_utils.match_masks(
                   # [alg_labels[j], labels[j][cur_slices]],
                   [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
