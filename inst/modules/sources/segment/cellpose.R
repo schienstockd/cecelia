@@ -63,6 +63,11 @@ Cellpose <- R6::R6Class(
           x
         })
       
+      useDask <- FALSE
+      if ("useDask" %in% names(self$funParams())) {
+        useDask <- self$funParams()$useDask
+      }
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -92,7 +97,7 @@ Cellpose <- R6::R6Class(
         updateMeasures = self$funParams()$updateMeasures,
         segment = self$funParams()$segment,
         measure = self$funParams()$measure,
-        useDask = self$funParams()$useDask,
+        useDask = useDask,
         saveMeshes = self$funParams()$saveMeshes,
         saveMeasures = self$funParams()$saveMeasures,
         extendedMeasures = self$funParams()$extendedMeasures
