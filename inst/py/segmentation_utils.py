@@ -354,7 +354,7 @@ class SegmentationUtils:
             # merge with exisiting labels
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
-              self.logfile_utils.log_mem_usage()
+              self.logfile_utils.log_mem_usage(locals())
               
               # get matches
               matched_masks = label_utils.match_masks(
@@ -363,13 +363,13 @@ class SegmentationUtils:
                 remove_unmatched = False)
               
               self.logfile_utils.log(f'> Merged {j}')
-              self.logfile_utils.log_mem_usage()
+              self.logfile_utils.log_mem_usage(locals())
               
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
               
               self.logfile_utils.log(f'> After {j}')
-              self.logfile_utils.log_mem_usage()
+              self.logfile_utils.log_mem_usage(locals())
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast

@@ -34,11 +34,12 @@ class LogfileUtils():
   
   """
   Get memory usage
+  https://stackoverflow.com/a/51046503
   """
   def log_mem_usage(self, context, num_vars = 10):
     for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(
                           context.items())), key = lambda x: -x[1])[:num_vars]:
-        self.log("{:>30}: {:>8}".format(name, self.sizeof_fmt(size)))
+        self.log('{:>30}: {:>8}'.format(name, self.sizeof_fmt(size)))
   
   """
   Getters
