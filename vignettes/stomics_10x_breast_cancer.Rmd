@@ -259,7 +259,8 @@ cciaObj <- initCciaObject(
 # run task
 funParams <- list(
   # valueNames = c("default", "stroma"),
-  valueNames = c("stroma"),
+  # valueNames = c("stroma"),
+  valueNames = c("default"),
   retrieveMeshesOnly = FALSE
 )
 
@@ -411,7 +412,19 @@ cciaObj <- initCciaObject(
 
 allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
 # channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
-channelNames <- unique(unlist(unname(genes[names(genes) != "proliferative"])))
+
+# get tumour and non-tumour first
+# Then, use the rest of the genes to get a more detailed
+# cluster map and try to make regions to see whether there are specific interactions
+# in specific regions for these tumours
+# Then, can you match that with the stroma branching?
+geneGroups <- c("tumour", "myoepithelium", "endothelial")
+
+channelNames <- unique(unlist(unname(genes[grepl(
+# for all other genes
+# channelNames <- unique(unlist(unname(genes[!grepl(
+  paste0(geneGroups, collapse = "|"), names(genes))])))
+channelNames <- channelNames[channelNames != "Hoechst"]
 
 # get numbers
 channelNames <- sapply(
@@ -438,7 +451,7 @@ funParams <- list(
   # keepPops = TRUE,
   keepPops = FALSE,
   # resolution = 1.0,
-  resolution = 0.6,
+  resolution = 0.2,
   mergeUmap = TRUE,
   # mergeUmap = FALSE,
   normalisePercentile = 99.8,

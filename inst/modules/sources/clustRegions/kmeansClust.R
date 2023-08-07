@@ -50,6 +50,7 @@ KmeansClust <- R6::R6Class(
       
       # expand pops?
       pops <- self$funParams()$pops
+      
       if (self$funParams()$expandPops == TRUE) {
         # get all pops
         # TODO is there a better way?
