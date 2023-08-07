@@ -356,7 +356,7 @@ class SegmentationUtils:
                 label_utils.match_masks(
                   # [alg_labels[j], labels[j][cur_slices]],
                   [np.squeeze(zarr_utils.fortify(labels[j][cur_slices])),
-                  zarr_utils.fortify(alg_labels[j]]),
+                  zarr_utils.fortify(alg_labels[j])],
                   stitch_threshold = self.label_overlap,
                   remove_unmatched = False
                   )

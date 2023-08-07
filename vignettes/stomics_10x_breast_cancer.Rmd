@@ -49,12 +49,12 @@ HPC_CONF <-  list(
       # walltime = "00-01:00:00",
       # walltime = "00-00:10:00",
       # walltime = "02-00:00:00",
-      # projectPartitions = "physical",
-      # projectID = "punim1124",
-      # useGPU = FALSE
-      projectPartitions = "gpu-a100",
-      projectID = "punim1031",
-      useGPU = TRUE
+      projectPartitions = "physical",
+      projectID = "punim1124",
+      useGPU = FALSE
+      # projectPartitions = "gpu-a100",
+      # projectID = "punim1031",
+      # useGPU = TRUE
     )
   ),
   utils = list(
@@ -205,7 +205,8 @@ funParams <- list(
   # haloWholeCell = FALSE,
   haloSize = 20, # for nuclei expansion
   haloWholeCell = TRUE,
-  blockSize = 2048,
+  # blockSize = 2048,
+  blockSize = 512,
   # overlap = 120, # for larger structures
   # context = 40,
   overlap = 64,
@@ -240,8 +241,8 @@ task <- cciaObj$runTask(
   # env = "local",
   runInplace = FALSE,
   # runInplace = TRUE,
-  taskID = 1
-  # taskID = 2
+  # taskID = 1
+  taskID = 2
 )
 ```
 
