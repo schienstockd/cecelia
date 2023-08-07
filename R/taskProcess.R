@@ -267,8 +267,9 @@ TaskProcess <- R6::R6Class(
     
     #' @description Get parameter
     #' @param param character for parameter
-    funParam = function(param) {
-      retVal <- NULL
+    #' @param param value for default
+    funParam = function(param, defaultValue = NULL) {
+      retVal <- defaultValue
       
       # check if param exists
       if (self$funParamNotNull(param) == TRUE) {
