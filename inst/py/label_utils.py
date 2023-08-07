@@ -90,4 +90,4 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
 
-  return masks.astype(dtype)
+  return [x.astype(dtype) for x in masks]
