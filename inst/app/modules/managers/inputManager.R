@@ -232,24 +232,19 @@ InputManager <- R6::R6Class(
           elmntGroups <- unlist(stringr::str_split(elmntNameTrimmed, "_"))
           curParams <- params
           
+          # TODO a bit more elegant .. ?
           for (x in elmntGroups) {
             if (x %in% names(curParams)) {
               curParams <- curParams[[x]]
             } else {
-              param <- NULL
+              curParams <- NULL
             }
           }
           
+          param <- curParams
+          
           if (elmntName == "segment-segment.cellpose.models_1_cellChannels")
             browser()
-          
-          # find item
-          paramName <- str_replace_all(elmntNameTrimmed, "_", ".")
-          params <- unlist(params)
-          
-          if (paramName %in% names(params)) {
-            param <- params[[paramName]]
-          }
         } else {
           if (elmntNameTrimmed %in% names(params)) {
             param <- params[[elmntNameTrimmed]]
