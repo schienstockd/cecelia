@@ -56,7 +56,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     dtype = masks[0].dtype
   
   if logfile_utils is not None:
-    logfile_utils.log([x[x > 0].min() if np.any(x) is True for x in masks])
+    logfile_utils.log([x[x > 0].min() for x in masks if np.any(x) is True])
     logfile_utils.log([x[x > 0].min() - 1 if np.any(x) is True else 0 for x in masks])
     logfile_utils.log(f'>> mmin {mmin}')
   
