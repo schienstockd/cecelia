@@ -4,8 +4,8 @@ import numpy as np
 Adapted from cellpose.metrics to find intersection between masks
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/metrics.py#L168
 """
-def intersection_over_union(x, y):
-  overlap = label_overlap(x, y)
+def intersection_over_union(x, y, logfile_utils = None):
+  overlap = label_overlap(x, y, logfile_utils = logfile_utils)
   n_pixels_x = np.sum(overlap, axis = 0, keepdims = True)
   n_pixels_true = np.sum(overlap, axis = 1, keepdims = True)
   iou = overlap / (n_pixels_x + n_pixels_true - overlap)
@@ -17,13 +17,18 @@ def intersection_over_union(x, y):
 Adapted from cellpose.metrics to find overlap between masks
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/metrics.py#L133
 """
-def label_overlap(x, y):
+def label_overlap(x, y, logfile_utils = None):
   # put label arrays into standard form then flatten them 
   x = x.ravel()
   y = y.ravel()
   
   # preallocate a 'contact map' matrix
-  overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = np.uint)
+  overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = np.uint32)
+  
+  if logfile_utils is not None:
+    logfile_utils.log('>> merge')
+    logfile_utils.log(mmax)
+    logfile_utils.log_mem_usage(context = locals())
   
   # loop over the labels in x and add to the corresponding
   # overlap entry. If label A in x and label B in y share P
@@ -55,7 +60,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       masks[i] = (masks[i + 1] > 0) * masks[i]
     
     # get intersection
-    iou = intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
+    iou = intersection_over_union(masks[i + 1], masks[i], logfile_utils = logfile_utils)[1:, 1:]
     
     if not iou.size and empty == 0:
       masks[i + 1] = masks[i + 1]
@@ -92,9 +97,4 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
   
-  if logfile_utils is not None:
-    logfile_utils.log('>> merge')
-    logfile_utils.log(mmax)
-    logfile_utils.log_mem_usage(context = locals())
-
   return masks
