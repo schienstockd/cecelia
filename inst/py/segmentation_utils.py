@@ -4,6 +4,7 @@ import zarr
 import os
 import json
 import shutil
+import sys
 import dask.array as da
 from pathlib import Path
 
