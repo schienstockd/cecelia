@@ -229,15 +229,21 @@ InputManager <- R6::R6Class(
         
         # grouped?
         if (any(!is.na(stringr::str_match(elmntNameTrimmed, "_")))) {
-          # elmntGroups <- unlist(stringr::str_split(elmntNameTrimmed, "_"))
-          # for (x in elmntGroups) {
-          #   if (x %in% names(params)) {
-          #     param <- params[[x]]
-          #   }
-          # }
+          elmntGroups <- unlist(stringr::str_split(elmntNameTrimmed, "_"))
+          curParams <- params
+          
+          for (x in elmntGroups) {
+            if (x %in% names(curParams)) {
+              curParams <- curParams[[x]]
+            } else {
+              param <- NULL
+            }
+          }
+          
+          if (elmntName == "segment-segment.cellpose.models_1_cellChannels")
+            browser()
           
           # find item
-          param <- NULL
           paramName <- str_replace_all(elmntNameTrimmed, "_", ".")
           params <- unlist(params)
           

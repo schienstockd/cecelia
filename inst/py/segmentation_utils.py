@@ -354,8 +354,6 @@ class SegmentationUtils:
             
             # merge with exisiting labels
             if self.label_overlap > 0:
-              # TODO I cannot figure out why this is accumulating memory
-              
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
               # get matches
@@ -371,8 +369,7 @@ class SegmentationUtils:
               # this will lead to artefacts - but is fast
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
-            # y_max_label = alg_labels[j].max()
-            y_max_label = labels[j][label_slices].max()
+            y_max_label = alg_labels[j].max()
             
             if y_max_label > 0:
               next_max_labels.append(y_max_label)
@@ -382,7 +379,8 @@ class SegmentationUtils:
         # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
         #   cur_max_labels = alg_labels['base'].max()
         if len(next_max_labels) > 0:
-          cur_max_labels = max(next_max_labels)
+          # cur_max_labels = max(next_max_labels)
+          cur_max_labels += max(next_max_labels)
       
         self.logfile_utils.log(f'>> Max label {cur_max_labels}')
       
