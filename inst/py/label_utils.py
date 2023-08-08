@@ -28,7 +28,6 @@ def label_overlap(x, y, dtype = np.uint16, logfile_utils = None):
   
   if logfile_utils is not None:
     logfile_utils.log('>> overlap')
-    logfile_utils.log_mem_usage(var_names = {'overlap': overlap})
     logfile_utils.log_mem_usage(context = locals())
   
   # loop over the labels in x and add to the corresponding
@@ -47,13 +46,18 @@ https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da
 """
 def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = None):
   # save merged labels
-  mmax = masks[0].max()
-  # mmin = masks[0].min()
+  mmax = np.max(x.max() for x in masks])
+  mmin = np.min(x[x > 0].min() - 1 if np.any(x) is True else 0 for x in masks])
   empty = 0
   
   # preserve dtype - use first image as reference
   if dtype is None:
     dtype = masks[0].dtype
+  
+  # TODO adjust label number to keep computation low
+  # Maybe a sparse matrix would be better .. ?
+  for i in range(len(masks)):
+    masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmin
   
   for i in range(len(masks)-1):
     # limit signal if no unmatched labels should be found
@@ -73,8 +77,8 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
     else:
-      iou[iou < stitch_threshold] = 0.0
-      iou[iou < iou.max(axis = 0)] = 0.0
+      iou[iou < stitch_threshold] = 0
+      iou[iou < iou.max(axis = 0)] = 0
       istitch = iou.argmax(axis = 1) + 1
       ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
       istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
@@ -97,5 +101,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     # remove non-matched labels
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
+      
+  # readjust label numbers
+  for i in range(len(masks)):
+    masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
   
   return masks
