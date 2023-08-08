@@ -92,8 +92,8 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
   
-  self.logfile_utils.log('>> merge')
-  self.logfile_utils.log(mmax)
-  self.logfile_utils.log_mem_usage(context = locals())
+  logfile_utils.log('>> merge')
+  logfile_utils.log(mmax)
+  logfile_utils.log_mem_usage(context = locals())
 
   return masks
