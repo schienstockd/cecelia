@@ -26,7 +26,7 @@ def label_overlap(x, y, logfile_utils = None):
   overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = np.uint32)
   
   if logfile_utils is not None:
-    logfile_utils.log('>> merge')
+    logfile_utils.log('>> overlap')
     logfile_utils.log(mmax)
     logfile_utils.log_mem_usage(context = locals())
   
