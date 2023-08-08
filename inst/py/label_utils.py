@@ -9,10 +9,10 @@ def intersection_over_union(x, y, dtype = np.uint16):
   # get overlap
   overlap = label_overlap(x, y, dtype = dtype)
   
-  n_pixels_x = np.sum(overlap_array, axis = 0, keepdims = True, dtype = np.uint16)
-  n_pixels_true = np.sum(overlap_array, axis = 1, keepdims = True, dtype = np.uint16)
+  n_pixels_x = np.sum(overlap, axis = 0, keepdims = True, dtype = np.uint16)
+  n_pixels_true = np.sum(overlap, axis = 1, keepdims = True, dtype = np.uint16)
   n_compose = (n_pixels_x + n_pixels_true - overlap)
-  iou = np.divide(overlap_array, n_compose, dtype = np.float16, where = n_compose != 0)
+  iou = np.divide(overlap, n_compose, dtype = np.float16, where = n_compose != 0)
   iou[np.isnan(iou)] = 0.0
   
   # # TODO there must be a better way to use sparse matrices
