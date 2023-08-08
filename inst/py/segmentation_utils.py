@@ -381,8 +381,8 @@ class SegmentationUtils:
               self.logfile_utils.log_mem_usage(var_names = {
                 'labels': labels[j],
                 'alg_labels': alg_labels[j],
-                'matched_masks 1': matched_masks[0],
-                'matched_masks 2': matched_masks[1]
+                'matched_masks 1': matched_masks[0][:],
+                'matched_masks 2': matched_masks[1][:]
               })
               
               # TODO merge masks - is there a better way?
