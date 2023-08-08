@@ -39,7 +39,7 @@ Match masks
 adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
 """
-def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None):
+def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = logfile_utils):
   # save merged labels
   mmax = masks[0].max()
   # mmin = masks[0].min()
@@ -91,5 +91,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     # remove non-matched labels
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
+  
+  self.logfile_utils.log('>> merge')
+  self.logfile_utils.log(mmax)
+  self.logfile_utils.log_mem_usage(context = locals())
 
   return masks
