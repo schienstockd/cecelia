@@ -55,6 +55,10 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   if dtype is None:
     dtype = masks[0].dtype
   
+  if logfile_utils is not None:
+    logfile_utils.log('>> mmin')
+    logfile_utils.log(f'> {mmin}')
+  
   # TODO adjust label number to keep computation low
   # Maybe a sparse matrix would be better .. ?
   for i in range(len(masks)):
