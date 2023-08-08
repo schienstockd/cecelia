@@ -358,47 +358,14 @@ class SegmentationUtils:
               
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
-              self.logfile_utils.log('> locals')
-              self.logfile_utils.log_mem_usage(context = locals())
-              self.logfile_utils.log('> globals')
-              self.logfile_utils.log_mem_usage(context = globals())
-              self.logfile_utils.log('> indv')
-              self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j],
-                'alg_labels': alg_labels[j]
-              })
-              
               # get matches
               matched_masks = label_utils.match_masks(
                 [labels[j][label_slices], alg_labels[j]],
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
               
-              self.logfile_utils.log(f'> After {j}')
-              self.logfile_utils.log('> locals')
-              self.logfile_utils.log_mem_usage(context = locals())
-              self.logfile_utils.log('> globals')
-              self.logfile_utils.log_mem_usage(context = globals())
-              self.logfile_utils.log('> indv')
-              self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j],
-                'alg_labels': alg_labels[j],
-                'matched_masks 1': matched_masks[0],
-                'matched_masks 2': matched_masks[1]
-              })
-              
               # TODO merge masks - is there a better way?
-              labels[j][label_slices] = np.maximum(matched_masks[0][:], matched_masks[1][:])
-              
-              self.logfile_utils.log(f'> Copied {j}')
-              self.logfile_utils.log('> locals')
-              self.logfile_utils.log_mem_usage(context = locals())
-              self.logfile_utils.log('> globals')
-              self.logfile_utils.log_mem_usage(context = globals())
-              self.logfile_utils.log('> indv')
-              self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j]
-              })
+              labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
