@@ -42,7 +42,8 @@ https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da
 def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None):
   # save merged labels
   mmax = masks[0].max()
-  mmin = masks[0].min()
+  # mmin = masks[0].min()
+  empty = 0
   
   # preserve dtype - use first image as reference
   if dtype is None:
