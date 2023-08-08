@@ -27,6 +27,7 @@ def label_overlap(x, y, logfile_utils = None):
   
   if logfile_utils is not None:
     logfile_utils.log('>> overlap')
+    logfile_utils.log_mem_usage(var_names = {'overlap': overlap})
     logfile_utils.log_mem_usage(context = locals())
   
   # loop over the labels in x and add to the corresponding
