@@ -356,6 +356,11 @@ class SegmentationUtils:
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
+              self.logfile_utils.log('> locals')
+              self.logfile_utils.log_mem_usage(context = locals())
+              self.logfile_utils.log('> globals')
+              self.logfile_utils.log_mem_usage(context = globals())
+              self.logfile_utils.log('> indv')
               self.logfile_utils.log_mem_usage(var_names = {
                 'labels': labels[j],
                 'alg_labels': alg_labels[j]
@@ -368,6 +373,11 @@ class SegmentationUtils:
                 remove_unmatched = False)
               
               self.logfile_utils.log(f'> After {j}')
+              self.logfile_utils.log('> locals')
+              self.logfile_utils.log_mem_usage(context = locals())
+              self.logfile_utils.log('> globals')
+              self.logfile_utils.log_mem_usage(context = globals())
+              self.logfile_utils.log('> indv')
               self.logfile_utils.log_mem_usage(var_names = {
                 'labels': labels[j],
                 'alg_labels': alg_labels[j],
@@ -379,6 +389,11 @@ class SegmentationUtils:
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
               
               self.logfile_utils.log(f'> Copied {j}')
+              self.logfile_utils.log('> locals')
+              self.logfile_utils.log_mem_usage(context = locals())
+              self.logfile_utils.log('> globals')
+              self.logfile_utils.log_mem_usage(context = globals())
+              self.logfile_utils.log('> indv')
               self.logfile_utils.log_mem_usage(var_names = {
                 'labels': labels[j]
               })
