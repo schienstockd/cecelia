@@ -44,7 +44,7 @@ HPC_CONF <-  list(
       numTasks = 1,
       numCPUperTask = 1,
       numGPUperTask = 1,
-      memory = 50,
+      memory = 100,
       walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
       # walltime = "00-00:30:00",
