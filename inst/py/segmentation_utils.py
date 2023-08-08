@@ -371,7 +371,8 @@ class SegmentationUtils:
               # this will lead to artefacts - but is fast
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
-            y_max_label = alg_labels[j].max()
+            # y_max_label = alg_labels[j].max()
+            y_max_label = labels[j][label_slices].max()
             
             if y_max_label > 0:
               next_max_labels.append(y_max_label)

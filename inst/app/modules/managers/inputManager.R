@@ -218,24 +218,31 @@ InputManager <- R6::R6Class(
     funParam = function(elmntName, defaultVal = NULL) {
       param <- NULL
       
-      if (!is.null(self$cciaObjectSet())) {
+      # if (!is.null(self$cciaObjectSet())) {
+      if (!is.null(self$cciaObject())) {
         # get trimmed element name
         elmntNameTrimmed <- .trimModuleFunName(elmntName)
         
         # get function parameters
-        params <- self$cciaObjectSet()$moduleFunParams(
-          self$selectedFun())
+        # params <- self$cciaObjectSet()$moduleFunParams(self$selectedFun())
+        params <- self$cciaObject()$moduleFunParams(self$selectedFun())
         
         # grouped?
         if (any(!is.na(stringr::str_match(elmntNameTrimmed, "_")))) {
-          elmntGroups <- unlist(stringr::str_split(elmntNameTrimmed, "_"))
+          # elmntGroups <- unlist(stringr::str_split(elmntNameTrimmed, "_"))
+          # for (x in elmntGroups) {
+          #   if (x %in% names(params)) {
+          #     param <- params[[x]]
+          #   }
+          # }
           
-          # go through and set last item
+          # find item
           param <- NULL
-          for (x in elmntGroups) {
-            if (x %in% names(params)) {
-              param <- param[[x]]
-            }
+          paramName <- str_replace_all(elmntNameTrimmed, "_", ".")
+          params <- unlist(params)
+          
+          if (paramName %in% names(params)) {
+            param <- params[[paramName]]
           }
         } else {
           if (elmntNameTrimmed %in% names(params)) {
@@ -418,6 +425,8 @@ InputManager <- R6::R6Class(
       specContent <- specType[[1]]
       
       uiDefault <- private$convertToSpecType(specContent$default, specType)
+      
+      browser()
       
       list(
         ui = checkboxInput(
@@ -645,6 +654,8 @@ InputManager <- R6::R6Class(
           names(channelChoices) <- namesChannelChoices
         }
       }
+      
+      browser()
       
       list(
         ui = createSelectInput(

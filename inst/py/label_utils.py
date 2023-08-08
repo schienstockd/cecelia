@@ -23,7 +23,7 @@ def label_overlap(x, y, dtype = np.uint16):
   y = y.ravel()
   
   # preallocate a 'contact map' matrix
-  # TODO can you .. incorporate min?
+  # TODO can you make a sparse matrix out of that .. ?
   overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = dtype)
   
   # loop over the labels in x and add to the corresponding
