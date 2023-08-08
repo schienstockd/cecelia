@@ -357,8 +357,6 @@ class SegmentationUtils:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               self.logfile_utils.log(sys.getsizeof(labels[j][label_slices]))
               self.logfile_utils.log(sys.getsizeof(alg_labels[j]))
-              self.logfile_utils.log(sys.getsizeof(matched_masks[0]))
-              self.logfile_utils.log(sys.getsizeof(matched_masks[1]))
               
               # get matches
               matched_masks = label_utils.match_masks(
@@ -374,6 +372,9 @@ class SegmentationUtils:
               
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+              
+              self.logfile_utils.log(f'> Copied {j}')
+              self.logfile_utils.log(sys.getsizeof(labels[j][label_slices]))
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
