@@ -9,17 +9,23 @@ def intersection_over_union(x, y, dtype = np.uint16):
   # get overlap
   overlap = label_overlap(x, y, dtype = dtype)
   
-  # TODO there must be a better way to use sparse matrices
-  n_pixels_x = overlap.sum(axis = 0)
-  n_pixels_true = overlap.sum(axis = 1)
-  
-  # reshape
-  n_pixels_true = n_pixels_true.reshape((n_pixels_true.shape[0], 1))
+  n_pixels_x = np.sum(overlap_array, axis = 0, keepdims = True, dtype = np.uint16)
+  n_pixels_true = np.sum(overlap_array, axis = 1, keepdims = True, dtype = np.uint16)
   n_compose = (n_pixels_x + n_pixels_true - overlap)
-  
-  iou = np.divide(overlap.toarray(), n_compose,
-                  dtype = np.float16, where = n_compose != 0)
+  iou = np.divide(overlap_array, n_compose, dtype = np.float16, where = n_compose != 0)
   iou[np.isnan(iou)] = 0.0
+  
+  # # TODO there must be a better way to use sparse matrices
+  # n_pixels_x = overlap.sum(axis = 0)
+  # n_pixels_true = overlap.sum(axis = 1)
+  # 
+  # # reshape and compose
+  # n_pixels_true = n_pixels_true.reshape((n_pixels_true.shape[0], 1))
+  # n_compose = (n_pixels_x + n_pixels_true - overlap)
+  # 
+  # iou = np.divide(overlap.toarray(), n_compose,
+  #                 dtype = np.float16, where = n_compose != 0)
+  # iou[np.isnan(iou)] = 0.0
   
   return iou
   
@@ -31,20 +37,21 @@ def label_overlap(x, y, dtype = np.uint16):
   # put label arrays into standard form then flatten them 
   x = x.ravel()
   y = y.ravel()
-  z = [1] * len(x)
+  # z = [1] * len(x)
   
   # preallocate a 'contact map' matrix
   # TODO can you make a sparse matrix out of that .. ?
-  # overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = dtype)
+  overlap = np.zeros((1 + x.max(), 1 + y.max()), dtype = dtype)
   
   # loop over the labels in x and add to the corresponding
   # overlap entry. If label A in x and label B in y share P
   # pixels, then the resulting overlap is P
   # len(x)=len(y), the number of pixels in the whole image 
-  # for i in range(len(x)):
-  #   overlap[x[i],y[i]] += 1
+  for i in range(len(x)):
+    overlap[x[i],y[i]] += 1
   
-  return coo_array((z, (x, y)), shape = (len(x), len(y)), dtype = dtype)
+  # return coo_array((z, (x, y)), shape = (len(x), len(y)), dtype = dtype)
+  return overlap
 
 """
 Match masks
