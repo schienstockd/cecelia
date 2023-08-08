@@ -352,14 +352,19 @@ class SegmentationUtils:
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
             alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
             
+            y_max_label = alg_labels[j].max()
+            
+            if y_max_label > 0:
+              next_max_labels.append(y_max_label)
+            
             # merge with exisiting labels
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
               # get matches
               matched_masks = label_utils.match_masks(
-                # [labels[j][label_slices], alg_labels[j]],
-                [alg_labels[j], labels[j][label_slices]],
+                [labels[j][label_slices], alg_labels[j]],
+                # [alg_labels[j], labels[j][label_slices]],
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
               
@@ -370,11 +375,6 @@ class SegmentationUtils:
               # this will lead to artefacts - but is fast
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
-            y_max_label = alg_labels[j].max()
-            
-            if y_max_label > 0:
-              next_max_labels.append(y_max_label)
-              
       # set current maximum from base
       # TODO is this a fair assumption? - No
       # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:

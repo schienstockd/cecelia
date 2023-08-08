@@ -16,8 +16,8 @@ def intersection_over_union(x, y, dtype = np.uint16):
   iou[np.isnan(iou)] = 0.0
   
   # # TODO there must be a better way to use sparse matrices
-  # n_pixels_x = overlap.sum(axis = 0)
-  # n_pixels_true = overlap.sum(axis = 1)
+  # n_pixels_x = overlap.sum(axis = 0).astype(np.uint16)
+  # n_pixels_true = overlap.sum(axis = 1).astype(np.uint16)
   # 
   # # reshape and compose
   # n_pixels_true = n_pixels_true.reshape((n_pixels_true.shape[0], 1))
