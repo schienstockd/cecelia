@@ -39,13 +39,14 @@ Match masks
 adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
 """
-def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
+def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None):
   # save merged labels
   mmax = masks[0].max()
-  empty = 0
+  mmin = masks[0].min()
   
   # preserve dtype - use first image as reference
-  dtype = masks[0].dtype
+  if dtype is None:
+    dtype = masks[0].dtype
   
   for i in range(len(masks)-1):
     # limit signal if no unmatched labels should be found
@@ -60,7 +61,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
       mmax = masks[i + 1].max()
     elif not iou.size and not empty == 0:
       icount = masks[i + 1].max()
-      istitch = np.arange(mmax + 1, mmax + icount + 1, 1, int)
+      istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
       mmax += icount
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
@@ -69,7 +70,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
       iou[iou < iou.max(axis = 0)] = 0.0
       istitch = iou.argmax(axis = 1) + 1
       ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
-      istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, int)
+      istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
       mmax += len(ino)
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
@@ -90,4 +91,4 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False):
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
 
-  return [x.astype(dtype) for x in masks]
+  return masks

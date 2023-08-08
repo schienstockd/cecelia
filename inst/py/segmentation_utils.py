@@ -354,6 +354,8 @@ class SegmentationUtils:
             
             # merge with exisiting labels
             if self.label_overlap > 0:
+              # TODO I cannot figure out why this is accumulating memory
+              
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
               self.logfile_utils.log('> locals')
