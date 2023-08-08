@@ -242,9 +242,6 @@ InputManager <- R6::R6Class(
           }
           
           param <- curParams
-          
-          if (elmntName == "segment-segment.cellpose.models_1_cellChannels")
-            browser()
         } else {
           if (elmntNameTrimmed %in% names(params)) {
             param <- params[[elmntNameTrimmed]]
