@@ -427,8 +427,6 @@ InputManager <- R6::R6Class(
       
       uiDefault <- private$convertToSpecType(specContent$default, specType)
       
-      browser()
-      
       list(
         ui = checkboxInput(
           elmntName, NULL,
@@ -655,8 +653,6 @@ InputManager <- R6::R6Class(
           names(channelChoices) <- namesChannelChoices
         }
       }
-      
-      browser()
       
       list(
         ui = createSelectInput(
