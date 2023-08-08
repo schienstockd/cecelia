@@ -206,6 +206,7 @@ funParams <- list(
   haloSize = 20, # for nuclei expansion
   haloWholeCell = TRUE,
   blockSize = 2048,
+  # blockSize = 512,
   # overlap = 120, # for larger structures
   # context = 40,
   overlap = 64,
