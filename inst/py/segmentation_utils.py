@@ -361,7 +361,8 @@ class SegmentationUtils:
               
               # get matches
               matched_masks = label_utils.match_masks(
-                [labels[j][label_slices], alg_labels[j]],
+                # [labels[j][label_slices], alg_labels[j]],
+                [alg_labels[j], labels[j][label_slices]],
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
               
