@@ -357,7 +357,7 @@ class SegmentationUtils:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
               
               self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j][label_slices],
+                'labels': labels[j],
                 'alg_labels': alg_labels[j]
               })
               
@@ -369,7 +369,7 @@ class SegmentationUtils:
               
               self.logfile_utils.log(f'> After {j}')
               self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j][label_slices],
+                'labels': labels[j],
                 'alg_labels': alg_labels[j],
                 'matched_masks 1': matched_masks[0],
                 'matched_masks 2': matched_masks[1]
@@ -380,7 +380,7 @@ class SegmentationUtils:
               
               self.logfile_utils.log(f'> Copied {j}')
               self.logfile_utils.log_mem_usage(var_names = {
-                'labels': labels[j][label_slices]
+                'labels': labels[j]
               })
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
