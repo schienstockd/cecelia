@@ -36,11 +36,11 @@ class LogfileUtils():
   Get memory usage
   https://stackoverflow.com/a/51046503
   """
-  def log_mem_usage(self, context = None, var_names = None, num_vars = 10):
+  def log_mem_usage(self, var_names = None, context = None, num_vars = 10):
     if var_names is not None:
       for i, x in var_names.items():
         self.log('{:>30}: {:>8}'.format(i, self.sizeof_fmt(sys.getsizeof(x))))
-    else if context is not None:
+    elif context is not None:
       for name, size in sorted(((name, sys.getsizeof(value)) for name, value in list(
                             context.items())), key = lambda x: -x[1])[:num_vars]:
           self.log('{:>30}: {:>8}'.format(name, self.sizeof_fmt(size)))
