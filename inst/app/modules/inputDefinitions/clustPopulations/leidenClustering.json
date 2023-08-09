@@ -8,7 +8,7 @@
   },
   "spec": {
     "inputs": {
-      "valueName": {
+      "valueNameSuffix": {
 				"type:character": {
 					"default": "default"
 				}
@@ -101,9 +101,9 @@
   },
   "ui": {
     "inputs": {
-      "valueName": {
+      "valueNameSuffix": {
 				"index": 0,
-				"label": "Name",
+				"label": "Suffix",
 				"widget:textInput": {
 				}
 			},

@@ -483,14 +483,16 @@ funParams <- list(
   uIDs = uIDs
 )
 
-# run task
-task <- cciaObj$runTask(
-  funName = "behaviourAnalysis.clusterTracks",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1
-)
+# run tasks for a range of parameters to compare cluster results
+
+  # run task
+  task <- cciaObj$runTask(
+    funName = "behaviourAnalysis.clusterTracks",
+    funParams = funParams,
+    env = "local",
+    runInplace = TRUE,
+    taskID = 1
+  )
 ```
 
 ```{r}
