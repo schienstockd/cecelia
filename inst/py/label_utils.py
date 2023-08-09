@@ -97,7 +97,12 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     #   masks[i + 1] = istitch[masks[i + 1]]
     else:
       iou = iou >= stitch_threshold
-      iou = iou >= iou.max(axis = 0).toarray()
+      x = np.array(iou.argmax(axis = 0))[0,:]
+      y = np.arange(0,x.size,1)
+      z = iou.max(axis = 0).toarray()[0,:]
+      iou = coo_array((z, (x, y)), shape = (len(x), len(y)))
+      
+      # iou = iou >= iou.max(axis = 0).toarray()
       # iou[iou < stitch_threshold] = 0
       # iou[iou < iou.max(axis = 0).toarray()] = 0
       istitch = iou.argmax(axis = 1) + 1
