@@ -60,6 +60,12 @@ https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da
 """
 def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = None):
   # save merged labels
+  if logfile_utils is not None:
+    logfile_utils.log([x.max() for x in masks])
+    logfile_utils.log(max([x.max() for x in masks]))
+    logfile_utils.log([x[x > 0].min() for x in masks if np.any(x)])
+    logfile_utils.log(min([x[x > 0].min() for x in masks if np.any(x)]))
+    
   mmin = min([x[x > 0].min() - 1 if np.any(x) else 0 for x in masks])
   empty = 0
   
@@ -72,7 +78,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmin
     
-  # get max for processing
+  # get max for processing from lefthand image
   mmax = masks[0].max()
   
   # log
