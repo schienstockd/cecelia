@@ -617,7 +617,8 @@ NapariUtils <- R6::R6Class(
     ## setters
     setViewerOutputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_output_file = r'%s'", .dockerMapPathToHost(x)),
+        sprintf("napari_utils.viewer_output_file = r'%s'",
+                .dockerMapPathToHost(x, path = "home")),
         execInteractive = execInteractive
       )
       
@@ -626,7 +627,8 @@ NapariUtils <- R6::R6Class(
     
     setViewerInputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_input_file = r'%s'", .dockerMapPathToHost(x)),
+        sprintf("napari_utils.viewer_input_file = r'%s'",
+                .dockerMapPathToHost(x, path = "home")),
         execInteractive = execInteractive
       )
       
