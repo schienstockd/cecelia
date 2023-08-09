@@ -76,7 +76,7 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "Fi2BUU", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$moduleFunParams("segment.cellpose")
+labelsDT <- cciaObj$popDT("labels")
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=12}
