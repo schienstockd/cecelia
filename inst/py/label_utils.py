@@ -135,10 +135,10 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # labels_adjust = mmin if no_stitch else (mmin - mmax)
   
   for i in range(1, len(masks)):
-      masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
-
-      if no_stitch is False:
-        masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmax
+    masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
+    
+    if no_stitch is False:
+      masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - (mmax - 1)
     
   if logfile_utils is not None:
     logfile_utils.log([x.max() for x in masks])
