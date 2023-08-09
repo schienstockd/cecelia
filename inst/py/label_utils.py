@@ -128,9 +128,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
       
   # readjust label numbers
-  # for i in range(len(masks)):
-    # masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin - mmax
-    # masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin - mmax
+  if iou.size:
+    for i in range(len(masks)):
+      masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin - mmax
     
   if logfile_utils is not None:
     logfile_utils.log(max([x.max() for x in masks]))
