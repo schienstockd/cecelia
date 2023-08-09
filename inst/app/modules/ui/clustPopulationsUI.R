@@ -33,6 +33,21 @@
             )
           ),
           fluidRow(
+            column(
+              12,
+              box(
+                solidHeader = TRUE,
+                collapsible = TRUE, 
+                title = "Cluster setting",
+                status = "primary",
+                width = 12,
+                fluidRow(
+                  column(3, )
+                )
+              )
+            )
+          ),
+          fluidRow(
             # column(
             #   6,
             #   box(
