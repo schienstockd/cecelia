@@ -47,10 +47,8 @@ NapariUtils <- R6::R6Class(
       ), execInteractive = execInteractive)
       
       # set io files
-      private$setViewerOutputFile(
-        .dockerMapPathToHost(normalizePath(viewerOutputFile)))
-      private$setViewerInputFile(
-        .dockerMapPathToHost(normalizePath(viewerInputFile)))
+      private$setViewerOutputFile(normalizePath(viewerOutputFile))
+      private$setViewerInputFile(normalizePath(viewerInputFile))
       
       # clear user input
       self$clearViewerInput()
@@ -619,7 +617,7 @@ NapariUtils <- R6::R6Class(
     ## setters
     setViewerOutputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_output_file = r'%s'", x),
+        sprintf("napari_utils.viewer_output_file = r'%s'", .dockerMapPathToHost(x)),
         execInteractive = execInteractive
       )
       
@@ -628,7 +626,7 @@ NapariUtils <- R6::R6Class(
     
     setViewerInputFile = function(x, execInteractive = TRUE) {
       self$execute(
-        sprintf("napari_utils.viewer_input_file = r'%s'", x),
+        sprintf("napari_utils.viewer_input_file = r'%s'", .dockerMapPathToHost(x)),
         execInteractive = execInteractive
       )
       
