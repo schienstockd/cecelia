@@ -60,7 +60,6 @@ https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da
 """
 def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = None):
   # save merged labels
-  # mmax = max([x.max() for x in masks])
   mmin = min([x[x > 0].min() - 1 if np.any(x) else 0 for x in masks])
   empty = 0
   
@@ -72,6 +71,18 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # Maybe a sparse matrix would be better .. ?
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmin
+    
+  # get max for processing
+  mmax = max([x.max() for x in masks])
+  
+  # log
+  if logfile_utils is not None:
+    logfile_utils.log(max([x.max() for x in masks]))
+    logfile_utils.log(min([x[x > 0].min() for x in masks if np.any(x)]))
+  
+  if logfile_utils is not None:
+    logfile_utils.log(f'+> max {mmax}')
+    logfile_utils.log(f'+> min {mmin}')
   
   for i in range(len(masks)-1):
     # limit signal if no unmatched labels should be found
@@ -83,12 +94,11 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     
     if not iou.size and empty == 0:
       masks[i + 1] = masks[i + 1]
-      # mmax = masks[i + 1].max()
+      mmax = masks[i + 1].max()
     elif not iou.size and not empty == 0:
       icount = masks[i + 1].max()
-      # istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
-      istitch = np.arange(mmin + 1, mmin + icount + 1, 1, dtype = dtype)
-      # mmax += icount
+      istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
+      mmax += icount
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
     else:
@@ -96,9 +106,8 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       iou[iou < iou.max(axis = 0)] = 0
       istitch = iou.argmax(axis = 1) + 1
       ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
-      # istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
-      istitch[ino] = np.arange(mmin + 1, mmin + len(ino) + 1, 1, dtype = dtype)
-      # mmax += len(ino)
+      istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
+      mmax += len(ino)
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
       empty = 1
@@ -117,5 +126,18 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     # remove non-matched labels
     for i in range(len(masks)):
       masks[i] = masks[i] * np.isin(masks[i], common_labels)
+      
+  # readjust label numbers
+  for i in range(len(masks)):
+    # masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
+    masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - (abs(mmax - mmin))
+    
+  if logfile_utils is not None:
+    logfile_utils.log(max([x.max() for x in masks]))
+    logfile_utils.log(min([x[x > 0].min() for x in masks if np.any(x)]))
+  
+  if logfile_utils is not None:
+    logfile_utils.log(f'+> max {mmax}')
+    logfile_utils.log(f'+> min {mmin}')
   
   return masks

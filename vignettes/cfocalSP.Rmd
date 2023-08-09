@@ -73,6 +73,19 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "qOZXGA", versionID = versionID, initReactivity = FALSE 
+)
+
+
+```
+
+```{r}
+# get distances from lymphs to melano
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "TURHVv", versionID = versionID, initReactivity = FALSE # Set
 )
 
