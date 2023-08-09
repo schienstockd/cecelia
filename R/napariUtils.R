@@ -47,8 +47,8 @@ NapariUtils <- R6::R6Class(
       ), execInteractive = execInteractive)
       
       # set io files
-      private$setViewerOutputFile(viewerOutputFile)
-      private$setViewerInputFile(viewerInputFile)
+      private$setViewerOutputFile(normalizePath(viewerOutputFile))
+      private$setViewerInputFile(normalizePath(viewerInputFile))
       
       # clear user input
       self$clearViewerInput()

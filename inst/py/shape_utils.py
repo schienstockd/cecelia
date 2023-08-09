@@ -3,9 +3,8 @@ import os
 import glob
 import json
 
-from napari.utils.io import csv_to_layer_data
+from napari_builtins.io import csv_to_layer_data
 from pathlib import Path
-
 import py.config_utils as cfg
 
 class ShapeUtils:
