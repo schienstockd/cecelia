@@ -77,7 +77,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   
   # log
   if logfile_utils is not None:
+    logfile_utils.log([x.max() for x in masks])
     logfile_utils.log(max([x.max() for x in masks]))
+    logfile_utils.log([x[x > 0].min() for x in masks if np.any(x)])
     logfile_utils.log(min([x[x > 0].min() for x in masks if np.any(x)]))
   
   if logfile_utils is not None:
@@ -97,12 +99,12 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       masks[i + 1] = masks[i + 1]
       # mmax = masks[i + 1].max()
       no_stitch = True
-    elif not iou.size and not empty == 0:
-      icount = masks[i + 1].max()
-      istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
-      # mmax += icount
-      istitch = np.append(np.array(0), istitch)
-      masks[i + 1] = istitch[masks[i + 1]]
+    # elif not iou.size and not empty == 0:
+    #   icount = masks[i + 1].max()
+    #   istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
+    #   # mmax += icount
+    #   istitch = np.append(np.array(0), istitch)
+    #   masks[i + 1] = istitch[masks[i + 1]]
     else:
       iou[iou < stitch_threshold] = 0
       iou[iou < iou.max(axis = 0)] = 0
@@ -132,13 +134,14 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # readjust label numbers
   # labels_adjust = mmin if no_stitch else (mmin - mmax)
   
-  for i in range(len(masks)):
+  for i in range(1, len(masks)):
       masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
 
       if no_stitch is False:
         masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmax
     
   if logfile_utils is not None:
+    logfile_utils.log([x.max() for x in masks])
     logfile_utils.log(max([x.max() for x in masks]))
   
   if logfile_utils is not None:
