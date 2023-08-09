@@ -73,18 +73,7 @@ ViewerManager <- R6::R6Class(
     },
     
     # return viewer
-    viewer = function(
-      viewerOutputFile = file.path(
-          cciaPath(), "app",
-          cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$outputFile
-        ),
-      viewerInputFile = file.path(
-          cciaPath(), "app",
-          cciaConf()$python$viewer$viewerPath,
-          cciaConf()$python$viewer$inputFile
-        )) {
-      
+    viewer = function() {
       if (is.null(private$getViewer()) && self$getIgnoreCalls() == FALSE && DEBUG_SHOW_VIEWER == TRUE) {
         # init viewer
         # viewer <- NapariUtils$new()
