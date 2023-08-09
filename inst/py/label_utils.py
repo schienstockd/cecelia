@@ -141,7 +141,8 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
     
-    if no_stitch is False:
+  if no_stitch is False:
+    for i in range(1, len(masks)):
       masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmax
     
   if logfile_utils is not None:
