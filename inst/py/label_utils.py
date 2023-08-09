@@ -95,8 +95,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       mmax = masks[i + 1].max()
     elif not iou.size and not empty == 0:
       icount = masks[i + 1].max()
-      istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
-      mmax += icount
+      # istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
+      istitch = np.arange(mmin + 1, mmin + icount + 1, 1, dtype = dtype)
+      # mmax += icount
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
     else:
@@ -104,8 +105,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       iou[iou < iou.max(axis = 0)] = 0
       istitch = iou.argmax(axis = 1) + 1
       ino = np.nonzero(iou.max(axis = 1) == 0.0)[0]
-      istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
-      mmax += len(ino)
+      # istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
+      istitch[ino] = np.arange(mmin + 1, mmin + len(ino) + 1, 1, dtype = dtype)
+      # mmax += len(ino)
       istitch = np.append(np.array(0), istitch)
       masks[i + 1] = istitch[masks[i + 1]]
       empty = 1
