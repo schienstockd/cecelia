@@ -381,7 +381,6 @@ class SegmentationUtils:
       # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
       #   cur_max_labels = alg_labels['base'].max()
       if len(next_max_labels) > 0:
-        self.logfile_utils.log(next_max_labels)
         cur_max_labels = max(next_max_labels)
     
       self.logfile_utils.log(f'>> Max label {cur_max_labels}')
