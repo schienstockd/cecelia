@@ -4,8 +4,8 @@
     # replace mapping with defined path
     filePath <- stringr::str_replace(
       filePath,
-      cciaConf()$docker$pathMapping$from[[path]],
-      cciaConf()$docker$pathMapping$to[[path]])
+      cciaConf()$docker$pathMapping[[path]]$from,
+      cciaConf()$docker$pathMapping[[path]]$to)
   }
   
   filePath
