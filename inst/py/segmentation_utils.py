@@ -353,10 +353,8 @@ class SegmentationUtils:
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
             alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
             
-            y_max_label = alg_labels[j].max()
-            
-            if y_max_label > 0:
-              next_max_labels.append(y_max_label)
+            # get labels pre merging
+            y_max_label_pre = alg_labels[j].max()
             
             # merge with exisiting labels
             if self.label_overlap > 0:
@@ -375,6 +373,13 @@ class SegmentationUtils:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
+            
+            # get labels post merging
+            y_max_label_post = alg_labels[j].max()
+            y_max_label = y_max_label_pre - abs(y_max_label_pre - y_max_label_post)
+              
+            if y_max_label > 0:
+              next_max_labels.append(y_max_label)
             
       # set current maximum from base
       # TODO is this a fair assumption? - No
