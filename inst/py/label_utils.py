@@ -99,10 +99,12 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
     
     # get intersection
     iou = intersection_over_union(masks[i + 1], masks[i])[1:, 1:]
+    no_stitch = False
     
     if not iou.size and empty == 0:
       masks[i + 1] = masks[i + 1]
       mmax = masks[i + 1].max()
+      no_stitch = True
     # elif not iou.size and not empty == 0:
     #   icount = masks[i + 1].max()
     #   istitch = np.arange(mmax + 1, mmax + icount + 1, 1, dtype = dtype)
@@ -138,6 +140,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # readjust label numbers
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
+    
+    if no_stitch is False:
+      masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmax
     
   if logfile_utils is not None:
     logfile_utils.log([x.max() for x in masks])
