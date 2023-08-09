@@ -261,7 +261,8 @@ class SegmentationUtils:
       clear_borders = len(slices) > 1
     
     # go through slices
-    for i, cur_slices in enumerate(slices):
+    # for i, cur_slices in enumerate(slices):
+    for i, cur_slices in enumerate(slices[1:6]):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
@@ -352,12 +353,14 @@ class SegmentationUtils:
             # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
             alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
             
+            y_max_label = alg_labels[j].max()
+            
+            if y_max_label > 0:
+              next_max_labels.append(y_max_label)
+            
             # merge with exisiting labels
             if self.label_overlap > 0:
               self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
-              
-              self.logfile_utils.log('A')
-              self.logfile_utils.log(alg_labels[j].max())
               
               # get matches
               matched_masks = label_utils.match_masks(
@@ -366,27 +369,13 @@ class SegmentationUtils:
                 stitch_threshold = self.label_overlap,
                 remove_unmatched = False)
               
-              self.logfile_utils.log('B')
-              self.logfile_utils.log(alg_labels[j].max())
-              
               # TODO merge masks - is there a better way?
               labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
-              
-              self.logfile_utils.log('C')
-              self.logfile_utils.log(alg_labels[j].max())
             else:
               self.logfile_utils.log(f'> Merge {j} labels by maximum')
               # this will lead to artefacts - but is fast
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
             
-            self.logfile_utils.log('D')
-            self.logfile_utils.log(alg_labels[j].max())
-            
-            y_max_label = alg_labels[j].max()
-            
-            if y_max_label > 0:
-              next_max_labels.append(y_max_label)
-              
       # set current maximum from base
       # TODO is this a fair assumption? - No
       # if alg_labels['base'] is not None and alg_labels['base'].max() > 0:
