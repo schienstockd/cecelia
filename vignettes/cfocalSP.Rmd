@@ -76,7 +76,9 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "qOZXGA", versionID = versionID, initReactivity = FALSE 
 )
 
-
+a <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(),
+  value_name = "default")$label_props_view()$as_df())
 ```
 
 ```{r}
