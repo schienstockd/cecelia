@@ -105,7 +105,7 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
       # iou = iou >= iou.max(axis = 0).toarray()
       # iou[iou < stitch_threshold] = 0
       # iou[iou < iou.max(axis = 0).toarray()] = 0
-      istitch = iou.argmax(axis = 1)[0,:] + 1
+      istitch = iou.argmax(axis = 1).A.ravel() + 1
       ino = np.nonzero(iou.max(axis = 1).toarray() == 0.0)[0]
       istitch[ino] = np.arange(mmax + 1, mmax + len(ino) + 1, 1, dtype = dtype)
       # mmax += len(ino)
