@@ -29,7 +29,7 @@ def intersection_over_union(x, y, dtype = np.uint16):
   # iou[np.isnan(iou)] = 0.0
   
   # return iou
-  return preprocessing.normalize(overlap, norm='l1', axis=1)
+  return preprocessing.normalize(overlap, norm='l1', axis=1).astype(np.float16)
   
 """
 Adapted from cellpose.metrics to find overlap between masks
