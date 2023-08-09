@@ -58,7 +58,7 @@ Match masks
 adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
 """
-def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None):
+def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = None):
   # save merged labels
   mmax = np.max([x.max() for x in masks])
   mmin = np.min([x[x > 0].min() - 1 if np.any(x) else 0 for x in masks])
@@ -72,6 +72,10 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # Maybe a sparse matrix would be better .. ?
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] - mmin
+    
+  if logfile_utils is not None:
+    logfile_utils.log(f'+> max {mmax}')
+    logfile_utils.log(f'+> min {mmin}')
   
   for i in range(len(masks)-1):
     # limit signal if no unmatched labels should be found
@@ -119,5 +123,9 @@ def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype =
   # readjust label numbers
   for i in range(len(masks)):
     masks[i][masks[i] > 0] = masks[i][masks[i] > 0] + mmin
+    
+  if logfile_utils is not None:
+    logfile_utils.log(max([x.max() for x in masks]))
+    logfile_utils.log(min([x[x > 0].min() for x in masks]))
   
   return masks
