@@ -82,7 +82,7 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   labels_diff = dict()
   
   if len(cur_labels) > 1:
-    labels_pre = {i: np.unique(x) for i, x in cur_labels.items()  if i != 'base'}
+    labels_pre = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
   
   # remove border labels
   cur_labels = {

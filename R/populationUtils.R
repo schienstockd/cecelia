@@ -129,6 +129,9 @@ PopulationUtils <- R6::R6Class(
       # check whether pops are different from IDs
       if (is.null(names(pops))) {
         names(pops) <- pops
+        
+        # TODO this should not occur in any case
+        names(pops)[!is.na(stringr::str_match(names(pops), "/"))] = ""
       }
       
       # remove populations without a name

@@ -43,10 +43,12 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
 )
 
-# a <- cciaObj$imPopMap("flow", includeFiltered = TRUE)
-cciaObj$setImPopMap("flow", a)
-cciaObj$setImGatingSetFilepath("default.gs")
-cciaObj$saveState()
+a <- cciaObj$imPopMap("flow", includeFiltered = TRUE)
+# cciaObj$setImPopMap("flow", a)
+# cciaObj$setImGatingSetFilepath("default.gs")
+# cciaObj$saveState()
+
+names(a)
 ```
 
 ```{r}
