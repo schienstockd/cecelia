@@ -223,9 +223,10 @@ InputManager <- R6::R6Class(
         # get trimmed element name
         elmntNameTrimmed <- .trimModuleFunName(elmntName)
         
-        # get function parameters
-        # params <- self$cciaObjectSet()$moduleFunParams(self$selectedFun())
+        # get function parameters from object first, then experimental set if not present
         params <- self$cciaObject()$moduleFunParams(self$selectedFun())
+        if (is.null(params))
+          params <- self$cciaObjectSet()$moduleFunParams(self$selectedFun())
         
         # grouped?
         if (any(!is.na(stringr::str_match(elmntNameTrimmed, "_")))) {
