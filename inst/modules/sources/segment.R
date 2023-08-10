@@ -57,6 +57,8 @@ Segment <- R6::R6Class(
       
       # save object
       cciaObj$saveState()
+      
+      attr(spaceholder, "suffixes")
     },
     
     # update labels filepath

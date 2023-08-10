@@ -27,7 +27,7 @@ Cellpose <- R6::R6Class(
       
       # reset image information
       # self$resetImageInfo()
-      self$resetImageInfo(labelSuffixes = labelSuffixes)
+      labelSuffixes <- self$resetImageInfo(labelSuffixes = labelSuffixes)
       
       self$initLog()
       self$writeLog("Start Cellpose segmentation")
@@ -104,7 +104,7 @@ Cellpose <- R6::R6Class(
       )
       
       # call python
-      self$pyScript("cellpose_wrapper", params)
+      # self$pyScript("cellpose_wrapper", params)
       
       # DONE
       self$writeLog("Done")

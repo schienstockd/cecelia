@@ -226,10 +226,10 @@ task <- cciaObj$runTask(
   funParams = funParams,
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  # env = "local",
-  runInplace = FALSE,
-  # runInplace = TRUE,
+  # env = "hpc",
+  env = "local",
+  # runInplace = FALSE,
+  runInplace = TRUE,
   taskID = 1
   # taskID = 2
 )
@@ -320,6 +320,19 @@ task <- cciaObj$runTask(
   runInplace = TRUE,
   taskID = 1
 )
+```
+
+```{r}
+# run population clustering
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$valueSuffixes("imLabelsFilepath", valueName = "default")
 ```
 
 ```{r}
@@ -486,7 +499,7 @@ funParams <- list(
   valueName = "default",
   uIDs = uIDs,
   clusterChannels = list(
-    base = list(
+    halo = list(
       channels = channelNames
     )
     # halo = list(
