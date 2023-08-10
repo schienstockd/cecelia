@@ -71,6 +71,19 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   cur_labels = {i: np.squeeze(x) for i, x in cur_labels.items()}
   cur_im_dat = np.squeeze(cur_im_dat)
   
+  # this applies to matched labels to make sure that halos are not cut off
+  # TODO this implies that all labels have a base
+  # but not all base will have a halo .. or matched cell
+  # you need to know which ones were removed
+  
+  # remember which ones were removed
+  labels_pre = dict()
+  labels_post = dict()
+  labels_diff = dict()
+  
+  if len(cur_labels) > 1:
+    labels_pre = {i: np.unique(x) for i, x in cur_labels.items()  if i != 'base'}
+  
   # remove border labels
   cur_labels = {
     i: clear_border_labels(x, dim_utils,
@@ -79,6 +92,15 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
         clear_depth = clear_depth
       ) for i, x in cur_labels.items()
     }
+  
+  if len(cur_labels) > 1:
+    labels_post = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
+    labels_diff = {i: set(labels_pre[i]) - set(labels_post[i]) for i in cur_labels.keys() if i != 'base'}
+    
+  # make sure that base labels are removed when auxialliary are
+  if len(labels_diff) > 1:
+    for i, x in labels_diff.items():
+      cur_labels['base'] = cur_labels['base'][np.isin(cur_labels['base'], x)] = 0
   
   return cur_labels, cur_im_dat
 

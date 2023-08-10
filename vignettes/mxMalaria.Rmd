@@ -76,7 +76,7 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "Fi2BUU", versionID = versionID, initReactivity = FALSE
 )
 
-labelsDT <- cciaObj$popDT("labels")
+cciaObj$omeXMLPixelRes()
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=12}

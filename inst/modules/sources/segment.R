@@ -66,7 +66,7 @@ Segment <- R6::R6Class(
       
       # add labels and properties
       # TODO why does this not work sometimes?
-      if (!is.null(labelSuffixes) && length(labelSuffixes) > 0) {
+      if (length(labelSuffixes) > 0) {
         # set combined labels
         labelsPath <- paste0(valueName, cciaConf()$files$ext$labels)
         attr(labelsPath, "suffixes") <- unlist(labelSuffixes)

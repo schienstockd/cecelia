@@ -99,17 +99,6 @@ task <- cciaObj$runTask(
 
 
 ```{r}
-# upload STOMICS
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
-)
-```
-
-```{r}
 genes <- list(
   tumour_general = c("ABCC11", "AGR3", "DSP", "ERBB2", "FOXA1",
                      "GATA3", "S100A14", "SERPINA3", "TACSTD2"),
@@ -247,13 +236,13 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
-# retrieve 
+# retrieve
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
 cciaObj$imLabelsFilepath("default")
@@ -263,6 +252,10 @@ labelsFilepath <- "default.zarr"
 attr(labelsFilepath, "suffixes") <- c("halo")
 cciaObj$setImLabelsFilepath(labelsFilepath, valueName = "default")
 cciaObj$imLabelsFilepath("default")
+
+channelNames <- cciaObj$imChannelNames()
+attr(channelNames, "types") <- c("halo")
+cciaObj$setImChannelNames(channelNames, valueName = "default")
 
 unique(unlist(lapply(
         c("default"),
@@ -436,6 +429,8 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
 )
 
+# a <- cciaObj$cciaObjects()[[1]]$popDT("labels")
+
 allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
 # channelNames <- unname(allChannelNames[allChannelNames != "Hoechst"])
 
@@ -477,7 +472,7 @@ funParams <- list(
   # keepPops = TRUE,
   keepPops = FALSE,
   # resolution = 1.0,
-  resolution = 0.2,
+  resolution = 0.3,
   mergeUmap = TRUE,
   # mergeUmap = FALSE,
   normalisePercentile = 99.8,
@@ -491,12 +486,12 @@ funParams <- list(
   valueName = "default",
   uIDs = uIDs,
   clusterChannels = list(
-    # halo = list(
-    #   channels = channelNames
-    # ),
     base = list(
       channels = channelNames
     )
+    # halo = list(
+    #   channels = channelNames
+    # )
   ),
   objectMeasures = c(
     "area", "perimeter", "solidity",
