@@ -344,7 +344,7 @@ class SegmentationUtils:
             y, self.dim_utils, context = self.context,
             clear_borders = clear_borders,
             clear_touching_border = self.clear_touching_border,
-            clear_depth = self.clear_depth) for y in alg_labels.items()
+            clear_depth = self.clear_depth) for j, y in alg_labels.items()
         }
         
         next_max_labels = list()
