@@ -485,14 +485,16 @@ funParams <- list(
 
 # run tasks for a range of parameters to compare cluster results
 clustParams <- list(
-  resolution = seq(0.2, 0.4, 0.05),
-  percentile = seq(98, 99.5, 0.5)
+  resolution = seq(0.20, 0.40, 0.05),
+  percentile = seq(98.0, 99.5, 0.5)
 )
 
 # go through combos
 paramCombs <- expand.grid(clustParams)
 
-for(x in split(paramCombs, seq(nrow(paramCombs)))[1:2]) {
+parallel::mclapply(split(paramCombs, seq(nrow(paramCombs))), function(x) {
+  .cciaMessageParallel(sprintf(">> Run task for %s", paste(x, collapse = " ")))
+  
   # adjust parameters
   funParams$valueName = paste0(
     "tracks.clusters.tcells.hmm_transitions_movement_", paste(x, collapse = "_"))
@@ -511,9 +513,7 @@ for(x in split(paramCombs, seq(nrow(paramCombs)))[1:2]) {
     runInplace = TRUE,
     taskID = 1
   )
-}
-
-task$result(wait = TRUE)
+}, mc.cores = 4)
 ```
 
 ```{r}

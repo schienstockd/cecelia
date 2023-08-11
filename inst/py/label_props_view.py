@@ -205,9 +205,9 @@ class LabelPropsView:
           self.adata = ad.read_h5ad(
             self.adata_filepath(), backed = "r" if read_only is True else "r+")
         except OSError as e:
-          print(f'>> {self.adata_filepath()} locked - retry in 500ms')
+          print(f'>> {self.adata_filepath()} locked - retry in 2s')
           print(f'>> {e}')
-          time.sleep(1/2)
+          time.sleep(2)
           
           counter += 1
       
