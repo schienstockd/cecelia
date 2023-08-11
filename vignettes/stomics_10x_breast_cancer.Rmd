@@ -332,7 +332,9 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$valueSuffixes("imLabelsFilepath", valueName = "default")
+popDT <- cciaObj$popDT("labels", pops = c("default"))
+
+a <- popDT[label %in% c(78402, 78300, 67797)]
 ```
 
 ```{r}
@@ -499,7 +501,7 @@ funParams <- list(
   valueName = "default",
   uIDs = uIDs,
   clusterChannels = list(
-    halo = list(
+    base = list(
       channels = channelNames
     )
     # halo = list(

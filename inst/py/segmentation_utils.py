@@ -290,13 +290,6 @@ class SegmentationUtils:
             if self.label_expansion > 0:
               alg_labels[j] = expand_labels(alg_labels[j], self.label_expansion)
             
-            # remove border labels
-            alg_labels[j] = measure_utils.clear_border_labels(
-              alg_labels[j], self.dim_utils, context = self.context,
-              clear_borders = clear_borders,
-              clear_touching_border = self.clear_touching_border,
-              clear_depth = self.clear_depth)
-              
             # remove small/big objects
             if self.cell_size_min > 0:
               alg_labels[j] = remove_small_objects(alg_labels[j], self.cell_size_min)
@@ -345,6 +338,15 @@ class SegmentationUtils:
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
         next_max_labels = list()
+        
+        # remove border labels
+        alg_labels = {
+          j: measure_utils.clear_border_labels(
+            y, self.dim_utils, context = self.context,
+            clear_borders = clear_borders,
+            clear_touching_border = self.clear_touching_border,
+            clear_depth = self.clear_depth) for y in alg_labels.items()
+        }
         
         for j in alg_labels.keys():
           if alg_labels[j] is not None:

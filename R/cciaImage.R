@@ -1960,7 +1960,7 @@ CciaImage <- R6::R6Class(
     labelsPopUtils = function(forceReload = FALSE, init = TRUE) {
       if (init == TRUE) {
         if (!is.null(self$valueNames("imLabelPropsFilepath"))) {
-          if (is.null(private$handleBranchPopUtils) || forceReload == TRUE) {
+          if (is.null(private$handleLabelsPopUtils) || forceReload == TRUE) {
             # init object
             private$handleLabelsPopUtils <- MultifileLabelPopUtils$new(
               self$persistentObjectDirectory(),
