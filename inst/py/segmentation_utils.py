@@ -198,20 +198,20 @@ class SegmentationUtils:
               obsm = obsm, uns = uns
               )
 
-      # find shapes of identified labels
-      if self.find_contours is True:
-        self.logfile_utils.log('Find contours')
-
-        label_contours = measure_utils.countours_2D_from_zarr(
-          labels, im_dat, self.dim_utils, self.logfile_utils,
-          block_size = self.block_size, overlap = self.overlap,
-          context = self.context
-        )
-
-        # save contours
-        label_contours.to_csv(
-          os.path.join(self.task_dir, 'label_contours.csv'),
-          index = False)
+      # # find shapes of identified labels
+      # if self.find_contours is True:
+      #   self.logfile_utils.log('Find contours')
+      # 
+      #   label_contours = measure_utils.countours_2D_from_zarr(
+      #     labels, im_dat, self.dim_utils, self.logfile_utils,
+      #     block_size = self.block_size, overlap = self.overlap,
+      #     context = self.context
+      #   )
+      # 
+      #   # save contours
+      #   label_contours.to_csv(
+      #     os.path.join(self.task_dir, 'label_contours.csv'),
+      #     index = False)
       
     return labels
 
