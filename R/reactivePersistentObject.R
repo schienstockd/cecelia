@@ -145,7 +145,7 @@ ReactivePersistentObject <- R6::R6Class(
     },
     
     #' @description on finalise
-    finalize = function() {
+    finalise = function() {
       # remove lock
       private$finishTransaction()
     },

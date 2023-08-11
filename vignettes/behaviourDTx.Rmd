@@ -411,8 +411,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-  # pID = pID, uID = "TWy8AS", versionID = versionID, initReactivity = FALSE # test
+  # DTx
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE
 )
 
 # get experimental info
@@ -492,8 +492,8 @@ clustParams <- list(
 # go through combos
 paramCombs <- expand.grid(clustParams)
 
-parallel::mclapply(split(paramCombs, seq(nrow(paramCombs))), function(x) {
-  .cciaMessageParallel(sprintf(">> Run task for %s", paste(x, collapse = " ")))
+for (x in split(paramCombs, seq(nrow(paramCombs)))) {
+  print(sprintf(">> Run task for %s", paste(x, collapse = " ")))
   
   # adjust parameters
   funParams$valueName = paste0(
@@ -513,7 +513,7 @@ parallel::mclapply(split(paramCombs, seq(nrow(paramCombs))), function(x) {
     runInplace = TRUE,
     taskID = 1
   )
-}, mc.cores = 4)
+}
 ```
 
 ```{r}

@@ -73,10 +73,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "Fi2BUU", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "XXfam7", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$omeXMLPixelRes()
+a <- cciaObj$popDT("labels")
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=12}
