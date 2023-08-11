@@ -141,14 +141,15 @@ class SegmentationUtils:
             # remove previous labels and rename multiscales
             shutil.rmtree(x)
             os.rename(multiscales_file_path, x)
-      else:
-        labels = dict()
-        
-        for i, x in self.labels_paths.items():
-          labels[i], group_info = zarr_utils.open_labels_as_zarr(x, len(im_dat))
-        
-        # get first level
-        labels = {i: x[0] for i, x in labels.items()}
+      
+      # load image
+      labels = dict()
+      
+      for i, x in self.labels_paths.items():
+        labels[i], group_info = zarr_utils.open_labels_as_zarr(x, len(im_dat))
+      
+      # get first level
+      labels = {i: x[0] for i, x in labels.items()}
       
       print(self.labels_props_filename)
       
