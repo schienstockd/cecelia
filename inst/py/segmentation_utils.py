@@ -146,7 +146,8 @@ class SegmentationUtils:
       labels = dict()
       
       for i, x in self.labels_paths.items():
-        labels[i], group_info = zarr_utils.open_labels_as_zarr(x, len(im_dat))
+        # labels[i], group_info = zarr_utils.open_labels_as_zarr(x, len(im_dat))
+        labels[i], group_info = zarr_utils.open_labels_as_zarr(x, 1)
       
       # get first level
       labels = {i: x[0] for i, x in labels.items()}
