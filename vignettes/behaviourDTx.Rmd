@@ -493,15 +493,27 @@ clustParams <- list(
 paramCombs <- expand.grid(clustParams)
 
 for(x in split(paramCombs, seq(nrow(paramCombs)))[1:2]) {
+  # adjust parameters
+  funParams$valueName = paste0(
+    "tracks.clusters.tcells.hmm_transitions_movement_", paste(x, collapse = "_"))
+  funParams$clusterColName = paste0(
+    "hmm_transitions_movement_", paste(x, collapse = "_"))
+  
+  for (i in names(x)) {
+    funParams[[i]] <- x[[i]]
+  }
+  
   # run task
   task <- cciaObj$runTask(
     funName = "behaviourAnalysis.clusterTracks",
     funParams = funParams,
     env = "local",
-    runInplace = FALSE,
+    runInplace = TRUE,
     taskID = 1
   )
 }
+
+task$result(wait = TRUE)
 ```
 
 ```{r}
