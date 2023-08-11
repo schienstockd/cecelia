@@ -104,7 +104,7 @@ Cellpose <- R6::R6Class(
       )
       
       # call python
-      # self$pyScript("cellpose_wrapper", params)
+      self$pyScript("cellpose_wrapper", params)
       
       # DONE
       self$writeLog("Done")

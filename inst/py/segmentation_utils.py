@@ -337,7 +337,6 @@ class SegmentationUtils:
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
-        next_max_labels = list()
         
         # remove border labels
         alg_labels = {
@@ -348,6 +347,7 @@ class SegmentationUtils:
             clear_depth = self.clear_depth) for y in alg_labels.items()
         }
         
+        next_max_labels = list()
         for j in alg_labels.keys():
           if alg_labels[j] is not None:
             # increase numbering

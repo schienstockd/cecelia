@@ -428,12 +428,12 @@ funParams <- list(
   popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
   # valueName = "tracks.clusters.tcells.movement",
   # clusterColName = "movement",
-  valueName = "tracks.clusters.tcells.hmm",
-  clusterColName = "hmm",
+  # valueName = "tracks.clusters.tcells.hmm",
+  # clusterColName = "hmm",
   # valueName = "tracks.clusters.tcells.hmm_movement",
   # clusterColName = "hmm_movement",
-  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  # clusterColName = "hmm_transitions_movement",
+  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  clusterColName = "hmm_transitions_movement",
   # valueName = "tracks.clusters.tcells.hmm_movement",
   # clusterColName = "hmm_movement",
   # valueName = "tracks.clusters.tcells.hmm_transitions_movement_shape",
@@ -441,16 +441,16 @@ funParams <- list(
   resolution = 0.25,
   percentile = 99.5,
   trackMeasures = c(
-    # "speed",
-    # "duration",
-    # "trackLength",
-    # "meanTurningAngle",
-    # "displacement",
-    # "straightness",
-    # "displacementRatio",
-    # "outreachRatio",
-    # "asphericity",
-    # "overallAngle"
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
   ),
   objectMeasures = c(
     # "surface_area",
@@ -462,8 +462,8 @@ funParams <- list(
     # "compactness",
     # "sphericity",
     # HMM states
-    "live.cell.hmm.state.movement"
-    # "live.cell.hmm.transitions.movement"
+    "live.cell.hmm.state.movement",
+    "live.cell.hmm.transitions.movement"
     # "live.cell.hmm.state.shape",
     # "live.cell.hmm.transitions.shape"
     ),
@@ -484,15 +484,24 @@ funParams <- list(
 )
 
 # run tasks for a range of parameters to compare cluster results
+clustParams <- list(
+  resolution = seq(0.2, 0.4, 0.05),
+  percentile = seq(98, 99.5, 0.5)
+)
 
+# go through combos
+paramCombs <- expand.grid(clustParams)
+
+for(x in split(paramCombs, seq(nrow(paramCombs)))[1:2]) {
   # run task
   task <- cciaObj$runTask(
     funName = "behaviourAnalysis.clusterTracks",
     funParams = funParams,
     env = "local",
-    runInplace = TRUE,
+    runInplace = FALSE,
     taskID = 1
   )
+}
 ```
 
 ```{r}
