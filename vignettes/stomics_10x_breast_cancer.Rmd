@@ -196,10 +196,10 @@ funParams <- list(
   haloWholeCell = TRUE,
   blockSize = 2048,
   # blockSize = 512,
-  # overlap = 120, # for larger structures
-  # context = 40,
-  overlap = 64,
-  context = 52,
+  overlap = 100, # for larger structures
+  context = 40,
+  # overlap = 64,
+  # context = 52,
   blockSizeZ = -1,
   overlapZ = -1,
   segment = TRUE,
@@ -334,7 +334,7 @@ cciaObj <- initCciaObject(
 
 popDT <- cciaObj$popDT("labels", pops = c("default"))
 
-a <- popDT[label %in% c(78402, 78300, 67797)]
+a <- popDT[label %in% c(17952)]
 ```
 
 ```{r}
@@ -487,7 +487,7 @@ funParams <- list(
   # keepPops = TRUE,
   keepPops = FALSE,
   # resolution = 1.0,
-  resolution = 0.3,
+  resolution = 0.4,
   mergeUmap = TRUE,
   # mergeUmap = FALSE,
   normalisePercentile = 99.8,
@@ -501,10 +501,10 @@ funParams <- list(
   valueName = "default",
   uIDs = uIDs,
   clusterChannels = list(
-    base = list(
+    halo = list(
       channels = channelNames
     )
-    # halo = list(
+    # base = list(
     #   channels = channelNames
     # )
   ),

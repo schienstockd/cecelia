@@ -77,12 +77,12 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   # you need to know which ones were removed
   
   # remember which ones were removed
-  labels_pre = dict()
-  labels_post = dict()
-  labels_diff = dict()
+  # labels_pre = dict()
+  # labels_post = dict()
+  # labels_diff = dict()
   
-  if len(cur_labels) > 1:
-    labels_pre = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
+  # if len(cur_labels) > 1:
+  #   labels_pre = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
   
   # remove border labels
   cur_labels = {
@@ -93,14 +93,14 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
       ) for i, x in cur_labels.items()
     }
   
-  if len(cur_labels) > 1:
-    labels_post = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
-    labels_diff = {i: set(labels_pre[i]) - set(labels_post[i]) for i in cur_labels.keys() if i != 'base'}
-    
-  # make sure that base labels are removed when auxialliary are
-  if len(labels_diff) > 1:
-    for i, x in labels_diff.items():
-      cur_labels['base'] = cur_labels['base'][np.isin(cur_labels['base'], x)] = 0
+  # if len(cur_labels) > 1:
+  #   labels_post = {i: np.unique(x) for i, x in cur_labels.items() if i != 'base'}
+  #   labels_diff = {i: list(set(labels_pre[i]) - set(labels_post[i])) for i in cur_labels.keys() if i != 'base'}
+  #   
+  # # make sure that base labels are removed when auxialliary are
+  # if len(labels_diff) > 1:
+  #   for i, x in labels_diff.items():
+  #     cur_labels['base'] = cur_labels['base'][np.isin(cur_labels['base'], x)] = 0
   
   return cur_labels, cur_im_dat
 

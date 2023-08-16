@@ -277,7 +277,7 @@ CciaImageSet <- R6::R6Class(
     #' @param ... passed to CciaImage$popDT
     popDT = function(asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
                      colsToNormalise = c(), batchGroup = "uID", normPercentile = 0.998,
-                     mc.cores = 2, ...) {
+                     mc.cores = 4, ...) {
       # get DTs from images
       if (private$isReactive() == TRUE) {
         popDTs <- lapply(
