@@ -263,7 +263,8 @@ class SegmentationUtils:
       clear_borders = len(slices) > 1
     
     # go through slices
-    for i, cur_slices in enumerate(slices):
+    # for i, cur_slices in enumerate(slices):
+    for i, cur_slices in enumerate(slices[0:2]):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
@@ -386,11 +387,10 @@ class SegmentationUtils:
           for j in [k for k in alg_labels.keys() if k != 'base']:
             if alg_labels[j] is not None:
               for x, y in dict_replace:
-                self.logfile_utils.log(j)
-                self.logfile_utils.log(alg_labels[j].dtype)
-                
+                # creates np.int64 array?
                 # alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
                 alg_labels[j] = np.where(alg_labels[j] == x, y, alg_labels[j])
+                
               labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
               
           # else:
