@@ -263,7 +263,7 @@ class SegmentationUtils:
       clear_borders = len(slices) > 1
     
     # go through slices
-    for i, cur_slices in enumerate(slices[0:2]):
+    for i, cur_slices in enumerate(slices):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
@@ -354,52 +354,49 @@ class SegmentationUtils:
             clear_depth = self.clear_depth) for j, y in alg_labels.items()
         }
         
-        # check that numbers are all the same for labels after border correction
-        # TODO there should be a better way
-        if len(alg_labels) > 0:
-          common_labels = list()
-
-          # get common labels from all masks
-          for i in alg_labels.keys():
-            if len(common_labels) > 0:
-              common_labels = np.intersect1d(common_labels, alg_labels[i])
-            else:
-              common_labels = np.unique(alg_labels[i])
-
-          # remove non-matched labels
-          for i in alg_labels.keys():
-            alg_labels[i] = alg_labels[i] * np.isin(alg_labels[i], common_labels)
-        
         next_max_labels = list()
-        for j in alg_labels.keys():
-          if alg_labels[j] is not None:
-            # increase numbering
-            # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
-            alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
+        # for j in alg_labels.keys():
+        if alg_labels['base'] is not None:
+          # increase numbering
+          # alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
+          alg_labels['base'][alg_labels['base'] > 0] = alg_labels['base'][alg_labels['base'] > 0] + cur_max_labels
+          
+          # merge with exisiting labels
+          # if self.label_overlap > 0:
+          self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
+          
+          # get matches
+          matched_masks = label_utils.match_masks(
+            [labels['base'][label_slices], alg_labels['base']],
+            # [alg_labels['base'], labels['base'][label_slices]],
+            stitch_threshold = self.label_overlap,
+            remove_unmatched = False,
+            logfile_utils = self.logfile_utils)
+          
+          # TODO merge masks - is there a better way?
+          labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+          
+          # propagate to other labels
+          # TODO is there a better way?
+          _, idx_pre = np.unique(alg_labels['base'], return_index = True)
+          _, idx_post = np.unique(matched_masks[1], return_index = True)
+          
+          # go through - TODO there should be a better way
+          for j in [k for k in alg_labels.keys() if k != 'base']:
+            if alg_labels[j] is not None:
+              for x, y in zip(alg_labels['base'][sorted(idx_pre)], matched_masks[1][sorted(idx_post)]):
+                alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
+              
+          # else:
+          #   self.logfile_utils.log(f'> Merge base labels by maximum')
+          #   # this will lead to artefacts - but is fast
+          #   labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
+          
+          # get labels post merging
+          y_max_label = labels['base'][label_slices].max()
             
-            # merge with exisiting labels
-            if self.label_overlap > 0:
-              self.logfile_utils.log(f'> Merge {j} labels by overlap {self.label_overlap}')
-              
-              # get matches
-              matched_masks = label_utils.match_masks(
-                [labels[j][label_slices], alg_labels[j]],
-                # [alg_labels[j], labels[j][label_slices]],
-                stitch_threshold = self.label_overlap,
-                remove_unmatched = False, logfile_utils = self.logfile_utils)
-              
-              # TODO merge masks - is there a better way?
-              labels[j][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
-            else:
-              self.logfile_utils.log(f'> Merge {j} labels by maximum')
-              # this will lead to artefacts - but is fast
-              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
-            
-            # get labels post merging
-            y_max_label = labels[j][label_slices].max()
-              
-            if y_max_label > 0 and y_max_label > cur_max_labels:
-              next_max_labels.append(y_max_label)
+          if y_max_label > 0 and y_max_label > cur_max_labels:
+            next_max_labels.append(y_max_label)
             
       # set current maximum from base
       # TODO is this a fair assumption? - No

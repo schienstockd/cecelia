@@ -60,7 +60,8 @@ Match masks
 adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
 """
-def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False, dtype = None, logfile_utils = None):
+def match_masks(masks, stitch_threshold = 0.2, remove_unmatched = False,
+                dtype = None, logfile_utils = None):
   mmin = min([x[x > 0].min() - 1 if np.any(x) else 0 for x in masks])
   empty = 0
   
