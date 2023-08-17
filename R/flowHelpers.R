@@ -432,16 +432,17 @@
 #' @description Get leaves from population
 #' @param gs GatingSet
 #' @param pop character for population
-#' @param groupByParent boolean for grouping
+#' @param groupByParent boolean for grouping by parent
+#' @param groupByGate boolean for grouping by gate
 #' @examples
 #' TODO
 #' @export
-.flowLeavesForPop <- function(gs, pop = "/", groupByParent = FALSE) {
+.flowLeavesForPop <- function(gs, pop = "/", groupByParent = FALSE, groupByGate = FALSE) {
   pops <- flowWorkspace::gs_get_pop_paths(gs, order = 'bfs')
   
   leaves <- .popsGetParentLeaves(pops = pops, pop = pop)
   
-  # return parent leaves
+  # return leaves by parent
   if (groupByParent == TRUE) {
     # group by parent
     leaveParents <- sapply(leaves, .flowPopParent, root = "root")
@@ -465,6 +466,34 @@
     
     # replace root
     names(leaves)[names(leaves) == ""] <- "root"
+    
+    # return leaves by gate
+    if (groupByGate == TRUE) {
+      for (i in names(leaves)) {
+        # get gating info
+        gateInfo <- lapply(leaves[[i]], function(x) {
+          paste(sort(names(.flowGatingAxisForPop(gs, x))),
+                collapse = " v ")
+        })
+        names(gateInfo) <- leaves[[i]]
+        
+        uniqueGates <- unique(gateInfo)
+        
+        groupedLeaves <- list()
+        
+        # TODO is there a better way?
+        for (j in uniqueGates) {
+          groupedLeaves[[j]] <- c()
+        }
+        
+        for (j in names(gateInfo)) {
+          groupedLeaves[[gateInfo[[j]]]] <- c(
+            groupedLeaves[[gateInfo[[j]]]], j)
+        }
+        
+        leaves[[i]] <- groupedLeaves
+      }
+    }
   }
   
   leaves
@@ -506,12 +535,13 @@
 #' @description Direct leaves for population
 #' @param gs GatingSet
 #' @param pop character for population
+#' @param ... passed to .flowLeavesForPop
 #' @examples
 #' TODO
 #' @export
-.flowDirectLeavesForPop <- function(gs, pop = "/") {
+.flowDirectLeavesForPop <- function(gs, pop = "/", ...) {
   # get all leaves
-  allLeaves <- .flowLeavesForPop(gs, pop = pop)
+  allLeaves <- .flowLeavesForPop(gs, pop = pop, ...)
   
   # filter for direct leaves
   if (!.flowPopIsRoot(pop)) {
@@ -937,273 +967,279 @@
   # TODO that should be better
   if (directLeaves == TRUE) {
     leaves <- list()
-    leaves[[popPath]] <- fgs$popLeaves(popPath, directLeaves = TRUE)
+    leaves[[popPath]] <- fgs$popLeaves(popPath, directLeaves = TRUE,
+                                       groupByParent = TRUE, groupByGate = TRUE)
   } else {
-    leaves <- fgs$popLeaves(popPath, directLeaves = FALSE, groupByParent = TRUE)
+    leaves <- fgs$popLeaves(popPath, directLeaves = FALSE,
+                            groupByParent = TRUE, groupByGate = TRUE)
   }
-  
-  browser()
   
   p1s <- list()
   for (xParent in names(leaves)) {
-    local({
-      pops <- leaves[[xParent]]
-      
-      # go through pops and get gates
-      popGates <- lapply(pops, fgs$popGate)
-      names(popGates) <- pops
-      
-      # get channels
-      popGateChannels <- lapply(popGates, function(x) names(x@parameters))
-      
-      xPops <- c("root", xParent)
-      
-      if (showPopColours == TRUE) {
-        # get all direct leaves of the leaves
-        directLeaves <- unlist(lapply(pops, fgs$popDirectLeaves))
+    for (xGateParams in names(leaves[[xParent]])) {
+      local({
+        pops <- leaves[[xParent]][[xGateParams]]
         
-        if (.flowPopIsRoot(xParent))
-          xPops <- c(xParent, directLeaves)
-        else
-          xPops <- c("root", xParent, directLeaves)
-      }
-      
-      # get pops
-      popDT <- cciaObj$popDT(
-        "flow", pops = xPops, popCols = unique(unlist(popGateChannels)),
-        completeDT = FALSE, uniqueLabels = TRUE)
-      
-      # go through gate combinations
-      for (gateChannels in unique(popGateChannels)) {
-        xLabel <- gateChannels[[1]]
-        yLabel <- gateChannels[[2]]
+        # go through pops and get gates
+        popGates <- lapply(pops, fgs$popGate)
+        names(popGates) <- pops
         
-        # get range
-        xRange <- range(popDT[, ..xLabel])
-        yRange <- range(popDT[, ..yLabel])
+        # get channels
+        popGateChannels <- lapply(popGates, function(x) names(x@parameters))
         
-        # get boundaries
-        gateDTs <- list()
+        xPops <- c("root", xParent)
         
-        for (j in names(popGates)) {
-          xGate <- popGates[[j]]
-          
-          # rectangle gate?
-          if (attr(xGate, "class") == "rectangleGate") {
-            # build path
-            gateDTs[[j]] <- as.data.table(list(
-              x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
-              y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
-            ))
-            setnames(gateDTs[[j]], "x", xLabel)
-            setnames(gateDTs[[j]], "y", yLabel)
-          } else {
-            # close path
-            gateDTs[[j]] <- as.data.table(xGate@boundaries)
-            gateDTs[[j]] <- rbind(gateDTs[[j]], gateDTs[[j]][1])
-          }
-        }
-        
-        # bind together
-        gateDT <- rbindlist(gateDTs, idcol = "pop")
-        
-        # get gate range
-        xRangeGate <- range(gateDT[, ..xLabel])
-        yRangeGate <- range(gateDT[, ..yLabel])
-        
-        # combine with data range
-        xRange <- c(floor_dec(min(xRange[[1]], xRangeGate[[1]]), level = 4),
-                    ceiling_dec(max(xRange[[2]], xRangeGate[[2]]), level = 4))
-        yRange <- c(floor_dec(min(yRange[[1]], yRangeGate[[1]]), level = 4),
-                    ceiling_dec(max(yRange[[2]], yRangeGate[[2]]), level = 4))
-        
-        # add label
-        # add label
-        # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
-        nameDTs <- list()
-        
-        for (j in names(popGates)) {
-          nameDTs[[j]] <- as.data.frame(list(
-            x = mean(gateDT[pop == j, ][[xLabel]]),
-            # x = min(gateDT[pop == j, ][[xLabel]]),
-            # x = max(gateDT[pop == j, ][[xLabel]]),
-            # x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
-            y = max(gateDT[pop == j, ][[yLabel]])
-            # y = mean(gateDT[pop == j, ][[yLabel]])
-          ))
-          
-          if (j %in% names(labelPos)) {
-            if ("x" %in% names(labelPos[[j]]))
-              nameDTs[[j]]$x <- labelPos[[j]]$x
-            if ("y" %in% names(labelPos[[j]]))
-              nameDTs[[j]]$y <- labelPos[[j]]$y
-            if ("yFun" %in% names(labelPos[[j]]))
-              nameDTs[[j]]$y <- labelPos[[j]]$yFun(gateDT[pop == j, ][[yLabel]])
-          }
-          
-          colnames(nameDTs[[j]]) <- c(xLabel, yLabel)
-          
-          # add pop name
-          if (showPopName == TRUE)
-            nameDTs[[j]]$label <- .flowTrimPath(j, pathLevels = 0)
-          else
-            nameDTs[[j]]$label <- ""
-          
-          # add percentage
-          popStats <- fgs$getPopStats(j, type = "percent")
-          nameDTs[[j]]$label <- paste(
-            nameDTs[[j]]$label, paste0(
-              sprintf("%0.2f", popStats$percent * 100), "%"))
-        }
-        
-        # bind together
-        nameDT <- rbindlist(nameDTs, idcol = "pop")
-        
-        # prepare colours
         if (showPopColours == TRUE) {
-          # show population colours
-          popColours <- as.list(sapply(
-            xPops,
-            function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
-          ))
+          # get all direct leaves of the leaves
+          directLeaves <- unlist(lapply(pops, fgs$popDirectLeaves))
           
-          # adjust root colour
-          popColours$root <- "black"
-          
-          popExclude <- ""
-          if (!.flowPopIsRoot(xParent)) {
-            popExclude <- "root"
-            popColours <- popColours[names(popColours) != "root"]
-          }
+          if (.flowPopIsRoot(xParent))
+            xPops <- c(xParent, directLeaves)
+          else
+            xPops <- c("root", xParent, directLeaves)
         }
         
-        # prepare plot
-        p1 <- ggplot2::ggplot() +
-          ggplot2::theme_classic() +
-          # xlim(xRange) + ylim(yRange) +
-          # https://stackoverflow.com/a/21307010
-          ggplot2::xlim(range(pretty(xRange))) +
-          ggplot2::ylim(range(pretty(yRange))) +
-          ggplot2::xlab(xLabel) +
-          ggplot2::ylab(yLabel)
+        # get pops
+        popDT <- cciaObj$popDT(
+          "flow", pops = xPops, popCols = unique(unlist(popGateChannels)),
+          completeDT = FALSE, uniqueLabels = TRUE)
         
-        # build raster
-        if (asContours == TRUE) {
-          if (showPopColours == TRUE) {
-            # get contours for pops
-            rasterContours <- list()
+        # go through gate combinations
+        for (gateChannels in unique(popGateChannels)) {
+          xLabel <- gateChannels[[1]]
+          yLabel <- gateChannels[[2]]
+          
+          # get range
+          xRange <- range(popDT[, ..xLabel])
+          yRange <- range(popDT[, ..yLabel])
+          
+          # get boundaries
+          gateDTs <- list()
+          
+          for (j in names(popGates)) {
+            xGate <- popGates[[j]]
             
-            for (y in xPops[!xPops %in% popExclude]) {
-              rasterContours[[y]] <- .flowRasterContour(
-                popDT[pop == y], xLabel, yLabel, color = popColours[[y]],
-                xRange = xRange, yRange = yRange)
+            # rectangle gate?
+            if (attr(xGate, "class") == "rectangleGate") {
+              # build path
+              gateDTs[[j]] <- as.data.table(list(
+                x = c(xGate@min[1], xGate@min[1], xGate@max[1], xGate@max[1]),
+                y = c(xGate@min[2], xGate@max[2], xGate@max[2], xGate@min[2])
+              ))
+              setnames(gateDTs[[j]], "x", xLabel)
+              setnames(gateDTs[[j]], "y", yLabel)
+            } else {
+              # close path
+              gateDTs[[j]] <- as.data.table(xGate@boundaries)
+              gateDTs[[j]] <- rbind(gateDTs[[j]], gateDTs[[j]][1])
+            }
+          }
+          
+          # bind together
+          gateDT <- rbindlist(gateDTs, idcol = "pop")
+          
+          # get gate range
+          xRangeGate <- range(gateDT[, ..xLabel])
+          yRangeGate <- range(gateDT[, ..yLabel])
+          
+          # combine with data range
+          xRange <- c(floor_dec(min(xRange[[1]], xRangeGate[[1]]), level = 4),
+                      ceiling_dec(max(xRange[[2]], xRangeGate[[2]]), level = 4))
+          yRange <- c(floor_dec(min(yRange[[1]], yRangeGate[[1]]), level = 4),
+                      ceiling_dec(max(yRange[[2]], yRangeGate[[2]]), level = 4))
+          
+          # add label
+          # add label
+          # nameDT <- as.data.frame(rbind(gateDT %>% colMeans()))
+          nameDTs <- list()
+          
+          for (j in names(popGates)) {
+            nameDTs[[j]] <- as.data.frame(list(
+              x = mean(gateDT[pop == j, ][[xLabel]]),
+              # x = min(gateDT[pop == j, ][[xLabel]]),
+              # x = max(gateDT[pop == j, ][[xLabel]]),
+              # x = quantile(gateDT[pop == j, ][[xLabel]], 0.75),
+              y = max(gateDT[pop == j, ][[yLabel]])
+              # y = mean(gateDT[pop == j, ][[yLabel]])
+            ))
+            
+            if (j %in% names(labelPos)) {
+              if ("x" %in% names(labelPos[[j]]))
+                nameDTs[[j]]$x <- labelPos[[j]]$x
+              if ("y" %in% names(labelPos[[j]]))
+                nameDTs[[j]]$y <- labelPos[[j]]$y
+              if ("yFun" %in% names(labelPos[[j]]))
+                nameDTs[[j]]$y <- labelPos[[j]]$yFun(gateDT[pop == j, ][[yLabel]])
             }
             
-            # add rasters
-            for (j in names(rasterContours)) {
-              y <- rasterContours[[j]]
+            colnames(nameDTs[[j]]) <- c(xLabel, yLabel)
+            
+            # add pop name
+            if (showPopName == TRUE)
+              nameDTs[[j]]$label <- .flowTrimPath(j, pathLevels = 0)
+            else
+              nameDTs[[j]]$label <- ""
+            
+            # add percentage
+            popStats <- fgs$getPopStats(j, type = "percent")
+            nameDTs[[j]]$label <- paste(
+              nameDTs[[j]]$label, paste0(
+                sprintf("%0.2f", popStats$percent * 100), "%"))
+          }
+          
+          # bind together
+          nameDT <- rbindlist(nameDTs, idcol = "pop")
+          
+          # prepare colours
+          if (showPopColours == TRUE) {
+            # show population colours
+            popColours <- as.list(sapply(
+              xPops,
+              function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+            ))
+            
+            # adjust root colour
+            popColours$root <- "black"
+            
+            popExclude <- ""
+            if (!.flowPopIsRoot(xParent)) {
+              popExclude <- "root"
+              popColours <- popColours[names(popColours) != "root"]
+            }
+          }
+          
+          # prepare plot
+          p1 <- ggplot2::ggplot() +
+            ggplot2::theme_classic() +
+            # xlim(xRange) + ylim(yRange) +
+            # https://stackoverflow.com/a/21307010
+            ggplot2::xlim(range(pretty(xRange))) +
+            ggplot2::ylim(range(pretty(yRange))) +
+            ggplot2::xlab(xLabel) +
+            ggplot2::ylab(yLabel)
+          
+          # build raster
+          if (asContours == TRUE) {
+            if (showPopColours == TRUE) {
+              # get contours for pops
+              rasterContours <- list()
               
-              p1 <- p1 + ggplot2::annotation_raster(
-                y$raster$image,
-                xmin = y$raster$x_range[1],
-                xmax = y$raster$x_range[2],
-                ymin = y$raster$y_range[1],
-                ymax = y$raster$y_range[2]
-              ) +
+              for (y in xPops[!xPops %in% popExclude]) {
+                rasterContours[[y]] <- .flowRasterContour(
+                  popDT[pop == y], xLabel, yLabel, color = popColours[[y]],
+                  xRange = xRange, yRange = yRange)
+              }
+              
+              # add rasters
+              for (j in names(rasterContours)) {
+                y <- rasterContours[[j]]
+                
+                p1 <- p1 + ggplot2::annotation_raster(
+                  y$raster$image,
+                  xmin = y$raster$x_range[1],
+                  xmax = y$raster$x_range[2],
+                  ymin = y$raster$y_range[1],
+                  ymax = y$raster$y_range[2]
+                ) +
+                  ggplot2::geom_polygon(
+                    data = y$contours,
+                    aes(x = y, y = x, group = as.factor(seq)),
+                    size = 0.2, color = popColours[[j]], fill = "white"
+                  )
+              }
+            } else {
+              r1 <- .flowRasterContour(
+                popDT[pop == xParent], xLabel, yLabel,
+                xRange = xRange, yRange = yRange, ...)
+              
+              p1 <- p1 + 
+                ggplot2::annotation_raster(
+                  r1$raster$image,
+                  xmin = r1$raster$x_range[1],
+                  xmax = r1$raster$x_range[2],
+                  ymin = r1$raster$y_range[1],
+                  ymax = r1$raster$y_range[2]) +
                 ggplot2::geom_polygon(
-                  data = y$contours,
+                  data = r1$contours,
                   aes(x = y, y = x, group = as.factor(seq)),
-                  size = 0.2, color = popColours[[j]], fill = "white"
-                )
+                  size = 0.2, color = "black", fill = "white") 
             }
           } else {
-            r1 <- .flowRasterContour(
-              popDT[pop == xParent], xLabel, yLabel,
-              xRange = xRange, yRange = yRange, ...)
+            if (showPopColours == TRUE) {
+              # build raster
+              r1 <- .flowRasterBuild(
+                popDT[pop != popExclude], xLabel, yLabel,
+                colorMode = "white", layout = "cover",
+                colorBy = "pop", color = popColours,
+                xRange = xRange, yRange = yRange, ...)
+            } else {
+              r1 <- .flowRasterBuild(
+                popDT[pop == xParent], xLabel, yLabel,
+                colorMode = "white", layout = "cover",
+                xRange = xRange, yRange = yRange, ...)
+            }
             
-            p1 <- p1 + 
-              ggplot2::annotation_raster(
-                r1$raster$image,
-                xmin = r1$raster$x_range[1],
-                xmax = r1$raster$x_range[2],
-                ymin = r1$raster$y_range[1],
-                ymax = r1$raster$y_range[2]) +
-              ggplot2::geom_polygon(
-                data = r1$contours,
-                aes(x = y, y = x, group = as.factor(seq)),
-                size = 0.2, color = "black", fill = "white") 
-          }
-        } else {
-          if (showPopColours == TRUE) {
-            # build raster
-            r1 <- .flowRasterBuild(
-              popDT[pop != popExclude], xLabel, yLabel,
-              colorMode = "white", layout = "cover",
-              colorBy = "pop", color = popColours,
-              xRange = xRange, yRange = yRange, ...)
-          } else {
-            r1 <- .flowRasterBuild(
-              popDT[pop == xParent], xLabel, yLabel,
-              colorMode = "white", layout = "cover",
-              xRange = xRange, yRange = yRange, ...)
+            p1 <- p1 +
+              annotation_raster(
+                r1$image,
+                xmin = r1$x_range[1], xmax = r1$x_range[2],
+                ymin = r1$y_range[1], ymax = r1$y_range[2]) 
           }
           
-          p1 <- p1 +
-            annotation_raster(
-              r1$image,
-              xmin = r1$x_range[1], xmax = r1$x_range[2],
-              ymin = r1$y_range[1], ymax = r1$y_range[2]) 
-        }
-        
-        # get population colors
-        if (showGatePopColours == TRUE) {
-          popColors <- sapply(
-            pops, function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]])
-        } else {
-          popColors <- rep("white", length(pops))
-        }
-        
-        # add gates
-        p1 <- p1 + ggplot2::geom_polygon(
-          data = gateDT,
-          aes(
-            x = get(xLabel),
-            y = get(yLabel),
-            group = pop
-          ), size = 0.5, color = "black",
-          # fill = "#23aeff", alpha = 0.2) +
-          alpha = 0.0) +
-          # ggplot2::geom_label(
-          ggrepel::geom_label_repel(
-            data = nameDT,
+          # get population colors
+          if (showGatePopColours == TRUE) {
+            popColors <- sapply(
+              pops, function(x) cciaObj$popAttr("flow", "colour", popPath = x)[[1]])
+          } else {
+            popColors <- rep("white", length(pops))
+          }
+          
+          # add gates
+          p1 <- p1 + ggplot2::geom_polygon(
+            data = gateDT,
             aes(
-              label = label,
               x = get(xLabel),
               y = get(yLabel),
-              group = pop,
-              fill = pop
-              ),
-            color = "black",
-            fontface = "bold",
-            # size = labelSize, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
-            size = labelSize, label.size = labelBorder, alpha = labelAlpha
-          ) +
-          # scale_color_manual(values = popColors) +
-          scale_fill_manual(values = popColors) +
-          ggtitle(xParent) +
-          theme(
-            legend.position = "none",
-            # plot.title = element_text(size = 8)
-            plot.title = element_text(size = plotTitleSize),
-            axis.title.x = element_text(size = xTitleSize),
-            axis.title.y = element_text(size = yTitleSize),
-            axis.text.x = element_text(size = xAxisSize),
-            axis.text.y = element_text(size = yAxisSize),
-          )
-        
-        p1s[[xParent]] <<- p1
-      }
-    })
+              group = pop
+            ), size = 0.5, color = "black",
+            # fill = "#23aeff", alpha = 0.2) +
+            alpha = 0.0) +
+            # ggplot2::geom_label(
+            ggrepel::geom_label_repel(
+              data = nameDT,
+              aes(
+                label = label,
+                x = get(xLabel),
+                y = get(yLabel),
+                group = pop,
+                fill = pop
+                ),
+              color = "black",
+              fontface = "bold",
+              # size = labelSize, color = cciaObj$popAttr("flow", "colour", popPath = x)[[1]]
+              size = labelSize, label.size = labelBorder, alpha = labelAlpha
+            ) +
+            # scale_color_manual(values = popColors) +
+            scale_fill_manual(values = popColors) +
+            ggtitle(xParent) +
+            theme(
+              legend.position = "none",
+              # plot.title = element_text(size = 8)
+              plot.title = element_text(size = plotTitleSize),
+              axis.title.x = element_text(size = xTitleSize),
+              axis.title.y = element_text(size = yTitleSize),
+              axis.text.x = element_text(size = xAxisSize),
+              axis.text.y = element_text(size = yAxisSize),
+            )
+          
+          # make fixed if coords are shown
+          if (all(!is.na(str_match(c(xLabel, yLabel), "centroid"))))
+            p1 <- p1 + coord_fixed()
+          
+          p1s[[paste(xParent, xGateParams, sep = ":")]] <<- p1
+        }
+      })
+    }
   }
   
   p1s

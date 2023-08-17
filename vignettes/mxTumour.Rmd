@@ -32,7 +32,7 @@ library(tidyverse)
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 ```
 
-```{r fig_gating, fig.height=3, fig.width=3}
+```{r fig_gating, fig.height=3, fig.width=6}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
@@ -56,9 +56,10 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
   
   p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 1)
-  print(p1)
+  suppressWarnings(print(p1))
   
-  # ggsave(file.path(anaDir, paste0(x$getUID(), "_gating.png")), width = 1.8, height = 1.8, plot = p1)
+  ggsave(file.path(anaDir, paste0(x$getUID(), "_gating.png")),
+         width = 5.4, height = 1.8, plot = p1, bg = "white")
 }
 ```
 
