@@ -444,6 +444,14 @@ class SegmentationUtils:
         labels['halo'] = expand_labels(base_labels, self.halo_size).astype(np.uint32)
       else:
         labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(np.uint32)
+        
+      # expand labels starts counting at '1'
+      _, idx_base = np.unique(base_labels, return_index = True)
+      labels_base = base_labels.ravel()[idx_base]
+      labels_halo = labels['halo'].ravel()[idx_base]
+      
+      for x, y in zip(labels_halo, labels_base):
+        labels['halo'][labels['halo'] == x] = y
       
     # add cyto segmentation from base and nucleus?
     if 'nuc' in labels.keys():
@@ -452,7 +460,7 @@ class SegmentationUtils:
       labels['cyto'][labels['nuc'] > 0] = 0
     
     return labels
-    
+
   """
   Predict slice
   """
