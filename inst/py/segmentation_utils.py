@@ -356,19 +356,19 @@ class SegmentationUtils:
         
         # check that numbers are all the same for labels after border correction
         # TODO there should be a better way
-        # if len(alg_labels) > 0:
-        #   common_labels = list()
-        # 
-        #   # get common labels from all masks
-        #   for i in alg_labels.keys():
-        #     if len(common_labels) > 0:
-        #       common_labels = np.intersect1d(common_labels, alg_labels[i])
-        #     else:
-        #       common_labels = np.unique(alg_labels[i])
-        # 
-        #   # remove non-matched labels
-        #   for i in alg_labels.keys():
-        #     alg_labels[i] = alg_labels[i] * np.isin(alg_labels[i], common_labels)
+        if len(alg_labels) > 0:
+          common_labels = list()
+
+          # get common labels from all masks
+          for i in alg_labels.keys():
+            if len(common_labels) > 0:
+              common_labels = np.intersect1d(common_labels, alg_labels[i])
+            else:
+              common_labels = np.unique(alg_labels[i])
+
+          # remove non-matched labels
+          for i in alg_labels.keys():
+            alg_labels[i] = alg_labels[i] * np.isin(alg_labels[i], common_labels)
         
         next_max_labels = list()
         for j in alg_labels.keys():
