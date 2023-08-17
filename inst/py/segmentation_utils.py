@@ -372,7 +372,7 @@ class SegmentationUtils:
           # if self.label_overlap > 0:
           self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
-          labels_pre = alg_labels['base'].ravel()[idx_pre]
+          labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
           
           # get matches
           matched_masks = label_utils.match_masks(
@@ -387,7 +387,7 @@ class SegmentationUtils:
           
           # propagate to other labels
           # TODO is there a better way?
-          labels_post = labels['base'][label_slices].ravel()[idx_pre]
+          labels_post = labels['base'][label_slices].ravel()[idx_pre[1:]]
           dict_replace = zip(labels_pre, labels_post)
           
           # go through 
