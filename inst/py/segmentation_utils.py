@@ -380,11 +380,12 @@ class SegmentationUtils:
           # TODO is there a better way?
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
           _, idx_post = np.unique(matched_masks[1], return_index = True)
+          dict_replace = zip(alg_labels['base'].ravel()[sorted(idx_pre)], matched_masks[1].ravel()[sorted(idx_post)])
           
           # go through - TODO there should be a better way
           for j in [k for k in alg_labels.keys() if k != 'base']:
             if alg_labels[j] is not None:
-              for x, y in zip(alg_labels['base'][sorted(idx_pre)], matched_masks[1][sorted(idx_post)]):
+              for x, y in dict_replace:
                 alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
               
           # else:
