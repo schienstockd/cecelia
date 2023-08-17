@@ -309,11 +309,10 @@ class SegmentationUtils:
               alg_labels[j] = np.expand_dims(
                 alg_labels[j], axis = self.dim_utils.dim_idx('T'))
             
-            # rank label ids
-            # TODO not run run when labels have to be matched .. ?
-            if self.match_labels is False and self.rank_labels is True:
-            # if self.rank_labels is True:
-              alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
+            # # rank label ids
+            # # TODO not run run when labels have to be matched .. ?
+            # if self.match_labels is False and self.rank_labels is True:
+            #   alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
             
         # match labels, then go on
         if self.match_labels is True:
@@ -337,6 +336,11 @@ class SegmentationUtils:
           for j, y in label_ids.items():
             for k in [z for z in list(y) if z not in list(matched_labels)]:
               alg_labels[j][alg_labels[j] == k] = 0
+          
+        # rank labels
+        for j in alg_labels.keys():
+          if self.rank_labels is True:
+            alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
