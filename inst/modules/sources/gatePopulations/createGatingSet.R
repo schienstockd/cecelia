@@ -69,6 +69,7 @@ CreateGatingSet <- R6::R6Class(
           else
             channelNames <- x$imChannelNames(includeTypes = TRUE)
         }
+        
         names(ffs) <- self$funParams()$uIDs
         
         if (length(self$funParams()$transChannels) > 0) {

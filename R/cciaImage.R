@@ -1884,7 +1884,7 @@ CciaImage <- R6::R6Class(
       
       # create attributes to add
       propsToAdd <- c(
-        extraChannelColumns,
+        # extraChannelColumns,
         cciaConf()$fcs$propsToAdd
       )
       

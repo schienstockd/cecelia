@@ -444,7 +444,7 @@
   # return parent leaves
   if (groupByParent == TRUE) {
     # group by parent
-    leaveParents <- sapply(leaves, .flowPopParent)
+    leaveParents <- sapply(leaves, .flowPopParent, root = "root")
     uniqueParents <- sapply(
       unique(leaveParents),
       .flowNormRootPath, defaultVal = "root", USE.NAMES = FALSE)
@@ -941,6 +941,8 @@
   } else {
     leaves <- fgs$popLeaves(popPath, directLeaves = FALSE, groupByParent = TRUE)
   }
+  
+  browser()
   
   p1s <- list()
   for (xParent in names(leaves)) {

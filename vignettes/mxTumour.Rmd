@@ -12,9 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-pID <- "az8y8l"
+# pID <- "az8y8l" # ZOE
+pID <- "Wq59Z0" # JY
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
@@ -26,7 +28,38 @@ library(tidyverse)
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
+```
+
+```{r fig_gating, fig.height=3, fig.width=3}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- c("MiM7Tl")
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  # get raster contours
+  p1s <- .flowPlotGatedRaster(
+    x, popPath = "root", labelSize = 2, labelBorder = 0.4,
+    xTitleSize = 12, yTitleSize = 12, labelAlpha = 0.8,
+    xAxisSize = 0, yAxisSize = 0,
+    asContours = TRUE, plotTitleSize = 0,
+    # plot_width = 92, plot_height = 92,
+    showPopName = TRUE, showGatePopColours = TRUE)
+    # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
+  
+  p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 1)
+  print(p1)
+  
+  # ggsave(file.path(anaDir, paste0(x$getUID(), "_gating.png")), width = 1.8, height = 1.8, plot = p1)
+}
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=12}

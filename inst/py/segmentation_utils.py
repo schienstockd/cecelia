@@ -311,7 +311,8 @@ class SegmentationUtils:
             
             # rank label ids
             # TODO not run run when labels have to be matched .. ?
-            if self.match_labels is False and self.rank_labels is True:
+            # if self.match_labels is False and self.rank_labels is True:
+            if self.rank_labels is True:
               alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
             
         # match labels, then go on
