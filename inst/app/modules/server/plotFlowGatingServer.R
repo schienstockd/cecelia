@@ -96,6 +96,7 @@
         progress$close()
         
         req(length(p1s) > 0)
+        req(input$nRow * input$nCol >= length(p1s))
         
         ggpubr::ggarrange(plotlist = p1s, nrow = input$nRow, ncol = input$nCol)
       }) %>% debounce(cciaConf()$tasks$results$poll)

@@ -334,7 +334,7 @@ cciaObj <- initCciaObject(
 
 popDT <- cciaObj$popDT("labels", pops = c("default"))
 
-a <- popDT[label %in% c(17952)]
+a <- popDT[label %in% c(44777)]
 ```
 
 ```{r}
