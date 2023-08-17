@@ -397,7 +397,7 @@ class SegmentationUtils:
             if alg_labels[j] is not None:
               # remove labels not in base
               # alg_labels[j][np.invert(np.isin(alg_labels[j], labels_pre))] = 0
-               
+              
               for x, y in dict_replace:
                 alg_labels[j][alg_labels[j] == x] = y
                 
