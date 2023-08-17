@@ -285,7 +285,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   
   # go through slices
   # for i, cur_slices in enumerate(slices):
-  for i, cur_slices in enumerate(slices[10:12]):
+  for i, cur_slices in enumerate(slices[0:2]):
     logfile_utils.log(">> Slice: " + str(i + 1) + "/" + str(len(slices)))
     logfile_utils.log(cur_slices)
     

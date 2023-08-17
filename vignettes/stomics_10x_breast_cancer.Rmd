@@ -338,6 +338,11 @@ a <- popDT[label %in% c(44777)]
 ```
 
 ```{r}
+props <- read.csv("~/Downloads/halo.csv", sep = "\t")
+```
+
+
+```{r}
 # upload STOMICS
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
