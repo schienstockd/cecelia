@@ -392,7 +392,7 @@ class SegmentationUtils:
           
           self.logfile_utils.log(labels_pre)
           self.logfile_utils.log(labels_post)
-          self.logfile_utils.log(np.unique(alg_labels[j]))
+          self.logfile_utils.log(np.unique(alg_labels['halo']))
           
           # go through 
           # TODO there should be a better way
