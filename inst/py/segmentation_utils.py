@@ -263,7 +263,7 @@ class SegmentationUtils:
       clear_borders = len(slices) > 1
     
     # go through slices
-    for i, cur_slices in enumerate(slices):
+    for i, cur_slices in enumerate(slices[0:2]):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
@@ -353,6 +353,22 @@ class SegmentationUtils:
             clear_touching_border = self.clear_touching_border,
             clear_depth = self.clear_depth) for j, y in alg_labels.items()
         }
+        
+        # check that numbers are all the same for labels after border correction
+        # TODO there should be a better way
+        if len(alg_labels) > 0:
+          common_labels = list()
+  
+          # get common labels from all masks
+          for i in alg_labels.keys():
+            if len(common_labels) > 0:
+              common_labels = np.intersect1d(common_labels, alg_labels[i])
+            else:
+              common_labels = np.unique(alg_labels[i])
+      
+          # remove non-matched labels
+          for i in alg_labels.keys():
+            alg_labels[i] = alg_labels[i] * np.isin(alg_labels[i], common_labels)
         
         next_max_labels = list()
         for j in alg_labels.keys():
