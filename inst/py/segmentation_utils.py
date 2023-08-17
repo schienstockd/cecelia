@@ -421,9 +421,9 @@ class SegmentationUtils:
     if self.halo_size > 0:
       # expand base labels abd subtract base labels from expanded labels
       if self.halo_whole_cell is True:
-        labels['halo'] = expand_labels(base_labels, self.halo_size)
+        labels['halo'] = expand_labels(base_labels, self.halo_size).astype(np.uint32)
       else:
-        labels['halo'] = expand_labels(base_labels, self.halo_size) - base_labels
+        labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(np.uint32)
       
     # add cyto segmentation from base and nucleus?
     if 'nuc' in labels.keys():
