@@ -347,13 +347,19 @@ class SegmentationUtils:
         alg_labels = self.post_processing(alg_labels)
         
         # remove border labels
-        alg_labels = {
-          j: measure_utils.clear_border_labels(
-            y, self.dim_utils, context = self.context,
-            clear_borders = clear_borders,
-            clear_touching_border = self.clear_touching_border,
-            clear_depth = self.clear_depth) for j, y in alg_labels.items()
-        }
+        # alg_labels = {
+        #   j: measure_utils.clear_border_labels(
+        #     y, self.dim_utils, context = self.context,
+        #     clear_borders = clear_borders,
+        #     clear_touching_border = self.clear_touching_border,
+        #     clear_depth = self.clear_depth) for j, y in alg_labels.items()
+        # }
+        # only for base
+        alg_labels['base'] = measure_utils.clear_border_labels(
+          alg_labels['base'], self.dim_utils, context = self.context,
+          clear_borders = clear_borders,
+          clear_touching_border = self.clear_touching_border,
+          clear_depth = self.clear_depth)
         
         next_max_labels = list()
         # for j in alg_labels.keys():
