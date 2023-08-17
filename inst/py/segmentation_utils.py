@@ -392,6 +392,8 @@ class SegmentationUtils:
           
           self.logfile_utils.log(labels_pre)
           self.logfile_utils.log(labels_post)
+          self.logfile_utils.log(alg_labels['base'].shape)
+          self.logfile_utils.log(alg_labels['halo'].shape)
           self.logfile_utils.log(np.unique(alg_labels['halo']))
           
           # go through 
