@@ -385,7 +385,7 @@ class SegmentationUtils:
           dict_replace = zip(labels_pre, labels_post)
           
           self.logfile_utils.log(labels_pre)
-          self.logfile_utils.log(labels['base'][label_slices].ravel()[idx_pre])
+          self.logfile_utils.log(labels_post)
           self.logfile_utils.log(dict_replace)
           
           # go through 
@@ -393,7 +393,7 @@ class SegmentationUtils:
           for j in [k for k in alg_labels.keys() if k != 'base']:
             if alg_labels[j] is not None:
               # remove labels not in base
-              alg_labels[j][!np.isin(alg_labels[j], labels_pre)] = 0
+              alg_labels[j][np.invert(np.isin(alg_labels[j], labels_pre))] = 0
               
               for x, y in dict_replace:
                 alg_labels[j][alg_labels[j] == x] = y
