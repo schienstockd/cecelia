@@ -383,7 +383,10 @@ class SegmentationUtils:
           _, idx_post = np.unique(matched_masks[1], return_index = True)
           dict_replace = zip(alg_labels['base'].ravel()[sorted(idx_pre)], matched_masks[1].ravel()[sorted(idx_post)])
           
+          self.logfile_utils.log(idx_pre)
+          self.logfile_utils.log(idx_post)
           self.logfile_utils.log(dict_replace)
+          
           # go through 
           # TODO there should be a better way
           for j in [k for k in alg_labels.keys() if k != 'base']:
