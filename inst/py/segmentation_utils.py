@@ -386,7 +386,11 @@ class SegmentationUtils:
           for j in [k for k in alg_labels.keys() if k != 'base']:
             if alg_labels[j] is not None:
               for x, y in dict_replace:
+                logfile_utils.log(j)
+                logfile_utils.log(alg_labels[j].dtype)
+                
                 alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
+                labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
               
           # else:
           #   self.logfile_utils.log(f'> Merge base labels by maximum')
