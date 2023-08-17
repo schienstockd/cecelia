@@ -389,8 +389,9 @@ class SegmentationUtils:
                 self.logfile_utils.log(j)
                 self.logfile_utils.log(alg_labels[j].dtype)
                 
-                alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
-                labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
+                # alg_labels[j] = alg_labels[j][alg_labels[j] == x] = y
+                alg_labels[j] = np.where(alg_labels[j] == x, y, alg_labels[j])
+              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
               
           # else:
           #   self.logfile_utils.log(f'> Merge base labels by maximum')
