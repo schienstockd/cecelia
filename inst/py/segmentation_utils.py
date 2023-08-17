@@ -366,16 +366,14 @@ class SegmentationUtils:
         if alg_labels['base'] is not None:
           # increase numbering
           for j in alg_labels.keys():
-            alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels[i]
+            if alg_labels[j] is not None:
+              alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
           
           # merge with exisiting labels
           # if self.label_overlap > 0:
           self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
           labels_pre = alg_labels['base'].ravel()[idx_pre]
-          
-          self.logfile_utils.log(np.unique(alg_labels['base']))
-          self.logfile_utils.log(np.unique(alg_labels['halo']))
           
           # get matches
           matched_masks = label_utils.match_masks(
@@ -392,9 +390,6 @@ class SegmentationUtils:
           # TODO is there a better way?
           labels_post = labels['base'][label_slices].ravel()[idx_pre]
           dict_replace = zip(labels_pre, labels_post)
-          
-          self.logfile_utils.log(labels_pre)
-          self.logfile_utils.log(labels_post)
           
           # go through 
           # TODO there should be a better way
