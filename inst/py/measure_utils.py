@@ -284,8 +284,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         os.remove(meshfile)
   
   # go through slices
-  # for i, cur_slices in enumerate(slices):
-  for i, cur_slices in enumerate(slices[0:2]):
+  for i, cur_slices in enumerate(slices):
     logfile_utils.log(">> Slice: " + str(i + 1) + "/" + str(len(slices)))
     logfile_utils.log(cur_slices)
     
@@ -383,9 +382,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         properties = props_to_get if i == 'base' else minimal_props_to_get
       )) for i, x in cur_labels.items()
       }
-    
-    if 'halo' in props_table.keys():
-      props_table['halo'].to_csv(os.path.join(task_dir, 'halo.csv'), sep = '\t')
       
     # edit column names
     # INFO this could be done on the whole DF afterwards
