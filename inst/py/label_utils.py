@@ -97,8 +97,7 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
     #   istitch = np.append(np.array(0), istitch)
     #   masks[i + 1] = istitch[masks[i + 1]]
     else:
-      if stitch_threshold > 0.0:
-        iou = iou >= stitch_threshold
+      iou = iou > stitch_threshold
       x = np.array(iou.argmax(axis = 0))[0,:]
       y = np.arange(0, x.size, 1, dtype = dtype)
       
