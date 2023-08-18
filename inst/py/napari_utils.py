@@ -486,11 +486,11 @@ class NapariUtils:
           self.remove_layer_by_name(labels_layer)
           
           # show nuclei as contours
-          contour = 2
-          opacity = 0.7
+          contour = 0
+          opacity = 1.0
           if i in ['nuc', 'halo']:
-            contour = 1
-            opacity = 1
+            contour = 0
+            opacity = 0.7
           
           # hide cytoplams by default  
           visible = True
