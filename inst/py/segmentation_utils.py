@@ -264,7 +264,7 @@ class SegmentationUtils:
     
     # go through slices
     # for i, cur_slices in enumerate(slices):
-    for i, cur_slices in enumerate(slices[0:2]):
+    for i, cur_slices in enumerate(slices[0:3]):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
