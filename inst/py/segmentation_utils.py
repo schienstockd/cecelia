@@ -264,7 +264,7 @@ class SegmentationUtils:
     
     # DEBUG FOR MULTIPLE LABELS
     if self.halo_size > 0:
-      slices = slices[0:3]
+      slices = slices[0:12]
     
     # go through slices
     for i, cur_slices in enumerate(slices):
