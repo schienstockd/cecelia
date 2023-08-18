@@ -196,10 +196,10 @@ funParams <- list(
   haloWholeCell = TRUE,
   # blockSize = 2048,
   blockSize = 512,
-  # overlap = 100, # for larger structures
-  # context = 40,
-  overlap = 64,
-  context = 52,
+  overlap = 100, # for larger structures
+  context = 40,
+  # overlap = 64,
+  # context = 52,
   blockSizeZ = -1,
   overlapZ = -1,
   segment = TRUE,
