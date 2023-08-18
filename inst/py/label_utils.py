@@ -61,7 +61,7 @@ adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
 """
 def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
-                dtype = None, logfile_utils = None):
+                only_unmatched = False, dtype = None, logfile_utils = None):
   mmin = min([x[x > 0].min() - 1 if np.any(x) else 0 for x in masks])
   empty = 0
   
@@ -119,8 +119,8 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
       masks[i + 1] = istitch[masks[i + 1]]
       empty = 1
 
-  # only accept common labels
-  if remove_unmatched is True:
+  # only accept common or not common labels
+  if any(remove_unmatched, only_unmatched):
     common_labels = list()
 
     # get common labels from all masks
@@ -131,8 +131,12 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
         common_labels = np.unique(masks[i])
 
     # remove non-matched labels
-    for i in range(len(masks)):
-      masks[i] = masks[i] * np.isin(masks[i], common_labels)
+    if remove_unmatched is True:
+      for i in range(len(masks)):
+        masks[i] = masks[i] * np.isin(masks[i], common_labels)
+    elif only_unmatched is True:
+      for i in range(len(masks)):
+        masks[i] = masks[i] * np.invert(np.isin(masks[i], common_labels))
       
   # readjust label numbers
   for i in range(len(masks)):

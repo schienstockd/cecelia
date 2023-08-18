@@ -380,12 +380,13 @@ class SegmentationUtils:
             [labels['base'][label_slices], alg_labels['base']],
             # [alg_labels['base'], labels['base'][label_slices]],
             stitch_threshold = self.label_overlap,
-            remove_unmatched = False,
+            # remove_unmatched = False,
+            only_unmatched = True,
             logfile_utils = self.logfile_utils)
           
           # TODO merge masks - is there a better way?
           # labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
-          labels['base'][label_slices] = matched_masks[1]
+          labels['base'][label_slices] = np.maximum(labels['base'][label_slices], matched_masks[1])
           
           # propagate to other labels
           # TODO is there a better way?
