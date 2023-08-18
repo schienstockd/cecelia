@@ -120,7 +120,7 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
       empty = 1
 
   # only accept common or not common labels
-  if any(remove_unmatched, only_unmatched):
+  if any([remove_unmatched, only_unmatched]):
     common_labels = list()
 
     # get common labels from all masks
