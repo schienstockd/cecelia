@@ -121,9 +121,9 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
     # get common labels from all masks
     for i in range(len(masks)):
       if i > 0:
-        common_labels = np.intersect1d(common_labels, masks[i])
+        common_labels = np.intersect1d(common_labels, np.unique(masks[i])[1:])
       else:
-        common_labels = np.unique(masks[i])
+        common_labels = np.unique(masks[i])[1:]
 
     # remove non-matched labels
     if remove_unmatched is True:
