@@ -384,7 +384,8 @@ class SegmentationUtils:
             logfile_utils = self.logfile_utils)
           
           # TODO merge masks - is there a better way?
-          labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+          # labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+          labels['base'][label_slices] = matched_masks[1]
           
           # propagate to other labels
           # TODO is there a better way?
