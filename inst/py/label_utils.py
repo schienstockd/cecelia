@@ -100,11 +100,6 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
       iou = iou > stitch_threshold
       x = np.array(iou.argmax(axis = 0))[0,:]
       y = np.arange(0, x.size, 1, dtype = dtype)
-      
-      logfile_utils.log(iou.max(axis = 0))
-      logfile_utils.log(iou.max(axis = 0).toarray())
-      logfile_utils.log(iou.max(axis = 0).toarray()[0,:])
-      
       z = iou.max(axis = 0).toarray()[0,:]
       iou = coo_array((z, (x, y)), shape = (len(x), len(y)))
       
