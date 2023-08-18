@@ -262,6 +262,10 @@ class SegmentationUtils:
     else:
       clear_borders = len(slices) > 1
     
+    # DEBUG FOR MULTIPLE LABELS
+    if self.halo_size > 0:
+      slices = slices[0:5]
+    
     # go through slices
     for i, cur_slices in enumerate(slices):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
