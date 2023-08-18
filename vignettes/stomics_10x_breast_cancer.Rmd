@@ -332,11 +332,11 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-popDT.labels <- cciaObj$popDT("labels", pops = c("default"))
+# popDT.labels <- cciaObj$popDT("labels", pops = c("default"))
 popDT.clust <- cciaObj$popDT("clust", includeFiltered = TRUE)
 
-a <- popDT.labels[label %in% c(31572, 31579)]
-b <- popDT.clust[label %in% c(31572, 31579)]
+# a <- popDT.labels[label %in% c(31572, 31579)]
+b <- popDT.clust[cluster %in% c(5)]
 ```
 
 ```{r}
