@@ -45,16 +45,16 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      walltime = "00-12:00:00",
+      # walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
-      # walltime = "00-00:30:00",
+      walltime = "00-00:30:00",
       # walltime = "02-00:00:00",
-      # projectPartitions = "physical",
-      # projectID = "punim1124",
-      # useGPU = FALSE
-      projectPartitions = "gpu-a100",
-      projectID = "punim1031",
-      useGPU = TRUE
+      projectPartitions = "physical",
+      projectID = "punim1124",
+      useGPU = FALSE
+      # projectPartitions = "gpu-a100",
+      # projectID = "punim1031",
+      # useGPU = TRUE
     )
   ),
   utils = list(
@@ -179,7 +179,7 @@ funParams <- list(
       "cellDiameter" = 10,
       "cellChannels" = list("Hoechst"),
       "nucChannels" = list(),
-      "normalise" = 99,
+      "normalise" = 99.9,
       "stitchThreshold" = 0.2,
       "mergeLabels" = FALSE,
       "threshold" = 0,
@@ -204,8 +204,8 @@ funParams <- list(
   overlapZ = -1,
   segment = TRUE,
   # segment = FALSE,
-  measure = TRUE,
-  # measure = FALSE,
+  # measure = TRUE,
+  measure = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
@@ -216,8 +216,8 @@ funParams <- list(
   minCellSize = 50,
   matchThreshold = 0.2,
   removeUnmatched = TRUE,
-  labelOverlap = 0.2
-  # labelOverlap = 0
+  # labelOverlap = 0.2
+  labelOverlap = 0
 )
 
 # run task
@@ -230,8 +230,8 @@ task <- cciaObj$runTask(
   # env = "local",
   runInplace = FALSE,
   # runInplace = TRUE,
-  taskID = 1
-  # taskID = 2
+  # taskID = 1
+  taskID = 2
 )
 ```
 
@@ -336,7 +336,7 @@ cciaObj <- initCciaObject(
 popDT.clust <- cciaObj$popDT("clust", includeFiltered = TRUE)
 
 # a <- popDT.labels[label %in% c(31572, 31579)]
-b <- popDT.clust[cluster %in% c(5)]
+b <- popDT.clust[clusters %in% c(5)]
 ```
 
 ```{r}
