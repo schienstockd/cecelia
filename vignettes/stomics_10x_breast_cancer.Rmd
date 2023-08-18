@@ -45,16 +45,16 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      # walltime = "00-12:00:00",
+      walltime = "00-12:00:00",
       # walltime = "00-01:00:00",
-      walltime = "00-00:30:00",
+      # walltime = "00-00:30:00",
       # walltime = "02-00:00:00",
-      projectPartitions = "physical",
-      projectID = "punim1124",
-      useGPU = FALSE
-      # projectPartitions = "gpu-a100",
-      # projectID = "punim1031",
-      # useGPU = TRUE
+      # projectPartitions = "physical",
+      # projectID = "punim1124",
+      # useGPU = FALSE
+      projectPartitions = "gpu-a100",
+      projectID = "punim1031",
+      useGPU = TRUE
     )
   ),
   utils = list(
@@ -179,7 +179,7 @@ funParams <- list(
       "cellDiameter" = 10,
       "cellChannels" = list("Hoechst"),
       "nucChannels" = list(),
-      "normalise" = 99.9,
+      "normalise" = 99.8,
       "stitchThreshold" = 0.2,
       "mergeLabels" = FALSE,
       "threshold" = 0,
@@ -194,18 +194,18 @@ funParams <- list(
   # haloWholeCell = FALSE,
   haloSize = 20, # for nuclei expansion
   haloWholeCell = TRUE,
-  # blockSize = 2048,
-  blockSize = 512,
-  overlap = 100, # for larger structures
-  context = 40,
-  # overlap = 64,
-  # context = 52,
+  blockSize = 2048,
+  # blockSize = 512,
+  # overlap = 100, # for larger structures
+  # context = 40,
+  overlap = 64,
+  context = 52,
   blockSizeZ = -1,
   overlapZ = -1,
   segment = TRUE,
   # segment = FALSE,
-  # measure = TRUE,
-  measure = FALSE,
+  measure = TRUE,
+  # measure = FALSE,
   updateMeasures = FALSE,
   # extendedMeasures = TRUE,
   extendedMeasures = FALSE,
@@ -234,7 +234,7 @@ task <- cciaObj$runTask(
   taskID = 2
 )
 
-task$result(wait = TRUE)
+# task$result(wait = TRUE)
 ```
 
 ```{r}
