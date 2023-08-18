@@ -332,9 +332,11 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-popDT <- cciaObj$popDT("labels", pops = c("default"))
+popDT.labels <- cciaObj$popDT("labels", pops = c("default"))
+popDT.clust <- cciaObj$popDT("clust", includeFiltered = TRUE)
 
-a <- popDT[label %in% c(44777)]
+a <- popDT.labels[label %in% c(31572, 31579)]
+b <- popDT.clust[label %in% c(31572, 31579)]
 ```
 
 ```{r}
@@ -514,9 +516,9 @@ funParams <- list(
     # )
   ),
   objectMeasures = c(
-    "area", "perimeter", "solidity",
-    "oblate", "prolate", "extent",
-    "fill", "eccentricity"
+    # "area", "perimeter", "solidity",
+    # "oblate", "prolate", "extent",
+    # "fill", "eccentricity"
   )
 )
 

@@ -802,8 +802,8 @@ createPopulationManager <- function(
       column(
         9, sliderInput(
           session$ns("popPointsSize"), NULL,
-          min = 1, max = 50,
-          value = 6, step = 2
+          min = 1, max = 100,
+          value = 6, step = 1
         )
       )
     )

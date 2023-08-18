@@ -412,6 +412,11 @@ class SegmentationUtils:
             
           if y_max_label > 0 and y_max_label > cur_max_labels:
             next_max_labels.append(y_max_label)
+        
+        # rank labels again?
+        # for j in alg_labels.keys():
+        #   if self.rank_labels is True:
+        #     alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
             
       # set current maximum from base
       # TODO is this a fair assumption? - No
