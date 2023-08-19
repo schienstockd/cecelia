@@ -518,9 +518,9 @@ funParams <- list(
     # )
   ),
   objectMeasures = c(
-    # "area", "perimeter", "solidity",
-    # "oblate", "prolate", "extent",
-    # "fill", "eccentricity"
+    "area", "perimeter", "solidity",
+    "oblate", "prolate", "extent",
+    "fill", "eccentricity"
   )
 )
 

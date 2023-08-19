@@ -66,6 +66,22 @@ HPC_CONF <-  list(
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/MARCELA/ANALYSIS"
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Q01mGA", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$setImLabelsFilepath("SPACEHOLDER",
+                            valueName = "default",
+                            setDefault = FALSE)
+
+cciaObj$saveState()
+```
+
 ```{r fig_gating, fig.height=3, fig.width=12}
 # Show gating
 devtools::load_all("../")

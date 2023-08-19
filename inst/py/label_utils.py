@@ -56,6 +56,31 @@ def label_overlap(x, y, dtype = np.uint16):
   # return overlap
 
 """
+Return base key
+"""
+def get_base_key(labels_array):
+  base_key = 'base'
+  
+  if 'halo' in labels_array.keys():
+    base_key = 'halo'
+    
+  return base_key
+
+"""
+Match label IDs
+"""
+def match_label_ids(labels_array, match_to = 'base'):
+  _, idx = np.unique(labels_array[match_to], return_index = True)
+  label_ids = labels_array[match_to].ravel()[idx[1:]]
+  
+  # go through to match labels
+  # TODO there should be a better way
+  for j in [k for k in labels_array.keys() if k != match_to]:
+    if labels_array[j] is not None:
+      # remove labels not present in match
+      labels_array[j][np.invert(np.isin(labels_array[j], label_ids))] = 0
+
+"""
 Match masks
 adapted from cellpose.utils.stitch3D
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/utils.py#L353
