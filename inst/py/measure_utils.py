@@ -13,6 +13,7 @@ from tqdm import tqdm
 import py.slice_utils as slice_utils
 import py.morpho_utils as morpho_utils
 import py.zarr_utils as zarr_utils
+import py.label_utils as label_utils
 from skimage.morphology import remove_small_objects, convex_hull_image
 
 import py.script_utils as script_utils
