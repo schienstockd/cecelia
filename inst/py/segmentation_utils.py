@@ -358,8 +358,9 @@ class SegmentationUtils:
         # TODO this should probably be adjusted for halo
         # also adjusted in measure utils
         next_max_labels = list()
+        
         # for j in alg_labels.keys():
-        if alg_labels[base_key] is not None:
+        if alg_labels['base'] is not None:
           base_key = label_utils.get_base_key(alg_labels)
           measure_utils.clear_border_from_labels(
             alg_labels, self.dim_utils, context = self.context,
