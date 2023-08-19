@@ -72,6 +72,7 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   cur_labels = {i: np.squeeze(x) for i, x in cur_labels.items()}
   cur_im_dat = np.squeeze(cur_im_dat)
   
+  # clear borders
   clear_border_from_labels(cur_labels, dim_utils,
     context = context, clear_borders = clear_borders,
     clear_touching_border = clear_touching_border,

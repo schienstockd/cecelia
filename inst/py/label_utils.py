@@ -61,8 +61,8 @@ Return base key
 def get_base_key(labels_array):
   base_key = 'base'
   
-  if 'halo' in labels_array.keys():
-    base_key = 'halo'
+  # if 'halo' in labels_array.keys():
+  #   base_key = 'halo'
     
   return base_key
 
