@@ -216,8 +216,8 @@ funParams <- list(
   minCellSize = 50,
   matchThreshold = 0.2,
   removeUnmatched = TRUE,
-  labelOverlap = 0.2
-  # labelOverlap = 0
+  # labelOverlap = 0.2
+  labelOverlap = 0
 )
 
 # run task
