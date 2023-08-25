@@ -47,8 +47,14 @@
         
         # add density colour per pop
         # TODO is this the right spot for this?
-        DT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
-           by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
+        if (nrow(DT) > 0) {
+          DT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
+             by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
+          
+          # set order of populations
+          # TODO not sure why that does not preserve the order for plotting
+          DT[, pop := factor(pop, levels = resultParamsPops())]
+        }
         
         progress$close()
         

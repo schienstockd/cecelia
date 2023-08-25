@@ -50,6 +50,8 @@ popDT <- cciaObj$popDT(popType = "clust", uIDs = names(cciaObj$cciaObjects())[1:
 popDT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
       by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
 
+popDT[, pop := factor(pop, levels = c("MHCII+", "F480+", "MHCII+F480+"))]
+
 unique(popDT$uID)
 ```
 
@@ -103,7 +105,7 @@ for (i in unique(popDT$uID)) {
 }
 
 ggpubr::ggarrange(plotlist = p1s, ncol = 1) +
-  theme(plot.background = element_rect(fill = "black", color = NA))
+  theme(plot.background = element_rect(fill = "#222222", color = NA))
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=6}
