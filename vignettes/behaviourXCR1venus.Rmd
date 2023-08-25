@@ -349,18 +349,19 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3.5, height = 3)
 dfToPlot <- copy(types.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
 clusterMapping <- list(
-  Directed = c(1),
-  Meandering = c(1),
-  # Patrolling = c(0,5,6),
-  Scanning = c(1)
+  Clustering = c(5),
+  Directed = c(2),
+  `Meandering oblate` = c(3),
+  `Meandering prolate` = c(1,4),
+  Scanning = c(0)
 )
 
 dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  group_by(clusters) %>%
-  # group_by(clusters.name) %>%
+  # group_by(clusters) %>%
+  group_by(clusters.name) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -374,8 +375,8 @@ ggplot(
   dfToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
-  geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = clusters.name)) +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = clusters.name)) +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
@@ -469,13 +470,15 @@ datToPlot <- copy(types.sc) %>%
   drop_na(clusters) %>%
   left_join(exp.info)
 
-# plot UMAP
-for (i in unique(datToPlot$pop)) {
-  x <- stringr::str_replace_all(i, "\\/", "_")
-  
-  plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop == i))
-  ggsave(file.path(anaDir, paste0("umap_HSV_", x, ".tiff")), width = 2, height = 2)
-}
+datToPlot <- .mapClustNames(datToPlot, clusterMapping, "clusters")
+
+# # plot UMAP
+# for (i in unique(datToPlot$pop)) {
+#   x <- stringr::str_replace_all(i, "\\/", "_")
+#   
+#   plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop == i))
+#   ggsave(file.path(anaDir, paste0("umap_HSV_", x, ".tiff")), width = 2, height = 2)
+# }
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
@@ -491,10 +494,12 @@ ggplot(
         c("tcells.gDT/tracked") ~ "gDT-II",
         c("dcs.all/tracked") ~ "Dendritic cells",
       ),levels = c("gBT-I", "gDT-II", "Dendritic cells"))) %>%
-    group_by(pop, clusters) %>%
+    # group_by(pop, clusters) %>%
+    group_by(pop, clusters.name) %>%
     summarise(n = n()) %>%
     mutate(freq = n/sum(n),),
-  aes(x = 1, y = freq, fill = clusters)) +
+  # aes(x = 1, y = freq, fill = clusters)) +
+  aes(x = 1, y = freq, fill = clusters.name)) +
   scale_fill_brewer(name = NULL, palette = "Set1") +
   theme_classic() +
   geom_bar(stat = "identity", width = 0.8) +
@@ -535,35 +540,43 @@ dfToPlot[!is.na(str_match(dfToPlot$pop, "^dcs")[, 1]), type := "Dendritic cells"
 dfToPlot$type <- factor(dfToPlot$type, levels = c("gBT-I", "gDT-II", "Dendritic cells"))
 
 sumPlot <- dfToPlot %>%
-  group_by(clusters, type) %>%
+  # group_by(clusters, type) %>%
+  group_by(clusters.name, type) %>%
   summarise(n = n()) %>%
-  mutate(freq = n/sum(n))
+  mutate(freq = n/sum(n) * 100)
 
 ggplot(sumPlot,
-  aes(1, freq, fill = type)) +
+  aes(clusters.name, freq, fill = type)) +
   scale_fill_manual(values = plotColors) +
   theme_classic() +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y", start = 0) +
-  xlim(0, 1.8) +
-  facet_wrap(.~clusters, nrow = 1) +
+  geom_bar(stat = "identity", width = 0.9) +
+  # geom_bar(stat = "identity", width = 1) +
+  # coord_polar("y", start = 0) +
+  # xlim(0, 1.8) +
+  # facet_wrap(.~clusters, nrow = 1) +
+  # facet_grid(clusters.name~.) +
   theme(
-    axis.text = element_text(size = 5),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 10),
+    # axis.text.x = element_blank(),
+    # axis.ticks.x = element_blank(),
     axis.text.y = element_blank(),
     axis.ticks.y = element_blank(),
     # legend.position = "bottom",
     legend.position = "none",
     legend.title = element_blank(),
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
+    # axis.line = element_blank(),
+    axis.line.y = element_blank(),
+    # axis.title.x = element_blank(),
     axis.title.y = element_blank(),
     strip.background = element_blank(),
-    strip.text.x = element_blank()
-  )
+    strip.text.y = element_blank()
+  ) +
+  ylab("Cell type (%)") +
+  scale_y_continuous(breaks = c(0, 50, 100)) +
+  coord_flip()
 
-ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 8, height = 1.5)
+ggsave(file.path(anaDir, "cluster_pop_freq.tiff"), width = 1.5, height = 1.5)
 ```
 
 ```{r}
@@ -612,14 +625,16 @@ propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 #   'trackLength'
 # )
 
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+
 # show heatmap for clusters
 propsSummary <- propsToPlot %>%
   dplyr::filter(
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -654,8 +669,8 @@ propsSummary <- propsToPlot %>%
 ggplot(propsSummary %>%
          dplyr::filter(!str_detect(prop, "live.cell")) %>%
          dplyr::filter(!str_detect(prop, "\\.")) %>%
-         drop_na(clusters)
-         , aes(clusters, prop)) +
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -668,14 +683,14 @@ ggplot(propsSummary %>%
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
-    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 3.5)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 

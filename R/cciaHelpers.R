@@ -1061,7 +1061,7 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
 #' TODO
 #' @export
 .mapClustNames <- function(DF, clusterMapping, clustCol = "clusters", nameCol = "clusters.name",
-                           defaultName = "NONE") {
+                           defaultName = "NONE", idCol = "clusters.id") {
   # set default name
   DF[[nameCol]] <- defaultName
   
@@ -1071,6 +1071,9 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
   
   # set as factor
   DF[[nameCol]] <- factor(DF[[nameCol]], levels = names(clusterMapping))
+  
+  # set IDs
+  DF[[idCol]] <- as.numeric(DF[[nameCol]])
   
   DF
 }

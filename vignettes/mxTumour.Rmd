@@ -22,7 +22,9 @@ projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
+```
 
+```{r}
 library(ggplot2)
 library(tidyverse)
 ```
@@ -30,6 +32,244 @@ library(tidyverse)
 ```{r}
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+popDT <- cciaObj$popDT(popType = "flow", pops = c("/nonDebris"))
+
+# calc ratio
+popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_YAP.647
+# popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_FRC.TdTomato
+```
+
+```{r fig_ratio, fig.height=4, fig.width=20}
+# can you plot per image and show the numbers?
+popToPlot <- popDT %>%
+  left_join(exp.info) %>%
+  filter(!is.infinite(ratio))
+
+ggplot(popToPlot, aes(as.factor(1), ratio)) +
+# ggplot(popToPlot, aes(location, ratio)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitter(seed = 1),
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    alpha = 1, color = "lightgrey") +
+    # alpha = 1, color = "black")
+  facet_grid(.~location+uID) +
+  geom_text(aes(label = label),
+            position = position_jitter(seed = 1), check_overlap = FALSE)
+  ggrepel::geom_text_repel(
+    data = popToPlot, aes(y = ratio, label = label),
+    max.overlaps = 30)
+
+# ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP.png"), height = 2, width = 2)
+ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP_indv.png"), height = 4, width = 20)
+
+# write.csv(popToPlot, file.path(anaDir, "ratio_nuc_cyto_YAP.csv"))
+```
+
+```{r}
+# show segmented numbers on image
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+# cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+
+# start ipython kernel
+viewer <- NapariUtils$new()
+
+viewer$initNapari()
+```
+
+```{r}
+generateScreenshots <- function(
+    anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+    matchChannels = FALSE, ...) {
+  # go through images and save movies
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    i <- x$getUID()
+    viewer$setTaskDir(x$persistentObjectDirectory())
+    
+    # get channels
+    imChannelNames <- x$imChannelNames()
+    
+    # match channels
+    curChannelsToShow <- channelsToShow
+    if (matchChannels == TRUE) {
+      # TODO this is very crude    
+      names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+        imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+      })
+    }
+
+    # get cmaps
+    layersVisible <- imChannelNames %in% names(curChannelsToShow)
+    channelColormaps <- rep("gray", length(layersVisible))
+    
+    for (j in names(curChannelsToShow))
+      channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+    
+    # open image
+    viewer$openImage(
+      x$imFilepath(),
+      imChannelNames = imChannelNames,
+      show3D = TRUE,
+      layersVisible = layersVisible,
+      channelColormaps = channelColormaps
+    )
+    
+    # add tracks
+    viewer$showLabelsAll(
+      popsToShow,
+      # showLabels = TRUE,
+      # labelSuffixes = list(default = list("nuc", "cyto")),
+      showPoints = TRUE,
+      showLabelIds = TRUE
+    )
+    
+    # adjust channel intensities
+    browser()
+  
+    # save screenshot
+    viewer$saveScreenshot(
+      file.path(anaDir, paste0(
+        paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+      ...)
+  }
+}
+```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info$uID
+
+channelsToShow <- list(
+  "YAP-647" = "magenta",
+  "FRC-TdTomato" = "green"
+  )
+popsToShow <- list("default")
+fileAttrs <- c("location", "mouse")
+
+generateScreenshots(
+  file.path(anaDir, "shots"), cciaObj, uIDs, channelsToShow,
+  popsToShow, fileAttrs, size = list(1200, 1200))
+```
+
+```{r}
+viewer$setTaskDir(x$persistentObjectDirectory())
+
+# get channels
+imChannelNames <- x$imChannelNames()
+
+# match channels
+curChannelsToShow <- channelsToShow
+if (matchChannels == TRUE) {
+  # TODO this is very crude    
+  names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+    imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+  })
+}
+
+# get cmaps
+layersVisible <- imChannelNames %in% names(curChannelsToShow)
+channelColormaps <- rep("gray", length(layersVisible))
+
+for (j in names(curChannelsToShow))
+  channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+
+# open image
+viewer$openImage(
+  x$imFilepath(),
+  imChannelNames = imChannelNames,
+  show3D = TRUE,
+  layersVisible = layersVisible,
+  channelColormaps = channelColormaps
+)
+
+# add tracks
+viewer$showLabelsAll(
+  popsToShow,
+  # showLabels = TRUE,
+  showTracks = TRUE,
+  splitTracks = splitTracks,
+  tracksBlending = tracksBlending
+)
+
+# add populations
+popsAdded <- list()
+
+# add populations to popMap
+for (valueName in popsToShow) {
+  pop <- paste0(valueName, "/tracked")
+  popType <- "live"
+  parentPops <- c(pop)
+  pops <- list()
+  
+  # create pops from cluster information
+  # pops <- mapply(function(x, i) {
+  for (j in names(splitTracks)) {
+    y <- splitTracks[[j]]
+    
+    pops <- append(pops, mapply(function(z, k) {
+    # mapply(function(y, j) {
+      list(
+        filterMeasure = j,
+        filterValues = z[["values"]],
+        filterFun = "eq",
+        colour = z[["colour"]]
+        # isTrack = TRUE
+      )
+    }, y, names(y), SIMPLIFY = FALSE))
+  }
+  
+  # add pops
+  popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
+  popsAdded[[valueName]] <- popsToAdd
+    
+  # remove populations
+  x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
+  
+  # add populations
+  x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+}
+
+# save to disk
+x$savePopMap(popType, includeFiltered = TRUE)
+x$savePops(popType, pops = unname(unlist(popsAdded)),
+           purge = TRUE, includeFiltered = TRUE)
+
+# show on image
+removePrevious <- TRUE
+for (j in names(popsAdded)) {
+  viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = 8,
+                        execInteractive = FALSE, removePrevious = removePrevious)
+  removePrevious <- FALSE
+}
+
+# save animation
+if (generateMovie == TRUE) {
+  viewer$saveTimeAnimation(
+    file.path(anaDir, "movies", paste0(
+      paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
+    windowSizeX = 1200, windowSizeY = 1000, fps = fps)
+}
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=6}

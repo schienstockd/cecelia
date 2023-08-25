@@ -432,7 +432,7 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE # DTx
+  pID = pID, uID = "rXctjl", versionID = versionID, initReactivity = FALSE
 )
 
 # get experimental info
@@ -441,20 +441,12 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
-```
 
-
-```{r}
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
-tcells.sc
-```
-
-
-```{r}
 # get popDTs for set
 popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
@@ -464,8 +456,6 @@ popDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
-
-popDTs
 ```
 
 ```{r}
@@ -691,14 +681,20 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
 # ggsave(file.path(anaDir, "HMM_heat_shape.pdf"), width = 2.3, height = 3)
 ```
 
+```{r}
+clusterMapping <- list(
+  Clustering = c(1),
+  Directed = c(2,6),
+  Meandering = c(3,4),
+  Scanning = c(0,5)
+)
+```
+
+
 ```{r fig_umap, fig.height=8, fig.width=8}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
-dfToPlot$clusters.name <- "NONE"
-dfToPlot[dfToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
-dfToPlot[dfToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
-dfToPlot[dfToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
-dfToPlot[dfToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
@@ -717,11 +713,11 @@ ggplot(
   dfToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
-  geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = clusters.name)) +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  # scale_color_brewer(name = NULL, palette = "Set1") +
-  scale_color_manual(values = colPal) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -734,18 +730,18 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) +
-  geom_label(
-    data = meanClusterPos,
-    aes(label = clusters),
-    # aes(label = clusters.name),
-    label.size = 0.25,
-    color = "black"
-    )
+    ) 
+  # geom_label(
+  #   data = meanClusterPos,
+  #   aes(label = clusters),
+  #   # aes(label = clusters.name),
+  #   label.size = 0.25,
+  #   color = "black"
+  #   )
 
 # # ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-# ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_shape.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_shape.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_shape_wo_labels.tiff"), width = 2, height = 2)
 ```
 
@@ -843,11 +839,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot$clusters.name <- "NONE"
-propsToPlot[propsToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
-propsToPlot[propsToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
-propsToPlot[propsToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
-propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -872,8 +864,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -906,8 +898,8 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
          dplyr::filter(!str_detect(prop, "live.cell")) %>%
-         drop_na(clusters)
-         , aes(clusters, prop)) +
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -920,14 +912,15 @@ ggplot(propsSummary %>%
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
-    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+ggsave(file.path(anaDir, "pops_heat.pdf"), width = 2.7, height = 3)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 
@@ -1030,25 +1023,21 @@ ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 4, height = 3
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 
-summaryDF$clusters.name <- "NONE"
-summaryDF[summaryDF$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
-summaryDF[summaryDF$clusters %in% c(5), ]$clusters.name <- "Meandering"
-summaryDF[summaryDF$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
-summaryDF[summaryDF$clusters %in% c(1), ]$clusters.name <- "Clustering"
+summaryDF <- .mapClustNames(summaryDF, clusterMapping, "clusters")
 
 # show frequency of clusters
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
   ungroup() %>%
-  complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
-  # complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
+  # complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
+  complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
   left_join(exp.info)
 
-ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, dpi))) +
-# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, dpi))) +
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, dpi))) +
+ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, dpi))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -1066,6 +1055,8 @@ summaryDF[summaryDF$Treatment == "HSV" & summaryDF$dpi == "2",]$Treatment.dpi <-
 summaryDF$cell_ID <- 0
 summaryDF[summaryDF$pop == "gBT/tracked",]$cell_ID <- 0
 summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
+
+summaryDF$clusters.id <- as.numeric(summaryDF$clusters.name)
 
 write.csv(summaryDF[summaryDF$cell_ID == 0,],
           file = file.path(anaDir, "freq_clusters_gBT.csv"))

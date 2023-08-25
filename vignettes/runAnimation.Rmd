@@ -23,7 +23,7 @@ viewer$initNapari()
 ```
 
 ```{r}
-generateMovies <- function(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                            splitTracks = NULL, matchChannels = FALSE, fps = 10,
                            generateMovie = TRUE, tracksBlending = "additive") {
   # go through images and save movies
@@ -166,7 +166,7 @@ channelsToShow <- list(
 popsToShow <- c("tcells.gBT", "tcells.gDT")
 fileAttrs <- c("Treatment", "DTx")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = FALSE)
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = FALSE)
 ```
 
 ```{r}
@@ -197,7 +197,7 @@ channelsToShow <- list(
 popsToShow <- c("gBT", "OTI")
 fileAttrs <- c("Genotype")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, generateMovie = FALSE, tracksBlending = "opaque")
 ```
 
@@ -232,7 +232,7 @@ channelsToShow <- list(
 popsToShow <- c("T.A", "T.B")
 fileAttrs <- c("Treatment")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, fps = 20)
 ```
 
@@ -267,7 +267,7 @@ channelsToShow <- list(
 popsToShow <- c("gBT", "gDT")
 fileAttrs <- c("Treatment", "dpi")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
 ```
 
 ```{r}
@@ -278,30 +278,31 @@ cciaObj <- initCciaObject(
   pID = "8BR53W", uID = "mrMpi5", versionID = 1, initReactivity = FALSE # Immunemap
 )
 
-uIDs <- names(cciaObj$cciaObjects())[[1]]
+# uIDs <- names(cciaObj$cciaObjects())[[1]]
+uIDs <- c("01MS5C")
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
-    zero = list(values = list(0), colour = "#E42328"),
-    one = list(values = list(1), colour = "#327EBA"),
-    two = list(values = list(2), colour = "#4CAF48"),
-    three = list(values = list(3), colour = "#974D9E"),
-    four = list(values = list(4), colour = "#F47F20")
+    zero = list(values = list(3), colour = "#E42328"),
+    one = list(values = list(1,4), colour = "#327EBA"),
+    two = list(values = list(0), colour = "#4CAF48"),
+    three = list(values = list(2), colour = "#974D9E")
     )
   )
 
 channelsToShow <- list(
   # "CD11c-YFP" = "bop orange",
-  "PROX1" = "cyan",
+  # "PROX1" = "bop blue",
+  "PROX1" = "white",
   "hCD2-DsRed" = "magenta"
   )
 popsToShow <- list("T")
 fileAttrs <- list()
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks,
                generateMovie = FALSE)
 
-viewer$showLabelsAll(showLabels = TRUE, valueNames = list("T", "LV"))
+# viewer$showLabelsAll(showLabels = TRUE, valueNames = list("T", "LV"))
 ```
 
 ```{r}
@@ -335,7 +336,7 @@ channelsToShow <- list(
 popsToShow <- c("tcells.P14", "tcells.gBT", "tcells.OTI")
 fileAttrs <- c("Treatment")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, matchChannels = TRUE, fps = 20)
 ```
 
@@ -371,7 +372,7 @@ channelsToShow <- list(
 popsToShow <- c("tcells.gBT", "tcells.gDT", "dcs.all")
 fileAttrs <- c()
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks)
 ```
 
@@ -407,7 +408,7 @@ channelsToShow <- list(
 popsToShow <- list("tcells.gBT")
 fileAttrs <- c("Treatment", "DTx")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, fps = 20)
 ```
 
@@ -442,6 +443,6 @@ channelsToShow <- list(
 popsToShow <- c("tcells.gBT", "tcells.OTI")
 fileAttrs <- c("Treatment")
 
-generateMovies(cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, fps = 20)
 ```

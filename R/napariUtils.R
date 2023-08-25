@@ -238,6 +238,7 @@ NapariUtils <- R6::R6Class(
     #' @param valueNames list of character for value names
     #' @param showLabels boolean to show labels
     #' @param showPoints boolean to show points
+    #' @param showLabelIds boolean to show label ids
     #' @param showBranching boolean to show branching
     #' @param showTracks boolean to show tracks
     #' @param showPops boolean to show populations
@@ -247,10 +248,11 @@ NapariUtils <- R6::R6Class(
     #' @param splitTracks list to split tracks by properties
     #' @param tracksBlending character to set blending for tracks
     showLabelsAll = function(valueNames, showLabels = FALSE, showPoints = FALSE,
-                             showTracks = FALSE, showPops = FALSE, showNeighbours = FALSE,
-                             showBranching = FALSE, asNpArray = FALSE, execInteractive = TRUE,
-                             labelSuffixes = list(), splitTracks = NULL,
-                             tracksBlending = "additive") {
+                             showLabelIds = FALSE, showTracks = FALSE,
+                             showPops = FALSE, showNeighbours = FALSE,
+                             showBranching = FALSE, asNpArray = FALSE,
+                             execInteractive = TRUE, labelSuffixes = list(),
+                             splitTracks = NULL, tracksBlending = "additive") {
       # show labels
       if (length(valueNames) > 0) {
         self$execute(
@@ -260,6 +262,7 @@ NapariUtils <- R6::R6Class(
               "value_names = %s,",
               "show_labels = %s,",
               "show_points = %s,",
+              "show_label_ids = %s,",
               "show_tracks = %s,",
               "show_branching = %s,",
               "as_np_array = %s,",
@@ -271,6 +274,7 @@ NapariUtils <- R6::R6Class(
             reticulate::r_to_py(valueNames),
             reticulate::r_to_py(showLabels),
             reticulate::r_to_py(showPoints),
+            reticulate::r_to_py(showLabelIds),
             reticulate::r_to_py(showTracks),
             reticulate::r_to_py(showBranching),
             reticulate::r_to_py(asNpArray),
@@ -285,13 +289,14 @@ NapariUtils <- R6::R6Class(
     #' @description Show labels
     #' @param showLabels boolean to show labels
     #' @param showPoints boolean to show points
+    #' @param showLabelIds boolean to show label ids
     #' @param showTracks boolean to show tracks
     #' @param showBranching boolean to show branching
     #' @param asNpArray boolean to load labels as numpy array for editing
     #' @param valueName character for value name
     #' @param labelSuffixes character for label suffixes
     #' @param execInteractive boolean to execute interactive
-    showLabels = function(showLabels = TRUE, showPoints = TRUE,
+    showLabels = function(showLabels = TRUE, showPoints = TRUE, showLabelIds = FALSE,
                           showTracks = TRUE, asNpArray = FALSE,
                           valueName = NULL, labelSuffixes = list(),
                           execInteractive = TRUE) {
@@ -305,6 +310,7 @@ NapariUtils <- R6::R6Class(
             "if napari_utils.viewer is not None: napari_utils.show_labels(",
             "show_labels = %s,",
             "show_points = %s,",
+            "show_label_ids = %s,",
             "show_tracks = %s,",
             "show_branching = %s,",
             paste0("value_name = ", valueNamePattern, ","),
@@ -314,6 +320,7 @@ NapariUtils <- R6::R6Class(
           ),
           reticulate::r_to_py(showLabels),
           reticulate::r_to_py(showPoints),
+          reticulate::r_to_py(showLabelIds),
           reticulate::r_to_py(showTracks),
           reticulate::r_to_py(showBranching),
           reticulate::r_to_py(valueName),
@@ -336,6 +343,35 @@ NapariUtils <- R6::R6Class(
           valueName,
           sprintf("[%s]", paste(trackIDs, collapse = ",")),
           name
+        ), execInteractive = execInteractive
+      )
+    },
+    
+    #' @description Save screenshot
+    #' @param filePath character to save screenshot
+    #' @param size list for resolution
+    #' @param scale numeric to scale image resolution
+    #' @param canvasOnly boolean to save only canvas
+    #' @param execInteractive boolean to execute interactive
+    saveScreenshot = function(filePath, size = NULL, scale = NULL,
+                              canvasOnly = TRUE, execInteractive = TRUE) {
+      # save screenshot
+      self$execute(
+        sprintf(
+          paste(
+            "napari_utils.viewer.window.screenshot(r'%s',",
+            "size = %s,",
+            "scale = %s,",
+            "flash = %s,",
+            "canvas_only = %s",
+            ")",
+            sep = "\n"
+          ),
+          filePath,
+          reticulate::r_to_py(size),
+          reticulate::r_to_py(scale),
+          reticulate::r_to_py(canvasOnly),
+          reticulate::r_to_py(TRUE)
         ), execInteractive = execInteractive
       )
     },

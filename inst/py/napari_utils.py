@@ -415,7 +415,7 @@ class NapariUtils:
   Show labels
   """
   def show_labels(self, value_name, show_labels = True, show_points = True,
-                  as_np_array = False, show_tracks = True,
+                  show_label_ids = True, as_np_array = False, show_tracks = True,
                   points_colour = "white", cache = True, label_suffixes = [],
                   show_branching = False, slices = None, split_tracks = None,
                   tracks_blending = 'additive'):
@@ -579,6 +579,16 @@ class NapariUtils:
         points_layer = 'Points' if value_name is None else f'({value_name}) Points'
         self.remove_layer_by_name(points_layer)
         
+        points_text = None
+        
+        if show_label_ids is True:
+          points_text = {
+            'string': '{label_id}',
+            'size': 20,
+            'color': 'white'
+            # 'translation': np.array([-30, 0]),
+          }
+          
         self.points_layer = self.viewer.add_points(
           label_points, size = 6,
           properties = properties,
@@ -587,7 +597,8 @@ class NapariUtils:
           # n_dimensional = True,
           scale = self.im_scale,
           face_color = points_colour,
-          edge_color = 'black'
+          edge_color = 'black',
+          text = points_text
           )
         
         labels_view.close()

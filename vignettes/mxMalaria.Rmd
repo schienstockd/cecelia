@@ -213,9 +213,9 @@ popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFilter
 regionPops <- cciaObj$popPaths(popType = "region", uIDs = uIDs, filteredOnly = TRUE)
 
 # get regions
-regionDT <- cciaObj$popDT(
-  popType = "region", includeFiltered = TRUE, completeDT = FALSE,
-  completeValueNames = "default", pops = regionPops)
+# regionDT <- cciaObj$popDT(
+#   popType = "region", includeFiltered = TRUE, completeDT = FALSE,
+#   completeValueNames = "default", pops = regionPops)
 
 # get regions
 spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
@@ -230,9 +230,9 @@ spatialDT[popDT[, c("uID", "label", "pop")],
 spatialDT[regionDT[, c("uID", "label", "pop")],
           on = c("uID", "from" = "label"),
           region := pop]
-regionDT[popDT[, c("uID", "label", "pop")],
-         on = c("uID", "label"),
-         flow.pop := i.pop]
+# regionDT[popDT[, c("uID", "label", "pop")],
+#          on = c("uID", "label"),
+#          flow.pop := i.pop]
 ```
 
 

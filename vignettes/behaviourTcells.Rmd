@@ -546,8 +546,10 @@ datToPlot$stain <- str_extract(
 # datToPlot <- datToPlot %>% group_by(stain) %>% slice_sample(n = numPoints)
 
 # plot UMAP
-for (i in unique(datToPlot$stain)) {
-  plot.p1(datToPlot, datToPlot %>% dplyr::filter(stain == i))
+# for (i in unique(datToPlot$stain)) {
+for (i in unique(datToPlot$cell_type)) {
+  # plot.p1(datToPlot, datToPlot %>% dplyr::filter(stain == i))
+  plot.p1(datToPlot, datToPlot %>% dplyr::filter(cell_type == i))
   ggsave(file.path(anaDir, paste0("umap_Uninf_", i, ".tiff")), width = 2, height = 2)
 }
 ```
@@ -1041,20 +1043,34 @@ summaryDF <- .mapClustNames(summaryDF, clusterMapping)
 
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(stain, clusters.name)] %>%
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(stain, clusters)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(stain, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(cell_type, clusters)] %>%
   droplevels() %>%
-  group_by(stain) %>%
+  # group_by(stain) %>%
+  group_by(cell_type) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
   ungroup() %>%
-  complete(stain, clusters, fill = list(freq.clusters = 0)) %>%
-  mutate(stain = factor(stain, levels = c(
-    "P14-ubTomato", "P14-CTDR", "OTI-uGFP", "OTI-CTV", "gBT-uGFP", "gBT-CTV"
+  # complete(stain, clusters, fill = list(freq.clusters = 0)) %>%
+  # mutate(stain = factor(stain, levels = c(
+  #   "P14-ubTomato", "P14-CTDR", "OTI-uGFP", "OTI-CTV", "gBT-uGFP", "gBT-CTV"
+  # )))
+  complete(cell_type, clusters, fill = list(freq.clusters = 0)) %>%
+  mutate(cell_type = factor(cell_type, levels = c(
+    "P14", "OTI", "gBT"
   )))
   # complete(stain, clusters.name, fill = list(freq.clusters = 0))
   # left_join(stainingCombinations)
 
+summaryDF$cell_type <- recode(
+  summaryDF$cell_type,
+  "gBT" = 'gBT-I',
+  "OTI" = 'OT-I',
+  "P14" = 'P14'
+)
+
 # ggplot(summaryDF, aes(x = 1, y = freq.clusters, fill = as.factor(clusters.name))) +
-ggplot(summaryDF, aes(x = stain, y = freq.clusters, fill = as.factor(clusters))) +
+# ggplot(summaryDF, aes(x = stain, y = freq.clusters, fill = as.factor(clusters))) +
+ggplot(summaryDF, aes(x = cell_type, y = freq.clusters, fill = as.factor(clusters))) +
   scale_fill_brewer(name = NULL, palette = "Set1") +
   theme_classic() +
   geom_bar(stat = "identity", width = 0.8) +
@@ -1063,9 +1079,9 @@ ggplot(summaryDF, aes(x = stain, y = freq.clusters, fill = as.factor(clusters)))
   # facet_wrap(.~stain, nrow = 1) +
   # xlim(0, 1.5) +
   theme(
-    axis.text = element_text(size = 12),
+    axis.text = element_text(size = 18),
     legend.key.size = unit(8, "mm"),
-    legend.text = element_text(size = 12),
+    legend.text = element_text(size = 18),
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
     # axis.text.y = element_blank(),
@@ -1080,5 +1096,6 @@ ggplot(summaryDF, aes(x = stain, y = freq.clusters, fill = as.factor(clusters)))
     # strip.text.x = element_blank()
   ) + coord_flip()
 
-ggsave(file.path(anaDir, "Behaviour.tiff"), width = 4, height = 2.5)
+# ggsave(file.path(anaDir, "Behaviour.tiff"), width = 4, height = 2.5)
+ggsave(file.path(anaDir, "Behaviour_cell_types.tiff"), width = 4, height = 1.8)
 ```

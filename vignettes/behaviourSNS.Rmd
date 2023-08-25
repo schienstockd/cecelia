@@ -1117,8 +1117,8 @@ hmmTime <- hmmTime %>%
 ```{r fig_states_time, fig.height = 3, fig.width = 14}
 time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
 
-# ggplot(hmmTime[hmmTime$uID == i,],
-ggplot(hmmTime,
+ggplot(hmmTime[hmmTime$uID == "oPZZCg",],
+# ggplot(hmmTime,
        aes((centroid_t * time.interval), freq,
            color = clusters.name,
            fill = clusters.name
@@ -1140,7 +1140,8 @@ ggplot(hmmTime,
   facet_wrap(.~uID, scales = "free_x", nrow = 1) +
   ylim(0, 1) + scale_y_continuous(breaks = c(0, 0.5, 1))
   
-ggsave(file.path(anaDir, "hmm_time.png"), height = 2, width = 10)
+# ggsave(file.path(anaDir, "hmm_time.png"), height = 2, width = 10)
+ggsave(file.path(anaDir, "hmm_time_oPZZCg.png"), height = 2, width = 2)
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 4}

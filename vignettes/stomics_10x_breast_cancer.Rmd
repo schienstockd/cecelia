@@ -196,10 +196,10 @@ funParams <- list(
   haloWholeCell = TRUE,
   blockSize = 2048,
   # blockSize = 512,
-  # overlap = 100, # for larger structures
-  # context = 40,
-  overlap = 64,
-  context = 52,
+  overlap = 100, # for larger structures
+  context = 40,
+  # overlap = 64,
+  # context = 52,
   blockSizeZ = -1,
   overlapZ = -1,
   segment = TRUE,
@@ -334,11 +334,16 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE
 )
 
-# popDT.labels <- cciaObj$popDT("labels", pops = c("default"))
-popDT.clust <- cciaObj$popDT("clust", includeFiltered = TRUE)
+#popDT.labels <- cciaObj$popDT("labels", pops = c("default"))
+#popDT.clust <- cciaObj$popDT("clust", pops = c("root"))
+
+DT <- cciaObj$labelProps()$as_df()
 
 # a <- popDT.labels[label %in% c(31572, 31579)]
-b <- popDT.clust[clusters %in% c(5)]
+#b <- popDT.clust[clusters %in% c(5)]
+
+# write.csv(popDT.labels, file.path(anaDir, "pop.csv"))
+write.csv(DT, file.path(anaDir, "pop.csv"))
 ```
 
 ```{r}
@@ -465,9 +470,9 @@ allChannelNames <- cciaObj$cciaObjects()[[1]]$imChannelNames()
 # Then, can you match that with the stroma branching?
 geneGroups <- c("tumour", "myoepithelium", "endothelial")
 
-channelNames <- unique(unlist(unname(genes[grepl(
+# channelNames <- unique(unlist(unname(genes[grepl(
 # for all other genes
-# channelNames <- unique(unlist(unname(genes[!grepl(
+channelNames <- unique(unlist(unname(genes[!grepl(
   paste0(geneGroups, collapse = "|"), names(genes))])))
 channelNames <- channelNames[channelNames != "Hoechst"]
 
@@ -488,15 +493,16 @@ uIDs <- c("aSf5Rr")
 
 # run task
 funParams <- list(
-  popType = "flow",
-  popsToCluster = c(),
-  # popsToCluster = c("/CD3"),
-  # savePops = TRUE,
-  savePops = FALSE,
-  # keepPops = TRUE,
-  keepPops = FALSE,
-  # resolution = 1.0,
-  resolution = 0.4,
+  # popType = "flow",
+  popType = "clust",
+  # popsToCluster = c(),
+  popsToCluster = c("others"),
+  savePops = TRUE,
+  # savePops = FALSE,
+  keepPops = TRUE,
+  # keepPops = FALSE,
+  resolution = 1.0,
+  # resolution = 0.4,
   mergeUmap = TRUE,
   # mergeUmap = FALSE,
   normalisePercentile = 99.8,
@@ -535,6 +541,97 @@ task <- cciaObj$runTask(
 
 task$result(wait = TRUE)
 ```
+
+```{r}
+# get branching of stroma network
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+popDT <- cciaObj$popDT(
+  "clust", includeFiltered = TRUE, completeDT = TRUE,
+  # pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE))),
+  pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))),
+  forceReload = TRUE)
+
+branchDT <- cciaObj$popDT(
+  "branch", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "stroma.branch",
+  pops = unlist(unname(cciaObj$popPaths("branch", includeFiltered = TRUE, includeRoot = FALSE))))
+
+regionDT <- cciaObj$popDT(
+  "region", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "default",
+  pops = unlist(unname(cciaObj$popPaths("region", includeFiltered = TRUE, includeRoot = FALSE))))
+```
+
+```{r}
+# find closest branching to region
+x <- as.matrix(branchDT[`branch-type` < 3, c('centroid_y', 'centroid_x')])
+rownames(x) <- branchDT[`branch-type` < 3]$label
+
+# find nearest neighbours
+popNN <- dbscan::kNN(
+  x, k = 1, query = as.matrix(regionDT[, c('centroid_y', 'centroid_x')]))
+
+# filter long distances
+# regionVals <- regionDT[popNN$id, ]$regions
+# regionVals <- branchDT[popNN$id, ]$`branch-type`
+regionDT[, branch.id := popNN$id]
+regionDT[, branch.dist := popNN$dist]
+regionDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
+      `branch-type` := `branch-type`]
+```
+
+
+```{r fig_pop_branching, fig.height=4, fig.width=4}
+summaryDT <- copy(regionDT)
+# threshold branching
+summaryDT[branch.dist > (12 / cciaObj$omeXMLPixelRes()$x), `branch-type` := -1]
+
+summaryDT <- summaryDT %>%
+  # drop_na() %>%
+  # group_by(pop, regionsNN) %>%
+  group_by(pop, `branch-type`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(`branch-type` != "-1")
+  
+summaryDT$`branch-type` <- recode(
+  summaryDT$`branch-type`,
+  `0` = 'Loose',
+  `1` = 'Medium',
+  `2` = 'Dense'
+)
+summaryDT$`branch-type` <- factor(
+  summaryDT$`branch-type`, levels = c("Loose", "Medium", "Dense"))
+
+# ggplot(summaryDT, aes(pop, freq, fill = regionsNN)) +
+# ggplot(summaryDT, aes(clusters, freq, fill = regionsNN)) +
+ggplot(summaryDT %>% drop_na(), aes(reorder(pop, freq), freq, fill = `branch-type`)) +
+  theme_classic() +
+  ylim(0, 100) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set1") +
+  theme(
+    # axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.justification = "left"
+  ) +
+  xlab("") + ylab("Stroma contact (%)") +
+  coord_flip()
+
+# ggsave(file.path(anaDir, 'stroma', 'aSf5Rr_branching_and_regions.png'), plot = p1, height = 4, width = 4)
+# ggsave(file.path(anaDir, 'stroma', 'aSf5Rr_branching_and_regions.png'), height = 4, width = 4)
+
+write.csv(summaryDT, file.path(anaDir, "aSf5Rr", "stroma_and_regions.csv"))
+```
+
 
 ```{r}
 # create populations for branching

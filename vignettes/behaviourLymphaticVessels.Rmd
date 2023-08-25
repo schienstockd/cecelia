@@ -319,10 +319,19 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.1, height = 3)
 ```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
+clusterMapping <- list(
+  `Scanning close` = c(3),
+  `Meandering close` = c(1,4),
+  `Meandering away` = c(0),
+  `Directed away` = c(2)
+)
+
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  group_by(clusters) %>%
-  # group_by(clusters.name) %>%
+  # group_by(clusters) %>%
+  group_by(clusters.name) %>%
   summarise(
     UMAP_1 = mean(UMAP_1),
     UMAP_2 = mean(UMAP_2)
@@ -336,8 +345,8 @@ ggplot(
   dfToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
-  geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = clusters.name)) +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = clusters.name)) +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
@@ -419,13 +428,6 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot$clusters.name <- "NONE"
-propsToPlot[propsToPlot$clusters %in% c(0), ]$clusters.name <- "Directed away from LV"
-propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Meandering close to LV"
-propsToPlot[propsToPlot$clusters %in% c(2), ]$clusters.name <- "Meandering away from LV"
-propsToPlot[propsToPlot$clusters %in% c(3), ]$clusters.name <- "Scanning in LV"
-propsToPlot[propsToPlot$clusters %in% c(4), ]$clusters.name <- "Patrolling in LV"
-
 # propsList <- c(
 #   'Movement HMM 1',
 #   'Movement HMM 2',
@@ -443,18 +445,20 @@ propsToPlot[propsToPlot$clusters %in% c(4), ]$clusters.name <- "Patrolling in LV
 #   'trackLength'
 # )
 
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+
 # show heatmap for clusters
 propsSummary <- propsToPlot %>%
   dplyr::filter(
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
-  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
-  arrange(-prop)
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean)))
+  # arrange(-prop) %>%
 ```
 
 
@@ -483,11 +487,12 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
-         # dplyr::filter(!str_detect(prop, "live.cell")) %>%
-         dplyr::filter(str_detect(prop, "live.cell"), !str_detect(prop, "live.cell.hmm")) %>%
-         mutate(prop = stringr::str_replace(prop, "live.cell.min_distance#live.LV/accepted.", "Distance to lymphatics ")) %>%
-         drop_na(clusters)
-         , aes(clusters, prop)) +
+         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         # dplyr::filter(str_detect(prop, "live.cell"), !str_detect(prop, "live.cell.hmm")) %>%
+         # mutate(prop = stringr::str_replace(
+         #   prop, "live.cell.min_distance#live.LV/accepted.", "Distance to lymphatics ")) %>%
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -500,15 +505,15 @@ ggplot(propsSummary %>%
     legend.title = element_blank(),
     legend.text = element_text(size = 12),
     axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
-    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
   xlab("") + ylab("")
 
-# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.8, height = 2.5)
-ggsave(file.path(anaDir, "clusters_heat_dist.pdf"), width = 3.7, height = 2)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.8, height = 3.8)
+# ggsave(file.path(anaDir, "clusters_heat_dist.pdf"), width = 3.7, height = 2)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 
@@ -611,19 +616,21 @@ ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 3.5, height =
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 
+summaryDF <- .mapClustNames(summaryDF, clusterMapping, "clusters")
+
 # show frequency of clusters
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
   ungroup() %>%
-  complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
-  # complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
+  # complete(uID, pop, clusters, fill = list(freq.clusters = 0)) %>%
+  complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
   left_join(exp.info)
 
-ggplot(summaryDF, aes(clusters, freq.clusters, color = clusters)) +
-# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = clusters.name)) +
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = clusters)) +
+ggplot(summaryDF, aes(clusters.name, freq.clusters, color = clusters.name)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_point() +
@@ -635,10 +642,10 @@ ggplot(summaryDF, aes(clusters, freq.clusters, color = clusters)) +
 
 ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 10, height = 3)
 
-summaryDF$Treatment.DTx <- 0
-summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
-summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
-summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+# summaryDF$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
 write.csv(
   summaryDF,
@@ -667,8 +674,14 @@ hmmDist <- tcells.sc %>%
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 5}
-datToPlot <- popDTs %>%
-  group_by(uID, track_id, `live.cell.track.clusters.hmm_transitions_movement`) %>%
+datToPlot <- copy(popDTs)
+
+datToPlot <- .mapClustNames(datToPlot, clusterMapping,
+                            "live.cell.track.clusters.hmm_transitions_movement")
+
+datToPlot <- datToPlot %>%
+  # group_by(uID, track_id, `live.cell.track.clusters.hmm_transitions_movement`) %>%
+  group_by(uID, track_id, clusters.name, clusters.id) %>%
   summarise(
     max.dist = quantile(`live.cell.min_distance#live.LV/accepted`, 0.95),
     min.dist = quantile(`live.cell.min_distance#live.LV/accepted`, 0.05),
@@ -676,10 +689,13 @@ datToPlot <- popDTs %>%
     ) %>%
   drop_na() %>%
   dplyr::filter(
-    `live.cell.track.clusters.hmm_transitions_movement` != "NA") 
+    # `live.cell.track.clusters.hmm_transitions_movement` != "NA") 
+    clusters.name != "NA") 
 
-ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, min.dist,
-                     color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+# ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, min.dist,
+#                      color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+ggplot(datToPlot, aes(clusters.name, min.dist,
+                     color = clusters.name)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -689,8 +705,10 @@ ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, min.d
   # ylim(0, 5) +
   scale_color_brewer(name = NULL, palette = "Dark2")
 
-ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, max.dist,
-                     color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+# ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, max.dist,
+#                      color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+ggplot(datToPlot, aes(clusters.name, max.dist,
+                     color = clusters.name)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -700,8 +718,10 @@ ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, max.d
   # ylim(0, 5) +
   scale_color_brewer(name = NULL, palette = "Dark2")
 
-ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, median.dist,
-                     color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+# ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, median.dist,
+#                      color = `live.cell.track.clusters.hmm_transitions_movement`)) +
+ggplot(datToPlot, aes(clusters.name, median.dist,
+                     color = clusters.name)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
