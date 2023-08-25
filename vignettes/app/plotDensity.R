@@ -23,12 +23,19 @@ for (x in appSources) {
 confidencePercentage = 95
 confidenceLevel = confidencePercentage/100
 
-# Population gating spleen
-pID <- "pEdOoZ"
-versionID <- 2
-uID <- "ktUu0n"
+# # Population gating spleen
+# pID <- "pEdOoZ"
+# versionID <- 2
+# uID <- "ktUu0n"
 
-id <- "plotFlowGating"
+# Population gating tumours
+pID <- "az8y8l"
+versionID <- 1
+uID <- "MX220R"
+uIDs <- c("sHP5sL", "C2UsQZ", "7OAZJe", "9OdgZz")
+pkg.env$cfg$dirs$projects <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+
+id <- "plotPopDensity"
 ns <- NS(id)
 
 ui <- fluidPage(
@@ -64,11 +71,47 @@ server <- function(input, output, session) {
       ### Functions
       
       ### Reactive values
+      popDT <- reactiveVal()
       
       ### Reactive-like values
       
       ### Reactives - RxCalc
       ## Event specific
+      
+      # listen to image selection
+      # observeEvent(moduleManagers()$selectionManager$selectedUIDs(), {
+      observeEvent(c(
+        selectedUIDs(),
+        popType(),
+        resultParamsPops()
+      ), {
+        # req(moduleManagers()$selectionManager$selectedUIDs())
+        req(selectedUIDs())
+        req(popType())
+        req(resultParamsPops())
+        
+        progress <- Progress$new()
+        progress$set(message = "Get population data", value = 50)
+        
+        # popDT(moduleManagers()$imageSetManager$selectedSet()$popDT(
+        DT <- cciaSet()$popDT(
+          popType = popType(),
+          uIDs = selectedUIDs(),
+          includeFiltered = TRUE,
+          # completeDT = TRUE,
+          # replaceNA = TRUE,
+          pops = resultParamsPops()
+        )
+        
+        # add density colour per pop
+        # TODO is this the right spot for this?
+        DT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
+           by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
+        
+        progress$close()
+        
+        popDT(DT)
+      })
       
       ## Generic
       # DEBUG
@@ -76,7 +119,7 @@ server <- function(input, output, session) {
         req(expInfo())
         
         # expInfo()$uID
-        c("TURHVv")
+        uIDs
       })
       
       # pop type
@@ -110,10 +153,6 @@ server <- function(input, output, session) {
         req(cciaObj())
         req(resultParamsPops())
         req(all(
-          !is.null(input$labelSize),
-          !is.null(input$asContours),
-          !is.null(input$showPopColours),
-          !is.null(input$directLeaves),
           !is.null(input$nRow),
           !is.null(input$nCol)
         ))
@@ -121,14 +160,50 @@ server <- function(input, output, session) {
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         
-        p1s <- .flowPlotGatedRaster(
-          cciaObj(),
-          popPath = resultParamsPops(),
-          labelSize = input$labelSize,
-          asContours = input$asContours,
-          showPopColours = input$showPopColours,
-          directLeaves = input$directLeaves
-          )
+        # plot density maps for individual populations
+        p1s <- list()
+        
+        for (i in unique(popDT()$uID)) {
+          local({
+            x <- popDT()[uID == i]
+            
+            axisX <- "centroid_x"
+            axisY <- "centroid_y"
+            
+            # can you orientate them in the same direction?
+            if (input$portraitMode == TRUE) {
+              if (max(x$centroid_x) > max(x$centroid_y)) {
+                axisX <- "centroid_y"
+                axisY <- "centroid_x"
+              }
+            } else {
+              if (max(x$centroid_x) < max(x$centroid_y)) {
+                axisX <- "centroid_y"
+                axisY <- "centroid_x"
+              }
+            }
+            
+            # p1s[[i]] <<- ggplot(x, aes(get(axisX), -get(axisY))) +
+            p1s[[i]] <<- ggplot(x, aes(get(axisX), get(axisY))) +
+              theme_classic() +
+              geom_point(colour = x$density) +
+              facet_grid(uID~pop) +
+              # plotThemeDark(angle = 0) +
+              coord_fixed() +
+              theme(
+                axis.text.x = element_blank(),
+                axis.ticks.x = element_blank(),
+                axis.text.y = element_blank(),
+                axis.ticks.y = element_blank(),
+                axis.line = element_blank(),
+                axis.title.x = element_blank(),
+                axis.title.y = element_blank(),
+                legend.position = "none"
+              ) +
+              scale_x_continuous(expand = c(0, 0)) +
+              scale_y_continuous(expand = c(0, 0))
+          })
+        }
         
         progress$close()
         
@@ -191,14 +266,15 @@ server <- function(input, output, session) {
               session$ns("resultParamsPopType"), "Population Type",
               choices = .reverseNamedList(popTypeChoices),
               # selected = isolate(popType())
-              selected = "flow"
+              selected = "clust"
             ),
             createSelectInput(
               session$ns("resultParamsPops"),
               label = "Populations to get",
               choices = popTypePops,
-              multiple = FALSE,
-              selected = isolate(resultParamsPops())
+              multiple = TRUE,
+              # selected = isolate(resultParamsPops())
+              selected = c("MHCII+", "F480+", "MHCII+F480+")
             )
             # createSelectInput(
             #   session$ns("resultParamsCols"),
@@ -220,24 +296,20 @@ server <- function(input, output, session) {
         tagList(
           h4("Gating"),      
           
-          sliderInput(
-            session$ns("labelSize"), label = "Label size",
-            value = 2, min = 0.2, max = 10, step = 0.2
-          ),
+          # sliderInput(
+          #   session$ns("labelSize"), label = "Label size",
+          #   value = 2, min = 0.2, max = 10, step = 0.2
+          # ),
           sliderInput(
             session$ns("nRow"), label = "Rows",
-            value = 2, min = 1, max = 10, step = 1
+            value = 2, min = 1, max = 20, step = 1
           ),
           sliderInput(
             session$ns("nCol"), label = "Columns",
-            value = 2, min = 1, max = 10, step = 1
+            value = 2, min = 1, max = 20, step = 1
           ),
           checkboxInput(
-            session$ns("showPopColours"), label = "Show pop colours", value = FALSE),
-          checkboxInput(
-            session$ns("asContours"), label = "Show contours", value = TRUE),
-          checkboxInput(
-            session$ns("directLeaves"), label = "Direct leaves", value = FALSE),
+            session$ns("portraitMode"), label = "Portrait Mode", value = TRUE),
           
           h4("Plot Layout"),
           numericInput(session$ns("plotHeight"), "Height (# pixels): ", value = 480),

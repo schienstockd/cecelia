@@ -990,7 +990,11 @@ server <- function(input, output, session) {
       menuSubItem(
         "Flow Gating",
         icon = icon("paintbrush"),
-        tabName = "plotFlowGating")
+        tabName = "plotFlowGating"),
+      menuSubItem(
+        "Population densities",
+        icon = icon("basketball"),
+        tabName = "plotPopDensities")
       # menuSubItem(
       #   "Tracking Cluster UMAPs",
       #   icon = icon("shuffle"),
@@ -1042,6 +1046,7 @@ server <- function(input, output, session) {
   .plotInteractionHeatmapsServer("plotInteractionHeatmaps", session, globalManagers)
   .plotClustersUMAPServer("plotClustersUMAP", session, globalManagers)
   .plotFlowGatingServer("plotFlowGating", session, globalManagers)
+  .plotPopDensitiesServer("plotPopDensities", session, globalManagers)
   
   # specific to live?
   .cleanupImagesServer("cleanupImages", session, globalManagers)

@@ -12,11 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-# pID <- "az8y8l" # ZOE
-pID <- "Wq59Z0" # JY
+pID <- "az8y8l" # ZOE
+# pID <- "Wq59Z0" # JY
 versionID <- 1
-# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
@@ -30,8 +30,111 @@ library(tidyverse)
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"s
+```
+
+```{r fig_gating, fig.height=3, fig.width=12}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "MX220R", versionID = versionID, initReactivity = FALSE
+)
+
+# get densities
+popDT <- cciaObj$popDT(popType = "clust", uIDs = names(cciaObj$cciaObjects())[1:10],
+                       includeFiltered = TRUE, pops = c("MHCII+", "F480+", "MHCII+F480+"))
+
+popDT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
+      by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
+
+unique(popDT$uID)
+```
+
+
+```{r fig_density, fig.height=10, fig.width=6}
+# plot density maps for individual populations
+p1s <- list()
+
+portraitMode <- FALSE
+
+for (i in unique(popDT$uID)) {
+  local({
+    x <- popDT[uID == i]
+    
+    axisX <- "centroid_x"
+    axisY <- "centroid_y"
+    
+    # can you orientate them in the same direction?
+    if (portraitMode == TRUE) {
+      if (max(x$centroid_x) > max(x$centroid_y)) {
+        axisX <- "centroid_y"
+        axisY <- "centroid_x"
+      }
+    } else {
+       if (max(x$centroid_x) < max(x$centroid_y)) {
+        axisX <- "centroid_y"
+        axisY <- "centroid_x"
+      }
+    }
+    
+    # p1s[[i]] <<- ggplot(x, aes(get(axisX), -get(axisY))) +
+    p1s[[i]] <<- ggplot(x, aes(get(axisX), get(axisY))) +
+      theme_classic() +
+      geom_point(colour = x$density) +
+      facet_grid(uID~pop) +
+      plotThemeDark(angle = 0) +
+      coord_fixed() +
+      theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none"
+      ) +
+      scale_x_continuous(expand = c(0, 0)) +
+      scale_y_continuous(expand = c(0, 0))
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, ncol = 1) +
+  theme(plot.background = element_rect(fill = "black", color = NA))
+```
+
+```{r fig_gating, fig.height=3, fig.width=6}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- c("MiM7Tl")
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  # get raster contours
+  p1s <- .flowPlotGatedRaster(
+    x, popPath = "root", labelSize = 2, labelBorder = 0.4,
+    xTitleSize = 12, yTitleSize = 12, labelAlpha = 0.8,
+    xAxisSize = 0, yAxisSize = 0,
+    asContours = TRUE, plotTitleSize = 0,
+    # plot_width = 92, plot_height = 92,
+    showPopName = TRUE, showGatePopColours = TRUE)
+    # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
+  
+  p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 1)
+  suppressWarnings(print(p1))
+  
+  ggsave(file.path(anaDir, paste0(x$getUID(), "_gating.png")),
+         width = 5.4, height = 1.8, plot = p1, bg = "white")
+}
 ```
 
 ```{r}
@@ -170,145 +273,4 @@ fileAttrs <- c("location", "mouse")
 generateScreenshots(
   file.path(anaDir, "shots"), cciaObj, uIDs, channelsToShow,
   popsToShow, fileAttrs, size = list(1200, 1200))
-```
-
-```{r}
-viewer$setTaskDir(x$persistentObjectDirectory())
-
-# get channels
-imChannelNames <- x$imChannelNames()
-
-# match channels
-curChannelsToShow <- channelsToShow
-if (matchChannels == TRUE) {
-  # TODO this is very crude    
-  names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
-    imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
-  })
-}
-
-# get cmaps
-layersVisible <- imChannelNames %in% names(curChannelsToShow)
-channelColormaps <- rep("gray", length(layersVisible))
-
-for (j in names(curChannelsToShow))
-  channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
-
-# open image
-viewer$openImage(
-  x$imFilepath(),
-  imChannelNames = imChannelNames,
-  show3D = TRUE,
-  layersVisible = layersVisible,
-  channelColormaps = channelColormaps
-)
-
-# add tracks
-viewer$showLabelsAll(
-  popsToShow,
-  # showLabels = TRUE,
-  showTracks = TRUE,
-  splitTracks = splitTracks,
-  tracksBlending = tracksBlending
-)
-
-# add populations
-popsAdded <- list()
-
-# add populations to popMap
-for (valueName in popsToShow) {
-  pop <- paste0(valueName, "/tracked")
-  popType <- "live"
-  parentPops <- c(pop)
-  pops <- list()
-  
-  # create pops from cluster information
-  # pops <- mapply(function(x, i) {
-  for (j in names(splitTracks)) {
-    y <- splitTracks[[j]]
-    
-    pops <- append(pops, mapply(function(z, k) {
-    # mapply(function(y, j) {
-      list(
-        filterMeasure = j,
-        filterValues = z[["values"]],
-        filterFun = "eq",
-        colour = z[["colour"]]
-        # isTrack = TRUE
-      )
-    }, y, names(y), SIMPLIFY = FALSE))
-  }
-  
-  # add pops
-  popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
-  popsAdded[[valueName]] <- popsToAdd
-    
-  # remove populations
-  x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
-  
-  # add populations
-  x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
-}
-
-# save to disk
-x$savePopMap(popType, includeFiltered = TRUE)
-x$savePops(popType, pops = unname(unlist(popsAdded)),
-           purge = TRUE, includeFiltered = TRUE)
-
-# show on image
-removePrevious <- TRUE
-for (j in names(popsAdded)) {
-  viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = 8,
-                        execInteractive = FALSE, removePrevious = removePrevious)
-  removePrevious <- FALSE
-}
-
-# save animation
-if (generateMovie == TRUE) {
-  viewer$saveTimeAnimation(
-    file.path(anaDir, "movies", paste0(
-      paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
-    windowSizeX = 1200, windowSizeY = 1000, fps = fps)
-}
-```
-
-```{r fig_gating, fig.height=3, fig.width=6}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
-)
-
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-uIDs <- c("MiM7Tl")
-
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  # get raster contours
-  p1s <- .flowPlotGatedRaster(
-    x, popPath = "root", labelSize = 2, labelBorder = 0.4,
-    xTitleSize = 12, yTitleSize = 12, labelAlpha = 0.8,
-    xAxisSize = 0, yAxisSize = 0,
-    asContours = TRUE, plotTitleSize = 0,
-    # plot_width = 92, plot_height = 92,
-    showPopName = TRUE, showGatePopColours = TRUE)
-    # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
-  
-  p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 1)
-  suppressWarnings(print(p1))
-  
-  ggsave(file.path(anaDir, paste0(x$getUID(), "_gating.png")),
-         width = 5.4, height = 1.8, plot = p1, bg = "white")
-}
-```
-
-```{r fig_gating, fig.height=3, fig.width=12}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "Fi2BUU", versionID = versionID, initReactivity = FALSE
-)
 ```
