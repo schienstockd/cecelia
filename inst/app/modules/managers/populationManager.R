@@ -185,8 +185,6 @@ createPopulationManager <- function(
   autoUpdateImage <- reactive({
     updateImage <- FALSE
     
-    browser()
-    
     if (input$autoUpdateImage == TRUE &&
         globalManagers$viewerManager()$getShowViewer() == TRUE &&
         # check that the current is selected
