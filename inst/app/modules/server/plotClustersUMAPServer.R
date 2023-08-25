@@ -219,6 +219,9 @@
         req(selectedUIDs())
         # req(resultParamsPops())
         
+        # make sure that it only requests data when selected
+        req(globalManagers$input$sidebar() == session$ns(c()))
+        
         progress <- Progress$new()
         progress$set(message = "Get population data", value = 50)
         

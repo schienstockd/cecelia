@@ -14,6 +14,9 @@ server <- function(input, output, session) {
   globalManagers$dataManager <- DataManager$new(session)$reactive()
   globalManagers$viewerManager <- ViewerManager$new(session)$reactive()
   
+  # https://www.r-bloggers.com/2018/07/using-global-input-values-inside-of-r-shiny-modules/
+  globalManagers$input <- list(sidebar = reactive(input$sidebar))
+  
   # flag for init
   dataManagerInitialised <- reactiveVal(FALSE)
   
