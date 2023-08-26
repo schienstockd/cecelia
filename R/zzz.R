@@ -270,7 +270,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     
     # adjust windows paths
     x$docker$pathMapping <- lapply(x$docker$pathMapping, function(y) {
-      y$to <- stringr::str_replace_all(x$docker$pathMapping$to, "\\\\", "\\\\\\\\")
+      list(from = y$from, to = stringr::str_replace_all(y$to, "\\\\", "\\\\\\\\"))
     })
     
     pkg.env$cfg$docker <- x$docker
