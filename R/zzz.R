@@ -268,8 +268,10 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     # include docker information in config
     x <- config::get(file = dockerConf)
     
-    # adjust windows path
-    x$docker$pathMapping$to <- stringr::str_replace_all(x$docker$pathMapping$to, "\\\\", "\\\\\\\\")
+    # adjust windows paths
+    x$docker$pathMapping <- lapply(x$docker$pathMapping, function(y) {
+      y$to <- stringr::str_replace_all(x$docker$pathMapping$to, "\\\\", "\\\\\\\\")
+    })
     
     pkg.env$cfg$docker <- x$docker
   }

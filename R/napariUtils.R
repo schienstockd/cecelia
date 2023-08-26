@@ -34,9 +34,7 @@ NapariUtils <- R6::R6Class(
       # import napari
       self$execute(paste(
         "import numpy as np",
-        sprintf(
-          "from %s import NapariUtils", "py.napari_utils"
-          ),
+        "from py.napari_utils import NapariUtils",
         "init_napari = True",
         "try:",
         "\tinit_napari = napari_utils is None",
