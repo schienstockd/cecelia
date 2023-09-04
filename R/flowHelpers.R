@@ -955,7 +955,7 @@
                                  labelPos = list(), asContours = FALSE,
                                  showPopColours = FALSE, showGatePopColours = TRUE,
                                  directLeaves = FALSE, showPopName = TRUE,
-                                 plotTitleSize = 14, ...) {
+                                 showAnnotation = TRUE, plotTitleSize = 14, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -1081,10 +1081,13 @@
               nameDTs[[j]]$label <- ""
             
             # add percentage
-            popStats <- fgs$getPopStats(j, type = "percent")
-            nameDTs[[j]]$label <- paste(
-              nameDTs[[j]]$label, paste0(
-                sprintf("%0.2f", popStats$percent * 100), "%"))
+            if (showAnnotation == TRUE) {
+              popStats <- fgs$getPopStats(j, type = "percent")
+              
+              nameDTs[[j]]$label <- paste(
+                nameDTs[[j]]$label, paste0(
+                  sprintf("%0.2f", popStats$percent * 100), "%"))
+            }
           }
           
           # bind together

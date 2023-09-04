@@ -31,7 +31,12 @@
 			},
       "popsToCluster": {
         "type:list": {}
-      }
+      },
+      "combinePops": {
+				"type:boolean": {
+					"default": false
+				}
+			}
     },
     "outputs": {}
   },
@@ -65,7 +70,13 @@
           "size": 1,
           "multiple": true
         }
-      }
+      },
+      "combinePops": {
+				"index": 4,
+				"label": "Combine populations",
+				"widget:checkbox": {
+				}
+			}
     },
     "outputs": {}
   }

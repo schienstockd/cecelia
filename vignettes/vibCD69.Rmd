@@ -71,8 +71,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "15SFzg", versionID = versionID, initReactivity = FALSE
-  # pID = pID, uID = "QS9obm", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "15SFzg", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "QS9obm", versionID = versionID, initReactivity = FALSE
 )
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
@@ -87,13 +87,13 @@ p1s <- .flowPlotGatedRaster(
   xTitleSize = 12, yTitleSize = 12,
   xAxisSize = 0, yAxisSize = 0,
   asContours = FALSE, plotTitleSize = 0, plot_width = 92, plot_height = 92,
-  showPopName = FALSE, showGatePopColours = FALSE)
+  showPopName = FALSE, showGatePopColours = FALSE, showAnnotation = FALSE)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
 
-ggsave(file.path(anaDir, "15SFzg_gating.png"), width = 2, height = 2)
-# ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "15SFzg_gating.png"), width = 2, height = 2)
+ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
 ```
 
 ```{r}

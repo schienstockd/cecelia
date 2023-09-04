@@ -227,9 +227,9 @@ spatialDT[popDT[, c("uID", "label", "pop")],
 spatialDT[popDT[, c("uID", "label", "pop")],
           on = c("uID", "from" = "label"),
           pop.from := pop]
-spatialDT[regionDT[, c("uID", "label", "pop")],
-          on = c("uID", "from" = "label"),
-          region := pop]
+# spatialDT[regionDT[, c("uID", "label", "pop")],
+#           on = c("uID", "from" = "label"),
+#           region := pop]
 # regionDT[popDT[, c("uID", "label", "pop")],
 #          on = c("uID", "label"),
 #          flow.pop := i.pop]
@@ -266,8 +266,9 @@ interactionDT <- rbindlist(interactionList, idcol = "interaction") %>%
 ```
 
 ```{r fig_interaction, fig.height=7, fig.width=5}
-ggplot(interactionDT %>% left_join(exp.info),
-       aes(interaction, pos, color = treatment)) +
+datToPlot <- interactionDT %>% left_join(exp.info)
+
+ggplot(datToPlot, aes(interaction, pos, color = treatment)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -287,6 +288,8 @@ ggplot(interactionDT %>% left_join(exp.info),
 
 ggsave(file.path(anaDir, "gating", "analysis", "interactions.png"),
        width = 6, height = 5)
+
+write.csv(datToPlot, file.path(anaDir, "gating", "analysis", "interactions.csv"))
 ```
 
 ```{r fig_regions, fig.height=3, fig.width=8}

@@ -120,7 +120,7 @@ funParams <- list(
   popsToCluster = c("tcells.gBT/tracked"),
   valueName = "tracks.clusters.tcells.hmm_transitions_movement",
   clusterColName = "hmm_transitions_movement",
-  resolution = 0.30,
+  resolution = 0.40,
   percentile = 99.5,
   trackMeasures = c(
     "speed",
@@ -145,8 +145,8 @@ funParams <- list(
     # "sphericity",
     # HMM states
     "live.cell.hmm.state.movement",
-    "live.cell.hmm.transitions.movement",
-    "live.cell.min_distance#live.dcs.CD11c/tracked"
+    "live.cell.hmm.transitions.movement"
+    # "live.cell.min_distance#live.dcs.CD11c/tracked"
     ),
   nMeasures = c(
     ),
@@ -431,142 +431,6 @@ ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 7, height = 8)
 ```
 
-```{r fig_total_transitions, fig.height=1, fig.width=5}
-library(ggplot2)
-library(ggraph)
-
-freqThr <- 0.0001
-
-pList <- list()
-
-stateOrder <- list(
-  "D" = "1",
-  "M" = "3",
-  "S" = "2",
-  "C" = "4"
-)
-
-summaryDF <- popDTs %>%
-  left_join(exp.info)
-
-summaryDF$cell_type <- str_extract(summaryDF$pop, "(?<=\\.)[:alnum:]+(?=/)")
-summaryDF$stain <- str_extract(
-  summaryDF$staining, sprintf("%s-[:alnum:]+", summaryDF$cell_type)
-  )
-summaryDF$stain[is.na(summaryDF$stain)] <- "gBT-CTV"
-summaryDF$Treatment_DTx <- interaction(summaryDF$Treatment, summaryDF$DTx)
-
-summaryDF <- .mapClustNames(summaryDF, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
-
-for (x in unique(summaryDF$live.cell.track.clusters.hmm_transitions_movement)) {
-# for (x in unique(summaryDF$clusters.name)) {
-# for (x in unique(summaryDF$Treatment_DTx)) {
-  # plot heatmap of transitions
-  DF <- summaryDF %>%
-    dplyr::filter(live.cell.track.clusters.hmm_transitions_movement == x) %>%
-    # dplyr::filter(clusters.name == x) %>%
-    # dplyr::filter(Treatment_DTx == x, live.cell.track.clusters.hmm_transitions_movement == 3) %>%
-    group_by(live.cell.hmm.transitions.movement) %>%
-    summarise(n = n()) %>%
-    separate(live.cell.hmm.transitions.movement,
-             into = c("from", "to"),
-             sep = "_", convert = TRUE) %>%
-    mutate(across(c(from, to), as.character)) %>%
-    replace_na(list(from = "0"))
-  
-  # edges for non-self transitions
-  edges <- DF %>%
-    dplyr::filter(from != to) %>%
-    mutate(freq = n/sum(n)) %>%
-    complete(from, to, fill = list(freq = 0)) %>%
-    drop_na() %>%
-    dplyr::filter(freq > freqThr) %>%
-    mutate(non.self = (freq - min(freq)) / (max(freq) - min(freq))) %>%
-    arrange(freq)
-  
-  # get number of self transitions
-  nodes <- DF %>%
-    dplyr::filter(from == to) %>%
-    mutate(freq = n/sum(n)) %>%
-    complete(from = unlist(stateOrder), fill = list(freq = 0)) %>%
-    replace_na(list(to = "0")) %>%
-    select(from, freq) %>%
-    dplyr::rename(node = from) %>%
-    add_row(node = "0", freq = 0) %>%
-    mutate(nodeName = node) %>%
-    dplyr::filter(node %in% unique(c(edges$from, edges$to))) %>%
-    mutate(self = (freq - min(freq)) / (max(freq) - min(freq)))
-  
-  # add names for nodes
-  for (i in names(stateOrder)) {
-    nodes[nodes$nodeName == stateOrder[[i]], ]$nodeName <- i
-  }
-  
-  # add state order
-  counter <- 0
-  nodes$order <- 0
-  for (y in stateOrder) {
-    nodes[nodes$node == y,]$order <- counter
-
-    counter <- counter + 1
-  }
-  
-  # https://www.hydrogenwaterusa.com/visualizing-large-directed-networks-with-ggraph-in-r/
-  g <- igraph::graph_from_data_frame(d = edges,
-                                     vertices = nodes %>% arrange(order),
-                                     directed = TRUE)
-  
-  # pList[[x]] <- ggraph(g, layout = "auto") +
-  # pList[[x]] <- ggraph(g, layout = "igraph", algorithm = "circle") +
-  # pList[[x]] <- ggraph(g, layout = "linear") +
-  # ggraph(g, layout = "igraph", algorithm = "circle") +
-  # ggraph(g, layout = "auto") +
-  ggraph(g, layout = "linear") +
-    # ggtitle(sprintf("%s", x)) +
-    geom_edge_fan2(aes(width = non.self, color = non.self),
-                   arrow = arrow(length = unit(5, 'mm'), type = "closed"),
-                   end_cap = circle(3, 'mm')) +
-    scale_edge_width(range = c(1, 2)) +
-    scale_edge_color_gradient2(
-      # low = "#D1D1D1",
-      low = "#dadada",
-      high = "black",
-      mid = "#616161",
-      midpoint = .5
-    ) +
-    geom_node_label(aes(label = nodeName, fill = self),
-                    color = "white", repel = FALSE, size=5,
-                    label.padding = unit(0.25, "lines")) +
-    scale_fill_gradient2(
-      # low = "blue",
-      low = "#009fe3",
-      mid = "black",
-      # high = "red",
-      high = "#e71d73",
-      midpoint = .5
-    ) +
-    theme_graph(
-      plot_margin = margin(0, 0, 0, 0)
-    ) +
-    theme(
-      legend.position = "none",
-      plot.title = element_text(size = 6, family = "Arial")
-    )
-
-  ggsave(file = file.path(anaDir, "networks", paste0("network_", x, ".pdf")),
-         width = 3, height = 1, dpi = 400)
-}
-
-# ggpubr::ggarrange(plotlist = pList, nrow = 1)
-
-# https://stackoverflow.com/a/17075381
-# ggsave(file = file.path(anaDir, "total_networks.tiff"),
-# ggsave(file = file.path(anaDir, "total_networks_GCAMP.tiff"),
-  # width = 7, height = 2)
-  # width = 20, height = 3.5)
-  # width = 25, height = 2)
-```
-
 ```{r fig_clusters_freq, fig.height=4, fig.width=15}
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
@@ -597,10 +461,10 @@ ggplot(summaryDF, aes(clusters, freq.clusters, color = clusters)) +
 
 ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 3, height = 3)
 
-summaryDF$Treatment.DTx <- 0
-summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
-summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
-summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
+# summaryDF$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
 write.csv(
   summaryDF,
@@ -621,15 +485,157 @@ tracks.info <- cciaObj$tracksInfo(
 
 summaryDF <- copy(tcells.sc) %>% left_join(tracks.info)
 
-ggplot(summaryDF, aes(clusters, log(`live.cell.min_distance#live.dcs.CD11c/tracked.median`), color = clusters)) +
+# distance by HMM states rather than track clusters?
+# ggplot(summaryDF, aes(clusters, `live.cell.contact#live.dcs.CD11c/tracked.FALSE`, color = clusters)) +
+# ggplot(summaryDF, aes(clusters, log(`live.cell.min_distance#live.dcs.CD11c/tracked.median`), color = clusters)) +
 # ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.mean`, color = clusters)) +
+ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.qUp`, color = clusters)) +
+# ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.qLow`, color = clusters)) +
   theme_classic() +
   geom_violin(scale = "width") +
   geom_jitter(
     position = position_jitterdodge(jitter.width = 1), alpha = 1.0) +
   stat_summary(fun=mean, geom="point", size=3, shape=18, color="black") +
+  scale_color_brewer(name = "Behaviour", palette = "Set1")
+
+ggsave(file.path(anaDir, "CD11c_distance.tiff"), width = 4, height = 4)
+
+write.csv(summaryDF, file.path(anaDir, "CD11c_distance.csv"))
+```
+
+```{r}
+# show contact of T cells to DCs
+tracksInfo <- cciaObj$tracksInfo(
+  "live.cell.contact#live.dcs.CD11c/tracked",
+  parentPop = "tcells.gBT/tracked", uIDs = uIDs
+)
+
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+dfToPlot <- tracksInfo %>%
+  left_join(unique(popDTs[, c(
+    "uID", "live.cell.track.clusters.hmm_transitions_movement", "track_id")])) %>%
+  mutate(contact = time.interval * `live.cell.contact#live.dcs.CD11c/tracked.TRUE.n`) %>%
+  dplyr::filter(live.cell.track.clusters.hmm_transitions_movement != "NA")
+
+write.csv(dfToPlot, file.path(anaDir, "clusters_contact_CD11c.csv"))
+ggplot(dfToPlot,
+       aes(
+         # live.cell.track.clusters.hmm_transitions_movement, mean.contacts
+         live.cell.track.clusters.hmm_transitions_movement, contact,
+         color = live.cell.track.clusters.hmm_transitions_movement
+         )) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 1), alpha = 1.0) +
+  stat_summary(fun=mean, geom="point", size=3, shape=18, color="black") +
+  scale_color_brewer(name = "Behaviour", palette = "Set1")
+```
+
+
+```{r}
+# get DCs for image
+DCs <- cciaObj$popDT(
+  popType = "live", pops = c(
+    "dcs.CD11c/tracked"
+    ),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+```{r fig_contact_time, fig.height=3, fig.width=5}
+tracks.info <- cciaObj$tracksInfo(
+  c(
+    "live.cell.min_distance#live.dcs.CD11c/tracked",
+    "live.cell.contact#live.dcs.CD11c/tracked",
+    "live.cell.contact_n#live.dcs.CD11c/tracked"
+    ),
+  parentPop = "tcells.gBT/tracked",
+  uIDs = uIDs
+)
+
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+dfToPlot <- tracks.info %>%
+  left_join(unique(popDTs[, c(
+    "uID", "live.cell.track.clusters.hmm_transitions_movement", "track_id")])) %>%
+  dplyr::filter(live.cell.track.clusters.hmm_transitions_movement != "NA") %>%
+  left_join(
+    {popDTs %>%
+      left_join(
+        DCs[, c("uID", "track_id", "label")],
+        by = c("uID", `live.cell.contact_id#live.dcs.CD11c/tracked` = "label")) %>%
+      dplyr::rename(c(
+        "track_id_T" = track_id.x,
+        "track_id_DC" = track_id.y
+      )) %>%
+      dplyr::filter(`live.cell.contact#live.dcs.CD11c/tracked` == TRUE) %>%
+      group_by(uID, track_id_T, live.cell.track.clusters.hmm_transitions_movement) %>%
+      summarise(unique.contacts = length(unique(track_id_DC)))},
+    by = c("uID", track_id = "track_id_T", "live.cell.track.clusters.hmm_transitions_movement")
+  ) %>%
+  mutate(time.per.DC = (time.interval * `live.cell.contact#live.dcs.CD11c/tracked.TRUE.n`)/unique.contacts)
+  # replace_na(list(unique.contacts = 0)) %>%
+  # group_by(uID, live.cell.track.clusters.hmm_transitions_movement) %>%
+  # summarise(
+  #   mean.contacts = mean(unique.contacts, na.rm = TRUE),
+  #   mean.time.per.DC = mean(time.per.DC, na.rm = TRUE)
+  #   )
+
+# Time spent scanning on individual DCs?
+ggplot(dfToPlot,
+       aes(
+         # live.cell.track.clusters.hmm_transitions_movement, mean.contacts
+         live.cell.track.clusters.hmm_transitions_movement, time.per.DC,
+         color = live.cell.track.clusters.hmm_transitions_movement
+         )) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 1), alpha = 1.0) +
+  stat_summary(fun=median, geom="point", size=3, shape=18, color="black") +
+  scale_color_brewer(name = "Behaviour", palette = "Set1")
+```
+
+```{r fig_contact_freq, fig.height=3, fig.width=5}
+summaryDF <- copy(popDTs) %>%
+  dplyr::filter(!is.na(live.cell.hmm.state.movement))
+
+# distance by HMM states rather than track clusters?
+ggplot(summaryDF,
+       aes(as.factor(live.cell.hmm.state.movement),
+           `live.cell.min_distance#live.dcs.CD11c/tracked`,
+           color = as.factor(live.cell.hmm.state.movement))) +
+# ggplot(summaryDF, aes(clusters, log(`live.cell.min_distance#live.dcs.CD11c/tracked.median`), color = clusters)) +
+# ggplot(summaryDF, aes(clusters, `live.cell.min_distance#live.dcs.CD11c/tracked.mean`, color = clusters)) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 1), alpha = 1.0) +
+  stat_summary(fun=median, geom="point", size=3, shape=18, color="black") +
   scale_color_brewer(name = "Treatment", palette = "Set1")
 
 ggsave(file.path(anaDir, "CD11c_distance.tiff"), width = 4, height = 4)
 ```
 
+```{r fig_contact_bins, fig.height=3, fig.width=5}
+# summaryDF <- copy(tcells.sc) %>% left_join(tracks.info)
+summaryDF <- copy(popDTs) %>%
+  dplyr::filter(
+    !is.na(live.cell.hmm.state.movement),
+    `live.cell.min_distance#live.dcs.CD11c/tracked` <= 40
+    )
+
+# distance by HMM states rather than track clusters?
+ggplot(summaryDF,
+       aes(`live.cell.min_distance#live.dcs.CD11c/tracked`,
+           as.factor(live.cell.hmm.state.movement),
+           fill = as.factor(live.cell.hmm.state.movement))) +
+  theme_classic() +
+  ggridges::geom_density_ridges(alpha = 0.8) +
+  scale_fill_brewer(name = "Treatment", palette = "Set3")
+
+ggsave(file.path(anaDir, "CD11c_distance_hmm.tiff"), width = 4, height = 4)
+```

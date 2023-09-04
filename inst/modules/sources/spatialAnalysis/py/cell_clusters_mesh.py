@@ -30,6 +30,8 @@ def run(params):
   im_res = script_utils.get_param(params, 'imRes', default = None)
   is_3D = script_utils.get_param(params, 'is3D', default = False)
   is_timecourse = script_utils.get_param(params, 'isTimecourse', default = False)
+  pops = script_utils.get_param(params, 'popsToCluster', default = list())
+  combine_pops = script_utils.get_param(params, 'combinePops', default = False)
 
   # prepare property columns to get
   prop_cols = [f'bbox_{side}_{axis}' for side in ['min', 'max'] for axis in ['x', 'y', 'z']]
@@ -44,9 +46,13 @@ def run(params):
   
   # init pop utils
   pop_utils = PopUtils()
+  
+  # combine populations?
+  if combine_pops is True:
+    pops = [pops]
 
   # go through populations
-  for pop in script_utils.get_param(params, 'popsToCluster', default = list()):
+  for pop in pops:
     # get timepoints
     timepoints = [-1]
     
@@ -65,7 +71,7 @@ def run(params):
         LabelPropsUtils(task_dir),
         pop_type,
         cols = prop_cols,
-        pops = [pop]
+        pops = pop if isinstance(pop, list) else [pop]
     )
     
     # same value for all within a population

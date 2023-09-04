@@ -34,6 +34,7 @@ CellClustersMeshes <- R6::R6Class(
         isTimecourse = cciaObj$omeXMLPixels()$SizeT > 1,
         popType = self$funParams()$popType,
         popsToCluster = self$funParams()$popsToCluster,
+        combinePops = self$funParams()$combinePops,
         minCellNum = self$funParams()$minCellNum,
         maxClusterDist = self$funParams()$maxClusterDist,
         noiseFilter = self$funParams()$noiseFilter,

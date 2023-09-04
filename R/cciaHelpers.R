@@ -1057,11 +1057,12 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
 #' @param clustCol character of column id
 #' @param nameCol character of column name
 #' @param defaultName character of default name
+#' @param removeNone boolean to remove ignored clustered
 #' @examples
 #' TODO
 #' @export
 .mapClustNames <- function(DF, clusterMapping, clustCol = "clusters", nameCol = "clusters.name",
-                           defaultName = "NONE", idCol = "clusters.id") {
+                           defaultName = "NONE", idCol = "clusters.id", removeNone = TRUE) {
   # set default name
   DF[[nameCol]] <- defaultName
   
@@ -1069,8 +1070,16 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
   for (i in names(clusterMapping))
     DF[DF[[clustCol]] %in% clusterMapping[[i]], ][[nameCol]] <- i
   
+  # remove None
+  clustLevels <- names(clusterMapping)
+  
+  if (removeNone == TRUE) {
+    DF <- DF[DF[[nameCol]] != "NONE"]
+    clustLevels <- clustLevels[clustLevels != "NONE"]
+  }
+  
   # set as factor
-  DF[[nameCol]] <- factor(DF[[nameCol]], levels = names(clusterMapping))
+  DF[[nameCol]] <- factor(DF[[nameCol]], levels = clustLevels)
   
   # set IDs
   DF[[idCol]] <- as.numeric(DF[[nameCol]])
