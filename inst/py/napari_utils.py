@@ -693,8 +693,8 @@ class NapariUtils:
   def show_channel_intensity(
     self, channel_id, value_name = 'default', chnl_scale = 255,
     percentile = cfg.data['images']['normalise']['percentile'],
-    cmap = 'viridis'):
-    chnl = f'mean_intensity_{channel_id}'
+    cmap = 'viridis', intensity_measure = 'mean'):
+    chnl = f'{intensity_measure}_intensity_{channel_id}'
 
     label_view = self.label_props_utils.label_props_view(value_name = value_name)
     chnl_values = label_view.view_cols(['label', chnl]).values_vars()

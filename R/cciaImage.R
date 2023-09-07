@@ -1888,12 +1888,16 @@ CciaImage <- R6::R6Class(
         cciaConf()$fcs$propsToAdd
       )
       
+      # get channels
+      imChannels <- self$imChannelNames(includeTypes = TRUE)
+      
       # crreate flow frame
       .prepareFlowFrame(
         labelProps,
-        self$imChannelNames(includeTypes = TRUE),
+        imChannels,
         attrNames = propsToAdd,
-        channelPattern = cciaConf()$files$labelPropsChannels,
+        # channelPattern = cciaConf()$files$labelPropsChannels,
+        channelPattern = paste0(attr(imChannels, "measure"), "_intensity"),
         addRownames = TRUE)
     },
     
@@ -2047,9 +2051,11 @@ CciaImage <- R6::R6Class(
         if (!purrr::is_empty(adataPath)) {
           if (is.null(adataUtils) || forceReload == TRUE) {
             if (file.exists(adataPath)) {
+              imChannels <- self$imChannelNames(includeTypes = TRUE)
+              
               # init object
               adataUtils <- AnndataUtils$new(
-                adataPath, self$imChannelNames(includeTypes = TRUE)
+                adataPath, imChannels, attr(imChannels, "measure")
               )
               
               # init reactivity
@@ -2879,7 +2885,7 @@ CciaImage <- R6::R6Class(
     
     imChannelNames = function(valueName = NULL, useNames = TRUE,
                               correctChannelNames = FALSE, includeTypes = FALSE,
-                              rmAttr = FALSE) {
+                              rmAttr = FALSE, includeMeasure = TRUE) {
       channelNames <- .getVersionedVarInList(
         self$getCciaMeta(), "imChannelNames", valueName = valueName)
       
@@ -2898,7 +2904,7 @@ CciaImage <- R6::R6Class(
                 y <- paste(x, channelNames, sep = "_")
                 # set names
                 names(y) <- sprintf(
-                  "%s_Chn%s",x, seq(length(channelNames)))
+                  "%s_Chn%s", x, seq(length(channelNames)))
                 y
               }
             ))
@@ -2909,6 +2915,14 @@ CciaImage <- R6::R6Class(
           for (i in names(channelAttr)[names(channelAttr) != "names"]) {
             attr(channelNames, i) <- channelAttr[[i]]
           }
+        }
+      }
+      
+      # include measures?
+      if (includeMeasure == TRUE) {
+        # default to mean
+        if (is.null(attr(channelNames, "measure"))) {
+          attr(channelNames, "measure") <- "mean"
         }
       }
       
@@ -2929,6 +2943,20 @@ CciaImage <- R6::R6Class(
       
       channelNames
     },
+    
+    # imChannelsMeasure = function() {
+    #   channelNames <- .getVersionedVarInList(
+    #     self$getCciaMeta(), "imChannelNames", valueName = valueName)
+    #   
+    #   measure <- attr(channelNames, "measure")
+    #   
+    #   # default to mean
+    #   if (is.null(measure)) {
+    #     measure <- "mean"
+    #   }
+    #   
+    #   measure
+    # },
     
     oriFilepath = function(modified = FALSE, revertToOri = FALSE) {
       retVal = NULL

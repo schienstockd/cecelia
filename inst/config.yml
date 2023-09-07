@@ -27,7 +27,6 @@ default:
   files:
     labelProps: "labelProps.h5ad"
     labels: "labels.zarr"
-    labelPropsChannels: "mean_intensity_"
     anndata: "adata.h5ad"
     fsdata: "ccid.fcs"
     gsdata: "ccid.gs"

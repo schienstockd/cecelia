@@ -515,10 +515,42 @@ time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$int
 dfToPlot <- tracksInfo %>%
   left_join(unique(popDTs[, c(
     "uID", "live.cell.track.clusters.hmm_transitions_movement", "track_id")])) %>%
-  mutate(contact = time.interval * `live.cell.contact#live.dcs.CD11c/tracked.TRUE.n`) %>%
+  mutate(contact = `live.cell.contact#live.dcs.CD11c/tracked.TRUE`) %>%
   dplyr::filter(live.cell.track.clusters.hmm_transitions_movement != "NA")
 
 write.csv(dfToPlot, file.path(anaDir, "clusters_contact_CD11c.csv"))
+
+ggplot(dfToPlot,
+       aes(
+         # live.cell.track.clusters.hmm_transitions_movement, mean.contacts
+         live.cell.track.clusters.hmm_transitions_movement, contact,
+         color = live.cell.track.clusters.hmm_transitions_movement
+         )) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 1), alpha = 1.0) +
+  stat_summary(fun=mean, geom="point", size=3, shape=18, color="black") +
+  scale_color_brewer(name = "Behaviour", palette = "Set1")
+```
+
+
+```{r}
+# show contact of T cells to DCs
+tracksInfo <- cciaObj$tracksInfo(
+  "live.cell.contact#live.dcs.CD11c/tracked",
+  parentPop = "tcells.gBT/tracked", uIDs = uIDs
+)
+
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+dfToPlot <- tracksInfo %>%
+  left_join(unique(popDTs[, c(
+    "uID", "live.cell.track.clusters.hmm_transitions_movement", "track_id")])) %>%
+  mutate(contact = time.interval * `live.cell.contact#live.dcs.CD11c/tracked.TRUE.n`) %>%
+  dplyr::filter(live.cell.track.clusters.hmm_transitions_movement != "NA")
+
+write.csv(dfToPlot, file.path(anaDir, "clusters_contact_CD11c_time.csv"))
 ggplot(dfToPlot,
        aes(
          # live.cell.track.clusters.hmm_transitions_movement, mean.contacts

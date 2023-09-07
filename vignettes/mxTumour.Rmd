@@ -12,11 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-pID <- "az8y8l" # ZOE
-# pID <- "Wq59Z0" # JY
+# pID <- "az8y8l" # ZOE
+pID <- "Wq59Z0" # JY
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 ```
 
 ```{r}
@@ -30,9 +30,30 @@ library(tidyverse)
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"s
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 ```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "79ncGd", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$runTask(
+  funName = "gatePopulations.createGatingSet",
+  funParams = list(
+    compensateZ = FALSE,
+    applyReversedLog = FALSE,
+    transformation = "biexponential"
+  ),
+  runInplace = TRUE
+)
+```
+
 
 ```{r fig_gating, fig.height=3, fig.width=12}
 devtools::load_all("../")
@@ -153,17 +174,31 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 popDT <- cciaObj$popDT(popType = "flow", pops = c("/nonDebris"))
 
 # calc ratio
-popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_YAP.647
+# popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_YAP.647
 # popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_FRC.TdTomato
+popDT$ratio <- popDT$nuc_YAP.647/popDT$nuc_FRC.TdTomato
 ```
 
-```{r fig_ratio, fig.height=4, fig.width=20}
+```{r fig_ratio, fig.height=4, fig.width=25}
 # can you plot per image and show the numbers?
-popToPlot <- popDT %>%
+# popDT$ratio <- popDT$nuc_YAP.647/popDT$nuc_FRC.TdTomato
+# popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_FRC.TdTomato
+# popDT$ratio <- popDT$nuc_YAP.647/popDT$cyto_YAP.647
+popDT$ratio <- popDT$nuc_FRC.TdTomato/popDT$cyto_YAP.647
+
+x <- popDT %>% dplyr::filter(uID == "79ncGd")
+
+for (i in cciaObj$cciaObjects()[[1]]$imChannelNames(includeTypes = TRUE, correctChannelNames = TRUE)) {
+  x[[paste0("norm.", i)]] <- x[[i]]/median(x[[i]])
+}
+
+x$ratio <- log(x$norm.nuc_YAP.647/x$norm.YAP.647)
+
+popToPlot <- x %>%
   left_join(exp.info) %>%
   filter(!is.infinite(ratio))
 
-ggplot(popToPlot, aes(as.factor(1), ratio)) +
+ggplot(popToPlot %>% dplyr::filter(uID == "79ncGd"), aes(as.factor(1), ratio)) +
 # ggplot(popToPlot, aes(location, ratio)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
@@ -180,7 +215,7 @@ ggplot(popToPlot, aes(as.factor(1), ratio)) +
     max.overlaps = 30)
 
 # ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP.png"), height = 2, width = 2)
-ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP_indv.png"), height = 4, width = 20)
+# ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP_indv.png"), height = 4, width = 20)
 
 # write.csv(popToPlot, file.path(anaDir, "ratio_nuc_cyto_YAP.csv"))
 ```

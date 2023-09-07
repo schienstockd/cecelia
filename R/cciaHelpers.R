@@ -643,26 +643,26 @@ firstSelectedImageFromSet <- function(selectedUIDs, selectedSet) {
 }
 
 
-#' @description Rename channel columns
-#' @param channelList list of character for channels
-#' @param channelNames list of character for channels names
-#' @param channelPattern character of channel pattern
-#' @param flowNames boolean to convert names to 'flow save names'
-#' @examples
-#' TODO
-#' @export
-renameChannelColumns <- function(channelList, channelNames, channelPattern = "mean_intensity",
-                                 flowNames = TRUE) {
-  # correct names as 'flow' names
-  if (flowNames == TRUE) {
-    channelNames <- .flowCorrectChannelNames(channelNames)
-  }
-
-  # rename all channels matching the pattern
-  channelList[c(!is.na(stringr::str_match(channelList, channelPattern)))] <- channelNames
-
-  channelList
-}
+#' #' @description Rename channel columns
+#' #' @param channelList list of character for channels
+#' #' @param channelNames list of character for channels names
+#' #' @param channelPattern character of channel pattern
+#' #' @param flowNames boolean to convert names to 'flow save names'
+#' #' @examples
+#' #' TODO
+#' #' @export
+#' renameChannelColumns <- function(channelList, channelNames, channelPattern = "mean_intensity",
+#'                                  flowNames = TRUE) {
+#'   # correct names as 'flow' names
+#'   if (flowNames == TRUE) {
+#'     channelNames <- .flowCorrectChannelNames(channelNames)
+#'   }
+#' 
+#'   # rename all channels matching the pattern
+#'   channelList[c(!is.na(stringr::str_match(channelList, channelPattern)))] <- channelNames
+#' 
+#'   channelList
+#' }
 
 #' @description Normalise DT column
 #' @param DT data.frame of population

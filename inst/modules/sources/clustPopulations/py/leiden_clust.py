@@ -36,6 +36,7 @@ def run(params):
   normalise_percentile = script_utils.get_param(params, 'normalisePercentile', default = 100)
   normalise_percentile_bottom = script_utils.get_param(params, 'normalisePercentileBottom', default = 0)
   normalise_individually = script_utils.get_param(params, 'normaliseIndividually', default = False)
+  intensity_measure = script_utils.get_param(params, 'intensityMeasure', default = 'mean')
   transformation = script_utils.get_param(params, 'transformation', default = 'NONE')
   log_base = script_utils.get_param(params, 'logBase', default = 10)
   uIDs = script_utils.get_param(params, 'uIDs', default = [])
@@ -49,7 +50,7 @@ def run(params):
 
   for i, x in cluster_channels.items():
     # get column names
-    column_names += [f'{i}_mean_intensity_{y}' if i != 'base' else f'mean_intensity_{y}' for y in x['channels']]
+    column_names += [f'{i}_{intensity_measure}_intensity_{y}' if i != 'base' else f'{intensity_measure}_intensity_{y}' for y in x['channels']]
   
   # add object measurements to column names
   column_names += object_measures

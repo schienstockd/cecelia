@@ -88,6 +88,7 @@ class SegmentationUtils:
     
     # extended parameters?
     self.extended_measures = script_utils.get_param(params, 'extended_measures', default = False)
+    self.calc_median_intensities = script_utils.get_param(params, 'calc_median_intensities', default = False)
     
     # generate label paths
     labels_path = Path(self.labels_filename)
@@ -170,7 +171,8 @@ class SegmentationUtils:
           task_dir = self.task_dir,
           value_name = self.value_name,
           save_meshes = self.save_meshes,
-          extended_measures = self.extended_measures
+          extended_measures = self.extended_measures,
+          calc_median_intensities = self.calc_median_intensities
         )
         
         # get spatial and temporal columns from props
@@ -189,6 +191,9 @@ class SegmentationUtils:
         if len(centroid_temporal) > 0:
           uns['temporal_cols'] = centroid_temporal
           obsm['temporal'] = props[centroid_temporal].to_numpy()
+          
+        # add information for channel intensity measure
+        uns['intensity_measure'] = 'mean' if self.calc_median_intensities is False else 'median'
         
         # save props
         if self.save_measures is True:

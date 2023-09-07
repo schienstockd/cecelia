@@ -11,7 +11,7 @@ import time
 import py.config_utils as cfg
 
 class LabelPropsView:
-  def __init__(self, task_dir, labels_file = None, value_name = None):
+  def __init__(self, task_dir, labels_file = None, value_name = None, intensity_measure = 'mean'):
     self._task_dir = task_dir
     self._value_name = None
     
@@ -77,6 +77,10 @@ class LabelPropsView:
   def centroids_order(self):
     return self._centroids_order
   
+  @property
+  def intensity_measure(self):
+    return self._intensity_measure
+  
   """
   Setters
   """
@@ -115,6 +119,10 @@ class LabelPropsView:
   @centroids_order.setter
   def centroids_order(self, x):
     self._centroids_order = x
+    
+  @centroids_order.setter
+  def intensity_measure(self, x):
+    self._intensity_measure = x
 
   """
   Add data to obs
@@ -203,13 +211,19 @@ class LabelPropsView:
       while self.adata is None and counter < 5:
         try:
           self.adata = ad.read_h5ad(
-            self.adata_filepath(), backed = "r" if read_only is True else "r+")
+            self.adata_filepath(), backed = 'r' if read_only is True else 'r+')
         except OSError as e:
           print(f'>> {self.adata_filepath()} locked - retry in 2s')
           print(f'>> {e}')
           time.sleep(2)
           
           counter += 1
+      
+      # set intensity measure value
+      if 'intensity_measure' in self.adata.uns.keys():
+        self.intensity_measure = self.adata.uns['intensity_measure']
+      else:
+        self.intensity_measure = 'mean'
       
       return self
         
@@ -343,7 +357,7 @@ class LabelPropsView:
     
     # get channel types from mean intensity
     if channel_names is None:
-      types = [re.match('^[a-z]+(?=_mean_intensity)', x) for x in self.col_names('vars')]
+      types = [re.match(f'^[a-z]+(?=_{self.intensity_measure}_intensity)', x) for x in self.col_names('vars')]
     else:
       # take first channel name
       types = [re.match(f'^[a-z]+(?=_{channel_names[0]})', x) for x in self.col_names('vars')]
@@ -357,12 +371,16 @@ class LabelPropsView:
   def channel_columns(self, as_numeric = False, prefix = None):
     channel_names = self.channel_names
     
+    # fall back to mean if median not present
+    if not self.has_cols(f'{self.intensity_measure}_intensity_0'):
+      intensity_type = 'mean'
+    
     if channel_names is None:
-      channel_names = [i for i in self.col_names('vars') if i.startswith('mean_intensity_')]
+      channel_names = [i for i in self.col_names('vars') if i.startswith(f'{self.intensity_measure}_intensity_')]
       
     # change names to numeric
     if as_numeric is True:
-      channel_names = [f'mean_intensity_{i}' for i in range(len(channel_names))]
+      channel_names = [f'{self.intensity_measure}_intensity_{i}' for i in range(len(channel_names))]
       
     # add prefix to channels?
     if prefix is not None:

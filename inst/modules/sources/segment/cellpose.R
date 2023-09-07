@@ -95,7 +95,8 @@ Cellpose <- R6::R6Class(
         useDask = self$funParam("useDask", FALSE),
         saveMeshes = self$funParams()$saveMeshes,
         saveMeasures = self$funParams()$saveMeasures,
-        extendedMeasures = self$funParams()$extendedMeasures
+        extendedMeasures = self$funParams()$extendedMeasures,
+        calcMedianIntensities = self$funParams()$calcMedianIntensities
       )
       
       # add optional parameters

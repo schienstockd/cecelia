@@ -98,7 +98,8 @@ CreateFlowFrame <- R6::R6Class(
           ),
         cciaObj$imChannelNames(includeTypes = TRUE),
         attrNames = propsToAdd,
-        channelPattern = cciaConf()$files$labelPropsChannels,
+        # channelPattern = cciaConf()$files$labelPropsChannels,
+        channelPattern = paste0(cciaObj$imChannelsMeasure(), "_intensity"),
         addRownames = TRUE)
       
       # DONE

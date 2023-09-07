@@ -206,6 +206,11 @@
 					"default": true
 				}
 			},
+			"calcMedianIntensities": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"updateMeasures": {
 				"type:boolean": {
 					"default": false
@@ -470,26 +475,32 @@
 				"widget:checkbox": {
 				}
 			},
-			"updateMeasures": {
+			"calcMedianIntensities": {
 				"index": 20,
+				"label": "Median intensities",
+				"widget:checkbox": {
+				}
+			},
+			"updateMeasures": {
+				"index": 21,
 				"label": "Update properties",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeasures": {
-				"index": 21,
+				"index": 22,
 				"label": "Save Measures",
 				"widget:checkbox": {
 				}
 			},
 			"saveMeshes": {
-				"index": 22,
+				"index": 23,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}
 			},
 			"extendedMeasures": {
-				"index": 23,
+				"index": 24,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}

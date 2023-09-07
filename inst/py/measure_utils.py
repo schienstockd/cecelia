@@ -119,6 +119,18 @@ def clear_border_from_labels(labels_array, dim_utils, context, clear_borders,
   label_utils.match_label_ids(labels_array, match_to = base_key)
 
 """
+Upper and lower percentiles
+"""
+def percentiles(regionmask, intensity):
+  return np.percentile(intensity[regionmask], q=(5, 95))
+
+"""
+Median intensity
+"""
+def median_intensity(regionmask, intensity):
+  return np.median(intensity[regionmask])
+
+"""
 Adapted clear borders for image
 """
 def clear_border_labels(labels, dim_utils, context = 1,
@@ -230,7 +242,7 @@ Measure properties from Zarr labels and image
 def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_name,
   block_size = None, overlap = None, context = None, gaussian_sigma = 1,
   clear_touching_border = True, clear_depth = True, timepoints = None, save_meshes = False,
-  extended_measures = False):
+  extended_measures = False, calc_median_intensities = False):
   # define base labels
   base_labels = 'base'
   labels_mode = 'default'
@@ -320,7 +332,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     
     minimal_props_to_get = [
       'label',
-      'mean_intensity',
+      # 'mean_intensity',
       'area'
     ]
     
@@ -331,7 +343,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       # TODO have to adjust the names when upgrading
       props_to_get = [
         'label',
-        'mean_intensity',
+        # 'mean_intensity',
         'centroid',
         'bbox',
         # do not work for 3D
@@ -350,7 +362,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     else:
       props_to_get = [
         'label',
-        'mean_intensity',
+        # 'mean_intensity',
         'centroid',
         'bbox',
         'bbox_area',
@@ -371,11 +383,18 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       for i, x in cur_labels.items():
         cur_labels[i] = remove_small_objects(x, 10)
     
+    # add mean?
+    if calc_median_intensities is False:
+      props_to_get += ['mean_intensity']
+      minimal_props_to_get += ['mean_intensity']
+    
     # get measurements
     props_table = {
       i: pd.DataFrame(measure.regionprops_table(
         x, cur_im_dat,
-        properties = props_to_get if i == 'base' else minimal_props_to_get
+        properties = props_to_get if i == 'base' else minimal_props_to_get,
+        # extra_properties = (median_intensity, percentiles,)
+        extra_properties = (median_intensity,) if calc_median_intensities is True else None
       )) for i, x in cur_labels.items()
       }
       
@@ -590,10 +609,19 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
           # TODO
     
     # add intensities for individual compartments
-    intensity_cols = [i for i in props_table[base_labels].columns if i.startswith('mean_intensity_')]
-    for j in [y for y in props_table.keys() if y in ['halo', 'nuc', 'cyto']]:
-      for i, x in enumerate(intensity_cols):
-        props_table[base_labels][f'{j}_mean_intensity_{i}'] = props_table[j][x]
+    # TODO not sure if it makes sense to get multiple intensity measures
+    # for each label - that might lead to massive properties in combination
+    # with nucleus, cyto and base
+    intensity_measures = ['mean']
+    if calc_median_intensities is True:
+      # intensity_measures.append('median')
+      intensity_measures = ['median']
+    
+    for k in intensity_measures:
+      intensity_cols = [i for i in props_table[base_labels].columns if i.startswith(f'{k}_intensity_')]
+      for j in [y for y in props_table.keys() if y in ['halo', 'nuc', 'cyto']]:
+        for i, x in enumerate(intensity_cols):
+          props_table[base_labels][f'{j}_{k}_intensity_{i}'] = props_table[j][x]
       
     centroid_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('centroid')]
     bbox_min_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_min')]

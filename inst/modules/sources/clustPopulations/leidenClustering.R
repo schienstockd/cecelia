@@ -28,6 +28,9 @@ LeidenClustering <- R6::R6Class(
       
       self$writeLog("Run clustering")
       
+      # get channels from first uID
+      imChannels <- cciaObj$cciaObjects(uIDs = self$funParams()$uIDs)[[1]]$imChannelNames()
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -43,6 +46,7 @@ LeidenClustering <- R6::R6Class(
         normalisePercentile = self$funParams()$normalisePercentile,
         normalisePercentileBottom = self$funParams()$normalisePercentileBottom,
         normaliseIndividually = self$funParams()$normaliseIndividually,
+        intensityMeasure = attr(imChannels, "measure"),
         transformation = self$funParams()$transformation,
         # TODO why is this not converted to numeric automatically?
         logBase = as.numeric(self$funParams()$logBase),

@@ -75,9 +75,16 @@ Segment <- R6::R6Class(
         
         cciaObj$setImLabelsFilepath(labelsPath, valueName = valueName)
         
-        # set suffixes for channel names
+        # set types for channel names
+        channelTypes <- unlist(labelSuffixes)
         channelNames <- cciaObj$imChannelNames()
-        attr(channelNames, "types") <- unlist(labelSuffixes)
+        
+        # add other measurements?
+        if (self$funParams()$calcMedianIntensities == TRUE) {
+          attr(channelNames, "measure") <- "median"
+        }
+        
+        attr(channelNames, "types") <- channelTypes
         
         cciaObj$setImChannelNames(channelNames, valueName = valueName)
       } else{

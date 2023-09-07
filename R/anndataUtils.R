@@ -28,7 +28,8 @@ AnndataUtils <- R6::R6Class(
     #' @description init
     #' @param objFilepath character of object file path
     #' @param imChannels list of character for channel names
-    initialize = function(objFilepath, imChannels) {
+    #' @param intensityMeasure character of channel measure
+    initialize = function(objFilepath, imChannels, intensityMeasure = "mean") {
       super$initialize(objFilepath, imChannels)
       
       # get task dir and labels file from filepath
@@ -53,13 +54,13 @@ AnndataUtils <- R6::R6Class(
       
       # get channels
       usedChannels <- names(labelsDT)[
-        !is.na(c(stringr::str_match(names(labelsDT), "mean_intensity")))
+        !is.na(c(stringr::str_match(names(labelsDT), paste0(intensityMeasure, "_intensity"))))
       ]
       
       # go through and rename
       for (x in usedChannels) {
         # is there a prefix?
-        columnPrefix <- as.character(stringr::str_match(x, ".+(?=_mean_intensity)"))
+        columnPrefix <- as.character(stringr::str_match(x, sprintf(".+(?=_%s_intensity)", intensityMeasure)))
         
         if (is.na(columnPrefix))
           setnames(labelsDT, x,
