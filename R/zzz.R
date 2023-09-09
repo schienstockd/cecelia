@@ -243,15 +243,15 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     x <- x[names(x) != "volumes"]
     
     a <- unlist(x)
-    b <- unlist(pkg.env$cfg)
-    # b <- unlist(as.relistable(pkg.env$cfg))
+    # b <- unlist(pkg.env$cfg)
+    b <- unlist(as.relistable(pkg.env$cfg))
     
     for (i in names(a)[names(a) %in% names(b)]) {
       b[[i]] <- a[[i]]
     }
     
     # relist
-    bRelist <- relist(b, pkg.env$cfg)
+    pkg.env$cfg <- relist(b, pkg.env$cfg)
     
     # convert to numeric
     # pkg.env$cfg <- list.as.numeric(bRelist)
