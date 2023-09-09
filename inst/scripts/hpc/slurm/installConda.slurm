@@ -30,14 +30,17 @@ if [ "x$SLURM_JOB_ID" == "x" ]; then
 fi
 
 # Run the job from the directory where it was launched (default)
-module load java/1.8.0_241
-module load miniconda3/4.9.2
+module load Java/8.372
+module load Miniconda3/22.11.1-1
 
 # otherwise rJava does not work
 export LD_LIBRARY_PATH=~/.conda/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
+# use different conda env path
+export CONDA_ENVS_PATH=/data/gpfs/projects/punim1124/cecelia/envs/
+
 # need to activate conda environment for R to work
-. /usr/local/easybuild-2019/easybuild/software/core/miniconda3/4.9.2/bin/activate
+. /apps/easybuild-2022/easybuild/software/Core/Miniconda3/22.11.1-1/bin/activate
 conda activate 'r-cecelia-env'
 
 # The job command(s):
