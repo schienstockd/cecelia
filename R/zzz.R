@@ -233,28 +233,8 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   if (file.exists(customConf)) {
     message(paste("[CCIA] >> Add custom config", customConf))
     
-    # include docker information in config
-    x <- config::get(file = customConf)
-    
-    # replace volumes
-    pkg.env$cfg$volumes <- x$volumes
-    
-    # copy everything else
-    x <- x[names(x) != "volumes"]
-    
-    a <- unlist(x)
-    # b <- unlist(pkg.env$cfg)
-    b <- unlist(as.relistable(pkg.env$cfg))
-    
-    for (i in names(a)[names(a) %in% names(b)]) {
-      b[[i]] <- a[[i]]
-    }
-    
-    # relist
-    pkg.env$cfg <- relist(b, pkg.env$cfg)
-    
-    # convert to numeric
-    # pkg.env$cfg <- list.as.numeric(bRelist)
+    # replace parameters
+    pkg.env$cfg <- modifyList(pkg.env$cfg, config::get(file = customConf))
   }
   
   # add specified project directory
