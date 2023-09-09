@@ -247,11 +247,14 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     b <- unlist(as.relistable(pkg.env$cfg))
     
     for (i in names(a)[names(a) %in% names(b)]) {
+      message(i)
+      
       b[[i]] <- a[[i]]
     }
     
     # convert to numeric
     bRelist <- relist(b, pkg.env$cfg)
+    message(bRelist)
     
     # relist
     pkg.env$cfg <- list.as.numeric(bRelist)
