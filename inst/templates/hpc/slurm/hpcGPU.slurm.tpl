@@ -61,6 +61,10 @@ module load Miniconda3/22.11.1-1
 # otherwise rJava does not work
 export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
+# otherwise openssl is confused
+export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/bin/openssl\
+${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+
 # otherwise cudnn libraries are not found
 export LD_LIBRARY_PATH=/apps/easybuild-2022/easybuild/software/Core/cuDNN/8.4.1.50-CUDA-11.7.0/lib64\
 ${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
