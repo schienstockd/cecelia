@@ -231,7 +231,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   customConf <- file.path(path, "custom.yml")
   
   if (file.exists(customConf)) {
-    message("[CCIA] >> Add custom config")
+    message(paste("[CCIA] >> Add custom config", customConf))
     
     # include docker information in config
     x <- config::get(file = customConf)
