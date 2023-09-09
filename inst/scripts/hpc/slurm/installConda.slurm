@@ -2,7 +2,7 @@
 # Based on the University of Melbourne job script generator for SLURM
 
 # Partition for the job:
-#SBATCH --partition=physical
+#SBATCH --partition=cascade
 
 # Multithreaded (SMP) job: must run on one node
 #SBATCH --nodes=1
