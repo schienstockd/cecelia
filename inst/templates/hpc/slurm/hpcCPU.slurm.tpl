@@ -56,10 +56,6 @@ module load Miniconda3/22.11.1-1
 # otherwise rJava does not work
 export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/lib:$JAVA_HOME/jre/lib/amd64/server/
 
-# otherwise openssl is confused
-export LD_LIBRARY_PATH=/data/gpfs/projects/punim1124/cecelia/envs/r-cecelia-env/bin/openssl\
-${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-
 # use different conda env path
 export CONDA_ENVS_PATH=/data/gpfs/projects/punim1124/cecelia/envs/
 
