@@ -22,9 +22,25 @@ cciaUse("~/cecelia/dev", initJupyter = TRUE)
 # cciaUse("~/cecelia/dev", initJupyter = FALSE)
 # cciaUse("~/cecelia/dev", initConda = FALSE)
 
-cciaRunApp(port = 6866, localPath = FALSE)
+cciaRunApp(port = 6865, localPath = FALSE)
 
 # cciaRunApp(port = 6866)
+```
+
+
+```{r}
+a <- readRDS("/Volumes/USER_data/Dominik/CECELIA_BACKUP/ZOE/4e268db5d87fd405/values.rds")
+
+a$project$ProjectVersionStateID <- "4e268db5d87fd405"
+a$project$ProjectName <- "ZOE TEST"
+a$project$ProjectUID <- "az8y8l"
+a$project$ProjectPath <- "/cecelia/projects/az8y8l"
+a$project$ProjectHPCusername <- "zfransos"
+a$project$ProjectHPCemail <- "zfransos@student.unimelb.edu.au"
+a$project$ProjectHPCprojectCPU <- "cascade"
+a$project$ProjectHPCpartitionsGPU <- "gpu-a100,gpu-a100-short"
+
+saveRDS(a, "/Volumes/USER_data/Dominik/CECELIA_BACKUP/ZOE/4e268db5d87fd405/values.rds")
 ```
 
 

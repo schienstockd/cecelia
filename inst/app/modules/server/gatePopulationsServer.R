@@ -188,15 +188,14 @@
           # add population to image
           popID <- cciaObj()$popIDsByAttrList(
             popType(), list(
-              # parent = .flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = "root"),
-              parent = .flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = "/"),
+              parent = .flowNormRootPath(flowPlot()$getPlotPopPath(), defaultVal = c("root", "/")),
               gateID = gateID,
               # xChannel = flowPlot()$getPlotXchannel(flowName = TRUE),
               # yChannel = flowPlot()$getPlotYchannel(flowName = TRUE)
               channels = c(
                 flowPlot()$getPlotXchannel(flowName = TRUE),
                 flowPlot()$getPlotYchannel(flowName = TRUE))
-            )
+            ), compareFun = "in"
           )
           
           # get path

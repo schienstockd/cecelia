@@ -487,10 +487,11 @@ class NapariUtils:
           
           # show nuclei as contours
           contour = 0
-          opacity = 1.0
+          opacity = 0.7
+          # if i in ['nuc', 'halo']:
           if i in ['nuc', 'halo']:
             contour = 0
-            opacity = 0.7
+            opacity = 1.0
           
           # hide cytoplams by default  
           visible = True

@@ -176,9 +176,8 @@ ReactivePersistentObject <- R6::R6Class(
       }
       
       # create directory
-      dir.create(dirname(
-        private$getStateFile()), showWarnings = FALSE)
-
+      dir.create(dirname(private$getStateFile()), showWarnings = FALSE)
+    
       # save to RDS
       saveRDS(savedValues, private$getStateFile(), compress = compressRDS)
       
@@ -210,13 +209,25 @@ ReactivePersistentObject <- R6::R6Class(
         
         if (retState == TRUE) {
           # load state file
-          stateRDS <- readRDS(private$getStateFile())
-          
-          # restore values
-          for (i in names(stateRDS)) {
-            self[[paste0("set", i)]](
-              stateRDS[[i]], invalidate = invalidate, reset = TRUE)
-          }
+          tryCatch({
+              stateRDS <- readRDS(private$getStateFile())
+              
+              # restore values
+              for (i in names(stateRDS)) {
+                self[[paste0("set", i)]](
+                  stateRDS[[i]], invalidate = invalidate, reset = TRUE)
+              }
+            },
+            error = function(cond) {
+              message(paste("Could not read state file:", private$getStateFile()))
+              message(cond)
+            },
+            warning = function(cond) {
+              message(paste("Could not read state file:", private$getStateFile()))
+              message(cond)
+            },
+            finally = {}
+          )
         }
       }
       
