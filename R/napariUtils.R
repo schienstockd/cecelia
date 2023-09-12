@@ -166,7 +166,7 @@ NapariUtils <- R6::R6Class(
           # reticulate::r_to_py(forceAsFlatList(imChannelNames)), 
           sprintf("['%s']", paste(c(unname(imChannelNames)), collapse = "', '")),
           reticulate::r_to_py(channelColormaps),
-          reticulate::r_to_py(multiscales),
+          reticulate::r_to_py(as.integer(multiscales)),
           reticulate::r_to_py(asDask),
           reticulate::r_to_py(downsampleZ),
           reticulate::r_to_py(show3D),

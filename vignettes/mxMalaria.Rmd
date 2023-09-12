@@ -428,7 +428,7 @@ viewer$initNapari()
 ```{r}
 generateScreenshots <- function(
     anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-    valueName = "default", popType = "flow", matchChannels = FALSE, ...) {
+    valueName = "default", popType = "flow", matchChannels = FALSE, save = TRUE, ...) {
   # go through images and save movies
   for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     i <- x$getUID()
@@ -459,7 +459,8 @@ generateScreenshots <- function(
       imChannelNames = imChannelNames,
       show3D = TRUE,
       layersVisible = layersVisible,
-      channelColormaps = channelColormaps
+      channelColormaps = channelColormaps,
+      multiscales = as.integer(1)
     )
     
     # add populations
@@ -482,7 +483,8 @@ generateScreenshots <- function(
     
     # show on image
     removePrevious <- TRUE
-    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+    # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
     
     for (j in names(popsToShow)) {
       viewer$showPopMapping(popType, valueName = valueName, pops = list(j),
@@ -495,10 +497,11 @@ generateScreenshots <- function(
     browser()
   
     # save screenshot
-    viewer$saveScreenshot(
-      file.path(anaDir, paste0(
-        paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
-      ...)
+    if (save == TRUE)
+      viewer$saveScreenshot(
+        file.path(anaDir, paste0(
+          paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+        ...)
   }
 }
 
@@ -509,17 +512,20 @@ cciaObj <- initCciaObject(
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # uIDs <- exp.info[treatment == "d8"]$uID
-uIDs <- exp.info[include == "y"]$uID
+# uIDs <- exp.info[include == "y"]$uID
+# uIDs <- c("Fi2BUU", "jQoHa2")
+# uIDs <- c("jQoHa2")
+uIDs <- c("Fi2BUU")
 
 channelsToShow <- list(
   "IgD" = "blue",
-  "CD4" = "red"
-  # "CD138" = "cyan",
-  # "FoxP3" = "yellow"
+  "CD4" = "red",
+  "CD138" = "cyan",
+  "FoxP3" = "yellow"
   )
 popsToShow <- list(
-  # "/nonDebris/include/Others 1/Others 2/CD4" = "red",
-  # "/nonDebris/include/Others 1/Others 2/IgD" = "blue",
+  "/nonDebris/include/Others 1/Others 2/CD4" = "red",
+  "/nonDebris/include/Others 1/Others 2/IgD" = "blue",
   "/nonDebris/include/Others 1/CD138" = "cyan",
   "/nonDebris/include/Treg" = "yellow"
 )
@@ -528,6 +534,8 @@ fileAttrs <- c("treatment", "mouse")
 generateScreenshots(
   # file.path(anaDir, "shots", "all"), cciaObj, uIDs, channelsToShow,
   # file.path(anaDir, "shots", "PB_Treg"), cciaObj, uIDs, channelsToShow,
-  file.path(anaDir, "shots", "PB_Treg_w_channels"), cciaObj, uIDs, channelsToShow,
-  popsToShow, fileAttrs, size = list(1200, 1200))
+  # file.path(anaDir, "shots", "PB_Treg_w_channels"), cciaObj, uIDs, channelsToShow,
+  file.path(anaDir, "zoom", "all_w_channels"), cciaObj, uIDs, channelsToShow,
+  # popsToShow, fileAttrs, size = list(1200, 1200))
+  popsToShow, fileAttrs, size = list(1200, 1200), save = FALSE)
 ```
