@@ -1131,7 +1131,8 @@ class NapariUtils:
               visible = pop_show,
               n_dimensional = False if self.dim_utils.is_timeseries() else True,
               scale = self.im_scale,
-              size = points_size)
+              size = points_size,
+              blending = 'translucent_no_depth')
       # else:
       #   # replace data
       #   popLayer.data = selected_points

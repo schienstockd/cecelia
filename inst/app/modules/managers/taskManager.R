@@ -1639,7 +1639,8 @@ createTaskManager <- function(
       session$ns("taskLimit"), "Tasks",
       min = 1,
       max = taskFunctionTasksLimit(),
-      value = 1
+      value = 1, 
+      step = 1
       )
   })
   

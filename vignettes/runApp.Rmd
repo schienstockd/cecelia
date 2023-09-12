@@ -43,6 +43,43 @@ a$project$ProjectHPCpartitionsGPU <- "gpu-a100,gpu-a100-short"
 saveRDS(a, "/Volumes/USER_data/Dominik/CECELIA_BACKUP/ZOE/4e268db5d87fd405/values.rds")
 ```
 
+```{r}
+a <- readRDS("/Volumes/Analysis_SSD/Communal/cecelia/projects/az8y8l/ANALYSIS/1/IIIII0/ccid.rds")
+names(sets) <- sets
+a$CciaObjectUIDs <- sets
+
+saveRDS(a, "/Volumes/Analysis_SSD/Communal/cecelia/projects/az8y8l/ANALYSIS/1/IIIII0/ccid.rds")
+```
+
+
+```{r}
+a <- list.dirs("/Volumes/Analysis_SSD/Communal/cecelia/projects/az8y8l/ANALYSIS/1", recursive = FALSE)
+sets <- c()
+
+for (i in a) {
+      tryCatch({
+        x <- readRDS(file.path(i, "ccid.rds"))
+        
+        if (x$CciaClass == "CciaImageSet" && "CciaObjectUIDs" %in% names(x)) {
+          sets <- c(sets, x$UID)
+          
+          # if () {
+          #   sets <- c(sets, x$UID)
+          # }
+        }
+      },
+      error = function(cond) {
+      },
+      warning = function(cond) {
+      },
+      finally = {}
+    )
+}
+
+
+```
+
+
 
 ```{r}
 # when you are done shutdown kernel

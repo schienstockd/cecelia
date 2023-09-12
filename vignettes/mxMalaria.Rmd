@@ -66,6 +66,7 @@ HPC_CONF <-  list(
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/MARCELA/ANALYSIS"
 ```
 
+
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
@@ -409,4 +410,124 @@ freqRegionsMat <- as.matrix(freqRegionsWider %>%
   ungroup() %>% 
   select(-c(from, pop.from)))
 rownames(freqRegionsMat) <- freqRegionsWider$from
+```
+
+```{r}
+# show pops on image
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+# cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+
+# start ipython kernel
+viewer <- NapariUtils$new()
+
+viewer$initNapari()
+```
+
+```{r}
+generateScreenshots <- function(
+    anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+    valueName = "default", popType = "flow", matchChannels = FALSE, ...) {
+  # go through images and save movies
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    i <- x$getUID()
+    viewer$setTaskDir(x$persistentObjectDirectory())
+    
+    # get channels
+    imChannelNames <- x$imChannelNames()
+    
+    # match channels
+    curChannelsToShow <- channelsToShow
+    if (matchChannels == TRUE) {
+      # TODO this is very crude    
+      names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+        imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+      })
+    }
+
+    # get cmaps
+    layersVisible <- imChannelNames %in% names(curChannelsToShow)
+    channelColormaps <- rep("gray", length(layersVisible))
+    
+    for (j in names(curChannelsToShow))
+      channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+    
+    # open image
+    viewer$openImage(
+      x$imFilepath(),
+      imChannelNames = imChannelNames,
+      show3D = TRUE,
+      layersVisible = layersVisible,
+      channelColormaps = channelColormaps
+    )
+    
+    # add populations
+    popsAdded <- list()
+    popMap <- x$imPopMap("flow")
+    
+    # get popIDs for paths
+    popIDs <- lapply(names(popsToShow), function(y) x$popIDsByAttr("flow", "path", y))
+    names(popIDs) <- names(popsToShow)
+    
+    # add populations to popMap
+    for (pop in names(popsToShow)) {
+      x$editPopColour("flow", popIDs[[pop]], popsToShow[[pop]])
+    }
+    
+    # save to disk
+    x$savePopMap(popType, includeFiltered = TRUE)
+    x$savePops(popType, pops = names(popsToShow),
+               purge = TRUE, includeFiltered = TRUE)
+    
+    # show on image
+    removePrevious <- TRUE
+    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+    
+    for (j in names(popsToShow)) {
+      viewer$showPopMapping(popType, valueName = valueName, pops = list(j),
+                            pointsSize = pointsSize,
+                            execInteractive = FALSE, removePrevious = removePrevious)
+      removePrevious <- FALSE
+    }
+    
+    # adjust channel intensities
+    browser()
+  
+    # save screenshot
+    viewer$saveScreenshot(
+      file.path(anaDir, paste0(
+        paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+      ...)
+  }
+}
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "avMpMe", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+# uIDs <- exp.info[treatment == "d8"]$uID
+uIDs <- exp.info[include == "y"]$uID
+
+channelsToShow <- list(
+  "IgD" = "blue",
+  "CD4" = "red"
+  # "CD138" = "cyan",
+  # "FoxP3" = "yellow"
+  )
+popsToShow <- list(
+  # "/nonDebris/include/Others 1/Others 2/CD4" = "red",
+  # "/nonDebris/include/Others 1/Others 2/IgD" = "blue",
+  "/nonDebris/include/Others 1/CD138" = "cyan",
+  "/nonDebris/include/Treg" = "yellow"
+)
+fileAttrs <- c("treatment", "mouse")
+
+generateScreenshots(
+  # file.path(anaDir, "shots", "all"), cciaObj, uIDs, channelsToShow,
+  # file.path(anaDir, "shots", "PB_Treg"), cciaObj, uIDs, channelsToShow,
+  file.path(anaDir, "shots", "PB_Treg_w_channels"), cciaObj, uIDs, channelsToShow,
+  popsToShow, fileAttrs, size = list(1200, 1200))
 ```

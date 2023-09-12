@@ -82,6 +82,8 @@ Segment <- R6::R6Class(
         # add other measurements?
         if (self$funParams()$calcMedianIntensities == TRUE) {
           attr(channelNames, "measure") <- "median"
+        } else {
+          attr(channelNames, "measure") <- "mean"
         }
         
         attr(channelNames, "types") <- channelTypes
