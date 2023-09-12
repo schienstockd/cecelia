@@ -1854,8 +1854,6 @@ CciaImage <- R6::R6Class(
       labelProps <- as.data.table(labelsView$view_label_col()$as_df())
       labelsView$close()
       
-      browser()
-      
       # compensate Z if selected
       if (compensateZ == TRUE) {
         labelProps <- .flowCompensatePoly(
