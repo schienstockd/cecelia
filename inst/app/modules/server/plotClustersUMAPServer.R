@@ -224,7 +224,7 @@
         # format plot
         .formatSummaryPlotData(
           p1, input, xlabTitle = xlabTitle, ylabTitle = ylabTitle) +
-          geom_label(
+          ggrepel::geom_label_repel(
             data = meanClusterPos,
             aes(label = clust),
             size = input$labelSize,
