@@ -841,6 +841,7 @@ cciaObj <- initCciaObject(
 )
 # get cluster information
 spatialDT <- cciaObj$spatialDT(valueName = "default")
+
 # join pops
 # spatialDT[popDT[, c("label", "pop")],
 #           on = c("to" = "label"),
@@ -854,6 +855,7 @@ spatialDT[popDT[, c("label", "clusters")],
 spatialDT[popDT[, c("label", "clusters")],
           on = c("from" = "label"),
           clusters.from := clusters]
+
 # filter same type associations
 spatialDT <- spatialDT[clusters.to != clusters.from]
 ```

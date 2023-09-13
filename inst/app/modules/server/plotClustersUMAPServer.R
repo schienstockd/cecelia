@@ -15,6 +15,7 @@
       ### Reactive values
       popDT <- reactiveVal()
       summaryDT <- reactiveVal()
+      clusterColPal <- reactiveVal()
       
       ### Reactive-like values
       
@@ -183,19 +184,66 @@
       # summary data for plot
       summaryPlotData <- reactive({
         req(pointsData())
+        req(resultSummaryAxisY())
         
         # generate plot layers
-        p1 <- ggplot(data = pointsData(), aes(UMAP_1, UMAP_2))
+        # get mean positions of clusters
+        meanClusterPos <- pointsData() %>%
+          group_by(get(resultSummaryAxisY())) %>%
+          summarise(
+            UMAP_1 = mean(UMAP_1),
+            UMAP_2 = mean(UMAP_2)
+          ) %>% dplyr::rename(clust = "get(resultSummaryAxisY())")
+        
+        if (resultSummaryAxisY() == "pop") {
+          # get population colors
+          colPal <- sapply(
+            unique(pointsData()[[resultSummaryAxisY()]]),
+            function(x) {
+              y <- cciaObj()$popAttr(
+                popType(), "colour", popPath = x, includeFiltered = TRUE, selectedOnly = TRUE)
+              
+              if (length(y) > 0)
+                y[[1]]
+              else
+                "grey"
+            })
+        } else {
+          colPal <- clusterColPal()
+        }
+        
+        # plot UMAP
+        p1 <- ggplot(pointsData(), aes(UMAP_1, UMAP_2)) +
+          geom_point(aes(color = get(resultSummaryAxisY())), size = input$pointSize) +
+          theme_classic() +
+          scale_color_manual(values = colPal) 
         
         xlabTitle <- ""
         ylabTitle <- ""
         
-        # main map
-        p1 <- p1 + geom_point(aes(color = get(resultSummaryAxisY())))
-        
         # format plot
-        p1 <- .formatSummaryPlotData(
-          p1, input, xlabTitle = xlabTitle, ylabTitle = ylabTitle)
+        .formatSummaryPlotData(
+          p1, input, xlabTitle = xlabTitle, ylabTitle = ylabTitle) +
+          geom_label(
+            data = meanClusterPos,
+            aes(label = clust),
+            size = input$labelSize,
+            label.size = input$labelBorder,
+            alpha = input$labelAlpha,
+            color = "black"
+          ) +
+          theme(
+            axis.text.x = element_blank(),
+            axis.ticks.x = element_blank(),
+            axis.text.y = element_blank(),
+            axis.ticks.y = element_blank(),
+            legend.justification = "right",
+            # legend.position = "bottom"
+            legend.position = "none",
+            axis.line = element_blank(),
+            axis.title.x = element_blank(),
+            axis.title.y = element_blank()
+          )
         
         # add facet wrap for category?
         # p1 <- p1 + facet_grid(.~cat) +
@@ -239,6 +287,13 @@
             replaceNA = TRUE,
             pops = resultParamsPops()
           ))
+        }
+        
+        # get colours for clusters
+        if (length(popDT()) > 0 && nrow(popDT()) > 0) {
+          clusterColPal(
+            randomcoloR::distinctColorPalette(length(unique(
+              popDT()$clusters))))
         }
         
         progress$close()
@@ -394,8 +449,30 @@
       
       # plot params
       output$plotParams <- renderUI({
-        # get default inputs
-        .formatSummaryPlotDataInputs(session)
+        append(
+          tagList(
+            h4("Clustering"), 
+            
+            sliderInput(
+              session$ns("pointSize"), label = "Point size",
+              value = 1, min = 0, max = 10, step = 1
+            ),
+            sliderInput(
+              session$ns("labelSize"), label = "Label size",
+              value = 10, min = 0, max = 20, step = 1
+            ),
+            sliderInput(
+              session$ns("labelBorder"), label = "Label border",
+              value = 1, min = 0, max = 10, step = 0.5
+            ),
+            sliderInput(
+              session$ns("labelAlpha"), label = "Label alpha",
+              value = 1, min = 0, max = 1, step = 0.05
+            ),
+          ),
+          # get default inputs
+          .formatSummaryPlotDataInputs(session)
+        )
       })
       
       ## Buttons

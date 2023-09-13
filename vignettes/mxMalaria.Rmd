@@ -105,7 +105,8 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     xAxisSize = 0, yAxisSize = 0,
     asContours = TRUE, plotTitleSize = 0,
     # plot_width = 92, plot_height = 92,
-    showPopName = TRUE, showGatePopColours = TRUE)
+    # showPopName = TRUE, showGatePopColours = TRUE)
+    showPopName = FALSE, showGatePopColours = FALSE, showAnnotation = FALSE)
     # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
   
   p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 1)

@@ -11,7 +11,7 @@ import time
 import py.config_utils as cfg
 
 class LabelPropsView:
-  def __init__(self, task_dir, labels_file = None, value_name = None, intensity_measure = 'mean'):
+  def __init__(self, task_dir, labels_file = None, value_name = None):
     self._task_dir = task_dir
     self._value_name = None
     
@@ -120,7 +120,7 @@ class LabelPropsView:
   def centroids_order(self, x):
     self._centroids_order = x
     
-  @centroids_order.setter
+  @intensity_measure.setter
   def intensity_measure(self, x):
     self._intensity_measure = x
 
@@ -164,19 +164,19 @@ class LabelPropsView:
   def change_channel_names(self, channel_names):
     channel_columns = self.channel_columns()
     
-    # get extra channel types
-    channel_types = self.channel_types()
-    
-    # get channel columns
-    channel_types_columns = {
-      x: [f'{x}_{y}' for y in channel_columns] for x in channel_types
-    }
-    
     # do they have the same length as channels?
     if (len(channel_names) == len(channel_columns)):
+      # get extra channel types
+      channel_types = self.channel_types()
+      
       # change over in var
       var_names = self.col_names()
       self.channel_names = channel_names
+      
+      # get channel columns
+      channel_types_columns = {
+        x: [f'{x}_{y}' for y in channel_columns] for x in channel_types
+      }
       
       # go through channel names and change columns
       for i, x in enumerate(channel_names):
@@ -220,7 +220,7 @@ class LabelPropsView:
           counter += 1
       
       # set intensity measure value
-      if 'intensity_measure' in self.adata.uns.keys():
+      if 'intensity_measure' in self.adata.uns.keys() and self.adata.uns['intensity_measure'] != None:
         self.intensity_measure = self.adata.uns['intensity_measure']
       else:
         self.intensity_measure = 'mean'

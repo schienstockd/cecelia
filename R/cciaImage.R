@@ -897,7 +897,8 @@ CciaImage <- R6::R6Class(
     #' @param popType character for population type
     #' @param colsStartsWith character to filter for values starting with
     labelPropsCols = function(valueNames = NULL, dataTypes = c("vars", "obs"),
-                              popType = NULL, colsStartsWith = NULL) {
+                              popType = NULL, colsStartsWith = NULL,
+                              changeChannelNames = TRUE) {
       # get value names
       if (is.null(valueNames)) {
         valueNames <- self$valueNames("imLabelPropsFilepath")
@@ -911,6 +912,10 @@ CciaImage <- R6::R6Class(
             labelProps <- self$labelProps(valueName = x)
             
             if (!is.null(labelProps)) {
+              labelProps$change_channel_names(
+                .flowCorrectChannelNames(unlist(self$imChannelNames()))
+              )
+              
               propsColNames <- unlist(sapply(
                 dataTypes,
                 function(y) labelProps$col_names(data_type = y)
@@ -2231,7 +2236,9 @@ CciaImage <- R6::R6Class(
     #' @param popIDs list of character for population IDs
     #' @param popPath character for population path
     #' @param includeFiltered boolean to include filtered populations
-    popAttr = function(popType, popAttr, popIDs = NULL, popPath = NULL, includeFiltered = FALSE) {
+    #' @param selectedOnly boolean to purge if none matched
+    popAttr = function(popType, popAttr, popIDs = NULL, popPath = NULL,
+                       includeFiltered = FALSE, selectedOnly = FALSE) {
       # get mapping from image
       popMap <- self$imPopMap(popType, includeFiltered = includeFiltered)
       
@@ -2243,7 +2250,7 @@ CciaImage <- R6::R6Class(
       popAttr <- lapply(popMap, function(x) if(popAttr %in% names(x)) x[[popAttr]])
       
       # get attribute for population
-      if (!is.null(popIDs)) {
+      if (!is.null(popIDs) || selectedOnly == TRUE) {
         popAttr <- popAttr[names(popAttr) %in% popIDs]
       }
       

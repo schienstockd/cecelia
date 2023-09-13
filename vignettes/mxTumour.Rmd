@@ -36,6 +36,42 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 
 ```{r}
 devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "CeViIH", versionID = versionID, initReactivity = FALSE
+)
+
+sapply(
+  c("root", "FRC"),
+  function(x) {
+  y <- cciaObj$popAttr("clust", "colour", popPath = x, includeFiltered = TRUE, selectedOnly = TRUE)
+  
+  if (length(y) > 0)
+    y[[1]]
+  else
+    "grey"
+})
+```
+
+
+```{r}
+# rename channels for label props
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "f6YZeo", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$labelPropsCols()
+```
+
+
+```{r}
+devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
@@ -53,6 +89,102 @@ cciaObj$runTask(
   runInplace = TRUE
 )
 ```
+
+```{r fig_tumour_border, fig.height=3, fig.width=12}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HV7E1F", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[include == "y" & stain == "YAP"]$uID
+
+# get pops
+popDT <- cciaObj$popDT(
+  popType = "flow", uIDs = uIDs,
+  includeFiltered = FALSE, pops = c("/nonDebris/FRC", "/nonDebris/FRC/YAP", "/nonDebris/Tumour"))
+
+# get spatial
+spatialDT <- cciaObj$spatialDT(valueName = "default")
+
+# join pops
+spatialDT[popDT[, c("label", "pop")],
+          on = c("to" = "label"),
+          pop.to := pop]
+spatialDT[popDT[, c("label", "pop")],
+          on = c("from" = "label"),
+          pop.from := pop]
+```
+
+```{r}
+# get FRC in vicinity of tumour
+vicinityDT <- spatialDT[pop.from == "/nonDebris/FRC" & pop.to == "/nonDebris/Tumour", c("uID", "from")]
+vicinityDT[, vicinity := TRUE]
+
+vicinityDT <- vicinityDT[popDT, on = c("uID", "from" = "label")]
+vicinityDT[is.na(vicinity), vicinity := FALSE]
+```
+
+```{r fig_yap_border, fig.height=3, fig.width=6}
+# what is the nuclear yap in border cells - raw and population
+# datToPlot <- vicinityDT[pop %in% c("/nonDebris/FRC", "/nonDebris/FRC/YAP")] %>%
+datToPlot <- popDT[pop %in% c("/nonDebris/FRC", "/nonDebris/FRC/YAP")] %>%
+  left_join(exp.info)
+
+# normalise to median
+channels <- cciaObj$cciaObjects()[[1]]$imChannelNames(includeTypes = TRUE, correctChannelNames = TRUE)
+for (i in unique(datToPlot$uID)) {
+  for (j in channels) {
+    datToPlot[uID == i, paste0("norm.", j) := datToPlot[uID == i][[j]]/median(datToPlot[uID == i][[j]])]
+  }
+}
+
+ggplot(datToPlot, aes(location, norm.nuc_YAP.647, color = location)) +
+  theme_classic() +
+  # geom_violin(outlier.alpha = 0) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.3, alpha = 1, size = 0.5) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Nuclear Yap (AU)") + xlab("") +
+  # coord_flip()
+  # ylim(0, 1) +
+  scale_fill_brewer(name = NULL, palette = "Set3") +
+  theme(legend.position = "none")
+
+ggsave(file.path(anaDir, "YAP_nucleus.png"), width = 2, height = 2)
+
+# plot percentage of YAP+ cells
+datSummary <- datToPlot %>%
+  group_by(uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(pop == "/nonDebris/FRC/YAP") %>%
+  left_join(exp.info)
+
+ggplot(datSummary, aes(location, freq, color = location)) +
+  theme_classic() +
+  # geom_violin(outlier.alpha = 0) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.3, alpha = 1) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("YAP+ (%)") + xlab("") + ylim(0, 100) + 
+  scale_fill_brewer(name = NULL, palette = "Set3") +
+  theme(legend.position = "none")
+
+ggsave(file.path(anaDir, "YAP_positive.png"), width = 2, height = 2)
+```
+
+```{r}
+
+```
+
 
 
 ```{r fig_gating, fig.height=3, fig.width=12}

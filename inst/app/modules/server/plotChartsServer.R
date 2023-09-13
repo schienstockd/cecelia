@@ -1141,6 +1141,7 @@
               "By alphabet/number" = "alphabet"),
               selected = "none")
           ),
+          
           # get default inputs
           .formatSummaryPlotDataInputs(session)
         )
