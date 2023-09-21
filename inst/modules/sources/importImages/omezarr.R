@@ -36,7 +36,7 @@ Omezarr <- R6::R6Class(
         if ("modified" %in% attributes(imPathIn) && attr(imPathIn, "modified") == TRUE) {
           imPathIn <- file.path(
             self$envParams()$dirs$zero, basename(imPathIn))
-        } else if (self$funParams()$isSequence == FALSE) {
+        } else if (!any(self$funParams()$isSequence, self$funParams()$is3P)) {
           # revert to Import image only if not sequence
           # otherwise take the original file name
           imPathIn <- file.path(

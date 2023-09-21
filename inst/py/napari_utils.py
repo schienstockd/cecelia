@@ -339,6 +339,9 @@ class NapariUtils:
       if contrast_limits is None and not self.dim_utils.is_32_bit():
         for x in self.viewer.layers:
           if x.visible > 0: x.reset_contrast_limits() 
+      
+      # add time stamp for movies
+      # https://forum.image.sc/t/napari-how-add-a-text-label-time-always-in-the-same-spot-in-viewer/52932/5
 
       # show scalebar
       self.viewer.scale_bar.unit = 'um'

@@ -52,15 +52,15 @@ def run(params):
     
     # check whether to create this dimension
     if stack_dim_idx is None:
-        stack_dim_idx = dim_utils.default_order.index(stack_dim)
-        stack_array = True
+      stack_dim_idx = dim_utils.default_order.index(stack_dim)
+      stack_array = True
     
     # concat or stack
     if stack_array is True:
-        x_new = np.stack(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
+      x_new = np.stack(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
     else:
-        # TODO need to test this
-        x_new = np.concatenate(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
+      # TODO need to test this
+      x_new = np.concatenate(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
     
     logfile_utils.log(f'>> Save back {x_new.shape}')
     
