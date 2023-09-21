@@ -136,9 +136,14 @@
         title = "Lab Server", status = "primary", solidHeader = TRUE,
         fluidRow(
           column(
-            6,
+            4,
             textInput(
-              ns("labServerSmbRemoteDir"), "Lab Server address")
+              ns("labServerSmbRemoteDir"), "Server address")
+          ),
+          column(
+            2,
+            textInput(
+              ns("labServerSmbRemoteAddon"), "Lab directory")
           ),
           column(
             4,

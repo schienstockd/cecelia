@@ -118,6 +118,11 @@ ProjectManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setProjectLabServerSmbRemoteAddon = function(x, invalidate = TRUE) {
+      private$projectLabServerSmbRemoteAddon <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setProjectLabServerSmbLocalMountDir = function(x, invalidate = TRUE) {
       private$projectLabServerSmbLocalMountDir <- x
       private$invalidate(invalidate = invalidate)
@@ -277,6 +282,10 @@ ProjectManager <- R6::R6Class(
     ## Lab server
     getProjectLabServerSmbRemoteDir = function(x) {
       private$projectLabServerSmbRemoteDir
+    },
+    
+    getProjectLabServerSmbRemoteAddon = function(x) {
+      private$projectLabServerSmbRemoteAddon
     },
     
     getProjectLabServerSmbLocalMountDir = function(x) {
@@ -1143,6 +1152,7 @@ ProjectManager <- R6::R6Class(
     
     # lab server 
     projectLabServerSmbRemoteDir = NULL,
+    projectLabServerSmbRemoteAddon = NULL,
     projectLabServerSmbLocalMountDir = NULL,
     projectLabServerSmbUser = NULL,
     handleProjectLabServerSmbPwd = NULL,

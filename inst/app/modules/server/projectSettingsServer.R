@@ -176,6 +176,13 @@
         )
       })
       
+      observeEvent(input$labServerSmbRemoteAddon, {
+        # save in manager
+        globalManagers$projectManager()$setProjectLabServerSmbRemoteAddon(
+          input$labServerSmbRemoteAddon, invalidate = FALSE
+        )
+      })
+      
       observeEvent(input$labServerSmbLocalMountDir, {
         # save in manager
         globalManagers$projectManager()$setProjectLabServerSmbLocalMountDir(

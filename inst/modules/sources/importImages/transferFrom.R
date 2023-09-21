@@ -64,9 +64,10 @@ TransferFrom <- R6::R6Class(
       
       self$writeLog(">> GET command")
       self$writeLog(sprintf(
-        "smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
+        "smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
         self$utilsParams()$smb$remoteDir,
         self$utilsParams()$smb$username,
+        self$utilsParams()$smb$remoteAddon,
         getDir, self$envParams(remoteTo)$dirs$zero,
         cmdMGET, cmdRename
       ))
@@ -75,10 +76,11 @@ TransferFrom <- R6::R6Class(
       smbCmd <- paste(
         smbCmd,
         sprintf(
-          "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
+          "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
           .prepForBash(.cciaDecrypt(self$utilsParams()$smb$password)),
           self$utilsParams()$smb$remoteDir,
           self$utilsParams()$smb$username,
+          self$utilsParams()$smb$remoteAddon,
           getDir, self$envParams(remoteTo)$dirs$zero,
           cmdMGET, cmdRename
         ),

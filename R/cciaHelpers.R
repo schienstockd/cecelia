@@ -478,6 +478,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           username = projectManager$getProjectLabServerSmbUser(),
           password = projectManager$projectLabServerSmbPwd(),
           remoteDir = projectManager$getProjectLabServerSmbRemoteDir(),
+          remoteAddon = projectManager$getProjectLabServerSmbRemoteAddon(),
           localDir = projectManager$getProjectLabServerSmbLocalMountDir()
         )
         # use local config files
