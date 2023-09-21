@@ -36,7 +36,10 @@ Omezarr <- R6::R6Class(
         if ("modified" %in% attributes(imPathIn) && attr(imPathIn, "modified") == TRUE) {
           imPathIn <- file.path(
             self$envParams()$dirs$zero, basename(imPathIn))
-        } else if (!any(self$funParams()$isSequence, self$funParams()$is3P)) {
+        } else if (self$funParams()$is3P == TRUE) {
+          imPathIn <- file.path(
+            self$envParams()$dirs$zero, basename(imPathIn))
+        } else if (self$funParams()$isSequence == FALSE) {
           # revert to Import image only if not sequence
           # otherwise take the original file name
           imPathIn <- file.path(
@@ -44,7 +47,7 @@ Omezarr <- R6::R6Class(
           
           # allow wildcard completion
           imPathInPattern <- "%s"
-        }
+        } 
       }
       
       self$writeLog(paste("Import", imPathIn))
