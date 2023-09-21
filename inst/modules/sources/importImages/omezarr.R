@@ -36,7 +36,7 @@ Omezarr <- R6::R6Class(
         if ("modified" %in% attributes(imPathIn) && attr(imPathIn, "modified") == TRUE) {
           imPathIn <- file.path(
             self$envParams()$dirs$zero, basename(imPathIn))
-        } else if (self$funParams()$is3P == TRUE) {
+        } else if ("is3P" %in% names(self$funParams()) && self$funParams()$is3P == TRUE) {
           imPathIn <- file.path(
             self$envParams()$dirs$zero, basename(imPathIn))
         } else if (self$funParams()$isSequence == FALSE) {
