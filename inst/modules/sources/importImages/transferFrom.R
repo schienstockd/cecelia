@@ -44,38 +44,56 @@ TransferFrom <- R6::R6Class(
       
       self$writeLog(smbCmd)
       self$writeLog("Transfer from SMB server")
-      self$writeLog(unlist(filesToCopy))
+      # self$writeLog(unlist(filesToCopy))
       
-      # create mget
-      cmdMGET <- paste(sprintf(
-        "mget %s",
-        sprintf('\\\"%s\\\"', basename(filesToCopy$files)), collapse = " "
-      ), collapse = "; ")
-      
-      # create rename
-      cmdRename <- ""
-      if (self$funParams()$isSequence == FALSE) {
-        cmdRename <- paste(sprintf(
-          "mv \\\"%s\\\" \\\"%s\\\"",
-          paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$files), sep = "/"),
-          paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$names), sep = "/")
-        ), collapse = "; ")
-      }
+      # create directory
+      self$writeLog(">> create directory")
+      self$writeLog(smbCmd)
+      handleSystem(self$sshConnection()$sshExecute(smbCmd))
       
       self$writeLog(">> GET command")
-      self$writeLog(sprintf(
-        "smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
-        self$utilsParams()$smb$remoteDir,
-        self$utilsParams()$smb$username,
-        self$utilsParams()$smb$remoteAddon,
-        getDir, self$envParams(remoteTo)$dirs$zero,
-        cmdMGET, cmdRename
-      ))
-      
-      # build exec string
-      smbCmd <- paste(
-        smbCmd,
+      self$writeLog(
         sprintf(
+          "smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"'",
+          self$utilsParams()$smb$remoteDir,
+          self$utilsParams()$smb$username,
+          self$utilsParams()$smb$remoteAddon,
+          getDir
+          # self$envParams(remoteTo)$dirs$zero
+          # cmdMGET, cmdRename
+        ))
+      
+      # batch files into 20 files
+      batchSize <- 500
+      nFiles <- length(filesToCopy$files)
+      
+      for (i in seq(ceiling(nFiles/batchSize))) {
+        iStart <- (i-1) * batchSize
+        iStop <- i * batchSize
+        
+        if (iStop > nFiles)
+          iStop <- nFiles
+        
+        self$writeLog(paste("> Transfer files", iStart, "-", iStop))
+        
+        # create mget
+        cmdMGET <- paste(sprintf(
+          "mget %s",
+          sprintf('\\\"%s\\\"', basename(filesToCopy$files[iStart:iStop])), collapse = " "
+        ), collapse = "; ")
+        
+        # create rename
+        cmdRename <- ""
+        if (self$funParams()$isSequence == FALSE) {
+          cmdRename <- paste(sprintf(
+            "mv \\\"%s\\\" \\\"%s\\\"",
+            paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$files[iStart:iStop]), sep = "/"),
+            paste(self$envParams(remoteTo)$dirs$zero, basename(filesToCopy$names[iStart:iStop]), sep = "/")
+          ), collapse = "; ")
+        }
+        
+        # copy
+        handleSystem(self$sshConnection()$sshExecute(sprintf(
           "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
           .prepForBash(.cciaDecrypt(self$utilsParams()$smb$password)),
           self$utilsParams()$smb$remoteDir,
@@ -83,12 +101,8 @@ TransferFrom <- R6::R6Class(
           self$utilsParams()$smb$remoteAddon,
           getDir, self$envParams(remoteTo)$dirs$zero,
           cmdMGET, cmdRename
-        ),
-        sep = ";"
-      )
-      
-      # exec
-      handleSystem(self$sshConnection()$sshExecute(smbCmd))
+        )))
+      }
       
       self$writeLog("Done")
       self$exitLog()

@@ -8,6 +8,7 @@ import re
 import math
 import pandas as pd
 import matplotlib.pyplot as plt
+import datetime
 
 from pathlib import Path
 
@@ -49,6 +50,7 @@ class NapariUtils:
 
     self._omexml = None
     self._zarr_group_info = None
+    self._time_interval = None
 
     # viewpoint cube
     self._im_cube_data = None
@@ -110,6 +112,10 @@ class NapariUtils:
   @property
   def zarr_group_info(self):
     return self._zarr_group_info
+  
+  @property
+  def time_interval(self):
+    return self._time_interval
   
   @property
   def viewer_input_file(self):
@@ -180,6 +186,10 @@ class NapariUtils:
   @zarr_group_info.setter
   def zarr_group_info(self, x):
     self._zarr_group_info = x
+  
+  @time_interval.setter
+  def time_interval(self, x):
+    self._time_interval = x
   
   @viewer_input_file.setter
   def viewer_input_file(self, x):
@@ -339,14 +349,33 @@ class NapariUtils:
       if contrast_limits is None and not self.dim_utils.is_32_bit():
         for x in self.viewer.layers:
           if x.visible > 0: x.reset_contrast_limits() 
-      
-      # add time stamp for movies
-      # https://forum.image.sc/t/napari-how-add-a-text-label-time-always-in-the-same-spot-in-viewer/52932/5
 
       # show scalebar
       self.viewer.scale_bar.unit = 'um'
       self.viewer.scale_bar.visible = True
       self.viewer.scale_bar.ticks = False
+
+  """
+  Add timestamp
+  https://forum.image.sc/t/napari-how-add-a-text-label-time-always-in-the-same-spot-in-viewer/52932/5
+  """
+  def add_timestamp(self, time_interval = 1):
+    # set timescale
+    self.time_interval = time_interval
+    
+    def update_slider(event):
+      time = self.viewer.dims.current_step[0]
+      self.viewer.text_overlay.text = str(datetime.timedelta(seconds = time * self.time_interval * 60))
+    
+    # TODO this should be adjustable
+    self.viewer.text_overlay.visible = True
+    self.viewer.text_overlay.font_size = 12
+    self.viewer.text_overlay.color = 'white'
+    
+    # TODO dummy call?
+    update_slider(None)
+    
+    self.viewer.dims.events.current_step.connect(update_slider)
 
   """
   Reset scale for labels

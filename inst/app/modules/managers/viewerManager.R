@@ -131,6 +131,15 @@ ViewerManager <- R6::R6Class(
           private$getShownUID() != imObj()$getUID() ||
           self$getReloadImage() == TRUE
         )) {
+          # get time information
+          showTimestamp <- imObj()$omeXMLPixels()$SizeT > 1
+            
+          if (showTimestamp == TRUE) {
+            timeInterval <- imObj()$omeXMLTimelapseInfo()$interval
+          } else {
+            timeInterval <- 1
+          }
+          
           self$viewer()$openImage(
             imFilepath,
             useChannelAxis = self$getUseChannelAxis(),
@@ -141,7 +150,9 @@ ViewerManager <- R6::R6Class(
             downsampleZ = self$getDownsampleZ(),
             multiscales = self$getMultiscales(),
             show3D = self$getShow3D(),
-            layersVisible = self$getLayersVisible()
+            layersVisible = self$getLayersVisible(),
+            showTimestamp = showTimestamp,
+            timeInterval = timeInterval
           )
           
           # set uID

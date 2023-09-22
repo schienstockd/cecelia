@@ -127,11 +127,13 @@ NapariUtils <- R6::R6Class(
     #' @param execInteractive boolean to execute interactive
     #' @param layersVisible boolean to make layers visible
     #' @param squeeze boolean to load image as squeezed numpy array
+    #' @param showTimestamp boolean to show time interval
+    #' @param timeInterval numeric for timelapse interval
     openImage = function(
       imPath, useChannelAxis = TRUE, imChannelNames = NULL, channelColormaps = NULL,
       napariModule = NULL, asDask = TRUE, downsampleZ = FALSE, show3D = FALSE,
       multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE,
-      squeeze = FALSE) {
+      squeeze = FALSE, showTimestamp = FALSE, timeInterval = 1) {
       # map path
       imPath <- .dockerMapPathToHost(imPath)
       
@@ -174,6 +176,16 @@ NapariUtils <- R6::R6Class(
           reticulate::r_to_py(squeeze)
           ), execInteractive = execInteractive
         )
+      
+      # add timestamp if movie
+      if (showTimestamp == TRUE) {
+        self$execute(
+          sprintf(
+            paste("napari_utils.add_timestamp(time_interval=%s)"),
+            reticulate::r_to_py(timeInterval)
+          ), execInteractive = execInteractive
+        )
+      }
       
       # define module specifics
       if (!is.null(napariModule)) {

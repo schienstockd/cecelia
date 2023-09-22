@@ -16,7 +16,7 @@ pID <- "Bi2995"
 # pID <- "rMeKCv"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 ```
 
 ```{r}

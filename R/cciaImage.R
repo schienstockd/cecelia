@@ -363,7 +363,7 @@ CciaImage <- R6::R6Class(
                 "[0-9]+\\.[0-9]+")) / 60
             )
           })
-        } else if (endsWith(basenameOriFilepath, ".lsm")) {
+        } else if (stringr::str_ends(basenameOriFilepath, "\\.lsm|tif")) {
           # get interval from pixel information
           tInfo <- list(
             interval = self$omeXMLPixels()$TimeIncrement / 60
