@@ -69,7 +69,7 @@ TransferFrom <- R6::R6Class(
       
       for (i in seq(ceiling(nFiles/batchSize))) {
         iStart <- (i-1) * batchSize + 1
-        iStop <- i * batchSize
+        iStop <- i * batchSize + 1
         
         if (iStop > nFiles)
           iStop <- nFiles
