@@ -68,8 +68,8 @@ TransferFrom <- R6::R6Class(
       nFiles <- length(filesToCopy$files)
       
       for (i in seq(ceiling(nFiles/batchSize))) {
-        iStart <- (i-1) * batchSize + 1
-        iStop <- i * batchSize + 1
+        iStart <- (i-1) * batchSize
+        iStop <- i * batchSize
         
         if (iStop > nFiles)
           iStop <- nFiles
