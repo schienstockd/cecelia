@@ -27,6 +27,7 @@ class LabelPropsView:
     
     self._channel_names = None
     self._adata = None
+    self._intensity_measure = None
     
     # by default, add centroids to df
     self._add_centroids_to_df = True
