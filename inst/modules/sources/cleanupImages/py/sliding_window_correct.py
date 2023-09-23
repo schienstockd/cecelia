@@ -60,6 +60,13 @@ def run(params):
     # store = im_correction_path
   )
   
+  # fill in image channels if others are being added
+  # TODO is there a better way to do this .. ?
+  if create_new_channels is True:
+    for i in range(dim_utils.dim_val('C')):
+      im_slice = dim_utils.create_channel_slices(i)
+      sum_zarr[im_slice] = im_dat[0][im_slice]
+      
   # go through timepoints and channels
   for i in tqdm(range(dim_utils.dim_val('T'))):
     # for j in range(dim_utils.dim_val('C')):
