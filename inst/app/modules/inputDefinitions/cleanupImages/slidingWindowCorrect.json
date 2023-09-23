@@ -23,7 +23,7 @@
 	    "imChannels": {
         "type:list": {}
       },
-  		"createNewChannel": {
+  		"createNewChannels": {
 				"type:boolean": {
 					"default": false
 				}

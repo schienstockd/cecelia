@@ -39,7 +39,7 @@ def run(params):
   
   # get all channels by default
   if im_channels is None:
-    im_channels = range(dim_utils.dim_val('C'))
+    im_channels = list(range(dim_utils.dim_val('C')))
   
   # remove previous folder
   # if im_correction_path is not None:
@@ -48,7 +48,9 @@ def run(params):
   # get im shape
   im_shape = im_dat[0].shape
   if create_new_channels is True:
+    im_shape = list(im_shape)
     im_shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + len(im_channels)
+    im_shape = tuple(im_shape)
   
   # prepare image taking into account any channels that need adding
   sum_zarr = zarr.create(
