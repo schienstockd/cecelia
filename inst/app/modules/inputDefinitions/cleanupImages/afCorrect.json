@@ -45,7 +45,12 @@
 						}
 					}
         }
-      }
+      },
+      "applyGaussianToOthers": {
+				"type:boolean": {
+					"default": true
+				}
+			}
     },
     "outputs": {}
   },
@@ -105,6 +110,12 @@
 							"step": 1
 						}
 					}
+				}
+			},
+			"applyGaussianToOthers": {
+				"index": 2,
+				"label": "Apply gaussian to others",
+				"widget:checkbox": {
 				}
 			}
     },

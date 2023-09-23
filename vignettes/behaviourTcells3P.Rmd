@@ -74,7 +74,33 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$omeXMLTimelapseInfo()
+cciaObj$imChannelNames()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  valueName = "driftCorrected",
+  imChannels = c("P14-Tomato", "P14-CTDR"),
+  slidingWindow = 10,
+  createNewChannels = TRUE
+)
+
+task <- cciaObj$runTask(
+  funName = "cleanupImages.slidingWindowCorrect",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 

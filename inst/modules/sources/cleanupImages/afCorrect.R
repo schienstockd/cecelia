@@ -43,6 +43,7 @@ AfCorrect <- R6::R6Class(
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         afCombinations = afCombinations,
+        applyGaussianToOthers = self$funParams()$applyGaussianToOthers,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,
           "ccidAfCorrected.zarr"
@@ -58,8 +59,8 @@ AfCorrect <- R6::R6Class(
       
       # update image information
       self$updateImageInfo(
-        filename = "ccidAfCorrected", valueName = "afCorrected",
-        addChannels = c("AF generated"))
+        filename = "ccidAfCorrected", valueName = "afCorrected")
+        # addChannels = c("AF generated"))
     }
   )
 )

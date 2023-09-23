@@ -17,11 +17,6 @@
         "type:list": {
         }
       },
-			"applyGaussianToOthers": {
-				"type:boolean": {
-					"default": true
-				}
-			},
 			"driftNormalisation": {
 				"type:character": {
 					"default": "none"
@@ -50,14 +45,8 @@
           "addChoices": ["AF generated"]
         }
       },
-			"applyGaussianToOthers": {
-				"index": 2,
-				"label": "Apply gaussian to others",
-				"widget:checkbox": {
-				}
-			},
 			"driftNormalisation": {
-				"index": 3,
+				"index": 2,
 				"label": "Drift normalisation",
         "widget:selection": {
           "items": {

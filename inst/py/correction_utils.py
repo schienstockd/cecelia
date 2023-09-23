@@ -497,7 +497,8 @@ def af_correct_image(
 
   # AF correct channels
   for i, x in af_combinations.items():
-    output_image[i], new_af_im = af_correct_channel(
+    # output_image[i], new_af_im = af_correct_channel(
+    output_image[i], _ = af_correct_channel(
       input_image, i, x['divisionChannels'], dim_utils = dim_utils,
       channel_percentile = x['channelPercentile'],
       correction_percentile = x['correctionPercentile'],
@@ -508,15 +509,15 @@ def af_correct_image(
       use_dask = use_dask
     )
 
-    # combine AF
-    if af_im is None:
-      af_im = copy(new_af_im)
-    else:
-      af_im = da.maximum(af_im, new_af_im)
+    # # combine AF
+    # if af_im is None:
+    #   af_im = copy(new_af_im)
+    # else:
+    #   af_im = da.maximum(af_im, new_af_im)
 
-  if len(af_combinations) > 0:
-    # add AF
-    output_image.append(af_im)
+  # if len(af_combinations) > 0:
+  #   # add AF
+  #   output_image.append(af_im)
 
   # create filter values
   filter_values = [0] * len(dim_utils.im_dim)

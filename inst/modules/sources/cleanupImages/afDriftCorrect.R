@@ -62,7 +62,8 @@ AfDriftCorrect <- R6::R6Class(
       self$exitLog()
       
       # update image information
-      self$updateImageInfo(addChannels = c("AF generated"))
+      # self$updateImageInfo(addChannels = c("AF generated"))
+      self$updateImageInfo()
     }
   )
 )

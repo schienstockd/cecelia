@@ -36,10 +36,10 @@ SlidingWindowCorrect <- R6::R6Class(
       else
         imChannelNames <- cciaObj$imChannelNames()
       
-      imChannels <- lapply(
+      imChannels <- sapply(
         imChannelNames, function(x) {
-          unname(which(cciaObj$imChannelNames() == x)) - 1
-        })
+          as.integer(unname(which(cciaObj$imChannelNames() == x)) - 1)
+        }, USE.NAMES = FALSE)
       
       # prepare new channel names if they should be added
       channelsToAdd <- c() 

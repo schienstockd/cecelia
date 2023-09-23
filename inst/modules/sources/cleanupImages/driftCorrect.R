@@ -35,8 +35,6 @@ DriftCorrect <- R6::R6Class(
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         driftChannel = self$funParams()$driftChannel,
-        applyDriftCorrection = self$funParams()$applyDriftCorrection,
-        applyGaussianToOthers = self$funParams()$applyGaussianToOthers,
         imCorrectionPath = file.path(self$envParams()$dirs$zero,
                                      "ccidDriftCorrected.zarr"),
         driftNormalisation = self$funParams()$driftNormalisation

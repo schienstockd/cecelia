@@ -40,6 +40,8 @@ def run(params):
   # get all channels by default
   if im_channels is None:
     im_channels = list(range(dim_utils.dim_val('C')))
+    
+  logfile_utils.log(f'> use {im_channels}')
   
   # remove previous folder
   # if im_correction_path is not None:
@@ -48,6 +50,8 @@ def run(params):
   # get im shape
   im_shape = im_dat[0].shape
   if create_new_channels is True:
+    logfile_utils.log(f'> add {len(im_channels)} new channels')
+    
     im_shape = list(im_shape)
     im_shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + len(im_channels)
     im_shape = tuple(im_shape)
@@ -119,12 +123,13 @@ def run(params):
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
     im_correction_path, im_path,
+    changed_shape = sum_zarr.shape,
     dim_utils = dim_utils
   )
 
 def main():
   # get params
-  params = script_utils.script_params()
+  params = script_utils.script_params(flatten_except = ['imChannels'])
 
   # run AF and drift correction
   run(params)
