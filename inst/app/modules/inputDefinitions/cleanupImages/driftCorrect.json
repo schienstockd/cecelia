@@ -1,0 +1,74 @@
+{
+  "fun": {
+    "driftCorrect": {
+      "category": "Module functions",
+      "label": "Drift Correction",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "driftChannel": {
+        "type:list": {
+        }
+      },
+			"applyGaussianToOthers": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+			"driftNormalisation": {
+				"type:character": {
+					"default": "none"
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+      "driftChannel": {
+        "index": 1,
+        "label": "Use for drift correction",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": false,
+          "addChoices": ["AF generated"]
+        }
+      },
+			"applyGaussianToOthers": {
+				"index": 2,
+				"label": "Apply gaussian to others",
+				"widget:checkbox": {
+				}
+			},
+			"driftNormalisation": {
+				"index": 3,
+				"label": "Drift normalisation",
+        "widget:selection": {
+          "items": {
+            "Phase": "phase",
+            "None": "none"
+          },
+          "multiple": false,
+          "size": 1
+        }
+			}
+    },
+    "outputs": {}
+  }
+}

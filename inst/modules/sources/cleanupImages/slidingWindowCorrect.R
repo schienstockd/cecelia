@@ -27,8 +27,25 @@ SlidingWindowCorrect <- R6::R6Class(
       cciaObj <- self$cciaTaskObject()
       
       self$writeLog(self$funParams()$valueName)
-      self$writeLog(cciaObj$imFilepath(valueName = self$funParams()$valueName))
-      self$writeLog(cciaObj$imFilepath(valueName = "corrected"))
+      
+      # convert channels names to numbers
+      imChannels <- NULL
+      
+      if (length(self$funParams()$imChannels) > 0)
+        imChannelNames <- self$funParams()$imChannels
+      else
+        imChannelNames <- cciaObj$imChannelNames()
+      
+      imChannels <- sapply(
+        imChannelNames, function(x) {
+          unname(which(cciaObj$imChannelNames() == x)) - 1
+        }, USE.NAMES = FALSE)
+      
+      # prepare new channel names if they should be added
+      channelsToAdd <- c() 
+      if (self$funParams()$createNewChannels == TRUE) {
+        channelsToAdd <- paste("Sliding", imChannelNames)
+      }
       
       # prepare params
       params <- list(
@@ -40,7 +57,9 @@ SlidingWindowCorrect <- R6::R6Class(
         ),
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero, "ccidSlidingWindow.zarr"),
-        slidingWindow = self$funParams()$slidingWindow
+        slidingWindow = self$funParams()$slidingWindow,
+        imChannels = imChannels,
+        createNewChannels = self$funParams()$createNewChannels
       )
       
       # call python
@@ -53,6 +72,7 @@ SlidingWindowCorrect <- R6::R6Class(
       # update image information
       self$updateImageInfo(
         filename = "ccidSlidingWindow", valueName = "slidingWindow", 
+        addChannels = channelsToAdd
       )
     }
   )

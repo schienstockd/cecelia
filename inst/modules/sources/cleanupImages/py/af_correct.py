@@ -40,38 +40,17 @@ def run(params):
     use_dask = False
   )
 
-  if params['applyDriftCorrection'] is True:
-    logfile_utils.log('>> get shifts')
-    
-    # get shifts
-    shifts = correction_utils.drift_correction_shifts(
-      corrected_image, int(params['driftChannel']), dim_utils,
-      normalisation = params['driftNormalisation'] if params['driftNormalisation'] != 'none' else None
-      )
-      
-    logfile_utils.log(shifts)
-    logfile_utils.log('>> apply shifts')
-    
-    # do drift correction
-    drift_image = correction_utils.drift_correct_im(
-      corrected_image, dim_utils,
-      params['driftChannel'],
-      shifts = shifts
-    )
-  else:
-    drift_image = corrected_image
-
   logfile_utils.log('>> save back')
   
   # save back
   zarr_utils.create_multiscales(
-    drift_image, params['imCorrectionPath'],
+    corrected_image, params['imCorrectionPath'],
     dim_utils = dim_utils, nscales = len(im_dat))
 
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
     params['imCorrectionPath'], params['imPath'],
-    changed_shape = drift_image.shape,
+    changed_shape = corrected_image.shape,
     dim_utils = dim_utils
   )
 
@@ -83,7 +62,7 @@ def main():
   	  }
   )
 
-  # run AF and drift correction
+  # run
   run(params)
 
 if __name__ == "__main__":

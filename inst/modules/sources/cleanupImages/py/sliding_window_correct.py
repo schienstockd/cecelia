@@ -21,7 +21,9 @@ def run(params):
   im_path = script_utils.get_param(params, 'imPath', default = None)
   im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default = None)
   sliding_window = script_utils.get_param(params, 'slidingWindow', default = 1)
-
+  im_channels = script_utils.get_param(params, 'imChannels', default = None)
+  create_new_channels = script_utils.get_param(params, 'createNewChannels', default = False)
+  
   # load image
   # im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = True)
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = False)
@@ -35,13 +37,23 @@ def run(params):
 
   logfile_utils.log('>> correct image by sliding window')
   
+  # get all channels by default
+  if im_channels is None:
+    im_channels = range(dim_utils.dim_val('C'))
+  
   # remove previous folder
   # if im_correction_path is not None:
   #   shutil.rmtree(im_correction_path)
   
-  # prepare image
+  # get im shape
+  im_shape = im_dat[0].shape
+  if create_new_channels is True:
+    im_shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + len(im_channels)
+  
+  # prepare image taking into account any channels that need adding
   sum_zarr = zarr.create(
-    im_dat[0].shape,
+    # im_dat[0].shape,
+    im_shape,
     dtype = im_dat[0].dtype,
     # chunks = im_dat[0].chunksize
     chunks = im_dat[0].chunks
@@ -50,7 +62,8 @@ def run(params):
   
   # go through timepoints and channels
   for i in tqdm(range(dim_utils.dim_val('T'))):
-    for j in range(dim_utils.dim_val('C')):
+    # for j in range(dim_utils.dim_val('C')):
+    for j, k in enumerate(im_channels):
       # build average image over time for warping 
       w_start = i - sliding_window
       w_end = i + sliding_window
@@ -66,11 +79,11 @@ def run(params):
       # set slices
       im_slices = [slice(None) for _ in range(len(im_dat[0].shape))]
       im_slices[dim_utils.dim_idx('T')] = slice(w_start, w_end, 1)
-      im_slices[dim_utils.dim_idx('C')] = j
+      im_slices[dim_utils.dim_idx('C')] = k
   
       sum_slices = [slice(None) for _ in range(len(sum_zarr.shape))]
       sum_slices[dim_utils.dim_idx('T')] = i
-      sum_slices[dim_utils.dim_idx('C')] = j
+      sum_slices[dim_utils.dim_idx('C')] = k if create_new_channels is False else dim_utils.dim_val('C') + j
       
       # set z slices
       if dim_utils.is_3D() is False and dim_utils.dim_idx('Z') is not None:
@@ -80,6 +93,8 @@ def run(params):
       sum_slices = tuple(sum_slices)
   
       # TODO this is very slow with im_dat as dask
+      # so it is currently limited to images that
+      # can fit into memory with zarr
       sum_zarr[sum_slices] = np.squeeze(np.median(
         im_dat[0][im_slices],
         axis = dim_utils.dim_idx('T', ignore_channel = True),
