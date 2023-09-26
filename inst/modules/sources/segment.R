@@ -36,7 +36,7 @@ Segment <- R6::R6Class(
       }
       
       # add halo
-      if (self$funParams()$haloSize > 0) {
+      if ("haloSize" %in% names(self$funParams()) && self$funParams()$haloSize > 0) {
         if (is.null(attr(spaceholder, "suffixes"))) {
           attr(spaceholder, "suffixes") <- c("halo")
         } else {

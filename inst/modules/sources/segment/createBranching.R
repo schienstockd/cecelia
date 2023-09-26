@@ -23,7 +23,7 @@ CreateBranching <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       valueName <- self$funParams()$valueName
-      branchingName <- paste0(self$funParams()$valueName, ".", "branch")
+      branchingName <- paste0(valueName, ".", "branch")
       
       # prepare params
       params <- list(
@@ -38,8 +38,9 @@ CreateBranching <- R6::R6Class(
       self$pyScript("create_branching", params)
       
       # DONE
-      self$writeLog("Done")
-      self$exitLog()
+      self$writeLog("Done branching")
+      # self$exitLog()
+      self$writeLog("Update image information")
       
       # update image information
       cciaObj$setImLabelsFilepath(
@@ -57,6 +58,8 @@ CreateBranching <- R6::R6Class(
       
       # create populations for branching
       popType <- "branch"
+      
+      self$writeLog("Create population DT")
       
       # create populations for branching types
       # create classification populations
@@ -91,6 +94,8 @@ CreateBranching <- R6::R6Class(
       
       # save object
       cciaObj$saveState()
+      
+      self$writeLog("Done Populations")
     }
   )
 )

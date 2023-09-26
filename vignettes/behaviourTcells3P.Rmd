@@ -71,10 +71,17 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$imChannelNames()
+# branchDT <- as.data.table(cciaObj$labelProps(valueName = "SHG.branch")$as_df())
+
+# get DTs
+branchDT <- cciaObj$popDT(
+  "branch", includeFiltered = TRUE, completeDT = TRUE,
+  completeValueNames = "SHG.branch",
+  pops = unlist(unname(cciaObj$popPaths("branch", includeFiltered = TRUE, includeRoot = FALSE))))
+popDT <- cciaObj$popDT("live", includeFiltered = TRUE, pops = "P14-CTDR/tracked")
 ```
 
 ```{r}

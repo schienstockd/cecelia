@@ -1367,6 +1367,10 @@ CciaImage <- R6::R6Class(
               popUtils, popDT, popCols = popCols, uniqueLabels = uniqueLabels,
               includeX = includeX, replaceX = replaceX, includeObs = includeObs,
               valueNames = completeValueNames)
+          
+          # make sure columns are unique
+          # TODO this should actually not happen
+          # popDT <- popDT[, .SD, .SDcols = unique(names(popDT))]
         }
         
         # build list
@@ -1450,6 +1454,10 @@ CciaImage <- R6::R6Class(
                   uniqueLabels = uniqueLabels,
                   includeX = includeX, replaceX = replaceX, includeObs = includeObs,
                   valueNames = completeValueNames)
+              
+              # make sure columns are unique
+              # TODO this should actually not happen
+              # filteredPopDT <- filteredPopDT[, .SD, .SDcols = unique(names(filteredPopDT))]
             }
             
             # is the filter value present?
