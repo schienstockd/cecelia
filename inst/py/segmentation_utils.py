@@ -282,6 +282,10 @@ class SegmentationUtils:
       
       label_slices = tuple([0 if x == slice(None) else x for x in cur_slices])
       
+      # adjust for time integration
+      if self.integrate_time is True:
+        label_slices.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+      
       # add channel back for slice prediction
       dat_slices = cur_slices
       if len(cur_slices) < len(im_dat.shape):
