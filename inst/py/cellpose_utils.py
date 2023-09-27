@@ -195,16 +195,16 @@ class CellposeUtils(SegmentationUtils):
   def predict_slice(self, im_dat, dat_slices):
     cur_im_dat = im_dat[dat_slices]
     
+    # check whether to integrate time
+    if self.dim_utils.is_timeseries() and self.integrate_time is True:
+      cur_im_dat = np.average(
+        cur_im_dat, axis = self.dim_utils.dim_idx('T', ignore_channel = True))
+    
     # get label shape
     label_shape = list(cur_im_dat.shape)
     label_shape.pop(self.dim_utils.dim_idx('C'))
     
     if self.dim_utils.is_timeseries():
-      # check whether to integrate time
-      if self.integrate_time is True:
-        cur_im_dat = np.average(
-          cur_im_dat, axis = self.dim_utils.dim_idx('T', ignore_channel = True))
-        
       # remove time if present
       label_shape.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
      
