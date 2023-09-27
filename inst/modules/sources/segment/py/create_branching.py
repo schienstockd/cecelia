@@ -44,8 +44,11 @@ def run(params):
   # https://skeleton-analysis.org/stable/examples/visualizing_3d_skeletons.html
   logfile_utils.log(f'> create skeleton')
   
+  # make sure that there is a time dimension for labels
+  integrate_time = True if (len(im_data[0].shape) - 1) > len(labels_data[0].shape) else False
+  
   # get slices
-  slices = slice_utils.create_slices(labels_data[0].shape, dim_utils)
+  slices = slice_utils.create_slices(labels_data[0].shape, dim_utils, ignore_time = integrate_time)
   
   # save labels
   # TODO is there a more elegant way to do this .. ?
@@ -118,7 +121,7 @@ def run(params):
     paths_tables[i]['label'] = np.arange(skeleton.n_paths) + 1 + max_label
     max_label = paths_tables[i]['label'].max()
     
-    if dim_utils.is_timeseries():
+    if dim_utils.is_timeseries() and integrate_time is False:
       # paths_tables[i]['centroid_t'] = i
       paths_tables[i]['centroid_t'] = cur_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
   
@@ -144,16 +147,12 @@ def run(params):
   logfile_utils.log(f'> save dataset {branching_name}')
   
   # adjust paths table
-  if dim_utils.is_timeseries():
-    paths_table = pd.concat(paths_tables, axis = 0, ignore_index = True)
-  else:
-    paths_table = paths_tables
+  paths_table = pd.concat(paths_tables, axis = 0, ignore_index = True)
   
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
-      # paths_table,
-      paths_table.drop('centroid_t', axis = 1),
+      paths_table.drop('centroid_t', axis = 1) if 'centroid_t' in paths_table.columns else paths_table,
       # save = True,
       obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']
       )
@@ -175,14 +174,14 @@ def run(params):
       ]), axis = 0)
   
   # add time
-  if dim_utils.is_timeseries():
+  if dim_utils.is_timeseries() and integrate_time is False:
     spatial_coords = np.hstack((np.vstack(paths_table['centroid_t']), spatial_coords))
   
   # get centre for coords
   # https://stackoverflow.com/a/18461943
   label_view.adata.obsm = {'spatial': spatial_coords}
   
-  if dim_utils.is_timeseries():
+  if dim_utils.is_timeseries() and integrate_time is False:
     if dim_utils.is_3D():
       spatial_cols = np.array(['centroid_t', 'centroid_z', 'centroid_y', 'centroid_x'])
     else:

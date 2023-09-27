@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 pID <- "Wq59Z0" # JY
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 ```
 
 ```{r}
@@ -139,10 +139,12 @@ channels <- cciaObj$cciaObjects()[[1]]$imChannelNames(includeTypes = TRUE, corre
 for (i in unique(datToPlot$uID)) {
   for (j in channels) {
     datToPlot[uID == i, paste0("norm.", j) := datToPlot[uID == i][[j]]/median(datToPlot[uID == i][[j]])]
+    # datToPlot[uID == i, paste0("norm.", j) := datToPlot[uID == i][[j]]/max(datToPlot[uID == i][[j]])]
   }
 }
 
-ggplot(datToPlot, aes(location, norm.nuc_YAP.647, color = location)) +
+# ggplot(datToPlot, aes(location, norm.nuc_YAP.647, color = location)) +
+ggplot(datToPlot, aes(location, nuc_YAP.647, color = location)) +
   theme_classic() +
   # geom_violin(outlier.alpha = 0) +
   geom_boxplot(outlier.alpha = 0) +
@@ -150,35 +152,35 @@ ggplot(datToPlot, aes(location, norm.nuc_YAP.647, color = location)) +
     # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
     width = 0.3, alpha = 1, size = 0.5) +
   # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
-  ylab("Nuclear Yap (AU)") + xlab("") +
+  ylab("Nuclear Yap (Ratio)") + xlab("") +
   # coord_flip()
   # ylim(0, 1) +
   scale_fill_brewer(name = NULL, palette = "Set3") +
-  theme(legend.position = "none")
+  theme(legend.position = "none") + facet_grid(.~uID)
 
-ggsave(file.path(anaDir, "YAP_nucleus.png"), width = 2, height = 2)
+ggsave(file.path(anaDir, "YAP_nucleus.png"), width = 10, height = 2)
 
-# plot percentage of YAP+ cells
-datSummary <- datToPlot %>%
-  group_by(uID, pop) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(pop == "/nonDebris/FRC/YAP") %>%
-  left_join(exp.info)
-
-ggplot(datSummary, aes(location, freq, color = location)) +
-  theme_classic() +
-  # geom_violin(outlier.alpha = 0) +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    width = 0.3, alpha = 1) +
-  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
-  ylab("YAP+ (%)") + xlab("") + ylim(0, 100) + 
-  scale_fill_brewer(name = NULL, palette = "Set3") +
-  theme(legend.position = "none")
-
-ggsave(file.path(anaDir, "YAP_positive.png"), width = 2, height = 2)
+# # plot percentage of YAP+ cells
+# datSummary <- datToPlot %>%
+#   group_by(uID, pop) %>%
+#   summarise(n = n()) %>%
+#   mutate(freq = n/sum(n) * 100) %>%
+#   dplyr::filter(pop == "/nonDebris/FRC/YAP") %>%
+#   left_join(exp.info)
+# 
+# ggplot(datSummary, aes(location, freq, color = location)) +
+#   theme_classic() +
+#   # geom_violin(outlier.alpha = 0) +
+#   geom_boxplot(outlier.alpha = 0) +
+#   geom_jitter(
+#     # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+#     width = 0.3, alpha = 1) +
+#   # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+#   ylab("YAP+ (%)") + xlab("") + ylim(0, 100) + 
+#   scale_fill_brewer(name = NULL, palette = "Set3") +
+#   theme(legend.position = "none")
+# 
+# ggsave(file.path(anaDir, "YAP_positive.png"), width = 2, height = 2)
 ```
 
 ```{r}

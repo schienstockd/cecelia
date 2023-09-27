@@ -540,12 +540,18 @@ class NapariUtils:
           #   # create mip
           #   self.im_labels = [np.amax(x, axis = self.dim_utils.dim_idx('Z', ignore_channel = True)) for x in self.im_labels]
           
+          # check that shape corresponds to scale
+          # TODO this can happen when there is no time axis for 4D images
+          labels_scale = self.im_scale.copy()
+          if len(self.im_labels[0].shape) < len(self.im_scale):
+            labels_scale.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+          
           # show labels
           labels_layer = self.viewer.add_labels(
               self.im_labels, properties = properties,
               # metadata = metadata,
               name = labels_layer,
-              scale = self.im_scale,
+              scale = labels_scale,
               cache = cache,
               opacity = opacity,
               visible = visible

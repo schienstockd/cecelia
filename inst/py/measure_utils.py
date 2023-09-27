@@ -271,8 +271,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     x, ignore_channel = True, ignore_time = True, squeeze = True) for x in ('X', 'Y', 'Z')}
   centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
   
-  logfile_utils.log(centroid_idx)
-  
   # reverse lookup for centroid and slice indicies
   slice_idx = {
     dim_utils.dim_idx(
