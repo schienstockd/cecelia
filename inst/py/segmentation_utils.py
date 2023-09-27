@@ -298,9 +298,6 @@ class SegmentationUtils:
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat, dat_slices)
       
-      self.logfile_utils.log('direct')
-      self.logfile_utils.log(alg_labels['base'].shape)
-      
       if alg_labels is not None:
         for j in alg_labels.keys():
           if alg_labels[j] is not None:
@@ -326,7 +323,7 @@ class SegmentationUtils:
             # add dummy dimension if time is used
             # otherwise cur_labels and alg_labels cannot
             # be merged together
-            if self.dim_utils.is_timeseries() is True:
+            if self.dim_utils.is_timeseries() is True and self.integrate_time is False:
               alg_labels[j] = np.expand_dims(
                 alg_labels[j], axis = self.dim_utils.dim_idx('T'))
             
@@ -363,9 +360,6 @@ class SegmentationUtils:
         for j in alg_labels.keys():
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
-        
-        self.logfile_utils.log('process')
-        self.logfile_utils.log(alg_labels['base'].shape)
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
