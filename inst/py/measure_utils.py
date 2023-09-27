@@ -62,16 +62,13 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
     if integrate_time is True:
       cur_im_dat = np.average(
         cur_im_dat, axis = dim_utils.dim_idx('T'))
-        
-      # remove time if present
-      label_shape.pop(self.dim_utils.dim_idx('T'))
 
   # swap channel axis to last position
   new_order = dim_utils.im_dim_order.copy()
   new_order.append(new_order.pop(new_order.index('C')))
   
   cur_im_dat = dim_utils.transpose_array_axis(
-      cur_im_dat, dim_utils.im_dim_order, new_order)
+    cur_im_dat, dim_utils.im_dim_order, new_order, integrate_time = integrate_time)
   
   cur_labels = {
     i: x.oindex[cur_slices] for i, x in labels.items()
@@ -265,7 +262,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   # get slices
   slices = slice_utils.create_slices(
     labels[base_labels].shape, dim_utils, block_size, overlap,
-    timepoints = timepoints, integrate_time = integrate_time)
+    timepoints = timepoints, ignore_time = integrate_time)
   
   props = list()
   
@@ -274,11 +271,13 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     x, ignore_channel = True, ignore_time = True, squeeze = True) for x in ('X', 'Y', 'Z')}
   centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
   
+  logfile_utils.log(centroid_idx)
+  
   # reverse lookup for centroid and slice indicies
   slice_idx = {
     dim_utils.dim_idx(
       x, ignore_channel = True, ignore_time = True, squeeze = True
-      ): dim_utils.dim_idx(x, ignore_channel = True, ignore_time = False
+      ): dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True
       ) for x in ('X', 'Y', 'Z')
     }
     
@@ -303,7 +302,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   
   # go through slices
   for i, cur_slices in enumerate(slices):
-    logfile_utils.log(">> Slice: " + str(i + 1) + "/" + str(len(slices)))
+    logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
     logfile_utils.log(cur_slices)
     
     # clear borders only if image is chunked
@@ -445,6 +444,8 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       for i, x in centroid_idx.items() if x is not None
     })
     props_table[base_labels].rename(columns = rename_cols, inplace = True)
+    
+    logfile_utils.log(props_table['base'].columns)
     
     # TODO this will not work for multilabel files
     if dim_utils.is_3D() is True:

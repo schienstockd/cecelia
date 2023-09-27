@@ -18,38 +18,41 @@ Create slices from image dimensions
 """
 def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
                   block_size_z = None, overlap_z = None, timepoints = None,
-                  integrate_time = False):
+                  integrate_time = False, ignore_time = False):
   slices = None
   
   # 3D timeseries
-  if False not in (dim_utils.is_3D(), dim_utils.is_timeseries()):
+  # if False not in (dim_utils.is_3D(), dim_utils.is_timeseries(), ~ignore_time):
+  if dim_utils.is_3D() is True and dim_utils.is_timeseries() is True and ignore_time is False:
     gen_slices = create_slices_3D_time(
       im_dim, dim_utils, block_size, overlap,
       block_size_z = block_size_z, overlap_z = overlap_z,
       timepoints = timepoints, integrate_time = integrate_time)
       
   # 2D timeseries
-  elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is True:
+  elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is True and ignore_time is False:
     gen_slices = create_slices_2D_time(
       im_dim, dim_utils, block_size, overlap,
       timepoints = timepoints, integrate_time = integrate_time)
       
   # 3D static
-  elif dim_utils.is_3D() is True and dim_utils.is_timeseries() is False:
+  # elif dim_utils.is_3D() is True and dim_utils.is_timeseries() is False:
+  elif dim_utils.is_3D() is True:
     gen_slices = create_slices_3D(
       im_dim, dim_utils, block_size, overlap,
-      block_size_z = block_size_z, overlap_z = overlap_z)
+      block_size_z = block_size_z, overlap_z = overlap_z, ignore_time = ignore_time)
       
   # 2D static
-  elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is False:
-    gen_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap)
+  # elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is False:
+  elif dim_utils.is_3D() is False:
+    gen_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap, ignore_time = ignore_time)
     
   slices = np.array([[slice(None) for _ in range(len(im_dim))]] * len(gen_slices['slices']))
   
   # add slices
   for i, x in enumerate(gen_slices['slices']):
     for j, y in enumerate(gen_slices['order']):
-      slices[i, dim_utils.dim_idx(y, ignore_channel = True)] = x[j]
+      slices[i, dim_utils.dim_idx(y, ignore_channel = True, ignore_time = ignore_time)] = x[j]
     
   # TODO do I need that?
   slices = [tuple(l.tolist()) for l in slices]
@@ -123,11 +126,11 @@ def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None, integr
 Create slices from image dimensions (3D)
 """
 def create_slices_3D(im_dim, dim_utils, block_size = None, overlap = None,
-                     block_size_z = None, overlap_z = None):
+                     block_size_z = None, overlap_z = None, ignore_time = False):
   # get idx
-  z_idx = dim_utils.dim_idx('Z', ignore_channel = True)
-  y_idx = dim_utils.dim_idx('Y', ignore_channel = True)
-  x_idx = dim_utils.dim_idx('X', ignore_channel = True)
+  z_idx = dim_utils.dim_idx('Z', ignore_channel = True, ignore_time = ignore_time)
+  y_idx = dim_utils.dim_idx('Y', ignore_channel = True, ignore_time = ignore_time)
+  x_idx = dim_utils.dim_idx('X', ignore_channel = True, ignore_time = ignore_time)
   
   # set block size to image stack if not set
   if block_size is None or block_size < 0:
@@ -183,10 +186,10 @@ def create_slices_3D(im_dim, dim_utils, block_size = None, overlap = None,
 """
 Create slices from image dimensions (2D)
 """
-def create_slices_2D(im_dim, dim_utils, block_size = None, overlap = None):
+def create_slices_2D(im_dim, dim_utils, block_size = None, overlap = None, ignore_time = False):
   # get idx
-  y_idx = dim_utils.dim_idx('Y', ignore_channel = True)
-  x_idx = dim_utils.dim_idx('X', ignore_channel = True)
+  y_idx = dim_utils.dim_idx('Y', ignore_channel = True, ignore_time = ignore_time)
+  x_idx = dim_utils.dim_idx('X', ignore_channel = True, ignore_time = ignore_time)
   
   # set block size to image stack if not set
   if block_size is None or block_size < 0:

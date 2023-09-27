@@ -407,8 +407,14 @@ class DimUtils:
   """
   Transpose axis based on reference dimension order
   """
-  def transpose_array_axis(self, array_to_transpose, array_dim_order, ref_dim_order):
+  def transpose_array_axis(self, array_to_transpose, array_dim_order,
+    ref_dim_order, integrate_time = False):
     transposed_data = array_to_transpose.copy()
+    
+    # remove time if integrating
+    if integrate_time is True:
+      array_dim_order.remove('T')
+      ref_dim_order.remove('T')
     
     # get order
     transpose_order = [array_dim_order.index(x) for x in ref_dim_order]

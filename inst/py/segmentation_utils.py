@@ -353,9 +353,6 @@ class SegmentationUtils:
             for k in [z for z in list(y) if z not in list(matched_labels)]:
               alg_labels[j][alg_labels[j] == k] = 0
         
-        self.logfile_utils.log('rank')
-        self.logfile_utils.log(alg_labels['base'].shape)
-        
         # rank labels
         for j in alg_labels.keys():
           if self.rank_labels is True:
@@ -377,9 +374,6 @@ class SegmentationUtils:
         # also adjusted in measure utils
         next_max_labels = list()
         
-        self.logfile_utils.log('border')
-        self.logfile_utils.log(alg_labels['base'].shape)
-        
         # for j in alg_labels.keys():
         if alg_labels['base'] is not None:
           measure_utils.clear_border_from_labels(
@@ -398,9 +392,6 @@ class SegmentationUtils:
           self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
           labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
-          
-          self.logfile_utils.log(labels['base'][label_slices].shape)
-          self.logfile_utils.log(alg_labels['base'].shape)
           
           # get matches
           matched_masks = label_utils.match_masks(
