@@ -298,6 +298,9 @@ class SegmentationUtils:
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat, dat_slices)
       
+      self.logfile_utils.log('direct')
+      self.logfile_utils.log(alg_labels['base'].shape)
+      
       if alg_labels is not None:
         for j in alg_labels.keys():
           if alg_labels[j] is not None:
