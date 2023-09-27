@@ -339,9 +339,7 @@ class SegmentationUtils:
         if self.match_labels is True:
           # TODO there must be a better way of doing this
           # get all label ids
-          label_ids = {
-            i: set(np.unique(x)) for i, x in alg_labels.items()
-          }
+          label_ids = {i: set(np.unique(x)) for i, x in alg_labels.items()}
           
           matched_labels = None
           
@@ -357,11 +355,17 @@ class SegmentationUtils:
           for j, y in label_ids.items():
             for k in [z for z in list(y) if z not in list(matched_labels)]:
               alg_labels[j][alg_labels[j] == k] = 0
-          
+        
+        self.logfile_utils.log('rank')
+        self.logfile_utils.log(alg_labels['base'].shape)
+        
         # rank labels
         for j in alg_labels.keys():
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
+        
+        self.logfile_utils.log('process')
+        self.logfile_utils.log(alg_labels['base'].shape)
         
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
@@ -378,6 +382,9 @@ class SegmentationUtils:
         # TODO this should probably be adjusted for halo
         # also adjusted in measure utils
         next_max_labels = list()
+        
+        self.logfile_utils.log('border')
+        self.logfile_utils.log(alg_labels['base'].shape)
         
         # for j in alg_labels.keys():
         if alg_labels['base'] is not None:
