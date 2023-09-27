@@ -194,20 +194,23 @@ class CellposeUtils(SegmentationUtils):
   """
   def predict_slice(self, im_dat, dat_slices):
     cur_im_dat = im_dat[dat_slices]
+    t_idx = self.dim_utils.dim_idx('T', ignore_channel = True)
+    c_idx = self.dim_utils.dim_idx('C', ignore_time = self.integrate_time)
     
     # check whether to integrate time
     if self.dim_utils.is_timeseries() and self.integrate_time is True:
-      cur_im_dat = np.average(
-        cur_im_dat, axis = self.dim_utils.dim_idx('T', ignore_channel = True))
+      self.logfile_utils.log('> Average time')
+      
+      cur_im_dat = np.average(cur_im_dat, axis = t_idx)
     
     # get label shape
     label_shape = list(cur_im_dat.shape)
-    label_shape.pop(self.dim_utils.dim_idx('C'))
+    label_shape.pop(c_idx)
     
-    if self.dim_utils.is_timeseries():
+    if self.dim_utils.is_timeseries() and self.integrate_time is False:
       # remove time if present
-      label_shape.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
-     
+      label_shape.pop(t_idx)
+    
     label_shape = tuple(label_shape)
 
     # save masks in list
@@ -226,32 +229,12 @@ class CellposeUtils(SegmentationUtils):
       self.logfile_utils.log(x['cellChannels'])
       
       if len(x['cellChannels']) > 0:
-        # init model
-        if cp_model in cfg.data['python']['cellpose']['models']:
-          model = models.Cellpose(
-            gpu = self.use_gpu, model_type = cp_model,
-            device = self.gpu_device
-            # omni = self.use_omni
-            )
-        else:
-          model = models.CellposeModel(
-            gpu = self.use_gpu,
-            # omni = self.use_omni,
-            pretrained_model = os.path.join(
-              self.ccia_path,
-              cfg.data['python']['cellpose']['modelsDir'],
-              cp_model
-              )
-            )
-        
         im = np.zeros(label_shape, dtype = np.uint32)
         nuc_im = None
         
         for y in x['cellChannels']:
           im = np.maximum(
-            im, np.squeeze(np.take(
-              cur_im_dat, y, axis = self.dim_utils.dim_idx('C'))
-              ))
+            im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
               
         # add nuclei channel?
         if len(x['nucChannels']) > 0:
@@ -259,9 +242,7 @@ class CellposeUtils(SegmentationUtils):
           
           for y in x['nucChannels']:
             nuc_im = np.maximum(
-              nuc_im, np.squeeze(np.take(
-                cur_im_dat, y, axis = self.dim_utils.dim_idx('C'))
-                ))
+              nuc_im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
 
         cell_diameter = x['cellDiameter'][0]
         # normalise_intensity = x['normalise'][0]
@@ -301,6 +282,24 @@ class CellposeUtils(SegmentationUtils):
         self.logfile_utils.log(f'> channels: {channels}')
         self.logfile_utils.log(f'> channel_axis: {channel_axis}')
         self.logfile_utils.log(f'> z_axis: {z_axis}')
+        
+        # init model
+        if cp_model in cfg.data['python']['cellpose']['models']:
+          model = models.Cellpose(
+            gpu = self.use_gpu, model_type = cp_model,
+            device = self.gpu_device
+            # omni = self.use_omni
+            )
+        else:
+          model = models.CellposeModel(
+            gpu = self.use_gpu,
+            # omni = self.use_omni,
+            pretrained_model = os.path.join(
+              self.ccia_path,
+              cfg.data['python']['cellpose']['modelsDir'],
+              cp_model
+              )
+            )
         
         ## EVAL ##
         masks = self.get_masks(
