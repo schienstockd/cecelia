@@ -85,6 +85,26 @@ popDT <- cciaObj$popDT("live", includeFiltered = TRUE, pops = "P14-CTDR/tracked"
 ```
 
 ```{r}
+# now build a weighted graph of the most visited edges and save back to branchDT
+# then you can use that to display on the image
+x <- as.matrix(branchDT[c('centroid_z', 'centroid_y', 'centroid_x')])
+rownames(x) <- branchDT$label
+
+# find nearest neighbours
+popNN <- dbscan::kNN(
+  x, k = 1, query = as.matrix(popDT[, c('centroid_z', 'centroid_y', 'centroid_x')]))
+
+# filter long distances
+# regionVals <- regionDT[popNN$id, ]$regions
+# regionVals <- branchDT[popNN$id, ]$`branch-type`
+popDT[, branch.id := popNN$id]
+popDT[, branch.dist := popNN$dist]
+popDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
+      `branch-type` := `branch-type`]
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
