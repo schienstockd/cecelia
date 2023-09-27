@@ -280,11 +280,13 @@ class SegmentationUtils:
       self.logfile_utils.log(cur_slices)
       self.logfile_utils.log(str(cur_max_labels))
       
-      label_slices = tuple([0 if x == slice(None) else x for x in cur_slices])
+      label_slices = [0 if x == slice(None) else x for x in cur_slices]
       
       # adjust for time integration
       if self.integrate_time is True:
         label_slices.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+      
+      label_slices = tuple(label_slices)
       
       # add channel back for slice prediction
       dat_slices = cur_slices
