@@ -382,6 +382,8 @@ class CellposeUtils(SegmentationUtils):
     # final merge of cyto and base
     merged_labels = np.zeros(label_shape, dtype = np.uint32)
     
+    self.logfile_utils.log(f'algo shape {label_shape}')
+    
     if set({'unmatched', 'cyto'}).issubset(interm_labels.keys()):
       merged_labels = np.maximum(interm_labels['cyto'], interm_labels['unmatched'])
     elif 'cyto' in interm_labels.keys():
