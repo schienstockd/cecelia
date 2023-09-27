@@ -17,7 +17,8 @@ def convert_coords_to_slices(coords):
 Create slices from image dimensions
 """
 def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
-                  block_size_z = None, overlap_z = None, timepoints = None):
+                  block_size_z = None, overlap_z = None, timepoints = None,
+                  integrate_time = False):
   slices = None
   
   # 3D timeseries
@@ -25,13 +26,13 @@ def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
     gen_slices = create_slices_3D_time(
       im_dim, dim_utils, block_size, overlap,
       block_size_z = block_size_z, overlap_z = overlap_z,
-      timepoints = timepoints)
+      timepoints = timepoints, integrate_time = integrate_time)
       
   # 2D timeseries
   elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is True:
     gen_slices = create_slices_2D_time(
       im_dim, dim_utils, block_size, overlap,
-      timepoints = timepoints)
+      timepoints = timepoints, integrate_time = integrate_time)
       
   # 3D static
   elif dim_utils.is_3D() is True and dim_utils.is_timeseries() is False:
@@ -60,32 +61,32 @@ Create slices from image dimensions (3D time)
 """
 def create_slices_3D_time(im_dim, dim_utils, block_size = None,
                           overlap = None, block_size_z = None, overlap_z = None,
-                          timepoints = None):
+                          timepoints = None, integrate_time = False):
   # create 3D frame slices
   frame_slices = create_slices_3D(
     im_dim, dim_utils, block_size, overlap,
     block_size_z = block_size_z, overlap_z = overlap_z)
     
   # combine time and frame slices
-  return combine_time_frame_slices(frame_slices, dim_utils,
-                                   timepoints = timepoints)
+  return combine_time_frame_slices(
+    frame_slices, dim_utils, timepoints = timepoints, integrate_time = integrate_time)
 
 """
 Create slices from image dimensions (2D time)
 """
 def create_slices_2D_time(im_dim, dim_utils, block_size = None, overlap = None,
-                          timepoints = None):
+                          timepoints = None, integrate_time = False):
   # create 2D frame slices
   frame_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap)
     
   # combine time and frame slices
-  return combine_time_frame_slices(frame_slices, dim_utils,
-                                   timepoints = timepoints)
+  return combine_time_frame_slices(
+    frame_slices, dim_utils, timepoints = timepoints, integrate_time = integrate_time)
     
 """
 Combine time and frame slices
 """
-def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None):
+def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None, integrate_time = False):
   # get time idx
   time_idx = dim_utils.dim_idx('T', ignore_channel = True)
   time_vals = list(range(dim_utils.dim_val('T'))) if timepoints is None else timepoints
@@ -93,17 +94,22 @@ def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None):
   # get length of frame slices
   len_frame_slices = len(frame_slices['slices'])
   
-  # replicate for timepoints
-  # https://stackoverflow.com/a/38099836/13766165
-  frame_slices['slices'] = [x for x in frame_slices['slices'] for _ in time_vals]
-  
   # convert frame tuples to list
   frame_slices['slices'] = [list(x) for x in frame_slices['slices']]
   
-  # combine with time slices
-  for i, t in enumerate(range(time_vals[0], time_vals[-1] + 1)):
-    for x in range(1, len_frame_slices + 1):
-      frame_slices['slices'][(i + 1) * x - 1].insert(time_idx, slice(t, t + 1, 1))
+  if integrate_time is True:
+    # combine slices with time
+    for i in range(len_frame_slices):
+      frame_slices['slices'][i].insert(time_idx, slice(time_vals[0], time_vals[-1] + 1, 1))
+  else:
+    # replicate for timepoints
+    # https://stackoverflow.com/a/38099836/13766165
+    frame_slices['slices'] = [x for x in frame_slices['slices'] for _ in time_vals]
+    
+    # combine slices with time
+    for i, t in enumerate(range(time_vals[0], time_vals[-1] + 1)):
+      for x in range(1, len_frame_slices + 1):
+        frame_slices['slices'][(i + 1) * x - 1].insert(time_idx, slice(t, t + 1, 1))
   
   # convert back to tuples
   frame_slices['slices'] = [tuple(x) for x in frame_slices['slices']]

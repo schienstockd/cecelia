@@ -60,6 +60,7 @@ def run(params):
     chunks = labels_data[0].chunks,
     dtype = np.uint32)
   paths_tables = list()
+  max_label = 0
   
   # go through slices
   for i, cur_slices in enumerate(slices):
@@ -114,7 +115,8 @@ def run(params):
     # create properties
     paths_tables.append(skan.summarize(skeleton))
     paths_tables[i]['path-id'] = np.arange(skeleton.n_paths)
-    paths_tables[i]['label'] = np.arange(skeleton.n_paths) + 1
+    paths_tables[i]['label'] = np.arange(skeleton.n_paths) + 1 + max_label
+    max_label = paths_tables[i]['label'].max()
     
     if dim_utils.is_timeseries():
       # paths_tables[i]['centroid_t'] = i
@@ -147,9 +149,6 @@ def run(params):
   else:
     paths_table = paths_tables
   
-  # get skeleton regionprops
-  
-  
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
@@ -178,8 +177,6 @@ def run(params):
   # add time
   if dim_utils.is_timeseries():
     spatial_coords = np.hstack((np.vstack(paths_table['centroid_t']), spatial_coords))
-  
-  logfile_utils.log(spatial_coords)
   
   # get centre for coords
   # https://stackoverflow.com/a/18461943

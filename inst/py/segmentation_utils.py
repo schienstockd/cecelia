@@ -43,6 +43,7 @@ class SegmentationUtils:
     self.rank_labels = script_utils.get_param(params, 'rank_labels', default = False)
     self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
     self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
+    self.integrate_time = script_utils.get_param(params, 'integrate_time', default = False)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -172,7 +173,8 @@ class SegmentationUtils:
           value_name = self.value_name,
           save_meshes = self.save_meshes,
           extended_measures = self.extended_measures,
-          calc_median_intensities = self.calc_median_intensities
+          calc_median_intensities = self.calc_median_intensities,
+          integrate_time = self.integrate_time
         )
         
         # get spatial and temporal columns from props
@@ -256,7 +258,7 @@ class SegmentationUtils:
     slices = slice_utils.create_slices(
       zarr_shape, self.dim_utils, self.block_size, self.overlap,
       block_size_z = self.block_size_z, overlap_z = self.overlap_z,
-      timepoints = self.timepoints)
+      timepoints = self.timepoints, integrate_time = self.integrate_time)
       
     # cur_max_labels = {i: 0 for i in labels.keys()}
     cur_max_labels = 0

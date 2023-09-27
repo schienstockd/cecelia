@@ -96,7 +96,8 @@ Cellpose <- R6::R6Class(
         saveMeshes = self$funParams()$saveMeshes,
         saveMeasures = self$funParams()$saveMeasures,
         extendedMeasures = self$funParams()$extendedMeasures,
-        calcMedianIntensities = self$funParams()$calcMedianIntensities
+        calcMedianIntensities = self$funParams()$calcMedianIntensities,
+        integrateTime = self$funParams()$integrateTime
       )
       
       # add optional parameters

@@ -199,9 +199,14 @@ class CellposeUtils(SegmentationUtils):
     label_shape = list(cur_im_dat.shape)
     label_shape.pop(self.dim_utils.dim_idx('C'))
     
-    # remove time if present
     if self.dim_utils.is_timeseries():
-      label_shape.pop(self.dim_utils.dim_idx('T'))
+      # check whether to integrate time
+      if self.integrate_time is True:
+        cur_im_dat = np.average(
+          cur_im_dat, axis = self.dim_utils.dim_idx('T', ignore_channel = True))
+        
+      # remove time if present
+      label_shape.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
      
     label_shape = tuple(label_shape)
 

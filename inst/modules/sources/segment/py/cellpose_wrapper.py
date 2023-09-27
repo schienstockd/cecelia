@@ -56,6 +56,7 @@ def run(params):
     # post-processing parameters
     'extended_measures': params['extendedMeasures'] if 'extendedMeasures' in params else False,
     'calc_median_intensities': params['calcMedianIntensities'] if 'calcMedianIntensities' in params else False,
+    'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
     'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,
     'clear_touching_border': params['clearTouchingBorder'] if 'clearTouchingBorder' in params else False,
     'rank_labels': params['rankLabels'] if 'rankLabels' in params else True,

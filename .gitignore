@@ -1,5 +1,7 @@
 inst/app/db/*
 inst/app/shiny_bookmarks
+inst/app/USER
+inst/app/COMMUNAL
 inst/app/viewer/connectionFile.debug.json
 inst/app/viewer/connectionFile.json
 inst/models/*

@@ -48,20 +48,30 @@ Get labels from slice
 """
 def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
                           context = 128, clear_borders = True,
-                          clear_touching_border = True, clear_depth = True):
+                          clear_touching_border = True, clear_depth = True, 
+                          integrate_time = False):
   # add channel to slices for data
   dat_slices = list(cur_slices)
   dat_slices.insert(dim_utils.dim_idx('C'), slice(None))
   dat_slices = tuple(dat_slices)
+  
   cur_im_dat = im_dat[dat_slices]
+  
+  if dim_utils.is_timeseries():
+    # check whether to integrate time
+    if integrate_time is True:
+      cur_im_dat = np.average(
+        cur_im_dat, axis = dim_utils.dim_idx('T'))
+        
+      # remove time if present
+      label_shape.pop(self.dim_utils.dim_idx('T'))
 
   # swap channel axis to last position
   new_order = dim_utils.im_dim_order.copy()
   new_order.append(new_order.pop(new_order.index('C')))
+  
   cur_im_dat = dim_utils.transpose_array_axis(
-      cur_im_dat,
-      dim_utils.im_dim_order,
-      new_order)
+      cur_im_dat, dim_utils.im_dim_order, new_order)
   
   cur_labels = {
     i: x.oindex[cur_slices] for i, x in labels.items()
@@ -242,7 +252,7 @@ Measure properties from Zarr labels and image
 def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_name,
   block_size = None, overlap = None, context = None, gaussian_sigma = 1,
   clear_touching_border = True, clear_depth = True, timepoints = None, save_meshes = False,
-  extended_measures = False, calc_median_intensities = False):
+  extended_measures = False, calc_median_intensities = False, integrate_time = False):
   # define base labels
   base_labels = 'base'
   labels_mode = 'default'
@@ -255,7 +265,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   # get slices
   slices = slice_utils.create_slices(
     labels[base_labels].shape, dim_utils, block_size, overlap,
-    timepoints = timepoints)
+    timepoints = timepoints, integrate_time = integrate_time)
   
   props = list()
   
@@ -305,7 +315,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     cur_labels, cur_im_dat = get_labels_from_slice(
       cur_slices, labels, im_dat, dim_utils, context,
       clear_borders = clear_borders, clear_depth = clear_depth,
-      clear_touching_border = clear_touching_border)
+      clear_touching_border = clear_touching_border, integrate_time = integrate_time)
     
     # fortify image
     cur_im_dat = zarr_utils.fortify(cur_im_dat)
@@ -700,7 +710,8 @@ def countours_2D_from_zarr(labels, im_dat, dim_utils, logfile_utils,
     logfile_utils.log(">> Slice: " + str(i + 1) + "/" + str(len(slices)))
     logfile_utils.log(cur_slices)
     
-    cur_labels, cur_im_dat = get_labels_from_slice(cur_slices, labels, im_dat, dim_utils, context)
+    cur_labels, cur_im_dat = get_labels_from_slice(
+      cur_slices, labels, im_dat, dim_utils, context)
     
     # find contours for individual labels
     contours = measure.find_contours(cur_labels, level = 0)

@@ -230,6 +230,11 @@
 				"type:boolean": {
 					"default": false
 				}
+			},
+			"integrateTime": {
+				"type:boolean": {
+					"default": false
+				}
 			}
     },
     "outputs": {}
@@ -502,6 +507,12 @@
 			"extendedMeasures": {
 				"index": 24,
 				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			},
+			"integrateTime": {
+				"index": 25,
+				"label": "Integrate time",
 				"widget:checkbox": {
 				}
 			}
