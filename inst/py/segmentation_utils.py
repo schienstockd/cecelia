@@ -235,6 +235,17 @@ class SegmentationUtils:
     zarr_shape.pop(self.dim_utils.dim_idx('C'))
     zarr_chunks.pop(self.dim_utils.dim_idx('C'))
     
+    # get slices
+    slices = slice_utils.create_slices(
+      zarr_shape, self.dim_utils, self.block_size, self.overlap,
+      block_size_z = self.block_size_z, overlap_z = self.overlap_z,
+      timepoints = self.timepoints, integrate_time = self.integrate_time)
+    
+    # adjust for time integration
+    if self.integrate_time is True:
+      zarr_shape.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+      zarr_chunks.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+    
     # create empty zarr file
     labels = dict()
     for i, x in self.labels_paths.items():
@@ -253,12 +264,6 @@ class SegmentationUtils:
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
         dtype = np.uint32)
-
-    # get slices
-    slices = slice_utils.create_slices(
-      zarr_shape, self.dim_utils, self.block_size, self.overlap,
-      block_size_z = self.block_size_z, overlap_z = self.overlap_z,
-      timepoints = self.timepoints, integrate_time = self.integrate_time)
       
     # cur_max_labels = {i: 0 for i in labels.keys()}
     cur_max_labels = 0
