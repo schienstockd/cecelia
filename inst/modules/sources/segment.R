@@ -66,6 +66,19 @@ Segment <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      # get channel names
+      channelNames <- cciaObj$imChannelNames()
+      
+      # add other measurements?
+      if (self$funParams()$calcMedianIntensities == TRUE) {
+        attr(channelNames, "measure") <- "median"
+      } else {
+        attr(channelNames, "measure") <- "mean"
+      }
+      
+      # reset types
+      attr(channelNames, "types") <- NULL
+      
       # add labels and properties
       # TODO why does this not work sometimes?
       if (length(labelSuffixes) > 0) {
@@ -77,24 +90,17 @@ Segment <- R6::R6Class(
         
         # set types for channel names
         channelTypes <- unlist(labelSuffixes)
-        channelNames <- cciaObj$imChannelNames()
-        
-        # add other measurements?
-        if (self$funParams()$calcMedianIntensities == TRUE) {
-          attr(channelNames, "measure") <- "median"
-        } else {
-          attr(channelNames, "measure") <- "mean"
-        }
         
         attr(channelNames, "types") <- channelTypes
-        
-        cciaObj$setImChannelNames(channelNames, valueName = valueName)
       } else{
         cciaObj$setImLabelsFilepath(
           paste0(valueName, cciaConf()$files$ext$labels),
           valueName = valueName
         )
       }
+      
+      # set channel names
+      cciaObj$setImChannelNames(channelNames, valueName = valueName)
       
       # load data from disk when loading the object
       # instead of pushing into object which makes it big
