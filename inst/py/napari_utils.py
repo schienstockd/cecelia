@@ -449,7 +449,8 @@ class NapariUtils:
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   show_label_ids = True, as_np_array = False, show_tracks = True,
                   points_colour = "white", cache = True, label_suffixes = [],
-                  show_branching = False, slices = None, split_tracks = None,
+                  show_branching = False, branching_property = 'type',
+                  slices = None, split_tracks = None,
                   tracks_blending = 'additive'):
     # set label ids
     label_ids = self.label_ids(value_name = value_name)
@@ -562,18 +563,22 @@ class NapariUtils:
           
           # add branching?
           if show_branching is True and value_name.endswith('.branch'):
-            # get branching distance
-            #percentile = 99.8
-            percentile = 100
-            chnl_scale = 255
+            if branching_property == 'type':
+              percentile = 100
+            else:
+              percentile = 99.5
             
+            chnl_scale = 255
+            branching_property_col = f'branch-{branching_property}'
+            
+            # get branching property
             paths_table = self.label_props_utils\
               .label_props_view(value_name = value_name)\
-              .view_cols(['label', 'branch-type'])\
+              .view_cols(['label', branching_property_col])\
               .values_obs()
             
             #branching_values = paths_table['branch-distance'].values
-            branching_values = paths_table['branch-type'].values
+            branching_values = paths_table[branching_property_col].values
             
             # get max value from intensity
             max_chnl_val = np.percentile(branching_values, percentile)

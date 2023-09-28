@@ -1,0 +1,72 @@
+{
+  "fun": {
+    "networkWeights": {
+      "category": "Module functions",
+      "label": "Network weights",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"pops": {
+        "type:list": {}
+      },
+      "maxDist": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 10
+        }
+      },
+      "upperPercentile": {
+        "type:double": {
+          "min": 80,
+          "max": 100,
+          "default": 99
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Branching",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelsFilepath"
+				}
+			},
+			"pops": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      },
+      "maxDist": {
+        "index": 2,
+        "label": "Maximum distance",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+      "upperPercentile": {
+        "index": 3,
+        "label": "Percentile",
+        "widget:slider": {
+          "step": 0.05
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

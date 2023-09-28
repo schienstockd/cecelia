@@ -516,6 +516,13 @@ server <- function(input, output, session) {
     }
   })
   
+  # Viewer branching property
+  observeEvent(input$viewerBranchingProperty, {
+    req(input$viewerBranchingProperty)
+    
+    globalManagers$viewerManager()$setBranchingProperty(input$viewerBranchingProperty)
+  })
+  
   # Viewer multiscales
   observeEvent(input$viewerMultiscales, {
     req(input$viewerMultiscales)

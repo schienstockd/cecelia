@@ -250,6 +250,7 @@ NapariUtils <- R6::R6Class(
     #' @param showPoints boolean to show points
     #' @param showLabelIds boolean to show label ids
     #' @param showBranching boolean to show branching
+    #' @param branchingProperty character of branching property to show
     #' @param showTracks boolean to show tracks
     #' @param showPops boolean to show populations
     #' @param showNeighbours boolean to show neighbours
@@ -260,9 +261,10 @@ NapariUtils <- R6::R6Class(
     showLabelsAll = function(valueNames, showLabels = FALSE, showPoints = FALSE,
                              showLabelIds = FALSE, showTracks = FALSE,
                              showPops = FALSE, showNeighbours = FALSE,
-                             showBranching = FALSE, asNpArray = FALSE,
-                             execInteractive = TRUE, labelSuffixes = list(),
-                             splitTracks = NULL, tracksBlending = "additive") {
+                             showBranching = FALSE, branchingProperty = "type",
+                             asNpArray = FALSE, execInteractive = TRUE,
+                             labelSuffixes = list(), splitTracks = NULL, 
+                             tracksBlending = "additive") {
       # show labels
       if (length(valueNames) > 0) {
         self$execute(
@@ -275,6 +277,7 @@ NapariUtils <- R6::R6Class(
               "show_label_ids = %s,",
               "show_tracks = %s,",
               "show_branching = %s,",
+              "branching_property = %s,",
               "as_np_array = %s,",
               "label_suffixes = %s,",
               "split_tracks = %s,",
@@ -287,6 +290,7 @@ NapariUtils <- R6::R6Class(
             reticulate::r_to_py(showLabelIds),
             reticulate::r_to_py(showTracks),
             reticulate::r_to_py(showBranching),
+            reticulate::r_to_py(branchingProperty),
             reticulate::r_to_py(asNpArray),
             reticulate::r_to_py(labelSuffixes),
             reticulate::r_to_py(splitTracks),

@@ -59,6 +59,17 @@ ui <- function(request) {
                        class = btnCLASS_IMPORTANT)
         )
       ),
+      fluidRow(
+        column(
+          10,
+          selectInput(
+            "viewerBranchingProperty", "Branching property",
+            list(
+              "Type" = "type",
+              "Weight" = "weight"
+            ), selected = "type")
+        )
+      ),
       tags$hr(),
       
       # --- Load/Save project ---

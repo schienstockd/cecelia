@@ -38,6 +38,7 @@ ViewerManager <- R6::R6Class(
     downsampleZ = FALSE,
     reloadImage = FALSE,
     multiscales = TRUE,
+    branchingProperty = "type",
     
     # setters
     setViewer = function(x, invalidate = TRUE) {
@@ -179,6 +180,7 @@ ViewerManager <- R6::R6Class(
             showPoints = self$getShowPoints(),
             showTracks = self$getShowTracks(),
             showBranching = self$getShowBranching(),
+            branchingProperty = self$getBranchingProperty(),
             asNpArray = showLabelsAsNpArray,
             labelSuffixes = labelSuffixes
           )
@@ -351,6 +353,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setBranchingProperty = function(x, invalidate = TRUE) {
+      private$branchingProperty <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     setMultiscales = function(x, invalidate = TRUE) {
       private$multiscales <- x
       private$invalidate(invalidate = invalidate)
@@ -428,6 +435,10 @@ ViewerManager <- R6::R6Class(
     
     getShowShapes = function() {
       private$showShapes
+    },
+    
+    getBranchingProperty = function() {
+      private$branchingProperty
     },
     
     getMultiscales = function() {
