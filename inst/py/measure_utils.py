@@ -259,8 +259,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     if all([x in labels.keys() for x in ['nuc', 'cyto']]):
       labels_mode = 'nuc_cyto'
   
-  logfile_utils.log(labels[base_labels].shape)
-  
   # get slices
   slices = slice_utils.create_slices(
     labels[base_labels].shape, dim_utils, block_size, overlap,
