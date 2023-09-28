@@ -258,7 +258,9 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     # cytoplasm and nuclei
     if all([x in labels.keys() for x in ['nuc', 'cyto']]):
       labels_mode = 'nuc_cyto'
-      
+  
+  logfile_utils.log(labels[base_labels].shape)
+  
   # get slices
   slices = slice_utils.create_slices(
     labels[base_labels].shape, dim_utils, block_size, overlap,
@@ -442,8 +444,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       for i, x in centroid_idx.items() if x is not None
     })
     props_table[base_labels].rename(columns = rename_cols, inplace = True)
-    
-    logfile_utils.log(props_table['base'].columns)
     
     # TODO this will not work for multilabel files
     if dim_utils.is_3D() is True:

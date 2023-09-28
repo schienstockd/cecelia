@@ -163,7 +163,8 @@ def label_volume_from_label_props(labels, label, dim_utils, props_table, padding
     # expand bbox by '1'
     # for x in [x.lower() for x in dim_utils.spatial_axis()]:
     for x in [x.lower() for x in dim_utils.spatial_axis()]:
-      dim_idx = dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True, drop_z = True)
+      dim_idx = dim_utils.dim_idx(
+        x, ignore_channel = True, ignore_time = True, drop_z = True, drop_time = True)
       
       bbox_min = max(int(label_props[f'bbox_min_{x}'])-padding, 0)
       bbox_max = min(int(label_props[f'bbox_max_{x}'])+padding, labels.shape[dim_idx])

@@ -241,7 +241,8 @@ class DimUtils:
   Get pos of dimension
   """
   def dim_idx(self, dim = None, ignore_channel = False, ignore_time = False,
-              ignore_z = False, default_order = False, squeeze = False, drop_z = False):
+              ignore_z = False, default_order = False, squeeze = False, drop_z = False,
+              drop_time = False):
     ret_val = None
     
     if default_order is True:
@@ -257,13 +258,14 @@ class DimUtils:
         
     # ignore channel?
     # if processing a timeseries but only use one frame
-    if ignore_time is True:
-      if self.is_timeseries(ignore_one = False) is True:
+    # if ignore_time is True:
+    #   if self.is_timeseries() is True:
+    if (drop_time is True and self.is_timeseries() is False) or (ignore_time is True and self.is_timeseries() is True):
         dim_order.pop(self.dim_idx('T', ignore_channel = ignore_channel))
         
     # drop z if not 3D?
     # TODO this is not clean
-    if (drop_z is True and self.is_3D() is False) or ignore_z is True:
+    if (drop_z is True and self.is_3D() is False) or (ignore_z is True and self.is_3D() is True):
       dim_order.pop(self.dim_idx(
         'Z', ignore_channel = ignore_channel, ignore_time = ignore_time
         ))
