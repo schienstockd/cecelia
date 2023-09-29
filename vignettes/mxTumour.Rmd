@@ -43,7 +43,7 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "8lAe4q", versionID = versionID, initReactivity = FALSE
 )
 
-
+cciaObj$imChannelNames()
 ```
 
 ```{r}
