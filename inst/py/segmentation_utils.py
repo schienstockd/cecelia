@@ -378,22 +378,16 @@ class SegmentationUtils:
         
         # for j in alg_labels.keys():
         if alg_labels['base'] is not None:
-          self.logfile_utils.log(f'> C.1 {alg_labels["base"].max()}')
-          
           measure_utils.clear_border_from_labels(
             alg_labels, self.dim_utils, context = self.context,
             clear_borders = clear_borders,
             clear_touching_border = self.clear_touching_border,
             clear_depth = self.clear_depth)
             
-          self.logfile_utils.log(f'> C.2 {alg_labels["base"].max()}')
-        
           # increase numbering
           for j in alg_labels.keys():
             if alg_labels[j] is not None:
               alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
-          
-          self.logfile_utils.log(f'> D {alg_labels["base"].max()}')
           
           # merge with exisiting labels
           # if self.label_overlap > 0:
