@@ -298,6 +298,7 @@ class SegmentationUtils:
       
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat, dat_slices)
+      self.logfile_utils.log(f'> A {alg_labels["base"].max()}')
       
       if alg_labels is not None:
         for j in alg_labels.keys():
