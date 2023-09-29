@@ -391,6 +391,7 @@ class SegmentationUtils:
           # merge with exisiting labels
           # if self.label_overlap > 0:
           self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
+          self.logfile_utils.log(f'> Found {alg_labels["base"].max()}')
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
           labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
           
