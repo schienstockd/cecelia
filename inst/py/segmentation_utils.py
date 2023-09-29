@@ -298,7 +298,6 @@ class SegmentationUtils:
       
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat, dat_slices)
-      self.logfile_utils.log(f'> A {alg_labels["base"].max()}')
       
       if alg_labels is not None:
         for j in alg_labels.keys():
@@ -360,8 +359,6 @@ class SegmentationUtils:
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
         
-        self.logfile_utils.log(f'> B {alg_labels["base"].max()}')
-        
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
         
@@ -382,11 +379,15 @@ class SegmentationUtils:
         
         # for j in alg_labels.keys():
         if alg_labels['base'] is not None:
+          self.logfile_utils.log(f'> C.1 {alg_labels["base"].max()}')
+          
           measure_utils.clear_border_from_labels(
             alg_labels, self.dim_utils, context = self.context,
             clear_borders = clear_borders,
             clear_touching_border = self.clear_touching_border,
             clear_depth = self.clear_depth)
+            
+          self.logfile_utils.log(f'> C.2 {alg_labels["base"].max()}')
         
           # increase numbering
           for j in alg_labels.keys():
