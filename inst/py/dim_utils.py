@@ -260,7 +260,8 @@ class DimUtils:
     # if processing a timeseries but only use one frame
     # if ignore_time is True:
     #   if self.is_timeseries() is True:
-    if (drop_time is True and self.is_timeseries() is False) or (ignore_time is True and self.is_timeseries() is True):
+    # if (drop_time is True and self.is_timeseries() is False) or (ignore_time is True and self.is_timeseries() is True):
+    if (drop_time is True and self.is_timeseries() is False) or ignore_time is True:
         dim_order.pop(self.dim_idx('T', ignore_channel = ignore_channel))
         
     # drop z if not 3D?

@@ -146,8 +146,8 @@ def clear_border_labels(labels, dim_utils, context = 1,
   ret_labels = labels
   
   # get depth axis
-  # depth_axis = dim_utils.dim_idx('Z', ignore_channel = True, ignore_time = True, default_order = False)
-  depth_axis = dim_utils.dim_idx('Z', ignore_channel = True, drop_time = True, default_order = False)
+  depth_axis = dim_utils.dim_idx('Z', ignore_channel = True, ignore_time = True, default_order = False)
+  # depth_axis = dim_utils.dim_idx('Z', ignore_channel = True, drop_time = True, default_order = False)
   
   # set context
   context = context if True in (clear_borders, clear_touching_border) else 1
