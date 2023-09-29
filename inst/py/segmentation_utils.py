@@ -360,8 +360,12 @@ class SegmentationUtils:
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
         
+        self.logfile_utils.log(f'> B {alg_labels["base"].max()}')
+        
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
+        
+        self.logfile_utils.log(f'> C {alg_labels["base"].max()}')
         
         # remove border labels
         # alg_labels = {
@@ -388,6 +392,8 @@ class SegmentationUtils:
           for j in alg_labels.keys():
             if alg_labels[j] is not None:
               alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
+          
+          self.logfile_utils.log(f'> D {alg_labels["base"].max()}')
           
           # merge with exisiting labels
           # if self.label_overlap > 0:
