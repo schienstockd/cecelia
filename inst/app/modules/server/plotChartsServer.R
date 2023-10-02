@@ -238,7 +238,7 @@
       plotData <- reactive({
         req(input$plotOutputTabs)
         req(summaryPlotData())
-        req(indvPlotData())
+        # req(indvPlotData())
         
         if (input$plotOutputTabs == "combined")
           summaryPlotData()
