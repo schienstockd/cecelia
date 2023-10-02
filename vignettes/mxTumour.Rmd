@@ -12,11 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-# pID <- "az8y8l" # ZOE
-pID <- "Wq59Z0" # JY
+pID <- "az8y8l" # ZOE
+# pID <- "Wq59Z0" # JY
 versionID <- 1
-# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+# projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 ```
 
 ```{r}
@@ -30,9 +30,68 @@ library(tidyverse)
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 ```
+
+```{r fig_cells_per_area, fig.height=3, fig.width=3}
+# show numbers of cells per area
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+x <- cciaObj$cciaObjects()[[1]]
+
+popPaths <- x$popPaths(popType = "clust", includeFiltered = TRUE)
+```
+
+```{r}
+# get dimensions and pops
+pixelRes <- x$omeXMLPixelRes()
+
+popDT <- x$popDT("clust", pops = popPaths, includeFiltered = TRUE)
+
+centroidCols <- str_match(names(popDT), "^centroid_(x|y|z)$")
+centroidCols <- centroidCols[,1][!is.na(centroidCols[,1])]
+centroidCols <- c("centroid_y", "centroid_x")
+
+pixelRes <- unlist(pixelRes[str_extract(centroidCols, "(?<=_).*")])
+
+# adjust for units
+areaUnit <- "mm"
+areaDim <- "area"
+
+areaUnitAdjust <- 1
+if (areaUnit == "mm")
+  areaUnitAdjust <- 1000
+
+# # get centroid limits
+popsLimits <- list(
+  min = popDT[, sapply(.SD, min), .SDcols = centroidCols] * pixelRes * (1/areaUnitAdjust),
+  max = popDT[, sapply(.SD, max), .SDcols = centroidCols] * pixelRes * (1/areaUnitAdjust)
+)
+popsLimits$max - popsLimits$min
+
+# get convex hull
+# https://stackoverflow.com/a/41190160
+# https://stackoverflow.com/a/59940985
+ps1 <- popDT[, ..centroidCols] * pixelRes * (1/areaUnitAdjust)
+ps1.surf <- geometry::convhulln(ps1, options = "FA")
+
+ps1.surf$area
+ps1.surf$vol
+
+# get cells per area
+popDT[, .(pop.n = .N, pop.area = (.N/ps1.surf$vol)),
+      by = .(pop)] %>% left_join(exp.info)
+```
+
 
 ```{r}
 devtools::load_all("../")

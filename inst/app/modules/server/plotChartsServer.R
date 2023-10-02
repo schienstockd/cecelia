@@ -170,6 +170,14 @@
         input$resultSummaryInteraction
       })
       
+      resultSummaryAreaType <- reactive({
+        input$resultSummaryAreaType
+      })
+      
+      resultSummaryAreaUnits <- reactive({
+        input$resultSummaryAreaUnits
+      })
+      
       # points data that is shown
       pointsData <- eventReactive(c(
         input$plotOutputTabs,
@@ -882,13 +890,14 @@
       })
       
       # create points DT
-      observeEvent(c(popDT(), resultSummaryAxisY(), expInfoUpdated()), {
+      observeEvent(c(popDT(), resultSummaryAxisY(), resultSummaryAreaType(),
+                     resultSummaryAreaUnits(), expInfoUpdated()), {
         req(popDT())
         req(resultSummaryAxisY())
         req(expInfo())
         
         # get mean of values for each image
-        if (resultSummaryAxisY() %in% c("pop.freq")) {
+        if (resultSummaryAxisY() == "pop.freq") {
           # create population frequencies
           # TODO data.table only version
           pointsDT(
@@ -902,6 +911,38 @@
           )
           
           # pointsDT()[, pop.freq := .SD$n1/sum(.SD$n1), by = .(uID)]
+        } else if (resultSummaryAxisY() == "pop.area") {
+          # get dimensions and pops
+          # TODO this assumes that all dimensions are the same
+          pixelRes <- cciaObj()$omeXMLPixelRes()
+          
+          # get centroids
+          if (resultSummaryAreaType() == "volume")
+            centroidPattern <- "^centroid_(x|y|z)$"
+          else
+            centroidPattern <- "^centroid_(x|y)$"
+          
+          centroidCols <- str_match(names(popDT()), centroidPattern)
+          centroidCols <- centroidCols[,1][!is.na(centroidCols[,1])]
+          pixelRes <- unlist(pixelRes[str_extract(centroidCols, "(?<=_).*")])
+          
+          # adjust for units
+          # TODO other scales?
+          areaUnitAdjust <- 1
+          if (resultSummaryAreaUnits() == "mm")
+            areaUnitAdjust <- 1000
+          
+          # get convex hull
+          # https://stackoverflow.com/a/41190160
+          # https://stackoverflow.com/a/59940985
+          ps1 <- popDT()[, ..centroidCols] * pixelRes * (1/areaUnitAdjust)
+          ps1.surf <- geometry::convhulln(ps1, options = "FA")
+          
+          # get cells per area
+          # popDT()[, `:=` (pop.n = .N, pop.area = (.N/ps1.surf$vol)),
+          pointsDT(
+            popDT()[, .(pop.n = .N, pop.area = (.N/ps1.surf$vol)),
+                    by = .(uID, int.pop, pop)] %>% left_join(expInfo()))
         } else {
           if (.cciaStatsTypeIsCategorical(resultSummaryAxisY())) {
             # TODO data.table only version 
@@ -1006,7 +1047,7 @@
         popCats <- list()
         
         if (!is.null(popType())) {
-          popTypePops <- unname(cciaObj()$popPaths(popType(), includeFiltered = TRUE))
+          popTypePops <- unname(cciaObj()$popPaths(popType(), includeFiltered = TRUE, includeRoot = TRUE))
           popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
         }
         
@@ -1016,7 +1057,18 @@
         
         popTypeChoices <- cciaConf()$parameters$popTypes
         
-        # get choices for categories
+        # create choices for y axis
+        resultSummaryAxisYList <- popTypeCols
+        names(resultSummaryAxisYList) <- popTypeCols
+        
+        resultSummaryAxisYList <- append(
+          list(
+            "Population (%)" = "pop.freq",
+            "Population (cells per area)" = "pop.area"
+            ), resultSummaryAxisYList
+        )
+          
+        # add pop type cols
         
         # create ui elements
         tagList(fluidRow(
@@ -1082,7 +1134,7 @@
             createSelectInput(
               session$ns("resultSummaryAxisY"),
               label = "Y Axis",
-              choices = c("pop.freq", popTypeCols),
+              choices = resultSummaryAxisYList,
               multiple = FALSE,
               selected = isolate(resultSummaryAxisY())
               # selected = "live.cell.hmm.state.movement"
@@ -1094,6 +1146,20 @@
               choices = c("NONE", colnames(expInfo())),
               multiple = FALSE,
               selected = isolate(resultSummaryInteraction())
+            ),
+            createSelectInput(
+              session$ns("resultSummaryAreaType"),
+              label = "Area type",
+              choices = list(Area = "area", Volume = "volume"),
+              multiple = FALSE,
+              selected = isolate(resultSummaryAreaType())
+            ),
+            createSelectInput(
+              session$ns("resultSummaryAreaUnits"),
+              label = "Area units",
+              choices = c("mm", "μm"),
+              multiple = FALSE,
+              selected = isolate(resultSummaryAreaUnits())
             )
           )
         ))

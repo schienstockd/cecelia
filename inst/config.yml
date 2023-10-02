@@ -249,6 +249,7 @@ default:
       clusters: "categorical"
       regions: "categorical"
       pop.freq: "numeric"
+      pop.area: "numeric"
       live.cell.speed: "numeric"
       live.cell.angle: "numeric"
       live.cell.is.clust: "logical"
