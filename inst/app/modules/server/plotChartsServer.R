@@ -913,9 +913,6 @@
           # pointsDT()[, pop.freq := .SD$n1/sum(.SD$n1), by = .(uID)]
         } else if (resultSummaryAxisY() == "pop.area") {
           # get dimensions and pops
-          # TODO this assumes that all dimensions are the same
-          pixelRes <- cciaObj()$omeXMLPixelRes()
-          
           # get centroids
           if (resultSummaryAreaType() == "volume")
             centroidPattern <- "^centroid_(x|y|z)$"
@@ -924,7 +921,6 @@
           
           centroidCols <- str_match(names(popDT()), centroidPattern)
           centroidCols <- centroidCols[,1][!is.na(centroidCols[,1])]
-          pixelRes <- unlist(pixelRes[str_extract(centroidCols, "(?<=_).*")])
           
           # adjust for units
           # TODO other scales?
@@ -932,17 +928,25 @@
           if (resultSummaryAreaUnits() == "mm")
             areaUnitAdjust <- 1000
           
-          # get convex hull
-          # https://stackoverflow.com/a/41190160
-          # https://stackoverflow.com/a/59940985
-          ps1 <- popDT()[, ..centroidCols] * pixelRes * (1/areaUnitAdjust)
-          ps1.surf <- geometry::convhulln(ps1, options = "FA")
+          # go through images
+          # for (x in cciaSet()$cciaObjects(uIDs = selectedUIDs())) {
+          for (x in cciaSet()$cciaObjects(uIDs = unique(popDT()$uID))) {
+            pixelRes <- unlist(x()$omeXMLPixelRes()[str_extract(centroidCols, "(?<=_).*")])
+            
+            # get convex hull
+            # https://stackoverflow.com/a/41190160
+            # https://stackoverflow.com/a/59940985
+            ps1 <- popDT()[uID == x()$getUID(), ..centroidCols] * pixelRes * (1/areaUnitAdjust)
+            ps1.surf <- geometry::convhulln(ps1, options = "FA")
+            expInfo()[uID == x()$getUID(), tissue.area := ps1.surf$vol]
+          }
           
-          # get cells per area
-          # popDT()[, `:=` (pop.n = .N, pop.area = (.N/ps1.surf$vol)),
+          # set points
           pointsDT(
-            popDT()[, .(pop.n = .N, pop.area = (.N/ps1.surf$vol)),
-                    by = .(uID, int.pop, pop)] %>% left_join(expInfo()))
+            popDT()[ , .(pop.n = .N), by = .(uID, int.pop, pop)] %>%
+              dplyr::left_join(expInfo()) %>%
+              dplyr::mutate(pop.area = pop.n/tissue.area)
+            )
         } else {
           if (.cciaStatsTypeIsCategorical(resultSummaryAxisY())) {
             # TODO data.table only version 
