@@ -123,8 +123,6 @@ def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None, integr
   # add to order
   frame_slices['order'].insert(time_idx, 'T')
   
-  print('[[[]]]')
-  
   return frame_slices
 
 """
