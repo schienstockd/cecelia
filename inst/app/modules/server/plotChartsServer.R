@@ -1238,7 +1238,8 @@
         plotCharts = list(
           plotData = plotData,
           indvPlotData = indvPlotData,
-          summaryData = summaryData,
+          # summaryData = summaryData,
+          summaryData = pointsDT,
           summaryPlotData = summaryPlotData,
           plotData = plotData,
           numUIDs = numUIDs
