@@ -109,16 +109,21 @@ def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None, integr
     # https://stackoverflow.com/a/38099836/13766165
     frame_slices['slices'] = [x for x in frame_slices['slices'] for _ in time_vals]
     
+    # convert frame tuples to list
+    frame_slices['slices'] = [list(x) for x in frame_slices['slices']]
+    
     # combine slices with time
     for i, t in enumerate(range(time_vals[0], time_vals[-1] + 1)):
       for x in range(1, len_frame_slices + 1):
         frame_slices['slices'][(i + 1) * x - 1].insert(time_idx, slice(t, t + 1, 1))
-  
+        
   # convert back to tuples
   frame_slices['slices'] = [tuple(x) for x in frame_slices['slices']]
   
   # add to order
   frame_slices['order'].insert(time_idx, 'T')
+  
+  print('[[[]]]')
   
   return frame_slices
 
