@@ -1365,7 +1365,7 @@ createTaskManager <- function(
           runQueuedTasks()
         } else {
           # watch for job exit
-          createNewTask(uID, hpcExitOnly = TRUE, taskFunction = funName)
+          createNewTask(taskID, hpcExitOnly = TRUE, taskFunction = funName)
         }
       }
     } else {
