@@ -1320,8 +1320,8 @@ createTaskManager <- function(
     funModule <- sub("\\..*", "", taskFunction()) 
     jobstates <- jobstates[!is.na(stringr::str_match(jobstates, funModule))]
     
-    # get taskIDs
-    taskIDs <- c(stringr::str_match(
+    # get uIDs
+    uIDs <- c(stringr::str_match(
       jobstates,
       sprintf(
         "(?<=%s\\/%s/%s\\/)[:alnum:]{6}",
@@ -1340,32 +1340,40 @@ createTaskManager <- function(
     # get job files
     jobIDfiles <- stringr::str_match(jobstates, "/.*")
     
+    # get taskIDs
+    taskIDs <- stringr::str_extract(basename(jobIDfiles), "(?<=\\.)[0-9]+(?=\\.)")
+    
     # remove na
-    taskIDs <- taskIDs[!is.na(taskIDs)]
-    tfNames <- tfNames[!is.na(taskIDs)]
-    jobIDfiles <- jobIDfiles[!is.na(taskIDs)]
+    uIDs <- uIDs[!is.na(uIDs)]
+    tfNames <- tfNames[!is.na(uIDs)]
+    taskIDs <- taskIDs[!is.na(uIDs)]
+    jobIDfiles <- jobIDfiles[!is.na(uIDs)]
+    
+    # compile task IDs
+    taskIDs.compiled <- paste(uIDs, tfNames, taskIDs, sep = ".")
     
     # get cancelled jobs
     progress$set(message = "Get cancelled jobs ... ", value = 50)
     
-    cancelledIDs <- cancelledTaskIDs(taskIDs, jobIDfiles)
+    cancelledIDs <- cancelledTaskIDs(taskIDs.compiled, jobIDfiles)
     
     # resume jobs
     cancelledTasks <- list()
-    if (length(taskIDs) > 0) {
-      for (i in seq(length(taskIDs))) {
-        taskID <- taskIDs[i]
-        funName <- tfNames[i]
+    if (length(uIDs) > 0) {
+      for (i in seq(length(uIDs))) {
+        # taskID <- taskIDs[i]
+        uID <- uIDs[i]
+        taskID.compiled <- taskIDs.compiled[i]
         
         # was the job cancelled by the scheduler?
-        if (taskID %in% cancelledIDs) {
-          taskMonitorUtils()$getTask(taskID)$cancel()
+        if (taskID.compiled %in% cancelledIDs) {
+          taskMonitorUtils()$getTask(taskID.compiled)$cancel()
           
           # run next in queue
           runQueuedTasks()
         } else {
           # watch for job exit
-          createNewTask(taskID, hpcExitOnly = TRUE, taskFunction = funName)
+          createNewTask(uID, taskID = taskID.compiled, hpcExitOnly = TRUE)
         }
       }
     } else {
