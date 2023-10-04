@@ -1348,7 +1348,7 @@ createTaskManager <- function(
     # get cancelled jobs
     progress$set(message = "Get cancelled jobs ... ", value = 50)
     
-    cancelledIDs <- cancelledTaskIDs(taskID, jobIDfiles)
+    cancelledIDs <- cancelledTaskIDs(taskIDs, jobIDfiles)
     
     # resume jobs
     cancelledTasks <- list()
