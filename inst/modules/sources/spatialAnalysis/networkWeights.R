@@ -71,7 +71,7 @@ NetworkWeights <- R6::R6Class(
       branchDT[weight > weightUp, weight := weightUp] 
       
       # create a column and add to label props
-      cciaObj$labelProps(valueName = self$funParams()$valueName)$add_obs(
+      cciaObj$labelProps(valueName = paste0(self$funParams()$valueName, ".branch"))$add_obs(
         reticulate::r_to_py(list("branch-weight" = branchDT$weight))
       )$save()
       

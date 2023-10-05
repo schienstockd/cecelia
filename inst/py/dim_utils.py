@@ -262,7 +262,8 @@ class DimUtils:
     #   if self.is_timeseries() is True:
     if (drop_time is True and self.is_timeseries() is False) or (ignore_time is True and self.is_timeseries() is True):
     # if (drop_time is True and self.is_timeseries() is False) or ignore_time is True:
-        dim_order.pop(self.dim_idx('T', ignore_channel = ignore_channel))
+      t_idx = self.dim_idx('T', ignore_channel = ignore_channel)
+      if t_idx is not None: dim_order.pop(t_idx) 
         
     # drop z if not 3D?
     # TODO this is not clean

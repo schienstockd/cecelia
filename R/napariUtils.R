@@ -277,7 +277,7 @@ NapariUtils <- R6::R6Class(
               "show_label_ids = %s,",
               "show_tracks = %s,",
               "show_branching = %s,",
-              "branching_property = %s,",
+              "branching_property = '%s',",
               "as_np_array = %s,",
               "label_suffixes = %s,",
               "split_tracks = %s,",
