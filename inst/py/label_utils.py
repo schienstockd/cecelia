@@ -123,6 +123,7 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
     #   masks[i + 1] = istitch[masks[i + 1]]
     else:
       iou = iou > stitch_threshold
+      self.logfile_utils.log(np.array(iou.argmax(axis = 0)).shape)
       # x = np.array(iou.argmax(axis = 0))[0,:]
       x = np.array(iou.argmax(axis = 0))
       y = np.arange(0, x.size, 1, dtype = dtype)
