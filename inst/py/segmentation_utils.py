@@ -396,10 +396,6 @@ class SegmentationUtils:
           _, idx_pre = np.unique(alg_labels['base'], return_index = True)
           labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
           
-          self.logfile_utils.log(label_slices)
-          self.logfile_utils.log(labels['base'][label_slices].shape)
-          self.logfile_utils.log(alg_labels['base'].shape)
-          
           # get matches
           matched_masks = label_utils.match_masks(
             [labels['base'][label_slices], alg_labels['base']],
