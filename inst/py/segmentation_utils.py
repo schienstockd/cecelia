@@ -397,7 +397,7 @@ class SegmentationUtils:
           labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
           
           self.logfile_utils.log(label_slices)
-          self.logfile_utils.log(labels['base'][label_slices])
+          self.logfile_utils.log(labels['base'][label_slices].shape)
           self.logfile_utils.log(alg_labels['base'].shape)
           
           # get matches
