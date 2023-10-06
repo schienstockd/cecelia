@@ -2933,27 +2933,29 @@ CciaImage <- R6::R6Class(
         }
       }
       
-      # include measures?
-      if (includeMeasure == TRUE) {
-        # default to mean
-        if (is.null(attr(channelNames, "measure"))) {
-          attr(channelNames, "measure") <- "mean"
+      if (!is.null(channelNames)) {
+        # include measures?
+        if (includeMeasure == TRUE) {
+          # default to mean
+          if (is.null(attr(channelNames, "measure"))) {
+            attr(channelNames, "measure") <- "mean"
+          }
         }
-      }
-      
-      # remove names?
-      if (useNames == FALSE) {
-        names(channelNames) <- NULL
-      }
-      
-      # correct channel names?
-      if (correctChannelNames == TRUE) {
-        channelNames <- .flowCorrectChannelNames(channelNames)
-      }
-      
-      # remove attributes?
-      if (rmAttr == TRUE) {
-        attributes(channelNames) <- NULL
+        
+        # remove names?
+        if (useNames == FALSE) {
+          names(channelNames) <- NULL
+        }
+        
+        # correct channel names?
+        if (correctChannelNames == TRUE) {
+          channelNames <- .flowCorrectChannelNames(channelNames)
+        }
+        
+        # remove attributes?
+        if (rmAttr == TRUE) {
+          attributes(channelNames) <- NULL
+        }
       }
       
       channelNames
