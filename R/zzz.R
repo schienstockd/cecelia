@@ -262,14 +262,15 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   
   # init conda
   if (initConda == TRUE && !purrr::is_empty(pkg.env$cfg$python$conda$env)) {
-    if (!is.null(minicondaPath))
-      Sys.setenv(RETICULATE_MINICONDA_PATH = minicondaPath)
     if (!is.null(condaEnvsPath))
       Sys.setenv(CONDA_ENVS_PATH = condaEnvsPath)
     
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
-    reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
+    if (!is.null(minicondaPath))
+      reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE, conda = minicondaPath)
+    else
+      reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
   
     # init jupyter
     if (initJupyter == TRUE) {
