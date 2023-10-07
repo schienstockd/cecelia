@@ -132,7 +132,7 @@ conda install -c conda-forge libstdcxx-ng=12
 You have to adjust the parameters in `~/path/to/cecelia/custom.yml` to your system.
 You need download/install:
 
-- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.4.0/bioformats2raw-0.4.0.zip)
+- [`bioformats2raw`](https://github.com/glencoesoftware/bioformats2raw/releases/download/v0.6.1/bioformats2raw-0.6.1.zip)
 
 - [`ImageJ`](https://imagej.net/imagej-wiki-static/Fiji/Downloads) if using Spot segmentation
 

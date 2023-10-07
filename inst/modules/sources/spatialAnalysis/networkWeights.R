@@ -63,12 +63,21 @@ NetworkWeights <- R6::R6Class(
 
       # get frequency of cells close to branches
       branchDT[, weight := 0]
-      branchDT[
-        label %in% unique(popDT[branch.dist < self$funParams()$maxDist]$branch.id),
-        weight := table(popDT[branch.dist < self$funParams()$maxDist, c("branch.id")])]
       
-      weightUp <- quantile(branchDT$weight, self$funParams()$upperPercentile/100)
-      branchDT[weight > weightUp, weight := weightUp] 
+      # branchWeights <- unique(popDT[branch.dist <= maxDist, c("branch.id", "track_id")]) %>%
+      # branchWeights <- popDT[branch.dist <= self$funParams()$maxDist, c("branch.id", "track_id")] %>%
+      branchWeights <- popDT[branch.dist <= self$funParams()$maxDist, c("branch.id", "label")] %>%
+        dplyr::group_by(branch.id) %>%
+        summarise(n = n())
+      
+      branchDT[
+        # label %in% unique(popDT[branch.dist < self$funParams()$maxDist]$branch.id),
+        label %in% branchWeights$branch.id,
+        # weight := table(popDT[branch.dist < self$funParams()$maxDist, c("branch.id")])]
+        weight := branchWeights$n]
+
+      # weightUp <- quantile(branchDT$weight, self$funParams()$upperPercentile/100)
+      # branchDT[weight > weightUp, weight := weightUp] 
       
       # create a column and add to label props
       cciaObj$labelProps(valueName = paste0(self$funParams()$valueName, ".branch"))$add_obs(

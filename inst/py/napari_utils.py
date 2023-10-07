@@ -563,10 +563,12 @@ class NapariUtils:
           
           # add branching?
           if show_branching is True and value_name.endswith('.branch'):
-            if branching_property == 'type':
-              percentile = 100
-            else:
-              percentile = 99.5
+            # if branching_property == 'type':
+            #   percentile = 100
+            # else:
+            #   percentile = 99.5
+              
+            percentile = 100
             
             chnl_scale = 255
             branching_property_col = f'branch-{branching_property}'

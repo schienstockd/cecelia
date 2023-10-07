@@ -27,7 +27,7 @@ python-fcl
 cpython
 stardist
 # for cellpose
-mxnet
+# mxnet
 torch
 torchvision
 torchaudio

@@ -18,7 +18,6 @@ import skimage.segmentation
 
 # cellpose specifics
 from cellpose import models
-import mxnet as mx
 import torch
 
 class CellposeUtils(SegmentationUtils):

@@ -22,13 +22,6 @@
           "max": 50,
           "default": 10
         }
-      },
-      "upperPercentile": {
-        "type:double": {
-          "min": 80,
-          "max": 100,
-          "default": 99
-        }
       }
     },
     "outputs": {}
@@ -57,13 +50,6 @@
         "label": "Maximum distance",
         "widget:slider": {
           "step": 0.5
-        }
-      },
-      "upperPercentile": {
-        "index": 3,
-        "label": "Percentile",
-        "widget:slider": {
-          "step": 0.05
         }
       }
     },

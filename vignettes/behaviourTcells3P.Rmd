@@ -71,7 +71,20 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE 
+)
+
+cciaObj$imChannelNames()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "DkSYMM", versionID = versionID, initReactivity = FALSE 
 )
 
 # branchDT <- as.data.table(cciaObj$labelProps(valueName = "SHG.branch")$as_df())
@@ -81,7 +94,8 @@ branchDT <- cciaObj$popDT(
   "branch", includeFiltered = TRUE, completeDT = TRUE,
   completeValueNames = "SHG.branch",
   pops = unlist(unname(cciaObj$popPaths("branch", includeFiltered = TRUE, includeRoot = FALSE))))
-popDT <- cciaObj$popDT("live", includeFiltered = TRUE, pops = "P14-CTDR/tracked")
+# popDT <- cciaObj$popDT("live", includeFiltered = TRUE, pops = "P14-CTDR/tracked")
+popDT <- cciaObj$popDT("live", includeFiltered = TRUE, pops = "OTI/tracked")
 ```
 
 ```{r}
@@ -104,33 +118,13 @@ popDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
 ```
 
 ```{r}
-# HMM
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
+unique(popDT[branch.dist < maxDist, c("branch.id", "track_id")])
 
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # Tcells
-)
-
-# run task
-funParams <- list(
-  popType = "live",
-  valueName = "SHG",
-  pops = c("P14-CTDR/tracked"),
-  maxDist = 5,
-  upperPercentile = 99.5
-)
-
-# run task
-task <- cciaObj$runTask(
-  funName = "spatialAnalysis.networkWeights",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1
-)
+(unique(popDT[branch.dist < maxDist, c("branch.id", "track_id")]) %>%
+  dplyr::group_by(branch.id) %>%
+  summarise(n = n()))$n
 ```
+
 
 ```{r}
 # get frequency of T cells close to branches
@@ -156,6 +150,36 @@ ggplot(branchDT, aes(centroid_x, -centroid_y, color = weight)) +
 ggsave(file.path(anaDir, "weights.png"), width = 5, height = 5)
 ```
 
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # Tcells
+  pID = pID, uID = "DkSYMM", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# run task
+funParams <- list(
+  popType = "live",
+  valueName = "SHG",
+  # pops = c("P14-CTDR/tracked"),
+  pops = c("OTI/tracked"),
+  maxDist = 5,
+  upperPercentile = 99.5
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.networkWeights",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
 
 ```{r}
 devtools::load_all("../")
