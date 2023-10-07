@@ -288,8 +288,9 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
 }
 
 #' @description Create app
+#' @param keepExe boolean to keep '.sh' from previous
 #' @export
-cciaCreateApp <- function() {
+cciaCreateApp <- function(keepExe = FALSE) {
   # copy all files to project directory
   copyPrevious <- FALSE
   
@@ -339,6 +340,13 @@ cciaCreateApp <- function() {
       file.path(cciaPath(), "app"),
       recursive = TRUE
     )
+    if (keepExe == TRUE) {
+      file.copy(
+        file.path(cciaPath(), "app.bak", "cecelia-macOSX.sh"),
+        file.path(cciaPath(), "app"),
+        recursive = TRUE
+      )
+    }
   }
 }
 
