@@ -575,10 +575,12 @@ readLogFile <- function(logFile, previousContent = NULL, mergeContent = TRUE) {
     output <- c(previousContent, logContent)
     
     # remember attributes
-    attr(output, "state") <- logSize
-    attr(output, "lineReads") <- lineReads
-    attr(output, "updated") <- TRUE
-    attr(output, "updatedContent") <- logContent
+    if (!is.null(output)) {
+      attr(output, "state") <- logSize
+      attr(output, "lineReads") <- lineReads
+      attr(output, "updated") <- TRUE
+      attr(output, "updatedContent") <- logContent
+    }
   }
   
   output
