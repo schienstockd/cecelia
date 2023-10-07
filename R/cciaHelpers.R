@@ -556,7 +556,7 @@ readLogFile <- function(logFile, previousContent = NULL, mergeContent = TRUE) {
     # if (file.exists(logFile))
     logContent <- NULL
     try({
-      logContent <- read_lines(logFile, skip = prevLineReads)
+      logContent <- readr::read_lines(logFile, skip = prevLineReads)
     })
     
     # remember lines

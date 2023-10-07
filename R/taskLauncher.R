@@ -312,7 +312,7 @@ TaskLauncher <- R6::R6Class(
         createDir = FALSE)
       
       if (readLog == TRUE) {
-        read_lines(self$taskLogFile())
+        readr::read_lines(self$taskLogFile())
       }
     },
     

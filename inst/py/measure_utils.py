@@ -267,16 +267,18 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   
   # get centroid indicies with regards to image dimension
   centroid_idx = {x: dim_utils.dim_idx(
-    x, ignore_channel = True, ignore_time = True, squeeze = True) for x in ('X', 'Y', 'Z')}
-  centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
+    x, ignore_channel = True, ignore_time = True, drop_time = True, squeeze = True) for x in ('X', 'Y', 'Z')}
   
   # reverse lookup for centroid and slice indicies
   slice_idx = {
     dim_utils.dim_idx(
-      x, ignore_channel = True, ignore_time = True, squeeze = True
+      x, ignore_channel = True, ignore_time = True, drop_time = True, squeeze = True
       ): dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True
       ) for x in ('X', 'Y', 'Z')
     }
+    
+  centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
+  slice_idx = {i: x for i, x in slice_idx.items() if i is not None}
     
   # get image scale
   im_scale = dim_utils.im_scale(dims = ['X', 'Y', 'Z'])
@@ -632,6 +634,8 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     centroid_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('centroid')]
     bbox_min_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_min')]
     bbox_max_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_max')]
+    
+    logfile_utils.log(centroid_cols)
     
     # add values from current slices to centroid and bbox
     # https://stackoverflow.com/a/27275479/13766165
