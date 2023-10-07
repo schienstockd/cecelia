@@ -221,12 +221,11 @@ cciaModels <- function(dlModels = c(
 #' @param sourceConda boolean to source conda files
 #' @param projectsDir character to define project directory of cecelia
 #' @param minicondaPath character to define miniconda path
-#' @param condaEnvsPath character to define conda envs path
 #' @export
 cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
                     jupyterConnectionFile = NULL, jupyterLibDir = NULL,
                     sourceConda = TRUE, projectsDir = NULL, localPath = TRUE,
-                    minicondaPath = NULL, condaEnvsPath = NULL) {
+                    minicondaPath = NULL) {
   # set path in environment
   pkg.env$path <- path
   
@@ -262,15 +261,12 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
   
   # init conda
   if (initConda == TRUE && !purrr::is_empty(pkg.env$cfg$python$conda$env)) {
-    if (!is.null(condaEnvsPath))
-      Sys.setenv(CONDA_ENVS_PATH = condaEnvsPath)
+    if (!is.null(minicondaPath))
+      Sys.setenv(RETICULATE_MINICONDA_PATH = minicondaPath)
     
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
-    if (!is.null(minicondaPath))
-      reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE, conda = minicondaPath)
-    else
-      reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
+    reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
   
     # init jupyter
     if (initJupyter == TRUE) {
