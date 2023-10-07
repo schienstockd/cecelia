@@ -102,6 +102,33 @@ brew install qt5
 brew link qt5 --force
 ```
 
+- If PyQt5 hangs at preparing metadata, then do the following:
+
+``` bash
+brew install sip
+. ~/Library/r-miniconda-arm64/etc/profile.d/conda.sh
+conda activate r-cecelia-env
+pip install pyqt5 --config-settings --confirm-license= --verbose
+```
+
+- `ld: library 'crypto' not found`
+
+- see SO answers [here](https://stackoverflow.com/a/67869667) and
+  [here](https://apple.stackexchange.com/a/434369)
+
+``` bash
+brew install openssl
+```
+
+Then, set the following in R before trying to run the install command
+again
+
+``` r
+Sys.setenv(LIBRARY_PATH="/opt/homebrew/lib")
+Sys.setenv(LDFLAGS="-L/opt/homebrew/lib")
+Sys.setenv(CPPFLAGS="-I/opt/homebrew/include")
+```
+
 - MPS for Cellpose works but some adjustment are not in the main branch
   yet:
 

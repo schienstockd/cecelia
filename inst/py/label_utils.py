@@ -123,10 +123,11 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
     #   masks[i + 1] = istitch[masks[i + 1]]
     else:
       iou = iou > stitch_threshold
-      if len(x.shape) > 0:
-        x = np.array(iou.argmax(axis = 0))[0,:]
-      else:
-        x = np.array(iou.argmax(axis = 0))
+      # x = np.array(iou.argmax(axis = 0))[0,:]
+      x = np.array(iou.argmax(axis = 0))
+      if len(x.shape) > 1:
+        x = x[0,:]
+      
       y = np.arange(0, x.size, 1, dtype = dtype)
       z = iou.max(axis = 0).toarray()[0,:]
       iou = coo_array((z, (x, y)), shape = (len(x), len(y)))
