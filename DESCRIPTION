@@ -78,8 +78,7 @@ Imports:
     DescTools,
     depmixS4,
     ggrepel,
-    geometry,
-    readr
+    geometry
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.1
