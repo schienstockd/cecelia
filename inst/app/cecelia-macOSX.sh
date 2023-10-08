@@ -1,14 +1,16 @@
 #!/bin/bash
 # params
-if [ -d ~/opt/anaconda3 ]; then
-  CONDA_DIR=~/opt/anaconda3
-elif [ -d ~/anaconda3 ]; then
-  CONDA_DIR=~/anaconda3
-elif [ -d ~/opt/miniconda3 ]; then
-  CONDA_DIR=~/opt/miniconda3
-elif [ -d ~/miniconda3 ]; then
-  CONDA_DIR=~/miniconda3
-fi
+# if [ -d ~/opt/anaconda3 ]; then
+#   CONDA_DIR=~/opt/anaconda3
+# elif [ -d ~/anaconda3 ]; then
+#   CONDA_DIR=~/anaconda3
+# elif [ -d ~/opt/miniconda3 ]; then
+#   CONDA_DIR=~/opt/miniconda3
+# elif [ -d ~/miniconda3 ]; then
+#   CONDA_DIR=~/miniconda3
+# elif [ -d /opt/miniconda3 ]; then
+#   CONDA_DIR=/opt/miniconda3
+# fi
 
 CONDA_ENV=r-cecelia-env
 # https://stackoverflow.com/a/70861080
@@ -25,9 +27,9 @@ R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR'
 export KMP_DUPLICATE_LIB_OK=TRUE
 echo $R_CALL
 
-# init conda
-. $CONDA_DIR/bin/activate
-conda activate $CONDA_ENV
+# # init conda
+# . $CONDA_DIR/bin/activate
+# conda activate $CONDA_ENV
 
 # run cecelia
 R -e $R_CALL

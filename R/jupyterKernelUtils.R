@@ -45,6 +45,10 @@ JupyterKernelUtils <- R6::R6Class(
         writeLines(c(""), f)
         close(f)
         
+        # TODO change permissions
+        # otherwise this cannot run on a shared computer
+        Sys.chmod(connectionFile, "777", use_umask = FALSE)
+        
         # start kernel in separate process
         private$setKernelProcess(
           parallel::mcparallel({
