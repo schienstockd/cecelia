@@ -15,12 +15,14 @@ fi
 CONDA_ENV=r-cecelia-env
 # https://stackoverflow.com/a/70861080
 CECELIA_DIR="$(cd "$(dirname "$0")/.." > /dev/null 2>&1 || exit; pwd -P)"
+CECELIA_PORT=686$((1 + $RANDOM % 9))
+
 # R_CALL="library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaCreateApp();cciaRunApp(port=6860,launch.browser=TRUE)"
 # R_CALL="library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=6860,launch.browser=TRUE)"
 # TODO flowCore load flowCore first, otherwise there is an issue with
 # different versions of Protobuf
 # TODO get 'bad value' in vroom if not loaded before
-R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=6860,launch.browser=TRUE)"
+R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
 
 # OMP: Error #15: Initializing libiomp5.dylib, but found libomp.dylib already initialized.
 # https://github.com/dmlc/xgboost/issues/1715#issuecomment-438924721
