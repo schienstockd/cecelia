@@ -420,10 +420,13 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   remotes::install_github("rglab/ggcyto", upgrade = "never", ...)
 }
 
-#' @description Install bioconductor requirements
-#' @param ncpus number of parallel processes
-#' @param ... passed to BiocManager::install
+#' @description Apply patches
 #' @export
-cciaBiocRequirements <- function(ncpus = 4, ...) {
-  
+cciaApplyPatches <- function() {
+  # Cellpose path for MPS
+  # https://github.com/MouseLand/cellpose/pull/668
+  file.copy(
+    list.files(system.file(
+      file.path("patches", "cellpose"), package = "cecelia"), full.names = TRUE),
+    file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"))
 }

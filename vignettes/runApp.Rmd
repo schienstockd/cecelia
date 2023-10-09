@@ -27,6 +27,19 @@ cciaRunApp(port = 6865, localPath = FALSE)
 # cciaRunApp(port = 6866)
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+cciaApplyPatches()
+```
+
+
 
 ```{r}
 a <- readRDS("/Volumes/USER_data/Dominik/CECELIA_BACKUP/ZOE/4e268db5d87fd405/values.rds")
