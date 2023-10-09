@@ -423,10 +423,13 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
 #' @description Apply patches
 #' @export
 cciaApplyPatches <- function() {
+  browser()
+  
   # Cellpose path for MPS
   # https://github.com/MouseLand/cellpose/pull/668
-  file.copy(
-    list.files(system.file(
-      file.path("patches", "cellpose"), package = "cecelia"), full.names = TRUE),
-    file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"))
+  from <- list.files(system.file(
+    file.path("patches", "cellpose"), package = "cecelia"), full.names = TRUE)
+  to <- rep(file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"),
+            length(from))
+  file.copy(from, to)
 }
