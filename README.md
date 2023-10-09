@@ -130,18 +130,11 @@ Sys.setenv(CPPFLAGS="-I/opt/homebrew/include")
 ```
 
 - MPS for Cellpose works but some adjustment are not in the main branch
-  yet:
+  yet. Run `cciaApplyPatches` to apply patches for MPS.
 
-You can make the changes from this [pull
-request](https://github.com/MouseLand/cellpose/pull/668) or you can copy
-
-- [core.py](inst/patches/cellpose/core.py)
-
-- [dynamics.py](inst/patches/cellpose/dynamics.py)
-
-into
-
-`~/Library/r-miniconda/envs/r-cecelia-env/lib/python3.9/site-packages/cellpose/`
+``` r
+cciaApplyPatches()
+```
 
 You need at least Ventura 13.2 and XCode 13.2 for pyTorch to work with
 MPS GPU in this case ([Github
