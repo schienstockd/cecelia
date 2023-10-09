@@ -25,7 +25,10 @@ cciaPath <- function() {
 #' @description Expose path
 #' @export
 cciaCondaPath <- function() {
-  file.path(reticulate::miniconda_path(),
+  # TODO otherwise this will end up in the wrong path
+  # if miniconda is in a different directory
+  # file.path(reticulate::miniconda_path(),
+  file.path(dirname(dirname(reticulate::conda_binary())),
             "envs", pkg.env$cfg$python$conda$env)
 }
 
