@@ -46,14 +46,13 @@ Remove <- R6::R6Class(
       self$writeLog(paste("Remove", imPath))
       unlink(imPath, recursive = TRUE)
       
-      # reset image information
-      cciaObj$setImFilepath(NULL, valueName = valueName)
-      cciaObj$setImChannelNames(NULL, valueName = valueName)
-      
-      # set new default
+      # reset image information and set new default
       # TODO there should be a method for this
+      cciaObj$setImFilepath(NULL, valueName = valueName)
       cciaObj$setImFilepath(
         basename(cciaObj$imFilepath(valueName = newDefault)), valueName = newDefault)
+      
+      cciaObj$setImChannelNames(NULL, valueName = valueName)
       cciaObj$setImChannelNames(
         cciaObj$imChannelNames(valueName = newDefault), valueName = newDefault)
       
