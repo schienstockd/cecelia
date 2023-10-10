@@ -57,7 +57,7 @@ def run(params):
 
   # call stardist on highest resolution
   mesmer_utils = MesmerUtils(seg_params)
-  labels = mesmer_utils.predict(im_dat[0], nscales = len(im_dat))
+  labels = mesmer_utils.predict(im_dat)
 
 def main():
   # get params

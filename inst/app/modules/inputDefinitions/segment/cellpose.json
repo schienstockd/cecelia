@@ -235,6 +235,11 @@
 				"type:boolean": {
 					"default": false
 				}
+			},
+			"normaliseToWhole": {
+				"type:boolean": {
+					"default": false
+				}
 			}
     },
     "outputs": {}
@@ -513,6 +518,12 @@
 			"integrateTime": {
 				"index": 25,
 				"label": "Integrate time",
+				"widget:checkbox": {
+				}
+			},
+			"normaliseToWhole": {
+				"index": 26,
+				"label": "Normalise to whole",
 				"widget:checkbox": {
 				}
 			}

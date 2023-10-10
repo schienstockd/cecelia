@@ -20,14 +20,17 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-pID <- "8BR53W"
+# pID <- "8BR53W"
+pID <- "CV5iNI"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
 ```
 
 ```{r}
@@ -37,10 +40,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "rRdGxB", versionID = versionID, initReactivity = FALSE # Tumour
-  pID = pID, uID = "b8Gxip", versionID = versionID, initReactivity = FALSE # Tumour
+  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour
 )
 
-cciaObj$omeXMLTimelapseInfo()
+cciaObj$oriFilepath()
 ```
 
 ```{r}

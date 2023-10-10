@@ -60,7 +60,7 @@ def run(params):
 
   # call stardist on highest resolution
   sd = StarDistUtils(seg_params)
-  labels = sd.predict(im_dat[0], nscales = len(im_dat))
+  labels = sd.predict(im_dat)
 
 def main():
   # get params

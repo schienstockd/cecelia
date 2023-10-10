@@ -57,6 +57,7 @@ def run(params):
     'extended_measures': params['extendedMeasures'] if 'extendedMeasures' in params else False,
     'calc_median_intensities': params['calcMedianIntensities'] if 'calcMedianIntensities' in params else False,
     'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
+    'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False,
     'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,
     'clear_touching_border': params['clearTouchingBorder'] if 'clearTouchingBorder' in params else False,
     'rank_labels': params['rankLabels'] if 'rankLabels' in params else True,
@@ -65,7 +66,8 @@ def run(params):
 
   # call cellpose on highest resolution
   cp = CellposeUtils(seg_params)
-  labels = cp.predict(im_dat[0], nscales = len(im_dat))
+  # labels = cp.predict(im_dat[0], nscales = len(im_dat))
+  labels = cp.predict(im_dat)
 
 def main():
   # get params

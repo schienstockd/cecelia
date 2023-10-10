@@ -44,7 +44,7 @@ class MorphoWatershedUtils(SegmentationUtils):
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, dat_slices):
+  def predict_slice(self, im_dat, dat_slices, norm_im = None):
     # add channel to slices for data
     dat_slices = list(dat_slices)
     dat_slices[self.dim_utils.dim_idx("C")] = slice(

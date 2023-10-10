@@ -62,7 +62,7 @@ def run(params):
 
   # run segmentation
   morpho_utils = MorphoWatershedUtils(params)
-  labels = morpho_utils.predict(im_dat[0])
+  labels = morpho_utils.predict(im_dat)
 
 def main():
   # get params

@@ -68,7 +68,7 @@ def run(params):
 
   # call stardist on highest resolution
   donblo_utils = DonbloUtils(seg_params)
-  labels = donblo_utils.predict(im_dat[0], nscales = len(im_dat))
+  labels = donblo_utils.predict(im_dat)
 
 def main():
   # get params

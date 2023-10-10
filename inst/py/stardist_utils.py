@@ -43,7 +43,7 @@ class StarDistUtils(SegmentationUtils):
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, dat_slices):
+  def predict_slice(self, im_dat, dat_slices, norm_im = None):
     # add channel
     dat_slices = list(dat_slices)
     dat_slices[self.dim_utils.dim_idx("C")] = self.nuclei_channels

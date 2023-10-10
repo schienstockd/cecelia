@@ -38,7 +38,7 @@ class DonbloUtils(SegmentationUtils):
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, im_slices):
+  def predict_slice(self, im_dat, im_slices, norm_im = None):
     cur_im_dat = im_dat[im_slices]
     cur_im_path = os.path.join(self.task_dir, 'donblo_tmp.tif')
     cur_seg_path = os.path.join(self.task_dir, 'donblo_tmp.seg.tif')

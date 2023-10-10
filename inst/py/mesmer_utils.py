@@ -46,7 +46,7 @@ class MesmerUtils(SegmentationUtils):
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, dat_slices):
+  def predict_slice(self, im_dat, dat_slices, norm_im = None):
     # create training image
     # Mesmer expects [batch, X, Y, channels]
     # it requires two channels - nucleus and cytoplasm/membrane

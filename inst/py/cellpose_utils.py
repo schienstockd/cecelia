@@ -93,7 +93,7 @@ class CellposeUtils(SegmentationUtils):
   """
   Prepare im for run
   """
-  def prepare_im(self, im, model_params, normalise_percentile = 99.9):
+  def prepare_im(self, im, model_params, normalise_percentile = 99.9, norm_im = None):
     # apply threshold?
     if 'threshold' in model_params.keys() and model_params['threshold'][0] > 0:
       im[im < model_params['threshold'][0]] = model_params['threshold'][0]
@@ -134,8 +134,12 @@ class CellposeUtils(SegmentationUtils):
     # normalise image
     if normalise_percentile > 0:
       # get min/max values for channels
-      max_percentile = np.percentile(im_to_predict, normalise_percentile)
-      min_percentile = np.percentile(im_to_predict, 100 - normalise_percentile)
+      if norm_im is None:
+        max_percentile = np.percentile(im_to_predict, normalise_percentile)
+        min_percentile = np.percentile(im_to_predict, 100 - normalise_percentile)
+      else:
+        max_percentile = np.percentile(norm_im, normalise_percentile)
+        min_percentile = np.percentile(norm_im, 100 - normalise_percentile)
       
       # calculate relative values
       im_to_predict = (im_to_predict - min_percentile) / (max_percentile - min_percentile)
@@ -191,7 +195,7 @@ class CellposeUtils(SegmentationUtils):
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, dat_slices):
+  def predict_slice(self, im_dat, dat_slices, norm_im = None):
     cur_im_dat = im_dat[dat_slices]
     t_idx = self.dim_utils.dim_idx('T', ignore_channel = True)
     c_idx = self.dim_utils.dim_idx('C', ignore_time = self.integrate_time)
@@ -212,6 +216,16 @@ class CellposeUtils(SegmentationUtils):
       label_shape.pop(t_idx)
     
     label_shape = tuple(label_shape)
+    
+    if norm_im is None:
+      norm_shape = list(norm_im.shape)
+      norm_shape.pop(c_idx)
+      
+      if self.dim_utils.is_timeseries() and self.integrate_time is False:
+        # remove time if present
+        norm_shape.pop(t_idx)
+      
+      norm_shape = tuple(norm_shape)
 
     # save masks in list
     model_masks = {
@@ -229,8 +243,11 @@ class CellposeUtils(SegmentationUtils):
       self.logfile_utils.log(x['cellChannels'])
       
       if len(x['cellChannels']) > 0:
+        # TODO this should be one function call for both zero and norm image
         im = np.zeros(label_shape, dtype = np.uint32)
         nuc_im = None
+        norm_cyto_im = None
+        norm_nuc_im = None
         
         for y in x['cellChannels']:
           im = np.maximum(
@@ -243,6 +260,22 @@ class CellposeUtils(SegmentationUtils):
           for y in x['nucChannels']:
             nuc_im = np.maximum(
               nuc_im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
+              
+        # prepare normalisation image
+        if norm_im is not None:
+          norm_cyto_im = np.zeros(norm_shape, dtype = np.uint32)
+          
+          for y in x['cellChannels']:
+            norm_cyto_im = np.maximum(
+              norm_cyto_im, np.squeeze(np.take(norm_im, y, axis = c_idx)))
+                
+          # add nuclei channel?
+          if len(x['nucChannels']) > 0:
+            norm_nuc_im = np.zeros(norm_shape, dtype = np.uint32)
+            
+            for y in x['nucChannels']:
+              norm_nuc_im = np.maximum(
+                norm_nuc_im, np.squeeze(np.take(norm_im, y, axis = c_idx)))
 
         cell_diameter = x['cellDiameter'][0]
         # normalise_intensity = x['normalise'][0]
@@ -263,7 +296,8 @@ class CellposeUtils(SegmentationUtils):
         channels = [0, 0]
         channel_axis = None
         z_axis = None
-        im_to_predict = self.prepare_im(im, x, normalise_percentile = normalise_percentile)
+        im_to_predict = self.prepare_im(
+          im, x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
         nuc_im_to_predict = None
         
         if self.dim_utils.is_3D():
@@ -271,7 +305,8 @@ class CellposeUtils(SegmentationUtils):
           z_axis = 0
         
         if nuc_im is not None:
-          nuc_im_to_predict = self.prepare_im(nuc_im, x, normalise_percentile = normalise_percentile)
+          nuc_im_to_predict = self.prepare_im(
+            nuc_im, x, normalise_percentile = normalise_percentile, norm_im = norm_nuc_im)
           
           # add nucleus channel to image
           im_to_predict = np.stack((im_to_predict, nuc_im_to_predict), axis = -1)

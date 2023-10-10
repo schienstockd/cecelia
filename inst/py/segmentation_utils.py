@@ -44,6 +44,7 @@ class SegmentationUtils:
     self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
     self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     self.integrate_time = script_utils.get_param(params, 'integrate_time', default = False)
+    self.normalise_to_whole = script_utils.get_param(params, 'normalise_to_whole', default = False)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -121,7 +122,10 @@ class SegmentationUtils:
   """
   Predict objects
   """
-  def predict(self, im_dat, nscales = 1):
+  def predict(self, im_dat):
+    # get scales
+    nscales = len(im_dat)
+    
     if self.process_as_zarr is True:
       if self.segment is True:
         labels = self.predict_from_zarr(im_dat)
@@ -163,7 +167,7 @@ class SegmentationUtils:
         self.logfile_utils.log('Measure labels')
         
         props = measure_utils.measure_from_zarr(
-          labels, im_dat, self.dim_utils, self.logfile_utils,
+          labels, im_dat[0], self.dim_utils, self.logfile_utils,
           block_size = self.block_size, overlap = self.overlap,
           context = self.context,
           clear_touching_border = self.clear_touching_border,
@@ -212,7 +216,7 @@ class SegmentationUtils:
       #   self.logfile_utils.log('Find contours')
       # 
       #   label_contours = measure_utils.countours_2D_from_zarr(
-      #     labels, im_dat, self.dim_utils, self.logfile_utils,
+      #     labels, im_dat[0], self.dim_utils, self.logfile_utils,
       #     block_size = self.block_size, overlap = self.overlap,
       #     context = self.context
       #   )
@@ -229,8 +233,8 @@ class SegmentationUtils:
   """
   def predict_from_zarr(self, im_dat):
     # init shape and chunks
-    zarr_shape = list(im_dat.shape)
-    zarr_chunks = list(zarr_utils.chunks(im_dat))
+    zarr_shape = list(im_dat[0].shape)
+    zarr_chunks = list(zarr_utils.chunks(im_dat[0]))
 
     zarr_shape.pop(self.dim_utils.dim_idx('C'))
     zarr_chunks.pop(self.dim_utils.dim_idx('C'))
@@ -274,6 +278,11 @@ class SegmentationUtils:
     else:
       clear_borders = len(slices) > 1
     
+    # TODO get intensities for whole image from lowest res?
+    norm_im = None
+    if self.normalise_to_whole is True:
+      norm_im = im_dat[-1]
+    
     # go through slices
     for i, cur_slices in enumerate(slices):
       self.logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
@@ -290,13 +299,13 @@ class SegmentationUtils:
       
       # add channel back for slice prediction
       dat_slices = cur_slices
-      if len(cur_slices) < len(im_dat.shape):
+      if len(cur_slices) < len(im_dat[0].shape):
         dat_slices = list(cur_slices)
         dat_slices.insert(self.dim_utils.dim_idx('C'), slice(None))
         dat_slices = tuple(dat_slices)
       
       # call segmentation implementation
-      alg_labels = self.predict_slice(im_dat, dat_slices)
+      alg_labels = self.predict_slice(im_dat[0], dat_slices, norm_im = norm_im)
       
       if alg_labels is not None:
         for j in alg_labels.keys():
@@ -476,5 +485,5 @@ class SegmentationUtils:
   """
   Predict slice
   """
-  def predict_slice(self, im_dat, im_slices):
+  def predict_slice(self, im_dat, im_slices, norm_im = None):
     pass
