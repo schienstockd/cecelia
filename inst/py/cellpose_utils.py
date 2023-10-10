@@ -217,7 +217,7 @@ class CellposeUtils(SegmentationUtils):
     
     label_shape = tuple(label_shape)
     
-    if norm_im is None:
+    if norm_im is not None:
       norm_shape = list(norm_im.shape)
       norm_shape.pop(c_idx)
       
