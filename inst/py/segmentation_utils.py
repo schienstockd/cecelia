@@ -254,8 +254,8 @@ class SegmentationUtils:
     labels = dict()
     for i, x in self.labels_paths.items():
       # remove directory if present
-      if os.path.exists(x):
-        shutil.rmtree(x)
+      # if os.path.exists(x):
+      #   shutil.rmtree(x)
       
       # does it mak a difference to open as dask?
       # TODO How do I create labels in dask and write as dask?
