@@ -98,6 +98,7 @@ Cellpose <- R6::R6Class(
         extendedMeasures = self$funParams()$extendedMeasures,
         calcMedianIntensities = self$funParams()$calcMedianIntensities,
         integrateTime = self$funParams()$integrateTime,
+        integrateTimeMode = if ("integrateTimeMode" %in% names(self$funParams())) self$funParams()$integrateTimeMode else "max",
         normaliseToWhole = self$funParams()$normaliseToWhole
       )
       

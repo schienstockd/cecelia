@@ -236,6 +236,11 @@
 					"default": false
 				}
 			},
+			"integrateTimeMode": {
+        "type:character": {
+          "default": "max"
+        }
+			},
 			"normaliseToWhole": {
 				"type:boolean": {
 					"default": true
@@ -521,8 +526,20 @@
 				"widget:checkbox": {
 				}
 			},
-			"normaliseToWhole": {
+			"integrateTimeMode": {
 				"index": 26,
+				"label": "Integration mode",
+        "widget:selection": {
+          "size": 1,
+          "multiple": false,
+          "items": {
+            "Maximum": "max",
+            "Average": "avg"
+  				}
+        }
+			},
+			"normaliseToWhole": {
+				"index": 27,
 				"label": "Normalise to whole",
 				"widget:checkbox": {
 				}

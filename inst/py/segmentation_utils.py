@@ -44,6 +44,7 @@ class SegmentationUtils:
     self.label_suffixes = script_utils.get_param(params, 'label_suffixes', default = [])
     self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     self.integrate_time = script_utils.get_param(params, 'integrate_time', default = False)
+    self.integrate_time_mode = script_utils.get_param(params, 'integrate_time_mode', default = 'max')
     self.normalise_to_whole = script_utils.get_param(params, 'normalise_to_whole', default = False)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)

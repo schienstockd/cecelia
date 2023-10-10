@@ -204,8 +204,10 @@ class CellposeUtils(SegmentationUtils):
     if self.dim_utils.is_timeseries() and self.integrate_time is True:
       self.logfile_utils.log('> Average time')
       
-      # cur_im_dat = np.average(cur_im_dat, axis = t_idx)
-      cur_im_dat = np.max(cur_im_dat, axis = t_idx)
+      if self.integrate_time_mode == 'avg':
+        cur_im_dat = np.average(cur_im_dat, axis = t_idx)
+      else:
+        cur_im_dat = np.max(cur_im_dat, axis = t_idx)
     
     # get label shape
     label_shape = list(cur_im_dat.shape)

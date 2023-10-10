@@ -57,6 +57,7 @@ def run(params):
     'extended_measures': params['extendedMeasures'] if 'extendedMeasures' in params else False,
     'calc_median_intensities': params['calcMedianIntensities'] if 'calcMedianIntensities' in params else False,
     'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
+    'integrate_time_mode': params['integrateTimeMode'] if 'integrateTimeMode' in params else 'max',
     'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False,
     'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,
     'clear_touching_border': params['clearTouchingBorder'] if 'clearTouchingBorder' in params else False,
