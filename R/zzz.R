@@ -313,12 +313,10 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
     }
     
     # copy to bak
-    file.rename(
-      file.path(cciaPath(), "app"), file.path(cciaPath(), "app.bak")
-    )
+    file.rename(file.path(cciaPath(), "app"), file.path(cciaPath(), "app.bak"))
     
     # remove app
-    unlink(file.path(cciaPath(), "app"), recursive = TRUE)
+    # unlink(file.path(cciaPath(), "app"), recursive = TRUE)
   }
   
   # copy new app
@@ -360,7 +358,7 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
   
   # set permissions for app
   if (!is.null(appChmod)) {
-    Sys.chmod(file.path(cciaPath(), "app"), "777", use_umask = FALSE)
+    Sys.chmod(file.path(cciaPath(), "app"), appChmod, use_umask = FALSE)
   }
 }
 
