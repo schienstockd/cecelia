@@ -297,8 +297,9 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
 
 #' @description Create app
 #' @param keepExe boolean to keep '.sh' from previous
+#' @param appChmod character for chmod
 #' @export
-cciaCreateApp <- function(keepExe = FALSE) {
+cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
   # copy all files to project directory
   copyPrevious <- FALSE
   
@@ -355,6 +356,11 @@ cciaCreateApp <- function(keepExe = FALSE) {
         recursive = TRUE
       )
     }
+  }
+  
+  # set permissions for app
+  if (!is.null(appChmod)) {
+    Sys.chmod(file.path(cciaPath(), "app"), "777", use_umask = FALSE)
   }
 }
 
