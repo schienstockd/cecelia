@@ -95,7 +95,10 @@ def run(params):
           cols = prop_cols,
           pops = [pop_b]
           )
-        
+          
+        # check whether to reload DF or meshes
+        reload_b = True
+          
         # define columns
         if invert_pops_a is True:
           dist_col = f'{pop_type_a}.cell.min_distance.inv#{pop_type_b}.{pop_b}'
@@ -141,17 +144,24 @@ def run(params):
               [t] if t >= 0 else ['NONE'],
               im_res = im_res, is_3D = is_3D,
               add_value_name_to_name = False)
-            meshes_b = morpho_utils.df_to_meshes(
-              task_dir,
-              pop_df_b, pop_value_name_b,
-              'centroid_t' if t >= 0 else 'NONE',
-              [t] if t >= 0 else ['NONE'],
-              im_res = im_res, is_3D = is_3D,
-              add_value_name_to_name = False)
-      
+            if reload_b is True:
+              meshes_b = morpho_utils.df_to_meshes(
+                task_dir,
+                pop_df_b, pop_value_name_b,
+                'centroid_t' if t >= 0 else 'NONE',
+                [t] if t >= 0 else ['NONE'],
+                im_res = im_res, is_3D = is_3D,
+                add_value_name_to_name = False)
+            
             logfile_utils.log(f'>> (t {t}) {pop_a} loaded {len(meshes_a)} meshes')
-            logfile_utils.log(f'>> (t {t}) {pop_b} loaded {len(meshes_b)} meshes')
-      
+            
+            if reload_b is True:
+              logfile_utils.log(f'>> (t {t}) {pop_b} loaded {len(meshes_b)} meshes')
+            
+            # check whether there is a time centroid
+            if is_timecourse is True:
+              reload_b = ~('centroid_t' in pop_df_b.columns)
+            
             if len(meshes_b) > 0:
               # add pop B to collision manager
               m = trimesh.collision.CollisionManager()

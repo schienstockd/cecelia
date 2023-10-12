@@ -55,20 +55,9 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   dat_slices.insert(dim_utils.dim_idx('C'), slice(None))
   dat_slices = tuple(dat_slices)
   
-  cur_im_dat = im_dat[dat_slices]
-  
-  if dim_utils.is_timeseries():
-    # check whether to integrate time
-    if integrate_time is True:
-      cur_im_dat = np.average(
-        cur_im_dat, axis = dim_utils.dim_idx('T'))
-
   # swap channel axis to last position
   new_order = dim_utils.im_dim_order.copy()
   new_order.append(new_order.pop(new_order.index('C')))
-  
-  cur_im_dat = dim_utils.transpose_array_axis(
-    cur_im_dat, dim_utils.im_dim_order, new_order, integrate_time = integrate_time)
   
   cur_labels = {
     i: x.oindex[cur_slices] for i, x in labels.items()
@@ -77,7 +66,21 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   # squeeze dimensions for timeseries only?
   # if dim_utils.is_timeseries() is True:
   cur_labels = {i: np.squeeze(x) for i, x in cur_labels.items()}
-  cur_im_dat = np.squeeze(cur_im_dat)
+  
+  cur_im_dat = None
+  if im_dat is not None:
+    cur_im_dat = im_dat[dat_slices]
+    
+    if dim_utils.is_timeseries():
+      # check whether to integrate time
+      if integrate_time is True:
+        cur_im_dat = np.average(
+          cur_im_dat, axis = dim_utils.dim_idx('T'))
+          
+    cur_im_dat = dim_utils.transpose_array_axis(
+      cur_im_dat, dim_utils.im_dim_order, new_order, integrate_time = integrate_time)
+    
+    cur_im_dat = np.squeeze(cur_im_dat)
   
   # clear borders
   clear_border_from_labels(cur_labels, dim_utils,
@@ -246,9 +249,10 @@ def convert_to_im_scale(prop, dim_utils, ignore_z = False):
 Measure properties from Zarr labels and image
 """
 def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_name,
-  block_size = None, overlap = None, context = None, gaussian_sigma = 1,
-  clear_touching_border = True, clear_depth = True, timepoints = None, save_meshes = False,
-  extended_measures = False, calc_median_intensities = False, integrate_time = False):
+  block_size = -1, overlap = -1, context = 1, gaussian_sigma = 1,
+  clear_touching_border = True, clear_depth = False, timepoints = None, save_meshes = False,
+  extended_measures = False, calc_median_intensities = False, integrate_time = False,
+  calc_intensities = True, slices = None):
   # define base labels
   base_labels = 'base'
   labels_mode = 'default'
@@ -259,9 +263,10 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       labels_mode = 'nuc_cyto'
   
   # get slices
-  slices = slice_utils.create_slices(
-    labels[base_labels].shape, dim_utils, block_size, overlap,
-    timepoints = timepoints, ignore_time = integrate_time)
+  if slices is None:
+    slices = slice_utils.create_slices(
+      labels[base_labels].shape, dim_utils, block_size, overlap,
+      timepoints = timepoints, ignore_time = integrate_time)
   
   props = list()
   
@@ -315,28 +320,31 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       clear_borders = clear_borders, clear_depth = clear_depth,
       clear_touching_border = clear_touching_border, integrate_time = integrate_time)
     
-    # fortify image
-    cur_im_dat = zarr_utils.fortify(cur_im_dat)
-    
-    # channel should be at last position
-    channel_idx = cur_im_dat.ndim - 1
-    
-    # run gaussian
-    if gaussian_sigma > 0:
-      # go through channels and run gaussian
-      # not very elegant.. but ok
-      # https://stackoverflow.com/a/42657219/13766165
-      for i in range(cur_im_dat.shape[channel_idx]):
-        # construct index
-        idx = [slice(None)] * cur_im_dat.ndim
-        idx[channel_idx] = i
-        
-        cur_im_dat[tuple(idx)] = filters.gaussian(
-          cur_im_dat[tuple(idx)], preserve_range = True, sigma = gaussian_sigma)
-      # # channel_axis is introduced in 0.19
-      # cur_im_dat = filters.gaussian(
-      #   cur_im_dat, sigma = gaussian_sigma,
-      #   preserve_range = True, channel_axis = dim_utils.dim_idx('C'))
+    # gaussian
+    if cur_im_dat is not None:
+      # fortify image
+      cur_im_dat = zarr_utils.fortify(cur_im_dat)
+      
+      # channel should be at last position
+      channel_idx = cur_im_dat.ndim - 1
+      
+      # run gaussian
+      if gaussian_sigma > 0:
+        # go through channels and run gaussian
+        # not very elegant.. but ok
+        # https://stackoverflow.com/a/42657219/13766165
+        for i in range(cur_im_dat.shape[channel_idx]):
+          # construct index
+          idx = [slice(None)] * cur_im_dat.ndim
+          idx = [slice(None)] * cur_im_dat.ndim
+          idx[channel_idx] = i
+          
+          cur_im_dat[tuple(idx)] = filters.gaussian(
+            cur_im_dat[tuple(idx)], preserve_range = True, sigma = gaussian_sigma)
+        # # channel_axis is introduced in 0.19
+        # cur_im_dat = filters.gaussian(
+        #   cur_im_dat, sigma = gaussian_sigma,
+        #   preserve_range = True, channel_axis = dim_utils.dim_idx('C'))
     
     minimal_props_to_get = [
       'label',
@@ -360,13 +368,13 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         # 'perimeter',
       ]
     
-      # remove non-objects
-      # hope 40 is enough..
-      for i, x in cur_labels.items():
-        cur_labels[i] = remove_small_objects(x, 40)
-        
-        # make sure that objects are not flat
-        # cur_labels[i] = remove_flat_objects(x, min_span = 3)
+      # # remove non-objects
+      # # hope 40 is enough..
+      # for i, x in cur_labels.items():
+      #   cur_labels[i] = remove_small_objects(x, 40)
+      #   
+      #   # make sure that objects are not flat
+      #   # cur_labels[i] = remove_flat_objects(x, min_span = 3)
     else:
       props_to_get = [
         'label',
@@ -387,12 +395,12 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         'solidity'
       ]
       
-      # remove non-objects
-      for i, x in cur_labels.items():
-        cur_labels[i] = remove_small_objects(x, 10)
+      # # remove non-objects
+      # for i, x in cur_labels.items():
+      #   cur_labels[i] = remove_small_objects(x, 10)
     
     # add mean?
-    if calc_median_intensities is False:
+    if calc_intensities is True and calc_median_intensities is False:
       props_to_get += ['mean_intensity']
       minimal_props_to_get += ['mean_intensity']
     
@@ -402,12 +410,12 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
         x, cur_im_dat,
         properties = props_to_get if i == 'base' else minimal_props_to_get,
         # extra_properties = (median_intensity, percentiles,)
-        extra_properties = (median_intensity,) if calc_median_intensities is True else None
+        extra_properties = (median_intensity,) if all([calc_median_intensities, calc_intensities]) else None
       )) for i, x in cur_labels.items()
       }
       
     # edit column names
-    # INFO this could be done on the whole DF afterwards
+    # TODO this could be done on the whole DF afterwards
     # but I need to know the bbox for surface quantification
     for i in props_table.keys():
       props_table[i].columns = [x.replace('-', '_') for x in props_table[i]]
@@ -634,8 +642,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     centroid_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('centroid')]
     bbox_min_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_min')]
     bbox_max_cols = props_table[base_labels].columns[props_table[base_labels].columns.str.startswith('bbox_max')]
-    
-    logfile_utils.log(centroid_cols)
     
     # add values from current slices to centroid and bbox
     # https://stackoverflow.com/a/27275479/13766165

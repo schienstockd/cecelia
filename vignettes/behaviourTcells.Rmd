@@ -475,6 +475,7 @@ ggplot(
 # ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
 ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
 ```
+
 ```{r fig_umap_props, fig.height=4, fig.width=4}
 datToPlot <- copy(tcells.sc) %>%
   drop_na(clusters) %>%

@@ -31,7 +31,8 @@ CreateBranching <- R6::R6Class(
         imPath = cciaObj$imFilepath(),
         branchingName = branchingName,
         preDilationSize = self$funParams()$preDilationSize,
-        postDilationSize = self$funParams()$postDilationSize
+        postDilationSize = self$funParams()$postDilationSize,
+        saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else TRUE
       )
       
       # call python

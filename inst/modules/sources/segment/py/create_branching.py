@@ -11,6 +11,7 @@ from py.label_props_utils import LabelPropsUtils
 import py.config_utils as cfg
 import py.script_utils as script_utils
 import py.slice_utils as slice_utils
+import py.measure_utils as measure_utils
 
 import skimage.morphology
 import skan
@@ -27,6 +28,7 @@ def run(params):
   im_path = script_utils.get_param(params, 'imPath')
   pre_dilation_size = script_utils.get_param(params, 'preDilationSize')
   post_dilation_size = script_utils.get_param(params, 'postDilationSize')
+  save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
   
   # logging
   logfile_utils = script_utils.get_logfile_utils(params)
@@ -63,6 +65,7 @@ def run(params):
     chunks = labels_data[0].chunks,
     dtype = np.uint32)
   paths_tables = list()
+  props_tables = list()
   max_label = 0
   
   # go through slices
@@ -124,6 +127,22 @@ def run(params):
     if dim_utils.is_timeseries() and integrate_time is False:
       # paths_tables[i]['centroid_t'] = i
       paths_tables[i]['centroid_t'] = cur_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
+      
+    # save meshes
+    if save_meshes is True:
+      logfile_utils.log(f'> save meshes')
+      
+      # TODO is that too much overhead to save meshes?
+      props_tables.append(measure_utils.measure_from_zarr(
+        {'base': skeleton_store}, None, dim_utils, logfile_utils,
+        task_dir = task_dir, slices = [cur_slices],
+        value_name = f'{value_name}.branch',
+        save_meshes = save_meshes,
+        extended_measures = True,
+        calc_intensities = False,
+        # TODO this will always drop time
+        integrate_time = True
+      ))
   
   logfile_utils.log(f'> save zarr')
   
@@ -149,9 +168,18 @@ def run(params):
   # adjust paths table
   paths_table = pd.concat(paths_tables, axis = 0, ignore_index = True)
   
+  if len(props_tables) > 0:
+    props_table = pd.concat(props_tables, axis = 0, ignore_index = True)
+    
+    # add bbox for meshes
+    paths_table = paths_table.merge(
+      props_table.loc[:, props_table.columns.str.startswith(('label', 'bbox'))],
+      how = 'left', on = 'label')
+  
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
+      # TODO this will always drop time
       paths_table.drop('centroid_t', axis = 1) if 'centroid_t' in paths_table.columns else paths_table,
       # save = True,
       obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']

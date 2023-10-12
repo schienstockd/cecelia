@@ -121,15 +121,15 @@ HmmStates <- R6::R6Class(
       
       # filter noise for measurements
       if (self$funParams()$noiseFilterMeasurements > 0) {
-        tracks.DT[,
-                  (self$funParams()$modelMeasurements) := lapply(
-                    self$funParams()$modelMeasurements,
-                    function(x) caTools::runmean(
-                    # function(x) runmed(
-                      .SD[[x]],
-                      k = self$funParams()$noiseFilterMeasurements)
-                  ),
-                  by = .(pop, uID, track_id)
+        tracks.DT[
+          , (self$funParams()$modelMeasurements) := lapply(
+            self$funParams()$modelMeasurements,
+            function(x) caTools::runmean(
+            # function(x) runmed(
+              .SD[[x]],
+              k = self$funParams()$noiseFilterMeasurements)
+          ),
+          by = .(pop, uID, track_id)
         ]
       }
       
@@ -148,23 +148,23 @@ HmmStates <- R6::R6Class(
           SIMPLIFY = FALSE
         )
         
-        tracks.DT[,
-                  (names(self$funParams()$normMeasurements)) := mapply(
-                    function(i, v) .SD[[i]]/v,
-                    names(self$funParams()$normMeasurements),
-                    normVals,
-                    SIMPLIFY = FALSE
-                  )
+        tracks.DT[
+          , (names(self$funParams()$normMeasurements)) := mapply(
+            function(i, v) .SD[[i]]/v,
+            names(self$funParams()$normMeasurements),
+            normVals,
+            SIMPLIFY = FALSE
+          )
         ]
       }
       
       # scale measurements
       if ("scaleMeasurements" %in% names(self$funParams()) && length(self$funParams()$scaleMeasurements) > 0) {
-        tracks.DT[,
-                  (self$funParams()$scaleMeasurements) := lapply(
-                    self$funParams()$scaleMeasurements,
-                    function(x) scale(.SD[[x]], center = FALSE)
-                  )
+        tracks.DT[
+          , (self$funParams()$scaleMeasurements) := lapply(
+            self$funParams()$scaleMeasurements,
+            function(x) scale(.SD[[x]], center = FALSE)
+          )
         ]
       }
       
@@ -172,7 +172,7 @@ HmmStates <- R6::R6Class(
       hmm_model <- depmixS4::depmix(
         lapply(
           self$funParams()$modelMeasurements,
-          function(x) eval(parse(text = sprintf("%s~1", x)))
+          function(x) eval(parse(text = sprintf("`%s`~1", x)))
           ),
         data = tracks.DT[, mget(self$funParams()$modelMeasurements)],
         nstates = self$funParams()$numStates,

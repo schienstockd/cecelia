@@ -30,6 +30,16 @@ Omezarr <- R6::R6Class(
       # define filepaths
       imPathIn <- cciaObj$oriFilepath(modified = TRUE, revertToOri = TRUE)
       
+      # copy to temp if needed
+      if ("copyToTmp" %in% names(self$funParams()) && self$funParams()$copyToTmp == TRUE) {
+        # tmpFilepath <- tempfile(paste0(basename(imPathIn), tools::file_ext(imPathIn)))
+        tmpFilepath <- tempfile()
+        self$writeLog(paste(">> Copy to", tmpFilepath))
+        
+        file.copy(imPathIn, tmpFilepath)
+        imPathIn <- tmpFilepath
+      }
+      
       imPathInPattern <- "\"%s\""
       if (self$callingEnv() == "hpc") {
         # get basename of modified image
@@ -123,6 +133,12 @@ Omezarr <- R6::R6Class(
         
         self$writeLog(paste("EXEC", cmd))
         handleSystem(.execSystem(cmd))
+      }
+      
+      # remove temporary file
+      if ("copyToTmp" %in% names(self$funParams()) && self$funParams()$copyToTmp == TRUE) {
+        self$writeLog(paste(">> Remove", tmpFilepath))
+        unlink(tmpFilepath)
       }
       
       self$writeLog("Done")

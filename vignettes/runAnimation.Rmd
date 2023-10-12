@@ -46,7 +46,7 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
     # get cmaps
     layersVisible <- imChannelNames %in% names(curChannelsToShow)
     channelColormaps <- rep("gray", length(layersVisible))
-    
+
     for (j in names(curChannelsToShow))
       channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
     
@@ -59,66 +59,68 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
       channelColormaps = channelColormaps
     )
     
-    # add tracks
-    viewer$showLabelsAll(
-      popsToShow,
-      # showLabels = TRUE,
-      showTracks = TRUE,
-      splitTracks = splitTracks,
-      tracksBlending = tracksBlending
-    )
-    
-    # add populations
-    popsAdded <- list()
-
-    # add populations to popMap
-    for (valueName in popsToShow) {
-      pop <- paste0(valueName, "/tracked")
-      popType <- "live"
-      parentPops <- c(pop)
-      pops <- list()
-      
-      # create pops from cluster information
-      # pops <- mapply(function(x, i) {
-      for (j in names(splitTracks)) {
-        y <- splitTracks[[j]]
-        
-        pops <- append(pops, mapply(function(z, k) {
-        # mapply(function(y, j) {
-          list(
-            filterMeasure = j,
-            filterValues = z[["values"]],
-            filterFun = "eq",
-            colour = z[["colour"]]
-            # isTrack = TRUE
-          )
-        }, y, names(y), SIMPLIFY = FALSE))
-      }
-      
-      # add pops
-      popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
-      popsAdded[[valueName]] <- popsToAdd
-        
-      # remove populations
-      x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
-      
-      # add populations
-      x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
-    }
-    
-    # save to disk
-    x$savePopMap(popType, includeFiltered = TRUE)
-    x$savePops(popType, pops = unname(unlist(popsAdded)),
-               purge = TRUE, includeFiltered = TRUE)
-    
-    # show on image
-    removePrevious <- TRUE
-    for (j in names(popsAdded)) {
-      viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = 8,
-                            execInteractive = FALSE, removePrevious = removePrevious)
-      removePrevious <- FALSE
-    }
+    if (length(popsToShow) > 0) {
+      # add tracks
+      viewer$showLabelsAll(
+        popsToShow,
+        # showLabels = TRUE,
+        showTracks = TRUE,
+        splitTracks = splitTracks,
+        tracksBlending = tracksBlending
+      )
   
+      # add populations
+      popsAdded <- list()
+  
+      # add populations to popMap
+      for (valueName in popsToShow) {
+        pop <- paste0(valueName, "/tracked")
+        popType <- "live"
+        parentPops <- c(pop)
+        pops <- list()
+  
+        # create pops from cluster information
+        # pops <- mapply(function(x, i) {
+        for (j in names(splitTracks)) {
+          y <- splitTracks[[j]]
+  
+          pops <- append(pops, mapply(function(z, k) {
+          # mapply(function(y, j) {
+            list(
+              filterMeasure = j,
+              filterValues = z[["values"]],
+              filterFun = "eq",
+              colour = z[["colour"]]
+              # isTrack = TRUE
+            )
+          }, y, names(y), SIMPLIFY = FALSE))
+        }
+  
+        # add pops
+        popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
+        popsAdded[[valueName]] <- popsToAdd
+  
+        # remove populations
+        x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
+  
+        # add populations
+        x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+      }
+  
+      # save to disk
+      x$savePopMap(popType, includeFiltered = TRUE)
+      x$savePops(popType, pops = unname(unlist(popsAdded)),
+                 purge = TRUE, includeFiltered = TRUE)
+  
+      # show on image
+      removePrevious <- TRUE
+      for (j in names(popsAdded)) {
+        viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = 8,
+                              execInteractive = FALSE, removePrevious = removePrevious)
+        removePrevious <- FALSE
+      }
+    }
+
     # save animation
     if (generateMovie == TRUE) {
       viewer$saveTimeAnimation(
@@ -130,6 +132,80 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
 }
 ```
 
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "8BR53W", uID = "LiQDGt", versionID = "1", initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+# uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
+uIDs <- c("tbh61I")
+
+# splitTracks <- list(
+#   live.cell.track.clusters.default = list(
+#     meandering = list(values = list(0), colour = "#4CAF48"),
+#     arresting = list(values = list(1), colour = "#327EBA"),
+#     directed = list(values = list(2), colour = "#E42328")
+#     )
+#   )
+
+channelsToShow <- list(
+  "OTI-CTV" = "yellow",
+  "EvansBlue" = "bop blue",
+  "SHG" = "gray"
+  )
+# popsToShow <- list("default")
+popsToShow <- list()
+fileAttrs <- c()
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               # splitTracks = splitTracks, fps = 10)
+               fps = 20)
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "CV5iNI", uID = "vwzo5g", versionID = "1", initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+# uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
+uIDs <- c("HYmMxh")
+
+splitTracks <- list(
+  live.cell.track.clusters.hmm_transitions_movement = list(
+    meandering = list(values = list(0), colour = "#4CAF48"),
+    arresting = list(values = list(1), colour = "#327EBA"),
+    directed = list(values = list(2), colour = "#E42328")
+    )
+  )
+
+channelsToShow <- list(
+  "OTI-GFP" = "yellow",
+  "Sliding EB" = "bop blue",
+  "Sliding SHG" = "magenta",
+  "Sliding THG" = "gray"
+  )
+popsToShow <- list("OTI")
+fileAttrs <- c()
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitTracks = splitTracks, fps = 10)
+```
 
 ```{r}
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
@@ -227,13 +303,14 @@ splitTracks <- list(
 
 channelsToShow <- list(
   "T-A" = "magenta",
-  "T-B" = "yellow"
+  "T-B" = "yellow",
+  "AF" = "gray"
   )
 popsToShow <- c("T.A", "T.B")
 fileAttrs <- c("Treatment")
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-               splitTracks = splitTracks, fps = 20)
+               splitTracks = splitTracks, fps = 20, generateMovie = FALSE)
 ```
 
 ```{r}

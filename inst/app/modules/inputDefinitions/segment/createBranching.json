@@ -25,6 +25,11 @@
 					"max": 10,
 					"default": 2
 				}
+			},
+			"saveMeshes": {
+				"type:boolean": {
+					"default": false
+				}
 			}
     },
     "outputs": {}
@@ -52,6 +57,12 @@
 				"label": "Branch post dilation",
 				"widget:slider": {
 					"step": 1
+				}
+			},
+			"saveMeshes": {
+				"index": 3,
+				"label": "Save Meshes",
+				"widget:checkbox": {
 				}
 			}
     },
