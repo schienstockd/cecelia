@@ -17,7 +17,7 @@
       },
       "copyToTmp": {
 				"type:boolean": {
-					"default": true
+					"default": false
 				}
 			},
       "isSequence": {

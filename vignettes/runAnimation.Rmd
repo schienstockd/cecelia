@@ -145,8 +145,8 @@ exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
-# uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "Sal",]$uID
-uIDs <- c("tbh61I")
+uIDs <- exp.info[exp.info$Include == "Y" & exp.info$Treatment == "CNO",]$uID
+# uIDs <- c("tbh61I")
 
 # splitTracks <- list(
 #   live.cell.track.clusters.default = list(
@@ -163,7 +163,7 @@ channelsToShow <- list(
   )
 # popsToShow <- list("default")
 popsToShow <- list()
-fileAttrs <- c()
+fileAttrs <- c("Treatment")
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                # splitTracks = splitTracks, fps = 10)
@@ -201,7 +201,7 @@ channelsToShow <- list(
   "Sliding THG" = "gray"
   )
 popsToShow <- list("OTI")
-fileAttrs <- c()
+fileAttrs <- c("Treatment")
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                splitTracks = splitTracks, fps = 10)
