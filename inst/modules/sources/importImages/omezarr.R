@@ -32,12 +32,33 @@ Omezarr <- R6::R6Class(
       
       # copy to temp if needed
       if ("copyToTmp" %in% names(self$funParams()) && self$funParams()$copyToTmp == TRUE) {
+        # add special type files
+        extraFiles <- c()
+        # if (self$funParams()$specialType == "tenxXenium")
+        #   extraFiles <- c("transcripts.csv.gz")
+        
+        # get files to copy
+        filesToCopy <- prepFilelistToSync(
+          imPathIn,
+          fileIMAGE_TO_IMPORT,
+          isSequence = any(self$funParams()$isSequence, self$funParams()$is3P),
+          extraFiles = extraFiles
+        )
+        
         # tmpFilepath <- tempfile(paste0(basename(imPathIn), tools::file_ext(imPathIn)))
         tmpFilepath <- tempfile()
         self$writeLog(paste(">> Copy to", tmpFilepath))
         
-        file.copy(imPathIn, tmpFilepath)
-        imPathIn <- tmpFilepath
+        if (length(filesToCopy$files) > 1) {
+          # make directory
+          dir.create(tmpFilepath)
+          toFiles <- file.path(tmpFilepath, basename(filesToCopy$names))
+          file.copy(filesToCopy$files, toFiles)
+          imPathIn <- toFiles[[1]]
+        } else {
+          file.copy(imPathIn, tmpFilepath)
+          imPathIn <- tmpFilepath
+        }
       }
       
       imPathInPattern <- "\"%s\""
@@ -138,7 +159,7 @@ Omezarr <- R6::R6Class(
       # remove temporary file
       if ("copyToTmp" %in% names(self$funParams()) && self$funParams()$copyToTmp == TRUE) {
         self$writeLog(paste(">> Remove", tmpFilepath))
-        unlink(tmpFilepath)
+        unlink(tmpFilepath, recursive = TRUE)
       }
       
       self$writeLog("Done")
