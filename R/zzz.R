@@ -358,7 +358,8 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
   
   # set permissions for app
   if (!is.null(appChmod)) {
-    Sys.chmod(file.path(cciaPath(), "app"), appChmod, use_umask = FALSE)
+    # Sys.chmod(file.path(cciaPath(), "app"), appChmod, use_umask = FALSE)
+    handleSystem(paste("chmod -R", appChmod, file.path(cciaPath(), "app")), silent = TRUE)
   }
 }
 
