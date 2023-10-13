@@ -67,9 +67,9 @@ AfCorrectPreview <- R6::R6Class(
       channelNames <- cciaObj$imChannelNames()
       
       # add correction channel if needed
-      if (!"AF generated" %in% names(channelNames)) {
-        channelNames <- c(channelNames, "AF generated")
-      }
+      # if (!"AF generated" %in% names(channelNames)) {
+      #   channelNames <- c(channelNames, "AF generated")
+      # }
       
       # remove names and convert to list
       channelNames <- as.list(channelNames)

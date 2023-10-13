@@ -12,11 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 # set test variables
-# pID <- "az8y8l" # ZOE
-pID <- "Wq59Z0" # JY
+pID <- "az8y8l" # ZOE
+# pID <- "Wq59Z0" # JY
 versionID <- 1
-# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+# projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 ```
 
 ```{r}
@@ -30,8 +30,8 @@ library(tidyverse)
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 ```
 
 ```{r fig_cells_per_area, fig.height=3, fig.width=3}

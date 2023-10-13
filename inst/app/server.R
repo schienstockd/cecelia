@@ -67,13 +67,11 @@ server <- function(input, output, session) {
             tags$div("Enter correct path",
                      class = errCLASS)
           },
-          # textInput(
-          #   session$ns("exportProjectPath"),
-          #   "Directory to export"),
-          shinyDirButton(
-            session$ns("exportProjectPath"), label = "Select directory",
-            title = 'Select directory'
-          ),
+          textInput(session$ns("exportProjectPath"), "Directory to export"),
+          # shinyDirButton(
+          #   session$ns("exportProjectPath"), label = "Select directory",
+          #   title = 'Select directory'
+          # ),
           actionButton(
             session$ns("exportProjectSubmit"),
             "Export Project")

@@ -20,8 +20,8 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-# pID <- "8BR53W"
-pID <- "CV5iNI"
+pID <- "8BR53W"
+# pID <- "CV5iNI"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -29,8 +29,31 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+```
+
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE
+)
+
+# uIDs <- names(cciaObj$cciaObjects())
+uIDs <- c("mYdPG4")
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  channelAttr <- attributes(x$imChannelNames())
+  channelAttr$names <- channelAttr$names[1:4]
+  channelNames <- x$imChannelNames()[1:4]
+  attributes(channelNames) <- channelAttr
+  x$setImChannelNames(channelNames, valueName = "corrected")
+  x$saveState()
+}
 ```
 
 ```{r}

@@ -131,8 +131,7 @@
         "label": "Use for drift correction",
         "widget:channelSelection": {
           "size": 1,
-          "multiple": false,
-          "addChoices": ["AF generated"]
+          "multiple": false
         }
       },
 			"applyDriftCorrection": {
