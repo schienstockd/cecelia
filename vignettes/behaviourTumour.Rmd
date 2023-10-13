@@ -40,42 +40,6 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE
-)
-
-# uIDs <- names(cciaObj$cciaObjects())
-uIDs <- c("mYdPG4")
-
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  channelAttr <- attributes(x$imChannelNames())
-  channelAttr$names <- channelAttr$names[1:4]
-  channelNames <- x$imChannelNames()[1:4]
-  attributes(channelNames) <- channelAttr
-  x$setImChannelNames(channelNames, valueName = "corrected")
-  x$saveState()
-}
-```
-
-```{r}
-# get HMM transitions
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE
-)
-
-cciaObj$valueNames("imLabelsFilepath")
-```
-
-```{r}
-# get HMM transitions
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
   pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE
 )
 
@@ -188,14 +152,16 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE # 3P
+  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE # 2P
+  # pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE # 3P
 )
 
 # get experimental info
 exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 
-uIDs <- c("4li7ih")
+# uIDs <- c("4li7ih")
 # uIDs <- c("HYmMxh")
+uIDs <- c("mYdPG4")
 
 # get clustering
 # tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
@@ -204,19 +170,25 @@ uIDs <- c("4li7ih")
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
-  popType = "live", pops = c("P14/tracked"),
-  # popType = "live", pops = c("OTI/tracked"),
+  # popType = "live", pops = c("P14/tracked"),
+  popType = "live", pops = c("OTI/tracked", "OTI/tracked/immotile", "OTI/tracked/motile"),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+shgDTs <- cciaObj$popDT(
+  popType = "branch", pops = c("SHG.branch"),
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
 ```
 
-```{r fig_hmm_space, fig.height=3, fig.width=9}
+```{r fig_hmm_space, fig.height=5, fig.width=5}
+# can you show branching in relation to stopped cells?
 ggplot(
-  popDTs %>% dplyr::filter(!is.na(live.cell.hmm.state.movement)),
-  aes(centroid_x, -centroid_y, color = as.factor(live.cell.hmm.state.movement))) +
+  shgDTs,
+  aes(centroid_x, -centroid_y)) +
   theme_classic() +
-  geom_point(alpha = 0.3) +
+  geom_point(color = "gray", alpha = 0.5) +
   plotThemeDark(angle = 0) +
   coord_fixed() +
   theme(
@@ -231,10 +203,83 @@ ggplot(
     strip.background = element_blank()
   ) +
   scale_x_continuous(expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0)) +
-  facet_grid(.~live.cell.hmm.state.movement)
+  scale_y_continuous(expand = c(0, 0))
+  # facet_grid(.~live.cell.hmm.state.movement)
 ```
 
+```{r fig_hmm_space, fig.height=5, fig.width=5}
+nnY <- shgDTs[, c('centroid_z', 'centroid_y', 'centroid_x')]
+
+for (i in unique(popDTs$pop)) {
+  x <- popDTs[pop == i]
+  
+  x$colour <- .flowColours(x$centroid_x, x$centroid_y)
+  
+  # get overlapping cells with SHG
+  nnX <- x[, c('centroid_z', 'centroid_y', 'centroid_x')]
+  
+  shgNN <- dbscan::kNN(nnY, k = 1, query = nnX)
+  x[, shgDist := shgNN$dist]
+  x[, shgContact := shgDist < 20]
+  
+  print(x %>% group_by(shgContact) %>% summarise(n = n()) %>% mutate(freq = n/sum(n) * 100))
+  
+  p1 <- ggplot(
+    x, aes(centroid_x, -centroid_y)) +
+    theme_classic() +
+    geom_point(data = shgDTs, color = "white") +
+    geom_point(data = x[shgContact == FALSE], color = "#4CAF48") +
+    geom_point(data = x[shgContact == TRUE], color = "#327EBA") +
+    ggtitle(i) +
+    plotThemeDark(angle = 0) +
+    coord_fixed() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none",
+      strip.background = element_blank(),
+      title = element_text(colour = "white")
+    ) +
+    scale_x_continuous(expand = c(0, 0)) +
+    scale_y_continuous(expand = c(0, 0)) 
+  
+  print(p1)
+}
+```
+
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# run task
+funParams <- list(
+  popType = "live",
+  valueName = "SHG.branch",
+  pops = c("OTI/tracked"),
+  maxDist = 20
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.networkWeights",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare

@@ -30,8 +30,10 @@ NetworkWeights <- R6::R6Class(
       branchDT <- cciaObj$popDT(
         "branch", includeFiltered = TRUE, completeDT = TRUE,
         completeValueNames = self$funParams()$valueName,
-        pops = unlist(unname(cciaObj$popPaths(
-          "branch", includeFiltered = TRUE, includeRoot = FALSE))))
+        # pops = unlist(unname(cciaObj$popPaths(
+        #   "branch", includeFiltered = TRUE, includeRoot = FALSE)))
+        pops = paste0(self$funParams()$valueName, ".branch")
+        )
       
       # this is designed to return weights based on tracked cell interactions
       # so, these populations should be from live?

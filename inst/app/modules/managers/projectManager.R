@@ -475,12 +475,12 @@ ProjectManager <- R6::R6Class(
     },
     
     # import project
-    importProject = function(importFile, bookmarkStateDir = NULL) {
+    importProject = function(importFile, bookmarkStateDir = NULL, isDir = FALSE) {
       # get file paths
       archivePath <- file.path(cciaConf()$dirs$projects, basename(importFile))
       
-      # copy tar to projects directory
-      file.copy(importFile, cciaConf()$dirs$projects)
+      # copy to projects
+      file.copy(importFile, cciaConf()$dirs$projects, recursive = TRUE)
       
       # get project ID and untar
       # pID <- basename(untar(archivePath, exdir = cciaConf()$dirs$projects, list = TRUE)$Name[[1]])
@@ -491,13 +491,16 @@ ProjectManager <- R6::R6Class(
       projectFile <- file.path(pPath, "project.csv")
       bookmarkFile <- file.path(pPath, "shinyBookmarks.csv")
       
-      if (tools::file_ext(archivePath) == "tar")
-        untar(archivePath, exdir = cciaConf()$dirs$projects)
-      else if (tools::file_ext(archivePath) == "zip")
-        unzip(archivePath, exdir = cciaConf()$dirs$projects)
-      
-      # delete tar
-      unlink(archivePath)
+      # check whether to unpack
+      if (tools::file_ext(basename(archivePath)) %in% c("tar", "zip")) {
+        if (tools::file_ext(archivePath) == "tar")
+          untar(archivePath, exdir = cciaConf()$dirs$projects)
+        else if (tools::file_ext(archivePath) == "zip")
+          unzip(archivePath, exdir = cciaConf()$dirs$projects)
+        
+        # delete tar
+        unlink(archivePath)
+      } 
       
       # TODO get a shiny bookmark url
       # otherwise I do not know where the bookmarks are saved
