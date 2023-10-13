@@ -717,8 +717,10 @@ server <- function(input, output, session) {
     # go through inputs
     failedInputs <- c()
     
-    exportPath <- joinSelectedPath(
-      input$exportProjectPath, useConfigVolumes = TRUE)
+    # TODO make sure that shiny directory selection works
+    # exportPath <- joinSelectedPath(
+    #   input$exportProjectPath, useConfigVolumes = TRUE)
+    exportPath <- input$exportProjectPath
     
     # if (input$exportProjectPath == "") {
     #   failedInputs <- c(
