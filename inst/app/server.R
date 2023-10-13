@@ -91,12 +91,10 @@ server <- function(input, output, session) {
             tags$div("Enter correct path",
                      class = errCLASS)
           },
-          # textInput(
+          textInput(session$ns("importProjectPath"), "Directory to import"),
+          # shinyFilesButton(
           #   session$ns("importProjectPath"),
-          #   "File to import"),
-          shinyFilesButton(
-            session$ns("importProjectPath"),
-            "Select File", NULL, multiple = FALSE),
+          #   "Select File", NULL, multiple = FALSE),
           actionButton(
             session$ns("importProjectSubmit"),
             "Import Project")
@@ -752,12 +750,13 @@ server <- function(input, output, session) {
     failedInputs <- c()
     
     # check that a file was selected
-    if (!any("files" %in% names(input$importProjectPath))) {
-      failedInputs <- c(
-        failedInputs, "importProjectPath")
-    }
-    
-    importPath <- joinSelectedFile(input$importProjectPath)
+    # if (!any("files" %in% names(input$importProjectPath))) {
+    #   failedInputs <- c(
+    #     failedInputs, "importProjectPath")
+    # }
+    # 
+    # importPath <- joinSelectedFile(input$importProjectPath)
+    importPath <- input$importProjectPath
     
     # import project
     if (length(failedInputs) > 0) {
