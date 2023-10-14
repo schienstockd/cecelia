@@ -27,34 +27,93 @@ library(ggplot2)
 library(tidyverse)
 ```
 
+```{r}
+anaDir <- "/Volumes/Analysis_SSD/Communal/cecelia/analysis/PbT"
+```
+
+
 ```{r fig_cells_per_area, fig.height=3, fig.width=3}
+# # show numbers of cells per area
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "Ua8SJM", versionID = versionID, initReactivity = FALSE
+# )
+# 
+# uIDs <- names(cciaObj$cciaObjects())
+# 
+# # run task
+# funParams <- list(
+#   valueName = "default",
+#   newDefault = "corrected",
+#   removeHPC = FALSE
+# )
+# 
+# # run task
+# task <- cciaObj$runTasks(
+#   funName = "importImages.remove",
+#   funParams = funParams,
+#   env = "local",
+#   runInplace = TRUE,
+#   taskID = 1,
+#   uIDs = uIDs,
+#   # uIDs = c("Dkireu"),
+#   mc.cores = 1
+# )
+```
+
+```{r}
 # show numbers of cells per area
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "Ua8SJM", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "EMVpqV", versionID = versionID, initReactivity = FALSE
 )
 
-uIDs <- names(cciaObj$cciaObjects())
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
-# run task
-funParams <- list(
-  valueName = "default",
-  newDefault = "corrected",
-  removeHPC = FALSE
-)
+uIDs <- exp.info[Final == "Done"]$uID
 
-# run task
-task <- cciaObj$runTasks(
-  funName = "importImages.remove",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1,
-  uIDs = uIDs,
-  # uIDs = c("Dkireu"),
-  mc.cores = 1
-)
+cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "flow", pops = c("/nonDebris/PbT/clustered", "/nonDebris/GFP/clustered"),
+  includeFiltered = TRUE, flushCache = TRUE,
+  uIDs = uIDs)
 ```
+
+```{r}
+cellClusters <- popDTs %>%
+  dplyr::filter(flow.cell.is.clust == TRUE) %>%
+  group_by(uID, flow.cell.clust.id, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100)
+
+pbtClusters <- cellClusters %>%
+  # dplyr::filter(pop == "/nonDebris/PbT/clustered", n >= 4) %>%
+  dplyr::filter(pop == "/nonDebris/PbT/clustered", freq >= 50) %>%
+  mutate(gfp = 100 - freq)
+```
+
+```{r}
+ggplot(pbtClusters %>% left_join(exp.info), aes(Mouse, gfp)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  # geom_jitter(width = 0.3, alpha = 1.0) +
+  geom_point() +
+  ylim(-1, 100) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  xlab("")
+```
+
+```{r}
+write.csv(pbtClusters %>% left_join(exp.info), file.path(anaDir, "GFP_clusters.csv"))
+```
+

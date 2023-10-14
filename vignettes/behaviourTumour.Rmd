@@ -207,27 +207,34 @@ ggplot(
   # facet_grid(.~live.cell.hmm.state.movement)
 ```
 
-```{r fig_hmm_space, fig.height=5, fig.width=5}
-nnY <- shgDTs[, c('centroid_z', 'centroid_y', 'centroid_x')]
+```{r fig_hmm_space, fig.height=8, fig.width=8}
+cropX <- 256
+max.dist <- 2
+# nnY <- shgDTs[centroid_x < cropX, c('centroid_z', 'centroid_y', 'centroid_x')]
+nnY <- shgDTs[centroid_x < cropX, c('centroid_y', 'centroid_x')]
 
-for (i in unique(popDTs$pop)) {
-  x <- popDTs[pop == i]
+# for (i in unique(popDTs$pop)) {
+hmmStates <- unique(popDTs$live.cell.hmm.state.movement)
+for (i in hmmStates[!is.na(hmmStates)]) {
+  # x <- popDTs[pop == i]
+  x <- popDTs[centroid_x < cropX & live.cell.hmm.state.movement == i]
   
   x$colour <- .flowColours(x$centroid_x, x$centroid_y)
   
   # get overlapping cells with SHG
-  nnX <- x[, c('centroid_z', 'centroid_y', 'centroid_x')]
+  # nnX <- x[, c('centroid_z', 'centroid_y', 'centroid_x')]
+  nnX <- x[, c('centroid_y', 'centroid_x')]
   
   shgNN <- dbscan::kNN(nnY, k = 1, query = nnX)
   x[, shgDist := shgNN$dist]
-  x[, shgContact := shgDist < 20]
+  x[, shgContact := shgDist < max.dist]
   
   print(x %>% group_by(shgContact) %>% summarise(n = n()) %>% mutate(freq = n/sum(n) * 100))
   
   p1 <- ggplot(
     x, aes(centroid_x, -centroid_y)) +
     theme_classic() +
-    geom_point(data = shgDTs, color = "white") +
+    geom_point(data = shgDTs[centroid_x < cropX], color = "white") +
     geom_point(data = x[shgContact == FALSE], color = "#4CAF48") +
     geom_point(data = x[shgContact == TRUE], color = "#327EBA") +
     ggtitle(i) +
@@ -250,6 +257,24 @@ for (i in unique(popDTs$pop)) {
   
   print(p1)
 }
+```
+
+```{r fig_angle, fig.height=3, fig.width=3}
+cropX <- 256
+max.dist <- 2
+nnY <- shgDTs[centroid_x < cropX, c('centroid_y', 'centroid_x')]
+nnX <- popDTs[, c('centroid_y', 'centroid_x')]
+
+shgNN <- dbscan::kNN(nnY, k = 1, query = nnX)
+popDTs[, shgDist := shgNN$dist]
+popDTs[, shgContact := shgDist < max.dist]
+
+ggplot(popDTs, aes(shgContact, live.cell.speed)) +
+  theme_classic() +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.40), alpha = 1.0) +
+  geom_jitter(width = 0.2, alpha = 1.0) +
+  geom_boxplot(outlier.alpha = 0)
+  # ylim(0, 1) +
 ```
 
 

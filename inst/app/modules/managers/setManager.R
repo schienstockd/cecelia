@@ -242,6 +242,9 @@ createImageSetManager <- function(
   observeEvent(input$createSet, {
     req(input$setName)
     
+    # check that the name is not already given
+    req(!input$setName %in% globalManagers$dataManager()$cciaImageCollection()$cciaObjectNames())
+    
     # create new object
     curParams <- list(
       Name = input$setName,
