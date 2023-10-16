@@ -808,28 +808,39 @@ taskDirFiles <- function(taskDir, valueNames, isDir = FALSE) {
   }
 }
 
-#' @description Get pop types from pops
+#' @description Split pop types and paths from pops
 #' @param pops list of character of populations
 #' @param popSplit character of population split
 #' @examples
 #' TODO
 #' @export
-popTypesFromPops <- function(pops, popSplit = "\\.") {
-  unique(sapply(
-    pops, function(x) unlist(stringr::str_split(x, popSplit, n = 2))[[1]]
-  ))
+splitPops <- function(pops, popSplit = "\\.", splitPart = 0) {
+  # get only part of the split
+  if (splitPart > 0) {
+    funX <- function(x) unlist(stringr::str_split(x, popSplit, n = 2))[[splitPart]]
+  } else {
+    funX <- function(x) unlist(stringr::str_split(x, popSplit, n = 2))
+  }
+  
+  unique(lapply(pops, funX))
+}
+
+#' @description Get pop types from pops
+#' @param ... passed to splitPops
+#' @examples
+#' TODO
+#' @export
+popTypesFromPops <- function(...) {
+  splitPops(..., splitPart = 1)
 }
 
 #' @description Get pop paths from pops
-#' @param pops list of character of populations
-#' @param popSplit character of population split
+#' @param ... passed to splitPops
 #' @examples
 #' TODO
 #' @export
-popPathsFromPops <- function(pops, popSplit = "\\.") {
-  unique(sapply(
-    pops, function(x) unlist(stringr::str_split(x, popSplit, n = 2))[[2]]
-  ))
+popPathsFromPops <- function(...) {
+  splitPops(..., splitPart = 2)
 }
 
 #' @description Get leaves for parent

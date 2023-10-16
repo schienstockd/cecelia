@@ -1,0 +1,68 @@
+{
+  "fun": {
+    "cellContacts": {
+      "category": "Module functions",
+      "label": "Cell Contacts (NOT IMPLEMENTED YET)",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "maxContactDist": {
+        "type:integer": {
+          "min": 0,
+          "max": 200,
+          "default": 5
+        }
+      },
+			"invertPopsA": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+      "popsA": {
+        "type:list": {}
+      },
+			"popsB": {
+				"type:list": {}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "maxContactDist": {
+        "index": 0,
+        "label": "Max contact distance",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "invertPopsA": {
+				"index": 1,
+				"label": "Invert populations",
+				"widget:checkbox": {
+				}
+			},
+      "popsA": {
+        "index": 2,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true,
+					"showAll": true
+        }
+      },
+			"popsB": {
+				"index": 3,
+				"label": "In contact with",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true,
+					"showAll": true
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

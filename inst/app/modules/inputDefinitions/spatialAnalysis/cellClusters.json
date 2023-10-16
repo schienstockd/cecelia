@@ -34,6 +34,11 @@
 				"type:boolean": {
 					"default": false
 				}
+			},
+			"integrateTime": {
+				"type:boolean": {
+					"default": false
+				}
 			}
     },
     "outputs": {}
@@ -71,6 +76,12 @@
 			"combinePops": {
 				"index": 4,
 				"label": "Combine populations",
+				"widget:checkbox": {
+				}
+			},
+			"integrateTime": {
+				"index": 5,
+				"label": "Integrate time",
 				"widget:checkbox": {
 				}
 			}

@@ -34,13 +34,40 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
 ```
 
 ```{r}
+# get contacts of T cells with SHG
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  popsA = c("live.OTI/tracked"),
+  popsB = c("labels.SHG.branch"),
+  maxContactDist = 20
+)
+
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellContacts",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
 # get HMM transitions
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE
 )
 
 # get experimental info
@@ -50,7 +77,8 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 # uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- c("HYmMxh")
+# uIDs <- c("HYmMxh")
+uIDs <- c("mYdPG4")
 
 # run task
 funParams <- list(
@@ -82,7 +110,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "vwzo5g", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "LiQDGt", versionID = versionID, initReactivity = FALSE
 )
 
 # get experimental info
@@ -92,7 +121,8 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 # uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- c("HYmMxh")
+# uIDs <- c("HYmMxh")
+uIDs <- c("mYdPG4")
 
 # run task
 funParams <- list(
@@ -100,7 +130,7 @@ funParams <- list(
   popsToCluster = c("OTI/tracked"),
   valueName = "tracks.clusters.tcells.hmm_transitions_movement",
   clusterColName = "hmm_transitions_movement",
-  resolution = 0.3,
+  resolution = 0.2,
   percentile = 99.5,
   trackMeasures = c(
     "speed",
@@ -164,9 +194,9 @@ exp.info <- cciaObj$summary(withSelf = FALSE, fields = c("Attr"))
 uIDs <- c("mYdPG4")
 
 # get clustering
-# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-#   cciaObj$persistentObjectDirectory(),
-#   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(),
+  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
 popDTs <- cciaObj$popDT(
@@ -180,6 +210,41 @@ shgDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
+```
+
+```{r fig_track_paths, fig.height=5, fig.width=5}
+tracksNetwork <- popDTs %>%
+  group_by(uID, live.cell.clust.id) %>%
+  summarise(
+    centroid_z = mean(centroid_z),
+    centroid_y = mean(centroid_y),
+    centroid_x = mean(centroid_x),
+  )
+
+# extract tracks paths from clustered cells
+ggplot(
+  tracksNetwork,
+  aes(centroid_x, -centroid_y)) +
+  theme_classic() +
+  # geom_point(data = popDTs[live.cell.is.clust == FALSE], colour = "gray") +
+  # geom_point(data = popDTs[live.cell.is.clust == TRUE], colour = "yellow") +
+  # geom_point(aes(colour = as.factor(live.cell.clust.id))) +
+  geom_point() +
+  # plotThemeDark(angle = 0) +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    strip.background = element_blank()
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
 ```
 
 ```{r fig_hmm_space, fig.height=5, fig.width=5}
@@ -208,37 +273,16 @@ ggplot(
 ```
 
 ```{r fig_hmm_space, fig.height=8, fig.width=8}
-cropX <- 256
-max.dist <- 2
-# nnY <- shgDTs[centroid_x < cropX, c('centroid_z', 'centroid_y', 'centroid_x')]
-nnY <- shgDTs[centroid_x < cropX, c('centroid_y', 'centroid_x')]
-
-# for (i in unique(popDTs$pop)) {
-hmmStates <- unique(popDTs$live.cell.hmm.state.movement)
-for (i in hmmStates[!is.na(hmmStates)]) {
-  # x <- popDTs[pop == i]
-  x <- popDTs[centroid_x < cropX & live.cell.hmm.state.movement == i]
-  
-  x$colour <- .flowColours(x$centroid_x, x$centroid_y)
-  
-  # get overlapping cells with SHG
-  # nnX <- x[, c('centroid_z', 'centroid_y', 'centroid_x')]
-  nnX <- x[, c('centroid_y', 'centroid_x')]
-  
-  shgNN <- dbscan::kNN(nnY, k = 1, query = nnX)
-  x[, shgDist := shgNN$dist]
-  x[, shgContact := shgDist < max.dist]
-  
-  print(x %>% group_by(shgContact) %>% summarise(n = n()) %>% mutate(freq = n/sum(n) * 100))
-  
+for (i in unique(popDTs$live.cell.track.clusters.hmm_transitions_movement)) {
   p1 <- ggplot(
-    x, aes(centroid_x, -centroid_y)) +
+    popDTs[live.cell.track.clusters.hmm_transitions_movement == i], aes(centroid_x, -centroid_y)) +
     theme_classic() +
-    geom_point(data = shgDTs[centroid_x < cropX], color = "white") +
-    geom_point(data = x[shgContact == FALSE], color = "#4CAF48") +
-    geom_point(data = x[shgContact == TRUE], color = "#327EBA") +
+    geom_point(data = shgDTs, color = "#4CAF48") +
+    # geom_point(data = x[shgContact == FALSE], color = "#4CAF48") +
+    # geom_point(data = x[shgContact == TRUE], color = "#327EBA") +
+    geom_path(aes(group = track_id), alpha = 1, color = "black") +
     ggtitle(i) +
-    plotThemeDark(angle = 0) +
+    # plotThemeDark(angle = 0) +
     coord_fixed() +
     theme(
       axis.text.x = element_blank(),

@@ -108,7 +108,7 @@ CellClusters <- R6::R6Class(
         clusterLogicals <- c()
         
         # go through timepoints if present
-        if ("centroid_t" %in% centroidCols) {
+        if ("centroid_t" %in% centroidCols && self$funParams()$integrateTime == FALSE) {
           for (t in seq(0, max(popDT$centroid_t))) {
             # convert centroid columns to matrix
             x <- as.matrix(popDT[centroid_t == t, ..centroidCols])
