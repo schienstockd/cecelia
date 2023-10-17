@@ -912,7 +912,7 @@ ggplot(datToPlot, aes(as.factor(clusters.name), freq,
   # scale_fill_discrete(name = "HMM State") +
   xlab("") + ylab("") 
 
-ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 2.5, height = 1.5)
+ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 2.5, height = 1.2)
 ```
 
 ```{r fig_clusters_heat, fig.height=3, fig.width=8}
@@ -1136,12 +1136,13 @@ ggplot(hmmTime[hmmTime$uID == "oPZZCg",],
     strip.background = element_blank(),
     strip.text.x = element_blank()
     ) +
-  xlab("Time (min)") + ylab("HMM frequency") +
+  # xlab("Time (min)") + ylab("Cluster\nfrequency") +
+  xlab("Time (min)") + ylab("") +
   facet_wrap(.~uID, scales = "free_x", nrow = 1) +
   ylim(0, 1) + scale_y_continuous(breaks = c(0, 0.5, 1))
   
 # ggsave(file.path(anaDir, "hmm_time.png"), height = 2, width = 10)
-ggsave(file.path(anaDir, "hmm_time_oPZZCg.png"), height = 2, width = 2)
+ggsave(file.path(anaDir, "hmm_time_oPZZCg.png"), height = 1, width = 1.8)
 ```
 
 ```{r fig_states_time, fig.height = 3, fig.width = 4}

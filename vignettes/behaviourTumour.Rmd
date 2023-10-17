@@ -201,7 +201,8 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
 # get popDTs for set
 popDTs <- cciaObj$popDT(
   # popType = "live", pops = c("P14/tracked"),
-  popType = "live", pops = c("OTI/tracked", "OTI/tracked/immotile", "OTI/tracked/motile"),
+  popType = "live", pops = c(
+    "OTI/tracked", "OTI/tracked/immotile", "OTI/tracked/motile", "OTI/tracked/clust.motile"),
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
@@ -213,14 +214,92 @@ shgDTs <- cciaObj$popDT(
 ```
 
 ```{r fig_track_paths, fig.height=5, fig.width=5}
-tracksNetwork <- popDTs %>%
+tracksPos <- popDTs[pop == "OTI/tracked/clust.motile"] %>%
+  dplyr::filter(live.cell.clust.id > 0) %>%
   group_by(uID, live.cell.clust.id) %>%
   summarise(
+    n = n(),
     centroid_z = mean(centroid_z),
     centroid_y = mean(centroid_y),
     centroid_x = mean(centroid_x),
-  )
+  ) %>%
+  mutate(n = n/quantile(n, 0.95))
 
+tracksPos[tracksPos$n >= 100, ]$n <- 100
+```
+
+```{r}
+# Ok .. now can you connect the trakcs to the clusters?
+tracksNetwork <- popDTs[pop == "OTI/tracked/clust.motile"] %>%
+  dplyr::filter(live.cell.clust.id > 0) %>%
+  group_by(uID, live.cell.clust.id, track_id) %>%
+  summarise(n = n())
+
+tracksWeighted <- tracksNetwork %>% left_join(tracksNetwork, by = c("uID", "track_id")) %>%
+  dplyr::filter(live.cell.clust.id.x != live.cell.clust.id.y) %>%
+  group_by(uID, live.cell.clust.id.x, live.cell.clust.id.y) %>%
+  summarise(weight = sum(n.y))
+
+tracksWeighted <- tracksWeighted %>% dplyr::rename(
+  from = live.cell.clust.id.x,
+  to = live.cell.clust.id.y
+)
+
+# weightCutoff <- 10
+# tracksWeighted[tracksWeighted$weight < weightCutoff, ]$weight <- 0
+```
+```{r}
+# # make graph
+# tracksGraph <- igraph::graph_from_data_frame(
+#   tracksWeighted[, c("from", "to", "weight")],
+#   directed = TRUE
+# )
+```
+
+
+```{r fig_track_network, fig.height=8, fig.width=8}
+library(ggraph)
+
+tracksPosMatched <- tracksPos[tracksPos$live.cell.clust.id %in% tracksWeighted$from,]
+
+ggraph(tracksWeighted, layout = "manual",
+       x = tracksPosMatched$centroid_x, y = -tracksPosMatched$centroid_y) +
+  theme_classic() +
+  geom_point(data = shgDTs, aes(centroid_x, -centroid_y), color = "#4CAF48") +
+  # geom_edge_link(aes(width = weight, color = weight, alpha = weight)) +
+  geom_edge_link(aes(width = weight, alpha = weight), colour = "white") +
+  scale_edge_width(range = c(0.5, 4)) +
+  scale_edge_alpha(range = c(0, 1)) +
+  # scale_edge_color_gradient2(high = "red", mid = "white", low = "blue",
+  #                            midpoint = quantile(tracksWeighted$weight, 0.80)) +
+  # geom_node_point() +
+  geom_point(data = tracksPos, aes(x = centroid_x, y = -centroid_y,
+                                   size = log(n), color = log(n))) +
+  scale_colour_gradient2(high = "red", mid = "white", low = "blue",
+                         midpoint = quantile(log(tracksPos$n), 0.75)) +
+  scale_size(range = c(0.5, 4)) +
+  plotThemeDark(angle = 0) +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    strip.background = element_blank()
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
+
+ggsave(file.path(anaDir, "network_mYdPG4.png"), height = 8, width = 8)
+```
+
+
+
+```{r fig_track_paths, fig.height=5, fig.width=5}
 # extract tracks paths from clustered cells
 ggplot(
   tracksNetwork,
@@ -229,7 +308,8 @@ ggplot(
   # geom_point(data = popDTs[live.cell.is.clust == FALSE], colour = "gray") +
   # geom_point(data = popDTs[live.cell.is.clust == TRUE], colour = "yellow") +
   # geom_point(aes(colour = as.factor(live.cell.clust.id))) +
-  geom_point() +
+  geom_point(data = shgDTs, color = "green") +
+  geom_point(aes(size = n)) +
   # plotThemeDark(angle = 0) +
   coord_fixed() +
   theme(

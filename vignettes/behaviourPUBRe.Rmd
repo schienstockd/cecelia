@@ -775,13 +775,10 @@ ggsave(file.path(anaDir, paste0("umap_Angle.tiff")), width = 2, height = 2)
 ```
 
 ```{r fig_umap, fig.height=4, fig.width=4}
-plot.p1 <- function(df.all, df.subset) {
-  plot.colours <- .flowColours(df.subset$UMAP_1, df.subset$UMAP_2, colramp = viridisLite::inferno)
-  
-  ggplot(df.all, aes(UMAP_1, UMAP_2)) +
+plot.p1 <- function(df.all, df.subsets) {
+  p1 <- ggplot(df.all, aes(UMAP_1, UMAP_2)) +
     theme_classic() +
     geom_point(color = "black", size = 1) +
-    geom_point(data = df.subset, color = plot.colours, size = 1, alpha = 1) +
     theme(
       axis.text = element_text(size = 15),
       axis.text.x = element_blank(),
@@ -795,6 +792,19 @@ plot.p1 <- function(df.all, df.subset) {
       axis.title.x = element_blank(),
       axis.title.y = element_blank()
       )
+  
+  # add points
+  for (i in seq(length(df.subsets))) {
+    x <- df.subsets[[i]]$data
+    colramp <- df.subsets[[i]]$colramp
+    
+    p1 <- p1 + geom_point(
+      data = x, size = 1, alpha = 1,
+      # color = .flowColours(x$UMAP_1, x$UMAP_2, colramp = colramp))
+      color = df.subsets[[i]]$colramp)
+  }
+  
+  p1
 }
 
 datToPlot <- copy(tcells.sc) %>%
@@ -802,18 +812,33 @@ datToPlot <- copy(tcells.sc) %>%
   left_join(exp.info)
 
 # plot UMAP
-for (i in unique(datToPlot$pop)) {
-  x <- stringr::str_replace_all(i, "\\/", "_")
-  
-  plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop == i, Treatment != "HSV"))
-  ggsave(file.path(anaDir, paste0("umap_Uninf_", x, ".tiff")), width = 2, height = 2)
-  
-  plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop == i, Treatment == "HSV" & dpi == "1"))
-  ggsave(file.path(anaDir, paste0("umap_HSV_1_", x, ".tiff")), width = 2, height = 2)
-  
-  plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop == i, Treatment == "HSV" & dpi != "1"))
-  ggsave(file.path(anaDir, paste0("umap_HSV_2_", x, ".tiff")), width = 2, height = 2)
-}
+plot.p1(datToPlot, list(
+    list(data = datToPlot %>% dplyr::filter(pop == "gDT/tracked", Treatment != "HSV"),
+       # colramp = viridisLite::mako),
+       colramp = "#4682b4"),
+  list(data = datToPlot %>% dplyr::filter(pop == "gBT/tracked", Treatment != "HSV"),
+       # colramp = viridisLite::inferno)
+       colramp = "#AA1F5E")
+))
+ggsave(file.path(anaDir, paste0("umap_Uninf.tiff")), width = 2, height = 2)
+plot.p1(datToPlot, list(
+    list(data = datToPlot %>% dplyr::filter(pop == "gDT/tracked", Treatment == "HSV" & dpi == "1"),
+       # colramp = viridisLite::mako),
+       colramp = "#4682b4"),
+  list(data = datToPlot %>% dplyr::filter(pop == "gBT/tracked", Treatment == "HSV" & dpi == "1"),
+       # colramp = viridisLite::inferno)
+       colramp = "#AA1F5E")
+))
+ggsave(file.path(anaDir, paste0("umap_HSV_1.tiff")), width = 2, height = 2)
+plot.p1(datToPlot, list(
+    list(data = datToPlot %>% dplyr::filter(pop == "gDT/tracked", Treatment == "HSV" & dpi == "2"),
+       # colramp = viridisLite::mako),
+       colramp = "#4682b4"),
+  list(data = datToPlot %>% dplyr::filter(pop == "gBT/tracked", Treatment == "HSV" & dpi == "2"),
+       # colramp = viridisLite::inferno)
+       colramp = "#AA1F5E")
+))
+ggsave(file.path(anaDir, paste0("umap_HSV_2.tiff")), width = 2, height = 2)
 ```
 
 ```{r}
