@@ -47,7 +47,7 @@ Omezarr <- R6::R6Class(
         
         # tmpFilepath <- tempfile(paste0(basename(imPathIn), tools::file_ext(imPathIn)))
         # tmpFilepath <- tempfile()
-        tmpFilepath <- tempfile(fileext = tools::file_ext(imPathIn))
+        tmpFilepath <- tempfile(fileext = paste0(".", tools::file_ext(imPathIn)))
         self$writeLog(paste(">> Copy to", tmpFilepath))
         
         if (length(filesToCopy$files) > 1) {
