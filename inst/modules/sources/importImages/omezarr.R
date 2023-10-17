@@ -49,11 +49,13 @@ Omezarr <- R6::R6Class(
           # make directory
           tmpFilepath <- tempfile()
           dir.create(tmpFilepath)
+          
           toFiles <- file.path(tmpFilepath, basename(filesToCopy$names))
           file.copy(filesToCopy$files, toFiles)
           imPathIn <- toFiles[[1]]
         } else {
           tmpFilepath <- tempfile(fileext = paste0(".", tools::file_ext(imPathIn)))
+          
           file.copy(imPathIn, tmpFilepath)
           imPathIn <- tmpFilepath
         }
