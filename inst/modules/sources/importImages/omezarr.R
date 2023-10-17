@@ -45,21 +45,20 @@ Omezarr <- R6::R6Class(
           extraFiles = extraFiles
         )
         
-        # tmpFilepath <- tempfile(paste0(basename(imPathIn), tools::file_ext(imPathIn)))
-        # tmpFilepath <- tempfile()
-        tmpFilepath <- tempfile(fileext = paste0(".", tools::file_ext(imPathIn)))
-        self$writeLog(paste(">> Copy to", tmpFilepath))
-        
         if (length(filesToCopy$files) > 1) {
           # make directory
+          tmpFilepath <- tempfile()
           dir.create(tmpFilepath)
           toFiles <- file.path(tmpFilepath, basename(filesToCopy$names))
           file.copy(filesToCopy$files, toFiles)
           imPathIn <- toFiles[[1]]
         } else {
+          tmpFilepath <- tempfile(fileext = paste0(".", tools::file_ext(imPathIn)))
           file.copy(imPathIn, tmpFilepath)
           imPathIn <- tmpFilepath
         }
+        
+        self$writeLog(paste(">> Copy to", tmpFilepath))
       }
       
       imPathInPattern <- "\"%s\""
