@@ -187,15 +187,16 @@ def run(params):
           channels_im = np.average(channels_im, axis = t_idx)
       
       # add to list
-      ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
-        np.squeeze(channels_im), im,
-        dim_utils.im_physical_size('x'),
-        dim_utils.im_physical_size('z'),
-        # TODO this takes a long time - not sure this is necessary for our case?
-        # oversampling_for_bundle = True,
-        oversampling_for_bundle = False,
-        pixel_size = dim_utils.im_physical_size('x')
-      ))
+      # ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
+      #   np.squeeze(channels_im), im,
+      #   dim_utils.im_physical_size('x'),
+      #   dim_utils.im_physical_size('z'),
+      #   # TODO this takes a long time - not sure this is necessary for our case?
+      #   # oversampling_for_bundle = True,
+      #   oversampling_for_bundle = False,
+      #   pixel_size = dim_utils.im_physical_size('x')
+      # ))
+      ext_props_tables.append([1,2,3])
       
   logfile_utils.log(f'> save zarr')
   

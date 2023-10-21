@@ -114,19 +114,13 @@ task <- cciaObj$runTask(
   taskID = 1
 )
 ```
-
-```{r}
-task$result(wait = TRUE)
-```
-
-
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "dFQ1N7", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
 )
 
 # run task
@@ -151,6 +145,22 @@ task <- cciaObj$runTask(
   taskID = 1
 )
 ```
+
+```{r}
+# ok - can you get the information for the filament network?
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
+)
+
+shgDTs <- cciaObj$popDT(
+  popType = "branch", pops = c("SHG.branch"),
+  includeFiltered = TRUE, flushCache = TRUE)
+```
+
 
 ```{r}
 # get contacts of T cells with SHG
