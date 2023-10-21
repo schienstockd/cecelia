@@ -11,7 +11,7 @@ import py.config_utils as cfg
 # https://github.com/phylars/ILEE_CSK/wiki/Tutorial
 # There were some errors coming up with the Github version
 # so use an adapted version
-import py.ILEE_CSK.ILEE_CSK as ILEE_CSK
+import py.ILEE_CSK as ILEE_CSK
 
 class IleeUtils(SegmentationUtils):
   def __init__(self, params):

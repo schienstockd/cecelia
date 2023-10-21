@@ -13,7 +13,7 @@ import py.script_utils as script_utils
 import py.slice_utils as slice_utils
 import py.measure_utils as measure_utils
 
-import py.ILEE_CSK.ILEE_CSK as ILEE_CSK
+import py.ILEE_CSK as ILEE_CSK
 
 import skimage.morphology
 import skan
