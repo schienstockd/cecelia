@@ -187,16 +187,15 @@ def run(params):
           channels_im = np.average(channels_im, axis = t_idx)
       
       # add to list
-      # ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
-      #   np.squeeze(channels_im), im,
-      #   dim_utils.im_physical_size('x'),
-      #   dim_utils.im_physical_size('z'),
-      #   # TODO this takes a long time - not sure this is necessary for our case?
-      #   # oversampling_for_bundle = True,
-      #   oversampling_for_bundle = False,
-      #   pixel_size = dim_utils.im_physical_size('x')
-      # ))
-      ext_props_tables.append(pd.DataFrame({'a':[1,2]}))
+      ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
+        np.squeeze(channels_im), im,
+        dim_utils.im_physical_size('x'),
+        dim_utils.im_physical_size('z'),
+        # TODO this takes a long time - not sure this is necessary for our case?
+        # oversampling_for_bundle = True,
+        oversampling_for_bundle = False,
+        pixel_size = dim_utils.im_physical_size('x')
+      ))
       
   logfile_utils.log(f'> save zarr')
   
@@ -230,11 +229,6 @@ def run(params):
       props_table.loc[:, props_table.columns.str.startswith(('label', 'bbox'))],
       how = 'left', on = 'label')
       
-  # add extended measures
-  ext_props_table = None
-  if len(ext_props_tables) > 0:
-    ext_props_table = pd.concat(ext_props_tables, axis = 0, ignore_index = True)
-  
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
@@ -242,7 +236,7 @@ def run(params):
       paths_table.drop('centroid_t', axis = 1) if 'centroid_t' in paths_table.columns else paths_table,
       # save = True,
       obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type'],
-      uns = {'extended': ext_props_table} if ext_props_table is not None else dict()
+      # uns = {'extended': ext_props_table} if ext_props_table is not None else dict()
       )
       
   # create positions
@@ -280,9 +274,14 @@ def run(params):
     else:
       spatial_cols = np.array(['centroid_y', 'centroid_x'])
   
+  # add extended measures
+  uns = dict()
+  if len(ext_props_tables) > 0:
+    uns = {'extended': pd.concat(ext_props_tables, axis = 0, ignore_index = True)}
+  uns['spatial_cols'] = spatial_cols
+  
   # create column identifier
-  label_view.adata.uns = {
-      'spatial_cols': spatial_cols,
+  label_view.adata.uns = uns
       # 'spatial_neighbors': {
       #     'connectivities_key': 'spatial_connectivities',
       #     'distances_key': 'spatial_distances'

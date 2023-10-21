@@ -49,12 +49,6 @@ fi
 module load Java/8.372
 module load Miniconda3/22.11.1-1
 
-# load MATLAB?
-if [ "$USE_MATLAB" == "y" ]; then
-   echo "Load MATLAB"
-   module load matlab/2021a
-fi
-
 # for segmentation calculations
 #module load eigen/3.3.8
 #module load cgal/4.14.1-python-3.7.4
@@ -68,6 +62,12 @@ export CONDA_ENVS_PATH=/data/gpfs/projects/punim1124/cecelia/envs/
 # need to activate conda environment for R to work
 . /apps/easybuild-2022/easybuild/software/Core/Miniconda3/22.11.1-1/bin/activate
 conda activate 'r-cecelia-env'
+
+# load MATLAB?
+if [ "$USE_MATLAB" == "y" ]; then
+   echo "Load MATLAB"
+   module load matlab/2021a
+fi
 
 # The job command(s):
 $CCIA_JOB_COMMAND

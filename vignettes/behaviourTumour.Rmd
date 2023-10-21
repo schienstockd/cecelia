@@ -138,10 +138,10 @@ task <- cciaObj$runTask(
   funParams = funParams,
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  # env = "local",
-  runInplace = FALSE,
-  # runInplace = TRUE,
+  # env = "hpc",
+  env = "local",
+  # runInplace = FALSE,
+  runInplace = TRUE,
   taskID = 1
 )
 ```
@@ -156,9 +156,13 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
 )
 
-shgDTs <- cciaObj$popDT(
-  popType = "branch", pops = c("SHG.branch"),
-  includeFiltered = TRUE, flushCache = TRUE)
+labels <- cciaObj$labelProps(valueName = "SHG.branch")
+labels$values_uns()
+labels$close()
+
+# shgDTs <- cciaObj$popDT(
+#   popType = "branch", pops = c("SHG.branch"),
+#   includeFiltered = TRUE, flushCache = TRUE)
 ```
 
 
