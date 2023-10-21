@@ -286,7 +286,6 @@ def run(params):
       #     'connectivities_key': 'spatial_connectivities',
       #     'distances_key': 'spatial_distances'
       # }
-  }
       
   # save props
   label_view.save(label_view.adata_filepath())
