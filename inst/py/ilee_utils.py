@@ -90,7 +90,7 @@ class IleeUtils(SegmentationUtils):
       self.logfile_utils.log(f'> Process Z: {i}')
       
       # otherwise this will fail if there is no signal
-      if im_to_process.max() > 1:
+      if im_to_process.max() > 0:
         diff_im[im_slices] = ILEE_CSK.ILEE_2d(
           im_to_process,
           k2 = self.k2, k1 = self.k1,

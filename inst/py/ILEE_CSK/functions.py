@@ -102,7 +102,8 @@ def rearrange_image_dimension(img, target_channel = None):
 def NE_peak (img, show_process=False):
     max_value = int(max(img.flatten()))
     NE_distribution=np.zeros(max_value) #to store count
-
+    mark = -1
+    
     last_NE=0
     for i in range(0, max_value, 20):
         if (show_process):
@@ -113,17 +114,18 @@ def NE_peak (img, show_process=False):
             mark = i
             break
         last_NE=NE_distribution[i]
-
-    for i in range (mark-40, mark):
-        if (show_process):
-            print('Analyzing at thresholding =', i)
-        labeled_map = label((img<i), return_num=True, connectivity=1)
-        NE_distribution[i]=labeled_map[1]
-        flag1 = NE_distribution[i]<NE_distribution[i-1]
-        flag2 = NE_distribution[i]<NE_distribution[i-2]
-        flag3 = NE_distribution[i]<NE_distribution[i-3]
-        if(flag1 & flag2 &flag3):
-            break
+    
+    if mark >= 0:
+      for i in range (mark-40, mark):
+          if (show_process):
+              print('Analyzing at thresholding =', i)
+          labeled_map = label((img<i), return_num=True, connectivity=1)
+          NE_distribution[i]=labeled_map[1]
+          flag1 = NE_distribution[i]<NE_distribution[i-1]
+          flag2 = NE_distribution[i]<NE_distribution[i-2]
+          flag3 = NE_distribution[i]<NE_distribution[i-3]
+          if(flag1 & flag2 &flag3):
+              break
 
     NE_peak = np.argmax(NE_distribution)
     return (NE_peak)
