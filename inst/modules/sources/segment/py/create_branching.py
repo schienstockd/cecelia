@@ -197,8 +197,6 @@ def run(params):
         pixel_size = dim_utils.im_physical_size('x')
       ))
       
-      logfile_utils.log(sk_df)
-  
   logfile_utils.log(f'> save zarr')
   
   if nscales > 1:
