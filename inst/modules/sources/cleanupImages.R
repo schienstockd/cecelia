@@ -53,8 +53,7 @@ CleanupImages <- R6::R6Class(
             names(newChannelNames) <- c(names(cciaObj$imChannelNames(valueName = "default")),
                                         sprintf("Chn%d", length(newChannelNames)))
             
-            cciaObj$setImChannelNames(newChannelNames,
-                                      valueName = valueName)
+            cciaObj$setImChannelNames(newChannelNames, valueName = valueName)
           }
         }
       

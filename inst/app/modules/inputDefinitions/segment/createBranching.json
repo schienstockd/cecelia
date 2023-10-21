@@ -26,6 +26,11 @@
 					"default": 2
 				}
 			},
+			"calcExtended": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"saveMeshes": {
 				"type:boolean": {
 					"default": false
@@ -59,8 +64,14 @@
 					"step": 1
 				}
 			},
-			"saveMeshes": {
+			"calcExtended": {
 				"index": 3,
+				"label": "Extended measurements",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 4,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}

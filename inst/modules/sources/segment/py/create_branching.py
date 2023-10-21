@@ -13,6 +13,8 @@ import py.script_utils as script_utils
 import py.slice_utils as slice_utils
 import py.measure_utils as measure_utils
 
+import py.ILEE_CSK.ILEE_CSK as ILEE_CSK
+
 import skimage.morphology
 import skan
 import numpy as np
@@ -28,6 +30,9 @@ def run(params):
   im_path = script_utils.get_param(params, 'imPath')
   pre_dilation_size = script_utils.get_param(params, 'preDilationSize')
   post_dilation_size = script_utils.get_param(params, 'postDilationSize')
+  label_channels = script_utils.get_param(params, 'labelChannels', default = [])
+  integrate_time_mode = script_utils.get_param(params, 'integrateTimeMode', default = None)
+  calc_extended = script_utils.get_param(params, 'calcExtended', default = False)
   save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
   
   # logging
@@ -66,6 +71,7 @@ def run(params):
     dtype = np.uint32)
   paths_tables = list()
   props_tables = list()
+  ext_props_tables = list()
   max_label = 0
   
   # go through slices
@@ -74,7 +80,7 @@ def run(params):
     logfile_utils.log(cur_slices)
   
     # get image to process
-    im = (np.squeeze(labels_data[0][cur_slices]) > 0).astype(np.uint8)
+    im = np.squeeze(labels_data[0][cur_slices])
     
     logfile_utils.log(f'> dilate pre {pre_dilation_size}')
     
@@ -84,13 +90,16 @@ def run(params):
       else:
         pre_selem = skimage.morphology.disk(pre_dilation_size)
           
-      im = skimage.morphology.binary_closing(im, pre_selem)
+      bin_im = skimage.morphology.binary_closing((im > 0).astype(np.uint8), pre_selem)
+    else:
+      bin_im = np.squeeze(labels_data[0][cur_slices]) > 0
     
     # create skeleton
     logfile_utils.log(f'> skeletonize')
-    binary_skeleton = skimage.morphology.skeletonize(im)
+    binary_skeleton = skimage.morphology.skeletonize(bin_im)
     skeleton = skan.Skeleton(binary_skeleton)
     del(binary_skeleton)
+    del(bin_im)
   
     # dilate
     logfile_utils.log(f'> dilate post {post_dilation_size}')
@@ -127,7 +136,7 @@ def run(params):
     if dim_utils.is_timeseries() and integrate_time is False:
       # paths_tables[i]['centroid_t'] = i
       paths_tables[i]['centroid_t'] = cur_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
-      
+    
     # save meshes
     if save_meshes is True:
       logfile_utils.log(f'> save meshes')
@@ -143,6 +152,52 @@ def run(params):
         # TODO this will always drop time
         integrate_time = True
       ))
+      
+    # calculate extended measurements
+    if calc_extended is True:
+      # get idx
+      cur_im_slices = list(cur_slices)
+      cur_im_slices.insert(dim_utils.dim_idx('C', ignore_time = True), slice(None))
+      cur_im_slices = tuple(cur_im_slices)
+      
+      # create shape and add time
+      channels_shape = list(im.shape)
+      if dim_utils.is_timeseries() and integrate_time is True:
+        channels_shape.insert(dim_utils.dim_idx('T'), dim_utils.dim_val('T'))
+      
+      # TODO should that be different.. ?
+      channels_im = np.zeros(channels_shape, dtype = np.uint32)
+      
+      for i in label_channels:
+        channels_im = np.maximum(
+          channels_im, 
+          np.squeeze(np.take(
+          im_data[0][cur_im_slices], i, axis = dim_utils.dim_idx('C')))
+          )
+        
+      # check whether to integrate time
+      if dim_utils.is_timeseries() and integrate_time is True:
+        logfile_utils.log('> Average time')
+        t_idx = dim_utils.dim_idx('T', ignore_channel = True)
+        
+        # get mode
+        if integrate_time_mode == 'max':
+          channels_im = np.max(axis = t_idx)
+        else:
+          channels_im = np.average(channels_im, axis = t_idx)
+      
+      # add to list
+      ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
+        np.squeeze(channels_im), im,
+        dim_utils.im_physical_size('x'),
+        dim_utils.im_physical_size('z'),
+        # TODO this takes a long time - not sure this is necessary for our case?
+        # oversampling_for_bundle = True,
+        oversampling_for_bundle = False,
+        pixel_size = dim_utils.im_physical_size('x')
+      ))
+      
+      logfile_utils.log(sk_df)
   
   logfile_utils.log(f'> save zarr')
   
@@ -175,6 +230,11 @@ def run(params):
     paths_table = paths_table.merge(
       props_table.loc[:, props_table.columns.str.startswith(('label', 'bbox'))],
       how = 'left', on = 'label')
+      
+  # add extended measures
+  ext_props_table = None
+  if len(ext_props_tables) > 0:
+    ext_props_table = pd.concat(ext_props_tables, axis = 0, ignore_index = True)
   
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
@@ -182,7 +242,8 @@ def run(params):
       # TODO this will always drop time
       paths_table.drop('centroid_t', axis = 1) if 'centroid_t' in paths_table.columns else paths_table,
       # save = True,
-      obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']
+      obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type'],
+      uns = {'extended': ext_props_table} if ext_props_table is not None else dict()
       )
       
   # create positions
@@ -231,14 +292,15 @@ def run(params):
       
   # save props
   label_view.save(label_view.adata_filepath())
-      
+  
 def main():
   # get params
   params = script_utils.script_params(
+    flatten_except = ['labelChannels']
   )
 
   # run cellpose
   run(params)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

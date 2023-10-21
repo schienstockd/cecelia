@@ -20,8 +20,8 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-pID <- "8BR53W"
-# pID <- "CV5iNI"
+# pID <- "8BR53W"
+pID <- "CV5iNI"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -29,8 +29,75 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+```
+
+```{r}
+# generate SHG
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  valueName = "SHG",
+  filamentChannels = list("Sliding SHG"),
+  normalise = 80,
+  k1 = 2.5,
+  k2 = 550,
+  integrateTime = TRUE,
+  integrateTimeMode = "avg",
+  # BLOCKS
+  clearDepth = FALSE,
+  clearTouchingBorder = FALSE,
+  haloSize = 0,
+  blockSize = -1,
+  overlap = -1,
+  blockSizeZ = -1,
+  overlapZ = -1,
+  context = 1
+)
+
+task <- cciaObj$runTask(
+  funName = "segment.ilee",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  valueName = "SHG",
+  preDilationSize = 0,
+  postDilationSize = 2,
+  calcExtended = TRUE
+)
+
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# run task
+task <- cciaObj$runTask(
+  funName = "segment.createBranching",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 ```{r}
@@ -256,6 +323,37 @@ tracksWeighted <- tracksWeighted %>% dplyr::rename(
 # )
 ```
 
+```{r}
+length(unique(shgDTs$`path-id`))
+nrow(shgDTs %>% drop_na())
+
+ggraph(shgDTs %>%
+         dplyr::rename(
+           from = `node-id-src`,
+           to = `node-id-dst`,
+           id = `path-id`
+         ), layout = "manual",
+       x = shgDTs$centroid_x, y = -shgDTs$centroid_y) +
+  theme_classic() +
+  geom_edge_link(colour = "white") +
+  geom_node_point() +
+  plotThemeDark(angle = 0) +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    strip.background = element_blank()
+  ) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))
+```
+
 
 ```{r fig_track_network, fig.height=8, fig.width=8}
 library(ggraph)
@@ -265,7 +363,8 @@ tracksPosMatched <- tracksPos[tracksPos$live.cell.clust.id %in% tracksWeighted$f
 ggraph(tracksWeighted, layout = "manual",
        x = tracksPosMatched$centroid_x, y = -tracksPosMatched$centroid_y) +
   theme_classic() +
-  geom_point(data = shgDTs, aes(centroid_x, -centroid_y), color = "#4CAF48") +
+  # geom_point(data = shgDTs, aes(centroid_x, -centroid_y), color = "#4CAF48") +
+  geom_density_2d_filled(data = shgDTs, aes(centroid_x, -centroid_y)) +
   # geom_edge_link(aes(width = weight, color = weight, alpha = weight)) +
   geom_edge_link(aes(width = weight, alpha = weight), colour = "white") +
   scale_edge_width(range = c(0.5, 4)) +

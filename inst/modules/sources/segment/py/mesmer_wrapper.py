@@ -68,5 +68,5 @@ def main():
   # run stardist
   run(params)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

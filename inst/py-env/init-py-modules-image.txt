@@ -40,3 +40,4 @@ squidpy>=1.3.0
 SimpleITK
 skan
 pstree
+ILEE_CSK

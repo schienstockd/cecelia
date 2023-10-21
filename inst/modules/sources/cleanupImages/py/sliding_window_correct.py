@@ -134,5 +134,5 @@ def main():
   # run AF and drift correction
   run(params)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

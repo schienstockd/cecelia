@@ -1,0 +1,215 @@
+{
+  "fun": {
+    "ilee": {
+      "category": "Module functions",
+      "label": "ILEE filaments",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"filamentChannels": {
+        "type:list": {}
+      },
+      "normalise": {
+				"type:integer": {
+					"min": 0,
+					"max": 100,
+					"default": 0
+				}
+			},
+      "k1": {
+				"type:double": {
+					"min": 0,
+					"max": 10,
+					"default": 2.5
+				}
+			},
+      "k2": {
+				"type:double": {
+					"min": 0,
+					"max": 1000,
+					"default": 550
+				}
+			},
+			"blockSize": {
+				"type:integer": {
+					"min": -1,
+					"max": 2048,
+					"default": 2048
+				}
+			},
+			"overlap": {
+				"type:integer": {
+					"min": -1,
+					"max": 256,
+					"default": 64
+				}
+			},
+			"blockSizeZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 1024,
+					"default": -1
+				}
+			},
+			"overlapZ": {
+				"type:integer": {
+					"min": -1,
+					"max": 64,
+					"default": -1
+				}
+			},
+			"context": {
+				"type:integer": {
+					"min": 1,
+					"max": 128,
+					"default": 52
+				}
+			},
+			"clearDepth": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"clearTouchingBorder": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"useDask": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"integrateTime": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"integrateTimeMode": {
+        "type:character": {
+          "default": "max"
+        }
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"filamentChannels": {
+        "index": 1,
+        "label": "Filaments",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+			"normalise": {
+				"index": 2,
+				"label": "Normalise",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"k1": {
+				"index": 3,
+				"label": "k1",
+				"widget:slider": {
+					"step": 0.1
+				}
+			},
+			"k2": {
+				"index": 4,
+				"label": "k2",
+				"widget:slider": {
+					"step": 50
+				}
+			},
+			"blockSize": {
+				"index": 5,
+				"label": "Block size",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlap": {
+				"index": 6,
+				"label": "Overlap",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"blockSizeZ": {
+				"index": 7,
+				"label": "Block size Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"overlapZ": {
+				"index": 8,
+				"label": "Overlap Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"context": {
+				"index": 9,
+				"label": "Context",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"clearDepth": {
+				"index": 10,
+				"label": "Clear depth",
+				"widget:checkbox": {
+				}
+			},
+			"clearTouchingBorder": {
+				"index": 11,
+				"label": "Clear borders",
+				"widget:checkbox": {
+				}
+			},
+			"useDask": {
+				"index": 12,
+				"label": "Lazy segmentation",
+				"widget:checkbox": {
+				}
+			},
+			"integrateTime": {
+				"index": 13,
+				"label": "Integrate time",
+				"widget:checkbox": {
+				}
+			},
+			"integrateTimeMode": {
+				"index": 14,
+				"label": "Integration mode",
+        "widget:selection": {
+          "size": 1,
+          "multiple": false,
+          "items": {
+            "Maximum": "max",
+            "Average": "avg"
+  				}
+        }
+			}
+    },
+    "outputs": {}
+  }
+}

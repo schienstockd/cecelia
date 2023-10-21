@@ -366,6 +366,13 @@ createTaskManager <- function(
       input$taskLocalUseGPU
   })
   
+  useMATLAB <- reactive({
+    if (useHPC() == TRUE)
+      input$taskHPCuseMATLAB
+    else
+      FALSE
+  })
+  
   # use HPC for task?
   useHPC <- reactive({
     taskEnvironment() == "hpc"
@@ -792,7 +799,8 @@ createTaskManager <- function(
       taskHPCnumGPUperTask = taskHPCnumGPUperTask(),
       taskHPCmemory = taskHPCmemory(),
       taskHPCwalltime = taskHPCwalltime(),
-      useGPU = useGPU()
+      useGPU = useGPU(),
+      useMATLAB = useMATLAB()
     )
   }
   

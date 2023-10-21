@@ -407,6 +407,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param taskHPCmemory integer of HPC memory in 'GB'
 #' @param taskHPCwalltime character of walltime 'dd-hh:mm:ss'
 #' @param useGPU boolean to use GPUs
+#' @param useMATLAB boolean to use MATLAB
 #' @examples
 #' TODO
 #' @export
@@ -414,7 +415,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
                            taskHPCnumNodes = 1, taskHPCnumTasks = 1,
                            taskHPCnumCPUperTask = 1, taskHPCnumGPUperTask = 1,
                            taskHPCmemory = 50, taskHPCwalltime = "00-01:00:00",
-                           useGPU = FALSE) {
+                           useGPU = FALSE, useMATLAB = FALSE) {
   # set HPC settings
   if (useGPU == TRUE) {
     hpcProjectQos = projectManager$getProjectHPCqosGPU()
@@ -465,7 +466,8 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           projectQos = hpcProjectQos,
           projectPartitions = hpcProjectPartitions,
           projectID = hpcProjectID,
-          useGPU = useGPU
+          useGPU = useGPU,
+          useMATLAB = useMATLAB
         )
       ),
       utils = list(

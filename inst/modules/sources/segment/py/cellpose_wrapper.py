@@ -79,5 +79,5 @@ def main():
   # run cellpose
   run(params)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
   main()

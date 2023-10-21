@@ -448,10 +448,10 @@ class NapariUtils:
   """
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   show_label_ids = True, as_np_array = False, show_tracks = True,
-                  points_colour = "white", cache = True, label_suffixes = [],
+                  points_colour = 'white', cache = True, label_suffixes = [],
                   show_branching = False, branching_property = 'type',
                   slices = None, split_tracks = None,
-                  tracks_blending = 'additive'):
+                  tracks_blending = 'additive', binarise_labels = False):
     # set label ids
     label_ids = self.label_ids(value_name = value_name)
 
@@ -506,11 +506,18 @@ class NapariUtils:
             self.im_labels[0] = self.im_labels[0][slices]
           
           # TODO Do we need to convert to numpy array to edit labels?
-          if as_np_array is True:
+          if as_np_array is True or binarise_labels is True:
             if self.as_dask is True:
-              self.im_labels[0] = self.im_labels[0].compute()
+              # self.im_labels[0] = self.im_labels[0].compute()
+              self.im_labels = [y.compute() for y in self.im_labels]
             else:
-              self.im_labels[0] = self.im_labels[0][:]
+              # self.im_labels[0] = self.im_labels[0][:]
+              self.im_labels = [y[:] for y in self.im_labels]
+            
+            # binarise labels
+            # TODO this is hard coded
+            if binarise_labels is True and not x.endswith('.branch.zarr'):
+              self.im_labels = [y > 0 for y in self.im_labels]
           
           print(self.im_labels[0].shape)
           

@@ -47,7 +47,7 @@ class SegmentationUtils:
     self.integrate_time_mode = script_utils.get_param(params, 'integrate_time_mode', default = 'max')
     self.normalise_to_whole = script_utils.get_param(params, 'normalise_to_whole', default = False)
     
-    self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 20)
+    self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 0)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
     # self.cell_size_max = script_utils.get_param(params, 'cell_size_max', default = 10**5)
     self.cell_size_max = script_utils.get_param(params, 'cell_size_max', default = 0)
@@ -400,43 +400,42 @@ class SegmentationUtils:
               alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
           
           # merge with exisiting labels
-          # if self.label_overlap > 0:
-          self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
-          self.logfile_utils.log(f'> Found {alg_labels["base"].max()}')
-          _, idx_pre = np.unique(alg_labels['base'], return_index = True)
-          labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
+          if self.label_overlap > 0:
+            self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
+            self.logfile_utils.log(f'> Found {alg_labels["base"].max()}')
+            _, idx_pre = np.unique(alg_labels['base'], return_index = True)
+            labels_pre = alg_labels['base'].ravel()[idx_pre[1:]]
           
-          # get matches
-          matched_masks = label_utils.match_masks(
-            [labels['base'][label_slices], alg_labels['base']],
-            # [alg_labels['base'], labels['base'][label_slices]],
-            stitch_threshold = self.label_overlap,
-            # remove_unmatched = False,
-            only_unmatched = True,
-            logfile_utils = self.logfile_utils)
+            # get matches
+            matched_masks = label_utils.match_masks(
+              [labels['base'][label_slices], alg_labels['base']],
+              # [alg_labels['base'], labels['base'][label_slices]],
+              stitch_threshold = self.label_overlap,
+              # remove_unmatched = False,
+              only_unmatched = True,
+              logfile_utils = self.logfile_utils)
           
-          # TODO merge masks - is there a better way?
-          # labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
-          labels['base'][label_slices] = np.maximum(labels['base'][label_slices], matched_masks[1])
-          
-          # propagate to other labels
-          # TODO is there a better way?
-          labels_post = labels['base'][label_slices].ravel()[idx_pre[1:]]
-          dict_replace = zip(labels_pre, labels_post)
-          
-          # go through 
-          # TODO there should be a better way
-          for j in [k for k in alg_labels.keys() if k != 'base']:
-            if alg_labels[j] is not None:
-              for x, y in dict_replace:
-                alg_labels[j][alg_labels[j] == x] = y
-                
-              labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
-              
-          # else:
-          #   self.logfile_utils.log(f'> Merge base labels by maximum')
-          #   # this will lead to artefacts - but is fast
-          #   labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
+            # TODO merge masks - is there a better way?
+            # labels['base'][label_slices] = np.maximum(matched_masks[0], matched_masks[1])
+            labels['base'][label_slices] = np.maximum(labels['base'][label_slices], matched_masks[1])
+            
+            # propagate to other labels
+            # TODO is there a better way?
+            labels_post = labels['base'][label_slices].ravel()[idx_pre[1:]]
+            dict_replace = zip(labels_pre, labels_post)
+            
+            # go through 
+            # TODO there should be a better way
+            for j in [k for k in alg_labels.keys() if k != 'base']:
+              if alg_labels[j] is not None:
+                for x, y in dict_replace:
+                  alg_labels[j][alg_labels[j] == x] = y
+                  
+                labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
+          else:
+            self.logfile_utils.log(f'> Merge base labels by maximum')
+            # this will lead to artefacts - but is fast
+            labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
           
           # get labels post merging
           y_max_label = labels['base'][label_slices].max()

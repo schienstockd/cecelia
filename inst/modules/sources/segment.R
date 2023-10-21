@@ -62,7 +62,8 @@ Segment <- R6::R6Class(
     },
     
     # update labels filepath
-    updateLabelsFilepath = function(valueName = NULL, labelSuffixes = c()) {
+    updateLabelsFilepath = function(valueName = NULL, labelSuffixes = c(),
+                                    labelChannels = c(), integrateTimeMode = NULL) {
       # get object
       cciaObj <- self$cciaTaskObject()
       
@@ -70,7 +71,7 @@ Segment <- R6::R6Class(
       channelNames <- cciaObj$imChannelNames()
       
       # add other measurements?
-      if (self$funParams()$calcMedianIntensities == TRUE) {
+      if ("calcMedianIntensities" %in% names(self$funParams()) && self$funParams()$calcMedianIntensities == TRUE) {
         attr(channelNames, "measure") <- "median"
       } else {
         attr(channelNames, "measure") <- "mean"
@@ -79,25 +80,31 @@ Segment <- R6::R6Class(
       # reset types
       attr(channelNames, "types") <- NULL
       
+      labelsPath <- paste0(valueName, cciaConf()$files$ext$labels)
+      
+      # add channels
+      if (length(labelChannels) > 0) {
+        attr(labelsPath, "channels") <- labelChannels
+      }
+      
+      # add time mode integration
+      if (!is.null(integrateTimeMode)) {
+        attr(labelsPath, "integrateTimeMode") <- integrateTimeMode
+      }
+      
       # add labels and properties
       # TODO why does this not work sometimes?
       if (length(labelSuffixes) > 0) {
         # set combined labels
-        labelsPath <- paste0(valueName, cciaConf()$files$ext$labels)
         attr(labelsPath, "suffixes") <- unlist(labelSuffixes)
-        
-        cciaObj$setImLabelsFilepath(labelsPath, valueName = valueName)
         
         # set types for channel names
         channelTypes <- unlist(labelSuffixes)
         
         attr(channelNames, "types") <- channelTypes
-      } else{
-        cciaObj$setImLabelsFilepath(
-          paste0(valueName, cciaConf()$files$ext$labels),
-          valueName = valueName
-        )
       }
+      
+      cciaObj$setImLabelsFilepath(labelsPath, valueName = valueName)
       
       # set channel names
       cciaObj$setImChannelNames(channelNames, valueName = valueName)
@@ -115,19 +122,19 @@ Segment <- R6::R6Class(
     },
     
     # update image information after segmentation
-    updateImageInfo = function(valueName = NULL, valueNames = NULL, labelSuffixes = c()) {
+    updateImageInfo = function(valueName = NULL, valueNames = NULL, ...) {
       # get value names if set, otherwise single value
       if (!is.null(valueNames) && length(valueNames) > 0) {
         # go through value names
         for (x in valueNames) {
-          self$updateLabelsFilepath(valueName = x, labelSuffixes = labelSuffixes)
+          self$updateLabelsFilepath(valueName = x, ...)
         }
       } else {
         if (is.null(valueName)) {
           valueName <- self$funParams()$valueName
         }
         
-        self$updateLabelsFilepath(valueName = valueName, labelSuffixes = labelSuffixes)
+        self$updateLabelsFilepath(valueName = valueName, ...)
       }
     }
   )

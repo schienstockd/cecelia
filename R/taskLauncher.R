@@ -125,6 +125,7 @@ TaskLauncher <- R6::R6Class(
           CCIA_JOB_NAME = curJobName,
           CCIA_EMAIL_ALERTS = emailAlerts,
           CCIA_EMAIL_ADDRESS = self$envParams()$conf$email,
+          USE_MATLAB = self$envParams()$conf$useMATLAB,
           CCIA_JOB_COMMAND = paste(
             # change into working directory
             # sprintf("cd %s", self$envParams()$dirs$task),

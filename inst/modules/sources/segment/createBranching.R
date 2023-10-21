@@ -25,14 +25,21 @@ CreateBranching <- R6::R6Class(
       valueName <- self$funParams()$valueName
       branchingName <- paste0(valueName, ".", "branch")
       
+      # get channels from segmentation
+      labelChannels <- cciaObj$valueAttr("imLabelsFilepath", "channels", valueName = valueName)
+      integrateTimeMode <- cciaObj$valueAttr("imLabelsFilepath", "integrateTimeMode", valueName = valueName)
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
         imPath = cciaObj$imFilepath(),
         branchingName = branchingName,
+        labelChannels = labelChannels,
+        integrateTimeMode = integrateTimeMode,
+        calcExtended = self$funParams()$calcExtended,
         preDilationSize = self$funParams()$preDilationSize,
         postDilationSize = self$funParams()$postDilationSize,
-        saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else TRUE
+        saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else FALSE
       )
       
       # call python
