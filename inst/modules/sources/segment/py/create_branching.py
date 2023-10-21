@@ -196,7 +196,7 @@ def run(params):
       #   oversampling_for_bundle = False,
       #   pixel_size = dim_utils.im_physical_size('x')
       # ))
-      ext_props_tables.append([1,2,3])
+      ext_props_tables.append(pd.DataFrame({'a':[1,2]}))
       
   logfile_utils.log(f'> save zarr')
   
