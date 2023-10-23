@@ -21,6 +21,7 @@ import numpy as np
 import zarr
 import shutil
 import pandas as pd
+import math
 
 def run(params):
   task_dir = script_utils.get_param(params, 'taskDir')
@@ -33,6 +34,7 @@ def run(params):
   label_channels = script_utils.get_param(params, 'labelChannels', default = [])
   integrate_time_mode = script_utils.get_param(params, 'integrateTimeMode', default = None)
   calc_extended = script_utils.get_param(params, 'calcExtended', default = False)
+  aniso_radius = script_utils.get_param(params, 'anisoRadius', default = 50)
   save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
   
   # logging
@@ -195,7 +197,10 @@ def run(params):
         # TODO this takes a long time - not sure this is necessary for our case?
         # oversampling_for_bundle = True,
         oversampling_for_bundle = False,
-        pixel_size = dim_utils.im_physical_size('x')
+        pixel_size = dim_utils.im_physical_size('x'),
+        aniso_radius = aniso_radius,
+        aniso_box_size = math.floor(aniso_radius/2),
+        return_box_data = True
       )
       ext_props_tables.append(ilee_summary)
       ext_props_aniso.append(ilee_anisotropy)

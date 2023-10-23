@@ -31,6 +31,13 @@
 					"default": false
 				}
 			},
+			"anisoRadius": {
+				"type:integer": {
+					"min": 0,
+					"max": 250,
+					"default": 50
+				}
+			},
 			"saveMeshes": {
 				"type:boolean": {
 					"default": false
@@ -68,6 +75,13 @@
 				"index": 3,
 				"label": "Extended measurements",
 				"widget:checkbox": {
+				}
+			},
+			"anisoRadius": {
+				"index": 3,
+				"label": "Anisotropy radius",
+				"widget:slider": {
+					"step": 1
 				}
 			},
 			"saveMeshes": {

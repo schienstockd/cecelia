@@ -37,6 +37,7 @@ CreateBranching <- R6::R6Class(
         labelChannels = labelChannels,
         integrateTimeMode = integrateTimeMode,
         calcExtended = self$funParams()$calcExtended,
+        anisoRadius = self$funParams()$anisoRadius,
         preDilationSize = self$funParams()$preDilationSize,
         postDilationSize = self$funParams()$postDilationSize,
         saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else FALSE
