@@ -1070,7 +1070,7 @@ def ILEE_2d (img, k2, k1 = 2.5, pL_type = 'pL_8', gauss_dif = True):
 
 
 def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank = False,
-                               aniso_radius = 150, aniso_box_size = aniso_radius/2, aniso_weighting_method = 'by_length',
+                               aniso_radius = 150, aniso_box_size = 75, aniso_weighting_method = 'by_length',
                                return_box_data = False):
     '''
 
@@ -1211,7 +1211,7 @@ def ILEE_3d (img, xy_unit, z_unit, k1, k2, single_k1 = False, use_matlab = False
 
 
 def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_for_bundle = True, pixel_size = 1,
-                               aniso_radius = 150, aniso_box_size = aniso_radius/2, aniso_weighting_method = 'by_length',
+                               aniso_radius = 150, aniso_box_size = 75, aniso_weighting_method = 'by_length',
                                return_box_data = False):
     '''
     Compute all cytoskeleton indices using 3d raw and difference image as input.
