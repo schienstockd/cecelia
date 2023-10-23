@@ -188,7 +188,7 @@ def run(params):
           channels_im = np.average(channels_im, axis = t_idx)
       
       # get anisotropy and summary
-      ilee_summary, ilee_anisotropy ILEE_CSK.analyze_actin_3d_standard(
+      ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_3d_standard(
         np.squeeze(channels_im), im,
         dim_utils.im_physical_size('x'),
         dim_utils.im_physical_size('z'),
