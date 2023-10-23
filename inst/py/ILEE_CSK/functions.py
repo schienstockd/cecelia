@@ -753,7 +753,7 @@ def average_DT_low_memory(img_binary, img_sk):
     std_sk = np.std(data_sk)
     return(ave_all, std_all, ave_sk, std_sk)
 
-@nb.njit
+# @nb.njit
 def anisotropy_2d_internal(shape,adj,point_list,radius,box_size):
     '''
     INPUT:
@@ -1069,7 +1069,9 @@ def ILEE_2d (img, k2, k1 = 2.5, pL_type = 'pL_8', gauss_dif = True):
     return(dif_map)
 
 
-def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank = False):
+def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank = False,
+                               aniso_radius = 150, aniso_box_size = aniso_radius/2, aniso_weighting_method = 'by_length',
+                               return_box_data = False):
     '''
 
     Compute all cytoskeleton indices using 2d raw and difference image as input.
@@ -1128,12 +1130,16 @@ def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank 
     node_branching_list = node_branching_list-2
     branching_act = np.sum(node_branching_list[node_branching_list>0]) / MF_full_length
 
-    anisotropy = analyze_anisotropy_2d (img_sk, radius = 150, box_size = 75, weighting_method = 'by_length', return_box_data = False)
+    anisotropy = analyze_anisotropy_2d (img_sk, radius = aniso_radius, box_size = aniso_box_size, weighting_method = aniso_weighting_method, return_box_data = return_box_data)
 
     print('Note: output length unit: pixel unit (PU)')
     df = pd.DataFrame(data = [[occupancy, linear_density, skewness, cv, diameter_tdt, diameter_sdt, sev_act, branching_act, anisotropy]],
                       columns = ['occupancy', 'linear_density (PU/PU^2)', 'skewness', 'cv', 'Diameter_tdt (PU)', 'Diameter_sdt (PU)', 'sev_act (/PU of filament)', 'branching_act(/PU of filament)', 'anisotropy'])
-    return(df)
+    
+    if return_box_data is True:
+      return(df, anisotropy)
+    else:
+      return(df)
 
 
 def ILEE_3d (img, xy_unit, z_unit, k1, k2, single_k1 = False, use_matlab = False, use_matlabGPU = False, gauss_dif = True):
@@ -1204,7 +1210,9 @@ def ILEE_3d (img, xy_unit, z_unit, k1, k2, single_k1 = False, use_matlab = False
     return(dif_map)
 
 
-def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_for_bundle = True, pixel_size = 1):
+def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_for_bundle = True, pixel_size = 1,
+                               aniso_radius = 150, aniso_box_size = aniso_radius/2, aniso_weighting_method = 'by_length',
+                               return_box_data = False):
     '''
     Compute all cytoskeleton indices using 3d raw and difference image as input.
 
@@ -1259,7 +1267,7 @@ def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_f
     node_branching_list = node_branching_list-2
     branching_act = np.sum(node_branching_list[node_branching_list>0]) / MF_full_length
 
-    anisotropy = analyze_anisotropy_3d(img_sk, radius=50, box_size=25, weighting_method = 'by_length', return_box_data=False)
+    anisotropy = analyze_anisotropy_3d(img_sk, radius=aniso_radius, box_size=aniso_box_size, weighting_method = aniso_weighting_method, return_box_data=return_box_data)
 
     if (oversampling_for_bundle):
         print('start oversampling for calculation of physical indexes of bundling class; this may take some time (~1min)')
@@ -1284,7 +1292,11 @@ def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_f
 
     df = pd.DataFrame(data = [[occupancy, linear_density, skewness, cv, diameter_tdt, diameter_sdt, sev_act, branching_act, anisotropy]],
                       columns = ['occupancy', 'linear_density (PU/PU^2)', 'skewness', 'cv', 'Diameter_tdt (PU)', 'Diameter_sdt (PU)', 'sev_act (/PU)', 'branching_act(/PU)', 'anisotropy'])
-    return(df)
+    
+    if return_box_data is True:
+      return(df, anisotropy)
+    else:
+      return(df)
 
 
 ##batch processing------------------------------------------------------------

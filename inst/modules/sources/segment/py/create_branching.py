@@ -72,6 +72,7 @@ def run(params):
   paths_tables = list()
   props_tables = list()
   ext_props_tables = list()
+  ext_props_aniso = list()
   max_label = 0
   
   # go through slices
@@ -186,8 +187,8 @@ def run(params):
         else:
           channels_im = np.average(channels_im, axis = t_idx)
       
-      # add to list
-      ext_props_tables.append(ILEE_CSK.analyze_actin_3d_standard(
+      # get anisotropy and summary
+      ilee_summary, ilee_anisotropy ILEE_CSK.analyze_actin_3d_standard(
         np.squeeze(channels_im), im,
         dim_utils.im_physical_size('x'),
         dim_utils.im_physical_size('z'),
@@ -195,7 +196,9 @@ def run(params):
         # oversampling_for_bundle = True,
         oversampling_for_bundle = False,
         pixel_size = dim_utils.im_physical_size('x')
-      ))
+      )
+      ext_props_tables.append(ilee_summary)
+      ext_props_aniso.append(ilee_anisotropy)
       
   logfile_utils.log(f'> save zarr')
   
@@ -277,7 +280,9 @@ def run(params):
   # add extended measures
   uns = dict()
   if len(ext_props_tables) > 0:
-    uns = {'extended': pd.concat(ext_props_tables, axis = 0, ignore_index = True)}
+    uns = {
+      'ilee_summary': pd.concat(ext_props_tables, axis = 0, ignore_index = True),
+      'ilee_anisotropy': ext_props_aniso}
   uns['spatial_cols'] = spatial_cols
   
   # create column identifier

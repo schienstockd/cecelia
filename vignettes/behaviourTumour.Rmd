@@ -20,8 +20,8 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-pID <- "8BR53W"
-# pID <- "CV5iNI"
+# pID <- "8BR53W"
+pID <- "CV5iNI"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -29,8 +29,8 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_3P/CECELIA"
 ```
 
 ```{r}
@@ -153,12 +153,16 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
+  # pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE 
 )
 
 labels <- cciaObj$labelProps(valueName = "SHG.branch")
-labels$values_uns()
+uns <- labels$values_uns()
 labels$close()
+
+paste(as.list(uns$ilee_summary), collapse = ", ")
+paste(names(uns$ilee_summary), collapse = ", ")
 
 # shgDTs <- cciaObj$popDT(
 #   popType = "branch", pops = c("SHG.branch"),
