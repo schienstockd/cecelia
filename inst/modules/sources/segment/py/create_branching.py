@@ -190,18 +190,28 @@ def run(params):
           channels_im = np.average(channels_im, axis = t_idx)
       
       # get anisotropy and summary
-      ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_3d_standard(
-        np.squeeze(channels_im), im,
-        dim_utils.im_physical_size('x'),
-        dim_utils.im_physical_size('z'),
-        # TODO this takes a long time - not sure this is necessary for our case?
-        # oversampling_for_bundle = True,
-        oversampling_for_bundle = False,
-        pixel_size = dim_utils.im_physical_size('x'),
-        aniso_radius = aniso_radius,
-        aniso_box_size = math.floor(aniso_radius/2),
-        return_box_data = True
-      )
+      if dim_utils.is_3D():
+        ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_3d_standard(
+          np.squeeze(channels_im), im,
+          dim_utils.im_physical_size('x'),
+          dim_utils.im_physical_size('z'),
+          # TODO this takes a long time - not sure this is necessary for our case?
+          # oversampling_for_bundle = True,
+          oversampling_for_bundle = False,
+          pixel_size = dim_utils.im_physical_size('x'),
+          aniso_radius = aniso_radius,
+          aniso_box_size = math.floor(aniso_radius/2),
+          return_box_data = True
+        )
+      else:
+        ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_2d_standard(
+          np.squeeze(channels_im), im,
+          pixel_size = dim_utils.im_physical_size('x'),
+          aniso_radius = aniso_radius,
+          aniso_box_size = math.floor(aniso_radius/2),
+          return_box_data = True
+        )
+      
       ext_props_tables.append(ilee_summary)
       ext_props_aniso.append(ilee_anisotropy)
       
@@ -286,8 +296,16 @@ def run(params):
   uns = dict()
   if len(ext_props_tables) > 0:
     uns = {
-      'ilee_summary': pd.concat(ext_props_tables, axis = 0, ignore_index = True),
-      'ilee_anisotropy': ext_props_aniso}
+      # https://github.com/scverse/anndata/issues/504
+      # float64 is probably not supported
+      'ilee_summary': pd.concat(ext_props_tables, axis = 0, ignore_index = True).astype(np.float32),
+      # 'ilee_anisotropy': ext_props_aniso}
+      'ilee_coor_list': [x[0] for x in ext_props_aniso],
+      'ilee_eigval': [x[1] for x in ext_props_aniso],
+      'ilee_eigvec': [x[2] for x in ext_props_aniso],
+      'ilee_box_total_length': [x[3] for x in ext_props_aniso],
+      'ilee_box_anisotropy': [x[4] for x in ext_props_aniso]
+      }
   uns['spatial_cols'] = spatial_cols
   
   # create column identifier

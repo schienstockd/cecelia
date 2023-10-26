@@ -1,0 +1,44 @@
+{
+  "fun": {
+    "distLeadingEdge": {
+      "category": "Module functions",
+      "label": "Distance leading edge",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "borderCutoff": {
+        "type:double": {
+          "min": 0,
+          "max": 50,
+          "default": 10
+        }
+      },
+      "popsForEdge": {
+        "type:list": {}
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "borderCutoff": {
+        "index": 0,
+        "label": "Border cutoff",
+        "widget:slider": {
+          "step": 0.5
+        }
+      },
+      "popsForEdge": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

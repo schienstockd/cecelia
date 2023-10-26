@@ -1,0 +1,70 @@
+{
+  "fun": {
+    "timeDeltaCorrect": {
+      "category": "Module functions",
+      "label": "Time Delta Correction",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"timeDelta": {
+				"type:integer": {
+					"min": 0,
+					"max": 20,
+					"default": 1
+				}
+			},
+	    "imChannels": {
+        "type:list": {}
+      },
+  		"createNewChannels": {
+				"type:boolean": {
+					"default": false
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+  		"timeDelta": {
+  			"index": 1,
+  			"label": "Time Delta",
+				"widget:slider": {
+					"step": 1
+				}
+  		},
+	    "imChannels": {
+        "index": 2,
+        "label": "Channels",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+      "createNewChannels": {
+				"index": 3,
+				"label": "Create new channels",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

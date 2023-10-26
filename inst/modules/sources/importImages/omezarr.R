@@ -72,6 +72,9 @@ Omezarr <- R6::R6Class(
         } else if ("is3P" %in% names(self$funParams()) && self$funParams()$is3P == TRUE) {
           imPathIn <- file.path(
             self$envParams()$dirs$zero, basename(imPathIn))
+          # set name as folder name
+          cciaObj$setCciaName(basename(dirname(imPathIn)))
+          cciaObj$saveState()
         } else if (self$funParams()$isSequence == FALSE) {
           # revert to Import image only if not sequence
           # otherwise take the original file name

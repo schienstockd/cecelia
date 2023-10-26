@@ -279,6 +279,7 @@ default:
       clust.cell.is.clust: "logical"
       clust.cell.contact: "logical"
       clust.cell.min_distance: "numeric"
+      clust.cell.dist.leading.edge: "numeric"
       flow.cell.is.clust: "logical"
       flow.cell.clust.id: "categorical"
       flow.cell.contact: "logical"
@@ -286,6 +287,7 @@ default:
       flow.cell.contains_n: "numeric"
       flow.cell.contained_by: "logical"
       flow.cell.min_distance: "numeric"
+      flow.cell.dist.leading.edge: "numeric"
   python:
     viewer:
       viewerPath: "viewer/"

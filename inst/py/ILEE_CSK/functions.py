@@ -843,9 +843,10 @@ def analyze_anisotropy_2d (img_sk, radius = 90, box_size = 45, weighting_method 
     adj = sk_data.nbgraph
     point_list = sk_data.coordinates
     shape_tuple = img_sk.shape
+    
     eigval, eigvec, box_total_length, coor_list = anisotropy_2d_internal(shape = shape_tuple, adj = adj, point_list = point_list, radius = radius, box_size = box_size)
     box_anisotropy = np.abs(eigval[:,:,0] - eigval[:,:,1])
-
+    
     if (weighting_method == 'by_length'):
         total_length = np.sum(box_total_length)
         anisotropy = np.sum(box_anisotropy) / total_length
@@ -1106,9 +1107,11 @@ def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank 
     pixs_skewness = ((onMF_pixs-mean_onMF)/std_onMF)**3
     skewness = np.mean(pixs_skewness)
     cv = std_onMF/mean_onMF
-
-    img_dif_ovsp = resize(img_dif, (img_dif.shape[0]*3, img_dif.shape[1]*3), order = 3)
-    img_binary = img_dif_ovsp>0
+    
+    # TODO why is this here?
+    # img_dif_ovsp = resize(img_dif, (img_dif.shape[0]*3, img_dif.shape[1]*3), order = 3)
+    # img_binary = img_dif_ovsp>0
+    img_binary = img_dif>0
 
     DT_map = distance_transform_edt (img_binary)
     mean_DT = np.mean(DT_map[DT_map>0])
@@ -1129,15 +1132,20 @@ def analyze_actin_2d_standard (img, img_dif, pixel_size = 1, exclude_true_blank 
     node_count = node_branching_list.shape[0]
     node_branching_list = node_branching_list-2
     branching_act = np.sum(node_branching_list[node_branching_list>0]) / MF_full_length
-
-    anisotropy = analyze_anisotropy_2d (img_sk, radius = aniso_radius, box_size = aniso_box_size, weighting_method = aniso_weighting_method, return_box_data = return_box_data)
+    
+    if return_box_data is True:
+      anisotropy, coor_list, eigval, eigvec, box_total_length, box_anisotropy = analyze_anisotropy_2d(
+        img_sk, radius = aniso_radius, box_size = aniso_box_size, weighting_method = aniso_weighting_method, return_box_data = True)
+    else:
+      anisotropy = analyze_anisotropy_2d(
+        img_sk, radius = aniso_radius, box_size = aniso_box_size, weighting_method = aniso_weighting_method, return_box_data = False)
 
     print('Note: output length unit: pixel unit (PU)')
     df = pd.DataFrame(data = [[occupancy, linear_density, skewness, cv, diameter_tdt, diameter_sdt, sev_act, branching_act, anisotropy]],
                       columns = ['occupancy', 'linear_density (PU/PU^2)', 'skewness', 'cv', 'Diameter_tdt (PU)', 'Diameter_sdt (PU)', 'sev_act (/PU of filament)', 'branching_act(/PU of filament)', 'anisotropy'])
     
     if return_box_data is True:
-      return(df, anisotropy)
+      return(df, (coor_list, eigval, eigvec, box_total_length, box_anisotropy))
     else:
       return(df)
 
@@ -1266,8 +1274,13 @@ def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_f
     node_count = node_branching_list.shape[0]
     node_branching_list = node_branching_list-2
     branching_act = np.sum(node_branching_list[node_branching_list>0]) / MF_full_length
-
-    anisotropy = analyze_anisotropy_3d(img_sk, radius=aniso_radius, box_size=aniso_box_size, weighting_method = aniso_weighting_method, return_box_data=return_box_data)
+    
+    if return_box_data is True:
+      anisotropy, coor_list, eigval, eigvec, box_total_length, box_anisotropy = analyze_anisotropy_3d(
+        img_sk, radius=aniso_radius, box_size=aniso_box_size, weighting_method = aniso_weighting_method, return_box_data=True)
+    else:
+      anisotropy = analyze_anisotropy_3d(
+        img_sk, radius=aniso_radius, box_size=aniso_box_size, weighting_method = aniso_weighting_method, return_box_data=False)
 
     if (oversampling_for_bundle):
         print('start oversampling for calculation of physical indexes of bundling class; this may take some time (~1min)')
@@ -1294,7 +1307,7 @@ def analyze_actin_3d_standard (img, img_dif_ori, xy_unit, z_unit, oversampling_f
                       columns = ['occupancy', 'linear_density (PU/PU^2)', 'skewness', 'cv', 'Diameter_tdt (PU)', 'Diameter_sdt (PU)', 'sev_act (/PU)', 'branching_act(/PU)', 'anisotropy'])
     
     if return_box_data is True:
-      return(df, anisotropy)
+      return(df, (coor_list, eigval, eigvec, box_total_length, box_anisotropy))
     else:
       return(df)
 

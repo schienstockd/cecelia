@@ -48,7 +48,7 @@
         # add density colour per pop
         # TODO is this the right spot for this?
         if (nrow(DT) > 0) {
-          DT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
+          DT[, pop.density := .flowColours(.SD$centroid_x, .SD$centroid_y),
              by = c("uID", "pop"), .SDcols = c("centroid_x", "centroid_y")]
           
           # set order of populations
@@ -65,6 +65,11 @@
       # populations to get
       resultParamsPops <- reactive({
         input$resultParamsPops
+      }) %>% debounce(cciaConf()$tasks$results$poll)
+      
+      # plotting axis
+      resultSummaryAxisY <- reactive({
+        input$resultSummaryAxisY
       }) %>% debounce(cciaConf()$tasks$results$poll)
       
       # selected ccia object
@@ -115,6 +120,7 @@
         req(cciaObj())
         req(popDT())
         req(resultParamsPops())
+        req(resultSummaryAxisY())
         req(all(
           !is.null(input$portraitMode),
           !is.null(input$nRow),
@@ -159,7 +165,6 @@
             # p1s[[i]] <<- ggplot(x, aes(get(axisX), -get(axisY))) +
             p1 <- ggplot(x, aes(get(axisX), get(axisY))) +
               theme_classic() +
-              geom_point(colour = x$density) +
               facet_grid(uID~pop) +
               theme(
                 strip.text = element_text(size = input$labelSize),
@@ -168,6 +173,15 @@
             
             if (input$darkThemeMode == TRUE) {
               p1 <- p1 + plotThemeDark(angle = 0, fontSize = input$labelSize)
+            }
+            
+            # add viridis scale
+            if (resultSummaryAxisY() != "pop.density") {
+              p1 <- p1 + 
+                geom_point(aes(color = get(resultSummaryAxisY()))) +
+                viridis::scale_colour_viridis()
+            } else {
+              p1 <- p1 + geom_point(colour = x$pop.density)
             }
             
             # further theme
@@ -238,10 +252,12 @@
         
         # get pop type columns
         popTypePops <- list()
+        popTypeCols <- list()
         
         if (!is.null(popType())) {
           popTypePops <- unname(cciaSet()$popPaths(
             uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
+          popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
         }
         
         # add root
@@ -249,6 +265,16 @@
         
         # get pop type columns
         popTypeChoices <- cciaConf()$parameters$popTypes
+        
+        # create choices for y axis
+        resultSummaryAxisYList <- popTypeCols
+        names(resultSummaryAxisYList) <- popTypeCols
+        
+        resultSummaryAxisYList <- append(
+          list(
+            "Population density" = "pop.density"
+          ), resultSummaryAxisYList
+        )
         
         # create ui elements
         tagList(fluidRow(
@@ -277,7 +303,16 @@
           ),
           column(
             3,
-            tags$label("Summary plots")
+            tags$label("Summary plots"),
+            createSelectInput(
+              session$ns("resultSummaryAxisY"),
+              label = "Y Axis",
+              choices = resultSummaryAxisYList,
+              multiple = FALSE,
+              selected = isolate(resultSummaryAxisY())
+              # selected = "live.cell.hmm.state.movement"
+              # selected = "clust.cell.contact#clust.TRITC+"
+            ),
           )
         ))
       })

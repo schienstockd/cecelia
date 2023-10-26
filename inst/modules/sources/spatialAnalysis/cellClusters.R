@@ -99,8 +99,6 @@ CellClusters <- R6::R6Class(
         self$writeLog(i)
         
         centroidCols <- colnames(popDT)[startsWith(colnames(popDT), "centroid_")]
-        popDT[, ..centroidCols]
-        
         convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
         
         # build result columns

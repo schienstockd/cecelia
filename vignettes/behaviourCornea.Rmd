@@ -20,29 +20,169 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-pID <- "8BR53W"
+pID <- "uh0h3c"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/clusterTracks/movement"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/CECELIA"
 ```
 
 ```{r}
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE
+# )
+# 
+# # run task
+# funParams <- list(
+#   valueName = "default", 
+#   imChannels = c("one"),
+#   timeDelta = 1,
+#   createNewChannels = TRUE
+# )
+# 
+# task <- cciaObj$runTask(
+#   funName = "cleanupImages.timeDeltaCorrect",
+#   funParams = funParams,
+#   env = "local",
+#   runInplace = TRUE,
+#   taskID = 1
+# )
+```
+
+```{r}
+# show numbers of cells per area
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "oWCeZZ", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "Bf68An", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "fht6t7", versionID = versionID, initReactivity = FALSE
 )
 
-# cciaObj$setImLabelPropsFilepath("default.h5ad", valueName = "default", setDefault = FALSE)
-# cciaObj$saveState()
-cciaObj$savePops("live", pops = c("default/tracked"), includeFiltered = TRUE)
-cciaObj$savePopMap("live", includeFiltered = TRUE)
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# get branching
+labels <- lapply(cciaObj$cciaObjects(), function(x) {
+  y <- x$labelProps(valueName = "vessels.branch")
+  uns <- y$values_uns()
+  y$close()
+  
+  uns
+})
+
+# load tracks
+tracks.tables <- list(
+  "b9o98P" = read.csv(
+    "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/Tests/tracking/MW_P011_inf_exp1.csv"),
+  "4i3bxX" = read.csv(
+    "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/Tests/tracking/MW_P011_whorl_exp2.csv")
+)
+```
+
+```{r}
+# can you combine tracks with anisotropy?
+# convert to tracks to get speed and angle and overall movement patterns
+# can you import them directly to the image?
+id.column <- which(colnames(tracks.tables[[1]]) == "Track")
+time.column <- which(colnames(tracks.tables[[1]]) == "Slice")
+pos.columns.x <- which(colnames(tracks.tables[[1]]) == "X")
+pos.columns.y <- which(colnames(tracks.tables[[1]]) == "Y")
+pos.columns <- c(pos.columns.x, pos.columns.y)
+
+tracks <- lapply(tracks.tables, function(x) {
+  celltrackR::as.tracks(
+    x,
+    id.column = id.column,
+    time.column = time.column,
+    pos.columns = pos.columns,
+    scale.t = 1
+  )
+})
+```
+
+```{r}
+# can you match the local anisotropy to each track?
+for (i in names(labels)) {
+  x <- labels[[i]]
+  
+  coordsX <- x$ilee_coor_list[1,,,1]
+  coordsY <- x$ilee_coor_list[1,,,2]
+  dim(coordsX) <- NULL
+  dim(coordsY) <- NULL
+  m <- cbind(coordsX, coordsY)
+  
+  # get anisotropy for each spot in track
+  tracks.tables[[i]]$aniso.id <- dbscan::kNN(m, k = 1, query = tracks.tables[[i]][, c("X", "Y")])$id
+  tracks.tables[[i]]$aniso.box <- x$ilee_box_anisotropy[tracks.tables[[i]]$aniso.id]
+}
+```
+
+
+```{r}
+# get track measurements
+measures <- c(
+  "speed", "duration", "trackLength", "meanTurningAngle",
+  "displacement", "straightness", "displacementRatio",
+  "outreachRatio", "asphericity", "overallAngle"
+)
+
+tracks.measures <- list()
+
+for (measure.x in measures) {
+  # get measurements
+  tracks.measures[[measure.x]] <- tracks.measure.fun(
+    tracks, eval(parse(text = paste0("celltrackR::", measure.x))),
+    result.name = measure.x, idcol = "uID")
+}
+
+tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.measures)
+tracksMeasures[, track_id := as.integer(track_id)]
+
+# then merge average anisotropy
+tracksMeasures[as.data.table(rbindlist(tracks.tables, idcol = "uID") %>%
+  group_by(uID, Track) %>%
+  summarise(mean.aniso.box = mean(aniso.box))), on = c("uID", "track_id" = "Track"),
+  mean.aniso.box := mean.aniso.box]
+
+# add % aniso
+for (i in names(labels)) {
+  # exp.info[uID == i, total.box.length := sum(labels[[i]]$ilee_box_total_length)]
+  # exp.info[uID == i, total.box.length := mean(labels[[i]]$ilee_box_total_length)]
+  exp.info[uID == i, total.box.length := max(labels[[i]]$ilee_box_total_length)]
+}
+
+tracksMeasures[exp.info, on = c("uID"), weighted.aniso.box := mean.aniso.box/total.box.length * 100]
+```
+
+```{r fig_track_aniso, fig.height=10, fig.width=4}
+# plot all combinations of measurements with anisotropy
+datToPlot <- tracksMeasures %>%
+  # pivot_longer(cols = c(measures, "mean.aniso.box"),
+  pivot_longer(cols = measures,
+               names_to = "measure", values_to = "value")
+
+# ggplot(datToPlot, aes(mean.aniso.box, value, color = uID)) +
+ggplot(datToPlot, aes(weighted.aniso.box, value, color = uID)) +
+  theme_classic() +
+  geom_point(shape = 1, stroke = 1) +
+  facet_wrap(.~measure, ncol = 3, scales = "free_y") +
+  xlab("Close to anisotropy with % of") +
+  scale_color_brewer(palette = "Set2") +
+  expand_limits(x = 0, y = 0) +
+  xlim(0, 50) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.justification = "left"
+  ) 
+
+ggsave(file.path(anaDir, "aniso.pdf"), height = 8, width = 6)
 ```
 

@@ -1051,7 +1051,8 @@
         popCats <- list()
         
         if (!is.null(popType())) {
-          popTypePops <- unname(cciaObj()$popPaths(popType(), includeFiltered = TRUE, includeRoot = TRUE))
+          popTypePops <- unname(cciaSet()$popPaths(
+            uIDs = selectedUIDs(), popType = popType(), includeFiltered = TRUE))
           popTypeCols <- cciaObj()$labelPropsCols(popType = popType())
         }
         

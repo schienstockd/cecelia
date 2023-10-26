@@ -34,7 +34,35 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/JY/tumours"
 ```
 
-```{r fig_cells_per_area, fig.height=3, fig.width=3}
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# run task
+funParams <- list(
+  popType = "flow",
+  popsForEdge = c("/nondebris/included"),
+  borderCutoff = 10
+)
+
+# run task
+task <- cciaObj$runTasks(
+  funName = "spatialAnalysis.distLeadingEdge",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = uIDs
+)
+```
+
+```{r}
 # show numbers of cells per area
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
@@ -45,11 +73,22 @@ cciaObj <- initCciaObject(
 )
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- c("Ad8GPQ")
 
-x <- cciaObj$cciaObjects()[[1]]
+popPaths <- cciaObj$popPaths(popType = "flow", uIDs = uIDs)
 
-popPaths <- x$popPaths(popType = "clust", includeFiltered = TRUE)
+# can you extract the tumour border as a line?
+popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = popPaths)
 ```
+
+```{r fig_tumour_border, fig.height=3, fig.width=12}
+ggplot(popDT, aes(centroid_x, -centroid_y, color = flow.cell.dist.leading.edge)) +
+  geom_point() +
+  theme_classic() +
+  coord_fixed() +
+  viridis::scale_color_viridis()
+```
+
 
 ```{r}
 # get dimensions and pops

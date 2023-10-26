@@ -706,8 +706,7 @@ CciaImage <- R6::R6Class(
     #' @param pop character to define population
     #' @param forceReload boolean to force reload of tracks
     #' @param minTracklength integer for minimum track length
-    tracks = function(pop, forceReload = FALSE,
-                      minTracklength = 0) {
+    tracks = function(pop, forceReload = FALSE, minTracklength = 0) {
       # was this requested before?
       tracks <- .getVersionedVar(
         private$labelTracks, valueName = pop)
