@@ -160,7 +160,8 @@ CellClusters <- R6::R6Class(
       
       if (is.null(valueNames)) {
         # TODO this is specific to flow when no other gating is added
-        labels <- cciaObj$labelProps()
+        # labels <- cciaObj$labelProps()
+        labels <- cciaObj$labelProps(valueName = "default")
         
         # order DT
         # TODO this should not be necessary?

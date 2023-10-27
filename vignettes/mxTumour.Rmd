@@ -41,6 +41,33 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  popsA = c("clust.MHCII+"),
+  popsB = c("labels.CD31.branch"),
+  maxContactDist = 10
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellContacts",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
 )
 

@@ -2,7 +2,7 @@
   "fun": {
     "cellContacts": {
       "category": "Module functions",
-      "label": "Cell Contacts (NOT IMPLEMENTED YET)",
+      "label": "Cell Contacts",
       "env": ["local", "hpc"]
     }
   },
