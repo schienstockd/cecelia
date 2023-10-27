@@ -419,7 +419,7 @@ def af_correct_channel(
     
   # apply rolling ball
   if rolling_ball_radius > 0:
-    corrected_data = corrected_data - rolling_ball(corrected_data)
+    corrected_data = corrected_data - rolling_ball(corrected_data, radius = rolling_ball_radius)
   
   # create AF
   # af_data = (cleaned_correction + 1)/(cleaned_image + 1)
