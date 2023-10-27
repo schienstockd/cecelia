@@ -43,6 +43,13 @@
 							"max": 10,
 							"default": 0
 						}
+					},
+					"rollingBallRadius": {
+						"type:integer": {
+							"min": 0,
+							"max": 200,
+							"default": 0
+						}
 					}
         }
       },
@@ -122,6 +129,13 @@
 						"label": "Median Filter",
 						"widget:slider": {
 							"step": 1
+						}
+					},
+					"rollingBallRadius": {
+						"index": 5,
+						"label": "Rolling ball radius",
+						"widget:slider": {
+							"step": 10
 						}
 					}
 				}

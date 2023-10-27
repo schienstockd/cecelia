@@ -345,7 +345,7 @@ def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
-  median_filter = 0):
+  median_filter = 0, rolling_ball_radius = 50):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
@@ -416,10 +416,14 @@ def af_correct_channel(
     corrected_data = dask_image.ndfilters.median_filter(
       corrected_data, footprint = footprint
     )
+    
+  # apply rolling ball
+  if rolling_ball_radius > 0:
+    corrected_data = corrected_data - rolling_ball(corrected_data)
   
   # create AF
   # af_data = (cleaned_correction + 1)/(cleaned_image + 1)
-  af_data = da.subtract(correction_im, corrected_data)
+  # af_data = da.subtract(correction_im, corrected_data)
 
   # create filter values
   filter_values = [0] * len(dim_utils.im_dim)
@@ -434,11 +438,12 @@ def af_correct_channel(
     corrected_data, sigma = filter_values
   )
 
-  filtered_af = dask_image.ndfilters.gaussian_filter(
-    af_data, sigma = filter_values
-  )
+  # filtered_af = dask_image.ndfilters.gaussian_filter(
+  #   af_data, sigma = filter_values
+  # )
 
-  return filtered_im, filtered_af
+  # return filtered_im, filtered_af
+  return filtered_im
 
 # subtract background from array
 # simple percentile
@@ -476,9 +481,9 @@ def subtract_shg(array, footprint = None):
 """
 Correct autofluoresence of image for multiple channels
 """
-def af_correct_image(
-  input_image, af_combinations, dim_utils,
-  gaussian_sigma = 1, use_dask = True, apply_gaussian_to_others = True):
+def af_correct_image(input_image, af_combinations, dim_utils,
+                     gaussian_sigma = 1, use_dask = True,
+                     apply_gaussian_to_others = True):
   # create channel list
   output_image = [input_image[dim_utils.create_channel_slices(i)]
                   for i in range(dim_utils.dim_val('C'))]
@@ -498,7 +503,7 @@ def af_correct_image(
   # AF correct channels
   for i, x in af_combinations.items():
     # output_image[i], new_af_im = af_correct_channel(
-    output_image[i], _ = af_correct_channel(
+    output_image[i] = af_correct_channel(
       input_image, i, x['divisionChannels'], dim_utils = dim_utils,
       channel_percentile = x['channelPercentile'],
       correction_percentile = x['correctionPercentile'],
@@ -506,7 +511,8 @@ def af_correct_image(
       # TODO is there a good way to correct for SHG?
       median_filter = x['medianFilter'],
       gaussian_sigma = gaussian_sigma,
-      use_dask = use_dask
+      use_dask = use_dask,
+      rolling_ball_radius = x['rollingBallRadius']
     )
 
     # # combine AF
