@@ -259,7 +259,7 @@
 			},
 			"models": {
 				"index": 1,
-				"label": "Model Parameters",
+				"label": "Model Parameters (REF doi.org/10.6084/m9.figshare.24441214)",
 				"widget:group": {
 				  "numItems": 5,
   				"model": {
@@ -270,9 +270,20 @@
               "multiple": false,
               "items": {
                 "Cytoplasm (version 2)": "cyto2",
-                "Cytoplasm": "cyto",
-      				  "ccia Fluorescent": "ccia.fluo",
-      				  "Nuclei": "nuclei"
+                "Cytoplasm Fluorescence": "CP",
+                "Cytoplasm Other": "CPx",
+                "ccia Fluorescent": "ccia.fluo",
+                "Nuclei": "nuclei",
+                "Tissuenet": "tissuenet",
+                "Tissuenet 1": "TN1",
+                "Tissuenet 2": "TN2",
+                "Tissuenet 3": "TN3",
+                "LiveCell": "livecell",
+                "LiveCell 1": "LC1",
+                "LiveCell 2": "LC2",
+                "LiveCell 3": "LC3",
+                "LiveCell 4": "LC4",
+                "General": "general"
       				}
             }
           },

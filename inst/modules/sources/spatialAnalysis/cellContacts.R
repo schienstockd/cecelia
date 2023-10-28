@@ -56,11 +56,13 @@ CellContacts <- R6::R6Class(
           yType <- y[[1]]
           yPop <- y[[2]]
           
+          yPopCol <- stringr::str_replace(yPop, "/", "__")
+          
           # set column for analysis
           minDistCol <- paste(
-            xType, "cell", paste0("min_distance#", yType), yPop, sep = ".")
+            xType, "cell", paste0("min_distance#", yType), yPopCol, sep = ".")
           hasContactCol <- paste(
-            xType, "cell", paste0("contact#", yType), yPop, sep = ".")
+            xType, "cell", paste0("contact#", yType), yPopCol, sep = ".")
           
           # init analysis column with NA
           rootDT[, c(minDistCol) := as.numeric(NA)]

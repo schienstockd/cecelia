@@ -47,7 +47,7 @@ cciaObj <- initCciaObject(
 # run task
 funParams <- list(
   popsA = c("clust.MHCII+"),
-  popsB = c("labels.CD31.branch"),
+  popsB = c("branch.CD31.branch/two"),
   maxContactDist = 10
 )
 
@@ -87,6 +87,28 @@ task <- cciaObj$runTasks(
   taskID = 1,
   uIDs = uIDs
 )
+```
+
+```{r}
+# show numbers of cells per area
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE
+)
+
+# can you extract the tumour border as a line?
+popDT <- cciaObj$popDT("clust", includeFiltered = TRUE)
+```
+
+```{r fig_tumour_border, fig.height=3, fig.width=12}
+ggplot(popDT[pop == "MHCII+"], aes(centroid_x, -centroid_y, color = `clust.cell.contact#branch.CD31.branch__two`)) +
+  geom_point() +
+  theme_classic() +
+  coord_fixed() 
+  # viridis::scale_color_viridis()
 ```
 
 ```{r}

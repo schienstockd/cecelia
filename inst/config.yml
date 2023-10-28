@@ -181,7 +181,7 @@ default:
       - "Mariah"
       - "Pixie"
   populations:
-    multifile: ['live', 'clsf', 'branch']
+    multifile: ["live", "clsf", "branch"]
   parameters:
     channelSelectionSize: 5
     popTypes:
@@ -310,7 +310,8 @@ default:
       models: ["whole-cell", "nuclear"]
       modelsDir: "models/mesmerModels/MultiplexSegmentation"
     cellpose:
-      models: ["cyto","nuclei","bact","cyto2","bact_omni","cyto2_omni"]
+      models: ["cyto","nuclei","cyto2", "tissuenet", "livecell", "general",
+                "CP", "CPx", "TN1", "TN2", "TN3", "LC1", "LC2", "LC3", "LC4"]
       modelsDir: "models/cellposeModels/"
     btrack:
       default:
