@@ -322,7 +322,7 @@ class CellposeUtils(SegmentationUtils):
         
         # init model
         if cp_model in cfg.data['python']['cellpose']['models']:
-          model = models.Cellpose(
+          model = models.CellposeModel(
             gpu = self.use_gpu, model_type = cp_model,
             device = self.gpu_device
             # omni = self.use_omni
