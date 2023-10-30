@@ -100,7 +100,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       envname = envName, packages = c("pip", "setuptools", "wheel"),
       pip = TRUE
     )
-    pip install --upgrade 
   } else {
     # TODO only install dependencies?
     # reticulate::conda_install()
