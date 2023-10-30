@@ -94,6 +94,13 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
+    
+    # upgrade pip wheels and setuptools
+    reticulate::conda_install(
+      envname = envName, packages = c("pip", "setuptools", "wheel"),
+      pip = TRUE
+    )
+    pip install --upgrade 
   } else {
     # TODO only install dependencies?
     # reticulate::conda_install()

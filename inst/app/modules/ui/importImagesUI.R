@@ -31,7 +31,10 @@
               fluidRow(
                 disabled(shinyFilesButton(
                   ns("imagesToImport"), "Select files",
-                  "Select files", multiple = TRUE))
+                  "Select files", multiple = TRUE)),
+                disabled(shinyFilesButton(
+                  ns("foldersToImport"), "Select folders",
+                  "Select folders", multiple = TRUE))
               )
             )
           ),

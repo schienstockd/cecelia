@@ -37,10 +37,12 @@
         # toggle selection
         if (is.null(moduleManagers()$imageSetManager$selectedSet())){
           disable("imagesToImport")
+          disable("foldersToImport")
           disable("setupLabServer")
           disable("deleteSet")
         } else {
           enable("imagesToImport")
+          enable("foldersToImport")
           enable("setupLabServer")
           enable("deleteSet")
         }
@@ -141,6 +143,11 @@
       ## Other
       shinyFileChoose(
         input, "imagesToImport",
+        roots = shinyFiles::getVolumes(),
+        session = session)
+      
+      shinyFileChoose(
+        input, "foldersToImport",
         roots = shinyFiles::getVolumes(),
         session = session)
       
