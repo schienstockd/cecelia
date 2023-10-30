@@ -26,13 +26,9 @@ class LocalPeakSeedsUtils(SeedUtils):
       
       # squash the ball according to image scale
       ball_scale = [
-        # TODO use when ome_type 0.21 is released  
-        # 1/self.omexml.images[0].pixels.physical_size_z,
-        # 1/self.omexml.images[0].pixels.physical_size_y,
-        # 1/self.omexml.images[0].pixels.physical_size_x
-        1/self.omexml.image().Pixels.get_PhysicalSizeX(),
-        1/self.omexml.image().Pixels.get_PhysicalSizeY(),
-        1/self.omexml.image().Pixels.get_PhysicalSizeZ()
+        1/self.omexml.images[0].pixels.physical_size_z,
+        1/self.omexml.images[0].pixels.physical_size_y,
+        1/self.omexml.images[0].pixels.physical_size_x
       ]
       
       # account for z spread
@@ -42,11 +38,8 @@ class LocalPeakSeedsUtils(SeedUtils):
       ball_shape = skimage.morphology.disk(self.cell_radius)
       
       ball_scale = [
-        # TODO use when ome_type 0.21 is released  
-        # 1/self.omexml.images[0].pixels.physical_size_y,
-        # 1/self.omexml.images[0].pixels.physical_size_x
-        1/self.omexml.image().Pixels.get_PhysicalSizeY(),
-        1/self.omexml.image().Pixels.get_PhysicalSizeZ()
+        1/self.omexml.images[0].pixels.physical_size_y,
+        1/self.omexml.images[0].pixels.physical_size_x
       ]
     
     # reshape to image pixel size

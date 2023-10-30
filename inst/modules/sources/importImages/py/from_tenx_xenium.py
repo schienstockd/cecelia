@@ -7,9 +7,9 @@ import numpy as np
 import pandas as pd
 import math
 import zarr
-import bioformats
 import shutil
 import random
+from ome_types import model
 
 from scipy.sparse import coo_array
 import skimage.filters
@@ -184,25 +184,28 @@ def run(params):
     os.rename(multiscales_file_path, ts_zarr_path)
   
   # build metadata
-  o = bioformats.omexml.OMEXML()
-  
   # TODO anything else?
-  o.image().Pixels.channel_count = zarr_shape[0]
-  o.image().Pixels.set_SizeC(zarr_shape[0])
-  o.image().Pixels.set_SizeX(zarr_shape[2])
-  o.image().Pixels.set_SizeY(zarr_shape[1])
-  o.image().Pixels.set_PhysicalSizeX(pixel_sizes['x'])
-  o.image().Pixels.set_PhysicalSizeY(pixel_sizes['y'])
-  o.image().Pixels.set_PhysicalSizeXUnit('um')
-  o.image().Pixels.set_PhysicalSizeYUnit('um')
-  o.image().Pixels.set_PixelType('uint16')
+  pixels = model.pixels.Pixels(
+    size_c = zarr_shape[0],
+    size_x = zarr_shape[2],
+    size_y = zarr_shape[1],
+    size_t = 1,
+    size_z = 1,
+    physical_size_x = pixel_sizes['x'],
+    physical_size_y = pixel_sizes['y'],
+    physical_size_x_unit = model.pixels.UnitsLength.MICROMETER,
+    physical_size_y_unit = model.pixels.UnitsLength.MICROMETER,
+    type = 'uint16',
+    dimension_order = ome_types.model.pixels.DimensionOrder.XYZCT,
+    metadata_only = True
+    )
   
-  #for i, x in enumerate(channel_names[0:num_channels]):
-  for i, x in enumerate(channel_names):
-    o.image().Pixels.Channel(i).Name = x
+  for x in channel_names:
+    pixels.channels.append(model.channel.Channel(name = x))
   
   # add metadata
-  ome_xml_utils.write_ome_xml(ts_zarr_path, o)
+  ome_xml_utils.write_ome_xml(
+    ts_zarr_path, model.OME(images=[model.Image(pixels=pixels)]))
 
 def main():
   # get params

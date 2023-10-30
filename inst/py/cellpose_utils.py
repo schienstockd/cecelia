@@ -15,6 +15,7 @@ import skimage.morphology
 import skimage.measure
 import skimage.feature
 import skimage.segmentation
+import ome_types
 
 # cellpose specifics
 from cellpose import models
@@ -284,11 +285,10 @@ class CellposeUtils(SegmentationUtils):
         normalise_percentile = x['normalise'][0]
         
         # adjust diameter for image resolution
-        # TODO use when ome_type 0.21 is released 
         # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
         scaling_factor = self.dim_utils.im_physical_size('x')
         
-        if self.dim_utils.omexml.image().Pixels.get_PhysicalSizeXUnit() == 'mm':
+        if self.dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.pixels.UnitsLength.MILLIMETER:
           scaling_factor *= 1000
         
         cell_diameter /= scaling_factor

@@ -25,12 +25,9 @@ Convert coordinates to physical units
 def convert_pixel_to_physical(df, omexml = None, im_res = dict()):
   if omexml is not None:
     # TODO use when ome_type 0.21 is released 
-    # im_res['x'] = omexml.images[0].pixels.physical_size_x
-    # im_res['y'] = omexml.images[0].pixels.physical_size_y
-    # im_res['z'] = omexml.images[0].pixels.physical_size_z
-    im_res['x'] = omexml.image().Pixels.get_PhysicalSizeX()
-    im_res['y'] = omexml.image().Pixels.get_PhysicalSizeY()
-    im_res['z'] = omexml.image().Pixels.get_PhysicalSizeZ()
+    im_res['x'] = omexml.images[0].pixels.physical_size_x
+    im_res['y'] = omexml.images[0].pixels.physical_size_y
+    im_res['z'] = omexml.images[0].pixels.physical_size_z
     
     # account for None
     im_res = [x if x is not None else 1 for x in im_res]

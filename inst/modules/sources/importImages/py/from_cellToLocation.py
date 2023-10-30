@@ -8,7 +8,7 @@ import pandas as pd
 import anndata as ad
 import math
 import zarr
-import bioformats
+from ome_types import model
 import shutil
 
 from scipy.interpolate import griddata
@@ -99,28 +99,32 @@ def run(params):
     os.rename(multiscales_file_path, zarr_filepath)
     
   # build metadata
-  o = bioformats.omexml.OMEXML()
-  
   # create channel name
   channel_names = [x.replace('q05cell_abundance_w_sf_', '')\
     for x in list(adata.obsm['q05_cell_abundance_w_sf'].columns)]
     
   # TODO anything else?
-  o.image().Pixels.channel_count = zarr_shape[0]
-  o.image().Pixels.set_SizeC(zarr_shape[0])
-  o.image().Pixels.set_SizeX(zarr_shape[2])
-  o.image().Pixels.set_SizeY(zarr_shape[1])
-  o.image().Pixels.set_PhysicalSizeX(1)
-  o.image().Pixels.set_PhysicalSizeY(1)
-  o.image().Pixels.set_PhysicalSizeXUnit('um')
-  o.image().Pixels.set_PhysicalSizeYUnit('um')
-  o.image().Pixels.set_PixelType('uint16')
+  pixels = model.pixels.Pixels(
+    size_c = zarr_shape[0],
+    size_x = zarr_shape[2],
+    size_y = zarr_shape[1],
+    size_t = 1,
+    size_z = 1,
+    physical_size_x = 1,
+    physical_size_y = 1,
+    physical_size_x_unit = model.pixels.UnitsLength.MICROMETER,
+    physical_size_y_unit = model.pixels.UnitsLength.MICROMETER,
+    type = 'uint16',
+    dimension_order = ome_types.model.pixels.DimensionOrder.XYZCT,
+    metadata_only = True
+    )
 
-  for i, x in enumerate(channel_names):
-    o.image().Pixels.Channel(i).Name = x
+  for x in channel_names:
+    pixels.channels.append(model.channel.Channel(name = x))
     
   # add metadata
-  ome_xml_utils.write_ome_xml(zarr_filepath, o)
+  ome_xml_utils.write_ome_xml(
+    zarr_filepath, model.OME(images=[model.Image(pixels=pixels)]))
   
   logfile_utils.log(f'>> save label properties')
   

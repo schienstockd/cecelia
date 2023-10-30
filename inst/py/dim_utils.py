@@ -18,9 +18,7 @@ class DimUtils:
   return pixel dimensions
   """
   def pixels(self):
-    # TODO use when ome_type 0.21 is released
-    # return self.omexml.images[0].pixels
-    return self.omexml.image().Pixels
+    return self.omexml.images[0].pixels
   
   """
   calc image dimensions
@@ -101,7 +99,7 @@ class DimUtils:
   Get pixel type
   """
   def pixel_type(self):
-    return self.omexml.image().Pixels.PixelType
+    return self.omexml.images[0].pixels.type
 
   """
   Is the image 32 bit?
@@ -114,9 +112,9 @@ class DimUtils:
   """
   def im_physical_sizes(self, default = 1):
     axis_sizes = {
-      'x': self.omexml.image().Pixels.get_PhysicalSizeX(),
-      'y': self.omexml.image().Pixels.get_PhysicalSizeY(),
-      'z': self.omexml.image().Pixels.get_PhysicalSizeZ()
+      'x': self.omexml.images[0].pixels.physical_size_x,
+      'y': self.omexml.images[0].pixels.physical_size_y,
+      'z': self.omexml.images[0].pixels.physical_size_z
     }
     
     # account for None
@@ -129,11 +127,11 @@ class DimUtils:
     axis_size = default
     
     if axis == 'x':
-      axis_size = self.omexml.image().Pixels.get_PhysicalSizeX()
+      axis_size = self.omexml.images[0].pixels.physical_size_x
     elif axis == 'y':
-      axis_size = self.omexml.image().Pixels.get_PhysicalSizeY()
+      axis_size = self.omexml.images[0].pixels.physical_size_y
     elif axis == 'z':
-      axis_size = self.omexml.image().Pixels.get_PhysicalSizeZ()
+      axis_size = self.omexml.images[0].pixels.physical_size_z
     
     return axis_size if axis_size is not None else default
   
@@ -142,9 +140,9 @@ class DimUtils:
   """
   def im_physical_units(self, default = 'um'):
     axis_units = {
-      'x': self.omexml.image().Pixels.get_PhysicalSizeXUnit(),
-      'y': self.omexml.image().Pixels.get_PhysicalSizeYUnit(),
-      'z': self.omexml.image().Pixels.get_PhysicalSizeZUnit()
+      'x': self.omexml.images[0].pixels.physical_size_x_unit.value,
+      'y': self.omexml.images[0].pixels.physical_size_y_unit.value,
+      'z': self.omexml.images[0].pixels.physical_size_z_unit.value
     }
     
     # account for None
@@ -157,11 +155,11 @@ class DimUtils:
     axis_unit = default
     
     if axis == 'x':
-      axis_unit = self.omexml.image().Pixels.get_PhysicalSizeXUnit()
+      axis_unit = self.omexml.images[0].pixels.physical_size_x_unit.value
     elif axis == 'y':
-      axis_unit = self.omexml.image().Pixels.get_PhysicalSizeYUnit()
+      axis_unit = self.omexml.images[0].pixels.physical_size_y_unit.value
     elif axis == 'z':
-      axis_unit = self.omexml.image().Pixels.get_PhysicalSizeZUnit()
+      axis_unit = self.omexml.images[0].pixels.physical_size_z_unit.value
     
     return axis_unit.replace('µ', 'u') if axis_unit is not None else default
   
@@ -170,12 +168,9 @@ class DimUtils:
   """
   def im_scale(self, dims = list(), as_dict = False, upper = True):
     # TODO use when ome_type 0.21 is released
-    # size_x = self.omexml.images[0].pixels.physical_size_x
-    # size_y = self.omexml.images[0].pixels.physical_size_y
-    # size_z = self.omexml.images[0].pixels.physical_size_z
-    size_x = self.omexml.image().Pixels.get_PhysicalSizeX()
-    size_y = self.omexml.image().Pixels.get_PhysicalSizeY()
-    size_z = self.omexml.image().Pixels.get_PhysicalSizeZ()
+    size_x = self.omexml.images[0].pixels.physical_size_x
+    size_y = self.omexml.images[0].pixels.physical_size_y
+    size_z = self.omexml.images[0].pixels.physical_size_z
     
     # construct scale
     im_scale = list(np.ones_like(self.im_dim))

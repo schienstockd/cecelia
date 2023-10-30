@@ -132,11 +132,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
       channel = c("anaconda")
     )
     
-    reticulate::conda_install(
-      envname = envName, packages = c("python-javabridge"),
-      pip = TRUE, pip_options = pipOptions
-    )
-    
     # cvxopt and others
     # https://github.com/civisanalytics/python-glmnet/issues/45#issuecomment-421094649
     reticulate::conda_install(
