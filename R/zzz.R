@@ -95,11 +95,11 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
     
-    # upgrade pip wheels and setuptools
-    reticulate::conda_install(
-      envname = envName, packages = c("pip", "setuptools", "wheel"),
-      pip = TRUE
-    )
+    # upgrade pip wheels and setuptools?
+    # reticulate::conda_install(
+    #   envname = envName, packages = c("pip", "setuptools", "wheel"),
+    #   pip = TRUE
+    # )
   } else {
     # TODO only install dependencies?
     # reticulate::conda_install()
@@ -134,7 +134,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     
     reticulate::conda_install(
       envname = envName, packages = c("python-javabridge"),
-      pip = TRUE, pip_options = c(pipOptions, "--use-pep517")
+      pip = TRUE, pip_options = pipOptions
     )
     
     # cvxopt and others
