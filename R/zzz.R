@@ -134,7 +134,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     
     reticulate::conda_install(
       envname = envName, packages = c("python-javabridge"),
-      pip = TRUE, pip_options = pipOptions
+      pip = TRUE, pip_options = c(pipOptions, "--use-pep517")
     )
     
     # cvxopt and others
