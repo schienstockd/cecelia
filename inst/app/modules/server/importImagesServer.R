@@ -85,6 +85,45 @@
         globalManagers$projectManager()$doProjectBookmark()
       })
       
+      # import folders
+      observeEvent(input$foldersToImport, {
+        req(input$foldersToImport)
+        browser()
+        
+        # check that a file was selected
+        req("files" %in% names(input$foldersToImport))
+        
+        newFiles <- joinSelectedPath(input$imagesToImport)
+
+        # create new images
+        newImages <- list()
+        for (curFile in newFiles) {
+          curParams <- list(
+            Name = basename(curFile),
+            Type = "Image",
+            Class = "CciaImage",
+            Meta = list(
+              "oriFilepath" = curFile
+              )
+            )
+          
+          # init
+          newUID <- globalManagers$projectManager()$genUID()
+          newImage <- CciaImage$new(
+            globalManagers$projectManager()$persistentObjectDirectory(newUID, ccidFile = TRUE),
+            newUID, initParams = curParams, retrieveState = FALSE)$reactive()
+          
+          # add to list
+          newImages <- append(newImages, newImage)
+        }
+        
+        # add to set
+        moduleManagers()$imageSetManager$selectedSet()$addCciaObjects(newImages)
+        
+        # autosave project
+        globalManagers$projectManager()$doProjectBookmark()
+      })
+      
       # delete uID
       observeEvent(input$deleteUID, {
         req(input$deleteUID)
@@ -146,8 +185,9 @@
         roots = shinyFiles::getVolumes(),
         session = session)
       
-      shinyFileChoose(
+      shinyDirChoose(
         input, "foldersToImport",
+        # roots = cciaConf()$volumes,
         roots = shinyFiles::getVolumes(),
         session = session)
       

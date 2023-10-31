@@ -297,7 +297,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
 }
 
 #' @description Create app
-#' @param keepExe boolean to keep '.sh' from previous
+#' @param keepExe boolean to keep '.command' from previous
 #' @param appChmod character for chmod
 #' @export
 cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
@@ -350,7 +350,7 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
     )
     if (keepExe == TRUE) {
       file.copy(
-        file.path(cciaPath(), "app.bak", "cecelia-macOSX.sh"),
+        file.path(cciaPath(), "app.bak", "cecelia-macOSX.command"),
         file.path(cciaPath(), "app"),
         recursive = TRUE
       )
@@ -396,6 +396,10 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
   # install rasterly
   # TODO maintained alternative?
   remotes::install_github("plotly/rasterly", ...)
+  
+  # TODO there is a bug that is not resolved on CRAN
+  # https://github.com/thomasp85/shinyFiles/issues/181
+  remotes::install_github("thomasp85/shinyFiles", ...)
 }
 
 #' @description Install bioconductor requirements

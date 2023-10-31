@@ -68,13 +68,13 @@ server <- function(input, output, session) {
                      class = errCLASS)
           },
           textInput(session$ns("exportProjectPath"), "Directory to export"),
-          # shinyDirButton(
-          #   session$ns("exportProjectPath"), label = "Select directory",
-          #   title = 'Select directory'
-          # ),
-          actionButton(
-            session$ns("exportProjectSubmit"),
-            "Export Project")
+          shinyDirButton(
+            session$ns("exportProjectPath"), label = "Select directory",
+            title = 'Select directory'
+          ),
+          # actionButton(
+          #   session$ns("exportProjectSubmit"),
+          #   "Export Project")
         )
       ),
       easyClose = TRUE
@@ -92,12 +92,12 @@ server <- function(input, output, session) {
                      class = errCLASS)
           },
           textInput(session$ns("importProjectPath"), "Directory to import"),
-          # shinyFilesButton(
-          #   session$ns("importProjectPath"),
-          #   "Select File", NULL, multiple = FALSE),
-          actionButton(
-            session$ns("importProjectSubmit"),
-            "Import Project")
+          shinyFilesButton(
+            session$ns("importProjectPath"),
+            "Select File", NULL, multiple = FALSE),
+          # actionButton(
+          #   session$ns("importProjectSubmit"),
+          #   "Import Project")
         )
       ),
       easyClose = TRUE
@@ -716,14 +716,14 @@ server <- function(input, output, session) {
     failedInputs <- c()
     
     # TODO make sure that shiny directory selection works
-    # exportPath <- joinSelectedPath(
-    #   input$exportProjectPath, useConfigVolumes = TRUE)
-    exportPath <- input$exportProjectPath
+    exportPath <- joinSelectedPath(
+      input$exportProjectPath, useConfigVolumes = TRUE)
+    # exportPath <- input$exportProjectPath
     
-    # if (input$exportProjectPath == "") {
-    #   failedInputs <- c(
-    #     failedInputs, "exportProjectPath")
-    # }
+    if (input$exportProjectPath == "") {
+      failedInputs <- c(
+        failedInputs, "exportProjectPath")
+    }
     
     # export project
     if (length(failedInputs) > 0) {
@@ -750,13 +750,13 @@ server <- function(input, output, session) {
     failedInputs <- c()
     
     # check that a file was selected
-    # if (!any("files" %in% names(input$importProjectPath))) {
-    #   failedInputs <- c(
-    #     failedInputs, "importProjectPath")
-    # }
-    # 
-    # importPath <- joinSelectedFile(input$importProjectPath)
-    importPath <- input$importProjectPath
+    if (!any("files" %in% names(input$importProjectPath))) {
+      failedInputs <- c(
+        failedInputs, "importProjectPath")
+    }
+
+    importPath <- joinSelectedFile(input$importProjectPath)
+    # importPath <- input$importProjectPath
     
     # import project
     if (length(failedInputs) > 0) {

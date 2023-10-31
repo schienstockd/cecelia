@@ -23,7 +23,7 @@
     #   column(4,
     #          shinyDirButton(
     #            ns("projectPath"), label = "Select directory",
-    #            title = 'Select directory')
+    #            title = "Select directory")
     #          )
     # ),
     tags$br(),

@@ -30,11 +30,10 @@
               fluidRow(tags$label("Add images to set")),
               fluidRow(
                 disabled(shinyFilesButton(
-                  ns("imagesToImport"), "Select files",
-                  "Select files", multiple = TRUE)),
-                disabled(shinyFilesButton(
-                  ns("foldersToImport"), "Select folders",
-                  "Select folders", multiple = TRUE))
+                  ns("imagesToImport"), "Select files", "Select files",
+                  multiple = TRUE)),
+                disabled(shinyDirButton(
+                  ns("foldersToImport"), "Select folders", "Select folders"))
               )
             )
           ),

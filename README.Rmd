@@ -113,14 +113,24 @@ brew link qt5 --force
 
 ```bash
 brew install sip
+# this might be different depending on where r-miniconda is
+# installed on your system
 . ~/Library/r-miniconda-arm64/etc/profile.d/conda.sh
 conda activate r-cecelia-env
 pip install pyqt5 --config-settings --confirm-license= --verbose
 ```
 
-- `ld: library 'crypto' not found`
+- GUI crashes when toggling processes. You need `pstree`.
 
-- see SO answers [here](https://stackoverflow.com/a/67869667) and [here](https://apple.stackexchange.com/a/434369)
+For MacOS you can use homebrew:
+
+```bash
+brew install pstree
+```
+
+- `ld: library 'crypto' not found` during `cciaBiocRequirements()`.
+
+See SO answers [here](https://stackoverflow.com/a/67869667) and [here](https://apple.stackexchange.com/a/434369)
 
 ```bash
 brew install openssl
