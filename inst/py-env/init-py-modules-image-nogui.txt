@@ -13,7 +13,7 @@ tifffile
 btrack
 ome-types
 threadpoolctl
-trimesh
+trimesh==3.23.5
 rtree
 shapely
 pyopencl
