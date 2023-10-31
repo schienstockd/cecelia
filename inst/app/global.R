@@ -47,7 +47,9 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   # That's ok - the path is set anyway by loading bookmark
   "init-projectPath", "init-projectPath-modal", "init-createProject",
   "global-projectHPCsshKeyfileChoose",
-  "import-imagesToImport", "import-imagesToImport-modal",
+  "importImages-imagesToImport",
+  "importImages-imagesToImport-modal",
+  "importImages-foldersToImport",
   # add settings to the values manually
   "settingsManager",
   # exclude passwords
@@ -57,11 +59,11 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "loadProject", "saveProject",
   "loadVersion", "createVersion",
   "shutdown", "restart", "closeViewer", "viewerAddAnimationPane",
-  "import-taskRunAll",
-  "import-taskHPCsync", "segment-taskHPCsync",
+  "importImages-taskRunAll",
+  "importImages-taskHPCsync", "segment-taskHPCsync",
   "gatePopulations-taskHPCsync", "clustPopulations-taskHPCsync",
-  "import-createSet", "import-refreshSet", "import-reloadSet",
-  "import-resetMetadata",
+  "importImages-createSet", "importImages-refreshSet", "importImages-reloadSet",
+  "importImages-resetMetadata",
   "global-setupLabServerTest", "global-udateHPCUserLibs",
   "metadata-createAttribute", "metadata-showImage", "metadata-reloadSet",
   "segment-showImage", "segment-segmentVp", "segment-reloadSet",

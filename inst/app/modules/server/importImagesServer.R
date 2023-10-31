@@ -85,27 +85,48 @@
         globalManagers$projectManager()$doProjectBookmark()
       })
       
-      # import folders
-      observeEvent(input$foldersToImport, {
-        req(input$foldersToImport)
-        browser()
+      # show modal to select image folders
+      showSelectFolders <- function(failed = c()) {
+        # get selected folder
+        selectedFolder <- joinSelectedPath(input$foldersToImport)
+        imFolders <- list.dirs(selectedFolder, recursive = FALSE)
+        names(imFolders) <- basename(imFolders)
         
-        # check that a file was selected
-        req("files" %in% names(input$foldersToImport))
-        
-        newFiles <- joinSelectedPath(input$imagesToImport)
-
+        # get directories and build checkboxes
+        modalDialog(
+          fluidRow(
+            column(
+              12,
+              if ("selectedFolders" %in% failed) {
+                tags$div("Enter correct path",
+                         class = errCLASS)
+              },
+              checkboxGroupInput(
+                session$ns("selectedFolders"), "Select images to import", imFolders),
+              actionButton(
+                session$ns("selectedFoldersSubmit"), "Import images")
+            )
+          ),
+          easyClose = TRUE, size = "l"
+        )
+      }
+      
+      # import images
+      observeEvent(input$selectedFoldersSubmit, {
         # create new images
         newImages <- list()
-        for (curFile in newFiles) {
+        
+        for (x in input$selectedFolders) {
+          # TODO this assumes that the first file is the one
+          # that is used to create the image
           curParams <- list(
-            Name = basename(curFile),
+            Name = basename(x),
             Type = "Image",
             Class = "CciaImage",
             Meta = list(
-              "oriFilepath" = curFile
-              )
+              "oriFilepath" = list.files(x, full.names = TRUE, no.. = TRUE)[[1]]
             )
+          )
           
           # init
           newUID <- globalManagers$projectManager()$genUID()
@@ -122,26 +143,42 @@
         
         # autosave project
         globalManagers$projectManager()$doProjectBookmark()
+        
+        # close modal
+        removeModal()
+      })
+      
+      # import folders
+      # TODO this is specific to Thorlabs images at the moment
+      observeEvent(input$foldersToImport, {
+        req(input$foldersToImport)
+        req("path" %in% names(input$foldersToImport))
+        
+        # show modal for user to select images
+        showModal(showSelectFolders())
       })
       
       # delete uID
       observeEvent(input$deleteUID, {
         req(input$deleteUID)
         
+        progress <- Progress$new()
+        
         # remove content from HPC
         if (globalManagers$projectManager()$useHPC() == TRUE) {
-          progress <- Progress$new()
           progress$set(message = "Delete HPC files ... ", value = 50)
           
           globalManagers$projectManager()$deleteHPCpersistentObjectDirectory(
             input$deleteUID, removeZero = TRUE)
-          
-          progress$close()
         }
+        
+        progress$set(message = "Delete local files ... ", value = 80)
         
         # remove from set
         moduleManagers()$imageSetManager$selectedSet()$removeCciaObjectByUID(
           input$deleteUID, removeZero = TRUE)
+        
+        progress$close()
         
         # autosave project
         globalManagers$projectManager()$doProjectBookmark()

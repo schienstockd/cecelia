@@ -70,7 +70,7 @@ server <- function(input, output, session) {
           textInput(session$ns("exportProjectPath"), "Directory to export"),
           shinyDirButton(
             session$ns("exportProjectPath"), label = "Select directory",
-            title = 'Select directory'
+            title = "Select directory"
           ),
           # actionButton(
           #   session$ns("exportProjectSubmit"),

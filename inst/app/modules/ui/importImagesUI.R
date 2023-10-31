@@ -33,7 +33,7 @@
                   ns("imagesToImport"), "Select files", "Select files",
                   multiple = TRUE)),
                 disabled(shinyDirButton(
-                  ns("foldersToImport"), "Select folders", "Select folders"))
+                  ns("foldersToImport"), "Thorlabs images", "Select folders"))
               )
             )
           ),
