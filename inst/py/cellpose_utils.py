@@ -288,7 +288,7 @@ class CellposeUtils(SegmentationUtils):
         # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
         scaling_factor = self.dim_utils.im_physical_size('x')
         
-        if self.dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.pixels.UnitsLength.MILLIMETER:
+        if self.dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.UnitsLength.MILLIMETER:
           scaling_factor *= 1000
         
         cell_diameter /= scaling_factor

@@ -112,10 +112,10 @@ def run(params):
     size_z = 1,
     physical_size_x = 1,
     physical_size_y = 1,
-    physical_size_x_unit = model.pixels.UnitsLength.MICROMETER,
-    physical_size_y_unit = model.pixels.UnitsLength.MICROMETER,
+    physical_size_x_unit = model.UnitsLength.MICROMETER,
+    physical_size_y_unit = model.UnitsLength.MICROMETER,
     type = 'uint16',
-    dimension_order = ome_types.model.pixels.DimensionOrder.XYZCT,
+    dimension_order = model.Pixels_DimensionOrder.XYZCT,
     metadata_only = True
     )
 
