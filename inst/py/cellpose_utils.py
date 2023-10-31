@@ -61,7 +61,8 @@ class CellposeUtils(SegmentationUtils):
         stitch_threshold = 0.0
       
       if model_name in cfg.data['python']['cellpose']['models']:
-        masks, flows, styles, diams = model.eval(
+        # masks, flows, styles, diams = model.eval(
+        masks, flows, styles = model.eval(
           im, channels = channels, diameter = cell_diameter,
           channel_axis = channel_axis, z_axis = z_axis,
           do_3D = do_3D,
@@ -87,7 +88,7 @@ class CellposeUtils(SegmentationUtils):
           flow_threshold = 0.99)
           # anisotropy=anisotropy) # Does not work
     except ValueError as e:
-      self.logfile_utils.log('Cellpose Prediction error')
+      self.logfile_utils.log(f'Cellpose Prediction error {e}')
       
     return masks
 

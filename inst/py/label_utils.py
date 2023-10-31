@@ -137,7 +137,7 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
       # iou[iou < iou.max(axis = 0).toarray()] = 0
       
       istitch = iou.argmax(axis = 1)
-      if len(istitch.shape) > 1:
+      if not isinstance(istitch, np.ndarray):
         istitch = istitch.A.ravel() + 1
       else:
         istitch = istitch.ravel() + 1
