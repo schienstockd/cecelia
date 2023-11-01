@@ -412,7 +412,7 @@ def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
-  median_filter = 0, rolling_ball_radius = 0, rolling_ball_padding = 4):
+  median_filter = 0):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
