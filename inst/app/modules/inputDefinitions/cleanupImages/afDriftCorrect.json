@@ -50,6 +50,13 @@
 							"max": 200,
 							"default": 0
 						}
+					},
+					"rollingBallPadding": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 4
+						}
 					}
         }
       },
@@ -136,6 +143,13 @@
 						"label": "Rolling ball radius",
 						"widget:slider": {
 							"step": 10
+						}
+					},
+					"rollingBallPadding": {
+						"index": 6,
+						"label": "Rolling ball padding",
+						"widget:slider": {
+							"step": 1
 						}
 					}
 				}

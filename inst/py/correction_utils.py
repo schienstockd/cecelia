@@ -13,8 +13,10 @@ import skimage.morphology
 import skimage.filters
 # import scipy.ndimage.filters
 import scipy.ndimage
+from tqdm import tqdm
 
 import py.zarr_utils as zarr_utils
+import py.slice_utils as slice_utils
 
 """
 Get drift correction shift
@@ -339,13 +341,78 @@ def apply_filter(
   return output_dask
 
 """
+Crop zero edges
+https://stackoverflow.com/a/39466129
+"""
+def non_zero_edges(im):
+  # argwhere will give you the coordinates of every non-zero point
+  true_points = np.argwhere(im)
+  
+  # take the smallest points and use them as the top left of your crop
+  top_left = true_points.min(axis=0)
+  
+  # take the largest points and use them as the bottom right of your crop
+  bottom_right = true_points.max(axis=0)
+
+  return {'tl': top_left, 'br': bottom_right}
+
+"""
+Apply 2D rolling ball
+"""
+def apply_2D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
+  im_to_process = np.squeeze(im[slices])
+  
+  edges = non_zero_edges(im_to_process)
+  crop_slices = (
+    slice(edges['tl'][0] + padding,
+          edges['br'][0] - padding, 1),
+    slice(edges['tl'][1] + padding,
+          edges['br'][1] - padding, 1)
+  )
+  
+  # set edges to zero due to crop
+  im[slices] = np.zeros_like(im[slices])
+  
+  slices = list(slices)
+  slices[dim_utils.dim_idx('Y')] = crop_slices[0]
+  slices[dim_utils.dim_idx('X')] = crop_slices[1]
+  slices = tuple(slices)
+  
+  im[slices] = im_to_process[crop_slices] - rolling_ball(im_to_process[crop_slices], radius = radius)
+
+"""
+Apply rolling ball
+"""
+def apply_rolling_ball(data, dim_utils, radius = 40, padding = 4):
+  # corrected_data = corrected_data - rolling_ball(data, radius = rolling_ball_radius)
+  # TODO go through in 2D as 3D seems a bit much
+  slices = slice_utils.create_slices(data.shape, dim_utils)
+      
+  # go through slices
+  for cur_slices in slices:
+    if dim_utils.is_3D():
+      # go through Z
+      for z in tqdm(range(dim_utils.dim_val('Z'))):
+        cur_slices = list(cur_slices)
+        cur_slices[dim_utils.dim_idx('Z')] = slice(z, z + 1, 1)
+        cur_slices = tuple(cur_slices)
+        
+        apply_2D_rolling_ball(
+          data, cur_slices, dim_utils, radius, padding)
+    else:
+      apply_2D_rolling_ball(
+        data, cur_slices, dim_utils, radius, padding)
+        
+  return data
+
+"""
 Correct autofluorescence using ratio of one to multiple channels
 """
 def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
-  median_filter = 0, rolling_ball_radius = 50):
+  median_filter = 0, rolling_ball_radius = 0, rolling_ball_padding = 4):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
@@ -383,7 +450,7 @@ def af_correct_channel(
     cleaned_correction = subtract_background(
       correction_im.compute(),
       percentile_min = correction_percentile)
-      
+
     # create dask arrays
     cleaned_image = da.from_array(
       cleaned_image, chunks = data[slices].chunksize)
@@ -398,28 +465,24 @@ def af_correct_channel(
     corrected_data = (cleaned_image + 1) / (cleaned_correction + 1)
   else:
     corrected_data = cleaned_image
-  
+
   # apply median filter
   if median_filter > 0:
     footprint = skimage.morphology.ball(median_filter)
     footprint = np.expand_dims(footprint, axis = dim_utils.dim_idx('T'))
     footprint = np.expand_dims(footprint, axis = dim_utils.dim_idx('C'))
-    
+
     # footprint_scale = [1] * len(dim_utils.im_dim)
     # footprint_scale[dim_utils.dim_idx('Z')] = dim_utils.omexml.images[0].pixels.physical_size_z
     # footprint_scale[dim_utils.dim_idx('Y')] = dim_utils.omexml.images[0].pixels.physical_size_y
     # footprint_scale[dim_utils.dim_idx('X')] = dim_utils.omexml.images[0].pixels.physical_size_x
-    
+
     # reshape to image pixel size
     # footprint = scipy.ndimage.zoom(footprint, tuple(footprint_scale))
-    
+
     corrected_data = dask_image.ndfilters.median_filter(
       corrected_data, footprint = footprint
     )
-    
-  # apply rolling ball
-  if rolling_ball_radius > 0:
-    corrected_data = corrected_data - rolling_ball(corrected_data, radius = rolling_ball_radius)
   
   # create AF
   # af_data = (cleaned_correction + 1)/(cleaned_image + 1)
@@ -458,26 +521,6 @@ def subtract_background(array, percentile_min = 80):
 
   return array
 
-# subtract shg from array
-def subtract_shg(array, footprint = None):
-  if 0 not in array.shape:
-    array_shape = array.shape
-    
-    print(footprint.shape)
-    
-    # apply morphological operation
-    # array = array - skimage.morphology.opening(
-    # array = skimage.morphology.closing(
-    array = scipy.ndimage.filters.median_filter(
-    # array = array - skimage.morphology.white_tophat(
-    # array = skimage.morphology.black_tophat(
-    # array = skimage.morphology.white_tophat(
-      # np.squeeze(array), selem = footprint
-      np.squeeze(array), footprint = footprint
-    ).reshape(array_shape)
-
-  return array
-
 """
 Correct autofluoresence of image for multiple channels
 """
@@ -496,25 +539,32 @@ def af_correct_image(input_image, af_combinations, dim_utils,
 
   # remove empty channel items
   # https://stackoverflow.com/a/12118700/13766165
-  af_combinations = {
-    i: x for i, x in af_combinations.items() if len(x['divisionChannels']) > 0
-    }
+  # af_combinations = {
+  #   i: x for i, x in af_combinations.items() if len(x['divisionChannels']) > 0
+  #   }
 
   # AF correct channels
   for i, x in af_combinations.items():
     # output_image[i], new_af_im = af_correct_channel(
-    output_image[i] = af_correct_channel(
-      input_image, i, x['divisionChannels'], dim_utils = dim_utils,
-      channel_percentile = x['channelPercentile'],
-      correction_percentile = x['correctionPercentile'],
-      correction_mode = x['correctionMode'],
-      # TODO is there a good way to correct for SHG?
-      median_filter = x['medianFilter'],
-      gaussian_sigma = gaussian_sigma,
-      use_dask = use_dask,
-      rolling_ball_radius = x['rollingBallRadius']
-    )
-
+    if len(x['divisionChannels']) > 0:
+      output_image[i] = af_correct_channel(
+        input_image, i, x['divisionChannels'], dim_utils = dim_utils,
+        channel_percentile = x['channelPercentile'],
+        correction_percentile = x['correctionPercentile'],
+        correction_mode = x['correctionMode'],
+        # TODO is there a good way to correct for SHG?
+        median_filter = x['medianFilter'],
+        gaussian_sigma = gaussian_sigma,
+        use_dask = use_dask
+      )
+    
+    # apply rolling ball
+    if x['rollingBallRadius'] > 0:
+      output_image[i] = apply_rolling_ball(
+        output_image[i], dim_utils,
+        x['rollingBallRadius'], x['rollingBallPadding']
+      )
+    
     # # combine AF
     # if af_im is None:
     #   af_im = copy(new_af_im)

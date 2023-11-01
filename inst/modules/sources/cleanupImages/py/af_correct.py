@@ -14,6 +14,9 @@ def run(params):
   # logging
   logfile_utils = script_utils.get_logfile_utils(params)
 
+  rolling_ball_radius = script_utils.get_param(params, 'rollingBallRadius', default = 0)
+  rolling_ball_padding = script_utils.get_param(params, 'rollingBallPadding', default = 4)
+
   # load image
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(
     params['imPath'], as_dask = True)

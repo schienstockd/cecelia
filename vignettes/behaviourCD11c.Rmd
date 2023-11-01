@@ -37,14 +37,15 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "xNaV1s", versionID = versionID, initReactivity = FALSE # CD11c
+  pID = pID, uID = "c2pA9X", versionID = versionID, initReactivity = FALSE # CD11c
 )
 
 uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c("GFkL1k")]
 
 # get experimental info
-exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr", "Time")
+as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr", "Time"), uIDs = uIDs
 ))
 ```
 
