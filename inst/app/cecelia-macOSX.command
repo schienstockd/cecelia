@@ -10,6 +10,8 @@ elif [ -d ~/miniconda3 ]; then
   CONDA_DIR=~/miniconda3
 elif [ -d /opt/miniconda3 ]; then
   CONDA_DIR=/opt/miniconda3
+elif [ -d /opt/miniconda ]; then
+  CONDA_DIR=/opt/miniconda
 fi
 
 CONDA_ENV=r-cecelia-env

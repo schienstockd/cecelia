@@ -1,4 +1,6 @@
 import napari
+from napari.components._viewer_constants import CanvasPosition
+
 import tifffile
 import zarr
 import numpy as np
@@ -371,6 +373,7 @@ class NapariUtils:
     self.viewer.text_overlay.visible = True
     self.viewer.text_overlay.font_size = 12
     self.viewer.text_overlay.color = 'white'
+    self.viewer.text_overlay.position = CanvasPosition.TOP_LEFT
     
     # TODO dummy call?
     update_slider(None)
