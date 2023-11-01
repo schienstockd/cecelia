@@ -42,6 +42,24 @@ cciaObj <- initCciaObject(
 
 uIDs <- names(cciaObj$cciaObjects())
 
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr", "Time")
+))
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "xNaV1s", versionID = versionID, initReactivity = FALSE # CD11c
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
 # run task
 funParams <- list(
   popType = "live",

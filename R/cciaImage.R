@@ -195,6 +195,16 @@ CciaImage <- R6::R6Class(
           self$imChannelNames())
       }
       
+      # append time
+      if ("Time" %in% fields) {
+        timeSec <- self$omeXMLPixels()$SizeT * self$omeXMLTimelapseInfo()$interval * 60
+        objSummary$Time <- suppressWarnings(paste(
+          lubridate::hour(timeSec),
+          lubridate::minute(timeSec),
+          round(lubridate::second(timeSec), digits = 0),
+          sep = ":"))
+      }
+      
       objSummary
     },
     
