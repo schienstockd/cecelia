@@ -405,6 +405,8 @@ def apply_3D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
   slices[dim_utils.dim_idx('X')] = crop_slices[2]
   slices = tuple(slices)
   
+  # TODO not sure what is best here
+  # https://scikit-image.org/docs/stable/auto_examples/segmentation/plot_rolling_ball.html
   im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
     im_to_process[crop_slices], kernel = skimage.restoration.ellipsoid_kernel(
       (1, radius, radius), 0.1))
@@ -418,7 +420,7 @@ def apply_rolling_ball(data, dim_utils, radius = 40, padding = 4):
   slices = slice_utils.create_slices(data.shape, dim_utils)
       
   # go through slices
-  for cur_slices in slices[0:1]:
+  for cur_slices in slices:
     if dim_utils.is_3D():
       apply_3D_rolling_ball(
         data, cur_slices, dim_utils, radius, padding)
