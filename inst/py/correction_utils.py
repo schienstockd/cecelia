@@ -359,8 +359,8 @@ def non_zero_edges(im):
 """
 Apply 2D rolling ball
 """
-def apply_2D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
-  im_to_process = np.squeeze(im[slices])
+def apply_2D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
+  im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
   
   edges = non_zero_edges(im_to_process)
   crop_slices = (
@@ -384,8 +384,8 @@ def apply_2D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
 """
 Apply 3D rolling ball
 """
-def apply_3D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
-  im_to_process = np.squeeze(im[slices])
+def apply_3D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
+  im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
   
   edges = non_zero_edges(im_to_process)
   crop_slices = (
@@ -414,19 +414,23 @@ def apply_3D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
 """
 Apply rolling ball
 """
-def apply_rolling_ball(data, dim_utils, radius = 40, padding = 4):
+def apply_rolling_ball(data, dim_utils, logfile_utils, radius = 40, padding = 4):
   # corrected_data = corrected_data - rolling_ball(data, radius = rolling_ball_radius)
   # TODO go through in 2D as 3D seems a bit much
   slices = slice_utils.create_slices(data.shape, dim_utils)
-      
+  
+  logfile_utils.log('>> Rolling ball subtraction')
+  
   # go through slices
   for cur_slices in slices:
+    logfile_utils.log(f'> Slice: {cur_slices}')
+    
     if dim_utils.is_3D():
       apply_3D_rolling_ball(
-        data, cur_slices, dim_utils, radius, padding)
+        data, cur_slices, dim_utils, logfile_utils, radius, padding)
     else:
       apply_2D_rolling_ball(
-        data, cur_slices, dim_utils, radius, padding)
+        data, cur_slices, dim_utils, logfile_utils, radius, padding)
         
   return data
 
@@ -435,7 +439,7 @@ Correct autofluorescence using ratio of one to multiple channels
 """
 def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
-  channel_percentile = 80, correction_percentile = 40,
+  logfile_utils, channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
   median_filter = 0):
   # get slices to access data
@@ -550,7 +554,7 @@ def subtract_background(array, percentile_min = 80):
 Correct autofluoresence of image for multiple channels
 """
 def af_correct_image(input_image, af_combinations, dim_utils,
-                     gaussian_sigma = 1, use_dask = True,
+                     logfile_utils, gaussian_sigma = 1, use_dask = True,
                      apply_gaussian_to_others = True):
   # create channel list
   output_image = [input_image[dim_utils.create_channel_slices(i)]
@@ -586,7 +590,7 @@ def af_correct_image(input_image, af_combinations, dim_utils,
     # apply rolling ball
     if x['rollingBallRadius'] > 0:
       output_image[i] = apply_rolling_ball(
-        output_image[i], dim_utils,
+        output_image[i], dim_utils, logfile_utils,
         x['rollingBallRadius'], x['rollingBallPadding']
       )
     
