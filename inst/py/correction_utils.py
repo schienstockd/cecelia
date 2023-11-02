@@ -8,7 +8,7 @@ import dask_image.ndfilters
 import zarr
 
 from skimage.registration import phase_cross_correlation
-from skimage.restoration import rolling_ball
+import skimage.restoration
 import skimage.morphology
 import skimage.filters
 # import scipy.ndimage.filters
@@ -378,7 +378,36 @@ def apply_2D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
   slices[dim_utils.dim_idx('X')] = crop_slices[1]
   slices = tuple(slices)
   
-  im[slices] = im_to_process[crop_slices] - rolling_ball(im_to_process[crop_slices], radius = radius)
+  im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
+    im_to_process[crop_slices], radius = radius)
+  
+"""
+Apply 3D rolling ball
+"""
+def apply_3D_rolling_ball(im, slices, dim_utils, radius = 40, padding = 4):
+  im_to_process = np.squeeze(im[slices])
+  
+  edges = non_zero_edges(im_to_process)
+  crop_slices = (
+    # TODO this assumes that z is first dimension
+    slice(None),
+    slice(edges['tl'][1] + padding,
+          edges['br'][1] - padding, 1),
+    slice(edges['tl'][2] + padding,
+          edges['br'][2] - padding, 1)
+  )
+  
+  # set edges to zero due to crop
+  im[slices] = np.zeros_like(im[slices])
+  
+  slices = list(slices)
+  slices[dim_utils.dim_idx('Y')] = crop_slices[1]
+  slices[dim_utils.dim_idx('X')] = crop_slices[2]
+  slices = tuple(slices)
+  
+  im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
+    im_to_process[crop_slices], kernel = skimage.restoration.ellipsoid_kernel(
+      (1, radius, radius), 0.1))
 
 """
 Apply rolling ball
@@ -389,16 +418,10 @@ def apply_rolling_ball(data, dim_utils, radius = 40, padding = 4):
   slices = slice_utils.create_slices(data.shape, dim_utils)
       
   # go through slices
-  for cur_slices in slices:
+  for cur_slices in slices[0:1]:
     if dim_utils.is_3D():
-      # go through Z
-      for z in tqdm(range(dim_utils.dim_val('Z'))):
-        cur_slices = list(cur_slices)
-        cur_slices[dim_utils.dim_idx('Z')] = slice(z, z + 1, 1)
-        cur_slices = tuple(cur_slices)
-        
-        apply_2D_rolling_ball(
-          data, cur_slices, dim_utils, radius, padding)
+      apply_3D_rolling_ball(
+        data, cur_slices, dim_utils, radius, padding)
     else:
       apply_2D_rolling_ball(
         data, cur_slices, dim_utils, radius, padding)
