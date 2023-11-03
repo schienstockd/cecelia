@@ -589,6 +589,14 @@ def af_correct_image(input_image, af_combinations, dim_utils,
   #   i: x for i, x in af_combinations.items() if len(x['divisionChannels']) > 0
   #   }
 
+  # create filter values
+  filter_values = [0] * len(dim_utils.im_dim)
+
+  # set filter to values to X, Y, Z
+  # for x in ('X', 'Y', 'Z'):
+  for x in dim_utils.spatial_axis():
+    filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
+
   # AF correct channels
   for i, x in af_combinations.items():
     # output_image[i], new_af_im = af_correct_channel(
@@ -602,6 +610,11 @@ def af_correct_image(input_image, af_combinations, dim_utils,
         median_filter = x['medianFilter'],
         gaussian_sigma = gaussian_sigma,
         use_dask = use_dask
+      )
+    elif apply_gaussian_to_others is True:
+      # apply gaussian
+      output_image[i] = dask_image.ndfilters.gaussian_filter(
+        output_image[i], sigma = filter_values
       )
     
     # # apply rolling ball
@@ -625,24 +638,6 @@ def af_correct_image(input_image, af_combinations, dim_utils,
   # if len(af_combinations) > 0:
   #   # add AF
   #   output_image.append(af_im)
-
-  # create filter values
-  filter_values = [0] * len(dim_utils.im_dim)
-
-  # set filter to values to X, Y, Z
-  # for x in ('X', 'Y', 'Z'):
-  for x in dim_utils.spatial_axis():
-    filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
-
-  # Apply gaussian for channels not used for
-  # AF correction, they already have a gaussian
-  if apply_gaussian_to_others is True:
-    for i, x in enumerate(output_image):
-      if len(af_combinations) == 0 or i not in af_combinations.keys():
-        # apply gaussian
-        output_image[i] = dask_image.ndfilters.gaussian_filter(
-          x, sigma = filter_values
-        )
 
   # combine dask arrays back
   # https://docs.dask.org/en/latest/array-stack.html

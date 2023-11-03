@@ -74,8 +74,10 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$setImFilepath("ccidAfCorrected.zarr", valueName = "afCorrected")
-cciaObj$saveState()
+cciaObj$imChannelNames()
+# cciaObj$setImFilepath("ccidSlidingWindow.zarr", valueName = "slidingWindow")
+# cciaObj$setImChannelNames(cciaObj$imChannelNames("default"), "default")
+# cciaObj$saveState()
 ```
 
 ```{r}
