@@ -552,6 +552,7 @@ def af_correct_channel(
     corrected_data, sigma = filter_values
   )
   
+  inverse_im = None
   if inverse_data is not None:
     inverse_im = dask_image.ndfilters.gaussian_filter(
       inverse_data, sigma = filter_values
