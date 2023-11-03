@@ -48,6 +48,7 @@ CleanupImages <- R6::R6Class(
         # update channel information
         if (length(addChannels) > 0) {
           # is the number of channels correct?
+          # TODO this will always fall back to default
           if (cciaObj$omeXMLPixels(reset = TRUE)$SizeC >= (length(cciaObj$imChannelNames(valueName = "default")) + length(addChannels))) {
             newChannelNames <- c(cciaObj$imChannelNames(valueName = "default"), addChannels)
             names(newChannelNames) <- c(names(cciaObj$imChannelNames(valueName = "default")),

@@ -41,10 +41,10 @@ AfCorrect <- R6::R6Class(
           if (x$generateInverse == TRUE)
             paste("Inverse", i)
           else
-            NULL
+            NA
         }, afCombinations, imChannels, SIMPLIFY = FALSE
       )
-      channelsToAdd <- channelsToAdd[!is.null(channelsToAdd)]
+      channelsToAdd <- channelsToAdd[!is.na(channelsToAdd)]
       
       # prepare params
       params <- list(
@@ -63,16 +63,16 @@ AfCorrect <- R6::R6Class(
       )
       
       # call python
-      self$pyScript("af_correct", params)
-      
-      # DONE
-      self$writeLog("Done")
-      self$exitLog()
+      # self$pyScript("af_correct", params)
       
       # update image information
       self$updateImageInfo(
         filename = "ccidAfCorrected", valueName = "afCorrected",
         addChannels = channelsToAdd)
+      
+      # DONE
+      self$writeLog("Done")
+      self$exitLog()
     }
   )
 )
