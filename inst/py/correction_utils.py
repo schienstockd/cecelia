@@ -611,7 +611,9 @@ def af_correct_image(input_image, af_combinations, dim_utils,
   # AF correct channels
   # for i, x in af_combinations.items():
   # if more items are assigned than present
-  for i, x in af_combinations[range(dim_utils.dim_val('C'))].items():
+  for i in range(dim_utils.dim_val('C')):
+    x = af_combinations[i]
+    
     # output_image[i], new_af_im = af_correct_channel(
     if len(x['divisionChannels']) > 0:
       output_image[i], inverse_image[i] = af_correct_channel(
