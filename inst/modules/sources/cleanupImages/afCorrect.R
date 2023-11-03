@@ -63,7 +63,7 @@ AfCorrect <- R6::R6Class(
       )
       
       # call python
-      # self$pyScript("af_correct", params)
+      self$pyScript("af_correct", params)
       
       # update image information
       self$updateImageInfo(

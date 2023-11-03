@@ -42,10 +42,10 @@ AfDriftCorrect <- R6::R6Class(
           if (x$generateInverse == TRUE)
             paste("Inverse", i)
           else
-            NULL
+            NA
         }, afCombinations, imChannels, SIMPLIFY = FALSE
       )
-      channelsToAdd <- channelsToAdd[!is.null(channelsToAdd)]
+      channelsToAdd <- channelsToAdd[!is.na(channelsToAdd)]
       
       # prepare params
       params <- list(
