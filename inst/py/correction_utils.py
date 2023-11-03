@@ -18,6 +18,9 @@ from tqdm import tqdm
 import py.zarr_utils as zarr_utils
 import py.slice_utils as slice_utils
 
+# will there be a non-prototype version at some point?
+import pyclesperanto_prototype as cle
+
 """
 Get drift correction shift
 """
@@ -340,97 +343,111 @@ def apply_filter(
 
   return output_dask
 
-"""
-Crop zero edges
-https://stackoverflow.com/a/39466129
-"""
-def non_zero_edges(im):
-  # argwhere will give you the coordinates of every non-zero point
-  true_points = np.argwhere(im)
-  
-  # take the smallest points and use them as the top left of your crop
-  top_left = true_points.min(axis=0)
-  
-  # take the largest points and use them as the bottom right of your crop
-  bottom_right = true_points.max(axis=0)
+# """
+# Crop zero edges
+# https://stackoverflow.com/a/39466129
+# """
+# def non_zero_edges(im):
+#   # argwhere will give you the coordinates of every non-zero point
+#   true_points = np.argwhere(im)
+#   
+#   # take the smallest points and use them as the top left of your crop
+#   top_left = true_points.min(axis=0)
+#   
+#   # take the largest points and use them as the bottom right of your crop
+#   bottom_right = true_points.max(axis=0)
+# 
+#   return {'tl': top_left, 'br': bottom_right}
+# 
+# """
+# Apply 2D rolling ball
+# """
+# def apply_2D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
+#   im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
+#   
+#   edges = non_zero_edges(im_to_process)
+#   crop_slices = (
+#     slice(edges['tl'][0] + padding,
+#           edges['br'][0] - padding, 1),
+#     slice(edges['tl'][1] + padding,
+#           edges['br'][1] - padding, 1)
+#   )
+#   
+#   # set edges to zero due to crop
+#   im[slices] = np.zeros_like(im[slices])
+#   
+#   slices = list(slices)
+#   slices[dim_utils.dim_idx('Y')] = crop_slices[0]
+#   slices[dim_utils.dim_idx('X')] = crop_slices[1]
+#   slices = tuple(slices)
+#   
+#   im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
+#     im_to_process[crop_slices], radius = radius)
+#   
+# """
+# Apply 3D rolling ball
+# """
+# def apply_3D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
+#   im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
+#   
+#   edges = non_zero_edges(im_to_process)
+#   crop_slices = (
+#     # TODO this assumes that z is first dimension
+#     slice(None),
+#     slice(edges['tl'][1] + padding,
+#           edges['br'][1] - padding, 1),
+#     slice(edges['tl'][2] + padding,
+#           edges['br'][2] - padding, 1)
+#   )
+#   
+#   # set edges to zero due to crop
+#   im[slices] = np.zeros_like(im[slices])
+#   
+#   slices = list(slices)
+#   slices[dim_utils.dim_idx('Y')] = crop_slices[1]
+#   slices[dim_utils.dim_idx('X')] = crop_slices[2]
+#   slices = tuple(slices)
+#   
+#   # TODO not sure what is best here
+#   # https://scikit-image.org/docs/stable/auto_examples/segmentation/plot_rolling_ball.html
+#   im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
+#     im_to_process[crop_slices], kernel = skimage.restoration.ellipsoid_kernel(
+#       (1, radius, radius), 0.1))
+# 
+# """
+# Apply rolling ball
+# """
+# def apply_rolling_ball(data, dim_utils, logfile_utils, radius = 40, padding = 4):
+#   # corrected_data = corrected_data - rolling_ball(data, radius = rolling_ball_radius)
+#   # TODO go through in 2D as 3D seems a bit much
+#   slices = slice_utils.create_slices(data.shape, dim_utils)
+#   
+#   logfile_utils.log('>> Rolling ball subtraction')
+#   
+#   # go through slices
+#   for cur_slices in slices:
+#     logfile_utils.log(f'> Slice: {cur_slices}')
+#     
+#     if dim_utils.is_3D():
+#       apply_3D_rolling_ball(
+#         data, cur_slices, dim_utils, logfile_utils, radius, padding)
+#     else:
+#       apply_2D_rolling_ball(
+#         data, cur_slices, dim_utils, logfile_utils, radius, padding)
+#         
+#   return data
 
-  return {'tl': top_left, 'br': bottom_right}
-
 """
-Apply 2D rolling ball
+Apply top hat
 """
-def apply_2D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
-  im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
-  
-  edges = non_zero_edges(im_to_process)
-  crop_slices = (
-    slice(edges['tl'][0] + padding,
-          edges['br'][0] - padding, 1),
-    slice(edges['tl'][1] + padding,
-          edges['br'][1] - padding, 1)
-  )
-  
-  # set edges to zero due to crop
-  im[slices] = np.zeros_like(im[slices])
-  
-  slices = list(slices)
-  slices[dim_utils.dim_idx('Y')] = crop_slices[0]
-  slices[dim_utils.dim_idx('X')] = crop_slices[1]
-  slices = tuple(slices)
-  
-  im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
-    im_to_process[crop_slices], radius = radius)
-  
-"""
-Apply 3D rolling ball
-"""
-def apply_3D_rolling_ball(im, slices, dim_utils, logfile_utils, radius = 40, padding = 4):
-  im_to_process = np.squeeze(zarr_utils.fortify(im[slices]))
-  
-  edges = non_zero_edges(im_to_process)
-  crop_slices = (
-    # TODO this assumes that z is first dimension
-    slice(None),
-    slice(edges['tl'][1] + padding,
-          edges['br'][1] - padding, 1),
-    slice(edges['tl'][2] + padding,
-          edges['br'][2] - padding, 1)
-  )
-  
-  # set edges to zero due to crop
-  im[slices] = np.zeros_like(im[slices])
-  
-  slices = list(slices)
-  slices[dim_utils.dim_idx('Y')] = crop_slices[1]
-  slices[dim_utils.dim_idx('X')] = crop_slices[2]
-  slices = tuple(slices)
-  
-  # TODO not sure what is best here
-  # https://scikit-image.org/docs/stable/auto_examples/segmentation/plot_rolling_ball.html
-  im[slices] = im_to_process[crop_slices] - skimage.restoration.rolling_ball(
-    im_to_process[crop_slices], kernel = skimage.restoration.ellipsoid_kernel(
-      (1, radius, radius), 0.1))
-
-"""
-Apply rolling ball
-"""
-def apply_rolling_ball(data, dim_utils, logfile_utils, radius = 40, padding = 4):
-  # corrected_data = corrected_data - rolling_ball(data, radius = rolling_ball_radius)
-  # TODO go through in 2D as 3D seems a bit much
+def apply_top_hat(data, dim_utils, radius = 40):
   slices = slice_utils.create_slices(data.shape, dim_utils)
   
-  logfile_utils.log('>> Rolling ball subtraction')
-  
   # go through slices
-  for cur_slices in slices:
-    logfile_utils.log(f'> Slice: {cur_slices}')
-    
-    if dim_utils.is_3D():
-      apply_3D_rolling_ball(
-        data, cur_slices, dim_utils, logfile_utils, radius, padding)
-    else:
-      apply_2D_rolling_ball(
-        data, cur_slices, dim_utils, logfile_utils, radius, padding)
+  for x in tqdm(slices):
+    data[x] = cle.nparray(cle.top_hat_box(
+      np.squeeze(zarr_utils.fortify(data[x])),
+      radius_x=radius, radius_y=radius, radius_z=1))
         
   return data
 
@@ -439,7 +456,7 @@ Correct autofluorescence using ratio of one to multiple channels
 """
 def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
-  logfile_utils, channel_percentile = 80, correction_percentile = 40,
+  channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
   median_filter = 0):
   # get slices to access data
@@ -587,12 +604,17 @@ def af_correct_image(input_image, af_combinations, dim_utils,
         use_dask = use_dask
       )
     
-    # apply rolling ball
-    if x['rollingBallRadius'] > 0:
-      output_image[i] = apply_rolling_ball(
-        output_image[i], dim_utils, logfile_utils,
-        x['rollingBallRadius'], x['rollingBallPadding']
-      )
+    # # apply rolling ball
+    # if x['rollingBallRadius'] > 0:
+    #   output_image[i] = apply_rolling_ball(
+    #     output_image[i], dim_utils, logfile_utils,
+    #     x['rollingBallRadius'], x['rollingBallPadding']
+    #   )
+    
+    # apply top hat
+    if x['topHatRadius'] > 0:
+      output_image[i] = apply_top_hat(
+        output_image[i], dim_utils, x['topHatRadius'])
     
     # # combine AF
     # if af_im is None:

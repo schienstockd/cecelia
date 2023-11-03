@@ -44,18 +44,11 @@
 							"default": 0
 						}
 					},
-					"rollingBallRadius": {
+					"topHatRadius": {
 						"type:integer": {
 							"min": 0,
-							"max": 200,
+							"max": 40,
 							"default": 0
-						}
-					},
-					"rollingBallPadding": {
-						"type:integer": {
-							"min": 0,
-							"max": 10,
-							"default": 4
 						}
 					}
         }
@@ -124,16 +117,9 @@
 							"step": 1
 						}
 					},
-					"rollingBallRadius": {
+					"topHatRadius": {
 						"index": 5,
-						"label": "Rolling ball radius",
-						"widget:slider": {
-							"step": 10
-						}
-					},
-					"rollingBallPadding": {
-						"index": 6,
-						"label": "Rolling ball padding",
+						"label": "Top hat radius",
 						"widget:slider": {
 							"step": 1
 						}

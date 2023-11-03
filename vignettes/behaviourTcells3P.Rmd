@@ -71,10 +71,11 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$imChannelNames()
+cciaObj$setImFilepath("ccidAfCorrected.zarr", valueName = "afCorrected")
+cciaObj$saveState()
 ```
 
 ```{r}
