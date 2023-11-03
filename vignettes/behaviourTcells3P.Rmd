@@ -74,10 +74,7 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$imChannelNames()
-# cciaObj$setImFilepath("ccidSlidingWindow.zarr", valueName = "slidingWindow")
-# cciaObj$setImChannelNames(cciaObj$imChannelNames("default"), "default")
-# cciaObj$saveState()
+branchDT <- as.data.table(cciaObj$labelProps(valueName = "SHG.branch")$as_df())
 ```
 
 ```{r}

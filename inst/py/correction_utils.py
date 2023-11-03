@@ -457,8 +457,8 @@ Correct autofluorescence using ratio of one to multiple channels
 def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
-  gaussian_sigma = 1, use_dask = True, correction_mode = 'subtract',
-  median_filter = 0):
+  gaussian_sigma = 1, use_dask = True, correction_mode = 'divide',
+  median_filter = 0, generate_inverse = False):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
@@ -534,6 +534,11 @@ def af_correct_channel(
   # af_data = (cleaned_correction + 1)/(cleaned_image + 1)
   # af_data = da.subtract(correction_im, corrected_data)
 
+  # generate inverse
+  inverse_data = None
+  if generate_inverse is True:
+    inverse_data = (cleaned_image + 1) / corrected_data
+
   # create filter values
   filter_values = [0] * len(dim_utils.im_dim)
   
@@ -541,18 +546,20 @@ def af_correct_channel(
   # for x in ('X', 'Y', 'Z'):
   for x in dim_utils.spatial_axis():
     filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
-
+  
   # apply filter
   filtered_im = dask_image.ndfilters.gaussian_filter(
     corrected_data, sigma = filter_values
   )
-
-  # filtered_af = dask_image.ndfilters.gaussian_filter(
-  #   af_data, sigma = filter_values
-  # )
+  
+  if is not None:
+    inverse_im = dask_image.ndfilters.gaussian_filter(
+      inverse_data, sigma = filter_values
+    )
 
   # return filtered_im, filtered_af
-  return filtered_im
+  # return filtered_im
+  return filtered_im, inverse_im
 
 # subtract background from array
 # simple percentile
@@ -571,11 +578,14 @@ def subtract_background(array, percentile_min = 80):
 Correct autofluoresence of image for multiple channels
 """
 def af_correct_image(input_image, af_combinations, dim_utils,
-                     logfile_utils, gaussian_sigma = 1, use_dask = True,
+                     gaussian_sigma = 1, use_dask = True,
                      apply_gaussian_to_others = True):
   # create channel list
   output_image = [input_image[dim_utils.create_channel_slices(i)]
-                  for i in range(dim_utils.dim_val('C'))]
+    for i in range(dim_utils.dim_val('C'))]
+                  
+  # create inverse list
+  inverse_image = [None] * len(output_image)
 
   # create AF image
   af_im = None
@@ -601,13 +611,14 @@ def af_correct_image(input_image, af_combinations, dim_utils,
   for i, x in af_combinations.items():
     # output_image[i], new_af_im = af_correct_channel(
     if len(x['divisionChannels']) > 0:
-      output_image[i] = af_correct_channel(
+      output_image[i], inverse_image[i] = af_correct_channel(
         input_image, i, x['divisionChannels'], dim_utils = dim_utils,
         channel_percentile = x['channelPercentile'],
         correction_percentile = x['correctionPercentile'],
         correction_mode = x['correctionMode'],
         # TODO is there a good way to correct for SHG?
         median_filter = x['medianFilter'],
+        generate_inverse = x['generateInverse'],
         gaussian_sigma = gaussian_sigma,
         use_dask = use_dask
       )
@@ -628,6 +639,11 @@ def af_correct_image(input_image, af_combinations, dim_utils,
     if x['topHatRadius'] > 0:
       output_image[i] = apply_top_hat(
         output_image[i], dim_utils, x['topHatRadius'])
+        
+      # apply to inverse
+      if inverse_image[i] is not None:
+        inverse_image[i] = apply_top_hat(
+          inverse_image[i], dim_utils, x['topHatRadius'])
     
     # # combine AF
     # if af_im is None:
@@ -641,7 +657,8 @@ def af_correct_image(input_image, af_combinations, dim_utils,
 
   # combine dask arrays back
   # https://docs.dask.org/en/latest/array-stack.html
-  output_dask = da.concatenate(output_image, axis = dim_utils.dim_idx('C'))
+  output_dask = da.concatenate(output_image + [x for x in inverse_image if x is not None],
+    axis = dim_utils.dim_idx('C'))
 
   # adjust chunksize and data type
   output_dask = output_dask.rechunk(chunks = input_image.chunksize)

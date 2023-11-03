@@ -36,7 +36,6 @@ def run(params):
   corrected_image = correction_utils.af_correct_image(
     im_dat[0], params['afCombinations'],
     dim_utils = dim_utils,
-    logfile_utils = logfile_utils,
     apply_gaussian_to_others = params['applyGaussianToOthers'],
     # correct percentile on whole image
     # rather than on individual dask blocks

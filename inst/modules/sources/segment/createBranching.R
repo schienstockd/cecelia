@@ -17,13 +17,16 @@ CreateBranching <- R6::R6Class(
     
     # run
     run = function() {
+      valueName <- self$funParams()$valueName
+      branchingName <- paste0(valueName, ".", "branch")
+      
+      self$resetImageInfo(valueName = branchingName)
+      
       self$initLog()
       self$writeLog("Start Branching extraction")
       
       # get object
       cciaObj <- self$cciaTaskObject()
-      valueName <- self$funParams()$valueName
-      branchingName <- paste0(valueName, ".", "branch")
       
       # get channels from segmentation
       labelChannels <- cciaObj$valueAttr("imLabelsFilepath", "channels", valueName = valueName)

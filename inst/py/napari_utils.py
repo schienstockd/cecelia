@@ -601,7 +601,7 @@ class NapariUtils:
             # insert background
             labels_cm = np.insert(labels_cm, 0, 0, axis = 0)
             
-            layer_chnl_colours = np.array(branching_values/max_chnl_val * chnl_scale - 1).astype(np.int)
+            layer_chnl_colours = np.array(branching_values/max_chnl_val * chnl_scale - 1).astype(int)
             layer_chnl_colours[layer_chnl_colours >= chnl_scale] = chnl_scale - 1
             layer_chnl_colours[layer_chnl_colours <= 0] = 1
             layer_chnl_colours = list(layer_chnl_colours)

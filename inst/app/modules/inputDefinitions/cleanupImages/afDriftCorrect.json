@@ -50,7 +50,12 @@
 							"max": 40,
 							"default": 0
 						}
-					}
+					},
+					"generateInverse": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			}
         }
       },
       "driftChannel": {
@@ -137,7 +142,13 @@
 						"widget:slider": {
 							"step": 1
 						}
-					}
+					},
+					"generateInverse": {
+    				"index": 6,
+    				"label": "Generate inverse",
+    				"widget:checkbox": {
+    				}
+    			}
 				}
 			},
       "driftChannel": {

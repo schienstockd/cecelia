@@ -34,6 +34,18 @@ AfCorrect <- R6::R6Class(
           x
         })
       
+      # get channels to add from inverse
+      imChannels <- cciaObj$imChannelNames(valueName = self$funParams()$valueName)
+      channelsToAdd <- mapply(
+        function(x, i) {
+          if (x$generateInverse == TRUE)
+            paste("Inverse", i)
+          else
+            NULL
+        }, afCombinations, imChannels, SIMPLIFY = FALSE
+      )
+      channelsToAdd <- channelsToAdd[!is.null(channelsToAdd)]
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -59,8 +71,8 @@ AfCorrect <- R6::R6Class(
       
       # update image information
       self$updateImageInfo(
-        filename = "ccidAfCorrected", valueName = "afCorrected")
-        # addChannels = c("AF generated"))
+        filename = "ccidAfCorrected", valueName = "afCorrected",
+        addChannels = channelsToAdd)
     }
   )
 )
