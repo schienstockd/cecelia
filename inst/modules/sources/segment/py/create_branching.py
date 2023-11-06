@@ -153,8 +153,7 @@ def run(params):
         save_meshes = save_meshes,
         extended_measures = True,
         calc_intensities = False,
-        # TODO this will always drop time
-        integrate_time = True
+        integrate_time = integrate_time
       ))
       
     # calculate extended measurements
@@ -192,8 +191,10 @@ def run(params):
       
       # flatten 3D image
       if calc_flattened is True and dim_utils.is_3D():
-        channels_im = np.max(channels_im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
-        im = np.max(im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
+        channels_im = np.max(channels_im, axis = dim_utils.dim_idx(
+          'Z', ignore_channel = True, ignore_time = integrate_time))
+        im = np.max(im, axis = dim_utils.dim_idx(
+          'Z', ignore_channel = True, ignore_time = integrate_time))
         
         logfile_utils.log(f'> flattened image {im.shape}')
       
