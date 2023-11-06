@@ -194,6 +194,8 @@ def run(params):
       if calc_flattened is True and dim_utils.is_3D():
         channels_im = np.max(channels_im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
         im = np.max(im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
+        
+        logfile_utils.log(f'> flattened image {im.shape}')
       
       # get anisotropy and summary
       if not dim_utils.is_3D() is True or calc_flattened is True:
