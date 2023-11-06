@@ -40,6 +40,7 @@ CreateBranching <- R6::R6Class(
         labelChannels = labelChannels,
         integrateTimeMode = integrateTimeMode,
         calcExtended = self$funParams()$calcExtended,
+        calcFlattened = self$funParams()$calcFlattened,
         anisoRadius = self$funParams()$anisoRadius,
         preDilationSize = self$funParams()$preDilationSize,
         postDilationSize = self$funParams()$postDilationSize,

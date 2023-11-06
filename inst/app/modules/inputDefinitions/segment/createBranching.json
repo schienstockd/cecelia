@@ -31,6 +31,11 @@
 					"default": false
 				}
 			},
+			"calcFlattened": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"anisoRadius": {
 				"type:integer": {
 					"min": 0,
@@ -77,15 +82,21 @@
 				"widget:checkbox": {
 				}
 			},
+			"calcFlattened": {
+				"index": 4,
+				"label": "Flatten to 2D",
+				"widget:checkbox": {
+				}
+			},
 			"anisoRadius": {
-				"index": 3,
+				"index": 5,
 				"label": "Anisotropy radius",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"saveMeshes": {
-				"index": 4,
+				"index": 6,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}

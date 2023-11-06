@@ -34,6 +34,7 @@ def run(params):
   label_channels = script_utils.get_param(params, 'labelChannels', default = [])
   integrate_time_mode = script_utils.get_param(params, 'integrateTimeMode', default = None)
   calc_extended = script_utils.get_param(params, 'calcExtended', default = False)
+  calc_flattened = script_utils.get_param(params, 'calcFlattened', default = False)
   aniso_radius = script_utils.get_param(params, 'anisoRadius', default = 50)
   save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
   
@@ -189,8 +190,21 @@ def run(params):
         else:
           channels_im = np.average(channels_im, axis = t_idx)
       
+      # flatten 3D image
+      if calc_flattened is True and dim_utils.is_3D():
+        channels_im = np.max(channels_im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
+        im = np.max(im, axis = dim_utils.dim_idx('Z', ignore_channel = True))
+      
       # get anisotropy and summary
-      if dim_utils.is_3D():
+      if not dim_utils.is_3D() is True or calc_flattened is True:
+        ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_2d_standard(
+          np.squeeze(channels_im), im,
+          pixel_size = dim_utils.im_physical_size('x'),
+          aniso_radius = aniso_radius,
+          aniso_box_size = math.floor(aniso_radius/2),
+          return_box_data = True
+        )
+      else:
         ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_3d_standard(
           np.squeeze(channels_im), im,
           dim_utils.im_physical_size('x'),
@@ -198,14 +212,6 @@ def run(params):
           # TODO this takes a long time - not sure this is necessary for our case?
           # oversampling_for_bundle = True,
           oversampling_for_bundle = False,
-          pixel_size = dim_utils.im_physical_size('x'),
-          aniso_radius = aniso_radius,
-          aniso_box_size = math.floor(aniso_radius/2),
-          return_box_data = True
-        )
-      else:
-        ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_2d_standard(
-          np.squeeze(channels_im), im,
           pixel_size = dim_utils.im_physical_size('x'),
           aniso_radius = aniso_radius,
           aniso_box_size = math.floor(aniso_radius/2),
