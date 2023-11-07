@@ -558,16 +558,29 @@ class NapariUtils:
             labels_scale.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
           
           # show labels
-          labels_layer = self.viewer.add_labels(
-              self.im_labels, properties = properties,
-              # metadata = metadata,
-              name = labels_layer,
-              scale = labels_scale,
-              cache = cache,
-              opacity = opacity,
-              visible = visible
-              # rendering = "translucent"
-          )
+          # make sure it is labels and not float
+          if self.im_labels[0].dtype in [bool, np.uint32]:
+            labels_layer = self.viewer.add_labels(
+                self.im_labels, properties = properties,
+                # metadata = metadata,
+                name = labels_layer,
+                scale = labels_scale,
+                cache = cache,
+                opacity = opacity,
+                visible = visible
+                # rendering = "translucent"
+            )
+          else:
+            labels_layer = self.viewer.add_image(
+                self.im_labels,
+                # metadata = metadata,
+                name = labels_layer,
+                scale = labels_scale,
+                cache = cache,
+                opacity = opacity,
+                visible = visible
+                # rendering = "translucent"
+            )
           
           labels_layer.contour = contour
           
