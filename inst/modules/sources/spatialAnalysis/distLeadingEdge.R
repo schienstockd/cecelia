@@ -73,8 +73,13 @@ DistLeadingEdge <- R6::R6Class(
         
         pppChull <- spatstat.geom::as.ppp(pointsDF, W = popsBbox)
         
+        # TODO why do I need to check that all points are in that pattern?
+        xMatch <- pointsDF$x %in% pppChull$x
+        yMatch <- pointsDF$y %in% pppChull$y
+        
         # get distances to window
-        pointsDF$dist <- spatstat.geom::bdist.points(pppChull)
+        pointsDF$dist <- 0
+        pointsDF[xMatch & yMatch,]$dist <- spatstat.geom::bdist.points(pppChull)
         
         headPoint <- pointsDF %>% arrange(-dist) %>% head(1)
         

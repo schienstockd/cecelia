@@ -22,9 +22,7 @@ projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
-```
 
-```{r}
 library(ggplot2)
 library(tidyverse)
 ```
@@ -70,6 +68,9 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 cciaObj <- initCciaObject(
   pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
 )
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- c("2Lb1kQ")
 
 # run task
 funParams <- list(
