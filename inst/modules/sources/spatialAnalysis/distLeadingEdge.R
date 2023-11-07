@@ -55,7 +55,7 @@ DistLeadingEdge <- R6::R6Class(
         # TODO get PPP - is that necessary?
         popPPP <- cciaObj$ppp(popType = self$funParams()$popType, pops = i,
                               includeFiltered = TRUE, completeDT = TRUE,
-                              hullType = "concave", concavity = 10)
+                              hullType = "concave", concavity = self$funParams()$concavity)
         
         self$writeLog(self$funParams()$popType)
         self$writeLog(i)

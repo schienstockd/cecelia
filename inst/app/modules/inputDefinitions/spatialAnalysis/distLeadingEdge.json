@@ -15,6 +15,13 @@
           "default": 10
         }
       },
+      "concavity": {
+        "type:integer": {
+          "min": 0,
+          "max": 50,
+          "default": 10
+        }
+      },
       "popsForEdge": {
         "type:list": {}
       }
@@ -30,8 +37,15 @@
           "step": 0.5
         }
       },
-      "popsForEdge": {
+      "concavity": {
         "index": 1,
+        "label": "Concavity",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "popsForEdge": {
+        "index": 2,
         "label": "Populations",
         "widget:popSelection": {
           "size": 1,
