@@ -18,8 +18,9 @@ class IleeUtils(SegmentationUtils):
     # call super
     super().__init__(params)
     
-    # labels will be float
+    # labels will be float and should not increase with tiles
     self.labels_dtype = np.float16
+    self.increase_labels_per_tile = False
     
     # get params
     self.filament_channels = script_utils.get_param(params, 'filament_channels', default = [])

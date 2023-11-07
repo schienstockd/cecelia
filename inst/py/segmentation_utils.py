@@ -81,6 +81,7 @@ class SegmentationUtils:
     # process as zarr?
     self.process_as_zarr = script_utils.get_param(params, 'process_as_zarr', default = False)
     self.labels_dtype = np.uint32
+    self.increase_labels_per_tile = True
     
     # get labels name
     self.value_name = script_utils.get_ccia_param(params, 'value_name', default = 'default')
@@ -397,9 +398,10 @@ class SegmentationUtils:
             clear_depth = self.clear_depth)
             
           # increase numbering
-          for j in alg_labels.keys():
-            if alg_labels[j] is not None:
-              alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
+          if self.increase_labels_per_tile is True:
+            for j in alg_labels.keys():
+              if alg_labels[j] is not None:
+                alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
           
           # merge with exisiting labels
           if self.label_overlap > 0:
