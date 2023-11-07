@@ -54,7 +54,8 @@ DistLeadingEdge <- R6::R6Class(
                                includeFiltered = TRUE, completeDT = TRUE)
         # TODO get PPP - is that necessary?
         popPPP <- cciaObj$ppp(popType = self$funParams()$popType, pops = i,
-                              includeFiltered = TRUE, completeDT = TRUE)
+                              includeFiltered = TRUE, completeDT = TRUE,
+                              hullType = "concave", concavity = 10)
         
         self$writeLog(self$funParams()$popType)
         self$writeLog(i)
@@ -131,7 +132,7 @@ DistLeadingEdge <- R6::R6Class(
                 c(abs(y - popsBbox$yrange[[1]]), abs(y - popsBbox$yrange[[2]]))
               ))
         }
-                
+        
         # get distance to line
         # https://gis.stackexchange.com/a/360678
         # https://gis.stackexchange.com/a/270894
@@ -148,6 +149,7 @@ DistLeadingEdge <- R6::R6Class(
         
         # copy information to root data table
         popDT[, c(distCol) := sf::st_distance(points, lines)]
+        min(sf::st_distance(points, lines))
         
         # join to root
         # https://stackoverflow.com/a/34600831/13766165

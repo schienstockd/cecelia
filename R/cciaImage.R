@@ -1690,8 +1690,9 @@ CciaImage <- R6::R6Class(
     #' @param windowPops list of character to define window
     #' @param pops list of character to define populations
     #' @param usePops list of character to filter population data.frame
+    #' @param usePhysicalScale boolean to convert to physical scale
     #' @param ... passed to self$popDT
-    pp3 = function(windowPops = NULL, pops = NULL, usePops = NULL, ...) {
+    pp3 = function(windowPops = NULL, pops = NULL, usePops = NULL, usePhysicalScale = TRUE, ...) {
       # get popDT
       popDT <- self$popDT(pops = pops, ...)
       
@@ -1700,11 +1701,18 @@ CciaImage <- R6::R6Class(
         popDT <- popDT[pop %in% usePops]
       }
       
-      # get bbox population
-      if (!is.null(windowPops) && length(windowPops) > 0)
+      if (usePhysicalScale == TRUE)
+        convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
+      
+      # get convex hull population
+      if (length(windowPops) > 0) {
         popWindow <- self$popDT(pops = windowPops, ...)
-      else
+        
+        if (usePhysicalScale == TRUE)
+          convertPixelToPhysical(popWindow, cciaObj$omeXMLPixelRes())
+      } else {
         popWindow <- popDT
+      }
       
       # create 3D spatial dataframe
       pointsDF <- data.frame(
@@ -1739,8 +1747,13 @@ CciaImage <- R6::R6Class(
     #' @param windowPops list of character to define window
     #' @param pops list of character to define populations
     #' @param usePops list of character to filter population data.frame
+    #' @param usePhysicalScale boolean to convert to physical scale
+    #' @param hullType character to define type of hull
+    #' @param concavity numeric to define concavity for concave hull
     #' @param ... passed to self$popDT
-    ppp = function(windowPops = NULL, pops = NULL, usePops = NULL, ...) {
+    ppp = function(windowPops = NULL, pops = NULL, usePops = NULL,
+                   usePhysicalScale = TRUE, hullType = "convex",
+                   concavity = 2, ...) {
       # get popDT
       popDT <- self$popDT(pops = pops, ...)
       
@@ -1749,11 +1762,18 @@ CciaImage <- R6::R6Class(
         popDT <- popDT[pop %in% usePops]
       }
       
+      if (usePhysicalScale == TRUE)
+        convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
+      
       # get convex hull population
-      if (length(windowPops) > 0)
+      if (length(windowPops) > 0) {
         popWindow <- self$popDT(pops = windowPops, ...)
-      else
+        
+        if (usePhysicalScale == TRUE)
+          convertPixelToPhysical(popWindow, cciaObj$omeXMLPixelRes())
+      } else {
         popWindow <- popDT
+      }
       
       # create 2D spatial dataframe
       pointsDF <- data.frame(
@@ -1773,9 +1793,18 @@ CciaImage <- R6::R6Class(
       
       if (nrow(pointsDF) > 0) {
         # create polygon window
-        polyCoords <- windowDF[chull(as.matrix(windowDF)),] %>%
-          arrange(desc(row_number()))
-        W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
+        if (hullType == "concave") {
+          # https://stackoverflow.com/a/33299920
+          polyCoords <- concaveman::concaveman(as.matrix(windowDF), concavity = concavity)
+          # reverse coordinates for owin ie/ anti-clockwise
+          polyCoords <- polyCoords[nrow(polyCoords):1, ]
+          
+          W <- spatstat.geom::owin(poly = list(x = polyCoords[,1], y = polyCoords[,2]))
+        } else {
+          polyCoords <- windowDF[chull(as.matrix(windowDF)),] %>%
+            arrange(desc(row_number()))
+          W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
+        }
         
         spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
       } else {

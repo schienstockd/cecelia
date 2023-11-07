@@ -67,8 +67,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
-  pID = pID, uID = "bQ4XcX", versionID = versionID, initReactivity = FALSE # wrong side
-  # pID = pID, uID = "mmqrqO", versionID = versionID, initReactivity = FALSE # edge in the middle
+  # pID = pID, uID = "bQ4XcX", versionID = versionID, initReactivity = FALSE # wrong side
+  pID = pID, uID = "mmqrqO", versionID = versionID, initReactivity = FALSE # edge in the middle
 )
 
 # uIDs <- names(cciaObj$cciaObjects())
@@ -93,48 +93,20 @@ task <- cciaObj$runTask(
 )
 ```
 
-```{r}
+```{r fig_tumour_border, fig.height=3, fig.width=12}
 # show numbers of cells per area
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "bQ4XcX", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "mmqrqO", versionID = versionID, initReactivity = FALSE
 )
 
 # can you extract the tumour border as a line?
-popDT <- cciaObj$popDT("clust", includeFiltered = TRUE)
-```
+popDT <- cciaObj$popDT("flow", pops = c("/nondebris/included"))
 
-```{r fig_tumour_border, fig.height=3, fig.width=12}
-ggplot(popDT[pop == "MHCII+"], aes(centroid_x, -centroid_y, color = `clust.cell.contact#branch.CD31.branch__two`)) +
-  geom_point() +
-  theme_classic() +
-  coord_fixed() 
-  # viridis::scale_color_viridis()
-```
-
-```{r}
-# show numbers of cells per area
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE
-)
-
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-uIDs <- c("Ad8GPQ")
-
-popPaths <- cciaObj$popPaths(popType = "flow", uIDs = uIDs)
-
-# can you extract the tumour border as a line?
-popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = popPaths)
-```
-
-```{r fig_tumour_border, fig.height=3, fig.width=12}
 ggplot(popDT, aes(centroid_x, -centroid_y, color = flow.cell.dist.leading.edge)) +
   geom_point() +
   theme_classic() +
