@@ -86,6 +86,8 @@ plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "lef
     axis.ticks = element_line(colour = "white"),
     strip.text = element_text(
       colour = "white", size = fontSize),
+    plot.title = element_text(
+      colour = "white", size = fontSize)
   )
 }
 

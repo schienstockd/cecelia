@@ -669,10 +669,19 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Tracks measures
-    #' @param measures list of character to define measures
     #' @param pops list of character to define populations
+    #' @param measures list of character to define measures
     #' @param forceReload boolean to force reload of values
-    tracksMeasures = function(measures, pops, forceReload = FALSE) {
+    tracksMeasures = function(pops, measures = NULL, forceReload = FALSE) {
+      # get default measures if null
+      if (is.null(measures)) {
+        measures <- c(
+          "speed", "duration", "trackLength", "meanTurningAngle",
+          "displacement", "straightness", "displacementRatio",
+          "outreachRatio", "asphericity", "overallAngle"
+        )
+      }
+      
       versionedVarName <- paste(
         pops,
         paste(measures, collapse = "&"),

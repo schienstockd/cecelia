@@ -204,7 +204,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
       tracks.fun.result,
       function(x) {
         DT <- as.data.table(as.matrix(x))[
-          , track_id := names(x)]
+          , track_id := as.numeric(names(x))]
         # ] %>% data.table::rename(!!result.name := "V1")
         setnames(DT, "V1", result.name)
         

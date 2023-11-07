@@ -372,25 +372,21 @@ CciaImageSet <- R6::R6Class(
     },
     
     #' @description Tracks measurements for images
-    #' @param measures list of character for track measurements
     #' @param removeNULL boolean to remove NULL
     #' @param uIDs list of character for unique IDs
     #' @param ... passed to CciaImage$tracksMeasures
-    tracksMeasures = function(measures,
-                              asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
+    tracksMeasures = function(asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
                               ...) {
       # get tracksInfo from images
       if (private$isReactive() == TRUE) {
         imTracksMeasures <- lapply(
           self$cciaObjects(uIDs = uIDs),
-          function(x) x()$tracksMeasures(
-            measures, ...)
+          function(x) x()$tracksMeasures(...)
         )
       } else {
         imTracksMeasures <- lapply(
           self$cciaObjects(uIDs = uIDs),
-          function(x) x$tracksMeasures(
-            measures, ...)
+          function(x) x$tracksMeasures(...)
         )
       }
       

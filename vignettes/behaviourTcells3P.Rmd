@@ -20,8 +20,9 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-# pID <- "CV5iNI"
-pID <- "uh0h3c"
+pID <- "CV5iNI"
+# pID <- "uh0h3c"
+# pID <- "8BR53W"
 versionID <- 1
 projectsDir <- "/Volumes/USER/Dominik/cecelia/projects/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
@@ -72,21 +73,30 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE 
-  pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE
-  # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
+  # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
+  # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
 )
 
 # get vector information to plot anisotropy
-# labels <- cciaObj$labelProps(valueName = "SHG.branch")
-labels <- cciaObj$labelProps(valueName = "vessels.branch")
+labels <- cciaObj$labelProps(valueName = "SHG.branch")
+# labels <- cciaObj$labelProps(valueName = "vessels.branch")
+# labels <- cciaObj$labelProps(valueName = "CD11c.branch")
 uns <- labels$values_uns()
 labels$close()
+
+# get branching
+branchDT <- cciaObj$popDT("branch")
+
+# get tracks to align with SHG
+popDT <- cciaObj$popDT("live", pops = "P14-CTDR/tracked", includeFiltered = TRUE)
+
+# get tracks info and check parameters
+tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
 ```
 
 ```{r}
-library(ggquiver)
-
 # plot quiver
 coords <- data.frame(
   y = as.vector(uns$ilee_coor_list[1,,,1]),
@@ -94,18 +104,103 @@ coords <- data.frame(
 )
 u <- as.vector(uns$ilee_eigval[1,,,2]) * as.vector(uns$ilee_eigvec[1,,,2,1])
 v <- as.vector(uns$ilee_eigval[1,,,1]) * as.vector(uns$ilee_eigvec[1,,,1,1])
-
-# coor_list[:,:,1].flatten(),
-# coor_list[:,:,0].flatten(),
-# eigval[:,:,1].flatten() * eigvec[:,:,1,0].flatten(),
-# eigval[:,:,0].flatten() * eigvec[:,:,0,0].flatten(),
-# color = 'red'
-ggplot(coords, aes(x = x, y = -y, u = u, v = v)) +
-  geom_quiver() +
-  theme_classic() +
-  coord_fixed()
 ```
 
+
+```{r fig_umap, fig.height=10, fig.width=10}
+# can you show the branching patterns on a plot?
+p1 <- ggplot(branchDT) + 
+  ggquiver::geom_quiver(
+    data = coords, aes(x = x, y = y, u = -u, v = v), color = "grey", size = 2) +
+  # scale_color_brewer(palette = "Set1") +
+  theme_classic() +
+  plotThemeDark() +
+  coord_fixed() +
+  xlim(0, cciaObj$omeXMLPixels()$SizeX) +
+  ylim(cciaObj$omeXMLPixels()$SizeY, 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  ) 
+
+p1 + geom_segment(aes(
+  x = `coord-src-2`, y = `coord-src-1`,
+  xend = `coord-dst-2`, yend = `coord-dst-1`),
+  # color = as.factor(`branch-type`)),
+  size = 1.5, color = "#4682b4") +
+  geom_path(
+    data = popDT, aes(centroid_x, centroid_y, group = track_id),
+    color = "#ebd441", size = 1.5)
+```
+
+```{r fig_umap, fig.height=10, fig.width=20}
+tracksMeasures <- colnames(tracksInfo)
+tracksMeasures <- tracksMeasures[!tracksMeasures %in% c("cell_type", "track_id")]
+
+tracksMeasuresDT <- popDT[tracksInfo, on = c("track_id")]
+
+p1s <- list()
+for (i in tracksMeasures) {
+  local({
+    local_i <- i
+    p1s[[local_i]] <<- p1 + geom_path(
+    # p1s[[local_i]] <<- p1 + geom_bin_2d(
+      data = tracksMeasuresDT, 
+      aes(centroid_x, centroid_y, group = track_id, color = get(local_i)),
+      # aes(centroid_x, centroid_y, group = track_id, fill = get(local_i)),
+      size = 1.5) +
+      viridis::scale_color_viridis() +
+      # viridis::scale_fill_viridis() +
+      ggtitle(local_i)
+  })
+}
+
+ggpubr::ggarrange(plotlist = p1s, ncol = 5, nrow = 2)
+```
+
+```{r}
+# can you correlate anisotropy with tracks?
+coordsX <- uns$ilee_coor_list[1,,,2]
+coordsY <- uns$ilee_coor_list[1,,,1]
+dim(coordsX) <- NULL
+dim(coordsY) <- NULL
+m <- cbind(coordsX, coordsY)
+
+# get anisotropy for each spot in track
+popDT$aniso.id <- dbscan::kNN(m, k = 1, query = popDT[, c("centroid_x", "centroid_y")])$id
+popDT$aniso.box <- uns$ilee_box_anisotropy[popDT$aniso.id]
+```
+
+```{r fig_track_aniso, fig.height=10, fig.width=15}
+# plot all combinations of measurements with anisotropy
+datToPlot <- as.data.table(popDT %>%
+  group_by(track_id) %>%
+  summarise(mean.aniso.box = mean(aniso.box)))[tracksInfo, on = c("track_id")] %>%
+  # pivot_longer(cols = c(measures, "mean.aniso.box"),
+  pivot_longer(cols = tracksMeasures,
+               names_to = "measure", values_to = "value")
+
+ggplot(datToPlot, aes(mean.aniso.box, value)) +
+# ggplot(datToPlot, aes(weighted.aniso.box, value, color = uID)) +
+  theme_classic() +
+  geom_point(shape = 1, stroke = 1) +
+  facet_wrap(.~measure, ncol = 4, scales = "free_y") +
+  xlab("Close to anisotropy with % of") +
+  scale_color_brewer(palette = "Set2") +
+  expand_limits(x = 0, y = 0) +
+  # xlim(0, 50) +
+  theme(
+    legend.title = element_blank(),
+    legend.position = "bottom",
+    legend.justification = "left"
+  )
+```
 
 ```{r}
 library(ggquiver)

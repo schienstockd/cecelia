@@ -29,6 +29,7 @@ class SegmentationUtils:
     self.subtract_edges = script_utils.get_param(params, 'subtract_edges', default = False)
     self.segment = script_utils.get_param(params, 'segment', default = True)
     self.measure = script_utils.get_param(params, 'measure', default = False)
+    
     # TODO not used
     self.use_dask = script_utils.get_param(params, 'use_dask', default = False)
     self.update_measures = script_utils.get_param(params, 'update_measures', default = False)
@@ -79,6 +80,7 @@ class SegmentationUtils:
 
     # process as zarr?
     self.process_as_zarr = script_utils.get_param(params, 'process_as_zarr', default = False)
+    self.labels_dtype = np.uint32
     
     # get labels name
     self.value_name = script_utils.get_ccia_param(params, 'value_name', default = 'default')
@@ -268,7 +270,7 @@ class SegmentationUtils:
         mode = 'w',
         shape = tuple(zarr_shape),
         chunks = tuple(zarr_chunks),
-        dtype = np.uint32)
+        dtype = self.labels_dtype)
       
     # cur_max_labels = {i: 0 for i in labels.keys()}
     cur_max_labels = 0
@@ -470,9 +472,9 @@ class SegmentationUtils:
     if self.halo_size > 0:
       # expand base labels abd subtract base labels from expanded labels
       if self.halo_whole_cell is True:
-        labels['halo'] = expand_labels(base_labels, self.halo_size).astype(np.uint32)
+        labels['halo'] = expand_labels(base_labels, self.halo_size).astype(self.labels_dtype)
       else:
-        labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(np.uint32)
+        labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(self.labels_dtype)
       
     # add cyto segmentation from base and nucleus?
     if 'nuc' in labels.keys():

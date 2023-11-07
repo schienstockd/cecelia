@@ -18,6 +18,9 @@ class IleeUtils(SegmentationUtils):
     # call super
     super().__init__(params)
     
+    # labels will be float
+    self.labels_dtype = np.float16
+    
     # get params
     self.filament_channels = script_utils.get_param(params, 'filament_channels', default = [])
     self.normalise = script_utils.get_param(params, 'normalise', default = 0)

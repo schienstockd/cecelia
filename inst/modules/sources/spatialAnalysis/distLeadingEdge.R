@@ -63,7 +63,7 @@ DistLeadingEdge <- R6::R6Class(
         convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
         
         # get distances
-        popsBbox <- boundingbox(popPPP)
+        popsBbox <- spatstat.geom::boundingbox(popPPP)
         
         # make convex hull to ppp and use bbox as window
         pointsDF <- data.frame(
