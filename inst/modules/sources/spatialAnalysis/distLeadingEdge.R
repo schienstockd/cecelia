@@ -74,7 +74,7 @@ DistLeadingEdge <- R6::R6Class(
         pppChull <- spatstat.geom::as.ppp(pointsDF, W = popsBbox)
         
         # get distances to window
-        pointsDF$dist <- bdist.points(pppChull)
+        pointsDF$dist <- spatstat.geom::bdist.points(pppChull)
         
         headPoint <- pointsDF %>% arrange(-dist) %>% head(1)
         
