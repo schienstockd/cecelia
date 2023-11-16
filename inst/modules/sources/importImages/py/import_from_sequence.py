@@ -44,23 +44,28 @@ def run(params):
     split_size = int(dim_utils.dim_val('Y')/dim_utils.dim_val('X'))
     
     # split array along Y
-    x_split = np.array_split(x, split_size, axis = dim_utils.dim_idx('Y'))
+    x_split = np.array_split(x_array, split_size, axis = dim_utils.dim_idx('Y'))
     
     # get or create stack axis
     stack_dim_idx = dim_utils.dim_idx(stack_dim)
     stack_array = False
     
-    # check whether to create this dimension
-    if stack_dim_idx is None:
-      stack_dim_idx = dim_utils.default_order.index(stack_dim)
-      stack_array = True
-    
-    # concat or stack
-    if stack_array is True:
-      x_new = np.stack(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
+    # how to handle new dimension
+    if stack_dim == 'C':
+      # concat arrays
+      x_new = np.concatenate(x_split, axis = stack_dim_idx)
     else:
-      # TODO need to test this
-      x_new = np.concatenate(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
+      # check whether to create this dimension
+      if stack_dim_idx is None:
+        stack_dim_idx = dim_utils.default_order.index(stack_dim)
+        stack_array = True
+    
+      # concat or stack
+      if stack_array is True:
+        x_new = np.stack(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
+      else:
+        # TODO need to test this
+        x_new = np.concatenate(x_split[::(skip_tiles + 1)], axis = stack_dim_idx)
     
     logfile_utils.log(f'>> Save back {x_new.shape}')
     
@@ -69,13 +74,16 @@ def run(params):
     
     # create shape dict for new image
     shape_dict = {'Y': int(dim_utils.dim_val('Y')/split_size)}
-    shape_dict[stack_dim.upper()] = x_new.shape[stack_dim_idx]
-    scale_dict = dict()
-    scale_dict[stack_dim.upper()] = physical_stack_scale
+    shape_dict[stack_dim] = x_new.shape[stack_dim_idx]
     
     # change image dimensions in xml
     omexml_new = ome_xml_utils.set_im_size_with_dict(omexml, shape_dict)
-    omexml_new = ome_xml_utils.set_physical_size_with_dict(omexml_new, scale_dict)
+    
+    if stack_dim != 'C':
+      scale_dict = dict()
+      scale_dict[stack_dim] = physical_stack_scale
+      
+      omexml_new = ome_xml_utils.set_physical_size_with_dict(omexml_new, scale_dict)
       
     # add metadata
     ome_xml_utils.write_ome_xml(zarr_path, omexml_new)

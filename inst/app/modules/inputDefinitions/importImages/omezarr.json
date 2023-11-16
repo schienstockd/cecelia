@@ -125,7 +125,8 @@
         "widget:selection": {
           "items": {
             "Depth": "Z",
-            "Time": "T"
+            "Time": "T",
+            "Channel": "C"
           },
           "multiple": false,
           "size": 1

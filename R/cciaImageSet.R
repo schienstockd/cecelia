@@ -295,8 +295,8 @@ CciaImageSet <- R6::R6Class(
             message(sprintf("[popDT] >> %s", x$getUID()))
             x$popDT(...)
           # }
-          # }, mc.cores = parallel::detectCores() - 2
-          }, mc.cores = mc.cores
+          }, mc.cores = parallel::detectCores() - 2
+          # }, mc.cores = mc.cores
         )
       }
       

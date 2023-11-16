@@ -187,9 +187,8 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     function(x) {
       # apply subtracks?
       if (!is.null(steps.subtracks)) {
-        return(sapply(celltrackR::subtracks(x, i = steps.subtracks,
-                                overlap = steps.overlap),
-                      call.FUN, ...))
+        return(sapply(celltrackR::subtracks(
+          x, i = steps.subtracks, overlap = steps.overlap), call.FUN, ...))
       } else {
         return(sapply(x, call.FUN, ...))
       }
@@ -204,11 +203,12 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
       tracks.fun.result,
       function(x) {
         DT <- as.data.table(as.matrix(x))[
-          , track_id := as.numeric(names(x))]
+          # , track_id := as.numeric(names(x))]
+          , track_id := names(x)]
         # ] %>% data.table::rename(!!result.name := "V1")
         setnames(DT, "V1", result.name)
         
-        DT
+        if (nrow(DT) > 0) DT else NULL
       }
     )
     

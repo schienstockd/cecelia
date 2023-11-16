@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -27,7 +28,7 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/Mengliang/CECELIA"
 ```
 
 ```{r}
@@ -63,7 +64,7 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "fht6t7", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
 )
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
@@ -77,34 +78,54 @@ labels <- lapply(cciaObj$cciaObjects(), function(x) {
   uns
 })
 
+# merge summary
+exp.info <- exp.info[rbindlist(lapply(labels, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
+
 # load tracks
-tracks.tables <- list(
-  "b9o98P" = read.csv(
-    "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/Tests/tracking/MW_P011_inf_exp1.csv"),
-  "4i3bxX" = read.csv(
-    "/Volumes/USER_data/Dominik/Experiments/KL-Cornea/Mengliang/Tests/tracking/MW_P011_whorl_exp2.csv")
-)
+tracks.table <- as.data.table(read.csv(
+  "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20231107/Nerve anisotropy and cell track/Cell tracking.csv"))
+
+# get branching
+branchDT <- cciaObj$popDT(popType = "branch")
+
+# clean up Region
+tracks.table[Region != "whorl", Region := "inf"]
+
+# match uIDs
+tracks.table[exp.info, on = c("ID" = "Patient", "Region" = "Type"), uID := uID]
+
+# copy group to exp info
+exp.info[unique(tracks.table[, c("uID", "Group")]), on = c("uID"), Group := Group]
+
+# add cell_ids
+tracks.table <- as.data.table(tracks.table %>%
+  group_by(across(all_of(c("uID", "Track")))) %>%
+  dplyr::mutate(cell_id = 1:n()))
+setnames(tracks.table, "Track", "track_id")
 ```
 
 ```{r}
 # can you combine tracks with anisotropy?
 # convert to tracks to get speed and angle and overall movement patterns
 # can you import them directly to the image?
-id.column <- which(colnames(tracks.tables[[1]]) == "Track")
-time.column <- which(colnames(tracks.tables[[1]]) == "Slice")
-pos.columns.x <- which(colnames(tracks.tables[[1]]) == "X")
-pos.columns.y <- which(colnames(tracks.tables[[1]]) == "Y")
+id.column <- which(colnames(tracks.table) == "track_id")
+time.column <- which(colnames(tracks.table) == "Slice")
+pos.columns.x <- which(colnames(tracks.table) == "X")
+pos.columns.y <- which(colnames(tracks.table) == "Y")
 pos.columns <- c(pos.columns.x, pos.columns.y)
 
-tracks <- lapply(tracks.tables, function(x) {
-  celltrackR::as.tracks(
-    x,
+# go through images and create tracks 
+tracks <- list()
+
+for (i in exp.info$uID) {
+  tracks[[i]] <- celltrackR::as.tracks(
+    tracks.table[uID == i],
     id.column = id.column,
     time.column = time.column,
     pos.columns = pos.columns,
     scale.t = 1
   )
-})
+}
 ```
 
 ```{r}
@@ -119,13 +140,16 @@ for (i in names(labels)) {
   m <- cbind(coordsX, coordsY)
   
   # get anisotropy for each spot in track
-  tracks.tables[[i]]$aniso.id <- dbscan::kNN(m, k = 1, query = tracks.tables[[i]][, c("X", "Y")])$id
-  tracks.tables[[i]]$aniso.box <- x$ilee_box_anisotropy[tracks.tables[[i]]$aniso.id]
+  tracks.table[uID == i, aniso.id := dbscan::kNN(m, k = 1, query = tracks.table[uID == i, c("X", "Y")])$id]
+  tracks.table[uID == i, aniso.box := x$ilee_box_anisotropy[tracks.table[uID == i, aniso.id]]]
 }
 ```
 
 
 ```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
 # get track measurements
 measures <- c(
   "speed", "duration", "trackLength", "meanTurningAngle",
@@ -146,9 +170,9 @@ tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.measures)
 tracksMeasures[, track_id := as.integer(track_id)]
 
 # then merge average anisotropy
-tracksMeasures[as.data.table(rbindlist(tracks.tables, idcol = "uID") %>%
-  group_by(uID, Track) %>%
-  summarise(mean.aniso.box = mean(aniso.box))), on = c("uID", "track_id" = "Track"),
+tracksMeasures[as.data.table(tracks.table %>%
+  group_by(uID, track_id) %>%
+  summarise(mean.aniso.box = mean(aniso.box))), on = c("uID", "track_id" = "track_id"),
   mean.aniso.box := mean.aniso.box]
 
 # add % aniso
@@ -161,28 +185,241 @@ for (i in names(labels)) {
 tracksMeasures[exp.info, on = c("uID"), weighted.aniso.box := mean.aniso.box/total.box.length * 100]
 ```
 
-```{r fig_track_aniso, fig.height=10, fig.width=4}
+```{r fig_aniso, fig.height=4, fig.width=12}
+# plot vessel measurements for each type
+vesselMeasures <- colnames(exp.info)[!colnames(exp.info) %in% c("uID", "Patient", "Type", "Group")]
+
+write.csv(exp.info, file.path(anaDir, "vessels.csv"))
+
+datToPlot <- exp.info %>%
+  pivot_longer(cols = vesselMeasures,
+               names_to = "measure", values_to = "value")
+
+ggplot(datToPlot, aes(Type, value, color = Group)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(width = 0.2) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  facet_wrap(.~measure, scales = "free", nrow = 2) +
+  theme(legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1")
+  # scale_color_manual(values = c("#327EBA", "#AA1F5E"))
+
+ggsave(file.path(anaDir, "vessels.pdf"), height = 4, width = 10)
+```
+
+```{r}
+# create data.table with properties
+tracks.table[
+  tracks.measure.fun(
+    tracks, celltrackR::speed, "cell_speed",
+    steps.subtracks = 1, idcol = "uID"),
+  on = .(uID, track_id, cell_id),
+  cell_speed := .(cell_speed)]
+
+tracks.table[
+  tracks.measure.fun(
+    tracks, celltrackR::overallAngle, "cell_angle",
+    steps.subtracks = 2, idcol = "uID"),
+  on = .(uID, track_id, cell_id),
+  # cell_angle := .(pracma::rad2deg(cell_angle))]
+  cell_angle := .(cell_angle)]
+```
+
+```{r}
+# get average direction and velocity for cells
+gridWindow <- 40
+shiftCols <- c("X", "Y")
+shiftColsNames <- paste("lag", shiftCols, sep = ".")
+
+# https://stackoverflow.com/a/24747155
+euc.dist <- function(x1, x2) sqrt(sum((x1 - x2) ^ 2))
+
+# get average vector fields
+tracks.table[, centroid_region := as.numeric(NA)]
+
+# get mean orientation
+# https://stackoverflow.com/a/26292059
+tracks.table[, (shiftColsNames) := shift(.SD), by = .(uID, track_id), .SDcols = shiftCols]
+tracks.table[, `:=` (
+  delta_X = X - lag.X,
+  delta_Y = Y - lag.Y
+  )] 
+
+# get distances
+tracks.table[, centroid_dist := euc.dist(c(X, Y), c(lag.X, lag.Y)), 
+             by = 1:nrow(tracks.table)]
+
+for (x in cciaObj$cciaObjects()) {
+  i <- x$getUID()
+  
+  tracksSpots <- expand.grid(
+    seq(0, x$omeXMLPixels()$SizeX, gridWindow),
+    seq(0, x$omeXMLPixels()$SizeY, gridWindow)
+  )
+  colnames(tracksSpots) <- c("X", "Y")
+  
+  # get closest spots
+  tracks.table[uID == i, centroid_region := dbscan::kNN(
+    as.matrix(tracksSpots), k = 1, query = as.matrix(tracks.table[uID == i, c("X", "Y")]))$id]
+}
+```
+
+```{r}
+# get average direction of cell
+tracks.summary <- as.data.table(tracks.table %>%
+  group_by(uID, track_id) %>%
+  summarise(
+    # mean_x = mean(X, na.rm = TRUE),
+    # mean_y = mean(Y, na.rm = TRUE),
+    start_x = head(X, n = 1),
+    start_y = head(Y, n = 1),
+    mean_angle = sum(cell_angle, na.rm = TRUE),
+    # mean_angle = mean(cell_angle, na.rm = TRUE),
+    # mean_speed = mean(cell_speed, na.rm = TRUE),
+    displacement = euc.dist(
+      c(head(X, n = 1), head(Y, n = 1)), c(tail(X, n = 1), tail(Y, n = 1)))
+  ))
+
+# get direction vectors
+# tracks.summary[, c("start_x", "start_y") := as.list(
+#   dagR::anglePoint(c(mean_x, mean_y), mean_angle, (displacement/2))), by = 1:nrow(tracks.summary)]
+tracks.summary[, c("end_x", "end_y") := as.list(
+  # dagR::anglePoint(c(mean_x, mean_y), mean_angle, (displacement/2))), by = 1:nrow(tracks.summary)]
+  dagR::anglePoint(c(start_x, start_y), mean_angle, (displacement/2))), by = 1:nrow(tracks.summary)]
+
+# get u and v
+tracks.summary[, `:=` (u = start_x - end_x, v = start_y - end_y)]
+```
+
+
+```{r fig_track_aniso, fig.height=6, fig.width=14}
+# plot quiver for each sample
+# for (i in names(labels)) {
+for (i in c("2TIPuT")) {
+  local({
+    local_i <- i
+    x <- labels[[local_i]]
+    
+    # get coords
+    coords <- data.frame(
+      y = as.vector(x$ilee_coor_list[1,,,1]),
+      x = as.vector(x$ilee_coor_list[1,,,2])
+    )
+    u <- as.vector(x$ilee_eigval[1,,,2]) * as.vector(x$ilee_eigvec[1,,,2,1])
+    v <- as.vector(x$ilee_eigval[1,,,1]) * as.vector(x$ilee_eigvec[1,,,1,1])
+    
+    # get tracks grid
+    # tracksGrid <- tracks.table[uID == local_i] %>%
+    #   group_by(centroid_region) %>%
+    #   summarise(
+    #     x = median(X, na.rm = TRUE),
+    #     y = median(Y, na.rm = TRUE),
+    #     velocity = median(centroid_dist, na.rm = TRUE),
+    #     u = log(velocity) * median(delta_X, na.rm = TRUE),
+    #     v = log(velocity) * median(delta_Y, na.rm = TRUE),
+    #     # u = median(delta_X, na.rm = TRUE),
+    #     # v = median(delta_Y, na.rm = TRUE),
+    #   )
+    
+    p1 <- ggplot(branchDT[uID == local_i]) + 
+      ggquiver::geom_quiver(
+        data = coords, aes(x = x, y = y, u = -u, v = v), color = "white") +
+      # scale_color_brewer(palette = "Set1") +
+      theme_classic() +
+      plotThemeDark() +
+      coord_fixed() +
+      xlim(0, cciaObj$cciaObjectByUID(local_i)[[1]]$omeXMLPixels()$SizeX) +
+      ylim(cciaObj$cciaObjectByUID(local_i)[[1]]$omeXMLPixels()$SizeY, 0) +
+      theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none"
+      ) +
+      geom_segment(aes(
+        x = `coord-src-1`, y = `coord-src-0`,
+        xend = `coord-dst-1`, yend = `coord-dst-0`),
+        # color = as.factor(`branch-type`)),
+        color = "#4682b4") +
+      # ggquiver::geom_quiver(
+      #   data = tracksGrid, aes(x = x, y = y, u = -u, v = v),
+      #   color = "yellow", linewidth = 0.5)
+      ggquiver::geom_quiver(
+        # data = tracks.summary[uID == local_i], aes(x = mean_x, y = mean_y, u = -u, v = v),
+        data = tracks.summary[uID == local_i], aes(x = start_x, y = start_y, u = u, v = v),
+        color = "yellow", linewidth = 0.5)
+      # geom_path(
+      #   data = tracks.table[uID == i], aes(X, Y, group = track_id),
+      #   color = "#ebd441")
+    
+    fileID <- paste(as.list(exp.info[uID == local_i, c("Patient", "Type")]), collapse = "-")
+    fileID <- paste0(fileID, "-", local_i)
+    
+    ggsave(file.path(anaDir, "samples", paste0(fileID, "_orientation.pdf")), height = 5, width = 5)
+    # ggsave(file.path(anaDir, "samples", paste0(fileID, "_tracks.pdf")), height = 5, width = 5)
+  })
+}
+```
+
+```{r fig_tracks, fig.height=6, fig.width=14}
+# then plot track measurements for inf and whorl
+datToPlot <- tracksMeasures %>%
+  # pivot_longer(cols = c(measures, "mean.aniso.box"),
+  pivot_longer(cols = measures,
+               names_to = "measure", values_to = "value") %>%
+  left_join(exp.info)
+
+write.csv(tracksMeasures %>%
+            left_join(exp.info[, c("uID", "Patient", "Type", "Group")]),
+          file.path(anaDir, "tracks_summary.csv"))
+
+ggplot(datToPlot, aes(Type, value, color = Group)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(width = 0.2) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  facet_wrap(.~measure, scales = "free", nrow = 2) +
+  theme(legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1")
+
+ggsave(file.path(anaDir, "tracks_summary.pdf"), height = 4, width = 14)
+```
+
+
+```{r fig_track_aniso, fig.height=5, fig.width=24}
 # plot all combinations of measurements with anisotropy
 datToPlot <- tracksMeasures %>%
   # pivot_longer(cols = c(measures, "mean.aniso.box"),
   pivot_longer(cols = measures,
-               names_to = "measure", values_to = "value")
+               names_to = "measure", values_to = "value") %>%
+  left_join(exp.info)
 
 # ggplot(datToPlot, aes(mean.aniso.box, value, color = uID)) +
-ggplot(datToPlot, aes(weighted.aniso.box, value, color = uID)) +
+# ggplot(datToPlot, aes(weighted.aniso.box, value, color = Type)) +
+# ggplot(datToPlot, aes(mean.aniso.box, value)) +
+ggplot(datToPlot, aes(weighted.aniso.box, value)) +
   theme_classic() +
-  geom_point(shape = 1, stroke = 1) +
-  facet_wrap(.~measure, ncol = 3, scales = "free_y") +
+  # geom_point(shape = 1, stroke = 1, alpha = 0.5) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(.~measure, ncol = 10, scales = "free_y") +
+  # facet_wrap(Type~measure, ncol = 10, scales = "free_y") +
   xlab("Close to anisotropy with % of") +
-  scale_color_brewer(palette = "Set2") +
+  # scale_color_brewer(palette = "Set1") +
+  scale_color_manual(values = c("#327EBA", "#AA1F5E")) +
   expand_limits(x = 0, y = 0) +
-  xlim(0, 50) +
+  # xlim(0, 50) +
   theme(
     legend.title = element_blank(),
     legend.position = "bottom",
     legend.justification = "left"
   ) 
 
-ggsave(file.path(anaDir, "aniso.pdf"), height = 8, width = 6)
+ggsave(file.path(anaDir, "track_aniso.pdf"), height = 4, width = 32)
 ```
 

@@ -85,15 +85,15 @@ def set_physical_size_with_dict(omexml, omedict):
   # go through dimensions
   for i, x in omedict.items():
     if i == 'T':
-      omexml.images[0].pixels.size_t = x
+      omexml.images[0].pixels.physical_size_t = x
     if i == 'Z':
-      omexml.images[0].pixels.size_z = x
+      omexml.images[0].pixels.physical_size_z = x
     if i == 'C':
-      omexml.images[0].pixels.size_c = x
+      omexml.images[0].pixels.physical_size_c = x
     if i == 'Y':
-      omexml.images[0].pixels.size_y = x
+      omexml.images[0].pixels.physical_size_y = x
     if i == 'X':
-      omexml.images[0].pixels.size_x = x
+      omexml.images[0].pixels.physical_size_x = x
       
   return omexml
 

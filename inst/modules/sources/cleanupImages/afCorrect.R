@@ -26,6 +26,8 @@ AfCorrect <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      self$writeLog("1")
+      
       # convert AF combination list to integer
       afCombinations <- self$funParams()$afCombinations
       afCombinations <- lapply(
@@ -36,6 +38,9 @@ AfCorrect <- R6::R6Class(
       
       # get channels to add from inverse
       imChannels <- cciaObj$imChannelNames(valueName = self$funParams()$valueName)
+      if (length(imChannels) == 0)
+        imChannels <- cciaObj$imChannelNames()
+      
       channelsToAdd <- mapply(
         function(x, i) {
           if (x$generateInverse == TRUE)

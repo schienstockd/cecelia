@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -73,10 +74,30 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "gkS7Qn", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+tracks <- list(B6 = cciaObj$tracks("tcells.B6"))
+
+tracks.DT <- tracks.measure.fun(
+  tracks, celltrackR::speed,
+  "live.cell.speed", steps.subtracks = 1,
+  idcol = "cell_type")
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
+  # pID = pID, uID = "nu0Nmo", versionID = versionID, initReactivity = FALSE # T cell types
 )
 
 # get vector information to plot anisotropy
@@ -90,10 +111,15 @@ labels$close()
 branchDT <- cciaObj$popDT("branch")
 
 # get tracks to align with SHG
-popDT <- cciaObj$popDT("live", pops = "P14-CTDR/tracked", includeFiltered = TRUE)
+# popDT <- cciaObj$popDT("live", pops = "P14-CTDR/tracked", includeFiltered = TRUE)
+# popDT <- cciaObj$popDT("live", pops = c(
+#   "tcells.OTI/tracked",
+#   "tcells.P14/tracked",
+#   "tcells.gBT/tracked"
+# ), includeFiltered = TRUE)
 
 # get tracks info and check parameters
-tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
+# tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
 ```
 
 ```{r}
@@ -106,12 +132,90 @@ u <- as.vector(uns$ilee_eigval[1,,,2]) * as.vector(uns$ilee_eigvec[1,,,2,1])
 v <- as.vector(uns$ilee_eigval[1,,,1]) * as.vector(uns$ilee_eigvec[1,,,1,1])
 ```
 
+```{r}
+# get average direction and velocity for cells
+gridWindow <- 40
+
+tracksSpots <- expand.grid(
+  seq(0, cciaObj$omeXMLPixels()$SizeX, gridWindow),
+  seq(0, cciaObj$omeXMLPixels()$SizeY, gridWindow)
+)
+colnames(tracksSpots) <- c("X", "Y")
+
+# get mean orientation
+shiftCols <- c("centroid_x", "centroid_y")
+shiftColsNames <- paste("lag", shiftCols, sep = ".")
+
+# https://stackoverflow.com/a/26292059
+popDT[, (shiftColsNames) := shift(.SD), by = .(pop, track_id), .SDcols = shiftCols]
+
+# https://stackoverflow.com/a/24747155
+euc.dist <- function(x1, x2) sqrt(sum((x1 - x2) ^ 2))
+
+popDT[, `:=` (
+  delta_centroid_x = centroid_x - lag.centroid_x,
+  delta_centroid_y = centroid_y - lag.centroid_y
+  )] 
+
+popDT[, centroid_dist := euc.dist(
+  c(centroid_x, centroid_y), c(lag.centroid_x, lag.centroid_y)), by = 1:nrow(popDT)]
+```
+
+```{r}
+# get average vector fields
+popDT[, centroid_region := as.numeric(NA)]
+
+# get closest spots
+popDT[, centroid_region := dbscan::kNN(
+  as.matrix(tracksSpots), k = 1, query = as.matrix(popDT[, c("centroid_x", "centroid_y")]))$id]
+```
+
+```{r fig_tracks_grid, fig.height=10, fig.width=10}
+# get average delta and velocity and plot .. ?
+tracksGrid <- popDT %>%
+  group_by(pop, centroid_region) %>%
+  summarise(
+    x = median(centroid_x, na.rm = TRUE),
+    y = median(centroid_y, na.rm = TRUE),
+    velocity = median(centroid_dist, na.rm = TRUE),
+    u = log(velocity) * median(delta_centroid_x, na.rm = TRUE),
+    v = log(velocity) * median(delta_centroid_y, na.rm = TRUE),
+    # u = velocity * median(delta_centroid_x, na.rm = TRUE),
+    # v = velocity * median(delta_centroid_y, na.rm = TRUE),
+  )
+
+ggplot(tracksGrid) + 
+  theme_classic() +
+  # geom_path(
+  #   data = popDT[value_name == "tcells.OTI"],
+  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
+  # geom_path(
+  #   data = popDT[value_name == "tcells.gBT"],
+  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
+  # geom_path(
+  #   data = popDT[value_name == "tcells.P14"],
+  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
+  ggquiver::geom_quiver(aes(x = x, y = y, u = -u, v = v, color = pop), linewidth = 2) +
+  theme_classic() +
+  plotThemeDark() +
+  coord_fixed() +
+  xlim(0, cciaObj$omeXMLPixels()$SizeX) +
+  ylim(cciaObj$omeXMLPixels()$SizeY, 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  ) 
+```
 
 ```{r fig_umap, fig.height=10, fig.width=10}
 # can you show the branching patterns on a plot?
 p1 <- ggplot(branchDT) + 
-  ggquiver::geom_quiver(
-    data = coords, aes(x = x, y = y, u = -u, v = v), color = "grey", size = 2) +
   # scale_color_brewer(palette = "Set1") +
   theme_classic() +
   plotThemeDark() +
@@ -133,10 +237,12 @@ p1 + geom_segment(aes(
   x = `coord-src-2`, y = `coord-src-1`,
   xend = `coord-dst-2`, yend = `coord-dst-1`),
   # color = as.factor(`branch-type`)),
-  size = 1.5, color = "#4682b4") +
-  geom_path(
-    data = popDT, aes(centroid_x, centroid_y, group = track_id),
-    color = "#ebd441", size = 1.5)
+  size = 1, color = "#4682b4", alpha = 1) +
+  ggquiver::geom_quiver(
+    data = coords, aes(x = x, y = y, u = -u, v = v), color = "grey", size = 2) 
+  # geom_path(
+  #   data = popDT, aes(centroid_x, centroid_y, group = track_id),
+  #   color = "#ebd441", size = 1.5)
 ```
 
 ```{r fig_umap, fig.height=10, fig.width=20}

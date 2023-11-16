@@ -41,3 +41,5 @@ skan
 pstree
 efel<=5.2.5
 pyclesperanto-prototype
+# to convert old OME schema
+lxml

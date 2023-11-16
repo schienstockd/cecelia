@@ -58,7 +58,10 @@ def run(params):
   integrate_time = True if (len(im_data[0].shape) - 1) > len(labels_data[0].shape) else False
   
   # get slices
-  slices = slice_utils.create_slices(labels_data[0].shape, dim_utils, ignore_time = integrate_time)
+  slices = {
+    'im': slice_utils.create_slices(im_data[0].shape, dim_utils, ignore_time = integrate_time),
+    'labels': slice_utils.create_slices(labels_data[0].shape, dim_utils, ignore_time = integrate_time)
+  }
   
   # save labels
   # TODO is there a more elegant way to do this .. ?
@@ -79,12 +82,17 @@ def run(params):
   max_label = 0
   
   # go through slices
-  for i, cur_slices in enumerate(slices):
-    logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
-    logfile_utils.log(cur_slices)
+  # for i, cur_slices in enumerate(slices):
+  for i in range(len(slices['im'])):
+    cur_im_slices = slices['im'][i]
+    cur_labels_slices = slices['labels'][i]
+    
+    # logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
+    logfile_utils.log(cur_im_slices)
+    logfile_utils.log(cur_labels_slices)
   
     # get image to process
-    im = np.squeeze(labels_data[0][cur_slices])
+    im = np.squeeze(labels_data[0][cur_labels_slices])
     
     logfile_utils.log(f'> dilate pre {pre_dilation_size}')
     
@@ -96,7 +104,7 @@ def run(params):
           
       bin_im = skimage.morphology.binary_closing((im > 0).astype(np.uint8), pre_selem)
     else:
-      bin_im = np.squeeze(labels_data[0][cur_slices]) > 0
+      bin_im = np.squeeze(labels_data[0][cur_labels_slices]) > 0
     
     # create skeleton
     logfile_utils.log(f'> skeletonize')
@@ -122,14 +130,14 @@ def run(params):
     
     # check that shape is matching
     # TODO this has to be done better and more generic
-    if len(skeleton_labels.shape) != len(labels_data[0][cur_slices].shape):
-      logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[0][cur_slices].shape}')
+    if len(skeleton_labels.shape) != len(labels_data[0][cur_labels_slices].shape):
+      logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[0][cur_labels_slices].shape}')
 
       skeleton_labels = np.expand_dims(skeleton_labels, axis = 0)
       
     # copy data
-    # skeleton_store[cur_slices][:] = skeleton_labels
-    skeleton_store[cur_slices] = skeleton_labels
+    # skeleton_store[cur_labels_slices][:] = skeleton_labels
+    skeleton_store[cur_labels_slices] = skeleton_labels
     
     # create properties
     paths_tables.append(skan.summarize(skeleton))
@@ -139,7 +147,7 @@ def run(params):
     
     if dim_utils.is_timeseries() and integrate_time is False:
       # paths_tables[i]['centroid_t'] = i
-      paths_tables[i]['centroid_t'] = cur_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
+      paths_tables[i]['centroid_t'] = cur_labels_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
     
     # save meshes
     if save_meshes is True:
@@ -148,7 +156,7 @@ def run(params):
       # TODO is that too much overhead to save meshes?
       props_tables.append(measure_utils.measure_from_zarr(
         {'base': skeleton_store}, None, dim_utils, logfile_utils,
-        task_dir = task_dir, slices = [cur_slices],
+        task_dir = task_dir, slices = [cur_labels_slices],
         value_name = f'{value_name}.branch',
         save_meshes = save_meshes,
         extended_measures = True,
@@ -158,16 +166,11 @@ def run(params):
       
     # calculate extended measurements
     if calc_extended is True:
-      # get idx
-      cur_im_slices = list(cur_slices)
-      cur_im_slices.insert(dim_utils.dim_idx('C', ignore_time = True), slice(None))
-      cur_im_slices = tuple(cur_im_slices)
-      
       # create shape and add time
       channels_shape = list(im.shape)
       if dim_utils.is_timeseries() and integrate_time is True:
         channels_shape.insert(dim_utils.dim_idx('T'), dim_utils.dim_val('T'))
-      
+        
       # TODO should that be different.. ?
       channels_im = np.zeros(channels_shape, dtype = np.uint32)
       
@@ -185,7 +188,7 @@ def run(params):
         
         # get mode
         if integrate_time_mode == 'max':
-          channels_im = np.max(axis = t_idx)
+          channels_im = np.max(channels_im, axis = t_idx)
         else:
           channels_im = np.average(channels_im, axis = t_idx)
       

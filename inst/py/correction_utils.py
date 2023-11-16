@@ -445,9 +445,25 @@ def apply_top_hat(data, dim_utils, radius = 40):
   
   # go through slices
   for x in tqdm(slices):
-    data[x] = cle.nparray(cle.top_hat_box(
+    # ValueError: shape mismatch: value array of shape (10, 512, 512) could not
+    # be broadcast to indexing result of shape (1, 10, 1, 512, 512)
+    # data[x] = cle.nparray(cle.top_hat_box(
+    #   np.squeeze(zarr_utils.fortify(data[x])),
+    #   radius_x=radius, radius_y=radius, radius_z=1))
+    top_hat_result = cle.nparray(cle.top_hat_box(
       np.squeeze(zarr_utils.fortify(data[x])),
       radius_x=radius, radius_y=radius, radius_z=1))
+      
+    # expand dims?
+    dims_diff = len(data[x].shape) - len(top_hat_result.shape)
+    
+    # TODO is there a better way? This is likely to fail for different images
+    if dims_diff > 0:
+      top_hat_result = np.expand_dims(top_hat_result, axis = dim_utils.dim_idx('T'))
+    if dims_diff > 1:
+      top_hat_result = np.expand_dims(top_hat_result, axis = dim_utils.dim_idx('C'))
+    
+    data[x] = top_hat_result
         
   return data
 
