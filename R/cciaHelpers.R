@@ -960,7 +960,7 @@ adataMatFromPopDT <- function(popDT, popKey = "clusters") {
       order(get(popKey)), sapply(.SD, function(x) list(mean = mean(as.numeric(x), na.rm = TRUE))),
       .SDcols = colnames(popDT)[
         !colnames(popDT) %in% c(
-          "uID", "label", popKey, "clusters", "region", "regions", "pop",
+          "uID", "label", popKey, "clusters", "region", "regions", "pop", "track_id",
           paste("UMAP", seq(2), sep = "_"))
       ], by = get(popKey)]
     setnames(adataSummary, "get", popKey)

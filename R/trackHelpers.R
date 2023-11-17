@@ -198,13 +198,16 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
   if (as.dt == FALSE) {
     return(tracks.fun.result)
   } else {
+    # split track IDs?
+    splitTrackIDs <- !is.null(steps.subtracks)
+    
     # convert to DT
     tracks.fun.DT <- lapply(
       tracks.fun.result,
       function(x) {
         DT <- as.data.table(as.matrix(x))[
           # , track_id := as.numeric(names(x))]
-          , track_id := names(x)]
+          , track_id := if (splitTrackIDs) names(x) else as.numeric(names(x))]
         # ] %>% data.table::rename(!!result.name := "V1")
         setnames(DT, "V1", result.name)
         
@@ -216,7 +219,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     DT <- data.table::rbindlist(tracks.fun.DT, idcol = idcol, fill = TRUE)
     
     # split track id?
-    if (!is.null(steps.subtracks)) {
+    if (splitTrackIDs) {
       DT[, c("track_id", "cell_id") := lapply(
         data.table::tstrsplit(track_id, ".", fixed = TRUE),
         as.numeric

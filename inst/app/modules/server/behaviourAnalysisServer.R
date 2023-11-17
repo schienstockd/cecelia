@@ -283,6 +283,7 @@
       
       ## Plots
       output$tracksClustersPlots <- renderUI({
+        # do the same as for region and pop clustering
         
       })
       

@@ -43,7 +43,8 @@
             tabsetPanel(
               id = ns("analysisResultsTabs"),
               type = "tabs",
-              selected = "tracksClusters",
+              # selected = "tracksClusters",
+              selected = "hmm",
               tabPanel("HMM",
                        value = "hmm",
                        tags$br(),

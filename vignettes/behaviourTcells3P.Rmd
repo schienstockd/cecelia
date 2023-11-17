@@ -72,17 +72,53 @@ HPC_CONF <-  list(
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "gkS7Qn", versionID = versionID, initReactivity = FALSE # SHG 3P
+# upload local files
+funParams <- list(
+   valueName = "tcells.B6",
+   maxSearchRadius = 10,
+   maxLost = 3,
+   accuracy = 0.8,
+   probToAssign = 0.8,
+   noiseInital = 300,
+   noiseProcessing = 100,
+   noiseMeasurements = 100,
+   distThresh = 10,
+   timeThresh = 5,
+   segmentationMissRate = 0.1,
+   lambdaLink = 5,
+   lambdaTime = 5,
+   lambdaDist = 5,
+   thetaTime = 5,
+   thetaDist = 5,
+   minTimepoints = 5,
+   minDisplacement = 10,
+   maxMeanTurningAngle = 0,
+   filters = list(
+     a = list(
+       measure = c("surface_to_volume"),
+       values = c("1.2"),
+       fun = c("lte")
+     )
+   ),
+   calcTrackingStats = TRUE
 )
 
-tracks <- list(B6 = cciaObj$tracks("tcells.B6"))
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "42xBGe", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
 
-tracks.DT <- tracks.measure.fun(
-  tracks, celltrackR::speed,
-  "live.cell.speed", steps.subtracks = 1,
-  idcol = "cell_type")
+cciaObj$setImLabelsFilepath("tcells.B6.zarr", valueName = "tcells.B6")
+cciaObj$setImLabelPropsFilepath("tcells.B6.h5ad", valueName = "tcells.B6")
+cciaObj$saveState()
+
+cciaObj$runTask(
+  funName = "tracking.bayesianTracking",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 
@@ -93,7 +129,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
-  pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "42xBGe", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour 3P
   # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
@@ -110,6 +149,14 @@ labels$close()
 # get branching
 branchDT <- cciaObj$popDT("branch")
 
+pops <- list(
+  # tcells.ubiTom = "tcells.ubiTom/tracked",
+  # tcells.B6 = "tcells.B6/tracked"
+  # `P14-Tom` = "P14-Tom/tracked",
+  # `P14-CTDR` = "P14-CTDR/tracked"
+  `P14` = "P14/tracked"
+)
+
 # get tracks to align with SHG
 # popDT <- cciaObj$popDT("live", pops = "P14-CTDR/tracked", includeFiltered = TRUE)
 # popDT <- cciaObj$popDT("live", pops = c(
@@ -117,9 +164,17 @@ branchDT <- cciaObj$popDT("branch")
 #   "tcells.P14/tracked",
 #   "tcells.gBT/tracked"
 # ), includeFiltered = TRUE)
+popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE)
 
 # get tracks info and check parameters
 # tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
+tracksInfo <- cciaObj$tracksMeasures(pops = pops)
+
+# get clustering
+tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+  cciaObj$persistentObjectDirectory(uID = "fmjlDg"),
+  value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 ```
 
 ```{r}
@@ -238,36 +293,50 @@ p1 + geom_segment(aes(
   xend = `coord-dst-2`, yend = `coord-dst-1`),
   # color = as.factor(`branch-type`)),
   size = 1, color = "#4682b4", alpha = 1) +
+  geom_path(
+    data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
+    color = "#ebd441", size = 1.5, alpha = 1) +
+  geom_path(
+    data = popDT[value_name == names(pops)[[2]]], aes(centroid_x, centroid_y, group = track_id),
+    color = "#AA1F5E", size = 1.5, alpha = 1) +
   ggquiver::geom_quiver(
-    data = coords, aes(x = x, y = y, u = -u, v = v), color = "grey", size = 2) 
-  # geom_path(
-  #   data = popDT, aes(centroid_x, centroid_y, group = track_id),
-  #   color = "#ebd441", size = 1.5)
+    data = coords, aes(x = x, y = y, u = -u, v = v), color = "white", size = 1)
+
+ggsave(file.path(anaDir, paste0("SHG_tracking_field-", cciaObj$getUID(), ".pdf")),
+       height = 8, width = 8)
 ```
 
 ```{r fig_umap, fig.height=10, fig.width=20}
 tracksMeasures <- colnames(tracksInfo)
 tracksMeasures <- tracksMeasures[!tracksMeasures %in% c("cell_type", "track_id")]
 
-tracksMeasuresDT <- popDT[tracksInfo, on = c("track_id")]
+tracksMeasuresDT <- popDT[tracksInfo, on = c("value_name" = "cell_type", "track_id")]
 
 p1s <- list()
 for (i in tracksMeasures) {
   local({
     local_i <- i
-    p1s[[local_i]] <<- p1 + geom_path(
-    # p1s[[local_i]] <<- p1 + geom_bin_2d(
-      data = tracksMeasuresDT, 
-      aes(centroid_x, centroid_y, group = track_id, color = get(local_i)),
-      # aes(centroid_x, centroid_y, group = track_id, fill = get(local_i)),
-      size = 1.5) +
+    
+    p1s[[local_i]] <<- p1 + 
+      ggquiver::geom_quiver(
+        data = coords, aes(x = x, y = y, u = -u, v = v), color = "white", size = 1) +
+      geom_path(
+      # p1s[[local_i]] <<- p1 + geom_bin_2d(
+        data = tracksMeasuresDT, 
+        aes(centroid_x, centroid_y, group = interaction(value_name, track_id), color = get(local_i)),
+        # aes(centroid_x, centroid_y, group = track_id, fill = get(local_i)),
+        size = 1.5) +
       viridis::scale_color_viridis() +
       # viridis::scale_fill_viridis() +
-      ggtitle(local_i)
+      ggtitle(local_i) 
+    
+    ggsave(
+      file.path(anaDir, paste0("SHG_tracking_field-", local_i, "-", cciaObj$getUID(), ".pdf")),
+      height = 8, width = 8, plot = p1s[[local_i]])
   })
 }
 
-ggpubr::ggarrange(plotlist = p1s, ncol = 5, nrow = 2)
+# ggpubr::ggarrange(plotlist = p1s, ncol = 5, nrow = 2)
 ```
 
 ```{r}
