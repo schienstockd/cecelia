@@ -73,8 +73,9 @@ class IleeUtils(SegmentationUtils):
       im = np.maximum(im, np.squeeze(np.take(cur_im_dat, i, axis = c_idx)))
       
     # generate diff image
-    im[im < np.percentile(im, self.normalise)] = 0
-    im = im-im.min()
+    im_threshold = np.percentile(im, self.normalise)
+    im[im < im_threshold] = im_threshold
+    im = im - im_threshold
     im = im.astype('float')
     
     # go through z-slices instead of 3D segmentation

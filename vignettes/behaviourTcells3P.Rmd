@@ -144,7 +144,6 @@ cciaObj$runTask(
 )
 ```
 
-
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)

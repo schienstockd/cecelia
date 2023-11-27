@@ -305,11 +305,11 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
   copyPrevious <- FALSE
   
   # copy previous app
-  if (file.exists(file.path(cciaPath(), "app"))) {
+  if (dir.exists(file.path(cciaPath(), "app"))) {
     copyPrevious <- TRUE
     
     # remove previous bak
-    if (file.exists(file.path(cciaPath(), "app.bak"))) {
+    if (dir.exists(file.path(cciaPath(), "app.bak"))) {
       unlink(file.path(cciaPath(), "app.bak"), recursive = TRUE)
     }
     

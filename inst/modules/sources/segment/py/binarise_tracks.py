@@ -70,6 +70,8 @@ def run(params):
   # binarise tracks
   bin_lines = list()
   
+  logfile_utils.log(pop_df['centroid_z'].max())
+  
   # tracks.sort_values(['track_id', 'centroid_t'], ascending=[True, True])\
   if dim_utils.is_3D():
     pop_df.groupby(['value_name', 'pop', 'track_id'])\
@@ -86,6 +88,13 @@ def run(params):
   tracks_array = np.array(list(itertools.chain(*bin_lines)))
   
   if dim_utils.is_3D():
+    logfile_utils.log(max(tracks_array[:,0]))
+    logfile_utils.log(max(tracks_array[:,1]))
+    logfile_utils.log(max(tracks_array[:,2]))
+    logfile_utils.log(tuple([dim_utils.dim_val(i) for i in ['z', 'y', 'x']]))
+    logfile_utils.log(np.isnan(tracks_array).any())
+    logfile_utils.log(np.isinf(tracks_array).any())
+    
     tracks_mat = sparse.COO(
       coords = (tracks_array[:,2], tracks_array[:,1], tracks_array[:,0]),
       data = [1] * tracks_array.shape[0],
