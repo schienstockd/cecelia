@@ -223,7 +223,7 @@ class PopUtils:
         
         if len(cols) > 0:
           label_view.view_cols(cols = cols)
-        
+          
         # create population df
         pop_df = label_view.filter_by_obs(
           x, filter_fun = 'eq' if invert is False else 'neq').as_df()

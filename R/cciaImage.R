@@ -1702,14 +1702,14 @@ CciaImage <- R6::R6Class(
       }
       
       if (usePhysicalScale == TRUE)
-        convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
+        convertPixelToPhysical(popDT, self$omeXMLPixelRes())
       
       # get convex hull population
       if (length(windowPops) > 0) {
         popWindow <- self$popDT(pops = windowPops, ...)
         
         if (usePhysicalScale == TRUE)
-          convertPixelToPhysical(popWindow, cciaObj$omeXMLPixelRes())
+          convertPixelToPhysical(popWindow, self$omeXMLPixelRes())
       } else {
         popWindow <- popDT
       }
@@ -1763,14 +1763,14 @@ CciaImage <- R6::R6Class(
       }
       
       if (usePhysicalScale == TRUE)
-        convertPixelToPhysical(popDT, cciaObj$omeXMLPixelRes())
+        convertPixelToPhysical(popDT, self$omeXMLPixelRes())
       
       # get convex hull population
       if (length(windowPops) > 0) {
         popWindow <- self$popDT(pops = windowPops, ...)
         
         if (usePhysicalScale == TRUE)
-          convertPixelToPhysical(popWindow, cciaObj$omeXMLPixelRes())
+          convertPixelToPhysical(popWindow, self$omeXMLPixelRes())
       } else {
         popWindow <- popDT
       }
@@ -1788,7 +1788,7 @@ CciaImage <- R6::R6Class(
       # create rectangle
       # TODO should this be a polygon?
       # get pixel info
-      # omePixels <- cciaObj$omeXMLPixels()
+      # omePixels <- self$omeXMLPixels()
       # W <- spatstat.geom::owin(c(0, omePixels$SizeX), c(0, omePixels$SizeY))
       
       if (nrow(pointsDF) > 0) {

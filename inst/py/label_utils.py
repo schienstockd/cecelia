@@ -3,6 +3,155 @@ from scipy.sparse import coo_array
 from sklearn import preprocessing
 
 """
+3D Bresenham for line digitisation
+https://www.geeksforgeeks.org/bresenhams-algorithm-for-3-d-line-drawing/
+"""
+def bresenham_3D(x1, y1, z1, x2, y2, z2):
+  # init first points
+  points = [(x1, y1, z1)]
+  
+  # TODO RuntimeWarning: overflow encountered in uint_scalars
+  # dx = abs(x2 - x1)
+  # dy = abs(y2 - y1)
+  # dz = abs(z2 - z1)
+  dx = max(x1, x2) - min(x1, x2)
+  dy = max(y1, y2) - min(y1, y2)
+  dz = max(z1, z2) - min(z1, z2)
+  
+  if (x2 > x1):
+    xs = 1
+  else:
+    xs = -1
+  if (y2 > y1):
+    ys = 1
+  else:
+    ys = -1
+  if (z2 > z1):
+    zs = 1
+  else:
+    zs = -1
+
+  # Driving axis is X-axis"
+  if (dx >= dy and dx >= dz):        
+    p1 = 2 * dy - dx
+    p2 = 2 * dz - dx
+    while (x1 != x2):
+      x1 += xs
+      if (p1 >= 0):
+        y1 += ys
+        p1 -= 2 * dx
+      if (p2 >= 0):
+        z1 += zs
+        p2 -= 2 * dx
+      p1 += 2 * dy
+      p2 += 2 * dz
+      points.append((x1, y1, z1))
+
+  # Driving axis is Y-axis"
+  elif (dy >= dx and dy >= dz):       
+    p1 = 2 * dx - dy
+    p2 = 2 * dz - dy
+    while (y1 != y2):
+      y1 += ys
+      if (p1 >= 0):
+        x1 += xs
+        p1 -= 2 * dy
+      if (p2 >= 0):
+        z1 += zs
+        p2 -= 2 * dy
+      p1 += 2 * dx
+      p2 += 2 * dz
+      points.append((x1, y1, z1))
+
+  # Driving axis is Z-axis"
+  else:        
+    p1 = 2 * dy - dz
+    p2 = 2 * dx - dz
+    while (z1 != z2):
+      z1 += zs
+      if (p1 >= 0):
+        y1 += ys
+        p1 -= 2 * dz
+      if (p2 >= 0):
+        x1 += xs
+        p2 -= 2 * dz
+      p1 += 2 * dy
+      p2 += 2 * dx
+      points.append((x1, y1, z1))
+      
+  return np.array(points)
+
+"""
+2D Bresenham for line digitisation
+Use 3D version for 2D?
+There is a 2D version but it did work that well for some points
+https://babavoss.pythonanywhere.com/python/bresenham-line-drawing-algorithm-implemented-in-py
+"""
+def bresenham_2D(x1, y1, x2, y2):
+  return bresenham_3D(x1, y1, 0, x2, y2, 0)[:, 0:2]
+
+# """
+# 2D Bresenham for line digitisation
+# https://babavoss.pythonanywhere.com/python/bresenham-line-drawing-algorithm-implemented-in-py
+# """
+# def bresenham_2D(x1, y1, x2, y2):
+#   x, y = x1, y1
+#   
+#   dx = abs(x2 - x1)
+#   dy = abs(y2 - y1)
+#   gradient = dy/float(dx)
+#   # https://stackoverflow.com/a/68118106
+#   # gradient = dx or dy/float(dx)
+#   
+#   # catch inf if dx is 0
+#   print(gradient, gradient == float('inf'))
+#   if gradient == np.inf:
+#     # dx, dy = dy, dx
+#     # x, y = y, x
+#     x1, y1 = y1, x1
+#     x2, y2 = y2, x2
+#   elif gradient > 1:
+#     # dx, dy = dy, dx
+#     # x, y = y, x
+#     x1, y1 = y1, x1
+#     x2, y2 = y2, x2
+#   
+#   p = 2*dy - dx
+#   
+#   print(dx, dy, gradient, gradient > 1, p)
+#   
+#   # Initialize the plotting points
+#   points = [(x, y)]
+#   
+#   print(range(2, dx + 2))
+#   
+#   # draw vertical
+#   if gradient == np.inf:
+#     for k in range(2, dy + 2):
+#       if p > 0:
+#         x = x + 1 if x < x2 else x - 1
+#         p = p + 2 * (dx - dy)
+#       else:
+#         p = p + 2 * dx
+#   
+#       y = y + 1 if y < y2 else y - 1
+#   
+#       points.append((x, y))
+#   else:
+#     for k in range(2, dx + 2):
+#       if p > 0:
+#         y = y + 1 if y < y2 else y - 1
+#         p = p + 2 * (dy - dx)
+#       else:
+#         p = p + 2 * dy
+#   
+#       x = x + 1 if x < x2 else x - 1
+#   
+#       points.append((x, y))
+#     
+#   return points
+
+"""
 Adapted from cellpose.metrics to find intersection between masks
 https://github.com/MouseLand/cellpose/blob/4e8205125750c0c82e03386f28ff6d4bef1da6c7/cellpose/metrics.py#L168
 """

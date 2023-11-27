@@ -203,8 +203,9 @@ def save_dask_as_zarr_multiscales(image_array, im_path, nscales = 1):
 """
 Create zarr from ndarray
 """
-def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr,
-                             ignore_channel = False, copy_values = True):
+def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr, store_path = None,
+                             ignore_channel = False, ignore_time = False, copy_values = True,
+                             remove_previous = False):
   # ignore channel for chunks?
   im_chunks = chunks(reference_zarr)
   
@@ -213,11 +214,21 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr,
     im_chunks.pop(dim_utils.dim_idx('C'))
     im_chunks = tuple(im_chunks)
   
+  if ignore_time is True:
+    im_chunks = list(im_chunks)
+    im_chunks.pop(dim_utils.dim_idx('T', ignore_channel = ignore_channel))
+    im_chunks = tuple(im_chunks)
+  
   print(im_array.shape)
   print(im_chunks)
   
+  # remove contents of directory
+  if remove_previous is True and os.path.exists(store_path):
+    shutil.rmtree(store_path)
+  
   # create zarr and copy    
   new_zarr = zarr.create(
+    store = store_path,
     mode = 'w',
     shape = im_array.shape,
     chunks = im_chunks,

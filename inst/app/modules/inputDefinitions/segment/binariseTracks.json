@@ -1,0 +1,42 @@
+{
+  "fun": {
+    "binariseTracks": {
+      "category": "Module functions",
+      "label": "Binarise Tracks",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"pops": {
+        "type:list": {}
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"valueName": {
+				"index": 0,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"pops": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true,
+          "popType": "live"
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

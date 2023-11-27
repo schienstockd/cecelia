@@ -844,14 +844,19 @@ InputManager <- R6::R6Class(
     buildPopChoices = function(uiContent) {
       popChoices <- NULL
       includeRoot <- FALSE
+      tracksOnly <- FALSE
       
       if ("includeRoot" %in% names(uiContent) && uiContent$includeRoot == TRUE)
         includeRoot <- TRUE
       
+      if ("tracksOnly" %in% names(uiContent) && uiContent$tracksOnly == TRUE)
+        tracksOnly <- TRUE
+      
       if ("showAll" %in% names(uiContent) && uiContent$showAll == TRUE) {
         popChoices <- self$cciaObject()$popPathsAll(
           includeFiltered = TRUE, flattenPops = TRUE, includeRoot = includeRoot,
-          useNames = !"useNames" %in% names(uiContent) || uiContent$useNames == FALSE)
+          useNames = !"useNames" %in% names(uiContent) || uiContent$useNames == FALSE,
+          tracksOnly = tracksOnly)
       } else {
         # was a pop type specified?
         if ("popType" %in% names(uiContent))
@@ -859,9 +864,9 @@ InputManager <- R6::R6Class(
         else
           popType <- self$getPopType()
         
-        if (!is.null(self$cciaObject()$popUtils(self$getPopType()))) {
+        if (!is.null(self$cciaObject()$popUtils(popType))) {
           popChoices <- self$cciaObject()$popPaths(
-            popType, includeFiltered = TRUE, includeRoot = includeRoot)
+            popType, includeFiltered = TRUE, includeRoot = includeRoot, tracksOnly = tracksOnly)
           
           # use names instead of uIDs
           if (!"useNames" %in% names(uiContent) || uiContent$useNames == FALSE) {

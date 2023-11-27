@@ -121,6 +121,44 @@ cciaObj$runTask(
 )
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+funParams <- list(
+   valueName = "P14-CTDR",
+   pops = c("P14-CTDR/tracked")
+)
+
+cciaObj$runTask(
+  funName = "segment.binariseTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+# cciaObj$popPaths("live", includeFiltered = TRUE, includeRoot = FALSE, tracksOnly = TRUE)
+popMap <- cciaObj$imPopMap("live", includeFiltered = TRUE)
+```
+
+
 
 ```{r}
 devtools::load_all("../")
@@ -131,8 +169,8 @@ cciaObj <- initCciaObject(
   # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "42xBGe", versionID = versionID, initReactivity = FALSE # SHG 3P
-  # pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
-  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour 3P
+  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour 3P
   # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
@@ -140,11 +178,16 @@ cciaObj <- initCciaObject(
 )
 
 # get vector information to plot anisotropy
-labels <- cciaObj$labelProps(valueName = "SHG.branch")
-# labels <- cciaObj$labelProps(valueName = "vessels.branch")
-# labels <- cciaObj$labelProps(valueName = "CD11c.branch")
-uns <- labels$values_uns()
-labels$close()
+unsLabels <- c("SHG", "P14-CTDR.tracks")
+uns <- list()
+
+for (i in unsLabels) {
+  labels <- cciaObj$labelProps(valueName = paste0(i, ".branch"))
+  # labels <- cciaObj$labelProps(valueName = "vessels.branch")
+  # labels <- cciaObj$labelProps(valueName = "CD11c.branch")
+  uns[[i]] <- labels$values_uns()
+  labels$close()
+}
 
 # get branching
 branchDT <- cciaObj$popDT("branch")
@@ -153,8 +196,8 @@ pops <- list(
   # tcells.ubiTom = "tcells.ubiTom/tracked",
   # tcells.B6 = "tcells.B6/tracked"
   # `P14-Tom` = "P14-Tom/tracked",
-  # `P14-CTDR` = "P14-CTDR/tracked"
-  `P14` = "P14/tracked"
+  `P14-CTDR` = "P14-CTDR/tracked"
+  # `P14` = "P14/tracked"
 )
 
 # get tracks to align with SHG
@@ -170,21 +213,29 @@ popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE)
 # tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
 tracksInfo <- cciaObj$tracksMeasures(pops = pops)
 
-# get clustering
-tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(uID = "fmjlDg"),
-  value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
-  # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(uID = "fmjlDg"),
+#   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+#   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 ```
 
 ```{r}
 # plot quiver
-coords <- data.frame(
-  y = as.vector(uns$ilee_coor_list[1,,,1]),
-  x = as.vector(uns$ilee_coor_list[1,,,2])
-)
-u <- as.vector(uns$ilee_eigval[1,,,2]) * as.vector(uns$ilee_eigvec[1,,,2,1])
-v <- as.vector(uns$ilee_eigval[1,,,1]) * as.vector(uns$ilee_eigvec[1,,,1,1])
+coords <- lapply(uns, function(x) {
+  coords <- data.frame(
+    y = as.vector(x$ilee_coor_list[1,,,1]),
+    x = as.vector(x$ilee_coor_list[1,,,2])
+  )
+  u <- as.vector(x$ilee_eigval[1,,,2]) * as.vector(x$ilee_eigvec[1,,,2,1])
+  v <- as.vector(x$ilee_eigval[1,,,1]) * as.vector(x$ilee_eigvec[1,,,1,1])
+  
+  list(
+    coords = coords,
+    u = u,
+    v = v
+  )
+})
 ```
 
 ```{r}
@@ -225,49 +276,6 @@ popDT[, centroid_region := dbscan::kNN(
   as.matrix(tracksSpots), k = 1, query = as.matrix(popDT[, c("centroid_x", "centroid_y")]))$id]
 ```
 
-```{r fig_tracks_grid, fig.height=10, fig.width=10}
-# get average delta and velocity and plot .. ?
-tracksGrid <- popDT %>%
-  group_by(pop, centroid_region) %>%
-  summarise(
-    x = median(centroid_x, na.rm = TRUE),
-    y = median(centroid_y, na.rm = TRUE),
-    velocity = median(centroid_dist, na.rm = TRUE),
-    u = log(velocity) * median(delta_centroid_x, na.rm = TRUE),
-    v = log(velocity) * median(delta_centroid_y, na.rm = TRUE),
-    # u = velocity * median(delta_centroid_x, na.rm = TRUE),
-    # v = velocity * median(delta_centroid_y, na.rm = TRUE),
-  )
-
-ggplot(tracksGrid) + 
-  theme_classic() +
-  # geom_path(
-  #   data = popDT[value_name == "tcells.OTI"],
-  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
-  # geom_path(
-  #   data = popDT[value_name == "tcells.gBT"],
-  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
-  # geom_path(
-  #   data = popDT[value_name == "tcells.P14"],
-  #   aes(centroid_x, centroid_y, group = track_id), color = "#327EBA", size = 1.5) +
-  ggquiver::geom_quiver(aes(x = x, y = y, u = -u, v = v, color = pop), linewidth = 2) +
-  theme_classic() +
-  plotThemeDark() +
-  coord_fixed() +
-  xlim(0, cciaObj$omeXMLPixels()$SizeX) +
-  ylim(cciaObj$omeXMLPixels()$SizeY, 0) +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    legend.position = "none"
-  ) 
-```
-
 ```{r fig_umap, fig.height=10, fig.width=10}
 # can you show the branching patterns on a plot?
 p1 <- ggplot(branchDT) + 
@@ -295,12 +303,15 @@ p1 + geom_segment(aes(
   size = 1, color = "#4682b4", alpha = 1) +
   geom_path(
     data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
-    color = "#ebd441", size = 1.5, alpha = 1) +
-  geom_path(
-    data = popDT[value_name == names(pops)[[2]]], aes(centroid_x, centroid_y, group = track_id),
+    # color = "#ebd441", size = 1.5, alpha = 1) +
     color = "#AA1F5E", size = 1.5, alpha = 1) +
+  # geom_path(
+  #   data = popDT[value_name == names(pops)[[2]]], aes(centroid_x, centroid_y, group = track_id),
+  #   color = "#AA1F5E", size = 1.5, alpha = 1) +
   ggquiver::geom_quiver(
-    data = coords, aes(x = x, y = y, u = -u, v = v), color = "white", size = 1)
+    data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.2) 
+  # ggquiver::geom_quiver(
+  #   data = coords[[2]]$coords, aes(x = x, y = y, u = -coords[[2]]$u, v = coords[[2]]$v), color = "#AA1F5E", size = 1)
 
 ggsave(file.path(anaDir, paste0("SHG_tracking_field-", cciaObj$getUID(), ".pdf")),
        height = 8, width = 8)

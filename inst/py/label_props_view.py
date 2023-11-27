@@ -512,30 +512,30 @@ class LabelPropsView:
       if len(self.adata.obsm) > 0:
         dfs = dict()
         
-        if "X_umap" in self.adata.obsm.keys():
-          dfs["X_UMAP"] = pd.DataFrame(self.adata.obsm["X_umap"])
-          dfs["X_UMAP"].columns = ["UMAP_1", "UMAP_2"]
-        if "X_diffmap" in self.adata.obsm.keys():
+        if 'X_umap' in self.adata.obsm.keys():
+          dfs['X_UMAP'] = pd.DataFrame(self.adata.obsm['X_umap'])
+          dfs['X_UMAP'].columns = ['UMAP_1', 'UMAP_2']
+        if 'X_diffmap' in self.adata.obsm.keys():
           # take first three columns
-          dfs["X_diffmap"] = pd.DataFrame(self.adata.obsm["X_diffmap"]).iloc[:, 1:4]
-          dfs["X_diffmap"].columns = ["DC_1", "DC_2", "DC_3"]
+          dfs['X_diffmap'] = pd.DataFrame(self.adata.obsm['X_diffmap']).iloc[:, 1:4]
+          dfs['X_diffmap'].columns = ['DC_1', 'DC_2', 'DC_3']
           
         if self.add_centroids_to_df is True and self.has_spatial_obsm() is True:
           df_spatial = None
           df_temporal = None
           
-          if "spatial" in self.adata.obsm.keys():
-            df_spatial = pd.DataFrame(self.adata.obsm["spatial"])
-            df_spatial.columns = self.adata.uns["spatial_cols"]
-          if "temporal" in self.adata.obsm.keys():
-            df_temporal = pd.DataFrame(self.adata.obsm["temporal"])
-            df_temporal.columns = self.adata.uns["temporal_cols"]
+          if 'spatial' in self.adata.obsm.keys():
+            df_spatial = pd.DataFrame(self.adata.obsm['spatial'])
+            df_spatial.columns = self.adata.uns['spatial_cols']
+          if 'temporal' in self.adata.obsm.keys():
+            df_temporal = pd.DataFrame(self.adata.obsm['temporal'])
+            df_temporal.columns = self.adata.uns['temporal_cols']
           
           # concat and change order
-          dfs["centroids"] = pd.concat([df_spatial, df_temporal], axis = 1)
+          dfs['centroids'] = pd.concat([df_spatial, df_temporal], axis = 1)
           
           if self.centroids_order is not None:
-            dfs["centroids"] = dfs["centroids"][self.centroids_order]
+            dfs['centroids'] = dfs['centroids'][self.centroids_order]
           
         # drop index
         # https://stackoverflow.com/a/51710480/13766165
