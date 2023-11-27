@@ -150,11 +150,14 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
-# cciaObj$popPaths("live", includeFiltered = TRUE, includeRoot = FALSE, tracksOnly = TRUE)
-popMap <- cciaObj$imPopMap("live", includeFiltered = TRUE)
+popDT <- cciaObj$popDT("labels", pops = c("OTI"))
+
+max(popDT$centroid_x)
+max(popDT$centroid_y)
+max(popDT$centroid_z)
 ```
 
 

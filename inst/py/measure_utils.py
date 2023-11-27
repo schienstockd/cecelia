@@ -471,7 +471,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
             
             # get volume mesh
             volume_mesh = morpho_utils.mesh_from_label_volume(
-              volume, dim_utils.im_scale(['X', 'Y', 'Z'])
+              volume, dim_utils.im_scale(['Z', 'Y', 'X'])
             )
             
             # save mesh
@@ -494,7 +494,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
               centre, evecs, radii = morpho_utils.ellipsoid_fit(
                 volume_mesh.convex_hull.vertices,
                 dims = {
-                  x: dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ['X', 'Y', 'Z']
+                  x: dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ['Z', 'Y', 'X']
                 }
               )
               
