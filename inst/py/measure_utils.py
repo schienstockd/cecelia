@@ -279,7 +279,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     #   ): dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ('Z', 'Y', 'X')
     # dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True): dim_utils.dim_idx(
     x: dim_utils.dim_idx(
-      x.upper(), ignore_channel = True, ignore_time = ~dim_utils.is_timeseries(), drop_time = True, squeeze = True
+      x.upper(), ignore_channel = True, ignore_time = True, drop_time = True, squeeze = True
       ) for x in ('z', 'y', 'x')
     }
     
