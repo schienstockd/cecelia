@@ -284,7 +284,6 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     
   centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
   slice_idx = {i: x for i, x in slice_idx.items() if i is not None}
-  logfile_utils.log(centroid_idx)
   
   # get image scale
   im_scale = dim_utils.im_scale(dims = ['Z', 'Y', 'X'])
