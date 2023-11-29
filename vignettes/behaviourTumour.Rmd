@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -154,47 +155,172 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE 
-  pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE 
+  # pID = pID, uID = "HYmMxh", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE 
 )
 
-labels <- cciaObj$labelProps(valueName = "SHG.branch")
-uns <- labels$values_uns()
-labels$close()
+# get vector information to plot anisotropy
+unsLabels <- c("SHG", "EB", "THG", "OTI.tracks")
+uns <- list()
 
-paste(as.list(uns$ilee_summary), collapse = ", ")
-paste(names(uns$ilee_summary), collapse = ", ")
+for (i in unsLabels) {
+  labels <- cciaObj$labelProps(valueName = paste0(i, ".branch"))
+  uns[[i]] <- labels$values_uns()
+  labels$close()
+}
 
-# shgDTs <- cciaObj$popDT(
-#   popType = "branch", pops = c("SHG.branch"),
-#   includeFiltered = TRUE, flushCache = TRUE)
+# get branching
+branchDT <- cciaObj$popDT("branch")
+
+pops <- list(
+  `OTI` = "OTI/tracked"
+)
+
+# get tracks to align with SHG
+popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE)
+
+# get tracks info and check parameters
+# tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
+tracksInfo <- cciaObj$tracksMeasures(pops = pops)
+
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(uID = "fmjlDg"),
+#   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+#   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 ```
-
 
 ```{r}
-# get contacts of T cells with SHG
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "mYdPG4", versionID = versionID, initReactivity = FALSE
-)
-
-# run task
-funParams <- list(
-  popsA = c("live.OTI/tracked"),
-  popsB = c("labels.SHG.branch"),
-  maxContactDist = 20
-)
-
-task <- cciaObj$runTask(
-  funName = "spatialAnalysis.cellContacts",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1
-)
+# plot quiver
+coords <- lapply(uns, function(x) {
+  coords <- data.frame(
+    y = as.vector(x$ilee_coor_list[1,,,1]),
+    x = as.vector(x$ilee_coor_list[1,,,2])
+  )
+  u <- as.vector(x$ilee_eigval[1,,,2]) * as.vector(x$ilee_eigvec[1,,,2,1])
+  v <- as.vector(x$ilee_eigval[1,,,1]) * as.vector(x$ilee_eigvec[1,,,1,1])
+  
+  list(
+    coords = coords,
+    u = u,
+    v = v
+  )
+})
 ```
+
+```{r fig_umap, fig.height=10, fig.width=10}
+# can you show the branching patterns on a plot?
+p1 <- ggplot(branchDT[pop != "OTI.tracks.branch"]) + 
+  # scale_color_brewer(palette = "Set1") +
+  theme_classic() +
+  plotThemeDark() +
+  coord_fixed() +
+  xlim(0, cciaObj$omeXMLPixels()$SizeX) +
+  ylim(cciaObj$omeXMLPixels()$SizeY, 0) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  ) 
+
+p1 + geom_segment(aes(
+  x = `coord-src-2`, y = `coord-src-1`,
+  xend = `coord-dst-2`, yend = `coord-dst-1`, color = pop),
+  # color = as.factor(`branch-type`)),
+  size = 1, alpha = 1) +
+  scale_color_manual(values = c("#327EBA", "white", "#ebd441")) +
+  geom_path(
+    data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
+    color = "#AA1F5E", size = 1.0, alpha = 1) 
+# p1 +
+#   ggquiver::geom_quiver(
+#     data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.0) +
+#   ggquiver::geom_quiver(
+#     data = coords$THG$coords, aes(x = x, y = y, u = -coords$THG$u, v = coords$THG$v), color = "#ebd441", size = 1.0) +
+#   ggquiver::geom_quiver(
+#     data = coords$EB$coords, aes(x = x, y = y, u = -coords$EB$u, v = coords$EB$v), color = "#327EBA", size = 1.0) +
+#   ggquiver::geom_quiver(
+#     data = coords$OTI.tracks$coords, aes(x = x, y = y, u = -coords$OTI.tracks$u, v = coords$OTI.tracks$v),
+#     color = "#AA1F5E", size = 1)
+
+# ggsave(file.path(anaDir, paste0("tracking_field-", cciaObj$getUID(), ".pdf")),
+# ggsave(file.path(anaDir, paste0("quiver_field-", cciaObj$getUID(), ".pdf")),
+ggsave(file.path(anaDir, paste0("tracking-", cciaObj$getUID(), ".pdf")),
+       height = 10, width = 10)
+```
+
+```{r}
+# get angles relative to T cells and structures
+tracks.i <- "OTI.tracks"
+
+vecDiffs <- list()
+
+for (i in names(coords)[names(coords) != tracks.i]) {
+  vecDiffs[[i]] <- c()
+  
+  for(j in seq(length(coords[[i]]$u))) {
+    matA <- matrix(c(coords[[tracks.i]]$u[[j]], coords[[tracks.i]]$v[[j]]), nrow = 2)
+    matB <- matrix(c(coords[[i]]$u[[j]], coords[[i]]$v[[j]]), nrow = 2)
+    vecDiffs[[i]] <- c(vecDiffs[[i]], 180 - matlib::angle(as.vector(matA), as.vector(matB)))
+  }
+}
+```
+
+```{r fig_umap, fig.height=10, fig.width=10}
+# plot out difference in angle
+# https://stackoverflow.com/a/39923381
+structNames <- names(coords)[names(coords) != tracks.i]
+diffsDT <- as.data.table(cbind(coords$SHG$coords, vecDiffs))
+diffsDT[is.na(diffsDT), ] <- 0 
+diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = structNames]
+diffsDT[SHG == 0, max := NA]
+
+p1 <- ggplot(diffsDT, aes(x, y)) +
+  theme_classic() +
+  plotThemeDark() +
+  coord_fixed() +
+  xlim(-10, cciaObj$omeXMLPixels()$SizeX + 10) +
+  ylim(cciaObj$omeXMLPixels()$SizeY + 10, -10) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+for (i in structNames) {
+   p2 <- p1 + geom_tile(aes(fill = get(i)), colour = "black", size = 0.5) +
+      viridis::scale_fill_viridis(
+        breaks = c(0, 180), labels = c(0, 180), na.value = "black") +
+    ggquiver::geom_quiver(
+      data = coords$OTI.tracks$coords, aes(x = x, y = y, u = -coords$OTI.tracks$u, v = coords$OTI.tracks$v),
+      color = "white", size = 1)
+  
+  ggsave(file.path(anaDir, paste0("angle-", i, "-", cciaObj$getUID(), ".pdf")),
+       height = 10, width = 10, plot = p2)
+}
+
+# plot most prominent class
+p2 <- p1 + geom_tile(aes(fill = max), colour = "black", size = 0.5) +
+  scale_fill_brewer(palette = "Set2") +
+  ggquiver::geom_quiver(
+    data = coords$OTI.tracks$coords, aes(x = x, y = y, u = -coords$OTI.tracks$u, v = coords$OTI.tracks$v),
+    color = "white", size = 1) +
+  theme(legend.position = "bottom")
+
+ggsave(file.path(anaDir, paste0("angle-max-", cciaObj$getUID(), ".pdf")),
+     height = 10, width = 10, plot = p2)
+```
+
 
 ```{r}
 # get HMM transitions

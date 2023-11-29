@@ -578,7 +578,8 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
           
           # get volume mesh
           volume_mesh = morpho_utils.mesh_from_label_volume(
-            volume,  dim_utils.im_scale(['X', 'Y', 'Z'])
+            # volume,  dim_utils.im_scale(['X', 'Y', 'Z'])
+            volume,  dim_utils.im_scale(['Z', 'Y', 'X'])
             )
           
           # save mesh

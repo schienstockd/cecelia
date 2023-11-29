@@ -79,7 +79,7 @@ def run(params):
     # change image dimensions in xml
     omexml_new = ome_xml_utils.set_im_size_with_dict(omexml, shape_dict)
     
-    if stack_dim != 'C':
+    if not stack_dim in ('C', 'T'):
       scale_dict = dict()
       scale_dict[stack_dim] = physical_stack_scale
       

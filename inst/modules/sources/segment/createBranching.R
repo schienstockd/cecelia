@@ -39,6 +39,8 @@ CreateBranching <- R6::R6Class(
         branchingName = branchingName,
         labelChannels = labelChannels,
         integrateTimeMode = integrateTimeMode,
+        flattenBranching = self$funParams()$flattenBranching,
+        useBorders = self$funParams()$useBorders,
         calcExtended = self$funParams()$calcExtended,
         calcFlattened = self$funParams()$calcFlattened,
         anisoRadius = self$funParams()$anisoRadius,

@@ -102,7 +102,7 @@
                          class = errCLASS)
               },
               checkboxGroupInput(
-                session$ns("selectedFolders"), "Select images to import", imFolders),
+                session$ns("selectedFolders"), "Select images to import", imFolders, width = "100%"),
               actionButton(
                 session$ns("selectedFoldersSubmit"), "Import images")
             )
@@ -162,6 +162,19 @@
       observeEvent(input$deleteUID, {
         req(input$deleteUID)
         
+        showModal(modalDialog(
+          tagList(h3("Are you sure?")), 
+          title = "Delete Image",
+          footer = tagList(actionButton(session$ns("deleteUIDConfirmed"), "Delete image"),
+                           modalButton("Cancel")
+          )
+        ))
+      })
+      
+      # observeEvent(input$deleteUID, {
+      observeEvent(input$deleteUIDConfirmed, {
+        req(input$deleteUID)
+        
         progress <- Progress$new()
         
         # remove content from HPC
@@ -182,6 +195,8 @@
         
         # autosave project
         globalManagers$projectManager()$doProjectBookmark()
+        
+        removeModal()
       })
       
       ## Generic

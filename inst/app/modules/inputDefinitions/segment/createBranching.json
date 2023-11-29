@@ -26,6 +26,16 @@
 					"default": 2
 				}
 			},
+			"flattenBranching": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"useBorders": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"calcExtended": {
 				"type:boolean": {
 					"default": false
@@ -76,27 +86,39 @@
 					"step": 1
 				}
 			},
-			"calcExtended": {
+		  "useBorders": {
 				"index": 3,
+				"label": "Use borders",
+				"widget:checkbox": {
+				}
+			},
+		  "flattenBranching": {
+				"index": 4,
+				"label": "Flatten branching to 2D",
+				"widget:checkbox": {
+				}
+			},
+			"calcExtended": {
+				"index": 5,
 				"label": "Extended measurements",
 				"widget:checkbox": {
 				}
 			},
 			"calcFlattened": {
-				"index": 4,
-				"label": "Flatten to 2D",
+				"index": 6,
+				"label": "Measure in 2D",
 				"widget:checkbox": {
 				}
 			},
 			"anisoRadius": {
-				"index": 5,
+				"index": 7,
 				"label": "Anisotropy radius",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"saveMeshes": {
-				"index": 6,
+				"index": 8,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}

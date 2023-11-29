@@ -58,7 +58,10 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   # exclude buttons
   "loadProject", "saveProject",
   "loadVersion", "createVersion",
+  "deleteSelectedProjectConfirmed",
   "shutdown", "restart", "closeViewer", "viewerAddAnimationPane",
+  "importImages-deleteSetConfirmed",
+  "importImages-deleteUIDConfirmed",
   "importImages-taskRunAll",
   "importImages-taskHPCsync", "segment-taskHPCsync",
   "gatePopulations-taskHPCsync", "clustPopulations-taskHPCsync",

@@ -590,7 +590,24 @@ server <- function(input, output, session) {
   })
   
   # delete selected version
+  
+  # https://stackoverflow.com/a/52909678
   observeEvent(input$deleteSelectedProject, {
+    req(input$deleteSelectedProject)
+    
+    showModal(modalDialog(
+      tagList(h3("Are you sure?")), 
+      title = "Delete Project",
+      footer = tagList(actionButton("deleteSelectedProjectConfirmed", "Delete project"),
+                       modalButton("Cancel")
+      )
+    ))
+  })
+  
+  # observeEvent(input$deleteSelectedProject, {
+  observeEvent(input$deleteSelectedProjectConfirmed, {
+    req(input$deleteSelectedProject)
+    
     progress <- Progress$new()
     
     if (globalManagers$projectManager()$useHPC() == TRUE) {
@@ -603,6 +620,7 @@ server <- function(input, output, session) {
     
     progress$close()
     
+    removeModal()
     showModal(showLoadProject())
   })
   

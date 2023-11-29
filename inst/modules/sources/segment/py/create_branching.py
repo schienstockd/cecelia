@@ -16,6 +16,7 @@ import py.measure_utils as measure_utils
 import py.ILEE_CSK as ILEE_CSK
 
 import skimage.morphology
+import skimage.segmentation
 import skan
 import numpy as np
 import zarr
@@ -33,6 +34,8 @@ def run(params):
   post_dilation_size = script_utils.get_param(params, 'postDilationSize')
   label_channels = script_utils.get_param(params, 'labelChannels', default = [])
   integrate_time_mode = script_utils.get_param(params, 'integrateTimeMode', default = None)
+  flatten_branching = script_utils.get_param(params, 'flattenBranching', default = False)
+  use_borders = script_utils.get_param(params, 'useBorders', default = False)
   calc_extended = script_utils.get_param(params, 'calcExtended', default = False)
   calc_flattened = script_utils.get_param(params, 'calcFlattened', default = False)
   aniso_radius = script_utils.get_param(params, 'anisoRadius', default = 50)
@@ -50,30 +53,59 @@ def run(params):
   omexml = ome_xml_utils.parse_meta(im_path)
   dim_utils = DimUtils(omexml)
   dim_utils.calc_image_dimensions(im_data[0].shape)
+  nscales = len(labels_data)
+  
+  # get chunks
+  labels_chunks = labels_data[0].chunks
+  
+  # use first pyramid
+  im_data = im_data[0]
+  labels_data = labels_data[0]
   
   # https://skeleton-analysis.org/stable/examples/visualizing_3d_skeletons.html
   logfile_utils.log(f'> create skeleton')
   
   # make sure that there is a time dimension for labels
-  integrate_time = True if (len(im_data[0].shape) - 1) > len(labels_data[0].shape) else False
+  integrate_time = True if (len(im_data.shape) - 1) > len(labels_data.shape) else False
+  
+  # flatten 3D image for branching
+  if flatten_branching and dim_utils.is_3D():
+    # im_data = np.max(im_data, axis = dim_utils.dim_idx(
+    #   'Z', ignore_channel = True, ignore_time = integrate_time))
+    z_idx = dim_utils.dim_idx('Z', ignore_channel = True, ignore_time = integrate_time)
+    labels_data_interm = np.max(labels_data, axis = z_idx)
+      
+    # TODO this will propagate the 2D image into 3D - otherwise
+    # the following steps will be a bit confusing
+    labels_data = zarr_utils.fortify(labels_data)
+    
+    slices = [slice(None) for _ in range(len(labels_data.shape))]
+    for z in range(labels_data.shape[z_idx]):
+      slices[z_idx] = z
+      labels_data[tuple(slices)] = labels_data_interm
+    
+    logfile_utils.log(f'> flattened image {labels_data.shape}')
+    
+  # use label boundaries
+  if use_borders:
+    labels_data = skimage.segmentation.find_boundaries(labels_data)
   
   # get slices
   slices = {
-    'im': slice_utils.create_slices(im_data[0].shape, dim_utils, ignore_time = integrate_time),
-    'labels': slice_utils.create_slices(labels_data[0].shape, dim_utils, ignore_time = integrate_time)
+    'im': slice_utils.create_slices(im_data.shape, dim_utils, ignore_time = integrate_time),
+    'labels': slice_utils.create_slices(labels_data.shape, dim_utils, ignore_time = integrate_time)
   }
   
   # save labels
   # TODO is there a more elegant way to do this .. ?
-  nscales = len(labels_data)
   skeleton_path = os.path.join(task_dir, cfg.value_dir(branching_name, 'labels'))
   
   # save as zarr
   skeleton_store = zarr.open(
     skeleton_path,
     mode = 'w',
-    shape = labels_data[0].shape,
-    chunks = labels_data[0].chunks,
+    shape = labels_data.shape,
+    chunks = labels_chunks,
     dtype = np.uint32)
   paths_tables = list()
   props_tables = list()
@@ -92,7 +124,7 @@ def run(params):
     logfile_utils.log(cur_labels_slices)
   
     # get image to process
-    im = np.squeeze(labels_data[0][cur_labels_slices])
+    im = np.squeeze(labels_data[cur_labels_slices])
     
     logfile_utils.log(f'> dilate pre {pre_dilation_size}')
     
@@ -104,7 +136,7 @@ def run(params):
           
       bin_im = skimage.morphology.binary_closing((im > 0).astype(np.uint8), pre_selem)
     else:
-      bin_im = np.squeeze(labels_data[0][cur_labels_slices]) > 0
+      bin_im = np.squeeze(labels_data[cur_labels_slices]) > 0
     
     # create skeleton
     logfile_utils.log(f'> skeletonize')
@@ -130,8 +162,8 @@ def run(params):
     
     # check that shape is matching
     # TODO this has to be done better and more generic
-    if len(skeleton_labels.shape) != len(labels_data[0][cur_labels_slices].shape):
-      logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[0][cur_labels_slices].shape}')
+    if len(skeleton_labels.shape) != len(labels_data[cur_labels_slices].shape):
+      logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[cur_labels_slices].shape}')
 
       skeleton_labels = np.expand_dims(skeleton_labels, axis = 0)
       
@@ -178,7 +210,7 @@ def run(params):
         channels_im = np.maximum(
           channels_im, 
           np.squeeze(np.take(
-          im_data[0][cur_im_slices], i, axis = dim_utils.dim_idx('C')))
+          im_data[cur_im_slices], i, axis = dim_utils.dim_idx('C')))
           )
         
       # check whether to integrate time
@@ -192,8 +224,8 @@ def run(params):
         else:
           channels_im = np.average(channels_im, axis = t_idx)
       
-      # flatten 3D image
-      if calc_flattened is True and dim_utils.is_3D():
+      # flatten 3D image for calculation
+      if calc_flattened and dim_utils.is_3D():
         channels_im = np.max(channels_im, axis = dim_utils.dim_idx(
           'Z', ignore_channel = True, ignore_time = integrate_time))
         im = np.max(im, axis = dim_utils.dim_idx(
@@ -202,7 +234,7 @@ def run(params):
         logfile_utils.log(f'> flattened image {im.shape}')
       
       # get anisotropy and summary
-      if not dim_utils.is_3D() is True or calc_flattened is True:
+      if not dim_utils.is_3D() or calc_flattened:
         ilee_summary, ilee_anisotropy = ILEE_CSK.analyze_actin_2d_standard(
           np.squeeze(channels_im), im,
           pixel_size = dim_utils.im_physical_size('x'),

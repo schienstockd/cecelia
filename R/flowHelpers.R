@@ -804,6 +804,8 @@
   # xAdj <- diff(range(DT[[flowX]]))/diff(xRange)
   # yAdj <- diff(range(DT[[flowY]]))/diff(yRange)
   
+  browser()
+  
   r1 <- rasterly::rasterly(
     data = DT,
     mapping = rasterly::aes(

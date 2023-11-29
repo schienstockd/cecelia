@@ -214,7 +214,21 @@ createImageSetManager <- function(
   })
   
   # delete image set
+  # https://stackoverflow.com/a/52909678
   observeEvent(input$deleteSet, {
+    req(selectedSet())
+    
+    showModal(modalDialog(
+      tagList(h3("Are you sure?")), 
+      title = "Delete Set",
+      footer = tagList(actionButton(session$ns("deleteSetConfirmed"), "Delete set"),
+                       modalButton("Cancel")
+      )
+    ))
+  })
+  
+  # observeEvent(input$deleteSet, {
+  observeEvent(input$deleteSetConfirmed, {
     req(selectedSet())
     
     # remove content from HPC
@@ -236,6 +250,8 @@ createImageSetManager <- function(
     selectedSet()$removeCciaObjects()
     selectedSet()$deleteObjectDirectory()
     globalManagers$dataManager()$cciaImageCollection()$removeCciaObjectByUID(selectedSet()$getUID())
+    
+    removeModal()
   })
   
   # create image set

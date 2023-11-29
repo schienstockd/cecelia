@@ -232,11 +232,7 @@ coords <- lapply(uns, function(x) {
   u <- as.vector(x$ilee_eigval[1,,,2]) * as.vector(x$ilee_eigvec[1,,,2,1])
   v <- as.vector(x$ilee_eigval[1,,,1]) * as.vector(x$ilee_eigvec[1,,,1,1])
   
-  list(
-    coords = coords,
-    u = u,
-    v = v
-  )
+  list(coords = coords, u = u, v = v)
 })
 ```
 
@@ -280,7 +276,7 @@ popDT[, centroid_region := dbscan::kNN(
 
 ```{r fig_umap, fig.height=10, fig.width=10}
 # can you show the branching patterns on a plot?
-p1 <- ggplot(branchDT) + 
+p1 <- ggplot(branchDT[pop != "P14-CTDR.tracks.branch"]) + 
   # scale_color_brewer(palette = "Set1") +
   theme_classic() +
   plotThemeDark() +
@@ -303,21 +299,90 @@ p1 + geom_segment(aes(
   xend = `coord-dst-2`, yend = `coord-dst-1`),
   # color = as.factor(`branch-type`)),
   size = 1, color = "#4682b4", alpha = 1) +
-  geom_path(
-    data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
-    # color = "#ebd441", size = 1.5, alpha = 1) +
-    color = "#AA1F5E", size = 1.5, alpha = 1) +
+  # geom_path(
+  #   data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
+  #   # color = "#ebd441", size = 1.5, alpha = 1) +
+  #   color = "#AA1F5E", size = 1.5, alpha = 1) +
   # geom_path(
   #   data = popDT[value_name == names(pops)[[2]]], aes(centroid_x, centroid_y, group = track_id),
   #   color = "#AA1F5E", size = 1.5, alpha = 1) +
   ggquiver::geom_quiver(
-    data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.2) 
-  # ggquiver::geom_quiver(
-  #   data = coords[[2]]$coords, aes(x = x, y = y, u = -coords[[2]]$u, v = coords[[2]]$v), color = "#AA1F5E", size = 1)
+    data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.2) +
+  ggquiver::geom_quiver(
+    data = coords[[2]]$coords, aes(x = x, y = y, u = -coords[[2]]$u, v = coords[[2]]$v), color = "#AA1F5E", size = 1)
 
 ggsave(file.path(anaDir, paste0("SHG_tracking_field-", cciaObj$getUID(), ".pdf")),
+# ggsave(file.path(anaDir, paste0("SHG_tracking_field-tracks-", cciaObj$getUID(), ".pdf")),
        height = 8, width = 8)
 ```
+
+```{r}
+# get angles relative to T cells and structures
+tracks.i <- "P14-CTDR.tracks"
+vecDiffs <- list()
+
+for (i in names(coords)[names(coords) != tracks.i]) {
+  vecDiffs[[i]] <- c()
+  
+  for(j in seq(length(coords[[i]]$u))) {
+    matA <- matrix(c(coords[[tracks.i]]$u[[j]], coords[[tracks.i]]$v[[j]]), nrow = 2)
+    matB <- matrix(c(coords[[i]]$u[[j]], coords[[i]]$v[[j]]), nrow = 2)
+    vecDiffs[[i]] <- c(vecDiffs[[i]], 180 - matlib::angle(as.vector(matA), as.vector(matB)))
+  }
+}
+```
+
+```{r fig_umap, fig.height=10, fig.width=10}
+# plot out difference in angle
+# https://stackoverflow.com/a/39923381
+structNames <- names(coords)[names(coords) != tracks.i]
+diffsDT <- as.data.table(cbind(coords$SHG$coords, vecDiffs))
+diffsDT[is.na(diffsDT), ] <- 0 
+diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = structNames]
+diffsDT[SHG == 0, max := NA]
+
+p1 <- ggplot(diffsDT, aes(x, y)) +
+  theme_classic() +
+  plotThemeDark() +
+  coord_fixed() +
+  xlim(-10, cciaObj$omeXMLPixels()$SizeX + 10) +
+  ylim(cciaObj$omeXMLPixels()$SizeY + 10, -10) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.position = "none"
+  )
+
+for (i in structNames) {
+   p2 <- p1 + geom_tile(aes(fill = get(i)), colour = "black", size = 0.5) +
+    # viridis::scale_fill_viridis(
+    #   breaks = c(0, 180), labels = c(0, 180), na.value = "black") +
+    scale_fill_gradient2(low="blue", high="red", mid = "white", midpoint = 90) +
+    ggquiver::geom_quiver(
+      data = coords$`P14-CTDR.tracks`$coords, aes(x = x, y = y, u = -coords$`P14-CTDR.tracks`$u, v = coords$`P14-CTDR.tracks`$v),
+      color = "white", size = 1)
+  
+  ggsave(file.path(anaDir, paste0("angle-", i, "-", cciaObj$getUID(), ".pdf")),
+       height = 10, width = 10, plot = p2)
+}
+
+# plot most prominent class
+p2 <- p1 + geom_tile(aes(fill = max), colour = "black", size = 0.5) +
+  scale_fill_brewer(palette = "Set2") +
+  ggquiver::geom_quiver(
+    data = coords$`P14-CTDR.tracks`$coords, aes(x = x, y = y, u = -coords$`P14-CTDR.tracks`$u, v = coords$`P14-CTDR.tracks`$v),
+    color = "white", size = 1) +
+  theme(legend.position = "bottom")
+
+ggsave(file.path(anaDir, paste0("angle-max-", cciaObj$getUID(), ".pdf")),
+     height = 10, width = 10, plot = p2)
+```
+
 
 ```{r fig_umap, fig.height=10, fig.width=20}
 tracksMeasures <- colnames(tracksInfo)
