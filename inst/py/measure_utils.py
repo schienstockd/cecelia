@@ -277,14 +277,16 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     #   # x, ignore_channel = True, ignore_time = True, drop_time = True, squeeze = True
     #   x, ignore_channel = True, ignore_time = ~dim_utils.is_timeseries(), drop_time = True, squeeze = True
     #   ): dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True) for x in ('Z', 'Y', 'X')
-    dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True): dim_utils.dim_idx(
-      x, ignore_channel = True, ignore_time = ~dim_utils.is_timeseries(), drop_time = True, squeeze = True
-      ) for x in ('Z', 'Y', 'X')
+    # dim_utils.dim_idx(x, ignore_channel = True, ignore_time = True): dim_utils.dim_idx(
+    x: dim_utils.dim_idx(
+      x.upper(), ignore_channel = True, ignore_time = ~dim_utils.is_timeseries(), drop_time = True, squeeze = True
+      ) for x in ('z', 'y', 'x')
     }
     
   centroid_idx = {i: x for i, x in centroid_idx.items() if x is not None}
   slice_idx = {i: x for i, x in slice_idx.items() if i is not None}
-    
+  logfile_utils.log(slice_idx)
+  
   # get image scale
   im_scale = dim_utils.im_scale(dims = ['Z', 'Y', 'X'])
   
@@ -646,22 +648,22 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
     
     # add values from current slices to centroid and bbox except for z in time
     # https://stackoverflow.com/a/27275479/13766165
-    for i, centroid in enumerate(centroid_cols):
-      slice_id = slice_idx[i]
+    for centroid in centroid_cols:
+      slice_id = slice_idx[centroid.split('_')[-1]]
       
       # check that there is a slice for that dimension
       if slice_id < len(cur_slices):
         props_table[base_labels][centroid] += cur_slices[slice_id].start
         
-    for i, bbox in enumerate(bbox_min_cols):
-      slice_id = slice_idx[i]
+    for bbox in bbox_min_cols:
+      slice_id = slice_idx[bbox.split('_')[-1]]
       
       # check that there is a slice for that dimension
       if slice_id < len(cur_slices):
         props_table[base_labels][bbox] += cur_slices[slice_id].start
         
-    for i, bbox in enumerate(bbox_max_cols):
-      slice_id = slice_idx[i]
+    for bbox in bbox_max_cols:
+      slice_id = slice_idx[bbox.split('_')[-1]]
       
       # check that there is a slice for that dimension
       if slice_id < len(cur_slices):
