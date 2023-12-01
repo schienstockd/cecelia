@@ -379,7 +379,7 @@ ProjectManager <- R6::R6Class(
       # genUID(as.numeric(cciaConf()$images$lenUID))
       
       # make sure the uID is not already used
-      uIDs <- list.dirs(a$persistentObjectDirectory(), recursive = FALSE, full.names = FALSE)
+      uIDs <- list.dirs(self$persistentObjectDirectory(), recursive = FALSE, full.names = FALSE)
       uID <- genUID(as.numeric(cciaConf()$images$lenUID))
       
       while (uID %in% uIDs) {
