@@ -55,7 +55,7 @@
         req("files" %in% names(input$imagesToImport))
         
         newFiles <- joinSelectedFiles(input$imagesToImport)
-
+        
         # create new images
         newImages <- list()
         for (curFile in newFiles) {

@@ -376,7 +376,17 @@ ProjectManager <- R6::R6Class(
     
     # generate uID
     genUID = function() {
-      genUID(as.numeric(cciaConf()$images$lenUID))
+      # genUID(as.numeric(cciaConf()$images$lenUID))
+      
+      # make sure the uID is not already used
+      uIDs <- list.dirs(a$persistentObjectDirectory(), recursive = FALSE, full.names = FALSE)
+      uID <- genUID(as.numeric(cciaConf()$images$lenUID))
+      
+      while (uID %in% uIDs) {
+        uID <- genUID(as.numeric(cciaConf()$images$lenUID))
+      }
+      
+      uID
     },
     
     # return HPC path
