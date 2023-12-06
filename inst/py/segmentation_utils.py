@@ -344,10 +344,7 @@ class SegmentationUtils:
             # # TODO not run run when labels have to be matched .. ?
             # if self.match_labels is False and self.rank_labels is True:
             #   alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
-          
-        self.logfile_utils.log('MATCH')
-        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
-        
+
         # match labels, then go on
         if self.match_labels is True:
           # TODO there must be a better way of doing this
@@ -369,24 +366,15 @@ class SegmentationUtils:
             for k in [z for z in list(y) if z not in list(matched_labels)]:
               alg_labels[j][alg_labels[j] == k] = 0
         
-        self.logfile_utils.log('RANK')
-        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
-        
         # rank labels
         for j in alg_labels.keys():
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
         
-        self.logfile_utils.log('KEYS')
-        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
-        
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
         
         self.logfile_utils.log(f'> C {alg_labels["base"].max()}')
-        
-        self.logfile_utils.log('POST')
-        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
         
         # remove border labels
         # alg_labels = {
@@ -414,6 +402,9 @@ class SegmentationUtils:
             for j in alg_labels.keys():
               if alg_labels[j] is not None:
                 alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
+          
+          self.logfile_utils.log('BEFORE')
+          self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
           
           # merge with exisiting labels
           if self.label_overlap > 0:
@@ -458,6 +449,9 @@ class SegmentationUtils:
             
           if y_max_label > 0 and y_max_label > cur_max_labels:
             next_max_labels.append(y_max_label)
+                  
+        self.logfile_utils.log('AFTER')
+        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
         
         # rank labels again?
         # for j in alg_labels.keys():
