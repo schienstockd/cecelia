@@ -483,7 +483,7 @@ class SegmentationUtils:
       # subtract nuclei from whole cell
       labels['cyto'] = np.copy(base_labels)
       # IndexError: too many indices for array: array is 2-dimensional, but 3 were indexed
-      labels['nuc'] = np.copy(labels['nuc'])
+      labels['nuc'] = np.squeeze(labels['nuc'])
       labels['cyto'][labels['nuc'] > 0] = 0
     
     return labels
