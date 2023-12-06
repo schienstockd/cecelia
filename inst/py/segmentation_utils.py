@@ -311,6 +311,8 @@ class SegmentationUtils:
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat[0], dat_slices, norm_im = norm_im)
       
+      self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
+      
       if alg_labels is not None:
         for j in alg_labels.keys():
           if alg_labels[j] is not None:
@@ -478,13 +480,13 @@ class SegmentationUtils:
       else:
         labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(self.labels_dtype)
       
-    # # add cyto segmentation from base and nucleus?
-    # if 'nuc' in labels.keys():
-    #   # subtract nuclei from whole cell
-    #   labels['cyto'] = np.copy(base_labels)
-    #   # IndexError: too many indices for array: array is 2-dimensional, but 3 were indexed
-    #   labels['nuc'] = np.squeeze(labels['nuc'])
-    #   labels['cyto'][labels['nuc'] > 0] = 0
+    # add cyto segmentation from base and nucleus?
+    if 'nuc' in labels.keys():
+      # subtract nuclei from whole cell
+      labels['cyto'] = np.copy(base_labels)
+      # IndexError: too many indices for array: array is 2-dimensional, but 3 were indexed
+      labels['nuc'] = np.squeeze(labels['nuc'])
+      labels['cyto'][labels['nuc'] > 0] = 0
     
     return labels
 

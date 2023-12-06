@@ -398,6 +398,8 @@ class CellposeUtils(SegmentationUtils):
     # match labels
     if len(model_masks['cyto']) > 0 and len(model_masks['nuc']) > 0:
       self.logfile_utils.log(f'>> Merge nuclei and cyto')
+      self.logfile_utils.log(interm_labels['nuc'].shape)
+      self.logfile_utils.log(interm_labels['cyto'].shape)
 
       # match cells to a nucleus - some cells might not have a nucleus
       # TODO can you rank the labels after merging?
