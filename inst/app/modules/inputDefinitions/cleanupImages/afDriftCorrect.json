@@ -51,6 +51,20 @@
 							"default": 0
 						}
 					},
+					"rollingBallRadius": {
+						"type:integer": {
+							"min": 0,
+							"max": 40,
+							"default": 0
+						}
+					},
+					"rollingBallPadding": {
+						"type:integer": {
+							"min": 0,
+							"max": 10,
+							"default": 4
+						}
+					},
 					"generateInverse": {
     				"type:boolean": {
     					"default": false
@@ -143,8 +157,22 @@
 							"step": 1
 						}
 					},
+					"rollingBallRadius": {
+						"index": 6,
+						"label": "Rolling ball radius",
+						"widget:slider": {
+							"step": 1
+						}
+					},
+					"rollingBallPadding": {
+						"index": 7,
+						"label": "Rolling ball padding",
+						"widget:slider": {
+							"step": 1
+						}
+					},
 					"generateInverse": {
-    				"index": 6,
+    				"index": 8,
     				"label": "Generate inverse",
     				"widget:checkbox": {
     				}

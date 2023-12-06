@@ -478,12 +478,13 @@ class SegmentationUtils:
       else:
         labels['halo'] = (expand_labels(base_labels, self.halo_size) - base_labels).astype(self.labels_dtype)
       
-    # add cyto segmentation from base and nucleus?
-    if 'nuc' in labels.keys():
-      # subtract nuclei from whole cell
-      labels['cyto'] = np.copy(base_labels)
-      # IndexError: too many indices for array: array is 2-dimensional, but 3 were indexed
-      labels['cyto'][np.squeeze(labels['nuc']) > 0] = 0
+    # # add cyto segmentation from base and nucleus?
+    # if 'nuc' in labels.keys():
+    #   # subtract nuclei from whole cell
+    #   labels['cyto'] = np.copy(base_labels)
+    #   # IndexError: too many indices for array: array is 2-dimensional, but 3 were indexed
+    #   labels['nuc'] = np.squeeze(labels['nuc'])
+    #   labels['cyto'][labels['nuc'] > 0] = 0
     
     return labels
 

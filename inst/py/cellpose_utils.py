@@ -36,7 +36,7 @@ class CellposeUtils(SegmentationUtils):
     # TODO is there a better way?
     # check which GPU to use
     # Apple M1
-    if torch.backends.mps.is_available():
+    if self.use_gpu and torch.backends.mps.is_available():
       # self.gpu_device = 'mps'
       self.gpu_device = torch.device('mps')
 
