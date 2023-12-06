@@ -440,7 +440,7 @@ class SegmentationUtils:
             self.logfile_utils.log(f'> Merge base labels by maximum')
             # this will lead to artefacts - but is fast
             # labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
-            for j in [k for k in alg_labels.keys()]:
+            for j in alg_labels.keys():
               if alg_labels[j] is not None:
                 labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
           
