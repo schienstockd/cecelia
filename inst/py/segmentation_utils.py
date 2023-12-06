@@ -403,9 +403,6 @@ class SegmentationUtils:
               if alg_labels[j] is not None:
                 alg_labels[j][alg_labels[j] > 0] = alg_labels[j][alg_labels[j] > 0] + cur_max_labels
           
-          self.logfile_utils.log('BEFORE')
-          self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
-          
           # merge with exisiting labels
           if self.label_overlap > 0:
             self.logfile_utils.log(f'> Merge base labels by overlap {self.label_overlap}')
@@ -442,16 +439,19 @@ class SegmentationUtils:
           else:
             self.logfile_utils.log(f'> Merge base labels by maximum')
             # this will lead to artefacts - but is fast
-            labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
+            # labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
+            for j in [k for k in alg_labels.keys()]:
+              if alg_labels[j] is not None:
+                for x, y in dict_replace:
+                  alg_labels[j][alg_labels[j] == x] = y
+                  
+                labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
           
           # get labels post merging
           y_max_label = labels['base'][label_slices].max()
             
           if y_max_label > 0 and y_max_label > cur_max_labels:
             next_max_labels.append(y_max_label)
-                  
-        self.logfile_utils.log('AFTER')
-        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
         
         # rank labels again?
         # for j in alg_labels.keys():
