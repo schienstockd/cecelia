@@ -311,8 +311,6 @@ class SegmentationUtils:
       # call segmentation implementation
       alg_labels = self.predict_slice(im_dat[0], dat_slices, norm_im = norm_im)
       
-      self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
-      
       if alg_labels is not None:
         for j in alg_labels.keys():
           if alg_labels[j] is not None:
@@ -346,7 +344,10 @@ class SegmentationUtils:
             # # TODO not run run when labels have to be matched .. ?
             # if self.match_labels is False and self.rank_labels is True:
             #   alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
-            
+          
+        self.logfile_utils.log('MATCH')
+        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})  
+        
         # match labels, then go on
         if self.match_labels is True:
           # TODO there must be a better way of doing this
@@ -368,15 +369,24 @@ class SegmentationUtils:
             for k in [z for z in list(y) if z not in list(matched_labels)]:
               alg_labels[j][alg_labels[j] == k] = 0
         
+        self.logfile_utils.log('RANK')
+        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
+        
         # rank labels
         for j in alg_labels.keys():
           if self.rank_labels is True:
             alg_labels[j] = measure_utils.rank_labels(alg_labels[j])
         
+        self.logfile_utils.log('KEYS')
+        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
+        
         # run post processing steps
         alg_labels = self.post_processing(alg_labels)
         
         self.logfile_utils.log(f'> C {alg_labels["base"].max()}')
+        
+        self.logfile_utils.log('POST')
+        self.logfile_utils.log({i: x.max() for i, x in alg_labels.items()})
         
         # remove border labels
         # alg_labels = {
