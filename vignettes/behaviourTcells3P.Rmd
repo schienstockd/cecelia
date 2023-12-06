@@ -171,7 +171,8 @@ cciaObj <- initCciaObject(
   # pID = pID, uID = "IksEJv", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "42xBGe", versionID = versionID, initReactivity = FALSE # SHG 3P
-  pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "wX74z9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour 3P
   # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
@@ -180,7 +181,8 @@ cciaObj <- initCciaObject(
 )
 
 # get vector information to plot anisotropy
-unsLabels <- c("SHG", "P14-CTDR.tracks")
+# unsLabels <- c("SHG", "P14-CTDR.tracks")
+unsLabels <- c("SHG", "gBT.tracks")
 uns <- list()
 
 for (i in unsLabels) {
@@ -198,7 +200,8 @@ pops <- list(
   # tcells.ubiTom = "tcells.ubiTom/tracked",
   # tcells.B6 = "tcells.B6/tracked"
   # `P14-Tom` = "P14-Tom/tracked",
-  `P14-CTDR` = "P14-CTDR/tracked"
+  # `P14-CTDR` = "P14-CTDR/tracked"
+  `gBT` = "gBT/tracked"
   # `P14` = "P14/tracked"
 )
 
@@ -276,7 +279,8 @@ popDT[, centroid_region := dbscan::kNN(
 
 ```{r fig_umap, fig.height=10, fig.width=10}
 # can you show the branching patterns on a plot?
-p1 <- ggplot(branchDT[pop != "P14-CTDR.tracks.branch"]) + 
+# p1 <- ggplot(branchDT[pop != "P14-CTDR.tracks.branch"]) + 
+p1 <- ggplot(branchDT[pop != "gBT.tracks.branch"]) + 
   # scale_color_brewer(palette = "Set1") +
   theme_classic() +
   plotThemeDark() +
@@ -296,24 +300,25 @@ p1 <- ggplot(branchDT[pop != "P14-CTDR.tracks.branch"]) +
 
 p1 + geom_segment(aes(
   x = `coord-src-2`, y = `coord-src-1`,
-  xend = `coord-dst-2`, yend = `coord-dst-1`),
+  xend = `coord-dst-2`, yend = `coord-dst-1`,
+  color = as.factor(`label`))) +
   # color = as.factor(`branch-type`)),
-  size = 1, color = "#4682b4", alpha = 1) +
-  # geom_path(
-  #   data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
-  #   # color = "#ebd441", size = 1.5, alpha = 1) +
-  #   color = "#AA1F5E", size = 1.5, alpha = 1) +
+  # size = 1, color = "#4682b4", alpha = 1) +
+  geom_path(
+    data = popDT[value_name == names(pops)[[1]]], aes(centroid_x, centroid_y, group = track_id),
+    # color = "#ebd441", size = 1.5, alpha = 1) +
+    color = "#AA1F5E", size = 1.5, alpha = 1)
   # geom_path(
   #   data = popDT[value_name == names(pops)[[2]]], aes(centroid_x, centroid_y, group = track_id),
   #   color = "#AA1F5E", size = 1.5, alpha = 1) +
-  ggquiver::geom_quiver(
-    data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.2) +
-  ggquiver::geom_quiver(
-    data = coords[[2]]$coords, aes(x = x, y = y, u = -coords[[2]]$u, v = coords[[2]]$v), color = "#AA1F5E", size = 1)
+  # ggquiver::geom_quiver(
+  #   data = coords$SHG$coords, aes(x = x, y = y, u = -coords$SHG$u, v = coords$SHG$v), color = "white", size = 1.2)
+  # ggquiver::geom_quiver(
+  #   data = coords[[2]]$coords, aes(x = x, y = y, u = -coords[[2]]$u, v = coords[[2]]$v), color = "#AA1F5E", size = 1)
 
-ggsave(file.path(anaDir, paste0("SHG_tracking_field-", cciaObj$getUID(), ".pdf")),
+# ggsave(file.path(anaDir, paste0("SHG_tracking_field-", cciaObj$getUID(), ".pdf")),
 # ggsave(file.path(anaDir, paste0("SHG_tracking_field-tracks-", cciaObj$getUID(), ".pdf")),
-       height = 8, width = 8)
+       # height = 8, width = 8)
 ```
 
 ```{r}

@@ -113,7 +113,8 @@ Omezarr <- R6::R6Class(
           nscales = self$funParams()$pyramidScale,
           skipTiles = self$funParams()$skipTiles,
           physicalStackScale = self$funParams()$physicalStackScale,
-          stackDim = self$funParams()$stackDim
+          stackDim = self$funParams()$stackDim,
+          seqREXP = self$funParams()$seqREXP
         )
         
         # call python

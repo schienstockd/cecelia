@@ -2,6 +2,7 @@
 import sys
 sys.path.append("./")
 
+import os
 import numpy as np
 
 import py.script_utils as script_utils
@@ -16,6 +17,7 @@ def run(params):
   # get params
   im_path = script_utils.get_param(params, 'imPath')
   zarr_path = script_utils.get_param(params, 'zarrPath')
+  seq_rexp = script_utils.get_param(params, 'seqREXP', default = None)
   is_stacked = script_utils.get_param(params, 'isStacked', default = False)
   skip_tiles = script_utils.get_param(params, 'skipTiles', default = 0)
   nscales = script_utils.get_param(params, 'nscales', default = 1)
@@ -27,7 +29,19 @@ def run(params):
   
   # read in OME XML from first image sequence
   logfile_utils.log(f'>> open image {im_path}')
-  im = tifffile.TiffFile(im_path)
+  
+  # or - read by regular expression
+  if seq_rexp is not None:
+    # >>> image_sequence = TiffSequence(
+    # ...     'temp_C0*.tif', pattern=r'_(C)(\d+)(T)(\d+)'
+    # ... )
+    # https://stackoverflow.com/a/56985941
+    im = tifffile.TiffSequence(
+      os.path.join(os.path.dirname(im_path), '*.tif'), pattern = r'%s' %seq_rexp)
+    
+    logfile_utils.log(f'> sequence shape {im.shape}')
+  else:  
+    im = tifffile.TiffFile(im_path)
   
   if is_stacked is True:
     logfile_utils.log(f'>> stack images with {skip_tiles}')
@@ -90,10 +104,40 @@ def run(params):
   else:
     # save back
     logfile_utils.log(f'>> save as zarr {zarr_path}')
-    zarr_utils.create_multiscales(im.asarray(), zarr_path, nscales = nscales)
+    im_array = im.asarray()
+    zarr_utils.create_multiscales(im_array, zarr_path, nscales = nscales)
     
     # add metadata
-    ome_xml_utils.write_ome_xml(zarr_path, im.ome_metadata)
+    if hasattr(im, 'ome_metadata'):
+      im_metadata = im.ome_metadata
+    else:
+      len_dims = len(im.dims)
+      len_shape = len(im_array.shape) - len_dims
+      
+      # create metadata
+      # TODO anything else?
+      pixels = model.pixels.Pixels(
+        size_c = im.dims.index('c') if 'c' in im.dims and im.dims.index('c') else 0,
+        size_x = im_array.shape[-1],
+        size_y = im_array.shape[-2],
+        size_t = im.dims.index('t') if 't' in im.dims and im.dims.index('t') else 0,
+        size_z = im_array.shape[0] if len_shape > 2 else 0,
+        physical_size_x = 1,
+        physical_size_y = 1,
+        physical_size_x_unit = model.UnitsLength.MICROMETER,
+        physical_size_y_unit = model.UnitsLength.MICROMETER,
+        type = 'uint16',
+        dimension_order = model.Pixels_DimensionOrder.XYZCT,
+        metadata_only = True
+        )
+      
+      for x in channel_names:
+        pixels.channels.append(model.channel.Channel(name = x))
+        
+      # add metadata
+      im_metadata = model.OME(images=[model.Image(pixels=pixels)])
+        
+    ome_xml_utils.write_ome_xml(zarr_path, im_metadata)
 
 def main():
   # get params

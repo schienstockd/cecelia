@@ -68,6 +68,11 @@
 				"type:character": {
 					"default": ""
 				}
+			},
+			"seqREXP": {
+				"type:character": {
+					"default": ""
+				}
 			}
     },
     "outputs": {}
@@ -147,6 +152,12 @@
 			"dimOrder": {
 				"index": 10,
 				"label": "Custom dimension order",
+				"widget:textInput": {
+				}
+			},
+			"seqREXP": {
+				"index": 11,
+				"label": "Sequence expression",
 				"widget:textInput": {
 				}
 			}
