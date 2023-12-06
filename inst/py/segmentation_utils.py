@@ -442,9 +442,6 @@ class SegmentationUtils:
             # labels['base'][label_slices] = np.maximum(labels['base'][label_slices], alg_labels['base'])
             for j in [k for k in alg_labels.keys()]:
               if alg_labels[j] is not None:
-                for x, y in dict_replace:
-                  alg_labels[j][alg_labels[j] == x] = y
-                  
                 labels[j][label_slices] = np.maximum(labels[j][label_slices], alg_labels[j])
           
           # get labels post merging
