@@ -36,13 +36,25 @@ FindSignalPeaks <- R6::R6Class(
       signalBooleanCol <- paste(
         self$funParams()$popType, "cell", "has", "peak", self$funParams()$signalName, sep = ".")
       
+      # get root DT
+      rootDT <- cciaObj$popDT(self$funParams()$popType,
+                              includeFiltered = TRUE)
+      
       signalAccContactCol <- c()
       
       # if (length(self$funParams()$sumContactWith) > 0) {
       if (!any(stringi::stri_isempty(self$funParams()$sumContactWith))) {
-        signalAccContactCol <- paste(
-          self$funParams()$popType, "cell", "peak", "acc",
-          sprintf("%s#%s", self$funParams()$signalName, self$funParams()$sumContactWith), sep = ".")
+        contactCol <- sprintf(
+          "%s.cell.contact#%s",
+          self$funParams()$popType,
+          self$funParams()$sumContactWith
+        )
+        
+        if (contactCol %in% colnames(rootDT)) {
+          signalAccContactCol <- paste(
+            self$funParams()$popType, "cell", "peak", "acc",
+            sprintf("%s#%s", self$funParams()$signalName, self$funParams()$sumContactWith), sep = ".")
+        }
       }
       
       # define columns for joining
@@ -52,11 +64,7 @@ FindSignalPeaks <- R6::R6Class(
         signalBooleanCol,
         signalAccCol,
         signalAccContactCol
-        )
-      
-      # get root DT
-      rootDT <- cciaObj$popDT(self$funParams()$popType,
-                              includeFiltered = TRUE)
+      )
       
       # init analysis column with NA
       for (x in joinCols) {
@@ -160,13 +168,7 @@ FindSignalPeaks <- R6::R6Class(
         # })
         
         # sum accumulated signal when in contact with another cell
-        if (!any(stringi::stri_isempty(self$funParams()$sumContactWith))) {
-          contactCol <- sprintf(
-            "%s.cell.contact#%s",
-            self$funParams()$popType,
-            self$funParams()$sumContactWith
-          )
-          
+        if (length(signalAccContactCol) > 0) {
           popDT[, c(signalAccContactCol) := get(signalAccCol) * get(contactCol)]
         }
         

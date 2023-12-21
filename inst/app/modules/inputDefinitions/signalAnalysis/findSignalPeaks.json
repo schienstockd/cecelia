@@ -81,7 +81,8 @@
 				"widget:channelSelection": {
 					"size": 1,
 					"multiple": false,
-					"useNames": true
+					"useNames": true,
+					"includeTypes": true
 				}
 			},
 			"channelDivision": {
@@ -90,7 +91,8 @@
 				"widget:channelSelection": {
 					"size": 1,
 					"multiple": false,
-					"useNames": true
+					"useNames": true,
+					"includeTypes": true
 				}
 			},
 			"channelSubtract": {
@@ -100,7 +102,8 @@
 					"size": 1,
 					"multiple": false,
 					"useNames": true,
-					"addZeroChoice": true
+					"addZeroChoice": true,
+					"includeTypes": true
 				}
 			},
 			"channelSubtractPercentile": {

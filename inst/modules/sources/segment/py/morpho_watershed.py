@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 # find local peaks with a specific radius
 # skimage.feature.peak_local_max

@@ -25,17 +25,18 @@ ceiling_dec <- function(x, level=1) round(x + 5*10^(-level-1), level)
 #' @param initTransaction boolean to init transaction
 #' @param waitForRelease boolean to wait for release
 #' @param retrieveState boolean to retrieve state
+#' @param projectsDir character for project directory
 #' @examples
 #' TODO
 #' @export
 initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
                            versionID = NULL, initReactivity = TRUE,
                            initTransaction = FALSE, waitForRelease = FALSE, 
-                           retrieveState = TRUE) {
+                           retrieveState = TRUE, projectsDir = cciaConf()$dirs$projects) {
   # compile object directory if not given
   if (is.null(cciaObjDir)) {
     cciaObjDir <- file.path(
-      cciaConf()$dirs$projects, pID, "ANALYSIS", versionID, uID
+      projectsDir, pID, "ANALYSIS", versionID, uID
     )
   }
   
@@ -270,8 +271,8 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' TODO
 #' @export
 .setVersionedVarInList <- function(attrList, itemName, itemValue,
-                                 setDefault = TRUE, valueName = NULL,
-                                 reset = FALSE) {
+                                   setDefault = TRUE, valueName = NULL,
+                                   reset = FALSE) {
   # set value name to default if not given
   if (is.null(valueName)) {
     valueName <- "default"

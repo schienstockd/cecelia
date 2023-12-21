@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 
 # https://github.com/quantumjot/BayesianTracker
 import btrack
@@ -19,6 +20,7 @@ class BayesianTrackingUtils(TrackingUtils):
     self.accuracy = script_utils.get_param(params, 'accuracy', default = 0.9)
     self.prob_to_assign = script_utils.get_param(params, 'prob_to_assign', default = 0.9)
     self.max_lost = params['max_lost']
+    self.track_branching = params['track_branching']
     
     # https://github.com/quantumjot/BayesianTracker/blob/f035ed7ce5c6f8bbfa134c6d3c5a89e7ea88f911/CONFIGURATION.md
     # sigma values, that is, uncertainty of measurements for
@@ -32,6 +34,7 @@ class BayesianTrackingUtils(TrackingUtils):
     
     # set options for hypothesis model
     self.lambda_link = script_utils.get_param(params, 'lambda_link', default = None)
+    self.lambda_branch = script_utils.get_param(params, 'lambda_branch', default = None)
     self.lambda_time = script_utils.get_param(params, 'lambda_time', default = None)
     self.lambda_dist = script_utils.get_param(params, 'lambda_dist', default = None)
     self.theta_time = script_utils.get_param(params, 'theta_time', default = None)
@@ -80,6 +83,10 @@ class BayesianTrackingUtils(TrackingUtils):
       # and 0.1 is the lowest value
       prob_not_assign = (0.1 - (1/10000)) * (1 - self.prob_to_assign)
       
+      # change to 2D if necessary
+      # if 'z' not in centroid_df.columns:
+      #   model_config.motion_model.measurements = 2
+            
       # change config values
       model_config.motion_model.max_lost = self.max_lost
       model_config.motion_model.prob_not_assign = prob_not_assign
@@ -94,6 +101,7 @@ class BayesianTrackingUtils(TrackingUtils):
       
       # change hypothesis model
       model_config.hypothesis_model.lambda_link = self.lambda_link
+      model_config.hypothesis_model.lambda_branch = self.lambda_branch
       model_config.hypothesis_model.lambda_time = self.lambda_time
       model_config.hypothesis_model.lambda_dist = self.lambda_dist
       model_config.hypothesis_model.theta_time = self.theta_time
@@ -101,6 +109,11 @@ class BayesianTrackingUtils(TrackingUtils):
       model_config.hypothesis_model.dist_thresh = self.dist_thresh
       model_config.hypothesis_model.time_thresh = self.time_thresh
       model_config.hypothesis_model.segmentation_miss_rate = self.segmentation_miss_rate
+      
+      # add branching
+      if self.track_branching:
+        # model_config.hypothesis_model.hypotheses += ['P_branch', 'P_dead']
+        model_config.hypothesis_model.hypotheses += ['P_branch']
       
       # set config
       tracker.configure(model_config)
@@ -111,22 +124,20 @@ class BayesianTrackingUtils(TrackingUtils):
       tracker.append(centroid_df)
   
       # track them (in interactive mode)
-      tracker.track_interactive(step_size=100)
+      # tracker.track_interactive(step_size=100)
+      tracker.track(step_size=100)
+      
+      # run the optimizer for 10 minutes before timing out
+      tracker.optimize(options={"tm_lim": 60_000 * 10})
   
       # generate hypotheses and run the global optimizer
-      tracker.optimize()
+      # tracker.optimize()
       
       tracks = tracker.tracks
+    
+    # TODO shuld this be a single DF or a list?
+    tracks_df = [pd.DataFrame(x.to_dict(),
+      columns = ('ID', 'parent', 'root', 'state', 'generation', 'label_id')) for x in tracks]
       
-    # contact track and label ids
-    tracks_concat = [x['label_id'] for x in tracks]
-    
-    # repeat track ids for all label ids
-    track_ids = [[i+1]*len(x) for i, x in enumerate(tracks_concat)]
-    track_ids = np.concatenate(track_ids)
-    
-    # push together as array
-    track_label_ids = np.concatenate(tracks_concat)
-    
     # return
-    return np.column_stack((track_ids, track_label_ids))
+    return pd.concat(tracks_df).rename(columns = {'ID': 'track_id'})

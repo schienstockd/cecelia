@@ -1,0 +1,588 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "Ar69Mq"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/FELIX_GARVAN/ANALYSIS/"
+```
+
+```{r}
+# HPC config
+HPC_CONF <-  list(
+  hpc = list(
+    conf = list(
+      email = "schienstockd@student.unimelb.edu.au",
+      emailOnBegin = FALSE,
+      emailOnEnd = FALSE,
+      emailOnFail = TRUE,
+      numNodes = 1,
+      numTasks = 1,
+      numCPUperTask = 1,
+      numGPUperTask = 1,
+      memory = 50,
+      walltime = "00-02:00:00",
+      projectPartitions = "gpu-a100",
+      projectID = "punim1031",
+      projectQos = "",
+      useGPU = TRUE
+    )
+  ),
+  utils = list(
+    ssh = list(
+      username = "schienstockd",
+      address = "spartan.hpc.unimelb.edu.au",
+      keyfile = "/Users/Dominik/.ssh/spartan_rsa"
+    ),
+    python = list(
+      condaEnv = cciaConf()$python$conda$source$env,
+      condaDir = cciaConf()$python$conda$dir
+    )
+  )
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6VVbzF", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+tracks.DT <- cciaObj$popDT(
+  popType = "live",
+  pops = c("merged/tracked"),
+  popCols = c("cell_id", c("nuc_two", "nuc_area")),
+  includeFiltered = TRUE
+)
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "qLglaf", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- c("6VVbzF")
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("merged/tracked"),
+  # modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  # modelMeasurements = c(
+  #   "eccentricity", "extent", "solidity",
+  #   "oblate", "prolate", "area",
+    # "nuc_area", "nc_ratio"
+  # ),
+  # modelMeasurements = c("live.cell.peak.ratio.nuclei"),
+  modelMeasurements = c("nuc_two", "nuc_area"),
+  # colName = "movement",
+  # colName = "shape",
+  colName = "nuclei",
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  noiseFilterMeasurements = 5,
+  postFiltering = 0,
+  postIterations = 0,
+  numStates = 3,
+  # numStates = 2,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "QJYqa7", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+uIDs <- exp.info[Include == "Y"]$uID
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells.OTI/tracked", "tcells.gBT/tracked", "tcells.P14/tracked"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  colName = "movement",
+  hmmStates = c("movement"),
+  includeStart = FALSE,
+  includeSelfTransitions = TRUE,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmTransitions",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "QJYqa7", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+uIDs <- exp.info[Include == "Y"]$uID
+
+# run task
+funParams <- list(
+  popType = "live",
+  popsToCluster = c("tcells.OTI/tracked", "tcells.gBT/tracked", "tcells.P14/tracked"),
+  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_movement",
+  clusterColName = "hmm_transitions_movement",
+  # clusterColName = "hmm_movement",
+  resolution = 0.15,
+  percentile = 99.9,
+  trackMeasures = c(
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
+  ),
+  objectMeasures = c(
+    # "extent",
+    # "solidity",
+    # "integral_mean_curvature",
+    # "ellipticity_oblate",
+    # "ellipticity_prolate",
+    # "ellipticity_interm_oblate",
+    # "ellipticity_interm_prolate",
+    # "sphericity",
+    # HMM states
+    "live.cell.hmm.state.movement",
+    "live.cell.hmm.transitions.movement"
+    ),
+  nMeasures = c(
+    ),
+  sumMeasures = c(
+    ),
+  calcMeasures = list(
+  ),
+  addPops = c(
+    ),
+  calcLabelProps = TRUE,
+  # usePaga = FALSE,
+  usePaga = TRUE,
+  pagaThreshold = 0.1,
+  minTracklength = 6,
+  # minTracklength = 18,
+  # minTracklength = 50,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "qLglaf", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- c("6VVbzF")
+
+# get vector information to plot anisotropy
+unsLabels <- c("merged.tracks")
+uns <- list()
+
+for (i in unsLabels) {
+  uns[[i]] <- list()
+  
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    labels <- x$labelProps(valueName = paste0(i, ".branch"))
+    uns[[i]][[x$getUID()]] <- labels$values_uns()
+    labels$close()
+  }
+}
+
+# get branching
+branchDT <- cciaObj$popDT(popType = "branch")
+
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   # value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
+#   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+#   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
+
+# get popDT for set
+popDT <- cciaObj$popDT(
+  popType = "live", pops = c("merged/tracked"),
+  includeFiltered = TRUE,
+  # flushCache = TRUE,
+  uIDs = uIDs)
+
+# get tracks info and check parameters
+# tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
+tracksInfo <- cciaObj$tracksMeasures(pops = c("merged/tracked"), uIDs = uIDs)
+```
+
+```{r}
+# plot quiver
+coords <- lapply(uns, function(x) {
+  lapply(x, function(y) {
+    coords <- data.frame(
+      y = as.vector(y$ilee_coor_list[1,,,1]),
+      x = as.vector(y$ilee_coor_list[1,,,2])
+    )
+    u <- as.vector(y$ilee_eigval[1,,,2]) * as.vector(y$ilee_eigvec[1,,,2,1])
+    v <- as.vector(y$ilee_eigval[1,,,1]) * as.vector(y$ilee_eigvec[1,,,1,1])
+    
+    list(coords = coords, u = u, v = v)
+  })
+})
+```
+
+```{r}
+# trackSummary <- tracksInfo
+colsToPlot <- colnames(tracksInfo)[!colnames(tracksInfo) %in% c("uID", "cell_type", "track_id")]
+trackSummary <- tracksInfo %>% 
+  pivot_longer(cols = colsToPlot, names_to = "measure", values_to = "value")
+
+# Show simple graph of track measurements
+ggplot(trackSummary, aes(cell_type, value)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    width = 0.5, alpha = 0.5) +
+  geom_violin() +
+  # scale_color_brewer(name = "Treatment", palette = "Set3") 
+  facet_wrap(.~measure, scales = "free_y", nrow = 2)
+
+ggsave(file.path(anaDir, "track_measures.pdf"), width = 8, height = 4)
+```
+
+```{r fig_hmm_props, fig.height=3, fig.width=3}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "eccentricity", "extent", "solidity",
+  "oblate", "prolate", "area",
+  "nuc_area", "nc_ratio",
+  "live.cell.peak.ratio.nuclei"
+))
+
+# convert angle to degrees
+popDT[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDT[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      # "live.cell.hmm.state.movement"
+      # "live.cell.hmm.state.shape"
+      "live.cell.hmm.state.nuclei"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+# ggsave(file.path(anaDir, "figures", "HMM_heat_movement.pdf"), width = 2.1, height = 3)
+# ggsave(file.path(anaDir, "figures", "HMM_heat_shape.pdf"), width = 2.1, height = 3)
+ggsave(file.path(anaDir, "figures", "HMM_heat_nuclei.pdf"), width = 2.1, height = 3)
+```
+
+```{r}
+# get frequencies of clusters at time points
+numTime <- popDT %>%
+  dplyr::filter(!is.na(track_id)) %>%
+  group_by(uID, centroid_t) %>%
+  summarise(n = n()) %>%
+  mutate(freq = (n - min(n))/(max(n) - min(n)) * 100)
+
+hmmMoveTime <- popDT %>%
+  dplyr::filter(!is.na(live.cell.hmm.state.movement)) %>%
+  group_by(uID, centroid_t, live.cell.hmm.state.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) 
+
+hmmShapeTime <- popDT %>%
+  dplyr::filter(!is.na(live.cell.hmm.state.shape)) %>%
+  group_by(uID, centroid_t, live.cell.hmm.state.shape) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) 
+
+hmmNucleiTime <- popDT %>%
+  dplyr::filter(!is.na(live.cell.hmm.state.nuclei)) %>%
+  group_by(uID, centroid_t, live.cell.hmm.state.nuclei) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) 
+
+genTime <- popDT %>%
+  mutate(track_generation = case_when(track_generation > 2 ~ 3, TRUE ~ track_generation)) %>%
+  dplyr::filter(!is.na(track_generation)) %>%
+  group_by(uID, centroid_t, track_generation) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) 
+```
+
+
+```{r fig_states_time, fig.height = 3, fig.width = 3}
+# Show number of cells per timepoint and the maximum generations
+# Also show shape and movement HMM
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+ggplot(genTime,
+       aes((centroid_t * time.interval)/60, freq)) +
+  geom_area(data = numTime, color = "grey", alpha = 0.2) +
+  stat_smooth(aes(color = as.factor(track_generation),
+                  fill = as.factor(track_generation)),
+              size = 1, span = 0.1, alpha = 0.2) +
+  # geom_line(size = 0.8) +
+  theme_classic() +
+  scale_color_brewer(name = "Generations", palette = "Set1") +
+  scale_fill_brewer(name = "Generations", palette = "Set1") +
+  theme(
+    # legend.title = element_blank(),
+    legend.position = "bottom",
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("Time (h)") + ylab("Frequency") +
+  facet_wrap(.~uID, scales = "free_x", nrow = 1)
+  
+ggsave(file.path(anaDir, "figures", "time_generations.png"), height = 3, width = 4)
+```
+
+```{r fig_states_time, fig.height = 3, fig.width = 3}
+time.interval <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]$omeXMLTimelapseInfo()$interval
+
+# ggplot(hmmMoveTime,
+ggplot(hmmShapeTime,
+       aes((centroid_t * time.interval)/60, freq)) +
+  geom_area(data = numTime, color = "grey", alpha = 0.2) +
+  # stat_smooth(aes(color = as.factor(live.cell.hmm.state.movement),
+  #                 fill = as.factor(live.cell.hmm.state.movement)),
+  stat_smooth(aes(color = as.factor(live.cell.hmm.state.shape),
+                  fill = as.factor(live.cell.hmm.state.shape)),
+              size = 1, span = 0.1, alpha = 0.2) +
+  # geom_line(size = 0.8) +
+  theme_classic() +
+  # movement
+  # scale_color_manual(name = "Movement", values = c("#ebd441", "#AA1F5E", "#4682b4")) +
+  # scale_fill_manual(name = "Movement", values = c("#ebd441", "#AA1F5E", "#4682b4")) +
+  # shape
+  scale_color_manual(name = "Shape", values = c("#4682b4", "#AA1F5E", "#ebd441")) +
+  scale_fill_manual(name = "Shape", values = c("#4682b4", "#AA1F5E", "#ebd441")) +
+  theme(
+    # legend.title = element_blank(),
+    legend.position = "bottom",
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("Time (h)") + ylab("Frequency") +
+  facet_wrap(.~uID, scales = "free_x", nrow = 1)
+  # scale_y_continuous(breaks = c(0, 50, 100))
+  
+# ggsave(file.path(anaDir, "figures", "time_hmm_movement.png"), height = 3, width = 4)
+ggsave(file.path(anaDir, "figures", "time_hmm_shape.png"), height = 3, width = 4)
+```
+
+```{r fig_flows, fig.height=10, fig.width=10}
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  p1 <- ggplot(popDT[uID == x$getUID()]) + 
+    # scale_color_brewer(palette = "Set1") +
+    theme_classic() +
+    plotThemeDark() +
+    coord_fixed() +
+    xlim(0, x$omeXMLPixels()$SizeX) +
+    ylim(x$omeXMLPixels()$SizeY, 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none" 
+    ) 
+  
+  xCoords <- coords$merged.tracks[[x$getUID()]]
+  
+  p1 <- p1 + geom_path(aes(centroid_x, centroid_y, group = track_id),
+      color = "#AA1F5E", size = 1, alpha = 1) +
+    ggquiver::geom_quiver(
+      data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
+  
+  print(p1)
+}
+
+ggsave(file.path(anaDir, paste0("flow-tracks-", cciaObj$getUID(), ".pdf")), height = 8, width = 8)
+```
+
+```{r fig_flows-hmm, fig.height=10, fig.width=10}
+plot.p1 <- function(df.all, df.subset) {
+  plot.colours <- .flowColours(df.subset$centroid_x, df.subset$centroid_y, colramp = viridisLite::inferno)
+  
+  p1 <- ggplot(df.all) + 
+    # scale_color_brewer(palette = "Set1") +
+    theme_classic() +
+    plotThemeDark() +
+    coord_fixed() +
+    xlim(0, x$omeXMLPixels()$SizeX) +
+    ylim(x$omeXMLPixels()$SizeY, 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none" 
+    ) 
+  
+  p1 <- p1 + 
+    # geom_point(data = df.all, aes(x = centroid_x, y = centroid_y), color = "grey", size = 1) +
+    geom_point(data = df.subset, aes(x = centroid_x, y = centroid_y), color = plot.colours, size = 1, alpha = 1)
+  
+  xCoords <- coords$merged.tracks[[x$getUID()]]
+  p1 <- p1 + ggquiver::geom_quiver(
+      data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
+}
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  # go through states
+  hmmStates <- unique(popDT$live.cell.hmm.state.movement)
+  # hmmStates <- unique(popDT$live.cell.hmm.state.shape)
+  hmmStates <- hmmStates[!is.na(hmmStates)]
+  
+  for (i in hmmStates) {
+    p1 <- plot.p1(
+      popDT[uID == x$getUID()], popDT[uID == x$getUID() & live.cell.hmm.state.movement == i]
+      # popDT[uID == x$getUID()], popDT[uID == x$getUID() & live.cell.hmm.state.shape == i]
+      )
+    ggsave(file.path(anaDir, "figures", paste0("flow-tracks-hmm-movement-", i, ".png")),
+    # ggsave(file.path(anaDir, "figures", paste0("flow-tracks-hmm-shape-", i, ".png")),
+           plot = p1, height = 8, width = 8)
+  }
+}
+
+```

@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Examples to run functions and modules
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
 pID <- "az8y8l" # ZOE
 # pID <- "Wq59Z0" # JY
@@ -39,7 +40,7 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
 )
 
 # run task

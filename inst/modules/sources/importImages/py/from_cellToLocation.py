@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 import numpy as np
 import pandas as pd

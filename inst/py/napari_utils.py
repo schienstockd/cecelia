@@ -554,7 +554,10 @@ class NapariUtils:
           # check that shape corresponds to scale
           # TODO this can happen when there is no time axis for 4D images
           labels_scale = self.im_scale.copy()
-          if len(self.im_labels[0].shape) < len(self.im_scale):
+          if len(self.im_labels[0].shape) < len(self.im_scale) - 1:
+            labels_scale.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
+            labels_scale.pop(self.dim_utils.dim_idx('Z', ignore_channel = True, ignore_time = True))
+          elif len(self.im_labels[0].shape) < len(self.im_scale):
             labels_scale.pop(self.dim_utils.dim_idx('T', ignore_channel = True))
           
           # show labels
@@ -687,6 +690,11 @@ class NapariUtils:
             
           labels_view.close()
           
+          # TODO make sure the array shape is correct
+          # this might be because the image is 2D
+          if len(self.im_scale) > tracks.shape[1] - 1:
+            tracks = np.insert(tracks, 2, 0, axis = 1)
+          
           # prepare properties
           prop_df = self.label_props_utils.label_props_view(value_name = value_name).exclude_centroid_cols()\
             .exclude_obs_cols(['label'])\
@@ -724,7 +732,7 @@ class NapariUtils:
                 # otherwise 0 will not be shown as colour
                 if i.find('.clusters.') > 0:
                   prop_list[i] = np.array(prop_list[i]) + 1
-                  
+                
                 # add to napari
                 if len(np.unique(bin_mask)) > 1:
                   self.viewer.add_tracks(

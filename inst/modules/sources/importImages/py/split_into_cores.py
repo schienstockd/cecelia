@@ -1,6 +1,6 @@
 # add CCIA modules
 import sys
-sys.path.append("./")
+sys.path.append('./')
 
 import tifffile
 import numpy as np

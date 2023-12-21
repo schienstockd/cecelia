@@ -473,8 +473,8 @@ Correct autofluorescence using ratio of one to multiple channels
 def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
-  gaussian_sigma = 1, use_dask = True, correction_mode = 'divide',
-  median_filter = 0, generate_inverse = False):
+  gaussian_sigma = 1, apply_gaussian = True, use_dask = True,
+  correction_mode = 'divide', median_filter = 0, generate_inverse = False):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
@@ -555,24 +555,28 @@ def af_correct_channel(
   if generate_inverse is True:
     inverse_data = (cleaned_image + 1) / corrected_data
 
-  # create filter values
-  filter_values = [0] * len(dim_utils.im_dim)
-  
-  # set filter to values to X, Y, Z
-  # for x in ('X', 'Y', 'Z'):
-  for x in dim_utils.spatial_axis():
-    filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
-  
-  # apply filter
-  filtered_im = dask_image.ndfilters.gaussian_filter(
-    corrected_data, sigma = filter_values
-  )
-  
-  inverse_im = None
-  if inverse_data is not None:
-    inverse_im = dask_image.ndfilters.gaussian_filter(
-      inverse_data, sigma = filter_values
+  if apply_gaussian is True:
+    # create filter values
+    filter_values = [0] * len(dim_utils.im_dim)
+    
+    # set filter to values to X, Y, Z
+    # for x in ('X', 'Y', 'Z'):
+    for x in dim_utils.spatial_axis():
+      filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
+    
+    # apply filter
+    filtered_im = dask_image.ndfilters.gaussian_filter(
+      corrected_data, sigma = filter_values
     )
+    
+    inverse_im = None
+    if inverse_data is not None:
+      inverse_im = dask_image.ndfilters.gaussian_filter(
+        inverse_data, sigma = filter_values
+      )
+  else:
+    filtered_im = corrected_data
+    inverse_im = inverse_data
 
   # return filtered_im, filtered_af
   # return filtered_im
@@ -596,7 +600,7 @@ Correct autofluoresence of image for multiple channels
 """
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                      gaussian_sigma = 1, use_dask = True,
-                     apply_gaussian_to_others = True):
+                     apply_gaussian = True, apply_gaussian_to_others = True):
   # create channel list
   output_image = [input_image[dim_utils.create_channel_slices(i)]
     for i in range(dim_utils.dim_val('C'))]
@@ -641,6 +645,7 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
         median_filter = x['medianFilter'],
         generate_inverse = x['generateInverse'],
         gaussian_sigma = gaussian_sigma,
+        apply_gaussian = apply_gaussian,
         use_dask = use_dask
       )
     elif apply_gaussian_to_others is True:

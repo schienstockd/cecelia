@@ -61,6 +61,7 @@ AfDriftCorrect <- R6::R6Class(
         afCombinations = afCombinations,
         driftChannel = self$funParams()$driftChannel,
         applyDriftCorrection = self$funParams()$applyDriftCorrection,
+        applyGaussian = self$funParams()$applyGaussian,
         applyGaussianToOthers = self$funParams()$applyGaussianToOthers,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,

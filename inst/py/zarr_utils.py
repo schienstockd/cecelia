@@ -3,6 +3,7 @@ import tifffile
 import dask.array as da
 import dask
 import os
+import shutil
 import numpy as np
 from copy import copy
 
@@ -18,8 +19,7 @@ def open_as_zarr(im_path, multiscales = None, as_dask = False, mode = 'r'):
   # open zarr
   if im_ext == ".zarr":
     im_data, zarr_group_info = open_zarr(
-      im_path, multiscales = multiscales, as_dask = as_dask, mode = mode,
-      omezarr = im_path.endswith("ome.zarr"))
+      im_path, multiscales = multiscales, as_dask = as_dask, mode = mode)
   else:
     # open image
     im_data, zarr_group_info = open_image_as_zarr(
@@ -30,8 +30,7 @@ def open_as_zarr(im_path, multiscales = None, as_dask = False, mode = 'r'):
 """
 Open Zarr converted from bioformats2raw
 """
-def open_zarr(zarr_path, mode = 'r', multiscales = None, as_dask = False,
-              omezarr = False):
+def open_zarr(zarr_path, mode = 'r', multiscales = None, as_dask = False):
   # open zarr store
   # TODO I could not get ome-zarr-py to work ..
   # there should only be one image for OME
@@ -39,7 +38,7 @@ def open_zarr(zarr_path, mode = 'r', multiscales = None, as_dask = False,
   
   # convert to list
   zarr_data, zarr_group_info = zarr_data_to_list(
-    zarr_path, multiscales = multiscales, mode = mode, omezarr = omezarr)
+    zarr_path, multiscales = multiscales, mode = mode, omezarr = zarr_path.endswith('.ome.zarr'))
   
   # convert to dask
   if as_dask is True:
@@ -203,11 +202,12 @@ def save_dask_as_zarr_multiscales(image_array, im_path, nscales = 1):
 """
 Create zarr from ndarray
 """
-def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr, store_path = None,
-                             ignore_channel = False, ignore_time = False, copy_values = True,
-                             remove_previous = False):
+def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr = None, im_chunks = None,
+                             store_path = None, ignore_channel = False, ignore_time = False,
+                             copy_values = True, remove_previous = False):
   # ignore channel for chunks?
-  im_chunks = chunks(reference_zarr)
+  if im_chunks is None:
+    im_chunks = chunks(reference_zarr)
   
   if ignore_channel is True:
     im_chunks = list(im_chunks)
@@ -219,8 +219,12 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr, store_path = N
     im_chunks.pop(dim_utils.dim_idx('T', ignore_channel = ignore_channel))
     im_chunks = tuple(im_chunks)
   
-  print(im_array.shape)
-  print(im_chunks)
+  # remove other dimensions if necessary
+  # TODO this is a bit awkward
+  if len(im_array.shape) != im_chunks:
+    im_chunks = list(im_chunks)
+    im_chunks.pop(0)
+    im_chunks = tuple(im_chunks)
   
   # remove contents of directory
   if remove_previous is True and os.path.exists(store_path):
@@ -245,7 +249,7 @@ Create multiscales for zarr
 https://zarr.readthedocs.io/en/stable/tutorial.html
 """
 def create_multiscales(im_array, filepath, dim_utils = None,
-                       x_idx = None, y_idx = None,
+                       im_chunks = None, x_idx = None, y_idx = None,
                        nscales = 1, keyword = 'datasets',
                        ignore_channel = False, reference_zarr = None,
                        mode = 'w', squeeze = False):
@@ -274,6 +278,7 @@ def create_multiscales(im_array, filepath, dim_utils = None,
     multiscales_zarr[0], im_chunks = create_zarr_from_ndarray(
       im_array, dim_utils,
       reference_zarr = reference_zarr,
+      im_chunks = im_chunks,
       ignore_channel = ignore_channel)
   
   if nscales > 1:

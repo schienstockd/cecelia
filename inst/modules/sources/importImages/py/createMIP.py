@@ -1,6 +1,6 @@
 # add CCIA modules
 import sys
-sys.path.append("./")
+sys.path.append('./')
 
 import py.script_utils as script_utils
 from py.imagej_utils import ImagejUtils

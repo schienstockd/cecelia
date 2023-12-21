@@ -212,7 +212,9 @@ FlowGatingSet <- R6::R6Class(
         flist <- self$flistFromGateCoords(gateCoords, x, y)
       
       # add pop to set
-      gs_pop_set_gate(self$getPopObj(), popPath, flist)
+      # make sure popPath is not empty
+      if (!is.null(popPath) && !purrr::is_empty(popPath))
+        gs_pop_set_gate(self$getPopObj(), popPath, flist)
       
       private$invalidate(invalidate = invalidate)
     },

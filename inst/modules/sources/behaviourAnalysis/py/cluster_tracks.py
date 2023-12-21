@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 # utils
 from py.label_props_utils import LabelPropsUtils

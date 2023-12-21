@@ -715,7 +715,8 @@ CciaImage <- R6::R6Class(
             result.name = measure.x, idcol = "cell_type")
         }
         
-        tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.DTs)
+        if (all(lengths(tracks.DTs) > 0))
+          tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.DTs)
       }
       
       tracksMeasures
@@ -915,8 +916,7 @@ CciaImage <- R6::R6Class(
     #' @param popType character for population type
     #' @param colsStartsWith character to filter for values starting with
     labelPropsCols = function(valueNames = NULL, dataTypes = c("vars", "obs"),
-                              popType = NULL, colsStartsWith = NULL,
-                              changeChannelNames = TRUE) {
+                              popType = NULL, colsStartsWith = NULL) {
       # get value names
       if (is.null(valueNames)) {
         valueNames <- self$valueNames("imLabelPropsFilepath")
@@ -2764,6 +2764,22 @@ CciaImage <- R6::R6Class(
     },
     
     ## setters
+    #' @description Set default for value names
+    #' @param x character for variable to get from self$getCciaMeta()
+    #' @param valueName character to set as default
+    #' @param invalidate boolean to invalidate object
+    setValueNameDefault = function(x, valueNameDefault, invalidate = TRUE) {
+      objMeta <- self$getCciaMeta()
+      retVal <- NULL
+      
+      # check if value is present
+      if (x %in% names(objMeta) && valueNameDefault %in% names(objMeta[[x]])) {
+        attr(objMeta[[x]], "default") <- valueNameDefault
+        
+        self$setCciaMeta(objMeta, invalidate = invalidate)
+      }
+    },
+    
     setOriFilepath = function(x, invalidate = TRUE) {
       objMeta <- self$getCciaMeta()
       objMeta$oriFilepath <- x

@@ -2,7 +2,7 @@
 import sys
 import os
 import numpy as np
-sys.path.append("./")
+sys.path.append('./')
 
 import scanpy as sc
 

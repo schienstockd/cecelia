@@ -1,6 +1,6 @@
 # add CCIA modules
 import sys
-sys.path.append("./")
+sys.path.append('./')
 
 import py.zarr_utils as zarr_utils
 from py.donblo_utils import DonbloUtils

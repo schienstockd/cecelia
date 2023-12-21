@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils
@@ -93,7 +93,7 @@ def run(params):
   # get slices
   slices = {
     'im': slice_utils.create_slices(im_data.shape, dim_utils, ignore_time = integrate_time),
-    'labels': slice_utils.create_slices(labels_data.shape, dim_utils, ignore_time = integrate_time)
+    'labels': slice_utils.create_slices(labels_data.shape, dim_utils, ignore_time = integrate_time, drop_z = True)
   }
   
   # save labels

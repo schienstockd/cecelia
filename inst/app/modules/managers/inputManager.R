@@ -626,9 +626,15 @@ InputManager <- R6::R6Class(
     createUIChannelSelection = function(elmntName, uiType, specType) {
       uiContent <- uiType[[1]]
       specContent <- specType[[1]]
+      includeTypes <- FALSE
+      
+      # include types
+      if ("includeTypes" %in% names(uiContent) && uiContent$includeTypes == TRUE) {
+        includeTypes <- TRUE
+      }
       
       # build channel choices
-      namesChannelChoices <- self$cciaObject()$imChannelNames()
+      namesChannelChoices <- self$cciaObject()$imChannelNames(includeTypes = includeTypes)
       
       # add values to choices?
       namesChannelChoices <- self$addChoicesToList(
@@ -645,11 +651,9 @@ InputManager <- R6::R6Class(
       names(channelChoices) <- namesChannelChoices
       
       # use names instead of channel numbers
-      if ("useNames" %in% names(uiContent)) {
-        if (uiContent$useNames == TRUE) {
-          channelChoices <- namesChannelChoices
-          names(channelChoices) <- namesChannelChoices
-        }
+      if ("useNames" %in% names(uiContent) && uiContent$useNames == TRUE) {
+        channelChoices <- namesChannelChoices
+        names(channelChoices) <- namesChannelChoices
       }
       
       list(

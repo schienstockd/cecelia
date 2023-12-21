@@ -3,7 +3,7 @@ import sys
 import os
 import numpy as np
 import pandas as pd
-sys.path.append("./")
+sys.path.append('./')
 
 from py.label_props_utils import LabelPropsUtils
 from py.pop_utils import PopUtils

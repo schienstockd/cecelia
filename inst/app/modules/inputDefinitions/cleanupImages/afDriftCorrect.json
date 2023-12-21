@@ -81,6 +81,11 @@
           "default": true
         }
       },
+			"applyGaussian": {
+				"type:boolean": {
+					"default": true
+				}
+			},
 			"applyGaussianToOthers": {
 				"type:boolean": {
 					"default": true
@@ -193,14 +198,20 @@
 				"widget:checkbox": {
 				}
 			},
-			"applyGaussianToOthers": {
+			"applyGaussian": {
 				"index": 4,
+				"label": "Apply gaussian",
+				"widget:checkbox": {
+				}
+			},
+			"applyGaussianToOthers": {
+				"index": 5,
 				"label": "Apply gaussian to others",
 				"widget:checkbox": {
 				}
 			},
 			"driftNormalisation": {
-				"index": 5,
+				"index": 6,
 				"label": "Drift normalisation",
         "widget:selection": {
           "items": {

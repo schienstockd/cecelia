@@ -364,7 +364,7 @@ class LabelPropsView:
       types = [re.match(f'^[a-z]+(?=_{channel_names[0]})', x) for x in self.col_names('vars')]
     
     # return matches
-    return [x.group() for x in types if x is not None]
+    return set([x.group() for x in types if x is not None])
   
   """
   Get channel columns

@@ -24,8 +24,9 @@ viewer$initNapari()
 
 ```{r}
 generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-                           splitTracks = NULL, matchChannels = FALSE, fps = 10,
-                           generateMovie = TRUE, tracksBlending = "additive") {
+                           splitTracks = NULL, splitPops = NULL, matchChannels = FALSE, fps = 10,
+                           generateMovie = TRUE, tracksBlending = "additive", pointsSize = 8,
+                           showTracks = TRUE) {
   # go through images and save movies
   for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     i <- x$getUID()
@@ -50,24 +51,37 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
     for (j in names(curChannelsToShow))
       channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
     
+    # get time information
+    showTimestamp <- x$omeXMLPixels()$SizeT > 1
+      
+    if (showTimestamp == TRUE) {
+      timeInterval <- x$omeXMLTimelapseInfo()$interval
+    } else {
+      timeInterval <- 1
+    }
+    
     # open image
     viewer$openImage(
       x$imFilepath(),
       imChannelNames = imChannelNames,
       show3D = TRUE,
       layersVisible = layersVisible,
-      channelColormaps = channelColormaps
+      channelColormaps = channelColormaps,
+      showTimestamp = showTimestamp,
+      timeInterval = timeInterval
     )
     
     if (length(popsToShow) > 0) {
       # add tracks
-      viewer$showLabelsAll(
-        popsToShow,
-        # showLabels = TRUE,
-        showTracks = TRUE,
-        splitTracks = splitTracks,
-        tracksBlending = tracksBlending
-      )
+      if (showTracks == TRUE) {
+        viewer$showLabelsAll(
+          popsToShow,
+          # showLabels = TRUE,
+          showTracks = showTracks,
+          splitTracks = splitTracks,
+          tracksBlending = tracksBlending
+        )
+      }
   
       # add populations
       popsAdded <- list()
@@ -95,11 +109,28 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
             )
           }, y, names(y), SIMPLIFY = FALSE))
         }
+        
+        # create pops from other measures
+        # TODO this is essentially the same as the previous
+        for (j in names(splitPops)) {
+          y <- splitPops[[j]]
+  
+          pops <- append(pops, mapply(function(z, k) {
+          # mapply(function(y, j) {
+            list(
+              filterMeasure = j,
+              filterValues = z[["values"]],
+              filterFun = "eq",
+              colour = z[["colour"]]
+              # isTrack = TRUE
+            )
+          }, y, names(y), SIMPLIFY = FALSE))
+        }
   
         # add pops
         popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
         popsAdded[[valueName]] <- popsToAdd
-  
+        
         # remove populations
         x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
   
@@ -111,11 +142,11 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
       x$savePopMap(popType, includeFiltered = TRUE)
       x$savePops(popType, pops = unname(unlist(popsAdded)),
                  purge = TRUE, includeFiltered = TRUE)
-  
+      
       # show on image
       removePrevious <- TRUE
       for (j in names(popsAdded)) {
-        viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = 8,
+        viewer$showPopMapping("live", valueName = j, pops = popsAdded[[j]], pointsSize = pointsSize,
                               execInteractive = FALSE, removePrevious = removePrevious)
         removePrevious <- FALSE
       }
@@ -131,6 +162,52 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
   }
 }
 ```
+
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/FELIX_GARVAN/ANALYSIS/"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "Ar69Mq", uID = "qLglaf", versionID = "1", initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+)
+
+uIDs <- c("6VVbzF")
+
+splitPops <- list(
+  # live.cell.hmm.state.movement = list(
+  #   meandering = list(values = list(1), colour = "#ebd441"),
+  #   directed = list(values = list(2), colour = "#AA1F5E"),
+  #   scanning = list(values = list(3), colour = "#4682b4")
+  #   )
+  # live.cell.hmm.state.shape = list(
+  #   oblate = list(values = list(1), colour = "#4682b4"),
+  #   prolate = list(values = list(2), colour = "#AA1F5E"),
+  #   interm = list(values = list(3), colour = "#ebd441")
+  #   )
+  live.cell.hmm.state.nuclei = list(
+    oblate = list(values = list(1), colour = "#AA1F5E"),
+    prolate = list(values = list(2), colour = "#4682b4"),
+    interm = list(values = list(3), colour = "#ebd441")
+    )
+  )
+
+channelsToShow <- list(
+  "one" = "gray",
+  "two" = "bop blue"
+  )
+popsToShow <- list("merged")
+fileAttrs <- c("")
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitPops = splitPops, fps = 30, pointsSize = 20, showTracks = FALSE)
+```
+
 
 ```{r}
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_TUMOUR_2P/CECELIA"

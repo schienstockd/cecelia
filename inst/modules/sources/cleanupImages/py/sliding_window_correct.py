@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils

@@ -70,6 +70,11 @@ MultifileLabelPopUtils <- R6::R6Class(
         labelsView <- self$getPopObj()[[x]]$label_props_view()
         
         if (!is.null(labelsView)) {
+          # rename channels
+          labelsView$change_channel_names(
+            self$getImChannels()[is.na(stringr::str_match(names(self$getImChannels()), "_"))]
+          )
+          
           # filter on columns?
           if (!is.null(popCols)) {
             # always add label if not present
@@ -92,8 +97,12 @@ MultifileLabelPopUtils <- R6::R6Class(
           }
           
           popList[[x]] <- as.data.table(
-            labelsView$change_channel_names(self$getImChannels())$as_df()
-            )
+            # labelsView$change_channel_names(self$getImChannels())$as_df()
+            # use only non-typed channel names
+            # labelsView$change_channel_names(
+            #   self$getImChannels()[is.na(stringr::str_match(names(self$getImChannels()), "_"))]
+            #   )$as_df())
+            labelsView$as_df())
           
           # drop NA?
           if (dropNA == TRUE) {

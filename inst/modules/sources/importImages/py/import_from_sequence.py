@@ -1,6 +1,6 @@
 # add CCIA modules
 import sys
-sys.path.append("./")
+sys.path.append('./')
 
 import os
 import numpy as np
@@ -31,7 +31,8 @@ def run(params):
   logfile_utils.log(f'>> open image {im_path}')
   
   # or - read by regular expression
-  if seq_rexp is not None:
+  # if seq_rexp is not None:
+  if seq_rexp is not None and seq_rexp.strip() != "":
     # >>> image_sequence = TiffSequence(
     # ...     'temp_C0*.tif', pattern=r'_(C)(\d+)(T)(\d+)'
     # ... )
@@ -83,8 +84,14 @@ def run(params):
     
     logfile_utils.log(f'>> Save back {x_new.shape}')
     
+    # generate chunks
+    # TODO this is specific to Thorlabs
+    im_chunks = [1] * len(x_new.shape)
+    im_chunks[dim_utils.dim_idx('X')] = x_new.shape[dim_utils.dim_idx('X')]
+    im_chunks[dim_utils.dim_idx('Y')] = x_new.shape[dim_utils.dim_idx('Y')]
+    
     # save back
-    zarr_utils.create_multiscales(x_new, zarr_path, nscales = nscales)
+    zarr_utils.create_multiscales(x_new, zarr_path, nscales = nscales, im_chunks = im_chunks)
     
     # create shape dict for new image
     shape_dict = {'Y': int(dim_utils.dim_val('Y')/split_size)}

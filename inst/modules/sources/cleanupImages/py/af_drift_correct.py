@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils
@@ -34,6 +34,7 @@ def run(params):
     im_dat[0], params['afCombinations'],
     dim_utils = dim_utils,
     logfile_utils = logfile_utils,
+    apply_gaussian = params['applyGaussian'],
     apply_gaussian_to_others = params['applyGaussianToOthers'],
     # correct percentile on whole image
     # rather than on individual dask blocks

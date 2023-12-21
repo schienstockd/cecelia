@@ -18,7 +18,7 @@ Create slices from image dimensions
 """
 def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
                   block_size_z = None, overlap_z = None, timepoints = None,
-                  integrate_time = False, ignore_time = False):
+                  integrate_time = False, ignore_time = False, drop_z = False):
   slices = None
   
   # 3D timeseries
@@ -33,7 +33,7 @@ def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
   elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is True and ignore_time is False:
     gen_slices = create_slices_2D_time(
       im_dim, dim_utils, block_size, overlap,
-      timepoints = timepoints, integrate_time = integrate_time)
+      timepoints = timepoints, integrate_time = integrate_time, drop_z = drop_z)
       
   # 3D static
   # elif dim_utils.is_3D() is True and dim_utils.is_timeseries() is False:
@@ -45,14 +45,14 @@ def create_slices(im_dim, dim_utils, block_size = None, overlap = None,
   # 2D static
   # elif dim_utils.is_3D() is False and dim_utils.is_timeseries() is False:
   elif dim_utils.is_3D() is False:
-    gen_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap, ignore_time = ignore_time)
+    gen_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap, ignore_time = ignore_time, drop_z = drop_z)
     
   slices = np.array([[slice(None) for _ in range(len(im_dim))]] * len(gen_slices['slices']))
   
   # add slices
   for i, x in enumerate(gen_slices['slices']):
     for j, y in enumerate(gen_slices['order']):
-      slices[i, dim_utils.dim_idx(y, ignore_channel = True, ignore_time = ignore_time)] = x[j]
+      slices[i, dim_utils.dim_idx(y, ignore_channel = True, ignore_time = ignore_time, drop_z = drop_z)] = x[j]
     
   # TODO do I need that?
   slices = [tuple(l.tolist()) for l in slices]
@@ -78,9 +78,9 @@ def create_slices_3D_time(im_dim, dim_utils, block_size = None,
 Create slices from image dimensions (2D time)
 """
 def create_slices_2D_time(im_dim, dim_utils, block_size = None, overlap = None,
-                          timepoints = None, integrate_time = False):
+                          timepoints = None, integrate_time = False, drop_z = False):
   # create 2D frame slices
-  frame_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap)
+  frame_slices = create_slices_2D(im_dim, dim_utils, block_size, overlap, drop_z = drop_z)
     
   # combine time and frame slices
   return combine_time_frame_slices(
@@ -189,10 +189,10 @@ def create_slices_3D(im_dim, dim_utils, block_size = None, overlap = None,
 """
 Create slices from image dimensions (2D)
 """
-def create_slices_2D(im_dim, dim_utils, block_size = None, overlap = None, ignore_time = False):
+def create_slices_2D(im_dim, dim_utils, block_size = None, overlap = None, ignore_time = False, drop_z = False):
   # get idx
-  y_idx = dim_utils.dim_idx('Y', ignore_channel = True, ignore_time = ignore_time)
-  x_idx = dim_utils.dim_idx('X', ignore_channel = True, ignore_time = ignore_time)
+  y_idx = dim_utils.dim_idx('Y', ignore_channel = True, ignore_time = ignore_time, drop_z = drop_z)
+  x_idx = dim_utils.dim_idx('X', ignore_channel = True, ignore_time = ignore_time, drop_z = drop_z)
   
   # set block size to image stack if not set
   if block_size is None or block_size < 0:

@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 from py.bayesian_tracking_utils import BayesianTrackingUtils
 
@@ -17,6 +17,7 @@ def run(params):
     'im_res': params['imRes'],
     'max_search_radius': params['maxSearchRadius'],
     'max_lost': params['maxLost'],
+    'track_branching': params['trackBranching'],
     'accuracy': params['accuracy'],
     'prob_to_assign': params['probToAssign'],
     'noise_inital': params['noiseInital'],
@@ -24,6 +25,7 @@ def run(params):
     'noise_measurements': params['noiseMeasurements'],
     'min_timepoints': params['minTimepoints'],
     'lambda_link': params['lambdaLink'],
+    'lambda_branch': params['lambdaBranch'],
     'lambda_time': params['lambdaTime'],
     'lambda_dist': params['lambdaDist'],
     'theta_time': params['thetaTime'],

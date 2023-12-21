@@ -46,7 +46,7 @@ class TrackingUtils:
         .view_label_col()\
         .as_df()
     else:
-      self.logfile_utils.log(">> Filter tracks by")
+      self.logfile_utils.log('>> Filter tracks by')
       self.logfile_utils.log(f'{self.filters}')
       
       # filter values
@@ -81,16 +81,16 @@ class TrackingUtils:
       centroid_df, im_res = self.im_res
       )
     
-    self.logfile_utils.log(">> Start tracking objects")
+    self.logfile_utils.log('>> Start tracking objects')
       
     # track objects
-    tracks_array = self.track_objects_from_centroids(centroid_df)
+    track_df = self.track_objects_from_centroids(centroid_df)
     
-    # convert to dataframe
-    track_df = pd.DataFrame(
-        tracks_array,
-        columns = ['track_id', 'label_id']
-        )
+    # # convert to dataframe
+    # track_df = pd.DataFrame(
+    #     tracks_array,
+    #     columns = ['track_id', 'label_id']
+    #     )
     
     # drop na and sort by label id
     track_df.dropna(axis = 0, inplace = True)
@@ -103,7 +103,7 @@ class TrackingUtils:
     # filter tracks by minimum timepoints
     # https://stackoverflow.com/a/58536543/13766165
     track_df = track_df[
-      track_df.groupby("track_id")['track_id'].transform('size') >= self.min_timepoints
+      track_df.groupby('track_id')['track_id'].transform('size') >= self.min_timepoints
       ]
       
     # get number of tracks
@@ -112,9 +112,9 @@ class TrackingUtils:
     
     # add cell numbering for tracks
     # https://stackoverflow.com/a/57787917/13766165
-    track_df['cell_id'] = track_df.groupby('track_id')['label_id'].rank(method="first", ascending=True)
+    track_df['cell_id'] = track_df.groupby('track_id')['label_id'].rank(method='first', ascending=True)
     
-    self.logfile_utils.log(">> Save back to label properties")
+    self.logfile_utils.log('>> Save back to label properties')
     
     # get labels
     labels_ids = self.label_props_utils.label_props_view()\
@@ -127,11 +127,15 @@ class TrackingUtils:
     # get track ids as dict
     track_dict = {
       'track_id': merged_track_ids['track_id'],
+      'track_parent': merged_track_ids['parent'],
+      'track_root': merged_track_ids['root'],
+      'track_state': merged_track_ids['state'],
+      'track_generation': merged_track_ids['generation'],
       'cell_id': merged_track_ids['cell_id']
     }
     
     self.logfile_utils.log(
-      "> Save to " + str(self.label_props_utils.label_props_view()\
+      '> Save to ' + str(self.label_props_utils.label_props_view()\
         .adata_filepath()))
     
     # add to obs and save

@@ -1,7 +1,7 @@
 # add CCIA modules
 import sys
 import os
-sys.path.append("./")
+sys.path.append('./')
 
 import numpy as np
 import zarr
@@ -69,8 +69,6 @@ def run(params):
   
   # binarise tracks
   bin_lines = list()
-  
-  logfile_utils.log(pop_df['centroid_z'].max())
   
   # tracks.sort_values(['track_id', 'centroid_t'], ascending=[True, True])\
   if dim_utils.is_3D():

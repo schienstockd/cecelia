@@ -105,85 +105,266 @@ setnames(tracks.table, "Track", "track_id")
 ```
 
 ```{r}
-# can you combine tracks with anisotropy?
-# convert to tracks to get speed and angle and overall movement patterns
-# can you import them directly to the image?
-id.column <- which(colnames(tracks.table) == "track_id")
-time.column <- which(colnames(tracks.table) == "Slice")
-pos.columns.x <- which(colnames(tracks.table) == "X")
-pos.columns.y <- which(colnames(tracks.table) == "Y")
-pos.columns <- c(pos.columns.x, pos.columns.y)
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
-# go through images and create tracks 
-tracks <- list()
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+)
 
-for (i in exp.info$uID) {
-  tracks[[i]] <- celltrackR::as.tracks(
-    tracks.table[uID == i],
-    id.column = id.column,
-    time.column = time.column,
-    pos.columns = pos.columns,
-    scale.t = 1
-  )
+valueName <- "IJ.manual"
+
+# how can you import tracks from ImageJ .. ?
+# build label properties from individual tracks
+for (x in cciaObj$cciaObjects()) {
+  y <- tracks.table[uID == x$getUID()]
+  z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "pixel.value.fiji.")])
+  colnames(z) <- c("label", "track_id", "centroid_t", "centroid_y", "centroid_x", "mean_intensity_0")
+  
+  # save props
+  labelsView <- cciaEnv()$LabelPropsUtils(
+    x$persistentObjectDirectory(),
+    taskDirFiles("labelProps", valueName))$label_props(
+      z, save = TRUE, obs_cols = c("label", "track_id"))
+  
+  # add to labels
+  x$setImLabelPropsFilepath(paste0(valueName, ".h5ad"), valueName)
+  x$saveState()
 }
 ```
 
 ```{r}
-# can you match the local anisotropy to each track?
-for (i in names(labels)) {
-  x <- labels[[i]]
-  
-  coordsX <- x$ilee_coor_list[1,,,1]
-  coordsY <- x$ilee_coor_list[1,,,2]
-  dim(coordsX) <- NULL
-  dim(coordsY) <- NULL
-  m <- cbind(coordsX, coordsY)
-  
-  # get anisotropy for each spot in track
-  tracks.table[uID == i, aniso.id := dbscan::kNN(m, k = 1, query = tracks.table[uID == i, c("X", "Y")])$id]
-  tracks.table[uID == i, aniso.box := x$ilee_box_anisotropy[tracks.table[uID == i, aniso.id]]]
-}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  valueName = "IJ.manual",
+  pops = c("IJ.manual")
+)
+
+# run task
+task <- cciaObj$runTasks(
+  funName = "segment.binariseTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = names(cciaObj$cciaObjects()),
+  mc.cores = 4
+)
 ```
 
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  valueName = "IJ.manual.tracks",
+  preDilationSize = 0,
+  postDilationSize = 2,
+  flattenBranching = FALSE,
+  useBorders = FALSE,
+  calcExtended = TRUE,
+  calcFlattened = FALSE,
+  anisoRadius = 40,
+  saveMeshes = FALSE
+)
+
+# run task
+task <- cciaObj$runTasks(
+  funName = "segment.createBranching",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = names(cciaObj$cciaObjects()),
+  mc.cores = 4
+)
+```
 
 ```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
-# get track measurements
-measures <- c(
-  "speed", "duration", "trackLength", "meanTurningAngle",
-  "displacement", "straightness", "displacementRatio",
-  "outreachRatio", "asphericity", "overallAngle"
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
-tracks.measures <- list()
+# get vector information to plot anisotropy
+unsLabels <- c("vessels", "IJ.manual.tracks")
+uns <- list()
 
-for (measure.x in measures) {
-  # get measurements
-  tracks.measures[[measure.x]] <- tracks.measure.fun(
-    tracks, eval(parse(text = paste0("celltrackR::", measure.x))),
-    result.name = measure.x, idcol = "uID")
+for (i in unsLabels) {
+  uns[[i]] <- list()
+
+  for (x in cciaObj$cciaObjects()) {
+    labels <- x$labelProps(valueName = paste0(i, ".branch"))
+
+    if (!is.null(labels)) {
+      uns[[i]][[x$getUID()]] <- labels$values_uns()
+      labels$close()
+    }
+  }
 }
 
-tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.measures)
-tracksMeasures[, track_id := as.integer(track_id)]
+# get branching
+branchDT <- cciaObj$popDT(popType = "branch")
 
-# then merge average anisotropy
-tracksMeasures[as.data.table(tracks.table %>%
-  group_by(uID, track_id) %>%
-  summarise(mean.aniso.box = mean(aniso.box))), on = c("uID", "track_id" = "track_id"),
-  mean.aniso.box := mean.aniso.box]
+pops <- list(
+  `IJ.manual` = "IJ.manual"
+)
 
-# add % aniso
-for (i in names(labels)) {
-  # exp.info[uID == i, total.box.length := sum(labels[[i]]$ilee_box_total_length)]
-  # exp.info[uID == i, total.box.length := mean(labels[[i]]$ilee_box_total_length)]
-  exp.info[uID == i, total.box.length := max(labels[[i]]$ilee_box_total_length)]
-}
+# get tracks to align with SHG
+popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE)
 
-tracksMeasures[exp.info, on = c("uID"), weighted.aniso.box := mean.aniso.box/total.box.length * 100]
+# get tracks info and check parameters
+tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = unique(popDT$uID))
 ```
+
+```{r}
+# plot quiver
+coords <- lapply(uns, function(x) {
+  lapply(x, function(y) {
+    coords <- data.frame(
+      y = as.vector(y$ilee_coor_list[1,,,1]),
+      x = as.vector(y$ilee_coor_list[1,,,2])
+    )
+    u <- as.vector(y$ilee_eigval[1,,,2]) * as.vector(y$ilee_eigvec[1,,,2,1])
+    v <- as.vector(y$ilee_eigval[1,,,1]) * as.vector(y$ilee_eigvec[1,,,1,1])
+    
+    list(coords = coords, u = u, v = v)
+  })
+})
+```
+
+```{r fig_flows, fig.height=10, fig.width=10}
+for (x in cciaObj$cciaObjects()) {
+  p1 <- ggplot(popDT[uID == x$getUID()]) + 
+    # scale_color_brewer(palette = "Set1") +
+    theme_classic() +
+    plotThemeDark() +
+    coord_fixed() +
+    xlim(0, x$omeXMLPixels()$SizeX) +
+    ylim(x$omeXMLPixels()$SizeY, 0) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none" 
+    ) 
+  
+  xCoords <- coords$IJ.manual.tracks[[x$getUID()]]
+  yCoords <- coords$vessels[[x$getUID()]]
+  
+  if (all(c(!is.null(xCoords), !is.null(yCoords))))
+    p1 <- p1 + 
+      geom_path(aes(centroid_x, centroid_y, group = track_id),
+        color = "#AA1F5E", linewidth = 1, alpha = 1) +
+      geom_segment(
+        data = branchDT[uID == x$getUID() & pop == "vessels.branch"],
+        aes(x = `coord-src-1`, y = `coord-src-0`,
+            xend = `coord-dst-1`, yend = `coord-dst-0`),
+        color = "#ebd441", linewidth = 1, alpha = 1) +
+      ggquiver::geom_quiver(
+        data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u, v = yCoords$v), color = "#4682b4") +
+      ggquiver::geom_quiver(
+        data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
+  
+  ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", x$getUID(), ".pdf")), plot = p1, height = 8, width = 8)
+}
+
+# ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", cciaObj$getUID(), ".pdf")), height = 8, width = 8)
+```
+
+```{r}
+# get angles relative to T cells and structures
+tracks.i <- "IJ.manual.tracks"
+vecDiffs <- list()
+
+for (i in names(coords)[names(coords) != tracks.i]) {
+  vecDiffs[[i]] <- list()
+  x <- coords[[i]]
+    
+  for (j in names(x)) {
+    if (!is.null(coords[[tracks.i]][[j]]) > 0) {
+      for (k in seq(length(x[[j]]$u))) {
+        matA <- matrix(c(coords[[tracks.i]][[j]]$u[[k]], coords[[tracks.i]][[j]]$v[[k]]), nrow = 2)
+        matB <- matrix(c(x[[j]]$u[[k]], x[[j]]$v[[k]]), nrow = 2)
+        vecDiffs[[i]][[j]] <- c(vecDiffs[[i]][[j]], 180 - matlib::angle(as.vector(matA), as.vector(matB)))
+      }
+    }
+  }
+}
+```
+
+```{r}
+# plot correlation between vessels and tracks
+# https://stackoverflow.com/a/39923381
+structNames <- names(coords)[names(coords) != tracks.i]
+
+# go through images
+for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs$vessels))) {
+  i <- x$getUID()
+  
+  diffsDT <- as.data.table(cbind(coords$vessels[[i]]$coords, vecDiffs$vessels[[i]]))
+  diffsDT[is.na(diffsDT), ] <- 0 
+  setnames(diffsDT, "vecDiffs$vessels[[i]]", "vessels")
+  diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = structNames]
+  diffsDT[vessels == 0, max := NA]
+  
+  p1 <- ggplot(diffsDT, aes(x, y)) +
+    theme_classic() +
+    plotThemeDark() +
+    coord_fixed() +
+    xlim(-10, x$omeXMLPixels()$SizeX + 10) +
+    ylim(x$omeXMLPixels()$SizeY + 10, -10) +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none"
+    )
+  
+  for (j in structNames) {
+     p2 <- p1 + geom_tile(aes(fill = get(j)), colour = "black", size = 0.5) +
+      # viridis::scale_fill_viridis(
+      #   breaks = c(0, 180), labels = c(0, 180), na.value = "black") +
+      scale_fill_gradient2(low="blue", high="red", mid = "white", midpoint = 90) +
+      ggquiver::geom_quiver(
+        data = coords$IJ.manual.tracks[[i]]$coords, aes(
+          x = x, y = y, u = -coords$IJ.manual.tracks[[i]]$u, v = coords$IJ.manual.tracks[[i]]$v),
+        color = "white", size = 1)
+    
+    ggsave(file.path(anaDir, "angle-diff", paste0("angle-", j, "-", x$getUID(), ".pdf")),
+         height = 10, width = 10, plot = p2)
+  }
+}
+```
+
 
 ```{r fig_aniso, fig.height=4, fig.width=12}
 # plot vessel measurements for each type
