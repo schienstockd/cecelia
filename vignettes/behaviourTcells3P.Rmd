@@ -74,13 +74,15 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # upload local files
 funParams <- list(
-  trainingSetID = "oe6kuP",
-  numTrainingImages = 20,
-  maximumProjection = TRUE,
+  # trainingSetID = "oe6kuP", # Tomato
+  trainingSetID = "91Kd1K", # XCR1
+  # numTrainingImages = 20,
+  numTrainingImages = 10,
+  maximumProjection = FALSE,
   removePrevious = TRUE,
   imSource = "default",
   channels = c(6),
-  crop = list(X = 2048, Y = 2048, Z = 0, T = 0)
+  crop = list(X = 2048, Y = 2048, Z = 8, T = 1)
 )
 
 # init ccia object
@@ -88,12 +90,14 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "fmjlDg", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
-# channel 7 for Tomato
-funParams$channels <- c(6)
+# channel 7 for Tomato, 6 for XCR1
+# funParams$channels <- c(6)
+funParams$channels <- c(5)
 uIDs <- c("Npsfli", "0QQl59", "vW8BC1", "n48TTE", "tK0DVg")
 
-# channel 3 for Tomato
+# channel 3 for Tomato, 2 for XCR1
 # funParams$channels <- c(2)
+# funParams$channels <- c(1)
 # uIDs <- c("RJsT1v", "tP38h2")
 
 cciaObj$runTasks(
@@ -114,7 +118,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "oe6kuP", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "oe6kuP", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "91Kd1K", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
 paste(names(cciaObj$cciaObjects()), collapse = "', '")

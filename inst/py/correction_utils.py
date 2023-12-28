@@ -655,14 +655,14 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
       )
     
     # apply rolling ball
-    if x['rollingBallRadius'] > 0:
+    if 'rollingBallRadius' in x.keys() and x['rollingBallRadius'] > 0:
       output_image[i] = apply_rolling_ball(
         output_image[i], dim_utils, logfile_utils,
         x['rollingBallRadius'], x['rollingBallPadding']
       )
     
     # apply top hat
-    if x['topHatRadius'] > 0:
+    if 'topHatRadius' in x.keys() and x['topHatRadius'] > 0:
       output_image[i] = apply_top_hat(
         output_image[i], dim_utils, x['topHatRadius'])
         

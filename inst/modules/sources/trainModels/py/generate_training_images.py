@@ -94,7 +94,7 @@ def run(params):
       # get slice
       slice_im = im_dat[0][slices]
       slice_shape = zarr_shape
-
+      
       # do maximum projection
       if params['maximumProjection'] is True:
         slice_im = np.amax(slice_im, dim_utils.dim_idx('Z'))
@@ -109,9 +109,6 @@ def run(params):
         slice_shape = tuple(slice_shape)
       
       # save as multiscales back
-      logfile_utils.log(x)
-      logfile_utils.log(slice_im.shape)
-      logfile_utils.log(zarr_chunks)
       zarr_utils.create_multiscales(slice_im, x, im_chunks = zarr_chunks)
 
       # add metadata
