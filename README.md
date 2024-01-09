@@ -1,7 +1,10 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-![Image](./im/logo.png)
+<figure>
+<img src="./im/logo.png" alt="Image" />
+<figcaption aria-hidden="true">Image</figcaption>
+</figure>
 
 <!-- badges: start -->
 <!-- badges: end -->
@@ -111,6 +114,14 @@ brew install sip
 . ~/Library/r-miniconda-arm64/etc/profile.d/conda.sh
 conda activate r-cecelia-env
 pip install pyqt5 --config-settings --confirm-license= --verbose
+
+- If `tensorflow` fails to import with `illegal instruction` you might need to install a Mac specific version [SO answer](https://stackoverflow.com/a/77067787)
+
+- `tensorflow-metal` will enable GPU support [Medium article](https://medium.com/bluetuple-ai/how-to-enable-gpu-support-for-tensorflow-or-pytorch-on-macos-4aaaad057e74)
+
+```bash
+pip install tensorflow-macos
+pip install tensorflow-metal
 ```
 
 - GUI crashes when toggling processes. You need `pstree`.

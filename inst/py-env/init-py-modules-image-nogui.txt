@@ -41,3 +41,5 @@ pyclesperanto-prototype
 lxml
 # multidimensional sparse matrices
 sparse
+n2v
+tensorflow
