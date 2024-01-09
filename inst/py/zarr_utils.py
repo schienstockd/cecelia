@@ -221,7 +221,7 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr = None, im_chun
   
   # remove other dimensions if necessary
   # TODO this is a bit awkward
-  if len(im_array.shape) != im_chunks:
+  if len(im_array.shape) != len(im_chunks):
     im_chunks = list(im_chunks)
     im_chunks.pop(0)
     im_chunks = tuple(im_chunks)

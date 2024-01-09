@@ -109,7 +109,7 @@ def run(params):
   x_chunks = im.shape[x_idx]
   y_chunks = im.shape[y_idx]
   
-  max_chunk = 512
+  max_chunk = 1024
   im_chunks[x_idx] = x_chunks if x_chunks < max_chunk else max_chunk
   im_chunks[y_idx] = y_chunks if y_chunks < max_chunk else max_chunk
   
@@ -120,7 +120,7 @@ def run(params):
   
   # save back
   zarr_utils.create_multiscales(
-    im, im_correction_path, im_chunks = im_chunks,
+    im, im_correction_path, im_chunks = tuple(im_chunks),
     dim_utils = None, nscales = len(im_dat),
     x_idx = x_idx, y_idx = y_idx)
 
