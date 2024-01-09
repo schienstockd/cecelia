@@ -1,0 +1,119 @@
+{
+  "fun": {
+    "trainN2V": {
+      "category": "Module functionss",
+      "label": "Train Noise2Void",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"imSource": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"patchXY": {
+        "type:integer": {
+					"min": 0,
+					"max": 256,
+          "default": 64
+        }
+      },
+			"patchZ": {
+        "type:integer": {
+					"min": 0,
+					"max": 64,
+          "default": 4
+        }
+      },
+			"trainEpochs": {
+        "type:integer": {
+					"min": 0,
+					"max": 256,
+          "default": 20
+        }
+      },
+			"modelName": {
+        "type:character": {
+          "default": ""
+        }
+      },
+			"modelDesc": {
+        "type:character": {
+          "default": ""
+        }
+      },
+			"modelAuthors": {
+        "type:character": {
+          "default": ""
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"imSource": {
+				"index": 1,
+				"label": "Image",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+			"patchXY": {
+				"index": 2,
+				"label": "Patch XY",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"patchZ": {
+				"index": 3,
+				"label": "Patch Z",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"trainEpochs": {
+				"index": 4,
+				"label": "Training epochs",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"modelName": {
+				"index": 5,
+				"label": "Model name",
+				"widget:textInput": {
+				}
+			},
+			"modelDesc": {
+				"index": 6,
+				"label": "Model description",
+				"widget:textInput": {
+				}
+			},
+			"modelAuthors": {
+				"index": 7,
+				"label": "Model authors (separate by ';')",
+				"widget:textInput": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

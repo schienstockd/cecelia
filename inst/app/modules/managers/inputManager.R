@@ -302,6 +302,9 @@ InputManager <- R6::R6Class(
       } else if (names(uiType) == "clSelectionGroup") {
         uiElement <- self$createUIClSelectionGroup(
           elmntName, uiType, specType)
+      } else if (names(uiType) == "modelSelectionGroup") {
+        uiElement <- self$createUIModelSelectionGroup(
+          elmntName, uiType, specType)
       } else if (names(uiType) == "channelSelection") {
         uiElement <- self$createUIChannelSelection(
           elmntName, uiType, specType)
@@ -603,7 +606,6 @@ InputManager <- R6::R6Class(
       )
     },
     
-    
     # classifier list group
     createUIClSelectionGroup = function(elmntName, uiType, specType) {
       # get classifiers and walk through
@@ -617,6 +619,21 @@ InputManager <- R6::R6Class(
       
       # add classifiers as items
       uiType[[1]]$items <- clChoices
+      
+      # build group with classifiers
+      self$createUIGroup(elmntName, uiType, specType)
+    },
+    
+    # model list group
+    createUIModelSelectionGroup = function(elmntName, uiType, specType) {
+      # get classifiers and walk through
+      modelChoices <- self$cciaObjectCollection()$modelFiles(uiType[[1]]$type)
+      
+      # set names to create list
+      names(modelChoices) <- modelChoices
+      
+      # add classifiers as items
+      uiType[[1]]$items <- modelChoices
       
       # build group with classifiers
       self$createUIGroup(elmntName, uiType, specType)

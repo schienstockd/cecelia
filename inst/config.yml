@@ -21,6 +21,9 @@ default:
       mesh: "mesh"
       shapes: "shapes"
       classifications: "cl"
+      models: "models"
+    models:
+      n2v: "n2v"
     classifications:
       pix: "pix"
       obj: "obj"

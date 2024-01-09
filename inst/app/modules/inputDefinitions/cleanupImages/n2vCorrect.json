@@ -1,0 +1,71 @@
+{
+  "fun": {
+    "n2vCorrect": {
+      "category": "Module functions",
+      "label": "Noise2Void",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "modelMapping": {
+        "type:group": {
+          "modelChannels": {
+            "type:list": {
+            }
+          },
+          "normPerc": {
+						"type:double": {
+							"min": 95,
+							"max": 100,
+							"default": 99.99
+						}
+					}
+        }
+      }
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+      "modelMapping": {
+				"index": 1,
+				"label": "Models",
+				"widget:modelSelectionGroup": {
+				  "type": "n2v",
+          "modelChannels": {
+            "index": 0,
+            "label": "Channels for model",
+            "widget:channelSelection": {
+              "size": 1,
+              "multiple": true,
+    					"useNames": true
+            }
+          },
+          "normPerc": {
+						"index": 1,
+						"label": "Normalise",
+						"widget:slider": {
+							"step": 0.01
+						}
+					}
+        }
+			}
+    },
+    "outputs": {}
+  }
+}

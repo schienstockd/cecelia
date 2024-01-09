@@ -75,12 +75,14 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # upload local files
 funParams <- list(
   # trainingSetID = "oe6kuP", # Tomato
-  trainingSetID = "91Kd1K", # XCR1
+  # trainingSetID = "91Kd1K", # XCR1
+  trainingSetID = "q4Hxd3", # Tom AF corrected
   # numTrainingImages = 20,
   numTrainingImages = 10,
   maximumProjection = FALSE,
   removePrevious = TRUE,
-  imSource = "default",
+  # imSource = "default",
+  imSource = "afCorrected",
   channels = c(6),
   crop = list(X = 2048, Y = 2048, Z = 8, T = 1)
 )
@@ -90,15 +92,19 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "fmjlDg", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
-# channel 7 for Tomato, 6 for XCR1
+# channel 7 for Tomato, 14 for XCR1
 # funParams$channels <- c(6)
-funParams$channels <- c(5)
-uIDs <- c("Npsfli", "0QQl59", "vW8BC1", "n48TTE", "tK0DVg")
+# funParams$channels <- c(13)
+# uIDs <- c("Npsfli", "0QQl59", "vW8BC1", "n48TTE", "tK0DVg")
 
-# channel 3 for Tomato, 2 for XCR1
+# channel 3 for Tomato, 10 for XCR1
 # funParams$channels <- c(2)
-# funParams$channels <- c(1)
+# funParams$channels <- c(9)
 # uIDs <- c("RJsT1v", "tP38h2")
+
+# AF correction test
+funParams$channels <- c(2)
+uIDs <- c("RJsT1v", "tP38h2")
 
 cciaObj$runTasks(
   funName = "trainModels.generateTrainingImages",
@@ -110,6 +116,99 @@ cciaObj$runTasks(
   mc.cores = 3
 )
 ```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "RJsT1v", versionID = versionID, initReactivity = FALSE 
+)
+
+cciaObj$valueNames("imFilepath")
+cciaObj$imFilepath()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "oe6kuP", versionID = versionID, initReactivity = FALSE # Tomato
+  # pID = pID, uID = "91Kd1K", versionID = versionID, initReactivity = FALSE # XCR1
+  pID = pID, uID = "q4Hxd3", versionID = versionID, initReactivity = FALSE # Tomato AF
+)
+
+cciaObj$persistentObjectDirectory(root = TRUE)
+      
+# train model for image restoration
+funParams <- list(
+  imSource = "ccidImage.zarr",
+  uIDs = names(cciaObj$cciaObjects()),
+  patchXY = 64,
+  patchZ = 4,
+  trainEpochs = 20,
+  modelAuthors = "Dominik",
+  # valueName = "3P_Tomato_v1",
+  # modelName = "3P Tomato v1",
+  # modelDesc = "3P Tomato model v1"
+  # valueName = "3P_XCR1_v1",
+  # modelName = "3P XCR1 v1",
+  # modelDesc = "3P XCR1 model v1"
+  valueName = "3P_Tomato_AF_v1",
+  modelName = "3P Tomato AF v1",
+  modelDesc = "3P Tomato AF model v1"
+)
+
+cciaObj$runTask(
+  funName = "trainModels.trainN2V",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "faPUoZ", versionID = versionID, initReactivity = FALSE # test
+  # pID = pID, uID = "Npsfli", versionID = versionID, initReactivity = FALSE # 4D 3P test
+  pID = pID, uID = "RJsT1v", versionID = versionID, initReactivity = FALSE # 4D 3P test
+)
+
+# train model for image restoration
+funParams <- list(
+  valueName = "default",
+  modelMapping = list(
+    `3P_Tomato_v1` = list(
+      # modelChannels = c("seven", "eleven", "fifteen"),
+      modelChannels = c("three", "seven", "eleven"),
+      normPerc = 99.99
+    ),
+    `3P_XCR1_v1` = list(
+      # modelChannels = c("fourteen"),
+      modelChannels = c("ten"),
+      normPerc = 99.99
+    )
+  )
+)
+
+cciaObj$runTask(
+  funName = "cleanupImages.n2vCorrect",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
 
 ```{r}
 # write uIDs list for python

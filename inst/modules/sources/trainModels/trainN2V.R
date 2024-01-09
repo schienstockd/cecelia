@@ -26,46 +26,30 @@ TrainN2V <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      self$writeLog(paste(
-        "--Training",
-        self$funParams()$trainingSetID,
-        "--num",
-        self$funParams()$numTrainingImages,
-        "--source",
-        self$funParams()$imSource,
-        "--channels",
-        self$funParams()$channels,
-        "--crop",
-        paste(self$funParams()$crop, collapse = ", "),
-        "--mip",
-        self$funParams()$maximumProjection
-      ))
-      
-      # get uIDs from set for training
-      trainingSet <- initCciaObject(
-        file.path(
-          rootDir, self$funParams()$trainingSetID
-        ), initReactivity = FALSE, initTransaction = TRUE, waitForRelease = TRUE
-      )
-      
-      trainUIDs <- names(cciaObj$cciaObjects())
+      # get im source from first image
+      # TODO this assumes the same name for all images
+      imSource <- basename(cciaObj$cciaObjects(uIDs = self$funParams()$uIDs)[[1]]$imFilepath(self$funParams()$imSource))
       
       # prepare params
       params <- list(
+        valueName = self$funParams()$valueName,
         taskDir = self$envParams()$dirs$task,
-        imPath = file.path(
-          self$envParams()$dirs$zero,
-          basename(cciaObj$imFilepath(self$funParams()$imSource))
-        ),
-        trainingSetPath = trainingSet$persistentObjectDirectory(),
-        trainingImagePaths = file.path(zeroRootDir, newUIDs, "ccidImage.zarr"),
-        channels = sapply(self$funParams()$channels, as.integer),
-        crop = lapply(self$funParams()$crop, as.numeric),
-        maximumProjection = self$funParams()$maximumProjection
+        zeroDir = cciaObj$persistentObjectDirectory(root = TRUE, zero = TRUE),
+        imSource = imSource,
+        uIDs = self$funParams()$uIDs,
+        patchXY = self$funParams()$patchXY,
+        patchZ = self$funParams()$patchZ,
+        trainEpochs = self$funParams()$trainEpochs,
+        modelDir = file.path(
+          cciaObj$persistentObjectDirectory(uID = cecelia:::CCID_IMAGE_COLLECTION), 
+          "models", "n2v"),
+        modelName = self$funParams()$modelName,
+        modelDesc = self$funParams()$modelDesc,
+        modelAuthors = self$funParams()$modelAuthors
       )
       
       # call python
-      self$pyScript("generate_training_images", params)
+      self$pyScript("train_n2v", params)
       
       # DONE
       self$writeLog("Done")

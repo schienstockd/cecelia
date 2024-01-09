@@ -183,7 +183,8 @@
         ),
         task = list(
           funLabel = "Training method",
-          taskVarsToAdd = taskVarsToAdd
+          taskVarsToAdd = taskVarsToAdd,
+          runTaskCombinedSelect = TRUE
         )
       )
       

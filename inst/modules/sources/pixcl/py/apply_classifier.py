@@ -28,7 +28,7 @@ def run(params):
   # get params
   task_dir = script_utils.get_param(params, 'taskDir')
   im_path = script_utils.get_param(params, 'imPath')
-  cl_mapping = script_utils.get_param(params, 'clMapping', default = [])
+  cl_mapping = script_utils.get_param(params, 'clMapping', default = {})
   normalise_image = script_utils.get_param(params, 'normaliseImage', default = True)
   norm_percentile = script_utils.get_param(params, 'normPercentile', default = 99.98)
   save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
