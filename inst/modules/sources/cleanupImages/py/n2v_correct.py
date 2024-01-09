@@ -71,17 +71,21 @@ def run(params):
           slices[t_idx] = t
           
           if is_3D:
-            pred.append(model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4)))
+            # pred.append(model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4)))
+            pred.append(model.predict(im[tuple(slices)], axes = 'ZYX'))
           else:
-            pred.append(model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4)))
+            # pred.append(model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4)))
+            pred.append(model.predict(im[tuple(slices)], axes = 'YX'))
             
         # concat
         pred = np.stack(pred, axis = 0)
       else:
         if is_3D:
-          pred = model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4))
+          # pred = model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4))
+          pred = model.predict(im[tuple(slices)], axes = 'ZYX')
         else:
-          pred = model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4))
+          # pred = model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4))
+          pred = model.predict(im[tuple(slices)], axes = 'YX')
           
       # pred_max = pred.max()
       # pred_min = pred.min()
