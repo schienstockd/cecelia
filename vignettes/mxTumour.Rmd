@@ -212,7 +212,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "f6YZeo", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "f6YZeo", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "EgflKz", versionID = versionID, initReactivity = FALSE
 )
 
 cciaObj$runTask(

@@ -1905,10 +1905,12 @@ CciaImage <- R6::R6Class(
       labelsView <- self$labelProps(valueName = valueName)
       
       # get extra columns
-      extraChannelColumns <- unlist(lapply(
-        labelsView$channel_types(), function(x) {
-          labelsView$channel_columns(prefix = x)
-        }))
+      if (length(labelsView$channel_types()) > 0) {
+        extraChannelColumns <- unlist(lapply(
+          labelsView$channel_types(), function(x) {
+            labelsView$channel_columns(prefix = x)
+          }))
+      }
       
       # get dataframe
       labelProps <- as.data.table(labelsView$view_label_col()$as_df())
