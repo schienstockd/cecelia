@@ -128,6 +128,21 @@ pip install tensorflow-macos
 pip install tensorflow-metal
 ```
 
+- If you get the following:
+
+``` bash
+2024-01-10 13:51:40.989247: I tensorflow/core/common_runtime/pluggable_device/pluggable_device_factory.cc:272] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 0 MB memory) -> physical PluggableDevice (device: 0, name: METAL, pci bus id: <undefined>)
+```
+
+Then you might have to downgrade [see overview table
+here](https://pypi.org/project/tensorflow-metal/#description) - but that
+did not always work ..
+
+``` bash
+pip install tensorflow-macos==2.11.0
+pip install tensorflow-metal==0.7.0
+```
+
 - GUI crashes when toggling processes. You need `pstree`.
 
 For MacOS you can use homebrew:

@@ -365,6 +365,24 @@ class CellposeUtils(SegmentationUtils):
           
           # then expand again
           masks = skimage.segmentation.expand_labels(masks)
+          
+        # # filter labels based on donut ratio?
+        # if x['filterByDonutRatio'][0] is True:
+        #   # make donuts from segmentation and measure intensity
+        #   donuts_inner = skimage.morphology.erosion(
+        #     masks, selem = skimage.morphology.ball(x['donutSize'][0]) \
+        #     if self.dim_utils.is_3D() else skimage.morphology.disk(x['donutSize'][0]))
+        #   donuts_outer = masks - donuts_inner
+        #   
+        #   donuts_inner_props = skimage.measure.regionprops_table(
+        #     donuts_inner, im_to_predict, properties = ['mean_intensity'])
+        #   donuts_outer_props = skimage.measure.regionprops_table(
+        #     donuts_outer, im_to_predict, properties = ['mean_intensity'])
+        #     
+        #   # take ratio
+        #   donuts_ratio = donuts_inner_props['mean_intensity_0']/donuts_outer_props['mean_intensity_0']
+        #   
+        #   if x['donutRatioType'][0] == 'inside':
         
         # add masks to list
         if np.max(masks) > 0:

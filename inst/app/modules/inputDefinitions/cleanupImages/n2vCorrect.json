@@ -13,6 +13,13 @@
 					"default": "default"
 				}
 			},
+			"tilingMult": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 2
+				}
+			},
       "modelMapping": {
         "type:group": {
           "modelChannels": {
@@ -42,8 +49,15 @@
 					"field": "imFilepath"
 				}
 			},
+			"tilingMult": {
+				"index": 2,
+				"label": "Tiling multiplier",
+				"widget:slider": {
+					"step": 1
+				}
+			},
       "modelMapping": {
-				"index": 1,
+				"index": 3,
 				"label": "Models",
 				"widget:modelSelectionGroup": {
 				  "type": "n2v",

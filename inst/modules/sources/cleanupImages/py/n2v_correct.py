@@ -21,6 +21,7 @@ def run(params):
   im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default = None)
   model_dir = script_utils.get_param(params, 'modelDir', default = None)
   model_mapping = script_utils.get_param(params, 'modelMapping', default = {})
+  tiling_mult = script_utils.get_param(params, 'tilingMult', default = 2)
 
   # load image
   # im_dat, zarr_group_info = zarr_utils.open_as_zarr(im_path, as_dask = True)
@@ -71,20 +72,20 @@ def run(params):
           slices[t_idx] = t
           
           if is_3D:
-            pred.append(model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4)))
+            pred.append(model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = tuple(x*tiling_mult for x in (1,2,2))))
             # pred.append(model.predict(im[tuple(slices)], axes = 'ZYX'))
           else:
-            pred.append(model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4)))
+            pred.append(model.predict(im[tuple(slices)], axes = 'YX', n_tiles = tuple(x*tiling_mult for x in (2,2))))
             # pred.append(model.predict(im[tuple(slices)], axes = 'YX'))
             
         # concat
         pred = np.stack(pred, axis = 0)
       else:
         if is_3D:
-          pred = model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = (2, 4, 4))
+          pred = model.predict(im[tuple(slices)], axes = 'ZYX', n_tiles = tuple(x*tiling_mult for x in (1,2,2)))
           # pred = model.predict(im[tuple(slices)], axes = 'ZYX')
         else:
-          pred = model.predict(im[tuple(slices)], axes = 'YX', n_tiles = (4, 4))
+          pred = model.predict(im[tuple(slices)], axes = 'YX', n_tiles = tuple(x*tiling_mult for x in (2,2)))
           # pred = model.predict(im[tuple(slices)], axes = 'YX')
           
       # pred_max = pred.max()

@@ -26,6 +26,9 @@ CECELIA_PORT=686$((1 + $RANDOM % 9))
 # TODO get 'bad value' in vroom if not loaded before
 R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
 
+# export homebrew
+export PATH=/opt/homebrew/bin:$PATH
+
 # OMP: Error #15: Initializing libiomp5.dylib, but found libomp.dylib already initialized.
 # https://github.com/dmlc/xgboost/issues/1715#issuecomment-438924721
 export KMP_DUPLICATE_LIB_OK=TRUE
