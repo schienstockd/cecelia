@@ -58,7 +58,7 @@ def run(params):
   
   # read transcript data
   ts_data = pd.read_csv(
-    transcripts_path, compression = 'gzip', error_bad_lines = False)
+    transcripts_path, compression = 'gzip', on_bad_lines='skip')
   max_values = ts_data['qv'].max()
   
   ## convert to zarr image

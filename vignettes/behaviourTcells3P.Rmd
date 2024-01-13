@@ -136,6 +136,31 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "tK0DVg", versionID = versionID, initReactivity = FALSE
+)
+
+# train model for image restoration
+funParams <- list(
+  valueName = "default",
+  stripePerc = 20,
+  imChannels = c("ten")
+)
+
+cciaObj$runTask(
+  funName = "cleanupImages.removeStripes",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   # pID = pID, uID = "oe6kuP", versionID = versionID, initReactivity = FALSE # Tomato
   # pID = pID, uID = "91Kd1K", versionID = versionID, initReactivity = FALSE # XCR1
   pID = pID, uID = "q4Hxd3", versionID = versionID, initReactivity = FALSE # Tomato AF

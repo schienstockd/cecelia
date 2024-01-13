@@ -11,10 +11,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Examples to run functions and modules
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+
 # set test variables
 pID <- "5g6H4F"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
@@ -67,6 +69,35 @@ HPC_CONF <-  list(
       condaEnv = cciaConf()$python$conda$source$env
     )
   )
+)
+```
+
+```{r}
+# upload STOMICS
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "aSf5Rr", versionID = versionID, initReactivity = FALSE 
+)
+
+# run task
+funParams <- list(
+  sumValue = 1,
+  filterValue = 1,
+  minFilterValue = 0
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "importImages.tenxXenium",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
 )
 ```
 

@@ -1,0 +1,59 @@
+{
+  "fun": {
+    "removeStripes": {
+      "category": "Module functions",
+      "label": "Remove stripes",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "stripePerc": {
+        "type:double": {
+          "min": 0,
+          "max": 100,
+          "default": 20
+        }
+      },
+  		"imChannels": {
+				"type:list": {}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+			"stripePerc": {
+				"index": 1,
+				"label": "Stripe percentage",
+				"widget:slider": {
+					"step": 0.5
+				}
+			},
+			"imChannels": {
+				"index": 2,
+				"label": "Channels",
+				"widget:channelSelection": {
+					"size": 1,
+					"multiple": true,
+					"useNames": true
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

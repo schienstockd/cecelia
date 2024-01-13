@@ -44,18 +44,16 @@ RemoveStripes <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         imPath = cciaObj$imFilepath(valueName = self$funParams()$valueName),
         imCorrectionPath = file.path(
-          self$envParams()$dirs$zero, "ccidN2V.zarr"),
-        modelDir = file.path(
-          cciaObj$persistentObjectDirectory(uID = cecelia:::CCID_IMAGE_COLLECTION), 
-          cciaConf()$dirs$tasks$models, cciaConf()$dirs$models$n2v),
-        modelMapping = modelMapping
+          self$envParams()$dirs$zero, "ccidNoStripes.zarr"),
+        stripePerc = self$funParams()$stripePerc,
+        imChannels = imChannels
       )
       
       # call python
-      self$pyScript("n2v_correct", params)
+      self$pyScript("remove_stripes", params)
       
       # update image information
-      self$updateImageInfo(filename = "ccidN2V", valueName = "n2v")
+      self$updateImageInfo(filename = "ccidNoStripes", valueName = "noStripes")
       
       # DONE
       self$writeLog("Done")
