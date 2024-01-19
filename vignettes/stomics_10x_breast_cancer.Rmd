@@ -73,6 +73,20 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
+a <- readRDS("~/R-workspace/cecelia/inst/app/shiny_bookmarks/ba9d364da69c2674/values.rds")
+a$project$ProjectUID <- "RTA7nu"
+a$project$ProjectPath <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/RTA7nu"
+a$project$ProjectName <- "YA CCL19-DTR"
+saveRDS(a, "~/R-workspace/cecelia/inst/app/shiny_bookmarks/ba9d364da69c2674/values.rds")
+```
+
+```{r}
+a <- readRDS("~/R-workspace/cecelia/inst/app/shiny_bookmarks/ba9d364da69c2674/input.rds")
+a
+```
+
+
+```{r}
 # upload STOMICS
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)

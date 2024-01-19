@@ -89,17 +89,19 @@ SpatialAnalysis <- R6::R6Class(
           # save to disk
           cciaObj$savePops(popType, purge = TRUE, includeFiltered = TRUE)
         }
-      } else if (self$funParams()$callingFun %in% c("cellContactsMeshes")) {
+      } else if (self$funParams()$callingFun %in% c("cellContacts", "cellContactsMeshes")) {
         # add populations to popMap
         for (i in self$funParams()$popsA) {
           # get pop type
           # popType <- self$funParams()$popType
           popTypeA <- popTypesFromPops(self$funParams()$popsA)
           # popTypeB <- popTypesFromPops(self$funParams()$popsB)
+          prepPopsB <- stringr::str_replace(self$funParams()$popsB, "/", "__")
           
           parentPops <- popPathsFromPops(c(i))
           pops <- lapply(
-            self$funParams()$popsB,
+            # self$funParams()$popsB,
+            prepPopsB,
             function(x) {
               list(
                 filterMeasure = sprintf("%s.cell.contact#%s", popTypeA, x),
@@ -110,7 +112,7 @@ SpatialAnalysis <- R6::R6Class(
           )
           
           # set names
-          names(pops) <- sprintf("contact.%s", stringr::str_replace(self$funParams()$popsB, "/", "__"))
+          names(pops) <- sprintf("contact.%s", prepPopsB)
           
           # remove populations
           cciaObj$delPopsByPath(

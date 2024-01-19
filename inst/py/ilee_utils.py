@@ -27,7 +27,7 @@ class IleeUtils(SegmentationUtils):
     self.normalise = script_utils.get_param(params, 'normalise', default = 0)
     self.k1 = script_utils.get_param(params, 'k1', default = 2.5)
     self.k2 = script_utils.get_param(params, 'k2', default = 550)
-    
+
     # TODO ILEE is using MATLAB and CUDA device
     # I am not sure that this will translate to MPS
     # # init params

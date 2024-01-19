@@ -70,7 +70,8 @@ Ilee <- R6::R6Class(
         filamentChannels = filamentChannels,
         normalise = self$funParams()$normalise,
         k1 = self$funParams()$k1,
-        k2 = self$funParams()$k2
+        k2 = self$funParams()$k2,
+        normaliseToWhole = self$funParams()$normaliseToWhole
       )
       
       # add optional parameters

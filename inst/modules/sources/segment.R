@@ -19,10 +19,12 @@ Segment <- R6::R6Class(
       
       ### reset information for analysis depending on segmentation ###
       # TODO - is there a better option to do this.. ?
-      self$runTasks(c(
-        "gatePopulations.resetImageInfo",
-        "clustPopulations.resetImageInfo"
-      ))
+      if (self$funName() %in% c("segment.cellpose")) {
+        self$runTasks(c(
+          "gatePopulations.resetImageInfo",
+          "clustPopulations.resetImageInfo"
+        ))
+      }
       
       # get object
       cciaObj <- self$cciaTaskObject()

@@ -834,7 +834,12 @@ splitPops <- function(pops, popSplit = "\\.", splitPart = 0) {
 #' TODO
 #' @export
 popTypesFromPops <- function(...) {
-  splitPops(..., splitPart = 1)
+  popTypes <- splitPops(..., splitPart = 1)
+  
+  if (length(popTypes) == 1)
+    popTypes[[1]]
+  else
+    popTypes
 }
 
 #' @description Get pop paths from pops

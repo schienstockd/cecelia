@@ -1,0 +1,436 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+# set test variables
+pID <- "RTA7nu"
+versionID <- 1
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/YA_CCL19/static"
+```
+
+```{r}
+# Load cluster data
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+      - "#ff0000"
+      - "#ff8c00"
+      - "#ffd700"
+      - "#0000cd"
+      - "#00ff00"
+      - "#00fa9a"
+      - "#4169e1"
+      - "#e9967a"
+      - "#00ffff"
+      - "#00bfff"
+      - "#d8bfd8"
+      - "#ff00ff"
+      - "#f0e68c"
+      - "#ff1493"
+      - "#ee82ee"
+```
+
+
+```{r}
+# add pop map back to images
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE
+)
+
+for (x in cciaObj$cciaObjects()) {
+  # init ccia object
+  x <- initCciaObject(
+    pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE
+  )
+  
+  x$setImPopMap("flow", list(
+    tu0wiW = list(name = "cells", colour = "#d8bfd8", show = TRUE,
+                  parent = "root", path = "/cells", valueName = "default",
+                  gateID = 1, xChannel = "volume", yChannel = "surface_to_volume"),
+    tu0wi1 = list(name = "P14", colour = "#ff1493", show = TRUE,
+                  parent = "cells", path = "/cells/P14", valueName = "default",
+                  gateID = 1, xChannel = "AF", yChannel = "P14"),
+    tu0wi4 = list(name = "O1", colour = "#d8bfd8", show = TRUE,
+                  parent = "cells", path = "/cells/O1", valueName = "default",
+                  gateID = 2, xChannel = "AF", yChannel = "P14"),
+    tu0wi5 = list(name = "XCR1", colour = "#00fa9a", show = TRUE,
+                  parent = "O1", path = "/cells/O1/XCR1", valueName = "default",
+                  gateID = 1, xChannel = "XCR1.Venus", yChannel = "CD11c.PE"),
+    tu0wi0 = list(name = "CD11c", colour = "#ffd700", show = TRUE,
+                  parent = "O1", path = "/cells/O1/CD11c", valueName = "default",
+                  gateID = 2, xChannel = "XCR1.Venus", yChannel = "CD11c.PE"),
+    tu0wi6 = list(name = "O2", colour = "#d8bfd8", show = TRUE,
+                  parent = "O1", path = "/cells/O1/O2", valueName = "default",
+                  gateID = 3, xChannel = "XCR1.Venus", yChannel = "CD11c.PE"),
+    tu0wi7 = list(name = "B220", colour = "#4169e1", show = TRUE,
+                  parent = "O2", path = "/cells/O1/O2/B220", valueName = "default",
+                  gateID = 1, xChannel = "AF", yChannel = "B220.PB")
+  ))
+  
+  x$setImGatingSetFilepath("default.gs", "default")
+  x$imGatingSetFilepath()
+  x$saveState()
+  
+  # run task
+  funParams <- list(
+    valueName = "LCMV",
+    preDilationSize = 0,
+    postDilationSize = 2,
+    flattenBranching = FALSE,
+    useBorders = FALSE,
+    calcExtended = FALSE,
+    calcFlattened = FALSE,
+    anisoRadius = 40,
+    saveMeshes = FALSE
+  )
+  
+  # run task
+  # task <- cciaObj$runTasks(
+  task <- x$runTask(
+    funName = "segment.createBranching",
+    funParams = funParams,
+    env = "local",
+    runInplace = TRUE,
+    taskID = 1
+    # uIDs = names(cciaObj$cciaObjects()),
+    # mc.cores = 4
+  )
+}
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE
+)
+
+popDT <- cciaObj$popDT("flow")
+```
+
+
+
+```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE
+)
+
+saveRDS(cciaObj$getCciaMeta()$funParams.segment.cellpose,
+        file.path(anaDir, "conf", "cp_params_exp1.rds"))
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "b0iSyj", versionID = versionID, initReactivity = FALSE
+)
+
+saveRDS(cciaObj$getCciaMeta()$funParams.segment.cellpose,
+        file.path(anaDir, "conf", "cp_params_exp2.rds"))
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
+  pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
+)
+
+# run task
+funParams <- list(
+  popsA = c("flow./cells/P14"),
+  # popsB = c("flow./cells/O1/XCR1", "flow./cells/O1/CD11c", "branch.LCMV.branch/two"),
+  popsB = c("branch.LCMV.branch/two"),
+  maxContactDist = 5
+)
+
+# uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+# task <- cciaObj$runTasks(
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellContacts",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+  # uIDs = uIDs,
+  # mc.cores = 1
+)
+```
+
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+popDT <- cciaObj$popDT(popType = "flow", pops = c("/cells/P14"))
+colnames(popDT)
+```
+
+```{r fig_gating, fig.height=6, fig.width=6}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE
+)
+
+for (x in cciaObj$cciaObjects()) {
+    # get raster contours
+  p1s <- .flowPlotGatedRaster(
+    x, popPaths = "root", labelSize = 5, labelBorder = 1, labelAlpha = 0.8,
+    xTitleSize = 16, yTitleSize = 16,
+    asContours = TRUE, plotTitleSize = 16)
+  
+  p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
+  
+  ggsave(file.path(anaDir, "gating", paste0(x$getCciaAttr(attrName = "DTx"), "_", x$getUID(), ".png")),
+         width = 8, height = 8, plot = p1)
+}
+```
+
+```{r}
+# plot out clustering cells
+datToPlot <- popDT %>%
+  group_by(uID, flow.cell.is.clust) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(flow.cell.is.clust == TRUE) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(DTx, freq)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0) +
+  ylim(0, 100)
+
+ggsave(file.path(anaDir, "P14_clustering.pdf"), width = 2, height = 2)
+```
+
+```{r}
+# plot out composition of cluster ie/ contact with XCR1 and virus
+datToPlot <- popDT %>%
+  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/XCR1`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(`flow.cell.contact#flow.__cells/O1/XCR1` == TRUE) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100)
+
+ggsave(file.path(anaDir, "P14_XCR1_interactions.pdf"), width = 3.5, height = 2)
+```
+
+```{r}
+# plot out composition of cluster ie/ contact with XCR1 and virus
+datToPlot <- popDT %>%
+  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/CD11c`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(`flow.cell.contact#flow.__cells/O1/CD11c` == TRUE) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100)
+
+ggsave(file.path(anaDir, "P14_CD11c_interactions.pdf"), width = 3.5, height = 2)
+```
+
+```{r}
+# plot out composition of cluster ie/ contact with XCR1 and virus
+datToPlot <- popDT %>%
+  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/CD11c`) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  dplyr::filter(`flow.cell.contact#flow.__cells/O1/CD11c` == TRUE) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100)
+
+ggsave(file.path(anaDir, "P14_CD11c_interactions.pdf"), width = 3.5, height = 2)
+```
+
+```{r}
+# show pops on image
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+
+# start ipython kernel
+viewer <- NapariUtils$new()
+
+viewer$initNapari()
+```
+
+```{r}
+generateScreenshots <- function(
+    anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+    valueName = "default", popType = "flow", matchChannels = FALSE, save = TRUE, ...) {
+  # go through images and save movies
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    i <- x$getUID()
+    viewer$setTaskDir(x$persistentObjectDirectory())
+    
+    # get channels
+    imChannelNames <- x$imChannelNames()
+    
+    # match channels
+    curChannelsToShow <- channelsToShow
+    if (matchChannels == TRUE) {
+      # TODO this is very crude    
+      names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+        imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+      })
+    }
+
+    # get cmaps
+    layersVisible <- imChannelNames %in% names(curChannelsToShow)
+    channelColormaps <- rep("gray", length(layersVisible))
+    
+    for (j in names(curChannelsToShow))
+      channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+    
+    # open image
+    viewer$openImage(
+      x$imFilepath(),
+      imChannelNames = imChannelNames,
+      show3D = TRUE,
+      layersVisible = layersVisible,
+      channelColormaps = channelColormaps
+      # multiscales = as.integer(1)
+    )
+    
+    # add populations
+    popsAdded <- list()
+    popMap <- x$imPopMap("flow")
+    
+    # get popIDs for paths
+    popIDs <- lapply(names(popsToShow), function(y) x$popIDsByAttr("flow", "path", y, includeFiltered = TRUE))
+    names(popIDs) <- names(popsToShow)
+    
+    # add populations to popMap
+    for (pop in names(popsToShow)) {
+      x$editPopColour("flow", popIDs[[pop]], popsToShow[[pop]], includeFiltered = TRUE)
+    }
+    
+    # save to disk
+    x$savePopMap(popType, includeFiltered = TRUE)
+    x$savePops(popType, pops = names(popsToShow),
+               purge = TRUE, includeFiltered = TRUE)
+    
+    # show on image
+    removePrevious <- TRUE
+    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+    # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
+    
+    for (j in names(popsToShow)) {
+      viewer$showPopMapping(popType, valueName = valueName, pops = list(j),
+                            pointsSize = pointsSize,
+                            execInteractive = FALSE, removePrevious = removePrevious)
+      removePrevious <- FALSE
+    }
+    
+    # adjust channel intensities
+    # browser()
+  
+    # save screenshot
+    if (save == TRUE)
+      viewer$saveScreenshot(
+        file.path(anaDir, paste0(
+          paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+        ...)
+  }
+}
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- names(cciaObj$cciaObjects())
+
+channelsToShow <- list(
+  "P14" = "gray",
+  "LCMV-594" = "red",
+  "CD11c-PE" = "yellow",
+  "XCR1-Venus" = "green",
+  "B220-PB" = "bop blue"
+  )
+popsToShow <- list(
+  "/cells/O1/O2/B220" = "#327EBA",
+  "/cells/O1/CD11c" = "yellow",
+  "/cells/O1/XCR1" = "green",
+  "/cells/P14" = "white",
+  "/cells/P14/clustered" = "magenta"
+)
+fileAttrs <- c("DTx")
+
+generateScreenshots(
+  # file.path(anaDir, "images"), cciaObj, uIDs, channelsToShow,
+  file.path(anaDir, "populations"), cciaObj, uIDs, list(),
+  # list(), fileAttrs, size = list(1200, 1200), save = TRUE)
+  popsToShow, fileAttrs, size = list(1200, 1200), save = TRUE)
+```

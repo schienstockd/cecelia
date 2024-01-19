@@ -121,32 +121,32 @@ def run(params):
     # dtype = np.float16
     dtype = np.uint16
   )
-  
+
   # remove previous image
   if os.path.isdir(ts_zarr_path) is True:
     shutil.rmtree(ts_zarr_path)
-  
+
   # copy in DAPI
   logfile_utils.log(f'>> Copy image channels')
   im_data, _ = zarr_utils.open_as_zarr(im_path_in)
   # seq_image[0, :, :] = im_data[0]/np.max(im_data[0])
   seq_image[0, :, :] = im_data[0]
-  
+
   # go through and create images
   for i, x in enumerate(channel_names):
     logfile_utils.log(f'> Process {x}')
-    
+
     y1 = ts_data.loc[ts_data['feature_name'] == x]
-    
+
     # create sparse matrix
     row = y1[dim_cols[0]].values / pixel_sizes['y']
     col = y1[dim_cols[1]].values / pixel_sizes['x']
-    
+
     # TODO rows and cols might be negative
     value_idx = np.intersect1d(np.where(row >= 0), np.where(col >= 0))
     row = row[value_idx]
     col = col[value_idx]
-    
+
     # data = y1['qv'].values / max_values
     # data = np.repeat(1, len(y1.index))
     data = np.repeat(1, len(row))
@@ -157,7 +157,7 @@ def run(params):
     # sum
     seq_image[i + 1, :, :] = skimage.filters.rank.sum(
         y2, skimage.morphology.disk(sum_value))
-        
+
     # enhance donuts
     seq_image[i + 1, :, :] = (skimage.filters.gaussian(seq_image[i + 1, :, :],
       filter_value, preserve_range = True) * (2**8-1)).astype(np.uint16)
@@ -166,18 +166,18 @@ def run(params):
         skimage.morphology.disk(min_filter_value))
     # seq_image[i + 1, :, :] = skimage.filters.median(seq_image[i + 1, :, :],
     #   skimage.morphology.disk(filter_value))
-    
-  # generate multiscales 
+
+  # generate multiscales
   # TODO is there a more elegant way to do this .. ?
   if nscales > 1:
     multiscales_file_path = ts_zarr_path + ".multiscales"
-  
+
     zarr_utils.create_multiscales(
       seq_image, multiscales_file_path,
       x_idx = 1, y_idx = 2,
       nscales = nscales
     )
-    
+
     # remove previous and rename multiscales
     if os.path.isdir(ts_zarr_path) is True:
       shutil.rmtree(ts_zarr_path)
@@ -185,7 +185,7 @@ def run(params):
   
   # build metadata
   # TODO anything else?
-  pixels = model.pixels.Pixels(
+  pixels = model.Pixels(
     size_c = zarr_shape[0],
     size_x = zarr_shape[2],
     size_y = zarr_shape[1],
@@ -196,12 +196,12 @@ def run(params):
     physical_size_x_unit = model.UnitsLength.MICROMETER,
     physical_size_y_unit = model.UnitsLength.MICROMETER,
     type = 'uint16',
-    dimension_order = ome_types.model.Pixels_DimensionOrder.XYZCT,
+    dimension_order = model.Pixels_DimensionOrder.XYZCT,
     metadata_only = True
     )
   
   for x in channel_names:
-    pixels.channels.append(model.channel.Channel(name = x))
+    pixels.channels.append(model.Channel(name = x))
   
   # add metadata
   ome_xml_utils.write_ome_xml(

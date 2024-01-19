@@ -42,7 +42,8 @@ def run(params):
     'filament_channels': params['filamentChannels'],
     'normalise': params['normalise'] if 'normalise' in params else 0,
     'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
-    'integrate_time_mode': params['integrateTimeMode'] if 'integrateTimeMode' in params else 'max'
+    'integrate_time_mode': params['integrateTimeMode'] if 'integrateTimeMode' in params else 'max',
+    'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False
   }
 
   # call ilee

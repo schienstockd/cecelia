@@ -66,7 +66,7 @@ CellContacts <- R6::R6Class(
           
           # init analysis column with NA
           rootDT[, c(minDistCol) := as.numeric(NA)]
-          rootDT[, c(hasContactCol) := NA]
+          rootDT[, c(hasContactCol) := FALSE]
           
           # get DT
           popDTB <- cciaObj$popDT(yType, pops = yPop, includeFiltered = TRUE)
@@ -147,12 +147,12 @@ CellContacts <- R6::R6Class(
         }
       }
       
+      # update image information
+      self$updateImageInfo()
+      
       # DONE
       self$writeLog("Done")
       self$exitLog()
-      
-      # update image information
-      self$updateImageInfo()
       
       TRUE
     }
