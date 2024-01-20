@@ -61,11 +61,6 @@ cciaObj <- initCciaObject(
 )
 
 for (x in cciaObj$cciaObjects()) {
-  # init ccia object
-  x <- initCciaObject(
-    pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE
-  )
-  
   x$setImPopMap("flow", list(
     tu0wiW = list(name = "cells", colour = "#d8bfd8", show = TRUE,
                   parent = "root", path = "/cells", valueName = "default",
@@ -127,10 +122,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "7rIBcg", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "b0iSyj", versionID = versionID, initReactivity = FALSE
 )
 
-popDT <- cciaObj$popDT("flow")
+cciaObj$popPaths("flow")
 ```
 
 
@@ -204,6 +199,7 @@ cciaObj <- initCciaObject(
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 popDT <- cciaObj$popDT(popType = "flow", pops = c("/cells/P14"))
+
 colnames(popDT)
 ```
 
