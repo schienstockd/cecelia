@@ -179,8 +179,6 @@ SpatialAnalysis <- R6::R6Class(
         }
       }
       
-      browser()
-          
       # save object
       cciaObj$saveState()
     }

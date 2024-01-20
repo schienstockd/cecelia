@@ -24,6 +24,8 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/YA_CCL19/static"
 ```{r}
 # Load cluster data
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+
+library(flowCore)
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -122,10 +124,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "b0iSyj", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "CXqh2V", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$popPaths("flow")
+colnames(cciaObj$popDT("flow"))
 ```
 
 
@@ -245,74 +247,54 @@ ggplot(datToPlot, aes(DTx, freq)) +
   ylim(0, 100)
 
 ggsave(file.path(anaDir, "P14_clustering.pdf"), width = 2, height = 2)
+write.csv(datToPlot, file.path(anaDir, "P14_clustering.csv"))
 ```
 
 ```{r}
 # plot out composition of cluster ie/ contact with XCR1 and virus
+# ie/ for every cluster ID there is a composition
+# datToPlot <- popDT[flow.cell.is.clust == TRUE] %>%
 datToPlot <- popDT %>%
-  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/XCR1`) %>%
+  rename(
+    XCR1 = `flow.cell.contact#flow.__cells/O1/XCR1`,
+    CD11c = `flow.cell.contact#flow.__cells/O1/CD11c`,
+    LCMV = `flow.cell.contact#branch.LCMV.branch__two`
+  ) %>%
+  pivot_longer(
+    cols = c("XCR1", "CD11c", "LCMV"),
+    names_to = "contact_type", values_to = "contact_value") %>%
+  # dplyr::filter(contact_value == TRUE) %>%
+  group_by(uID, flow.cell.is.clust, contact_type, contact_value) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(`flow.cell.contact#flow.__cells/O1/XCR1` == TRUE) %>%
+  ungroup() %>%
+  complete(uID, contact_type, contact_value, fill = list(freq = 0)) %>%
+  dplyr::filter(contact_value == TRUE) %>%
   left_join(exp.info)
 
-ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
+datToPlot$popState <- "non.clustering"
+datToPlot[datToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
+
+ggplot(datToPlot, aes(DTx, freq, color = contact_type)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
     position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
     # width = 0.2, alpha = 1.0) +
-  ylim(0, 100)
+  ylim(0, 100) +
+  scale_color_brewer(palette = "Set2") +
+  facet_grid(.~popState)
 
-ggsave(file.path(anaDir, "P14_XCR1_interactions.pdf"), width = 3.5, height = 2)
-```
-
-```{r}
-# plot out composition of cluster ie/ contact with XCR1 and virus
-datToPlot <- popDT %>%
-  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/CD11c`) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(`flow.cell.contact#flow.__cells/O1/CD11c` == TRUE) %>%
-  left_join(exp.info)
-
-ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    # width = 0.2, alpha = 1.0) +
-  ylim(0, 100)
-
-ggsave(file.path(anaDir, "P14_CD11c_interactions.pdf"), width = 3.5, height = 2)
-```
-
-```{r}
-# plot out composition of cluster ie/ contact with XCR1 and virus
-datToPlot <- popDT %>%
-  group_by(uID, flow.cell.is.clust, `flow.cell.contact#flow.__cells/O1/CD11c`) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(`flow.cell.contact#flow.__cells/O1/CD11c` == TRUE) %>%
-  left_join(exp.info)
-
-ggplot(datToPlot, aes(DTx, freq, color = flow.cell.is.clust)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-    # width = 0.2, alpha = 1.0) +
-  ylim(0, 100)
-
-ggsave(file.path(anaDir, "P14_CD11c_interactions.pdf"), width = 3.5, height = 2)
+ggsave(file.path(anaDir, "P14_cluster_interactions.pdf"), width = 5, height = 2)
+write.csv(datToPlot, file.path(anaDir, "P14_cluster_interactions.csv"))
 ```
 
 ```{r}
 # show pops on image
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
-# cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
-cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+# cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
 
 # start ipython kernel
 viewer <- NapariUtils$new()
@@ -323,7 +305,7 @@ viewer$initNapari()
 ```{r}
 generateScreenshots <- function(
     anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-    valueName = "default", popType = "flow", matchChannels = FALSE, save = TRUE, ...) {
+    valueName = "default", matchChannels = FALSE, save = TRUE, ...) {
   # go through images and save movies
   for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     i <- x$getUID()
@@ -360,32 +342,36 @@ generateScreenshots <- function(
     
     # add populations
     popsAdded <- list()
-    popMap <- x$imPopMap("flow")
-    
-    # get popIDs for paths
-    popIDs <- lapply(names(popsToShow), function(y) x$popIDsByAttr("flow", "path", y, includeFiltered = TRUE))
-    names(popIDs) <- names(popsToShow)
-    
-    # add populations to popMap
-    for (pop in names(popsToShow)) {
-      x$editPopColour("flow", popIDs[[pop]], popsToShow[[pop]], includeFiltered = TRUE)
-    }
-    
-    # save to disk
-    x$savePopMap(popType, includeFiltered = TRUE)
-    x$savePops(popType, pops = names(popsToShow),
-               purge = TRUE, includeFiltered = TRUE)
     
     # show on image
     removePrevious <- TRUE
     pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
     # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
     
-    for (j in names(popsToShow)) {
-      viewer$showPopMapping(popType, valueName = valueName, pops = list(j),
-                            pointsSize = pointsSize,
-                            execInteractive = FALSE, removePrevious = removePrevious)
-      removePrevious <- FALSE
+    # add populations to popMap
+    for (popType in names(popsToShow)) {
+      popMap <- x$imPopMap(popType, includeFiltered = TRUE)
+      curPops <- popsToShow[[popType]]
+    
+      # get popIDs for paths
+      popIDs <- lapply(names(curPops), function(y) x$popIDsByAttr(popType, "path", y, includeFiltered = TRUE))
+      names(popIDs) <- names(curPops)
+      
+      for (pop in names(curPops)) {
+        x$editPopColour(popType, popIDs[[pop]], curPops[[pop]], includeFiltered = TRUE)
+      }
+    
+      # save to disk
+      x$savePopMap(popType, includeFiltered = TRUE)
+      x$savePops(popType, pops = names(popIDs),
+                 purge = TRUE, includeFiltered = TRUE)
+      
+      for (j in names(curPops)) {
+        viewer$showPopMapping(popType, valueName = popMap[[popIDs[[j]]]]$valueName,
+                              pops = list(j), pointsSize = pointsSize,
+                              execInteractive = FALSE, removePrevious = removePrevious)
+        removePrevious <- FALSE
+      }
     }
     
     # adjust channel intensities
@@ -416,11 +402,16 @@ channelsToShow <- list(
   "B220-PB" = "bop blue"
   )
 popsToShow <- list(
-  "/cells/O1/O2/B220" = "#327EBA",
-  "/cells/O1/CD11c" = "yellow",
-  "/cells/O1/XCR1" = "green",
-  "/cells/P14" = "white",
-  "/cells/P14/clustered" = "magenta"
+  flow = list(
+    "/cells/O1/O2/B220" = "#327EBA",
+    "/cells/O1/CD11c" = "yellow",
+    "/cells/O1/XCR1" = "green",
+    "/cells/P14" = "magenta",
+    "/cells/P14/clustered" = "white"
+  ),
+  branch = list(
+    "LCMV.branch/two" = "red"
+  )
 )
 fileAttrs <- c("DTx")
 

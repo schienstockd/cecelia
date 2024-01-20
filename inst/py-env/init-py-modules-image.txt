@@ -27,7 +27,7 @@ cellpose
 anndata
 dask_image
 python-fcl
-cpython
+# cpython
 stardist
 # for cellpose
 # mxnet
