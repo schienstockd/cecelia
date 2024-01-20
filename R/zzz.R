@@ -433,8 +433,8 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   install.packages("BH")
   
   # install separately
-  remotes::install_github("rglab/cytolib", upgrade = "always", ...)
   remotes::install_github("rglab/flowCore", upgrade = "always", ...)
+  remotes::install_github("rglab/cytolib", upgrade = "always", ...)
   remotes::install_github("rglab/flowWorkspace", upgrade = "always", ...)
   remotes::install_github("rglab/ggcyto", upgrade = "always", ...)
 }
