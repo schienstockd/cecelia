@@ -430,13 +430,14 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   
   # install BH again?
   # https://github.com/RGLab/cytolib/issues/21#issuecomment-1144870336
-  install.packages("BH")
+  # install.packages("BH")
   
   # install separately
-  remotes::install_github("rglab/flowCore", upgrade = "always", ...)
-  remotes::install_github("rglab/cytolib", upgrade = "always", ...)
-  remotes::install_github("rglab/flowWorkspace", upgrade = "always", ...)
-  remotes::install_github("rglab/ggcyto", upgrade = "always", ...)
+  remotes::install_github("rglab/cytolib", upgrade = "never", ...)
+  remotes::install_github("rglab/flowCore", upgrade = "never", ...)
+  remotes::install_github("rglab/flowViz", upgrade = "never", ...)
+  remotes::install_github("rglab/flowWorkspace", upgrade = "never", ...)
+  remotes::install_github("rglab/ggcyto", upgrade = "never", ...)
 }
 
 #' @description Apply patches
