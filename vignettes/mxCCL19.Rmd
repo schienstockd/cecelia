@@ -290,6 +290,47 @@ write.csv(datToPlot, file.path(anaDir, "P14_cluster_interactions.csv"))
 ```
 
 ```{r}
+# plot out % of all three cell types together
+# ie/ for every cluster ID there is a composition
+# datToPlot <- popDT[flow.cell.is.clust == TRUE] %>%
+datToPlot <- as.data.table(popDT %>%
+  rename(
+    XCR1 = `flow.cell.contact#flow.__cells/O1/XCR1`,
+    CD11c = `flow.cell.contact#flow.__cells/O1/CD11c`,
+    LCMV = `flow.cell.contact#branch.LCMV.branch__two`
+  ))
+
+# condition for 
+datToPlot[, triplet := FALSE]
+datToPlot[(XCR1 == TRUE | CD11c == TRUE) & LCMV == TRUE, triplet := TRUE]
+
+datToPlot <- datToPlot %>%
+  group_by(uID, flow.cell.is.clust, triplet) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, triplet, fill = list(freq = 0)) %>%
+  dplyr::filter(triplet == TRUE) %>%
+  left_join(exp.info)
+
+datToPlot$popState <- "non.clustering"
+datToPlot[datToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
+
+ggplot(datToPlot, aes(DTx, freq, color = popState)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100) +
+  scale_color_brewer(palette = "Set2")
+
+ggsave(file.path(anaDir, "P14_triplet_interactions.pdf"), width = 3, height = 2)
+write.csv(datToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
+```
+
+
+```{r}
 # show pops on image
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")

@@ -52,7 +52,7 @@ cciaSetup <- function(path = "~/cecelia") {
   pkg.env$path <- path
   
   # create directory if not present
-  dir.create(path, showWarnings = FALSE)
+  dir.create(path, showWarnings = FALSE, recursive = TRUE)
   
   # copy in custom.yml to be modified
   file.copy(system.file("custom.yml", package = "cecelia"), file.path(path))
@@ -172,7 +172,7 @@ cciaModels <- function(dlModels = c(
   )) {
   # create models directory
   modelsDir <- file.path(cciaPath(), "models")
-  dir.create(modelsDir, showWarnings = FALSE)
+  dir.create(modelsDir, showWarnings = FALSE, recursive = TRUE)
   
   # Download ccia models form github repo
   download.file(
@@ -198,7 +198,7 @@ cciaModels <- function(dlModels = c(
   untar(tarfile = file.path(modelsDir, "mesmerModels.tar.gz"))
   # tar: could not chdir to './mesmerModels/MultiplexSegmentation'
   # exdir = )
-  dir.create(file.path(modelsDir, "mesmerModels"), showWarnings = FALSE)
+  dir.create(file.path(modelsDir, "mesmerModels"), showWarnings = FALSE, recursive = TRUE)
   file.copy("MultiplexSegmentation",
             file.path(modelsDir, "mesmerModels"),
             recursive = TRUE)
