@@ -272,7 +272,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     
     reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
   
-    # init jupyter
+    # init jupyter kernel
     if (initJupyter == TRUE) {
       if (is.null(jupyterConnectionFile))
         pkg.env$napariUtils <- NapariUtils$new(useConnectionFile = FALSE, libDir = jupyterLibDir)
