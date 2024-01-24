@@ -40,6 +40,10 @@ JupyterKernelUtils <- R6::R6Class(
           cciaConf()$python$viewer$connectionFile
         ))
         
+        # make sure directory exists
+        if (!dir.exists(dirname(connectionFile)))
+          dir.create(connectionFile, recursive = TRUE)
+        
         # file.remove(connectionFile)
         f <- file(connectionFile)
         writeLines(c(""), f)
