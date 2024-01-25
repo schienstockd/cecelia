@@ -320,6 +320,10 @@ cciaCreateApp <- function(keepExe = FALSE, appChmod = NULL) {
     # unlink(file.path(cciaPath(), "app"), recursive = TRUE)
   }
   
+  # make sure path exists
+  if (!dir.exists(cciaPath()))
+    dir.create(cciaPath(), recursive = TRUE)
+  
   # copy new app
   file.copy(
     system.file("app", package = "cecelia"), file.path(cciaPath()),
