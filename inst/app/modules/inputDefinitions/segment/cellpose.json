@@ -261,6 +261,7 @@
 				"index": 1,
 				"label": "Model Parameters (REF doi.org/10.6084/m9.figshare.24441214)",
 				"widget:group": {
+          "visibility": "hidden",
 				  "numItems": 5,
   				"model": {
             "index": 0,

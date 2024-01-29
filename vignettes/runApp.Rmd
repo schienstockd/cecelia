@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Run app
 
 ```{r}
+library(flowCore)
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # NotImplementedError: The operator 'aten::to_mkldnn' is not currently implemented for the MPS device.
 Sys.setenv(PYTORCH_ENABLE_MPS_FALLBACK = "1")
