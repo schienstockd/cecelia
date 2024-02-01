@@ -367,7 +367,8 @@ InputManager <- R6::R6Class(
         ui = uiList,
         # convert names back
         names = sapply(uiElement$names, .trimModuleFunName,
-                       USE.NAMES = FALSE)
+                       USE.NAMES = FALSE),
+        observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL
       )
     },
     
@@ -1168,6 +1169,7 @@ InputManager <- R6::R6Class(
       funTrimmed <- .trimModuleFunName(funName)
       
       uiMapping <- list()
+      uiObservers <- list()
       
       # get UIs
       private$setUiDefs(NULL)
@@ -1194,6 +1196,10 @@ InputManager <- R6::R6Class(
           # add to mapping
           uiMapping[[x]] <- uiElement$ui
           
+          # add oberservers
+          if ("observers" %in% names(uiElement))
+            uiObservers[[x]] <- uiElement$observers
+          
           # add inputs to list
           inputList <- c(inputList, uiElement$names)
         }
@@ -1204,6 +1210,11 @@ InputManager <- R6::R6Class(
       self$setFunInputs(inputList)
       
       # return UI
+      # TODO not sure how to handle observers in UI
+      # list(
+      #   ui = tagList(uiMapping),
+      #   observers = uiObservers
+      # )
       tagList(uiMapping)
     },
     
