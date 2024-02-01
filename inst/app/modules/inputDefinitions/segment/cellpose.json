@@ -261,8 +261,9 @@
 				"index": 1,
 				"label": "Model Parameters (REF doi.org/10.6084/m9.figshare.24441214)",
 				"widget:group": {
-          "visibility": "hidden",
+          "visible": true,
 				  "numItems": 5,
+				  "dynItems": true,
   				"model": {
             "index": 0,
             "label": "Cellpose Model",

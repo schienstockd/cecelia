@@ -767,30 +767,49 @@ InputManager <- R6::R6Class(
       # go through group items and build elements
       uiElements <- list()
       nameList <- c()
+      toggleVis <- FALSE
+      toggleDyn <- FALSE
       
       # get items
       groupItems <- list()
       
       if ("items" %in% names(uiContent)) {
+        # it could be a named list - so do not change
+        # groupItems <- as.character(uiContent$items)
         groupItems <- uiContent$items
       } else if ("numItems" %in% names(uiContent)) {
         # build items
-        groupItems <- seq(uiContent$numItems)
+        groupItems <- as.character(seq(uiContent$numItems))
         names(groupItems) <- groupItems
+      }
+      
+      # toggle content
+      if ("visible" %in% names(uiContent)) {
+        visName <- paste0(elmntName, "_visibility")
+        nameList <- append(nameList, visName)
+        uiElements[["0"]] <- fluidRow(
+          column(12, checkboxInput(visName, "show", uiContent$visible))
+        )
+        
+        toggleVis <- TRUE
+      }
+      
+      if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
+        toggleDyn <- TRUE
       }
       
       for (i in names(groupItems)) {
         x <- groupItems[[i]]
+        xID <- sprintf("%s_%s", .trimModuleFunName(elmntName), x)
         
         uiGroupElements <- list()
         
         # go through elements
-        for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "type")]) {
+        for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible")]) {
           curUI <- uiContent[[j]]
           curSpecs <- specContent[[j]]
           
-          curElmntName <- sprintf(
-            "%s_%s_%s", .trimModuleFunName(elmntName), x, j)
+          curElmntName <- sprintf("%s_%s", xID, j)
           
           # get element
           uiGroupElements[[j]] <- self$createUIElement(
@@ -800,14 +819,35 @@ InputManager <- R6::R6Class(
           #add input to list
           nameList <- c(nameList, curElmntName)
         }
+
+        # make panel dynamic?
+        itemLabel <- tags$i(tags$label(i))
         
-        uiElements[[x]] <- fluidRow(
-          column(12, tags$i(tags$label(i))),
-          column(
-            12,
-            tagList(lapply(uiGroupElements, function(x) x$ui))
+        if (dynItems == TRUE) {
+          itemLabel <- tagList(
+            itemLabel,
+            actionButton(paste0(xID, "_del"), '', icon = shiny::icon('times'), style = 'float: right')
           )
-        )
+        }
+        
+        # add conditional panel
+        # TODO is this too complicated here?
+        elementRow <- tags$div(
+          # id = environment(private$getSession()$ns)[['namespace']],
+          id = xID,
+          fluidRow(
+            column(12, itemLabel),
+            column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))
+          ))
+        
+        if (toggleVis == TRUE) {
+          uiElements[[x]] <- conditionalPanel(
+            # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
+            condition = sprintf("input['%s'] == true", visName),
+            elementRow)
+        } else {
+          uiElements[[x]] <- elementRow
+        }
       }
       
       list(

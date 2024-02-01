@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Examples to run functions and modules
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
 pID <- "Bi2995"
 # pID <- "rMeKCv"
@@ -24,6 +25,8 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N051/ANALYSIS/IMAGE/CECELIA
 ```
 
 ```{r}
+library(flowWorkspace)
+
 # Load cluster data
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
@@ -212,16 +215,16 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # uIDs <- exp.info$uID[!exp.info$uID %in% c()]
 uIDs <- exp.info$uID
 
-# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
-pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
+pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
+# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
 
 # exclude 'O' pops
 pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
 # pops <- pops[pops != "/nonDebris"]
 
 # get pops
-# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
-popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
+popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
 
 unique(popDT$pop)
 ```
@@ -369,6 +372,74 @@ table(spatialDT[
 
 unique(spatialDT$pop.from)
 ```
+
+```{r}
+# can you bootstrap interactions?
+spatialDT <- spatialDT[!is.na(pop.to)]
+
+# summaryAssociation <- spatialDT %>%
+summaryAssociation <- spatialDT %>%
+  # dplyr::filter(startsWith(pop.from, "/nonDebris/P14")) %>%
+  group_by(uID, pop.from, pop.to) %>%
+  dplyr::summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  drop_na() %>%
+  ungroup() %>%
+  complete(uID, pop.from, pop.to, fill = list(freq = 0))
+
+# bootstrap
+# numIterations <- 1000
+numIterations <- 10
+associationSummaries <- list()
+
+for (i in seq(numIterations)) {
+  if (i %% 10 == 0)
+    print(paste(">>", i))
+  
+  suppressMessages({
+    curSummary <- copy(spatialDT)
+
+    # randomise pop
+    curSummary[popDT[, c("uID", "label", "pop")],
+               on = c("uID", "to" = "label"),
+               pop.to := sample(pop)]
+    curSummary[popDT[, c("uID", "label", "pop")],
+               on = c("uID", "from" = "label"),
+               pop.from := pop]
+    
+    # summarise
+    associationSummaries[[i]] <- as.data.table(curSummary %>%
+      group_by(uID, pop.from, pop.to) %>%
+      dplyr::summarise(n = n()) %>%
+      mutate(freq = n/sum(n) * 100) %>%
+      drop_na() %>%
+      ungroup() %>%
+      complete(uID, pop.from, pop.to, fill = list(freq = 0)))
+  })
+}
+
+# bind together
+associationSummaries <- rbindlist(associationSummaries, idcol = "it")
+```
+
+```{r}
+# take mean and sd for iterations
+associationSummaries <- as.data.table(associationSummaries %>%
+  pivot_wider(names_from = "it", values_from = "freq") %>%
+  replace(is.na(.), 0) %>%
+  pivot_longer(cols = -c(uID, pop.from, pop.to, n), names_to = "it", values_to = "freq") %>%
+  group_by(uID, pop.from, pop.to) %>%
+  summarise(
+    mean = mean(freq),
+    sd = sd(freq)
+  ) %>%
+  left_join(summaryAssociation) %>%
+  mutate(z.score = (freq - mean) / sd) %>%
+  drop_na())
+
+associationSummaries[is.infinite(z.score), z.score := 0]
+```
+
 
 ```{r}
 popDT.spatial <- copy(popDT)

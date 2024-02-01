@@ -11,10 +11,12 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Examples to run functions and modules
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
 pID <- "pEdOoZ"
 versionID <- 2
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
@@ -941,7 +943,8 @@ uIDs <- names(cciaObj$cciaObjects())
 # get populations
 popDT <- cciaObj$popDT(
   popType = "clust", includeFiltered = TRUE,
-  pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
+  pops = cciaObj$popPaths(popType = "clust", includeFiltered = TRUE), uIDs = uIDs)
+  # pops = c("Th.ae", "Th.malignant", "Treg"), uIDs = uIDs)
 
 # get cluster information
 spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
