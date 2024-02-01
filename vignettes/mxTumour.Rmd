@@ -43,7 +43,8 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
 )
 
-testDT <- cciaObj$popDT("clust", includeFiltered = TRUE, flushCache = TRUE)
+testDT <- cciaObj$popDT("clust", pops = c("MHCII+"), includeFiltered = TRUE)
+testDT <- cciaObj$popDT("clust", includeFiltered = TRUE, flushCache = FALSE)
 
 testDT[label == "35265",]
 ```
