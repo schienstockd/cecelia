@@ -24,6 +24,9 @@ createTaskManager <- function(
   curTaskStates <- reactiveVal()
   prevTaskStates <- reactiveVal(list())
   
+  # task UI
+  funParamsUI <- reactiveVal()
+  
   ### Reactive-like values
   tasksCounter <- list()
   taskMonitorUtils <- TaskMonitorUtils$new()$reactive()
@@ -1670,10 +1673,17 @@ createTaskManager <- function(
   
   # show parameters based on selected workflow
   output$funParams <- renderUI({
+    req(funParamsUI())
+    
+    funParamsUI()
+  })
+  
+  observeEvent(c(cciaObj(), taskFunction()), {
     req(cciaObj())
     
     # set ccia object and set
-    isolate({ # Do not update if the object changes
+    if (is.null(moduleManagers()$inputManager$cciaObject()) ||
+        cciaObj()$getUID() != moduleManagers()$inputManager$cciaObject()$getUID()) {
       moduleManagers()$inputManager$setCciaObject(cciaObj())
       moduleManagers()$inputManager$setCciaObjectSet(
         moduleManagers()$imageSetManager$selectedSet()
@@ -1681,10 +1691,32 @@ createTaskManager <- function(
       moduleManagers()$inputManager$setCciaObjectCollection(
         globalManagers$dataManager()$cciaImageCollection()
       )
-    })
+    }
     
     # TODO can you add observers generated from the panels here .. ?
-    moduleManagers()$inputManager$createFunParamsUI(taskFunction())
+    funParamsOut <- moduleManagers()$inputManager$createFunParamsUI(taskFunction())
+    
+    # set UI
+    funParamsUI(funParamsOut$ui)
+    
+    # execute observers
+    if (length(funParamsOut$observers) > 0) {
+      # go through groups
+      for (i in names(funParamsOut$observers)) {
+        x <- funParamsOut$observers[[i]]
+        
+        # go through observers
+        # TODO there is probably only one per group?
+        for (j in names(x)) {
+          inputName <- trimInputName(environment(session$ns)[["namespace"]], j)
+          
+          observeEvent(input[[inputName]], {
+            inputName_local <- local(inputName)
+            eval(x[[j]])
+          })
+        }
+      }
+    }
   })
   
   # output for log

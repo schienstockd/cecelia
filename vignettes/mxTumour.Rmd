@@ -43,9 +43,24 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
 )
 
+testDT <- cciaObj$popDT("clust", includeFiltered = TRUE, flushCache = TRUE)
+
+testDT[label == "35265",]
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
+)
+
 # run task
 funParams <- list(
-  popsA = c("clust.MHCII+"),
+  popsA = c("clust.MHCII+", "clust.F480+"),
   popsB = c("branch.CD31.branch/two"),
   maxContactDist = 10
 )

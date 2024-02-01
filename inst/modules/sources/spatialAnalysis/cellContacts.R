@@ -30,23 +30,23 @@ CellContacts <- R6::R6Class(
       popsA <- splitPops(self$funParams()$popsA)
       popsB <- splitPops(self$funParams()$popsB)
       
+      # TODO multiple pops do not work
       # go through pops
       for (x in popsA) {
         xType <- x[[1]]
         xPop <- x[[2]]
+        
+        # get root DT
+        # TODO you need to get root for that value name
+        # This is the case for multi-label pops
+        # TODO would you use this function for static images .. ?
+        rootDT <- cciaObj$popDT(xType, includeFiltered = TRUE)
         
         # get DT
         popDTA <- cciaObj$popDT(xType, pops = xPop, includeFiltered = TRUE)
         
         centroidCols <- colnames(popDTA)[startsWith(colnames(popDTA), "centroid_")]
         convertPixelToPhysical(popDTA, cciaObj$omeXMLPixelRes())
-        
-        # get root DT
-        # TODO you need to get root for that value name
-        # This is the case for multi-label pops
-        # TODO would you use this function for static images .. ?
-        # rootDT <- cciaObj$popDT(xType, includeFiltered = TRUE)
-        rootDT <- cciaObj$popDT(xType, includeFiltered = TRUE)
         
         # get columns for query
         centroidCols <- colnames(popDTA)[colnames(popDTA) %in% paste0("centroid_", c("z", "y", "x"))]

@@ -770,6 +770,7 @@ InputManager <- R6::R6Class(
       nameList <- c()
       toggleVis <- FALSE
       toggleDyn <- FALSE
+      observerList <- list()
       
       # get items
       groupItems <- list()
@@ -784,20 +785,48 @@ InputManager <- R6::R6Class(
         names(groupItems) <- groupItems
       }
       
+      # dynamic content
+      if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
+        addRowName <- paste0(elmntName, "_addRow")
+        
+        print(paste(">> observe", addRowName))
+        observerList[[addRowName]] <- expression({
+          browser()
+          # new_id <- paste("row", input$addLine, sep = "_")
+          # insertUI(
+          #   selector = "#placeholder",
+          #   where = "beforeBegin",
+          #   ui = row_ui(new_id)
+          # )
+          # 
+          # handler_list <- isolate(handler())
+          # new_handler <- callModule(row_server, new_id)
+          # handler_list <- c(handler_list, new_handler)
+          # names(handler_list)[length(handler_list)] <- new_id
+          # handler(handler_list)
+          # 
+          # observeEvent(input[[paste0(new_id, '-deleteButton')]], {
+          #   removeUI(selector = sprintf('#%s', new_id))
+          #   remove_shiny_inputs(new_id, input)
+          # })
+        })
+        
+        toggleDyn <- TRUE
+      }
+      
       # toggle content
       if ("visible" %in% names(uiContent)) {
         visName <- paste0(elmntName, "_visibility")
         nameList <- append(nameList, visName)
+        
         uiElements[["SPACER"]] <- fluidRow(
           # column(12, checkboxInput(visName, "Show all", uiContent$visible))
-          column(12, checkboxInput(visName, "Show all", TRUE))
+          column(4, checkboxInput(visName, "Show all", TRUE)),
+          # TODO not sure how to add oberservers here
+          if (toggleDyn == TRUE) column(2, actionButton(addRowName, "", icon = shiny::icon("plus"))) else NULL,
         )
         
         toggleVis <- TRUE
-      }
-      
-      if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
-        toggleDyn <- TRUE
       }
       
       for (i in names(groupItems)) {
@@ -834,9 +863,8 @@ InputManager <- R6::R6Class(
         
         if (toggleDyn == TRUE) {
           itemLabel <- fluidRow(
-            column(8, itemLabel)
-            # not sure how to add oberservers here
-            # column(4, actionButton(paste0(xID, "_del"), '', icon = shiny::icon('times')))
+            column(10, itemLabel),
+            column(2, actionButton(paste0(xID, "_del"), "", icon = shiny::icon("minus")))
           )
         }
         
@@ -863,7 +891,8 @@ InputManager <- R6::R6Class(
       
       list(
         ui = tagList(uiElements),
-        names = nameList
+        names = nameList,
+        observers = observerList
       )
     },
     
@@ -1211,11 +1240,11 @@ InputManager <- R6::R6Class(
       
       # return UI
       # TODO not sure how to handle observers in UI
-      # list(
-      #   ui = tagList(uiMapping),
-      #   observers = uiObservers
-      # )
-      tagList(uiMapping)
+      list(
+        ui = tagList(uiMapping),
+        observers = uiObservers
+      )
+      # tagList(uiMapping)
     },
     
     # return ccia object for input
