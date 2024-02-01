@@ -422,6 +422,18 @@ for (i in seq(numIterations)) {
 associationSummaries <- rbindlist(associationSummaries, idcol = "it")
 ```
 
+```{r fig_p14, fig.height=4, fig.width=4}
+ggplot(associationSummaries %>% left_join(exp.info), aes(Treatment, z.score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_jitter(width = 0.3, alpha = 1.0) +
+  xlab("") + ylab("Interaction (z score)") +
+  facet_grid(pop.to~pop.from) +
+  expand_limits(y = 0)
+```
+
+
 ```{r}
 # take mean and sd for iterations
 associationSummaries <- as.data.table(associationSummaries %>%
