@@ -342,6 +342,7 @@
 				"index": 22,
 				"label": "Filters",
 				"widget:group": {
+				  "visible": false,
 					"numItems": 4,
 					"measure": {
 						"index": 1,

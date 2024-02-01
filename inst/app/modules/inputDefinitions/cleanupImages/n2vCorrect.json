@@ -60,6 +60,7 @@
 				"index": 3,
 				"label": "Models",
 				"widget:modelSelectionGroup": {
+				  "visible": false,
 				  "type": "n2v",
           "modelChannels": {
             "index": 0,

@@ -398,11 +398,14 @@ for (i in seq(numIterations)) {
   
   suppressMessages({
     curSummary <- copy(spatialDT)
-
+    
+    curPopDT <- copy(popDT[, c("uID", "label", "pop")])
+    curPopDT[, pop := sample(pop, replace = FALSE)]
+    
     # randomise pop
-    curSummary[popDT[, c("uID", "label", "pop")],
+    curSummary[curPopDT[, c("uID", "label", "pop")],
                on = c("uID", "to" = "label"),
-               pop.to := sample(pop)]
+               pop.to := pop]
     curSummary[popDT[, c("uID", "label", "pop")],
                on = c("uID", "from" = "label"),
                pop.from := pop]
@@ -422,18 +425,6 @@ for (i in seq(numIterations)) {
 associationSummaries <- rbindlist(associationSummaries, idcol = "it")
 ```
 
-```{r fig_p14, fig.height=4, fig.width=4}
-ggplot(associationSummaries %>% left_join(exp.info), aes(Treatment, z.score)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-  geom_jitter(width = 0.3, alpha = 1.0) +
-  xlab("") + ylab("Interaction (z score)") +
-  facet_grid(pop.to~pop.from) +
-  expand_limits(y = 0)
-```
-
-
 ```{r}
 # take mean and sd for iterations
 associationSummaries <- as.data.table(associationSummaries %>%
@@ -452,6 +443,16 @@ associationSummaries <- as.data.table(associationSummaries %>%
 associationSummaries[is.infinite(z.score), z.score := 0]
 ```
 
+```{r fig_p14, fig.height=4, fig.width=4}
+ggplot(associationSummaries %>% left_join(exp.info), aes(Treatment, z.score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_jitter(width = 0.3, alpha = 1.0) +
+  xlab("") + ylab("Interaction (z score)") +
+  facet_grid(pop.to~pop.from) +
+  expand_limits(y = 0)
+```
 
 ```{r}
 popDT.spatial <- copy(popDT)

@@ -214,6 +214,7 @@
 				"index": 14,
 				"label": "Use channels for clusterings",
 				"widget:channelSelectionTypeGroup": {
+				  "visible": false,
           "channels": {
             "index": 0,
             "label": "Channels",

@@ -95,6 +95,7 @@
 				"index": 1,
 				"label": "Channel combinations",
 				"widget:channelGroup": {
+				  "visible": false,
 					"divisionChannels": {
 						"index": 0,
 						"label": "Channels",

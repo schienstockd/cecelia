@@ -54,6 +54,7 @@
 				"index": 0,
 				"label": "Classifiers",
 				"widget:clSelectionGroup": {
+				  "visible": false,
 				  "type": "pix",
           "clChannels": {
             "index": 0,

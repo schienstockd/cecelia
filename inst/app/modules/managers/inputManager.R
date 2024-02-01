@@ -787,8 +787,9 @@ InputManager <- R6::R6Class(
       if ("visible" %in% names(uiContent)) {
         visName <- paste0(elmntName, "_visibility")
         nameList <- append(nameList, visName)
-        uiElements[["0"]] <- fluidRow(
-          column(12, checkboxInput(visName, "show", uiContent$visible))
+        uiElements[["SPACER"]] <- fluidRow(
+          # column(12, checkboxInput(visName, "Show all", uiContent$visible))
+          column(12, checkboxInput(visName, "Show all", TRUE))
         )
         
         toggleVis <- TRUE
@@ -823,28 +824,37 @@ InputManager <- R6::R6Class(
         # make panel dynamic?
         itemLabel <- tags$i(tags$label(i))
         
-        if (dynItems == TRUE) {
-          itemLabel <- tagList(
-            itemLabel,
-            actionButton(paste0(xID, "_del"), '', icon = shiny::icon('times'), style = 'float: right')
+        # add vis
+        if (toggleVis == TRUE) {
+          visItemName <- paste0(visName, "_", x)
+          
+          itemLabel <- tags$i(checkboxInput(visItemName, i, uiContent$visible))
+        }
+        
+        if (toggleDyn == TRUE) {
+          itemLabel <- fluidRow(
+            column(8, itemLabel)
+            # not sure how to add oberservers here
+            # column(4, actionButton(paste0(xID, "_del"), '', icon = shiny::icon('times')))
           )
         }
         
         # add conditional panel
         # TODO is this too complicated here?
-        elementRow <- tags$div(
-          # id = environment(private$getSession()$ns)[['namespace']],
-          id = xID,
-          fluidRow(
-            column(12, itemLabel),
-            column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))
-          ))
+        elementRow <- tagList(
+          fluidRow(column(12, itemLabel)),
+          tags$div(id = xID, fluidRow(column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))), tags$hr())
+        )
         
         if (toggleVis == TRUE) {
-          uiElements[[x]] <- conditionalPanel(
-            # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
-            condition = sprintf("input['%s'] == true", visName),
-            elementRow)
+          uiElements[[x]] <- tagList(
+            elementRow[[1]],
+            conditionalPanel(
+              # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
+              condition = sprintf("input['%s'] == true && input['%s'] == true",
+                                  visName, visItemName),
+              elementRow[[2]])
+          )
         } else {
           uiElements[[x]] <- elementRow
         }

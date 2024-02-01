@@ -1683,6 +1683,7 @@ createTaskManager <- function(
       )
     })
     
+    # TODO can you add observers generated from the panels here .. ?
     moduleManagers()$inputManager$createFunParamsUI(taskFunction())
   })
   

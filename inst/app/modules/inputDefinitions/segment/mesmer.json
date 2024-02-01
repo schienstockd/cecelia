@@ -170,6 +170,7 @@
 				"index": 1,
 				"label": "Model Parameters",
 				"widget:group": {
+				  "visible": false,
 				  "numItems": 5,
           "nucleiChannels": {
             "index": 0,
