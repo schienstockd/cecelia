@@ -1033,8 +1033,8 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
       
       # get files that match the filename_0000n
       addedFiles <- addedFiles[
-        str_sub(addedFiles, start = 1,
-                end = stri_locate_last_fixed(addedFiles, "_")[,1] - 1) == filename
+        stringr::str_sub(addedFiles, start = 1,
+                end = stringi::stri_locate_last_fixed(addedFiles, "_")[,1] - 1) == filename
       ]
       
       # remove NA
@@ -1042,16 +1042,16 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
       
       # remove non 5 numeric values
       addedFiles <- addedFiles[!is.na(stringr::str_match(
-        str_sub(
+        stringr::str_sub(
           addedFiles,
-          start = stri_locate_last_fixed(addedFiles, "_")[,1] + 1),
+          start = stringi::stri_locate_last_fixed(addedFiles, "_")[,1] + 1),
         "[0-9]{5}"
       ))]
       
       # add names
       # addedNames <- c(paste0(newFilename, stringr::str_replace(addedFiles, filename, "")))
       addedNames <- c(
-        paste0(newFilename, str_sub(addedFiles, str_length(filename) + 1))
+        paste0(newFilename, stringr::str_sub(addedFiles, str_length(filename) + 1))
         )
     }
     

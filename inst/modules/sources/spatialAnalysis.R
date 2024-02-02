@@ -70,8 +70,6 @@ SpatialAnalysis <- R6::R6Class(
             )
           )
           
-          browser()
-          
           # remove populations
           cciaObj$delPopsByPath(
             popType,

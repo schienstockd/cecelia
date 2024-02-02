@@ -1709,9 +1709,16 @@ createTaskManager <- function(
         # TODO there is probably only one per group?
         for (j in names(x)) {
           inputName <- trimInputName(environment(session$ns)[["namespace"]], j)
+          groupName <- stringr::str_sub(
+            inputName, start = 1, end = stringi::stri_locate_last_fixed(inputName, "_")[,1] - 1)
           
           observeEvent(input[[inputName]], {
+            # define local variables
             inputName_local <- local(inputName)
+            groupName_local <- local(groupName)
+            self_local <- local(moduleManagers()$inputManager)
+            vars_local <- local(if ("vars" %in% names(funParamsOut)) funParamsOut$vars[[i]] else NULL)
+            
             eval(x[[j]])
           })
         }

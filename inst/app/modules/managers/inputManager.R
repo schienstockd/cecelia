@@ -258,6 +258,78 @@ InputManager <- R6::R6Class(
         defaultVal
     },
     
+    # generate UI elements based on UI definition
+    # this is intended for grouped items
+    createUIElements = function(elmntName, subElmntLabel, subElmntName, uiContent, specContent) {
+      # get booleans
+      # TODO should that be passed as parameter?
+      toggleDyn <- "dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE
+      toggleVis <- "visible" %in% names(uiContent)
+      visName <- paste0(elmntName, "_visibility")
+      
+      elmntID <- sprintf("%s_%s", .trimModuleFunName(elmntName), subElmntName)
+      nameList <- list()
+      uiGroupElements <- list()
+      
+      # go through elements
+      for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible")]) {
+        curUI <- uiContent[[j]]
+        curSpecs <- specContent[[j]]
+        
+        curElmntName <- sprintf("%s_%s", elmntID, j)
+        
+        # get element
+        uiGroupElements[[j]] <- self$createUIElement(
+          curElmntName, curUI, curSpecs
+        )
+        
+        #add input to list
+        nameList <- c(nameList, curElmntName)
+      }
+      
+      # make panel dynamic?
+      itemLabel <- tags$i(tags$label(subElmntLabel))
+      
+      # add vis
+      if (toggleVis == TRUE) {
+        visItemName <- paste0(visName, "_", subElmntName)
+        
+        itemLabel <- tags$i(checkboxInput(visItemName, subElmntLabel, uiContent$visible))
+      }
+      
+      if (toggleDyn == TRUE) {
+        itemLabel <- fluidRow(
+          column(10, itemLabel)
+          # column(2, actionButton(paste0(elmntID, "_del"), "", icon = shiny::icon("minus")))
+        )
+      }
+      
+      # add conditional panel
+      # TODO is this too complicated here?
+      elementRow <- tagList(
+        fluidRow(column(12, itemLabel)),
+        tags$div(id = elmntID, fluidRow(column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))), tags$hr())
+      )
+      
+      if (toggleVis == TRUE) {
+        uiElements <- tagList(
+          elementRow[[1]],
+          conditionalPanel(
+            # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
+            condition = sprintf("input['%s'] == true && input['%s'] == true",
+                                visName, visItemName),
+            elementRow[[2]])
+        )
+      } else {
+        uiElements <- elementRow
+      }
+      
+      list(
+        ui = uiElements,
+        names = nameList
+      )
+    },
+    
     # generate UI element
     createUIElement = function(elmntName, uiDef, specDef) {
       # get widget type
@@ -368,7 +440,8 @@ InputManager <- R6::R6Class(
         # convert names back
         names = sapply(uiElement$names, .trimModuleFunName,
                        USE.NAMES = FALSE),
-        observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL
+        observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL,
+        vars = if ("vars" %in% names(uiElement)) uiElement$vars else NULL
       )
     },
     
@@ -791,20 +864,18 @@ InputManager <- R6::R6Class(
         
         print(paste(">> observe", addRowName))
         observerList[[addRowName]] <- expression({
-          browser()
-          # new_id <- paste("row", input$addLine, sep = "_")
-          # insertUI(
-          #   selector = "#placeholder",
-          #   where = "beforeBegin",
-          #   ui = row_ui(new_id)
-          # )
-          # 
-          # handler_list <- isolate(handler())
-          # new_handler <- callModule(row_server, new_id)
-          # handler_list <- c(handler_list, new_handler)
-          # names(handler_list)[length(handler_list)] <- new_id
-          # handler(handler_list)
-          # 
+          # get new ID 
+          new_id <- input[[inputName_local]]
+          new_uiElements <- self_local$createUIElements(
+            groupName_local, new_id, new_id, vars_local$uiContent, vars_local$specContent)
+          
+          insertUI(
+            selector = stringr::str_replace_all(
+              paste0("#", session$ns(paste0(groupName_local, "_placeholder"))), "\\.", "\\\\."),
+            where = "beforeEnd",
+            ui = new_uiElements$ui
+          )
+          
           # observeEvent(input[[paste0(new_id, '-deleteButton')]], {
           #   removeUI(selector = sprintf('#%s', new_id))
           #   remove_shiny_inputs(new_id, input)
@@ -826,73 +897,29 @@ InputManager <- R6::R6Class(
           # if (toggleDyn == TRUE) column(2, actionButton(addRowName, "", icon = shiny::icon("plus"))) else NULL,
         )
         
+        # add placeholder
+        if (toggleDyn == TRUE) {
+          uiElements[["SPACER"]] <- tagList(uiElements[["SPACER"]], div(id = paste0(elmntName, "_placeholder")))
+        }
+        
         toggleVis <- TRUE
       }
       
       for (i in names(groupItems)) {
+        # generate elements from definition
         x <- groupItems[[i]]
-        xID <- sprintf("%s_%s", .trimModuleFunName(elmntName), x)
         
-        uiGroupElements <- list()
+        xElements <- self$createUIElements(elmntName, i, x, uiContent, specContent)
         
-        # go through elements
-        for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible")]) {
-          curUI <- uiContent[[j]]
-          curSpecs <- specContent[[j]]
-          
-          curElmntName <- sprintf("%s_%s", xID, j)
-          
-          # get element
-          uiGroupElements[[j]] <- self$createUIElement(
-            curElmntName, curUI, curSpecs
-          )
-          
-          #add input to list
-          nameList <- c(nameList, curElmntName)
-        }
-
-        # make panel dynamic?
-        itemLabel <- tags$i(tags$label(i))
-        
-        # add vis
-        if (toggleVis == TRUE) {
-          visItemName <- paste0(visName, "_", x)
-          
-          itemLabel <- tags$i(checkboxInput(visItemName, i, uiContent$visible))
-        }
-        
-        if (toggleDyn == TRUE) {
-          itemLabel <- fluidRow(
-            column(10, itemLabel)
-            # column(2, actionButton(paste0(xID, "_del"), "", icon = shiny::icon("minus")))
-          )
-        }
-        
-        # add conditional panel
-        # TODO is this too complicated here?
-        elementRow <- tagList(
-          fluidRow(column(12, itemLabel)),
-          tags$div(id = xID, fluidRow(column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))), tags$hr())
-        )
-        
-        if (toggleVis == TRUE) {
-          uiElements[[x]] <- tagList(
-            elementRow[[1]],
-            conditionalPanel(
-              # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
-              condition = sprintf("input['%s'] == true && input['%s'] == true",
-                                  visName, visItemName),
-              elementRow[[2]])
-          )
-        } else {
-          uiElements[[x]] <- elementRow
-        }
+        uiElements[[x]] <- xElements$ui
+        nameList <- append(nameList, unlist(xElements$names))
       }
       
       list(
         ui = tagList(uiElements),
         names = nameList,
-        observers = observerList
+        observers = observerList,
+        vars = list(uiContent = uiContent, specContent = specContent)
       )
     },
     
@@ -1199,6 +1226,7 @@ InputManager <- R6::R6Class(
       
       uiMapping <- list()
       uiObservers <- list()
+      uiVars <- list()
       
       # get UIs
       private$setUiDefs(NULL)
@@ -1229,6 +1257,10 @@ InputManager <- R6::R6Class(
           if ("observers" %in% names(uiElement))
             uiObservers[[x]] <- uiElement$observers
           
+          # add vars
+          if ("vars" %in% names(uiElement))
+            uiVars[[x]] <- uiElement$vars
+          
           # add inputs to list
           inputList <- c(inputList, uiElement$names)
         }
@@ -1242,7 +1274,8 @@ InputManager <- R6::R6Class(
       # TODO not sure how to handle observers in UI
       list(
         ui = tagList(uiMapping),
-        observers = uiObservers
+        observers = uiObservers,
+        vars = uiVars
       )
       # tagList(uiMapping)
     },
@@ -1302,6 +1335,9 @@ InputManager <- R6::R6Class(
           listItems <- stringr::str_extract(
             names(curVals), sprintf("(?<=%s_).+", i)
           )
+          
+          # make sure it is not a keyword
+          listItems <- listItems[!is.na(stringr::str_match(listItems, "_"))]
           listItems <- listItems[!is.na(listItems)]
           
           # get names for list

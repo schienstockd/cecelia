@@ -27,8 +27,6 @@ ImportTracking <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      browser()
-      
       # DONE
       self$writeLog("Done")
       self$exitLog()
