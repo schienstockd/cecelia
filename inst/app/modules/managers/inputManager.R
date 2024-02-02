@@ -316,7 +316,8 @@ InputManager <- R6::R6Class(
           elementRow[[1]],
           conditionalPanel(
             # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
-            condition = sprintf("input['%s'] == true && input['%s'] == true",
+            # condition = sprintf("input['%s'] == true && input['%s'] == true",
+            condition = sprintf("input['%s'] == true || input['%s'] == true",
                                 visName, visItemName),
             elementRow[[2]])
         )
