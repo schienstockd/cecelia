@@ -285,7 +285,7 @@ InputManager <- R6::R6Class(
           curElmntName, curUI, curSpecs, idPrefix = if (uiType == "box") idPrefix else NULL)
         
         #add input to list
-        nameList <- c(nameList, curElmntName)
+        nameList <- c(nameList, uiGroupElements[[j]]$names)
       }
       
       # make panel dynamic?
@@ -943,9 +943,6 @@ InputManager <- R6::R6Class(
       # go through group items and build elements
       uiElements <- list()
       nameList <- c()
-      
-      if (length(idPrefix) > 1)
-        browser()
       
       # get items
       for (i in names(uiContent$items)) {

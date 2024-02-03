@@ -63,6 +63,8 @@ Cellpose <- R6::R6Class(
           x
         })
       
+      save(models, file = "~/Downloads/models.RData")
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
