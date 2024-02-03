@@ -272,7 +272,7 @@ InputManager <- R6::R6Class(
       uiGroupElements <- list()
       
       # go through elements
-      for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible")]) {
+      for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible", "collapsible", "collapsed")]) {
         curUI <- uiContent[[j]]
         curSpecs <- specContent[[j]]
         
@@ -353,6 +353,9 @@ InputManager <- R6::R6Class(
       } else if (names(uiType) == "group") {
         uiElement <- self$createUIGroup(
           elmntName, uiType, specType)
+      } else if (names(uiType) == "box") {
+        uiElement <- self$createUIBox(
+          elmntName, uiType, specType, uiDef$label)
       } else if (names(uiType) == "sliderImageIntensity") {
         uiElement <- self$createUISliderImageIntensity(
           elmntName, uiType, specType)
@@ -425,9 +428,15 @@ InputManager <- R6::R6Class(
       }
       
       # create ui
+      # if (any(endsWith(tolower(names(uiType)), c("group", "box")))) {
       if (endsWith(tolower(names(uiType)), "group")) {
         uiList <- list(
           fluidRow(column(12, tags$label(uiDef$label))),
+          fluidRow(column(12, uiElement$ui))
+        )
+      } else if (names(uiType) == "box") {
+        uiList <- list(
+          # fluidRow(column(12, tags$label(uiDef$label))),
           fluidRow(column(12, uiElement$ui))
         )
       } else {
@@ -441,8 +450,7 @@ InputManager <- R6::R6Class(
       list(
         ui = uiList,
         # convert names back
-        names = sapply(uiElement$names, .trimModuleFunName,
-                       USE.NAMES = FALSE),
+        names = sapply(uiElement$names, .trimModuleFunName, USE.NAMES = FALSE),
         observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL,
         vars = if ("vars" %in% names(uiElement)) uiElement$vars else NULL
       )
@@ -927,6 +935,38 @@ InputManager <- R6::R6Class(
       )
     },
     
+    # box
+    createUIBox = function(elmntName, uiType, specType, boxLabel) {
+      uiContent <- uiType[[1]]
+      specContent <- specType[[1]]
+      
+      # go through group items and build elements
+      uiElements <- list()
+      nameList <- c()
+      
+      # get items
+      for (i in names(uiContent$items)) {
+        uiElements[[i]] <- self$createUIElement(
+          i, uiContent$items[[i]], specContent[[i]])
+      }
+      
+      # make box
+      uiBox <- box(
+        # id = ns("id"),
+        solidHeader = TRUE,
+        collapsible = uiContent$collapsible, 
+        collapsed = uiContent$collapsed,
+        title = boxLabel,
+        status = "info",
+        width = 12,
+        tagList(sapply(uiElements, function(x) x$ui)))
+      
+      list(
+        ui = uiBox,
+        names = unname(sapply(uiElements, function(x) x$names))
+      )
+    },
+    
     # module function list
     createUIModuleFunSelection = function(elmntName, uiType, specType) {
       uiContent <- uiType[[1]]
@@ -935,8 +975,7 @@ InputManager <- R6::R6Class(
       # build choices
       choices <- private$getInputDefinitions()
       choices <- choices[!names(choices) %in% c("retrieve", "upload")]
-      choicesNames <- sapply(
-        choices, function(x) x$fun[[1]]$label)
+      choicesNames <- sapply(choices, function(x) x$fun[[1]]$label)
       choices <- names(choices)
       names(choices) <- choicesNames
       
@@ -1232,6 +1271,9 @@ InputManager <- R6::R6Class(
       uiObservers <- list()
       uiVars <- list()
       
+      # combine elements in boxes?
+      uiBoxes <- list()
+      
       # get UIs
       private$setUiDefs(NULL)
       private$setSpecDefs(NULL)
@@ -1249,10 +1291,7 @@ InputManager <- R6::R6Class(
         # go through elements and generate UIs
         for (x in names(private$getUiDefs())) {
           uiElement <- self$createUIElement(
-            x,
-            private$getUiDefs()[[x]],
-            private$getSpecDefs()[[x]]
-            )
+            x, private$getUiDefs()[[x]], private$getSpecDefs()[[x]])
           
           # add to mapping
           uiMapping[[x]] <- uiElement$ui
