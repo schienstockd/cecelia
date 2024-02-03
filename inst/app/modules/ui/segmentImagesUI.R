@@ -33,9 +33,7 @@
       ),
       column(
         3,
-        fluidRow(
-          .taskManagerUI(id)
-        ),
+        fluidRow(.taskManagerUI(id)),
         tags$br(),
         fluidRow(
           box(
@@ -50,14 +48,14 @@
                 uiOutput(ns("taskFunction"))
               )
             ),
-            uiOutput(ns("funParams")),
+            uiOutput(ns("funParams"))
             # fluidRow(
             #   column(
             #     2, actionButton(ns("segmentVp"), "Segment viewpoint")
             #   )
             # )
           )
-        ),
+        )
         # fluidRow(
         #   box(
         #     solidHeader = TRUE,

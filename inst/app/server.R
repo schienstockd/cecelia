@@ -158,7 +158,7 @@ server <- function(input, output, session) {
           }),
         ))
       },
-      easyClose = TRUE
+      easyClose = TRUE, size = "xl"
     )
   }
   
@@ -584,7 +584,7 @@ server <- function(input, output, session) {
     globalManagers$projectManager()$setProjectUID(
       input$loadSelectedProject
     )
-
+    
     # load project version
     globalManagers$projectManager()$loadProjectVersion()
   })

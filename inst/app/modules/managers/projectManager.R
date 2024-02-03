@@ -1034,8 +1034,7 @@ ProjectManager <- R6::R6Class(
       DBI::dbDisconnect(dbConn)
       
       # set state ID
-      self$setProjectVersionStateID(
-        dbRes[1, "stateID"])
+      self$setProjectVersionStateID(dbRes[1, "stateID"])
     },
     
     # copy version content

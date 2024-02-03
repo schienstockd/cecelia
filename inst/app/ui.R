@@ -107,7 +107,6 @@ ui <- function(request) {
     )
   )
   
-  
   # --- main body ---
   body <- dashboardBody(
     useShinyjs(),
@@ -119,9 +118,9 @@ ui <- function(request) {
     # https://stackoverflow.com/questions/32465177/how-to-manually-expand-a-submenu-in-a-shiny-dashboard-side-bar
     
     # change theme
-    shinyDashboardThemes(
-      theme = "grey_dark"
-    ),
+    # shinyDashboardThemes(
+    #   theme = "grey_dark"
+    # ),
     
     tabItems(
       # create project

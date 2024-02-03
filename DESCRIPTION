@@ -80,7 +80,8 @@ Imports:
     geometry,
     lubridate,
     ggquiver,
-    concaveman
+    concaveman,
+    bs4Dash
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3

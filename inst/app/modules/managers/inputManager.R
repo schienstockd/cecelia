@@ -265,7 +265,7 @@ InputManager <- R6::R6Class(
       # TODO should that be passed as parameter?
       toggleDyn <- "dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE
       toggleVis <- "visible" %in% names(uiContent)
-      visName <- paste0(elmntName, "_visibility")
+      visName <- paste0(elmntName, "Visibility")
       
       elmntID <- sprintf("%s_%s", .trimModuleFunName(elmntName), subElmntName)
       nameList <- list()
@@ -290,7 +290,6 @@ InputManager <- R6::R6Class(
       # make panel dynamic?
       itemLabel <- tags$i(tags$label(subElmntLabel))
       
-      # add vis
       if (toggleVis == TRUE) {
         visItemName <- paste0(visName, "_", subElmntName)
         
@@ -872,7 +871,7 @@ InputManager <- R6::R6Class(
           
           insertUI(
             selector = stringr::str_replace_all(
-              paste0("#", session$ns(paste0(groupName_local, "_placeholder"))), "\\.", "\\\\."),
+              paste0("#", session$ns(paste0(groupName_local, "Placeholder"))), "\\.", "\\\\."),
             where = "beforeEnd",
             ui = new_uiElements$ui
           )
@@ -888,8 +887,10 @@ InputManager <- R6::R6Class(
       
       # toggle content
       if ("visible" %in% names(uiContent)) {
-        visName <- paste0(elmntName, "_visibility")
+        visName <- paste0(elmntName, "Visibility")
         nameList <- append(nameList, visName)
+        
+        browser()
         
         uiElements[["SPACER"]] <- fluidRow(
           # column(12, checkboxInput(visName, "Show all", uiContent$visible))
@@ -900,7 +901,7 @@ InputManager <- R6::R6Class(
         
         # add placeholder
         if (toggleDyn == TRUE) {
-          uiElements[["SPACER"]] <- tagList(uiElements[["SPACER"]], div(id = paste0(elmntName, "_placeholder")))
+          uiElements[["SPACER"]] <- tagList(uiElements[["SPACER"]], div(id = paste0(elmntName, "Placeholder")))
         }
         
         toggleVis <- TRUE

@@ -41,6 +41,7 @@
             status = "primary",
             width = 12,
             background = "black",
+            # background = "gray-dark", #bs4dash
             tabsetPanel(
               id = ns("tracksPlotsPanel"),
               type = "tabs",
