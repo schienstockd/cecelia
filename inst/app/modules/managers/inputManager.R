@@ -291,9 +291,12 @@ InputManager <- R6::R6Class(
       itemLabel <- tags$i(tags$label(subElmntLabel))
       
       if (toggleVis == TRUE) {
-        visItemName <- paste0(visName, "_", subElmntName)
+        visItemName <- paste0(visName, "-", subElmntName)
         
-        itemLabel <- tags$i(checkboxInput(visItemName, subElmntLabel, uiContent$visible))
+        # itemLabel <- tags$i(checkboxInput(visItemName, subElmntLabel, uiContent$visible))
+        itemLabel <- tags$i(checkboxInput(
+          visItemName, subElmntLabel, self$funParam(getInputName(visItemName), uiContent$visible)))
+        nameList <- c(nameList, visItemName)
       }
       
       if (toggleDyn == TRUE) {
@@ -890,11 +893,10 @@ InputManager <- R6::R6Class(
         visName <- paste0(elmntName, "Visibility")
         nameList <- append(nameList, visName)
         
-        browser()
-        
         uiElements[["SPACER"]] <- fluidRow(
           # column(12, checkboxInput(visName, "Show all", uiContent$visible))
-          column(4, checkboxInput(visName, "Show all", TRUE))
+          column(4, checkboxInput(
+            visName, "Show all", self$funParam(getInputName(visName), uiContent$visible)))
           # TODO not sure how to add oberservers here
           # if (toggleDyn == TRUE) column(2, actionButton(addRowName, "", icon = shiny::icon("plus"))) else NULL,
         )

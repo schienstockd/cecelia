@@ -201,6 +201,15 @@ trimInputName <- function(sessionID, inputID) {
   stringr::str_split(inputID, paste0(sessionID, "-"))[[1]][[2]]
 }
 
+#' @description Return input field from string of full id
+#' @param inputID character of input ID
+#' @examples
+#' TODO
+#' @export
+getInputName <- function(inputID) {
+  stringr::str_extract(inputID, "(?<=\\.)[^.]+$")
+}
+
 ## Bookmarking
 # build state url
 buildShinyBookmarkURL <- function(session, stateID) {
