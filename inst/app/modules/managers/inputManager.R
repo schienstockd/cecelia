@@ -268,6 +268,7 @@ InputManager <- R6::R6Class(
       visName <- paste0(elmntName, "Visibility")
       
       elmntID <- sprintf("%s_%s", .trimModuleFunName(elmntName), subElmntName)
+      idPrefix <- paste0(elmntID, "_")
       nameList <- list()
       uiGroupElements <- list()
       
@@ -277,11 +278,11 @@ InputManager <- R6::R6Class(
         curSpecs <- specContent[[j]]
         
         curElmntName <- sprintf("%s_%s", elmntID, j)
+        uiType <- names(private$uiType(curUI))
         
         # get element
         uiGroupElements[[j]] <- self$createUIElement(
-          curElmntName, curUI, curSpecs
-        )
+          curElmntName, curUI, curSpecs, idPrefix = if (uiType == "box") idPrefix else NULL)
         
         #add input to list
         nameList <- c(nameList, curElmntName)
@@ -334,7 +335,7 @@ InputManager <- R6::R6Class(
     },
     
     # generate UI element
-    createUIElement = function(elmntName, uiDef, specDef) {
+    createUIElement = function(elmntName, uiDef, specDef, idPrefix = NULL) {
       # get widget type
       uiType <- private$uiType(uiDef)
       specType <- private$specType(specDef)
@@ -355,7 +356,7 @@ InputManager <- R6::R6Class(
           elmntName, uiType, specType)
       } else if (names(uiType) == "box") {
         uiElement <- self$createUIBox(
-          elmntName, uiType, specType, uiDef$label)
+          elmntName, uiType, specType, uiDef$label, idPrefix)
       } else if (names(uiType) == "sliderImageIntensity") {
         uiElement <- self$createUISliderImageIntensity(
           elmntName, uiType, specType)
@@ -873,7 +874,6 @@ InputManager <- R6::R6Class(
       if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
         addRowName <- paste0(elmntName, "_addRow")
         
-        print(paste(">> observe", addRowName))
         observerList[[addRowName]] <- expression({
           # get new ID 
           new_id <- input[[inputName_local]]
@@ -936,7 +936,7 @@ InputManager <- R6::R6Class(
     },
     
     # box
-    createUIBox = function(elmntName, uiType, specType, boxLabel) {
+    createUIBox = function(elmntName, uiType, specType, boxLabel, idPrefix = NULL) {
       uiContent <- uiType[[1]]
       specContent <- specType[[1]]
       
@@ -944,10 +944,13 @@ InputManager <- R6::R6Class(
       uiElements <- list()
       nameList <- c()
       
+      if (length(idPrefix) > 1)
+        browser()
+      
       # get items
       for (i in names(uiContent$items)) {
         uiElements[[i]] <- self$createUIElement(
-          i, uiContent$items[[i]], specContent[[i]])
+          paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
       }
       
       # make box
@@ -957,7 +960,11 @@ InputManager <- R6::R6Class(
         collapsible = uiContent$collapsible, 
         collapsed = uiContent$collapsed,
         title = boxLabel,
-        status = "info",
+        # success Green
+        # info Blue
+        # warning Orange
+        # danger Red
+        status = "warning",
         width = 12,
         tagList(sapply(uiElements, function(x) x$ui)))
       
