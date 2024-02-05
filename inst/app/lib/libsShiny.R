@@ -6,6 +6,7 @@ library(dashboardthemes)
 library(shinyjs)
 library(plotly)
 library(shinyFiles)
+library(sortable)
 
 library(httpuv)
 library(tools)

@@ -81,7 +81,8 @@ Imports:
     lubridate,
     ggquiver,
     concaveman,
-    bs4Dash
+    bs4Dash,
+    sortable
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3

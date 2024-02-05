@@ -63,7 +63,14 @@ Cellpose <- R6::R6Class(
           x
         })
       
-      save(models, file = "~/Downloads/models.RData")
+      # sort ranks by and filter
+      models <- models[self$funParams()$modelsRanks]
+      
+      # get visibility
+      modelVisibilities <- self$funParamVisibilities("models")
+      
+      if (!is.null(modelVisibilities))
+        models <- models[names(modelVisibilities)[modelVisibilities == TRUE]]
       
       # prepare params
       params <- list(

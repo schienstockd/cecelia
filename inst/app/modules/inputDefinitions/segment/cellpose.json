@@ -280,6 +280,7 @@
           "visible": false,
 				  "numItems": 5,
 				  "dynItems": true,
+				  "sortable": true,
   				"model": {
             "index": 0,
             "label": "Cellpose Model",

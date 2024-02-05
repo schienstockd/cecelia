@@ -265,6 +265,7 @@ InputManager <- R6::R6Class(
       # TODO should that be passed as parameter?
       toggleDyn <- "dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE
       toggleVis <- "visible" %in% names(uiContent)
+      sortItems <- "sortable" %in% names(uiContent) && uiContent$sortable == TRUE
       visName <- paste0(elmntName, "Visibility")
       
       elmntID <- sprintf("%s_%s", .trimModuleFunName(elmntName), subElmntName)
@@ -272,8 +273,11 @@ InputManager <- R6::R6Class(
       nameList <- list()
       uiGroupElements <- list()
       
+      # TODO this is not good
+      reservedNames <- c("items", "numItems", "dynItems", "sortable", "type", "visible", "collapsible", "collapsed")
+      
       # go through elements
-      for (j in names(uiContent)[!names(uiContent) %in% c("items", "numItems", "dynItems", "type", "visible", "collapsible", "collapsed")]) {
+      for (j in names(uiContent)[!names(uiContent) %in% reservedNames]) {
         curUI <- uiContent[[j]]
         curSpecs <- specContent[[j]]
         
@@ -311,7 +315,8 @@ InputManager <- R6::R6Class(
       # TODO is this too complicated here?
       elementRow <- tagList(
         fluidRow(column(12, itemLabel)),
-        tags$div(id = elmntID, fluidRow(column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))), tags$hr())
+        tags$div(id = elmntID, fluidRow(column(12, tagList(lapply(uiGroupElements, function(x) x$ui)))),
+                 if (sortItems == FALSE) tags$hr() else NULL)
       )
       
       if (toggleVis == TRUE) {
@@ -855,6 +860,7 @@ InputManager <- R6::R6Class(
       nameList <- c()
       toggleVis <- FALSE
       toggleDyn <- FALSE
+      rankID <- paste0(elmntName, "Ranks")
       observerList <- list()
       
       # get items
@@ -869,6 +875,9 @@ InputManager <- R6::R6Class(
         groupItems <- as.character(seq(uiContent$numItems))
         names(groupItems) <- groupItems
       }
+      
+      # sort group items?
+      groupItems <- groupItems[self$funParam(getInputName(rankID), names(groupItems))]
       
       # dynamic content
       if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
@@ -927,8 +936,34 @@ InputManager <- R6::R6Class(
         nameList <- append(nameList, unlist(xElements$names))
       }
       
+      # sortable items?
+      if ("sortable" %in% names(uiContent) && uiContent$sortable == TRUE) {
+        # push UI into sortable element
+        # check for toggle visibility
+        if (toggleVis == TRUE) {
+          uiElements <- tagList(
+            uiElements[[1]],
+            rank_list(
+              text = "",
+              labels = uiElements[2:length(uiElements)],
+              input_id = rankID
+            )
+          )
+        } else {
+          uiElements <- rank_list(
+            text = "",
+            labels = uiElements,
+            input_id = rankID
+          )
+        }
+        
+        nameList <- append(nameList, rankID)
+      } else {
+        uiElements <- tagList(uiElements)
+      }
+      
       list(
-        ui = tagList(uiElements),
+        ui = uiElements,
         names = nameList,
         observers = observerList,
         vars = list(uiContent = uiContent, specContent = specContent)

@@ -109,6 +109,10 @@ ui <- function(request) {
   
   # --- main body ---
   body <- dashboardBody(
+    tags$img(
+      src = "https://www.pixelstalk.net/wp-content/uploads/2016/04/Ninja-desktop-wallpaper.png",
+      style = 'position:absolute;background-repeat:repeat'
+    ),
     useShinyjs(),
     extendShinyjs(
       file.path("JS", "shinyjsExtended.js"),
