@@ -67,10 +67,10 @@ Cellpose <- R6::R6Class(
       models <- models[self$funParams()$modelsRanks]
       
       # get visibility
-      modelVisibilities <- self$funParamVisibilities("models")
+      modelVisibilities <- self$funParamVisibilities("models", onlyVisible = TRUE)
       
       if (!is.null(modelVisibilities))
-        models <- models[names(modelVisibilities)[modelVisibilities == TRUE]]
+        models <- models[names(modelVisibilities)]
       
       # prepare params
       params <- list(

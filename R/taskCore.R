@@ -123,10 +123,13 @@ TaskCore <- R6::R6Class(
     
     # get visible function parameters
     # TODO is there a better way?
-    funParamVisibilities = function(funParam) {
+    funParamVisibilities = function(funParam, onlyVisible = FALSE) {
       funParams <- self$funParams()
       funParams <- funParams[names(funParams)[!is.na(stringr::str_match(names(funParams), paste0(funParam, "Visibility-.+")))]]
       names(funParams) <- stringr::str_extract(names(funParams), "(?<=Visibility-).+")
+      
+      if (onlyVisible == TRUE)
+        funParams <- funParams[funParams == TRUE]
       
       funParams
     },

@@ -3,6 +3,7 @@ default:
     pathToMedia: "media"
     pathToCss: "css"
     pathToJS: "www/JS"
+    pathToImg: "img"
   dirs:
     analysis: "ANALYSIS"
     bioformats2raw: "/path/to/bioformats2raw"

@@ -27,6 +27,14 @@ BayesianTracking <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      # get visibility
+      filterVisibilities <- self$funParamVisibilities("filters", onlyVisible = TRUE)
+      
+      filters <- self$funParams()$filters
+      
+      if (!is.null(filterVisibilities))
+        filters <- filters[names(filterVisibilities)]
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -49,7 +57,7 @@ BayesianTracking <- R6::R6Class(
         lambdaDist = self$funParams()$lambdaDist,
         thetaTime = self$funParams()$thetaTime,
         thetaDist = self$funParams()$thetaDist,
-        filters = self$funParams()$filters
+        filters = filters
       )
 
       # call python

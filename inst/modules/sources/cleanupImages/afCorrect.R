@@ -36,6 +36,12 @@ AfCorrect <- R6::R6Class(
           x
         })
       
+      # get visibility
+      afVisibilities <- self$funParamVisibilities("afCombinations", onlyVisible = TRUE)
+      
+      if (!is.null(afVisibilities))
+        afCombinations <- afCombinations[names(afVisibilities)]
+      
       # get channels to add from inverse
       imChannels <- cciaObj$imChannelNames(valueName = self$funParams()$valueName)
       if (length(imChannels) == 0)

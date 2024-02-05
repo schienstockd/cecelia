@@ -47,6 +47,12 @@ N2vCorrect <- R6::R6Class(
         )
       modelMapping <- modelMapping[lengths(modelMapping) > 0]
       
+      # get visibility
+      modelVisibilities <- self$funParamVisibilities("modelMapping", onlyVisible = TRUE)
+      
+      if (!is.null(modelVisibilities))
+        modelMapping <- modelMapping[names(modelVisibilities)]
+      
       # TODO this takes a long time as it loads all objects
       # n2vFiles <- self$cciaImageCollection()$n2vFiles(fullPath = TRUE)
       
