@@ -612,8 +612,9 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
   af_im = None
 
   # ensure that names are integers
-  af_combinations = {int(i):af_combinations[i] for i in af_combinations}
-
+  # af_combinations = {int(i):af_combinations[i] for i in af_combinations}
+  af_combinations = {int(i):x for i, x in af_combinations.items()}
+  
   # remove empty channel items
   # https://stackoverflow.com/a/12118700/13766165
   # af_combinations = {
@@ -629,10 +630,10 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     filter_values[dim_utils.dim_idx(x)] = gaussian_sigma
 
   # AF correct channels
-  # for i, x in af_combinations.items():
+  for i, x in af_combinations.items():
   # if more items are assigned than present
-  for i in range(dim_utils.dim_val('C')):
-    x = af_combinations[i]
+  # for i in range(dim_utils.dim_val('C')):
+  #   x = af_combinations[i]
     
     # output_image[i], new_af_im = af_correct_channel(
     if len(x['divisionChannels']) > 0:
