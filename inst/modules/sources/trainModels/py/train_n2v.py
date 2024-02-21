@@ -3,6 +3,7 @@ import sys
 import os
 sys.path.append('./')
 import numpy as np
+import json
 
 import py.script_utils as script_utils
 import py.zarr_utils as zarr_utils
@@ -89,6 +90,9 @@ def run(params):
   # We are now creating our network model.
   model = N2V(config = config, name = value_name, basedir = model_dir)
   history = model.train(X, X_val)
+
+  # save history to JSON
+  json.dump(history, open(os.path.join(model_dir, value_name + '.json', 'w'))
   
   # TODO return training history to plot in shiny
   model.export_TF(
