@@ -31,7 +31,7 @@ def run(params):
   # create dim utils for image
   dim_utils = DimUtils(omexml, use_channel_axis = True)
   dim_utils.calc_image_dimensions(im_dat[0].shape)
-
+  
   # create chunks
   zarr_chunks = np.ones(len(dim_utils.im_dim))
   zarr_chunks[dim_utils.dim_idx('X')] = params['crop']['X'] if params['crop']['X'] < dim_utils.dim_val('X') else dim_utils.dim_val('X')

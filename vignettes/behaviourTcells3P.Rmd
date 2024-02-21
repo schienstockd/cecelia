@@ -76,7 +76,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 funParams <- list(
   # trainingSetID = "oe6kuP", # Tomato
   # trainingSetID = "91Kd1K", # XCR1
-  trainingSetID = "q4Hxd3", # Tom AF corrected
+  # trainingSetID = "q4Hxd3", # Tom AF corrected
+  trainingSetID = "fIuYJG", # TEST
   # numTrainingImages = 20,
   numTrainingImages = 10,
   maximumProjection = FALSE,
@@ -89,7 +90,8 @@ funParams <- list(
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "fmjlDg", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "fmjlDg", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "ecnsNw", versionID = versionID, initReactivity = FALSE # Tissues
 )
 
 # channel 7 for Tomato, 14 for XCR1
@@ -104,7 +106,8 @@ cciaObj <- initCciaObject(
 
 # AF correction test
 funParams$channels <- c(2)
-uIDs <- c("RJsT1v", "tP38h2")
+# uIDs <- c("RJsT1v", "tP38h2")
+uIDs <- c("Ktys8X")
 
 cciaObj$runTasks(
   funName = "trainModels.generateTrainingImages",

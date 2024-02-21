@@ -19,15 +19,15 @@ server <- function(input, output, session) {
       output$funParams <- renderUI({
         rank_list(
           text = "",
-          labels = tagList(
-            tagList(
+          labels = list(
+            "q3qr" = tagList(
               checkboxInput(session$ns("one"), "ONE"),
               checkboxInput(session$ns("one_again"), "ONE another"),
               conditionalPanel(
                 condition = sprintf("input['%s'] == true", session$ns("one")),
                 h3(">> ONE MORE")
               )),
-            tagList(
+            "rew23" = tagList(
               checkboxInput(session$ns("two"), "TWO"),
               conditionalPanel(
                 condition = sprintf("input['%s'] == true", session$ns("two")),
@@ -41,7 +41,8 @@ server <- function(input, output, session) {
       })
       
       output$results_basic <- renderPrint({
-        sapply(input$ranks, function(x) stringr::str_split(x, "\n")[[1]][[1]], USE.NAMES = FALSE)
+        # sapply(input$ranks, function(x) stringr::str_split(x, "\n")[[1]][[1]], USE.NAMES = FALSE)
+        input$ranks
       })
     }
   )

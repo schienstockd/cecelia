@@ -331,7 +331,7 @@ default:
     connectTimeout: 5
     address: "spartan.hpc.unimelb.edu.au"
     partitions:
-      cpu: "cascade"
+      cpu: "cascade,sapphire"
       gpu: "gpu-a100,gpu-a100-short"
     qos:
       cpu: " "

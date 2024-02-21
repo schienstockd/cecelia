@@ -26,6 +26,7 @@ createTaskManager <- function(
   
   # task UI
   funParamsUI <- reactiveVal()
+  # funParamsReactives <- list()
   
   ### Reactive-like values
   tasksCounter <- list()
@@ -1708,12 +1709,14 @@ createTaskManager <- function(
         # go through observers
         # TODO there is probably only one per group?
         for (j in names(x)) {
-          inputName <- trimInputName(environment(session$ns)[["namespace"]], j)
+          obsNs <- environment(session$ns)[["namespace"]]
+          inputName <- trimInputName(obsNs, j)
           groupName <- stringr::str_sub(
             inputName, start = 1, end = stringi::stri_locate_last_fixed(inputName, "_")[,1] - 1)
           
           observeEvent(input[[inputName]], {
             # define local variables
+            ns_local <- local(obsNs)
             inputName_local <- local(inputName)
             groupName_local <- local(groupName)
             self_local <- local(moduleManagers()$inputManager)

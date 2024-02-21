@@ -306,8 +306,8 @@ InputManager <- R6::R6Class(
       
       if (toggleDyn == TRUE) {
         itemLabel <- fluidRow(
-          column(10, itemLabel)
-          # column(2, actionButton(paste0(elmntID, "_del"), "", icon = shiny::icon("minus")))
+          column(10, itemLabel),
+          column(2, actionButton(paste0(elmntID, "-del"), "", icon = shiny::icon("minus")))
         )
       }
       
@@ -860,6 +860,7 @@ InputManager <- R6::R6Class(
       nameList <- c()
       toggleVis <- FALSE
       toggleDyn <- FALSE
+      isSortable <- "sortable" %in% names(uiContent) && uiContent$sortable == TRUE
       rankID <- paste0(elmntName, "Ranks")
       observerList <- list()
       
@@ -882,12 +883,15 @@ InputManager <- R6::R6Class(
       # dynamic content
       if ("dynItems" %in% names(uiContent) && uiContent$dynItems == TRUE) {
         addRowName <- paste0(elmntName, "_addRow")
+        addRowTitle <- paste0(addRowName, "Title")
         
         observerList[[addRowName]] <- expression({
-          # get new ID 
-          new_id <- input[[inputName_local]]
+          # get new ID - just get a random ID?
+          new_id <- genUID(4)
+          new_name <- paste0(groupName_local, "_", new_id)
+          
           new_uiElements <- self_local$createUIElements(
-            groupName_local, new_id, new_id, vars_local$uiContent, vars_local$specContent)
+            groupName_local, input[[paste0(inputName_local, "Title")]], new_id, vars_local$uiContent, vars_local$specContent)
           
           insertUI(
             selector = stringr::str_replace_all(
@@ -896,10 +900,15 @@ InputManager <- R6::R6Class(
             ui = new_uiElements$ui
           )
           
-          # observeEvent(input[[paste0(new_id, '-deleteButton')]], {
-          #   removeUI(selector = sprintf('#%s', new_id))
-          #   remove_shiny_inputs(new_id, input)
-          # })
+          observeEvent(input[[paste0(new_name, '-del')]], {
+            removeUI(selector = sprintf('#%s', new_name))
+            remove_shiny_inputs(new_id, input)
+          })
+        })
+        
+        # somehow trigger update on rank_list?
+        inputList[[rankID]] <- expression({
+          # can you access the reactive to create renderUI
         })
         
         toggleDyn <- TRUE
@@ -913,16 +922,21 @@ InputManager <- R6::R6Class(
         uiElements[["SPACER"]] <- fluidRow(
           # column(12, checkboxInput(visName, "Show all", uiContent$visible))
           column(4, checkboxInput(
-            visName, "Show all", self$funParam(getInputName(visName), uiContent$visible)))
+            visName, "Show all", self$funParam(getInputName(visName), uiContent$visible))),
           # TODO not sure how to add oberservers here
-          # if (toggleDyn == TRUE) column(2, actionButton(addRowName, "", icon = shiny::icon("plus"))) else NULL,
+          if (toggleDyn == TRUE) column(
+            4,
+            textInput(addRowTitle, label = NULL, value = NULL),
+            actionButton(addRowName, "", icon = shiny::icon("plus"))
+          ) else NULL
         )
         
         # add placeholder
-        if (toggleDyn == TRUE) {
+        # does not work with sortable widget
+        if (toggleDyn == TRUE && isSortable == FALSE) {
           uiElements[["SPACER"]] <- tagList(uiElements[["SPACER"]], div(id = paste0(elmntName, "Placeholder")))
         }
-        
+
         toggleVis <- TRUE
       }
       
@@ -937,24 +951,32 @@ InputManager <- R6::R6Class(
       }
       
       # sortable items?
-      if ("sortable" %in% names(uiContent) && uiContent$sortable == TRUE) {
+      if (isSortable == TRUE) {
+        # can you .. make this a uiOutput and fill this with renderUI?
+        # then you can generate a sortable list and add and remove items
+        
         # push UI into sortable element
-        # check for toggle visibility
-        if (toggleVis == TRUE) {
-          uiElements <- tagList(
-            uiElements[[1]],
-            rank_list(
+        if (toggleDyn == TRUE) {
+          # renderUI in here?
+          uiElements <- uiOutput(outputId = rankID)
+        } else {
+          # check for toggle visibility
+          if (toggleVis == TRUE) {
+            uiElements <- tagList(
+              uiElements[[1]],
+              rank_list(
+                text = "",
+                labels = uiElements[2:length(uiElements)],
+                input_id = rankID
+              )
+            )
+          } else {
+            uiElements <- rank_list(
               text = "",
-              labels = uiElements[2:length(uiElements)],
+              labels = uiElements,
               input_id = rankID
             )
-          )
-        } else {
-          uiElements <- rank_list(
-            text = "",
-            labels = uiElements,
-            input_id = rankID
-          )
+          }
         }
         
         nameList <- append(nameList, rankID)
@@ -1419,7 +1441,7 @@ InputManager <- R6::R6Class(
           )
           
           # make sure it is not a keyword
-          listItems <- listItems[!is.na(stringr::str_match(listItems, "_"))]
+          # listItems <- listItems[!is.na(stringr::str_match(listItems, "_"))]
           listItems <- listItems[!is.na(listItems)]
           
           # get names for list
