@@ -79,7 +79,7 @@ def run(params):
   # TODO do you need to be able to adjust anything else?
   config = N2VConfig(
     X, unet_kern_size = 3, 
-    # train_steps_per_epoch = train_steps_per_epoch,
+    train_steps_per_epoch = train_steps_per_epoch,
     train_epochs = train_epochs,
     train_loss = 'mse', batch_norm = True, 
     train_batch_size = 4, n2v_perc_pix = 0.198, n2v_patch_shape = patch_shape, 
