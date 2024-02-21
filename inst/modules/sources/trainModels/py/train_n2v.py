@@ -92,7 +92,7 @@ def run(params):
   history = model.train(X, X_val)
 
   # save history to JSON
-  json.dump(history, open(os.path.join(model_dir, value_name + '.json', 'w')))
+  json.dump(history, open(os.path.join(model_dir, value_name + '.json'), 'w'))
   
   # TODO return training history to plot in shiny
   model.export_TF(
