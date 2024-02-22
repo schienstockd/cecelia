@@ -906,10 +906,10 @@ InputManager <- R6::R6Class(
           })
         })
         
-        # somehow trigger update on rank_list?
-        inputList[[rankID]] <- expression({
-          # can you access the reactive to create renderUI
-        })
+        # # somehow trigger update on rank_list?
+        # inputList[[rankID]] <- expression({
+        #   # can you access the reactive to create renderUI
+        # })
         
         toggleDyn <- TRUE
       }
