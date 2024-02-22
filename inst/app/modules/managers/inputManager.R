@@ -306,8 +306,8 @@ InputManager <- R6::R6Class(
       
       if (toggleDyn == TRUE) {
         itemLabel <- fluidRow(
-          column(10, itemLabel),
-          column(2, actionButton(paste0(elmntID, "-del"), "", icon = shiny::icon("minus")))
+          column(10, itemLabel)
+          # column(2, actionButton(paste0(elmntID, "-del"), "", icon = shiny::icon("minus")))
         )
       }
       
@@ -922,13 +922,13 @@ InputManager <- R6::R6Class(
         uiElements[["SPACER"]] <- fluidRow(
           # column(12, checkboxInput(visName, "Show all", uiContent$visible))
           column(4, checkboxInput(
-            visName, "Show all", self$funParam(getInputName(visName), uiContent$visible))),
+            visName, "Show all", self$funParam(getInputName(visName), uiContent$visible)))
           # TODO not sure how to add oberservers here
-          if (toggleDyn == TRUE) column(
-            4,
-            textInput(addRowTitle, label = NULL, value = NULL),
-            actionButton(addRowName, "", icon = shiny::icon("plus"))
-          ) else NULL
+          # if (toggleDyn == TRUE) column(
+          #   4,
+          #   textInput(addRowTitle, label = NULL, value = NULL),
+          #   actionButton(addRowName, "", icon = shiny::icon("plus"))
+          # ) else NULL
         )
         
         # add placeholder
@@ -956,28 +956,28 @@ InputManager <- R6::R6Class(
         # then you can generate a sortable list and add and remove items
         
         # push UI into sortable element
-        if (toggleDyn == TRUE) {
-          # renderUI in here?
-          uiElements <- uiOutput(outputId = rankID)
-        } else {
-          # check for toggle visibility
-          if (toggleVis == TRUE) {
-            uiElements <- tagList(
-              uiElements[[1]],
-              rank_list(
-                text = "",
-                labels = uiElements[2:length(uiElements)],
-                input_id = rankID
-              )
-            )
-          } else {
-            uiElements <- rank_list(
+        # if (toggleDyn == TRUE) {
+        #   # renderUI in here?
+        #   uiElements <- uiOutput(outputId = rankID)
+        # } else {
+        # check for toggle visibility
+        if (toggleVis == TRUE) {
+          uiElements <- tagList(
+            uiElements[[1]],
+            rank_list(
               text = "",
-              labels = uiElements,
+              labels = uiElements[2:length(uiElements)],
               input_id = rankID
             )
-          }
+          )
+        } else {
+          uiElements <- rank_list(
+            text = "",
+            labels = uiElements,
+            input_id = rankID
+          )
         }
+        # }
         
         nameList <- append(nameList, rankID)
       } else {
