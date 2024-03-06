@@ -21,7 +21,11 @@ RetrieveProject <- R6::R6Class(
       self$retrieve(
         self$funParams()$retrPID,
         pDir = if ("pDir" %in% names(self$funParams()))
-          self$funParams()$pDir else NULL
+          self$funParams()$pDir else NULL,
+        mfluxConfigFile = if ("mfluxConfigFile" %in% names(self$funParams()))
+          self$funParams()$mfluxConfigFile else NULL,
+        smbConfigFile = if ("smbConfigFile" %in% names(self$funParams()))
+          self$funParams()$smbConfigFile else NULL
         )
     }
   )
