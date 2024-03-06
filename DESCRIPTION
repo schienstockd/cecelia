@@ -80,7 +80,6 @@ Imports:
     geometry,
     lubridate,
     ggquiver,
-    concaveman,
     bs4Dash,
     sortable
 LinkingTo: Rcpp
