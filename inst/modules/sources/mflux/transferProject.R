@@ -36,7 +36,7 @@ TransferProject <- R6::R6Class(
         remoteDir = self$envParams("hpc")$dirs$task,
         useCompression = FALSE
       )
-      # self$runTasks(c("hpc.upload"), funParams = funParams)
+      self$runTasks(c("hpc.upload"), funParams = funParams)
       
       # unlink configs
       unlink(configFiles)
@@ -46,8 +46,8 @@ TransferProject <- R6::R6Class(
       taskVars$fun <- list(
         retrPID = self$globalParams()$pID,
         pDir = self$funParams()$pDir,
-        mfluxConfigFile = paste0(self$envParams("hpc")$dirs$task, "/", mfluxConfigFile),
-        smbConfigFile = paste0(self$envParams("hpc")$dirs$task, "/", smbConfigFile)
+        mfluxConfigFile = paste0(self$envParams("hpc")$dirs$task, "/tasks/", basename(mfluxConfigFile)),
+        smbConfigFile = paste0(self$envParams("hpc")$dirs$task, "/tasks/", basename(smbConfigFile))
       )
       
       # run environment

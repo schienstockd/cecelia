@@ -102,6 +102,8 @@ Mflux <- R6::R6Class(
         # mount SMB directory
         smbAddress <- paste0("smb:", self$utilsParams()$smb$remoteDir, self$utilsParams()$smb$remoteAddon)
         cmd <- paste("gio mount", smbAddress, "<", smbConfigFile)
+        
+        self$writeLog(cmd)
         handleSystem(.execSystem(cmd, intern = FALSE))
         
         smbMounted <- smbAddress
@@ -110,11 +112,11 @@ Mflux <- R6::R6Class(
         # prepare SMB directory
         userID <- .execSystem("id -u", intern = TRUE)
         smbServer <- stringr::str_split(self$utilsParams()$smb$remoteDir, "/")[[1]]
-        smbShare <- smbServer[[2]]
+        smbServer <- smbServer[smbServer != ""]
         
         smbDir <- paste0(
           "/run/user/", userID, "/gvfs/smb-share:server=", smbServer[[1]],
-          ",share=", paste0(smbShare, self$utilsParams()$smb$remoteAddon))
+          ",share=", paste0(smbServer[[2]], self$utilsParams()$smb$remoteAddon))
         
         # append directory
         pDir <- paste0(smbDir, "/", pDir)
