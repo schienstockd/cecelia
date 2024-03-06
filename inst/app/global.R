@@ -47,6 +47,7 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   # That's ok - the path is set anyway by loading bookmark
   "init-projectPath", "init-projectPath-modal", "init-createProject",
   "global-projectHPCsshKeyfileChoose",
+  "global-mfluxTokenFileChoose",
   "importImages-imagesToImport",
   "importImages-imagesToImport-modal",
   "importImages-foldersToImport",
@@ -55,7 +56,8 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   # exclude passwords
   "global-labServerSmbPwd", "global-projectHPCpwd",
   "global-runHPCTask",
-  # exclude buttons
+  "global-runMfluxTask",
+    # exclude buttons
   "loadProject", "saveProject",
   "loadVersion", "createVersion",
   "deleteSelectedProjectConfirmed",

@@ -8,6 +8,7 @@ default:
     analysis: "ANALYSIS"
     bioformats2raw: "/path/to/bioformats2raw"
     blosc: ""
+    mfluxClients: ""
     database: "db/"
     projects: "/path/to/projects/"
     debug: "log"

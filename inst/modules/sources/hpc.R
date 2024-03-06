@@ -15,6 +15,9 @@ Hpc <- R6::R6Class(
     upload = function(localFiles, localDir, remoteDir, 
                       newFilename = NULL, removeFiles = FALSE,
                       isSequence = FALSE, extraFiles = list(), ...) {
+      self$initLog()
+      self$writeLog("Upload")
+      
       newFilenames <- NULL
       
       # prepare file list 
@@ -26,8 +29,6 @@ Hpc <- R6::R6Class(
         newFilenames <- filelist$names
       }
       
-      self$initLog()
-      self$writeLog("Upload")
       self$writeLog(localFiles)
       
       if (!is.null(newFilenames)) {

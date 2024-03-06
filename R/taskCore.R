@@ -55,9 +55,7 @@ TaskCore <- R6::R6Class(
     #' @param taskConf list of list of character for task config
     #' @param funParams list of generic for task parameters
     #' @param runLocal boolean to run task local
-    #' @param callingEnv character for calling environment
-    runTasks = function(tasks, taskConf = NULL, funParams = list(), runLocal = FALSE,
-                        callingEnv = NULL) {
+    runTasks = function(tasks, taskConf = NULL, funParams = list(), runLocal = FALSE) {
       if (is.null(taskConf)) {
         taskConf <- private$getTaskConf()
       }

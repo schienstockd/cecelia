@@ -30,7 +30,8 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N101/ANALYSIS/CECELIA/"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N101/ANALYSIS/CECELIA/"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/3P_TEST/Tissues"
 ```
 
 ```{r}
@@ -357,38 +358,43 @@ cciaObj <- initCciaObject(
   # pID = pID, uID = "8nDQV9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "42xBGe", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "DHiI67", versionID = versionID, initReactivity = FALSE # SHG 3P
-  pID = pID, uID = "wX74z9", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "wX74z9", versionID = versionID, initReactivity = FALSE # SHG 3P
   # pID = pID, uID = "4li7ih", versionID = versionID, initReactivity = FALSE # Tumour 3P
   # pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
   # pID = pID, uID = "nu0Nmo", versionID = versionID, initReactivity = FALSE # T cell types
+  pID = pID, uID = "ecnsNw", versionID = versionID, initReactivity = FALSE # Tissues
 )
 
 # get vector information to plot anisotropy
 # unsLabels <- c("SHG", "P14-CTDR.tracks")
-unsLabels <- c("SHG", "gBT.tracks")
-uns <- list()
-
-for (i in unsLabels) {
-  labels <- cciaObj$labelProps(valueName = paste0(i, ".branch"))
-  # labels <- cciaObj$labelProps(valueName = "vessels.branch")
-  # labels <- cciaObj$labelProps(valueName = "CD11c.branch")
-  uns[[i]] <- labels$values_uns()
-  labels$close()
-}
-
-# get branching
-branchDT <- cciaObj$popDT("branch")
+# unsLabels <- c("SHG", "gBT.tracks")
+# uns <- list()
+# 
+# for (i in unsLabels) {
+#   labels <- cciaObj$labelProps(valueName = paste0(i, ".branch"))
+#   # labels <- cciaObj$labelProps(valueName = "vessels.branch")
+#   # labels <- cciaObj$labelProps(valueName = "CD11c.branch")
+#   uns[[i]] <- labels$values_uns()
+#   labels$close()
+# }
+# 
+# # get branching
+# branchDT <- cciaObj$popDT("branch")
 
 pops <- list(
   # tcells.ubiTom = "tcells.ubiTom/tracked",
   # tcells.B6 = "tcells.B6/tracked"
   # `P14-Tom` = "P14-Tom/tracked",
   # `P14-CTDR` = "P14-CTDR/tracked"
-  `gBT` = "gBT/tracked"
+  # `gBT` = "gBT/tracked"
+  `Tcells` = "default/tracked"
   # `P14` = "P14/tracked"
 )
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- c("z4O95Y", "JIuGbT", "OnH3TR")
 
 # get tracks to align with SHG
 # popDT <- cciaObj$popDT("live", pops = "P14-CTDR/tracked", includeFiltered = TRUE)
@@ -397,7 +403,7 @@ pops <- list(
 #   "tcells.P14/tracked",
 #   "tcells.gBT/tracked"
 # ), includeFiltered = TRUE)
-popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE)
+popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
 
 # get tracks info and check parameters
 # tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
@@ -409,6 +415,30 @@ tracksInfo <- cciaObj$tracksMeasures(pops = pops)
 #   value_name = "tracks.clusters.tcells.default.sc")$label_props_view()$as_df())
 #   # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
 ```
+
+```{r fig_umap, fig.height=3, fig.width=4}
+# plot speeds
+tracksInfo[, uID := factor(uID, levels = c("z4O95Y", "JIuGbT", "OnH3TR"))]
+
+ggplot(tracksInfo, aes(as.factor(1), speed)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    width = 0.2, alpha = 0.4) +
+  geom_boxplot(outlier.alpha = 0.) +
+  facet_grid(.~depth) +
+  # coord_flip() +
+  xlab("") + ylab("Velocity (μm/min)") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+  )
+
+ggsave(file.path(anaDir, "tracking", "iLN", "depth-speeds.png"), height = 1.5, width = 4)
+```
+
 
 ```{r}
 # plot quiver

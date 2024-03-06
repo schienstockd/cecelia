@@ -11,9 +11,100 @@
     id,
     ## Below is the module function
     function(input, output, session) {
+      ### Functions
+      
+      # create task observer
+      createTaskObserver <- function(taskType, taskInput, taskReactive, outputID,
+                                     outputReactive, funParams = NULL, finalExp = NULL) {
+        taskLauncher <- TaskLauncher$new()
+        
+        # call function
+        taskName <- paste0(taskType, ".", input[[taskInput]])
+        
+        if (!is.null(taskName)) {
+          # get task vars
+          taskVars <- createTaskVars(cecelia:::CCID_IMAGE_COLLECTION, globalManagers$projectManager(), "local")
+          
+          # add function parameters
+          if (!is.null(funParams)) 
+            taskVars$fun <- funParams
+          
+          # call update task on image analysis object set
+          taskLauncher$initTask(taskName, taskVars)
+          
+          # prep run
+          taskLauncher$prepRun()
+          
+          # clear task log
+          taskLauncher$clearTaskLogFile()
+          
+          # create task
+          taskReactive(createForkedTask(
+            list("Settings task" = taskLauncher)
+          ))
+          
+          # clear output
+          html(id = outputID, html = "*** START ***")
+          disable(paste0("run", firstToupper(taskInput)))
+          enable(paste0("cancel", firstToupper(taskInput)))
+          
+          # wait for exit
+          o <- observe({
+            outputFile <- taskReactive()$taskHandle()$taskLogFile()
+            req(outputFile)
+            
+            # get log
+            outputReactive(readLogFile(
+              outputFile, previousContent = outputReactive()
+            ))
+            
+            # add output
+            if (!is.null(outputReactive()) && attr(outputReactive(), "updated") == TRUE) {
+              # crop to a limit
+              if (attr(outputReactive(), "lineReads") > 100 || length(attr(outputReactive(), "updatedContent")) > 100) {
+                html(id = "outputReactive",
+                     html = trimws(paste(tail(outputReactive(), 100), collapse = "\n")))
+              } else {
+                updatedContent <- trimws(paste(attr(outputReactive(), "updatedContent"), collapse = "\n"))
+                
+                # only print if not only spaces
+                # https://stackoverflow.com/a/35726243
+                if (!grepl("^\\s*$", updatedContent))
+                  html(id = outputID,
+                       html = paste0("<br/>", updatedContent),
+                       add = TRUE)
+              }
+            }
+            
+            # is task finished?
+            if (taskReactive()$completed()) {
+              o$destroy()
+              
+              # reset log
+              outputReactive(NULL)
+              html(id = outputID, html = paste0("<br/>", "*** END ***"), add = TRUE)
+              
+              # reset buttons
+              enable(paste0("run", firstToupper(taskInput)))
+              disable(paste0("cancel", firstToupper(taskInput)))
+              
+              # call final expression
+              if (!is.null(finalExp)) {
+                eval(parse(text = finalExp))
+              }
+            } else {
+              invalidateLater(cciaConf()$tasks$log$poll)
+            }
+          })
+        }
+      }
+      
       ### Reactive values
       hpcOutput <- reactiveVal()
       hpcTask <- reactiveVal()
+      
+      mfluxOutput <- reactiveVal()
+      mfluxTask <- reactiveVal()
       
       ### Reactive-like values
       
@@ -204,6 +295,79 @@
         )
       })
       
+      observeEvent(input$mfluxHost, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxHost(
+          input$mfluxHost, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$mfluxPort, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxPort(
+          input$mfluxPort, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$mfluxTransport, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxTransport(
+          input$mfluxTransport, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$mfluxNamespace, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxNamespace(
+          input$mfluxNamespace, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$mfluxUsername, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxUsername(
+          input$mfluxUsername, invalidate = FALSE
+        )
+      })
+      
+      # set input for token file
+      observeEvent(input$mfluxTokenFileChoose, {
+        req(input$mfluxTokenFileChoose)
+        # check that a file was selected
+        req("files" %in% names(input$mfluxTokenFileChoose))
+        
+        curPath <- joinSelectedFile(input$mfluxTokenFileChoose)
+        
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxTokenFile(
+          curPath, invalidate = TRUE
+        )
+      })
+      
+      # update input value
+      observeEvent(globalManagers$projectManager()$getProjectMfluxTokenFile(), {
+        req(globalManagers$projectManager()$getProjectMfluxTokenFile())
+        
+        updateTextInput(
+          session, "mfluxTokenFile",
+          value = globalManagers$projectManager()$getProjectMfluxTokenFile()
+        )
+      })
+      
+      observeEvent(input$mfluxNbWorkers, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxNbWorkers(
+          input$mfluxNbWorkers, invalidate = FALSE
+        )
+      })
+      
+      observeEvent(input$mfluxSync, {
+        # save in manager
+        globalManagers$projectManager()$setProjectMfluxSync(
+          input$mfluxSync, invalidate = FALSE
+        )
+      })
+      
       # hpc test result
       observeEvent(input$setupHPCTest, {
         # check if connection works
@@ -228,82 +392,7 @@
       observeEvent(input$runHPCTask, {
         req(input$hpcTask)
         
-        taskLauncher <- TaskLauncher$new()
-        
-        hpcTask <- NULL
-        
-        # call hpc function
-        if (input$hpcTask == "updateUserLibraries")
-          hpcTask <- "hpc.updateUserLibraries"
-        else if (input$hpcTask == "cleanupTransferredImages")
-          hpcTask <- "hpc.cleanupTransferredImages"
-        
-        if (!is.null(hpcTask)) {
-          # call update task on image analysis object set
-          taskLauncher$initTask(
-            hpcTask,
-            createTaskVars(cecelia:::CCID_IMAGE_COLLECTION, globalManagers$projectManager(), "local"))
-          
-          # prep run
-          taskLauncher$prepRun()
-          
-          # clear task log
-          taskLauncher$clearTaskLogFile()
-          
-          # create task
-          hpcTask(createForkedTask(
-            list("Settings task" = taskLauncher)
-          ))
-          
-          # clear output
-          html(id = "hpcOutput", html = "*** START ***")
-          disable("runHPCTask")
-          enable("cancelHPCTask")
-          
-          # wait for exit
-          o <- observe({
-            outputFile <- hpcTask()$taskHandle()$taskLogFile()
-            req(outputFile)
-            
-            # get log
-            hpcOutput(readLogFile(
-              outputFile, previousContent = hpcOutput()
-            ))
-            
-            # add output
-            if (!is.null(hpcOutput()) && attr(hpcOutput(), "updated") == TRUE) {
-              # crop to a limit
-              if (attr(hpcOutput(), "lineReads") > 100 || length(attr(hpcOutput(), "updatedContent")) > 100) {
-                html(id = "hpcOutput",
-                     html = trimws(paste(tail(hpcOutput(), 100), collapse = "\n")))
-              } else {
-                updatedContent <- trimws(paste(attr(hpcOutput(), "updatedContent"), collapse = "\n"))
-                
-                # only print if not only spaces
-                # https://stackoverflow.com/a/35726243
-                if (!grepl("^\\s*$", updatedContent))
-                    html(id = "hpcOutput",
-                         html = paste0("<br/>", updatedContent),
-                         add = TRUE)
-              }
-            }
-            
-            # is task finished?
-            if (hpcTask()$completed()) {
-              o$destroy()
-              
-              # reset log
-              hpcOutput(NULL)
-              html(id = "hpcOutput", html = paste0("<br/>", "*** END ***"), add = TRUE)
-              
-              # reset buttons
-              enable("runHPCTask")
-              disable("cancelHPCTask")
-            } else {
-              invalidateLater(cciaConf()$tasks$log$poll)
-            }
-          })
-        }
+        createTaskObserver("hpc", "hpcTask", hpcTask, "hpcOutput", hpcOutput)
       })
       
       # cancel HPC user libraries
@@ -335,6 +424,42 @@
             success = btnLABEL_SUCCESS,
             fail = btnLABEL_FAILED
           ))
+      })
+      
+      # call Mediaflux tasks
+      observeEvent(input$runMfluxTask, {
+        req(input$mfluxTask)
+        
+        # check to prepare project upload
+        if (input$mfluxTask == "uploadProject")
+          globalManagers$projectManager()$exportProject(saveData = FALSE)
+        
+        funParams <- NULL
+        finalExp <- NULL
+        
+        if (input$mfluxTask == "retrieveProject") {
+          req(input$mfluxRetrPID)
+          funParams <- list(retrPID = input$mfluxRetrPID)
+          
+          # create expression for completion
+          finalExp <- sprintf(
+            "globalManagers$projectManager()$importProject('%s', retrFiles = FALSE)",
+            input$mfluxRetrPID)
+        } else if (input$mfluxTask == "transferProject") {
+          req(input$mfluxTransferDir)
+          funParams <- list(pDir = input$mfluxTransferDir)
+        }
+        
+        createTaskObserver("mflux", "mfluxTask", mfluxTask, "mfluxOutput",
+                           mfluxOutput, funParams = funParams, finalExp = finalExp)
+      })
+      
+      # cancel Mediaflux
+      observeEvent(input$cancelMfluxTask, {
+        req(mfluxTask())
+        
+        # cancel task
+        mfluxTask()$cancel()
       })
       
       ## Generic
@@ -370,6 +495,13 @@
       # keyfile
       shinyFileChoose(
         input, "projectHPCsshKeyfileChoose",
+        roots = shinyFiles::getVolumes(),
+        session = session,
+        hidden = TRUE)
+      
+      # tokenfile
+      shinyFileChoose(
+        input, "mfluxTokenFileChoose",
         roots = shinyFiles::getVolumes(),
         session = session,
         hidden = TRUE)

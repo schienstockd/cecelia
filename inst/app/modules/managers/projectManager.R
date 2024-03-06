@@ -143,6 +143,46 @@ ProjectManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setProjectMfluxHost = function(x, invalidate = TRUE) {
+      private$projectMfluxHost <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxPort = function(x, invalidate = TRUE) {
+      private$projectMfluxPort <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxTransport = function(x, invalidate = TRUE) {
+      private$projectMfluxTransport <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxNamespace = function(x, invalidate = TRUE) {
+      private$projectMfluxNamespace <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxTokenFile = function(x, invalidate = TRUE) {
+      private$projectMfluxTokenFile <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxNbWorkers = function(x, invalidate = TRUE) {
+      private$projectMfluxNbWorkers <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxSync = function(x, invalidate = TRUE) {
+      private$projectMfluxSync <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
+    setProjectMfluxUsername = function(x, invalidate = TRUE) {
+      private$projectMfluxUsername <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     ## SETTINGS
     getProjectName = function() {
       private$projectName
@@ -215,6 +255,38 @@ ProjectManager <- R6::R6Class(
     
     getProjectHPCemailOnFail = function() {
       private$projectHPCemailOnFail
+    },
+    
+    getProjectMfluxHost = function() {
+      private$projectMfluxHost
+    },
+    
+    getProjectMfluxPort = function() {
+      private$projectMfluxPort
+    },
+    
+    getProjectMfluxTransport = function() {
+      private$projectMfluxTransport
+    },
+    
+    getProjectMfluxNamespace = function() {
+      private$projectMfluxNamespace
+    },
+    
+    getProjectMfluxTokenFile = function() {
+      private$projectMfluxTokenFile
+    },
+    
+    getProjectMfluxNbWorkers = function() {
+      private$projectMfluxNbWorkers
+    },
+    
+    getProjectMfluxSync = function() {
+      private$projectMfluxSync
+    },
+    
+    getProjectMfluxUsername = function() {
+      private$projectMfluxUsername
     },
     
     # check whether HPC can be used or not
@@ -446,7 +518,7 @@ ProjectManager <- R6::R6Class(
     },
     
     # export project
-    exportProject = function(exportDir, bookmarkStateDir = NULL) {
+    exportProject = function(exportDir = NULL, bookmarkStateDir = NULL, saveData = TRUE) {
       # define paths
       projectFile <- file.path(self$getProjectPath(), "project.csv")
       bookmarksFile <- file.path(self$getProjectPath(), "shinyBookmarks.csv")
@@ -465,32 +537,37 @@ ProjectManager <- R6::R6Class(
         function(x) getShinyBookmarkStatePath(x, bookmarkStateDir = bookmarkStateDir)
       )
       
+      unlink(bookmarkDir, recursive = TRUE)
       dir.create(bookmarkDir)
       file.copy(bookmarkDirs, bookmarkDir, recursive = TRUE)
       
-      # tar everything together and copy
-      # go to directory and then tar
-      wd <- getwd()
-      setwd(dirname(self$getProjectPath()))
+      if (saveData == TRUE) {
+        # tar everything together and copy
+        # go to directory and then tar
+        wd <- getwd()
+        setwd(dirname(self$getProjectPath()))
+        
+        tar(tarfile = file.path(exportDir, paste0(self$getProjectUID(), ".tar")),
+            files = self$getProjectUID())
+        
+        # switch back
+        setwd(wd)
+      }
       
-      tar(tarfile = file.path(exportDir, paste0(self$getProjectUID(), ".tar")),
-          files = self$getProjectUID())
-      
-      # switch back
-      setwd(wd)
-      
-      # remove temporary files from project directory
-      unlink(bookmarkDir, recursive = TRUE)
-      unlink(bookmarksFile, recursive = TRUE)
+      # # remove temporary files from project directory
+      # unlink(bookmarkDir, recursive = TRUE)
+      # unlink(bookmarksFile, recursive = TRUE)
     },
     
     # import project
-    importProject = function(importFile, bookmarkStateDir = NULL, isDir = FALSE) {
+    importProject = function(importFile, bookmarkStateDir = NULL, retrFiles = TRUE) {
       # get file paths
       archivePath <- file.path(cciaConf()$dirs$projects, basename(importFile))
       
-      # copy to projects
-      file.copy(importFile, cciaConf()$dirs$projects, recursive = TRUE)
+      if (retrFiles == TRUE) {
+        # copy to projects
+        file.copy(importFile, cciaConf()$dirs$projects, recursive = TRUE)
+      }
       
       # get project ID and untar
       # pID <- basename(untar(archivePath, exdir = cciaConf()$dirs$projects, list = TRUE)$Name[[1]])
@@ -1168,6 +1245,16 @@ ProjectManager <- R6::R6Class(
     projectLabServerSmbLocalMountDir = NULL,
     projectLabServerSmbUser = NULL,
     handleProjectLabServerSmbPwd = NULL,
+    
+    # Mediaflux
+    projectMfluxHost = NULL,
+    projectMfluxPort = NULL,
+    projectMfluxTransport = NULL,
+    projectMfluxNamespace = NULL,
+    projectMfluxTokenFile = NULL,
+    projectMfluxNbWorkers = NULL,
+    projectMfluxSync = NULL,
+    projectMfluxUsername = NULL,
     
     # get database file
     dbFile = function() {

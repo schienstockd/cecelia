@@ -92,6 +92,7 @@ TransferFrom <- R6::R6Class(
           ), collapse = "; ")
         }
         
+        # TODO credentials should be in temporary file - not in command!
         # copy
         handleSystem(self$sshConnection()$sshExecute(sprintf(
           "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",

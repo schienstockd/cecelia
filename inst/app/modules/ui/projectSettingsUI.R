@@ -26,7 +26,7 @@
     ),
     fluidRow(
       box(
-        title = "hpc", status = "primary", solidHeader = TRUE,
+        title = "HPC", status = "primary", solidHeader = TRUE,
         fluidRow(
           column(
             7,
@@ -170,6 +170,106 @@
           column(
             3,
             actionButton(ns("setupLabServerResult"), "...")
+          )
+        )
+      ),
+      box(
+        title = "Mediaflux", status = "primary", solidHeader = TRUE,
+        fluidRow(
+          column(
+            8,
+            textInput(
+              ns("mfluxHost"), "Host", value = "")
+          ),
+          column(
+            2,
+            textInput(
+              ns("mfluxPort"), "Port", value = "443")
+          ),
+          column(
+            2,
+            textInput(
+              ns("mfluxTransport"), "Transport", value = "https")
+          )
+        ),
+        fluidRow(
+          column(
+            12,
+            textInput(
+              ns("mfluxNamespace"), "Namespace", value = "")
+          )
+        ),
+        tags$label("Token Keyfile"),
+        fluidRow(
+          column(
+            5,
+            textInput(ns("mfluxTokenFile"), NULL, value = "")
+          ),
+          column(
+            2,
+            shinyFilesButton(
+              ns("mfluxTokenFileChoose"),
+              "Select", NULL, multiple = FALSE)
+          )
+        ),
+        fluidRow(
+          column(
+            4,
+            textInput(
+              ns("mfluxUsername"), "Username", value = "")
+          ),
+          column(
+            3,
+            sliderInput(
+              ns("mfluxNbWorkers"), "Number of Workers", min = 1, max = 8, value = 4)
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'retrieveProject'", ns("mfluxTask")),
+            column(2, textInput(ns("mfluxRetrPID"), "pID to retrieve", value = ""))
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'uploadProject'", ns("mfluxTask")),
+            column(2, checkboxInput(ns("mfluxSync"), "Sync", value = FALSE))
+          ),
+          conditionalPanel(
+            condition = sprintf("input['%s'] == 'transferProject'", ns("mfluxTask")),
+            column(2, textInput(ns("mfluxTransferDir"), "Transfer directory", value = ""))
+          )
+        ),
+        fluidRow(
+          # column(
+          #   2,
+          #   actionButton(ns("setupHPCTest"), "Test connection")
+          # ),
+          # column(
+          #   1,
+          #   actionButton(ns("setupMfluxResult"), "...")
+          # ),
+          column(
+            3,
+            selectInput(
+              ns("mfluxTask"), NULL,
+              choices = list(
+                "Upload project" = "uploadProject",
+                "Retrieve project" = "retrieveProject",
+                "Transfer project" = "transferProject"
+              ), selected = "backupProject"
+            )
+          ),
+          column(
+            1,
+            actionButton(ns("runMfluxTask"), "Run")
+          ),
+          column(
+            1,
+            actionButton(ns("cancelMfluxTask"), "Cancel", class = btnCLASS_IMPORTANT)
+          )
+        ),
+        tags$hr(),
+        fluidRow(
+          column(12,
+                 div(style = "max-height:300px;overflow-y:scroll",
+                     verbatimTextOutput(ns("mfluxOutput")))
           )
         )
       )

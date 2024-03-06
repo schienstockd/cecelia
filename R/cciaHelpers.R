@@ -483,6 +483,16 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           remoteDir = projectManager$getProjectLabServerSmbRemoteDir(),
           remoteAddon = projectManager$getProjectLabServerSmbRemoteAddon(),
           localDir = projectManager$getProjectLabServerSmbLocalMountDir()
+        ),
+        mflux = list(
+          host = projectManager$getProjectMfluxHost(),
+          port = projectManager$getProjectMfluxPort(),
+          transport = projectManager$getProjectMfluxTransport(),
+          namespace = projectManager$getProjectMfluxNamespace(),
+          tokenfile = projectManager$getProjectMfluxTokenFile(),
+          nbWorkers = projectManager$getProjectMfluxNbWorkers(),
+          sync = projectManager$getProjectMfluxSync(),
+          username = projectManager$getProjectMfluxUsername()
         )
         # use local config files
         # python = list(

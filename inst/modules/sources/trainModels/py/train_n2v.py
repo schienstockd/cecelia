@@ -60,7 +60,7 @@ def run(params):
   else:
     patch_shape = (patch_xy, patch_xy)
     
-  logfile_utils.log(f'> init patches {patch_shape}')
+  logfile_utils.log(f'> init patches {patch_shape} for {len(imgs)} images')
   
   patches = datagen.generate_patches_from_list(
     imgs[:1], shape = patch_shape, shuffle = True)
