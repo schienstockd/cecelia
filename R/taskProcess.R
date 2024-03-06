@@ -226,6 +226,10 @@ TaskProcess <- R6::R6Class(
         sink(self$getTaskLogFile())
       }
       
+      # make sure there is a directory
+      if (!dir.exists(dirname(self$getTaskLogFile())))
+        dir.create(dirname(self$getTaskLogFile()))
+      
       write("*** START PROCESS ***", file = self$getTaskLogFile())
     },
     

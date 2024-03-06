@@ -29,9 +29,6 @@ TransferProject <- R6::R6Class(
         tmpdir = file.path(self$envParams()$dirs$task, "tasks"))
       configFiles <- c(mfluxConfigFile, smbConfigFile)
       
-      self$writeLog(self$envParams("local")$dirs$task)
-      self$writeLog(self$envParams("hpc")$dirs$task)
-      
       # transfer configs
       funParams <- list(
         localFiles = configFiles,
@@ -39,7 +36,7 @@ TransferProject <- R6::R6Class(
         remoteDir = self$envParams("hpc")$dirs$task,
         useCompression = FALSE
       )
-      self$runTasks(c("hpc.upload"), funParams = funParams)
+      # self$runTasks(c("hpc.upload"), funParams = funParams)
       
       # unlink configs
       unlink(configFiles)
@@ -47,21 +44,22 @@ TransferProject <- R6::R6Class(
       # start job for transfer
       taskVars <- private$getTaskConf()
       taskVars$fun <- list(
-        retrPID = self$globalEnv()$pID,
+        retrPID = self$globalParams()$pID,
         pDir = self$funParams()$pDir,
         mfluxConfigFile = paste0(self$envParams("hpc")$dirs$task, "/", mfluxConfigFile),
-        smbConfigFile = paste0(self$envParams("hpc")$dirs$task, "/", smbConfigFile),
+        smbConfigFile = paste0(self$envParams("hpc")$dirs$task, "/", smbConfigFile)
       )
       
       # run environment
       taskVars$env$global$env <- "hpc"
-      runInplace <- TRUE
       
-      self$initLog()
-      self$writeLog(paste("Retrieve", fileIMAGE_CONVERTED))
+      # switch task dirs
+      # taskVars$env$local$dirs$task <- taskVars$env$hpc$dirs$task
+      # taskVars$env$local$dirs$zero <- taskVars$env$hpc$dirs$zero
       
-      taskLauncher$initTask(
-        "hpc.retrieve", taskVars, inplace = runInplace)
+      # init task launcher
+      taskLauncher <- TaskLauncher$new()
+      taskLauncher$initTask("mflux.retrieveProject", taskVars, inplace = FALSE)
       
       # prep run
       taskLauncher$prepRun()
@@ -70,12 +68,6 @@ TransferProject <- R6::R6Class(
       taskLauncher$run()
       
       taskLauncher$result(TRUE)
-      
-      # mount lab server
-      
-      # download data from mediaflux to dataserver
-      
-      # close connection
       
       self$writeLog("Done")
       self$exitLog()

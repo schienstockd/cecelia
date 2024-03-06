@@ -233,7 +233,7 @@
           ),
           conditionalPanel(
             condition = sprintf("input['%s'] == 'transferProject'", ns("mfluxTask")),
-            column(2, textInput(ns("mfluxTransferDir"), "Transfer directory", value = ""))
+            column(5, textInput(ns("mfluxTransferDir"), "Transfer directory", value = ""))
           )
         ),
         fluidRow(
