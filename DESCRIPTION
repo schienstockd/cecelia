@@ -79,9 +79,7 @@ Imports:
     ggrepel,
     geometry,
     lubridate,
-    ggquiver,
-    bs4Dash,
-    sortable
+    ggquiver
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
