@@ -392,6 +392,7 @@ ProjectManager <- R6::R6Class(
       # test connection
       sshCon <- SshUtils$new(projectManager = self$reactive())
       
+      # TODO this should be done with a file
       smbCmd <- sprintf(
         "echo $'%s' | smbclient %s -U %s -c 'ls'",
         self$projectLabServerSmbPwd(decrypt = TRUE, forBash = TRUE),

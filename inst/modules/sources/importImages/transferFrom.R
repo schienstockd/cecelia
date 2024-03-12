@@ -52,20 +52,33 @@ TransferFrom <- R6::R6Class(
       handleSystem(self$sshConnection()$sshExecute(smbCmd))
       
       self$writeLog(">> GET command")
-      self$writeLog(
-        sprintf(
-          "smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"'",
-          self$utilsParams()$smb$remoteDir,
-          self$utilsParams()$smb$username,
-          self$utilsParams()$smb$remoteAddon,
-          getDir
-          # self$envParams(remoteTo)$dirs$zero
-          # cmdMGET, cmdRename
-        ))
       
       # batch files into 20 files
       batchSize <- 500
       nFiles <- length(filesToCopy$files)
+      
+      # push credentials to file
+      smbConfigFile <- tempfile(
+        tmpdir = file.path(self$envParams("local")$dirs$task, "tasks"), fileext = ".tmp")
+      
+      fileConn <- file(smbConfigFile)
+      writeLines(.cciaDecrypt(self$utilsParams()$smb$password), fileConn)
+      close(fileConn)
+      
+      # upload and delete
+      # transfer configs
+      funParams <- list(
+        localFiles = smbConfigFile,
+        localDir = self$envParams("local")$dirs$task,
+        remoteDir = self$envParams("hpc")$dirs$task,
+        useCompression = FALSE
+      )
+      self$runTasks(c("hpc.upload"), funParams = funParams)
+      
+      # unlink configs
+      unlink(smbConfigFile)
+      hpcSmbConfigFile <- paste(
+        self$envParams("hpc")$dirs$task, "tasks", basename(smbConfigFile), sep = "/")
       
       for (i in seq(ceiling(nFiles/batchSize))) {
         iStart <- (i-1) * batchSize
@@ -94,16 +107,25 @@ TransferFrom <- R6::R6Class(
         
         # TODO credentials should be in temporary file - not in command!
         # copy
-        handleSystem(self$sshConnection()$sshExecute(sprintf(
-          "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
-          .prepForBash(.cciaDecrypt(self$utilsParams()$smb$password)),
+        cmd <- sprintf(
+          # "echo $'%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
+          # .prepForBash(.cciaDecrypt(self$utilsParams()$smb$password)),
+          "cat '%s' | smbclient %s -U %s -c 'prompt OFF; recurse ON; mask \\\"\\\"; cd \\\"%s\\\"; cd \\\"%s\\\"; lcd %s; %s'; %s",
+          hpcSmbConfigFile,
           self$utilsParams()$smb$remoteDir,
           self$utilsParams()$smb$username,
           self$utilsParams()$smb$remoteAddon,
           getDir, self$envParams(remoteTo)$dirs$zero,
           cmdMGET, cmdRename
-        )))
+        )
+        
+        self$writeLog(cmd)
+          
+        handleSystem(self$sshConnection()$sshExecute(cmd))
       }
+      
+      # remove SMB config
+      handleSystem(self$sshConnection()$sshExecute(paste("rm", hpcSmbConfigFile)))
       
       self$writeLog("Done")
       self$exitLog()

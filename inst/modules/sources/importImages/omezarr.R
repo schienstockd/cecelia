@@ -29,7 +29,11 @@ Omezarr <- R6::R6Class(
       
       # define filepaths
       imPathIn <- cciaObj$oriFilepath(modified = TRUE, revertToOri = TRUE)
-      
+
+      if (self$funParams()$imType == "segmentation") {
+        imPathIn <- paste0(tools::file_path_sans_ext(imPathIn), self$funParams()$imSuffix)
+      }
+            
       # copy to temp if needed
       if ("copyToTmp" %in% names(self$funParams()) && self$funParams()$copyToTmp == TRUE) {
         # add special type files
@@ -85,10 +89,18 @@ Omezarr <- R6::R6Class(
       
       self$writeLog(paste("Import", imPathIn))
       
-      imPathOut <- file.path(
-        self$envParams()$dirs$zero,
-        sprintf("%s.ome.zarr", fileIMAGE_CONVERTED)
-      )
+      if (self$funParams()$imType == "segmentation") {
+        imPathOut <- file.path(
+          self$envParams()$dirs$task,
+          cciaConf()$dirs$tasks$labels,
+          sprintf("%s.zarr", self$funParams()$valueName)
+        )
+      } else {
+        imPathOut <- file.path(
+          self$envParams()$dirs$zero,
+          sprintf("%s.ome.zarr", fileIMAGE_CONVERTED)
+        )
+      }
       
       self$writeLog(paste("Save as", imPathOut))
       
@@ -100,6 +112,9 @@ Omezarr <- R6::R6Class(
       if (self$funParams()$pyramidScale > 0) {
         pyramidScaleStr <- sprintf("--resolutions %d", self$funParams()$pyramidScale)
       }
+      
+      # default or set fielpath?
+      imFilepath <- NULL
       
       # check whether image is a sequence
       if (self$funParams()$isSequence) {
@@ -119,6 +134,21 @@ Omezarr <- R6::R6Class(
         
         # call python
         self$pyScript("import_from_sequence", params)
+      } else if (self$funParams()$imType == "segmentation") {
+        self$writeLog(">> Create segmentation from file")
+        
+        # create params
+        params <- list(
+          refPath = cciaObj$imFilepath(),
+          imPathIn = imPathIn,
+          imPathOut = imPathOut
+        )
+        
+        # call python
+        self$pyScript("import_segmentation", params)
+        
+        # set name
+        imFilepath <- basename(imPathOut)
       } else {
         # use custom dimension order?
         dimOrderStr <- ""
@@ -165,11 +195,11 @@ Omezarr <- R6::R6Class(
         unlink(tmpFilepath, recursive = TRUE)
       }
       
+      # update image information
+      self$updateImageInfo(imFilepath = imFilepath)
+      
       self$writeLog("Done")
       self$exitLog()
-      
-      # update image information
-      self$updateImageInfo()
     }
   )
 )

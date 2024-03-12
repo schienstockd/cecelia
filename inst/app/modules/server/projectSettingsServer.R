@@ -434,21 +434,28 @@
         if (input$mfluxTask == "uploadProject")
           globalManagers$projectManager()$exportProject(saveData = FALSE)
         
-        funParams <- NULL
+        funParams <- list()
         finalExp <- NULL
         
+        # fun params
+        if (input$mfluxTask %in% c("retrieveProject", "recoverProject")) {
+          funParams <- append(funParams, list(retrPID = input$mfluxRetrPID))
+        }
+        
+        if (input$mfluxTask %in% c("backupProject", "recoverProject")) {
+          req(input$mfluxBackupDir)
+          funParams <- append(funParams, list(pDir = input$mfluxBackupDir))
+        }
+        
+        # expressions
         if (input$mfluxTask == "retrieveProject") {
           req(input$mfluxRetrPID)
-          funParams <- list(retrPID = input$mfluxRetrPID)
           
           # create expression for completion
           finalExp <- sprintf(
             "globalManagers$projectManager()$importProject('%s', retrFiles = FALSE)",
             input$mfluxRetrPID)
-        } else if (input$mfluxTask == "transferProject") {
-          req(input$mfluxTransferDir)
-          funParams <- list(pDir = input$mfluxTransferDir)
-        }
+        } 
         
         createTaskObserver("mflux", "mfluxTask", mfluxTask, "mfluxOutput",
                            mfluxOutput, funParams = funParams, finalExp = finalExp)

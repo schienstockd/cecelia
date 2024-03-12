@@ -59,6 +59,65 @@ Mflux <- R6::R6Class(
       return(smbConfigFile)
     },
     
+    # SMB address
+    smbAddress = function() {
+      paste0("smb:", self$utilsParams()$smb$remoteDir, self$utilsParams()$smb$remoteAddon)
+    },
+    
+    # prepare SMB mount
+    mountSMB = function() {
+      # need to push config file to server to access mediaflux
+      mfluxConfigFile <- self$prepMfluxConfig(
+        tmpdir = file.path(self$envParams()$dirs$task, "tasks"))
+      
+      # push lab server credentials to HPC
+      smbConfigFile <- self$prepSmbConfig(
+        tmpdir = file.path(self$envParams()$dirs$task, "tasks"))
+      configFiles <- c(mfluxConfigFile, smbConfigFile)
+      
+      # transfer configs
+      funParams <- list(
+        localFiles = configFiles,
+        localDir = self$envParams("local")$dirs$task,
+        remoteDir = self$envParams("hpc")$dirs$task,
+        useCompression = FALSE
+      )
+      self$runTasks(c("hpc.upload"), funParams = funParams)
+      
+      # unlink configs
+      unlink(configFiles)
+      
+      # start transfer
+      mfluxConfigFile <- paste0(self$envParams("hpc")$dirs$task, "/tasks/", basename(mfluxConfigFile))
+      smbConfigFile <- paste0(self$envParams("hpc")$dirs$task, "/tasks/", basename(smbConfigFile))
+      
+      # mount SMB directory
+      cmd <- paste("gio mount", self$smbAddress(), "<", smbConfigFile)
+      
+      # prepare SMB directory
+      smbServer <- stringr::str_split(self$utilsParams()$smb$remoteDir, "/")[[1]]
+      smbServer <- smbServer[smbServer != ""]
+      
+      # get user ID
+      # TODO this whole procedure show probably be a bash script
+      userID <- stringr::str_trim(self$sshConnection()$sshExecute("id -u", intern = TRUE))
+      
+      smbDir <- paste0(
+        "/run/user/", userID, "/gvfs/smb-share:server=", smbServer[[1]],
+        # "/run/user/$(USER_ID)/gvfs/smb-share:server=", smbServer[[1]],
+        ",share=", paste0(tolower(smbServer[[2]]), self$utilsParams()$smb$remoteAddon))
+      
+      # append directory
+      pDir <- paste0(smbDir, "/", self$funParams()$pDir)
+      
+      return(list(
+        cmd = cmd,
+        pDir = pDir,
+        mfluxConfigFile = mfluxConfigFile,
+        smbConfigFile = smbConfigFile
+      ))
+    },
+    
     # upload files
     upload = function(FilesToUpload) {
       self$initLog()
@@ -92,57 +151,20 @@ Mflux <- R6::R6Class(
     },
     
     # retrieve files
-    retrieve = function(retrPID, pDir = NULL, mfluxConfigFile = NULL, smbConfigFile = NULL) {
+    retrieve = function(retrPID) {
       self$initLog()
       self$writeLog("Retrieve")
-      smbMounted <- NULL
       
-      # mount volumes for download?
-      if (!is.null(smbConfigFile) && self$taskEnv() == "hpc") {
-        # mount SMB directory
-        smbAddress <- paste0("smb:", self$utilsParams()$smb$remoteDir, self$utilsParams()$smb$remoteAddon)
-        cmd <- paste("gio mount", smbAddress, "<", smbConfigFile)
-        
-        self$writeLog(cmd)
-        handleSystem(.execSystem(cmd, intern = FALSE))
-        
-        smbMounted <- smbAddress
-        unlink(smbConfigFile)
-        
-        # prepare SMB directory
-        userID <- .execSystem("id -u", intern = TRUE)
-        smbServer <- stringr::str_split(self$utilsParams()$smb$remoteDir, "/")[[1]]
-        smbServer <- smbServer[smbServer != ""]
-        
-        smbDir <- paste0(
-          "/run/user/", userID, "/gvfs/smb-share:server=", smbServer[[1]],
-          ",share=", paste0(smbServer[[2]], self$utilsParams()$smb$remoteAddon))
-        
-        # append directory
-        pDir <- paste0(smbDir, "/", pDir)
-      } else {
-        # create destination dir
-        if (is.null(pDir))
-          pDir <- file.path(dirname(self$globalParams()$projectsDir))
-      }
+      # create destination dir
+      pDir <- file.path(dirname(self$globalParams()$projectsDir))
       
       # prep config
-      if (is.null(mfluxConfigFile))
-        mfluxConfigFile <- self$prepConfig()
-      
-      # check that the module is loaded
-      # TODO this is unimelb specific
-      if (self$taskEnv() == "hpc") {
-        handleSystem(.execSystem("module load unimelb-mf-clients"))
-        mfluxBin <- "unimelb-mf-download"
-      } else {
-        mfluxBin <- file.path(cciaConf()$dirs$mfluxClients, "unimelb-mf-download")
-      }
+      mfluxConfigFile <- self$prepMfluxConfig()
       
       # prepare call
       cmd <- paste(c(
         # TODO this is unimelb specific
-        mfluxBin,
+        file.path(cciaConf()$dirs$mfluxClients, "unimelb-mf-download"),
         paste("--mf.config", mfluxConfigFile),
         paste("--nb-workers", self$utilsParams()$mflux$nbWorkers),
         "--quiet",
@@ -153,14 +175,10 @@ Mflux <- R6::R6Class(
       
       # call mediaflux
       self$writeLog(cmd)
-      # handleSystem(.execSystem(cmd, intern = FALSE))
+      handleSystem(.execSystem(cmd, intern = FALSE))
       
       # clean up
       unlink(mfluxConfigFile)
-      
-      # unmount
-      if (!is.null(smbMounted))
-        handleSystem(.execSystem(paste("gio mount -u ", smbMounted), intern = FALSE))
       
       self$writeLog("Done")
       self$exitLog()

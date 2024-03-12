@@ -120,8 +120,8 @@ def run(params):
     cur_labels_slices = slices['labels'][i]
     
     # logfile_utils.log('>> Slice: ' + str(i + 1) + '/' + str(len(slices)))
-    logfile_utils.log(cur_im_slices)
-    logfile_utils.log(cur_labels_slices)
+    # logfile_utils.log(cur_im_slices)
+    # logfile_utils.log(cur_labels_slices)
   
     # get image to process
     im = np.squeeze(labels_data[cur_labels_slices])
@@ -162,7 +162,8 @@ def run(params):
     
     # check that shape is matching
     # TODO this has to be done better and more generic
-    if len(skeleton_labels.shape) != len(labels_data[cur_labels_slices].shape):
+    # if len(skeleton_labels.shape) != len(labels_data[cur_labels_slices].shape):
+    while len(skeleton_labels.shape) != len(labels_data[cur_labels_slices].shape):
       logfile_utils.log(f'> {skeleton_labels.shape} v {labels_data[cur_labels_slices].shape}')
 
       skeleton_labels = np.expand_dims(skeleton_labels, axis = 0)

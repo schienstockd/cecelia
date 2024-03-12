@@ -219,12 +219,12 @@
               ns("mfluxUsername"), "Username", value = "")
           ),
           column(
-            3,
+            2,
             sliderInput(
-              ns("mfluxNbWorkers"), "Number of Workers", min = 1, max = 8, value = 4)
+              ns("mfluxNbWorkers"), "Workers", min = 1, max = 8, value = 4)
           ),
           conditionalPanel(
-            condition = sprintf("input['%s'] == 'retrieveProject'", ns("mfluxTask")),
+            condition = sprintf("input['%1$s'] == 'retrieveProject' || input['%1$s'] == 'recoverProject'", ns("mfluxTask")),
             column(2, textInput(ns("mfluxRetrPID"), "pID to retrieve", value = ""))
           ),
           conditionalPanel(
@@ -232,8 +232,8 @@
             column(2, checkboxInput(ns("mfluxSync"), "Sync", value = FALSE))
           ),
           conditionalPanel(
-            condition = sprintf("input['%s'] == 'transferProject'", ns("mfluxTask")),
-            column(5, textInput(ns("mfluxTransferDir"), "Transfer directory", value = ""))
+            condition = sprintf("input['%1$s'] == 'backupProject' || input['%1$s'] == 'recoverProject'", ns("mfluxTask")),
+            column(4, textInput(ns("mfluxBackupDir"), "Backup directory", value = ""))
           )
         ),
         fluidRow(
@@ -252,8 +252,9 @@
               choices = list(
                 "Upload project" = "uploadProject",
                 "Retrieve project" = "retrieveProject",
-                "Transfer project" = "transferProject"
-              ), selected = "backupProject"
+                "Backup project" = "backupProject",
+                "Recover project" = "recoverProject"
+              ), selected = "uploadProject"
             )
           ),
           column(

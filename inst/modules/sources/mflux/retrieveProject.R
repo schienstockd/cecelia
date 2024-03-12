@@ -18,15 +18,7 @@ RetrieveProject <- R6::R6Class(
     # run
     run = function() {
       # retrieve whole project folder
-      self$retrieve(
-        self$funParams()$retrPID,
-        pDir = if ("pDir" %in% names(self$funParams()))
-          self$funParams()$pDir else NULL,
-        mfluxConfigFile = if ("mfluxConfigFile" %in% names(self$funParams()))
-          self$funParams()$mfluxConfigFile else NULL,
-        smbConfigFile = if ("smbConfigFile" %in% names(self$funParams()))
-          self$funParams()$smbConfigFile else NULL
-        )
+      self$retrieve(self$funParams()$retrPID)
     }
   )
 )

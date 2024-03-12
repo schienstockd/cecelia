@@ -52,76 +52,82 @@ Import <- R6::R6Class(
     # reset image information
     resetImageInfo = function() {
       # unlink files in zero dir
-      unlink(
-        file.path(self$envParams("local")$dirs$zero,
-                  paste0(fileIMAGE_CONVERTED, c(".zarr", ".ome.tiff", ".ome.zarr"))),
-        recursive = TRUE
+      if (self$funParams()$imType == "primary") {
+        unlink(
+          file.path(self$envParams("local")$dirs$zero,
+                    paste0(fileIMAGE_CONVERTED, c(".zarr", ".ome.tiff", ".ome.zarr"))),
+          recursive = TRUE
         )
+      }
     },
     
     # update image information after conversion
-    updateImageInfo = function() {
+    updateImageInfo = function(imFilepath = NULL) {
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      # get converted image filename
-      imFilepath <- Sys.glob(file.path(
-        self$envParams()$dirs$zero,
-        paste0(fileIMAGE_CONVERTED, "*")))
+      # check type of image to be imported to # set filename
+      if (self$funParams()$imType == "segmentation") {
+        cciaObj$setImLabelsFilepath(imFilepath, valueName = self$funParams()$valueName)
+      } else {
+        # get converted image filename
+        imFilepath <- Sys.glob(file.path(
+          self$envParams()$dirs$zero,
+          paste0(fileIMAGE_CONVERTED, "*")))
+        
+        cciaObj$setImFilepath(basename(imFilepath))
       
-      # set filename
-      cciaObj$setImFilepath(basename(imFilepath))
-      
-      # switch dimensions back if new order was set
-      if ("dimOrder" %in% names(self$funParams()) && self$funParams()$dimOrder != "") {
-        # prepare params
-        params <- list(
-          imPath = file.path(
-            self$envParams()$dirs$zero,
-            basename(cciaObj$imFilepath())
+        # switch dimensions back if new order was set
+        if ("dimOrder" %in% names(self$funParams()) && self$funParams()$dimOrder != "") {
+          # prepare params
+          params <- list(
+            imPath = file.path(
+              self$envParams()$dirs$zero,
+              basename(cciaObj$imFilepath())
+            )
           )
-        )
+          
+          # call python
+          self$pyScript("switch_dim_order", params)
+        }
         
-        # call python
-        self$pyScript("switch_dim_order", params)
-      }
-      
-      # delete MIP?
-      if ("createMIP" %in% names(self$funParams()) && self$funParams()$createMIP == TRUE) {
-        if (!is.null(cciaObj$oriFilepath(modified = TRUE)))
-          unlink(cciaObj$oriFilepath(modified = TRUE))
-      }
-      
-      # delete Rescale?
-      if ("rescaleImage" %in% names(self$funParams()) && self$funParams()$rescaleImage == TRUE) {
-        # make sure the image is float
-        params <- list(
-          imPath = file.path(
-            self$envParams()$dirs$zero,
-            basename(cciaObj$imFilepath())
-          ),
-          pixelType = "uint16"
-        )
+        # delete MIP?
+        if ("createMIP" %in% names(self$funParams()) && self$funParams()$createMIP == TRUE) {
+          if (!is.null(cciaObj$oriFilepath(modified = TRUE)))
+            unlink(cciaObj$oriFilepath(modified = TRUE))
+        }
         
-        # call python
-        self$pyScript("change_pixel_type", params)
+        # delete Rescale?
+        if ("rescaleImage" %in% names(self$funParams()) && self$funParams()$rescaleImage == TRUE) {
+          # make sure the image is float
+          params <- list(
+            imPath = file.path(
+              self$envParams()$dirs$zero,
+              basename(cciaObj$imFilepath())
+            ),
+            pixelType = "uint16"
+          )
+          
+          # call python
+          self$pyScript("change_pixel_type", params)
+          
+          if (!is.null(cciaObj$oriFilepath(modified = TRUE)))
+            unlink(cciaObj$oriFilepath(modified = TRUE))
+        }
         
-        if (!is.null(cciaObj$oriFilepath(modified = TRUE)))
-          unlink(cciaObj$oriFilepath(modified = TRUE))
+        # add label properties
+        # TODO this is hard coded
+        if ("syncFile" %in% names(self$funParams()) && self$funParams()$syncFile == "cell2location") {
+          cciaObj$setImLabelPropsFilepath(
+            paste0("default", cciaConf()$files$ext$labelProps),
+            valueName = "default"
+          )
+        }
+        
+        # get metadata
+        cciaObj$resetMetaFromFile()
       }
-      
-      # add label properties
-      # TODO this is hard coded
-      if ("syncFile" %in% names(self$funParams()) && self$funParams()$syncFile == "cell2location") {
-        cciaObj$setImLabelPropsFilepath(
-          paste0("default", cciaConf()$files$ext$labelProps),
-          valueName = "default"
-        )
-      }
-      
-      # get metadata
-      cciaObj$resetMetaFromFile()
-      
+        
       # save object
       cciaObj$saveState()
     }

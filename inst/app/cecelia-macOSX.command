@@ -17,7 +17,7 @@ fi
 CONDA_ENV=r-cecelia-env
 # https://stackoverflow.com/a/70861080
 CECELIA_DIR="$(cd "$(dirname "$0")/.." > /dev/null 2>&1 || exit; pwd -P)"
-CECELIA_PORT=686$((1 + $RANDOM % 9))
+CECELIA_PORT=68$((1 + $RANDOM % 9))$((1 + $RANDOM % 9))
 
 # R_CALL="library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaCreateApp();cciaRunApp(port=6860,launch.browser=TRUE)"
 # R_CALL="library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=6860,launch.browser=TRUE)"

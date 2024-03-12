@@ -91,12 +91,17 @@ def fortify(im_array):
 Return chunksize
 """
 def chunks(im_array):
-  if type(im_array) is zarr.core.Array:
-    return im_array.chunks
-  elif type(im_array) is dask.array.core.Array:
-    return im_array.chunksize
+  im_chunks = None
   
-  return None
+  if type(im_array) is zarr.core.Array:
+    im_chunks = im_array.chunks
+  elif type(im_array) is dask.array.core.Array:
+    im_chunks = im_array.chunksize
+  
+  # make sure they are only numbers
+  # TODO there was a case when I had:
+  # [(1, 1, 1, 1), (640,), (680,)]
+  return [x if isinstance(x, int) else x[0] for x in im_chunks]
 
 """
 Open labels as Dask array

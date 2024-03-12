@@ -73,6 +73,21 @@
 				"type:character": {
 					"default": ""
 				}
+			},
+      "imType": {
+				"type:character": {
+					"default": "primary"
+				}
+			},
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "imSuffix": {
+				"type:character": {
+					"default": ""
+				}
 			}
     },
     "outputs": {}
@@ -158,6 +173,30 @@
 			"seqREXP": {
 				"index": 11,
 				"label": "Sequence expression",
+				"widget:textInput": {
+				}
+			},
+			"imType": {
+        "index": 12,
+        "label": "Image type",
+        "widget:selection": {
+          "items": {
+            "Primary": "primary",
+            "Segmentation": "segmentation"
+          },
+          "multiple": false,
+          "size": 1
+        }
+			},
+			"valueName": {
+				"index": 13,
+				"label": "Image name",
+				"widget:textInput": {
+				}
+			},
+			"imSuffix": {
+				"index": 14,
+				"label": "Image suffix",
 				"widget:textInput": {
 				}
 			}

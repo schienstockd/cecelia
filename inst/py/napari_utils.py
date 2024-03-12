@@ -281,9 +281,9 @@ class NapariUtils:
         self.open_viewer()
 
       # this has to be set to the channel when used
-      if channel_names is not None and len(channel_names) == 1:
-        use_channel_axis = False
-        channel_names = None
+      # if channel_names is not None and len(channel_names) == 1:
+      #   use_channel_axis = False
+      #   channel_names = None
       self.use_channel_axis = use_channel_axis
       
       # get channel axis

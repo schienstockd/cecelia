@@ -64,14 +64,15 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
 )
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 # get branching
 labels <- lapply(cciaObj$cciaObjects(), function(x) {
-  y <- x$labelProps(valueName = "vessels.branch")
+  y <- x$labelProps(valueName = "fibres.branch")
   uns <- y$values_uns()
   y$close()
   
@@ -83,19 +84,20 @@ exp.info <- exp.info[rbindlist(lapply(labels, function(x) x$ilee_summary), idcol
 
 # load tracks
 tracks.table <- as.data.table(read.csv(
-  "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20231107/Nerve anisotropy and cell track/Cell tracking.csv"))
+  # "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20231107/Nerve anisotropy and cell track/Cell tracking.csv"))
+  "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20240307/MW_videos/Cell_track.csv"))
 
 # get branching
-branchDT <- cciaObj$popDT(popType = "branch")
+# branchDT <- cciaObj$popDT(popType = "branch")
 
 # clean up Region
-tracks.table[Region != "whorl", Region := "inf"]
+# tracks.table[Region != "whorl", Region := "inf"]
 
 # match uIDs
-tracks.table[exp.info, on = c("ID" = "Patient", "Region" = "Type"), uID := uID]
+tracks.table[exp.info, on = c("ID" = "Patient", "Region"), uID := uID]
 
 # copy group to exp info
-exp.info[unique(tracks.table[, c("uID", "Group")]), on = c("uID"), Group := Group]
+# exp.info[unique(tracks.table[, c("uID", "Group")]), on = c("uID"), Group := Group]
 
 # add cell_ids
 tracks.table <- as.data.table(tracks.table %>%
@@ -110,7 +112,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
 )
 
 valueName <- "IJ.manual"
@@ -119,7 +122,8 @@ valueName <- "IJ.manual"
 # build label properties from individual tracks
 for (x in cciaObj$cciaObjects()) {
   y <- tracks.table[uID == x$getUID()]
-  z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "pixel.value.fiji.")])
+  # z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "pixel.value.fiji.")])
+  z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "TI")])
   colnames(z) <- c("label", "track_id", "centroid_t", "centroid_y", "centroid_x", "mean_intensity_0")
   
   # save props
@@ -135,66 +139,69 @@ for (x in cciaObj$cciaObjects()) {
 ```
 
 ```{r}
-# get HMM transitions
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
-)
-
-# run task
-funParams <- list(
-  valueName = "IJ.manual",
-  pops = c("IJ.manual")
-)
-
-# run task
-task <- cciaObj$runTasks(
-  funName = "segment.binariseTracks",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1,
-  uIDs = names(cciaObj$cciaObjects()),
-  mc.cores = 4
-)
+# # get HMM transitions
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+#   pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
+# )
+# 
+# # run task
+# funParams <- list(
+#   valueName = "IJ.manual",
+#   pops = c("IJ.manual")
+# )
+# 
+# # run task
+# task <- cciaObj$runTasks(
+# # task <- cciaObj$cciaObjects()[[1]]$runTask(
+#   funName = "segment.binariseTracks",
+#   funParams = funParams,
+#   env = "local",
+#   runInplace = TRUE,
+#   taskID = 1,
+#   uIDs = names(cciaObj$cciaObjects()),
+#   mc.cores = 3
+# )
 ```
 
 ```{r}
-# get HMM transitions
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
-)
-
-# run task
-funParams <- list(
-  valueName = "IJ.manual.tracks",
-  preDilationSize = 0,
-  postDilationSize = 2,
-  flattenBranching = FALSE,
-  useBorders = FALSE,
-  calcExtended = TRUE,
-  calcFlattened = FALSE,
-  anisoRadius = 40,
-  saveMeshes = FALSE
-)
-
-# run task
-task <- cciaObj$runTasks(
-  funName = "segment.createBranching",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1,
-  uIDs = names(cciaObj$cciaObjects()),
-  mc.cores = 4
-)
+# # get HMM transitions
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
+#   pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
+# )
+# 
+# # run task
+# funParams <- list(
+#   valueName = "IJ.manual.tracks",
+#   preDilationSize = 0,
+#   postDilationSize = 2,
+#   flattenBranching = FALSE,
+#   useBorders = FALSE,
+#   calcExtended = TRUE,
+#   calcFlattened = FALSE,
+#   anisoRadius = 40,
+#   saveMeshes = FALSE
+# )
+# 
+# # run task
+# task <- cciaObj$runTasks(
+#   funName = "segment.createBranching",
+#   funParams = funParams,
+#   env = "local",
+#   runInplace = TRUE,
+#   taskID = 1,
+#   uIDs = names(cciaObj$cciaObjects()),
+#   mc.cores = 4
+# )
 ```
 
 ```{r}
@@ -203,11 +210,15 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE # SHG 3P
+  # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
 # get vector information to plot anisotropy
-unsLabels <- c("vessels", "IJ.manual.tracks")
+# unsLabels <- c("fibres", "IJ.manual.tracks")
+unsLabels <- c("fibres")
 uns <- list()
 
 for (i in unsLabels) {
@@ -222,6 +233,9 @@ for (i in unsLabels) {
     }
   }
 }
+
+# merge summary
+exp.info <- exp.info[rbindlist(lapply(uns$fibres, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
 
 # get branching
 branchDT <- cciaObj$popDT(popType = "branch")
@@ -238,6 +252,29 @@ tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = unique(popDT$uID))
 ```
 
 ```{r}
+tracks <- cciaObj$tracks("IJ.manual", uIDs = unique(popDT$uID))
+
+# create data.table with properties
+tracks.DT <- tracks.measure.fun(tracks, celltrackR::speed,
+                                "live.cell.speed", steps.subtracks = 1,
+                                idcol = "uID")
+
+# add further measurements
+tracks.DT[
+  tracks.measure.fun(
+    tracks, celltrackR::overallAngle, "live.cell.angle",
+    steps.subtracks = 2, idcol = "uID"),
+  on = .(uID, track_id, cell_id),
+  live.cell.angle := .(live.cell.angle)]
+
+# convert angle to degrees
+tracks.DT[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+# add global angle to each track
+tracks.DT[, live.cell.angle_deg.csum := cumsum(tidyr::replace_na(live.cell.angle_deg, 0)), by = c("uID", "track_id")]
+```
+
+```{r}
 # plot quiver
 coords <- lapply(uns, function(x) {
   lapply(x, function(y) {
@@ -251,6 +288,129 @@ coords <- lapply(uns, function(x) {
     list(coords = coords, u = u, v = v)
   })
 })
+```
+
+```{r}
+# check where the centre of each track is
+tracksInfo[
+  popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
+  on = c("uID", "track_id"),
+  `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
+```
+
+```{r}
+# round datapoints
+aRad <- 25
+tracksInfo[, centroid_y_tile := round(centroid_y/aRad) * aRad]
+tracksInfo[, centroid_x_tile := round(centroid_x/aRad) * aRad]
+           
+# to which anisotropy does the track belong to?
+coordMappingsList <- list()
+
+for (x in unique(tracksInfo$uID)) {
+  coordMapping <- (tracksInfo[uID == x] %>%
+    left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+              by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
+    left_join(
+      popDT[uID == x] %>%
+        group_by(track_id) %>%
+        arrange(label) %>%
+        filter(row_number() == 1 | row_number() == n()) %>%
+        summarise(y = diff(centroid_y), x = diff(centroid_x)), by = c("track_id"))
+
+  matA <- matrix(c(
+    coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
+    coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
+  ), ncol = 2)
+  
+  matB <- matrix(c(
+    coordMapping$x,
+    coordMapping$y
+  ), ncol = 2)
+  
+  matAngles <- c()
+  matAniso <-  c()
+  for (i in seq(nrow(matA))) {
+    matAngles <- c(matAngles, matlib::angle(as.vector(matA[i, ]), as.vector(matB[i, ]))[1])
+    matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+  }
+  
+  coordMapping$angle <- matAngles
+  coordMapping$aniso <- matAniso
+  coordMapping <- as.data.table(coordMapping)
+  
+  # difference cannot be more than 90 DEG
+  coordMapping[angle > 90, angle := 180 - angle]
+  
+  coordMappingsList[[x]] <- copy(coordMapping)
+}
+
+coordMappings <- rbindlist(coordMappingsList)
+```
+
+```{r fig_angles, fig.height=3, fig.width=3}
+# now plot out
+datToPlot <- coordMappings %>%
+  group_by(uID) %>%
+  summarise(mean = mean(angle, na.rm = TRUE)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean)) +
+ggplot(coordMappings %>% left_join(exp.info), aes(Region, angle)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 0) +
+  geom_violin(scale = "width") +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="#AA1F5E") +
+  ylim(0, 100)
+
+ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
+
+# save as CSV
+write.csv(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
+```
+
+```{r fig_angles, fig.height=3, fig.width=3}
+# now plot out
+datToPlot <- coordMappings %>%
+  group_by(uID) %>%
+  summarise(mean = mean(angle, na.rm = TRUE)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean)) +
+ggplot(coordMappings %>% left_join(exp.info), aes(Region, aniso)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 0) +
+  geom_violin(scale = "width") +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="#AA1F5E") 
+
+ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+```
+
+```{r fig_aniso, fig.height=4, fig.width=12}
+# plot vessel measurements for each type
+vesselMeasures <- colnames(exp.info)[!colnames(exp.info) %in% c("uID", "Patient", "Region")]
+
+write.csv(exp.info, file.path(anaDir, "fibres.csv"))
+
+datToPlot <- exp.info %>%
+  pivot_longer(cols = vesselMeasures,
+               names_to = "measure", values_to = "value")
+
+ggplot(datToPlot, aes(Region, value)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  facet_wrap(.~measure, scales = "free", nrow = 2) +
+  theme(legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1")
+  # scale_color_manual(values = c("#327EBA", "#AA1F5E"))
+
+ggsave(file.path(anaDir, "fibres.pdf"), height = 4, width = 12)
 ```
 
 ```{r fig_flows, fig.height=10, fig.width=10}
@@ -270,27 +430,34 @@ for (x in cciaObj$cciaObjects()) {
       axis.line = element_blank(),
       axis.title.x = element_blank(),
       axis.title.y = element_blank(),
-      legend.position = "none" 
+      legend.position = "none"
     ) 
   
   xCoords <- coords$IJ.manual.tracks[[x$getUID()]]
-  yCoords <- coords$vessels[[x$getUID()]]
+  yCoords <- coords$fibres[[x$getUID()]]
   
-  if (all(c(!is.null(xCoords), !is.null(yCoords))))
+  # if (all(c(!is.null(xCoords), !is.null(yCoords))))
+  if (all(c(!is.null(yCoords))))
     p1 <- p1 + 
+      # geom_path(aes(centroid_x, centroid_y, group = track_id, colour = as.factor(track_id)),
       geom_path(aes(centroid_x, centroid_y, group = track_id),
-        color = "#AA1F5E", linewidth = 1, alpha = 1) +
+        # color = "#AA1F5E", linewidth = 1, alpha = 1) +
+        color = "white", linewidth = 1, alpha = 1) +
+        # linewidth = 2, alpha = 1) +
       geom_segment(
-        data = branchDT[uID == x$getUID() & pop == "vessels.branch"],
+        data = branchDT[uID == x$getUID() & pop == "fibres.branch"],
         aes(x = `coord-src-1`, y = `coord-src-0`,
             xend = `coord-dst-1`, yend = `coord-dst-0`),
-        color = "#ebd441", linewidth = 1, alpha = 1) +
+        # color = "#ebd441", linewidth = 1, alpha = 1) +
+        color = "#AA1F5E", linewidth = 1, alpha = 1) +
       ggquiver::geom_quiver(
-        data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u, v = yCoords$v), color = "#4682b4") +
-      ggquiver::geom_quiver(
-        data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
+        data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u, v = yCoords$v), color = "#4682b4") 
+      # ggquiver::geom_quiver(
+      #   data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
   
-  ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", x$getUID(), ".pdf")), plot = p1, height = 8, width = 8)
+  y <- exp.info[uID == x$getUID()]
+  
+  ggsave(file.path(anaDir, "flows", paste0(y$Patient, "-", y$Region, "-", x$getUID(), ".pdf")), plot = p1, height = 8, width = 8)
 }
 
 # ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", cciaObj$getUID(), ".pdf")), height = 8, width = 8)
@@ -318,19 +485,19 @@ for (i in names(coords)[names(coords) != tracks.i]) {
 ```
 
 ```{r}
-# plot correlation between vessels and tracks
+# plot correlation between fibres and tracks
 # https://stackoverflow.com/a/39923381
 structNames <- names(coords)[names(coords) != tracks.i]
 
 # go through images
-for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs$vessels))) {
+for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs$fibres))) {
   i <- x$getUID()
   
-  diffsDT <- as.data.table(cbind(coords$vessels[[i]]$coords, vecDiffs$vessels[[i]]))
+  diffsDT <- as.data.table(cbind(coords$fibres[[i]]$coords, vecDiffs$fibres[[i]]))
   diffsDT[is.na(diffsDT), ] <- 0 
-  setnames(diffsDT, "vecDiffs$vessels[[i]]", "vessels")
+  setnames(diffsDT, "vecDiffs$fibres[[i]]", "fibres")
   diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = structNames]
-  diffsDT[vessels == 0, max := NA]
+  diffsDT[fibres == 0, max := NA]
   
   p1 <- ggplot(diffsDT, aes(x, y)) +
     theme_classic() +
@@ -365,29 +532,6 @@ for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs$vessels))) {
 }
 ```
 
-
-```{r fig_aniso, fig.height=4, fig.width=12}
-# plot vessel measurements for each type
-vesselMeasures <- colnames(exp.info)[!colnames(exp.info) %in% c("uID", "Patient", "Type", "Group")]
-
-write.csv(exp.info, file.path(anaDir, "vessels.csv"))
-
-datToPlot <- exp.info %>%
-  pivot_longer(cols = vesselMeasures,
-               names_to = "measure", values_to = "value")
-
-ggplot(datToPlot, aes(Type, value, color = Group)) +
-  theme_classic() +
-  geom_boxplot(outlier.alpha = 0) +
-  # geom_jitter(width = 0.2) +
-  geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
-  facet_wrap(.~measure, scales = "free", nrow = 2) +
-  theme(legend.position = "bottom") +
-  scale_color_brewer(palette = "Set1")
-  # scale_color_manual(values = c("#327EBA", "#AA1F5E"))
-
-ggsave(file.path(anaDir, "vessels.pdf"), height = 4, width = 10)
-```
 
 ```{r}
 # create data.table with properties
