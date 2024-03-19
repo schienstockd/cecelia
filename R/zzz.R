@@ -93,8 +93,10 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   if (envPresent == FALSE || rebuild == TRUE) {
     # do system check to make sure that ARM64 is installed for conda
     # otherwise conda installed x86_64 for arm64 in some instances
-    if (any(!is.na(stringr::str_match(Sys.info()['version'], "ARM"))))
+    if (any(!is.na(stringr::str_match(Sys.info()['version'], "ARM")))) {
+      warning(">> Set conda-subdir arm64")
       Sys.setenv(CONDA_SUBDIR = "osx-arm64")
+    }
     
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
