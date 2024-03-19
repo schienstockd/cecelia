@@ -29,6 +29,7 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 
 ```{r}
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/Mengliang/CECELIA"
+# anaDir <- "/Users/Dominik/Dropbox/_Dominik-Scott share/Meetings/Progress/Mengliang"
 ```
 
 ```{r}
@@ -249,6 +250,12 @@ popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE)
 
 # get tracks info and check parameters
 tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = unique(popDT$uID))
+
+# check where the centre of each track is
+tracksInfo[
+  popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
+  on = c("uID", "track_id"),
+  `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
 ```
 
 ```{r}
@@ -288,14 +295,6 @@ coords <- lapply(uns, function(x) {
     list(coords = coords, u = u, v = v)
   })
 })
-```
-
-```{r}
-# check where the centre of each track is
-tracksInfo[
-  popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
-  on = c("uID", "track_id"),
-  `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
 ```
 
 ```{r}
@@ -348,46 +347,208 @@ for (x in unique(tracksInfo$uID)) {
 coordMappings <- rbindlist(coordMappingsList)
 ```
 
-```{r fig_angles, fig.height=3, fig.width=3}
-# now plot out
-datToPlot <- coordMappings %>%
-  group_by(uID) %>%
-  summarise(mean = mean(angle, na.rm = TRUE)) %>%
-  left_join(exp.info)
+```{r}
+# now .. can you also shuffle points and angles?
+coordMappingsList <- list()
+bootIterations <- 100
+bootTracksInfo <- copy(tracksInfo)
 
-# ggplot(datToPlot, aes(Region, mean)) +
-ggplot(coordMappings %>% left_join(exp.info), aes(Region, angle)) +
+for (x in unique(bootTracksInfo$uID)) {
+  print(paste(">>", x))
+  
+  y <- cciaObj$cciaObjectByUID(x)[[1]]
+  
+  sizeX <- y$omeXMLPixels()$SizeX
+  sizeY <- y$omeXMLPixels()$SizeY
+  
+  for (bootID in seq(bootIterations)) {
+    if (bootID %% 20 == 0)
+        print(paste(">", bootID))
+    
+    # vary angle
+    curPopsList <- list()
+    for (i in popDT[uID == x]$track_id) {
+      bootAngle <- runif(n=1, min=0, max=90)
+      
+      # vary angle
+      curPopsList[[i]] <-
+        rearrr::rotate_2d(
+          popDT[uID == x & track_id == i] %>%
+            group_by(track_id) %>%
+            arrange(label) %>%
+            filter(row_number() == 1 | row_number() == n()),
+          degrees = bootAngle,
+          origin_fn = rearrr::centroid,
+          x_col = "centroid_x",
+          y_col = "centroid_y")
+    }
+    curPops <- rbindlist(curPopsList)
+    
+    coordMapping_rot <- (bootTracksInfo[uID == x] %>%
+      left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+                by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
+      left_join(
+        # popDT[uID == x] %>%
+        curPops %>%
+          group_by(track_id) %>%
+          # arrange(label) %>%
+          # filter(row_number() == 1 | row_number() == n()) %>%
+          summarise(
+            y = diff(centroid_y_rotated),
+            x = diff(centroid_x_rotated)),
+        by = c("track_id"))
+    
+    # go through all tracks and vary position
+    for (i in bootTracksInfo[uID == x]$track_id) {
+      bootX <- runif(n=1, min=0, max=sizeX)
+      bootY <- runif(n=1, min=0, max=sizeY)
+      
+      bootTracksInfo[uID == x & track_id == i, centroid_y_tile := round(bootY/aRad) * aRad]
+      bootTracksInfo[uID == x & track_id == i, centroid_x_tile := round(bootX/aRad) * aRad]
+    }
+    
+    coordMapping <- (bootTracksInfo[uID == x] %>%
+      left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+                by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x")))
+  
+    matA <- matrix(c(
+      coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
+      coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
+    ), ncol = 2)
+    
+    # varied angles
+    matB <- matrix(c(
+      coordMapping_rot$x,
+      coordMapping_rot$y
+    ), ncol = 2)
+    
+    matAngles <- c()
+    matAniso <-  c()
+    for (i in seq(nrow(matA))) {
+      matAngles <- c(matAngles, matlib::angle(as.vector(matA[i, ]), as.vector(matB[i, ]))[1])
+      matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+    }
+    
+    coordMapping$angle <- matAngles
+    coordMapping$aniso <- matAniso
+    coordMapping <- as.data.table(coordMapping)
+    
+    # difference cannot be more than 90 DEG
+    coordMapping[angle > 90, angle := 180 - angle]
+    
+    coordMapping$bootID <- bootID
+    
+    coordMappingsList[[paste(x, bootID, sep = "-")]] <- copy(coordMapping)
+  }
+}
+
+coordMappingsBoot <- rbindlist(coordMappingsList)
+```
+
+```{r}
+# now bind observation and simulation
+coordMappings$type <- "obs"
+coordMappings$bootID <- 0
+coordMappingsBoot$type <- "rand"
+
+coordMappingsTotal <- rbindlist(list(coordMappings, coordMappingsBoot), use.names = TRUE, fill = TRUE)
+```
+
+
+```{r fig_angles, fig.height=8, fig.width=8}
+# now plot out
+# datToPlot <- coordMappingsTotal %>%
+#   group_by(uID, type, bootID) %>%
+#   summarise(mean = mean(angle, na.rm = TRUE)) %>%
+#   left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean, color = type)) +
+ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(Region, angle)) +
+# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, angle)) +
   theme_classic() +
-  # geom_boxplot(outlier.alpha = 0) +
+  # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
   geom_jitter(width = 0.2) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
-  stat_summary(fun=mean, geom="point", size=8, shape=18, color="#AA1F5E") +
-  ylim(0, 100)
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black")
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red")
+  # ylim(0, 100) +
+  # facet_grid(.~Region)
 
 ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
+# ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
 
 # save as CSV
 write.csv(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
 ```
 
-```{r fig_angles, fig.height=3, fig.width=3}
-# now plot out
-datToPlot <- coordMappings %>%
+```{r fig_angles, fig.height=8, fig.width=8}
+datToPlot <- coordMappingsTotal[type == "obs"] %>% left_join(coordMappingsTotal[type == "rand"] %>%
   group_by(uID) %>%
-  summarise(mean = mean(angle, na.rm = TRUE)) %>%
-  left_join(exp.info)
+  summarise(mean.angle = mean(angle, na.rm = TRUE))) %>%
+  mutate(angle.norm = angle/mean.angle) %>%
+  dplyr::filter(aniso > 0)
 
-# ggplot(datToPlot, aes(Region, mean)) +
-ggplot(coordMappings %>% left_join(exp.info), aes(Region, aniso)) +
+ggplot(datToPlot %>% left_join(exp.info), aes(Region, angle.norm)) +
   theme_classic() +
-  # geom_boxplot(outlier.alpha = 0) +
+  # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
   geom_jitter(width = 0.2) +
-  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
-  stat_summary(fun=mean, geom="point", size=8, shape=18, color="#AA1F5E") 
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  stat_summary(fun=mean, geom="point", size=4, shape=18, color="red") +
+  ylim(0, 8) + geom_hline(yintercept = 1)
+
+# ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
+ggsave(file.path(anaDir, "track_alignment_boot_norm.png"), height = 4, width = 4)
+
+# save as CSV
+write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_norm.csv"))
+```
+
+```{r fig_aniso, fig.height=8, fig.width=8}
+# now plot out
+# datToPlot <- coordMappingsTotal %>%
+#   group_by(uID, type, bootID) %>%
+#   summarise(mean = mean(angle, na.rm = TRUE)) %>%
+#   left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean, color = type)) +
+ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 1) +
+  geom_violin(scale = "width") +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black") +
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
+  # ylim(0, 100) +
+  facet_grid(.~Region)
 
 ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+# ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
+```
+
+```{r fig_aniso, fig.height=8, fig.width=8}
+datToPlot <- coordMappingsTotal[type == "obs"] %>% left_join(coordMappingsTotal[type == "rand"] %>%
+  group_by(uID) %>%
+  summarise(mean.aniso = mean(aniso, na.rm = TRUE))) %>%
+  mutate(aniso.norm = aniso/mean.aniso) %>%
+  dplyr::filter(aniso > 0)
+
+ggplot(datToPlot %>% left_join(exp.info), aes(Region, aniso.norm)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 1) +
+  geom_violin(scale = "width") +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  stat_summary(fun=mean, geom="point", size=4, shape=18, color="red") +
+  ylim(0, 10) + geom_hline(yintercept = 1)
+
+ggsave(file.path(anaDir, "track_aniso_boot_norm.png"), height = 6, width = 4)
+
+# save as CSV
+write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_aniso_norm.csv"))
 ```
 
 ```{r fig_aniso, fig.height=4, fig.width=12}

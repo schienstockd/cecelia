@@ -510,6 +510,13 @@ server <- function(input, output, session) {
     } else {
       globalManagers$viewerManager()$setShowShapes(FALSE)
     }
+    
+    # reset viewer?
+    if ("resetViewer" %in% input$viewerParams) {
+      globalManagers$viewerManager()$setResetViewer(TRUE)
+    } else {
+      globalManagers$viewerManager()$setResetViewer(FALSE)
+    }
   })
   
   # Viewer branching property

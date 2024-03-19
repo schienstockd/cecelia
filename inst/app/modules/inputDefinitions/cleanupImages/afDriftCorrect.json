@@ -18,58 +18,66 @@
 					"divisionChannels": {
 						"type:list": {}
 					},
-					"channelPercentile": {
-						"type:double": {
-							"min": 0,
-							"max": 100,
-							"default": 60
-						}
+					"box1": {
+            "type:box": {
+    					"channelPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 60
+    						}
+    					},
+    					"correctionPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 95
+    						}
+    					},
+    					"correctionMode": {
+    						"type:character": {
+    							"default": "divide"
+    						}
+    					},
+    					"generateInverse": {
+        				"type:boolean": {
+        					"default": false
+        				}
+        			}
+            }
 					},
-					"correctionPercentile": {
-						"type:double": {
-							"min": 0,
-							"max": 100,
-							"default": 95
-						}
-					},
-					"correctionMode": {
-						"type:character": {
-							"default": "divide"
-						}
-					},
-					"medianFilter": {
-						"type:integer": {
-							"min": 0,
-							"max": 10,
-							"default": 0
-						}
-					},
-					"topHatRadius": {
-						"type:integer": {
-							"min": 0,
-							"max": 40,
-							"default": 0
-						}
-					},
-					"rollingBallRadius": {
-						"type:integer": {
-							"min": 0,
-							"max": 40,
-							"default": 0
-						}
-					},
-					"rollingBallPadding": {
-						"type:integer": {
-							"min": 0,
-							"max": 10,
-							"default": 4
-						}
-					},
-					"generateInverse": {
-    				"type:boolean": {
-    					"default": false
-    				}
-    			}
+					"box2": {
+            "type:box": {
+    					"medianFilter": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 10,
+    							"default": 0
+    						}
+    					},
+    					"topHatRadius": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 40,
+    							"default": 0
+    						}
+    					},
+    					"rollingBallRadius": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 40,
+    							"default": 0
+    						}
+    					},
+    					"rollingBallPadding": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 10,
+    							"default": 4
+    						}
+    					}
+            }
+					}
         }
       },
       "driftChannel": {
@@ -123,66 +131,86 @@
 							"multiple": true
 						}
 					},
-					"channelPercentile": {
-		        "index": 1,
-		        "label": "Channel Percentile",
-		        "widget:slider": {
-		          "step": 0.5
-		        }
-		      },
-					"correctionPercentile": {
-						"index": 2,
-						"label": "Correction Percentile",
-						"widget:slider": {
-							"step": 0.5
-						}
+					"box1": {
+            "index": 1,
+            "label": "Advanced",
+            "widget:box": {
+              "collapsible": true,
+              "collapsed": true,
+              "items": {
+      					"channelPercentile": {
+      		        "index": 1,
+      		        "label": "Channel Percentile",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionPercentile": {
+      						"index": 2,
+      						"label": "Correction Percentile",
+      						"widget:slider": {
+      							"step": 0.5
+      						}
+      					},
+      					"correctionMode": {
+      						"index": 3,
+      						"label": "Correction mode",
+      						"widget:selection": {
+      							"size": 1,
+      							"multiple": false,
+      							"items": [
+      								"divide",
+      								"none"
+      							]
+      						}
+      					},
+								"generateInverse": {
+          				"index": 4,
+          				"label": "Generate inverse",
+          				"widget:checkbox": {
+          				}
+          			}
+              }
+            }
 					},
-					"correctionMode": {
-						"index": 3,
-						"label": "Correction mode",
-						"widget:selection": {
-							"size": 1,
-							"multiple": false,
-							"items": [
-								"divide",
-								"none"
-							]
-						}
-					},
-					"medianFilter": {
-						"index": 4,
-						"label": "Median Filter",
-						"widget:slider": {
-							"step": 1
-						}
-					},
-					"topHatRadius": {
-						"index": 5,
-						"label": "Top hat radius",
-						"widget:slider": {
-							"step": 1
-						}
-					},
-					"rollingBallRadius": {
-						"index": 6,
-						"label": "Rolling ball radius",
-						"widget:slider": {
-							"step": 1
-						}
-					},
-					"rollingBallPadding": {
-						"index": 7,
-						"label": "Rolling ball padding",
-						"widget:slider": {
-							"step": 1
-						}
-					},
-					"generateInverse": {
-    				"index": 8,
-    				"label": "Generate inverse",
-    				"widget:checkbox": {
-    				}
-    			}
+					"box2": {
+            "index": 1,
+            "label": "Filters",
+            "widget:box": {
+              "collapsible": true,
+              "collapsed": true,
+              "items": {
+      					"medianFilter": {
+      						"index": 0,
+      						"label": "Median Filter",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"topHatRadius": {
+      						"index": 1,
+      						"label": "Top hat radius",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"rollingBallRadius": {
+      						"index": 2,
+      						"label": "Rolling ball radius",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"rollingBallPadding": {
+      						"index": 3,
+      						"label": "Rolling ball padding",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					}
+              }
+            }
+					}
 				}
 			},
       "driftChannel": {

@@ -18,11 +18,18 @@ ui <- function(request) {
       
       # --- Viewer settings ---
       tags$hr(),
-      fluidRow(
-        column(
-          6,
+      box(
+        # id = ns("viewerParamsBox"),
+        title = "Viewer",
+        solidHeader = TRUE,
+        collapsible = TRUE, 
+        collapsed = TRUE, 
+        status = "primary",
+        width = 12,
+        fluidRow(
+          actionButton("viewerAddAnimationPane", "Record Viewer"),
           checkboxGroupInput(
-            "viewerParams", "Viewer",
+            "viewerParams", NULL,
             c(
               # "Split channels" = "useChannelAxis",
               # "Viewer" = "showViewer",
@@ -39,29 +46,16 @@ ui <- function(request) {
               "Shapes" = "showShapes",
               "Lazy" = "asDask",
               "Squeeze" = "squeeze",
-              "Downsample Z" = "downsampleZ"
+              "Reset" = "resetViewer"
+              # "Downsample Z" = "downsampleZ"
               ),
             selected = c(
               "layersVisible", "showViewer", "showLabels", "showTracks",
               "showPoints", "showPops", "showNeighbours", "showShapes", "asDask",
-              "showBranching"
+              "showBranching", "resetViewer"
               )
-            )
-        ),
-        column(
-          6,
-          selectInput("viewerMultiscales", "Pyramids",
-                      seq(1, 12), selected = 12),
-          actionButton("viewerAddAnimationPane",
-                       "Recorder"),
-          tags$br(),
-          actionButton("closeViewer", "Close",
-                       class = btnCLASS_IMPORTANT)
-        )
-      ),
-      fluidRow(
-        column(
-          10,
+            ),
+          sliderInput("viewerMultiscales", "Pyramids", min = 1, max = 12, value = 12),
           selectInput(
             "viewerBranchingProperty", "Branching property",
             list(
@@ -70,34 +64,44 @@ ui <- function(request) {
             ), selected = "type")
         )
       ),
-      tags$hr(),
       
       # --- Load/Save project ---
-      fluidRow(
-        column(3,
-               tags$div("Project", class = 'txt-default-centred')
-               ),
-        column(3,
-               actionButton("loadProject", "Load"),
-               actionButton("importProject", "Import")
-               ),
-        column(3,
-               disabled(actionButton("saveProject", "Save")),
-               disabled(actionButton("exportProject", "Export")),
-               )
+      box(
+        # id = ns("viewerParamsBox"),
+        title = "Project",
+        solidHeader = TRUE,
+        collapsible = TRUE, 
+        collapsed = TRUE, 
+        status = "primary",
+        width = 12,
+        fluidRow(
+          column(6,
+                 actionButton("loadProject", "Load"),
+                 actionButton("importProject", "Import")
+          ),
+          column(6,
+                 disabled(actionButton("saveProject", "Save")),
+                 disabled(actionButton("exportProject", "Export"))
+          )
+        )
       ),
-      fluidRow(
-        column(3,
-               tags$div("Version", class = 'txt-default-centred')
-               ),
-        column(3,
-               disabled(actionButton("loadVersion", "Load"))
-               ),
-        column(3,
-               disabled(actionButton("createVersion", "Create"))
-               )
+      box(
+        # id = ns("viewerParamsBox"),
+        title = "Version",
+        solidHeader = TRUE,
+        collapsible = TRUE, 
+        collapsed = TRUE, 
+        status = "primary",
+        width = 12,
+        fluidRow(
+          column(6,
+                 disabled(actionButton("loadVersion", "Load"))
+          ),
+          column(6,
+                 disabled(actionButton("createVersion", "Create"))
+          )
+        )
       ),
-      tags$hr(),
       fluidRow(
         column(6,
                actionButton("shutdown", "Shutdown",

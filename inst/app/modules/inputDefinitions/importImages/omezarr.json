@@ -20,74 +20,82 @@
 					"default": false
 				}
 			},
-      "isSequence": {
-				"type:boolean": {
-					"default": false
-				}
+			"box1": {
+	      "type:box": {
+          "isSequence": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
+          "is3P": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
+          "isStacked": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
+          "skipTiles": {
+    				"type:integer": {
+              "min": 0,
+              "max": 5,
+              "default": 1
+            }
+    			},
+    			"physicalStackScale": {
+            "type:double": {
+              "min": 0,
+              "max": 30,
+              "default": 1
+            }
+    			},
+    			"stackDim": {
+            "type:character": {
+              "default": "Z"
+            }
+    			}
+	      }
 			},
-      "is3P": {
-				"type:boolean": {
-					"default": false
-				}
-			},
-      "isStacked": {
-				"type:boolean": {
-					"default": false
-				}
-			},
-      "skipTiles": {
-				"type:integer": {
-          "min": 0,
-          "max": 5,
-          "default": 1
-        }
-			},
-			"physicalStackScale": {
-        "type:double": {
-          "min": 0,
-          "max": 30,
-          "default": 1
-        }
-			},
-			"stackDim": {
-        "type:character": {
-          "default": "Z"
-        }
-			},
-			"createMIP": {
-				"type:boolean": {
-					"default": false
-				}
-			},
-			"rescaleImage": {
-				"type:boolean": {
-					"default": false
-				}
-			},
-			"dimOrder": {
-				"type:character": {
-					"default": ""
-				}
-			},
-			"seqREXP": {
-				"type:character": {
-					"default": ""
-				}
-			},
-      "imType": {
-				"type:character": {
-					"default": "primary"
-				}
-			},
-      "valueName": {
-				"type:character": {
-					"default": "default"
-				}
-			},
-      "imSuffix": {
-				"type:character": {
-					"default": ""
-				}
+			"box2": {
+	      "type:box": {
+	        "createMIP": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
+    			"rescaleImage": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
+    			"dimOrder": {
+    				"type:character": {
+    					"default": ""
+    				}
+    			},
+    			"seqREXP": {
+    				"type:character": {
+    					"default": ""
+    				}
+    			},
+    	    "imType": {
+    				"type:character": {
+    					"default": "primary"
+    				}
+    			},
+          "valueName": {
+    				"type:character": {
+    					"default": "default"
+    				}
+    			},
+          "imSuffix": {
+    				"type:character": {
+    					"default": ""
+    				}
+    			}
+	      }
 			}
     },
     "outputs": {}
@@ -107,98 +115,118 @@
 				"widget:checkbox": {
 				}
 			},
-			"isSequence": {
-				"index": 2,
-				"label": "Image sequence",
-				"widget:checkbox": {
-				}
+			"box1": {
+      	"index": 2,
+        "label": "Thorlabs",
+      	"widget:box": {
+      		"collapsible": true,
+      		"collapsed": true,
+      		"items": {
+      		  "isSequence": {
+      				"index": 0,
+      				"label": "Image sequence",
+      				"widget:checkbox": {
+      				}
+      			},
+      			"is3P": {
+      				"index": 1,
+      				"label": "3P Image (Thorlabs)",
+      				"widget:checkbox": {
+      				}
+      			},
+      			"isStacked": {
+      				"index": 2,
+      				"label": "Image stacked",
+      				"widget:checkbox": {
+      				}
+      			},
+      			"skipTiles": {
+              "index": 3,
+              "label": "Skip tiles",
+              "widget:slider": {
+                "step": 1
+              }
+            },
+      			"physicalStackScale": {
+              "index": 4,
+              "label": "Stack Scale",
+              "widget:slider": {
+                "step": 0.01
+              }
+            },
+      			"stackDim": {
+              "index": 5,
+              "label": "Stack Dimension",
+              "widget:selection": {
+                "items": {
+                  "Depth": "Z",
+                  "Time": "T",
+                  "Channel": "C"
+                },
+                "multiple": false,
+                "size": 1
+              }
+            }
+      		}
+      	}
 			},
-			"is3P": {
-				"index": 3,
-				"label": "3P Image (Thorlabs)",
-				"widget:checkbox": {
-				}
-			},
-			"isStacked": {
-				"index": 4,
-				"label": "Image stacked",
-				"widget:checkbox": {
-				}
-			},
-			"skipTiles": {
-        "index": 5,
-        "label": "Skip tiles",
-        "widget:slider": {
-          "step": 1
-        }
-      },
-			"physicalStackScale": {
-        "index": 6,
-        "label": "Stack Scale",
-        "widget:slider": {
-          "step": 0.01
-        }
-      },
-			"stackDim": {
-        "index": 7,
-        "label": "Stack Dimension",
-        "widget:selection": {
-          "items": {
-            "Depth": "Z",
-            "Time": "T",
-            "Channel": "C"
-          },
-          "multiple": false,
-          "size": 1
-        }
-      },
-			"createMIP": {
-				"index": 8,
-				"label": "Create MIP",
-				"widget:checkbox": {
-				}
-			},
-			"rescaleImage": {
-				"index": 9,
-				"label": "Rescale image",
-				"widget:checkbox": {
-				}
-			},
-			"dimOrder": {
-				"index": 10,
-				"label": "Custom dimension order",
-				"widget:textInput": {
-				}
-			},
-			"seqREXP": {
-				"index": 11,
-				"label": "Sequence expression",
-				"widget:textInput": {
-				}
-			},
-			"imType": {
-        "index": 12,
-        "label": "Image type",
-        "widget:selection": {
-          "items": {
-            "Primary": "primary",
-            "Segmentation": "segmentation"
-          },
-          "multiple": false,
-          "size": 1
-        }
-			},
-			"valueName": {
-				"index": 13,
-				"label": "Image name",
-				"widget:textInput": {
-				}
-			},
-			"imSuffix": {
-				"index": 14,
-				"label": "Image suffix",
-				"widget:textInput": {
-				}
+			"box2": {
+      	"index": 3,
+        "label": "Advanced",
+      	"widget:box": {
+      		"collapsible": true,
+      		"collapsed": true,
+      		"items": {
+      		  "createMIP": {
+      				"index": 0,
+      				"label": "Create MIP",
+      				"widget:checkbox": {
+      				}
+      			},
+      			"rescaleImage": {
+      				"index": 1,
+      				"label": "Rescale image",
+      				"widget:checkbox": {
+      				}
+      			},
+      			"dimOrder": {
+      				"index": 2,
+      				"label": "Custom dimension order",
+      				"widget:textInput": {
+      				}
+      			},
+      			"seqREXP": {
+      				"index": 3,
+      				"label": "Sequence expression",
+      				"widget:textInput": {
+      				}
+      			},
+      			"imType": {
+              "index": 4,
+              "label": "Image type",
+              "widget:selection": {
+                "items": {
+                  "Primary": "primary",
+                  "Segmentation": "segmentation"
+                },
+                "multiple": false,
+                "size": 1
+              }
+      			},
+      			"valueName": {
+      				"index": 5,
+      				"label": "Image name",
+      				"widget:textInput": {
+      				}
+      			},
+      			"imSuffix": {
+      				"index": 6,
+      				"label": "Image suffix",
+      				"widget:textInput": {
+      				}
+      			}
+      		}
+      	}
 			}
     },
     "outputs": {}

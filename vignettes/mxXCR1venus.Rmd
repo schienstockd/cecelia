@@ -13,8 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
-pID <- "Bi2995"
+# pID <- "Bi2995"
 # pID <- "rMeKCv"
+pID <- "Kr5So2"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -33,6 +34,32 @@ cciaUse("~/cecelia/dev")
 
 library(ggplot2)
 library(tidyverse)
+```
+
+```{r}
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fJOCk6", versionID = versionID, initReactivity = FALSE
+)
+
+spaceholder <- "SPACEHOLDER"
+valueName <- "T-Bcells"
+
+cciaObj$imLabelsFilepath(valueName = valueName)
+
+# # reset values
+# cciaObj$setImLabelsFilepath(
+#   spaceholder, valueName = valueName, setDefault = FALSE)
+# 
+# cciaObj$setImLabelPropsFilepath(
+#   "SPACEHOLDER", valueName = valueName, setDefault = FALSE)
+# 
+# # save object
+# cciaObj$saveState()
 ```
 
 ```{r fig_gating, fig.height=3, fig.width=5}
@@ -60,23 +87,25 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "oKjACa", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "fJOCk6", versionID = versionID, initReactivity = FALSE
 )
 
 # cciaObj$setImLabelPropsFilepath("default.h5ad", valueName = "default")
 # cciaObj$saveState()
 
-cciaObj$runTask(
+task <- cciaObj$runTask(
   funName = "gatePopulations.createGatingSet",
   funParams = list(
     compensateZ = FALSE,
     polyDegree = 0,
     applyReversedLog = FALSE,
-    transformation = "logicle",
+    transformation = "biexponential",
     transChannels = unlist(cciaObj$imChannelNames())
   ),
-  runInplace = TRUE
+  runInplace = FALSE
 )
+
+task$result()
 ```
 
 ```{r}

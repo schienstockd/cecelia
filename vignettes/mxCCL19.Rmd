@@ -201,8 +201,6 @@ cciaObj <- initCciaObject(
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 popDT <- cciaObj$popDT(popType = "flow", pops = c("/cells/P14"))
-
-colnames(popDT)
 ```
 
 ```{r fig_gating, fig.height=6, fig.width=6}
@@ -302,9 +300,16 @@ datToPlot <- as.data.table(popDT %>%
 
 # condition for 
 datToPlot[, triplet := FALSE]
+datToPlot[, triplet_CD11c := FALSE]
+datToPlot[, triplet_XCR1 := FALSE]
 datToPlot[(XCR1 == TRUE | CD11c == TRUE) & LCMV == TRUE, triplet := TRUE]
+datToPlot[(CD11c == TRUE) & LCMV == TRUE, triplet_CD11c := TRUE]
+datToPlot[(XCR1 == TRUE) & LCMV == TRUE, triplet_XCR1 := TRUE]
+```
 
-datToPlot <- datToPlot %>%
+
+```{r fig_triplet, fig.height=3, fig.width=3}
+summaryToPlot <- datToPlot %>%
   group_by(uID, flow.cell.is.clust, triplet) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
@@ -313,10 +318,10 @@ datToPlot <- datToPlot %>%
   dplyr::filter(triplet == TRUE) %>%
   left_join(exp.info)
 
-datToPlot$popState <- "non.clustering"
-datToPlot[datToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
+summaryToPlot$popState <- "non.clustering"
+summaryToPlot[summaryToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
 
-ggplot(datToPlot, aes(DTx, freq, color = popState)) +
+ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
@@ -327,6 +332,59 @@ ggplot(datToPlot, aes(DTx, freq, color = popState)) +
 
 ggsave(file.path(anaDir, "P14_triplet_interactions.pdf"), width = 3, height = 2)
 write.csv(datToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
+```
+
+```{r fig_triplet, fig.height=3, fig.width=3}
+summaryToPlot <- datToPlot %>%
+  group_by(uID, flow.cell.is.clust, triplet_CD11c) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, triplet_CD11c, fill = list(freq = 0)) %>%
+  dplyr::filter(triplet_CD11c == TRUE) %>%
+  left_join(exp.info) %>%
+  replace_na(list(flow.cell.is.clust = FALSE))
+
+summaryToPlot$popState <- "non.clustering"
+summaryToPlot[summaryToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
+
+ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100) +
+  scale_color_brewer(palette = "Set2")
+
+ggsave(file.path(anaDir, "P14_triplet_CD11c_interactions.pdf"), width = 3, height = 2)
+write.csv(datToPlot, file.path(anaDir, "P14_triplet_CD11c_interactions.csv"))
+```
+
+```{r fig_triplet, fig.height=3, fig.width=3}
+summaryToPlot <- datToPlot %>%
+  group_by(uID, flow.cell.is.clust, triplet_XCR1) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, triplet_XCR1, fill = list(freq = 0)) %>%
+  dplyr::filter(triplet_XCR1 == TRUE) %>%
+  left_join(exp.info)
+
+summaryToPlot$popState <- "non.clustering"
+summaryToPlot[summaryToPlot$flow.cell.is.clust == TRUE,]$popState <- "clustering"
+
+ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 1.0) +
+  ylim(0, 100) +
+  scale_color_brewer(palette = "Set2")
+
+ggsave(file.path(anaDir, "P14_triplet_XCR1_interactions.pdf"), width = 3, height = 2)
+write.csv(datToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
 ```
 
 

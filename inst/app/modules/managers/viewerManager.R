@@ -38,6 +38,7 @@ ViewerManager <- R6::R6Class(
     downsampleZ = FALSE,
     reloadImage = FALSE,
     multiscales = TRUE,
+    resetViewer = TRUE,
     branchingProperty = "type",
     
     # setters
@@ -153,7 +154,8 @@ ViewerManager <- R6::R6Class(
             show3D = self$getShow3D(),
             layersVisible = self$getLayersVisible(),
             showTimestamp = showTimestamp,
-            timeInterval = timeInterval
+            timeInterval = timeInterval,
+            resetViewer = self$getResetViewer()
           )
           
           # set uID
@@ -368,6 +370,11 @@ ViewerManager <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setResetViewer = function(x, invalidate = TRUE) {
+      private$resetViewer <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     # getters
     getLazyLoading = function() {
       private$lazyLoading
@@ -447,6 +454,10 @@ ViewerManager <- R6::R6Class(
     
     getIgnoreCalls = function() {
       private$ignoreCalls
+    },
+    
+    getResetViewer = function() {
+      private$resetViewer
     }
   )
 )

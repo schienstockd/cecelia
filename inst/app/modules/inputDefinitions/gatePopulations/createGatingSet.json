@@ -8,35 +8,6 @@
   },
   "spec": {
     "inputs": {
-      "compensateZ": {
-        "type:boolean": {
-          "default": false
-        }
-      },
-      "cropDataBySD": {
-        "type:boolean": {
-          "default": false
-        }
-      },
-      "polyDegree": {
-        "type:integer": {
-          "min": 1,
-          "max": 10,
-          "default": 4
-        }
-      },
-      "applyReversedLog": {
-        "type:boolean": {
-          "default": false
-        }
-      },
-      "reversedLogBase": {
-        "type:integer": {
-          "min": 0,
-          "max": 10,
-          "default": 0
-        }
-      },
       "transformation": {
         "type:string": {
           "default": "none"
@@ -44,46 +15,47 @@
       },
       "transChannels": {
         "type:list": {}
-      }
+      },
+			"box1": {
+        "type:box": {
+          "compensateZ": {
+            "type:boolean": {
+              "default": false
+            }
+          },
+          "cropDataBySD": {
+            "type:boolean": {
+              "default": false
+            }
+          },
+          "polyDegree": {
+            "type:integer": {
+              "min": 1,
+              "max": 10,
+              "default": 4
+            }
+          },
+          "applyReversedLog": {
+            "type:boolean": {
+              "default": false
+            }
+          },
+          "reversedLogBase": {
+            "type:integer": {
+              "min": 0,
+              "max": 10,
+              "default": 0
+            }
+          }
+        }
+			}
     },
     "outputs": {}
   },
   "ui": {
     "inputs": {
-      "compensateZ": {
-        "index": 0,
-        "label": "Compensate Depth",
-        "widget:checkbox": {
-        }
-      },
-      "cropDataBySD": {
-        "index": 1,
-        "label": "Crop data by SD",
-        "widget:checkbox": {
-        }
-      },
-      "polyDegree": {
-        "index": 2,
-        "label": "Poly Degree",
-        "widget:slider": {
-          "step": 1
-        }
-      },
-      "applyReversedLog": {
-        "index": 3,
-        "label": "Reversed log",
-        "widget:checkbox": {
-        }
-      },
-      "reversedLogBase": {
-        "index": 4,
-        "label": "Log base",
-        "widget:slider": {
-          "step": 1
-        }
-      },
       "transformation": {
-        "index": 5,
+        "index": 0,
         "label": "Transform",
         "widget:selection": {
           "items": {
@@ -103,12 +75,54 @@
         }
       },
       "transChannels": {
-        "index": 6,
+        "index": 1,
         "label": "Channels",
         "widget:channelSelection": {
           "size": 1,
           "multiple": true,
           "useNames": true
+        }
+      },
+			"box1": {
+        "index": 2,
+        "label": "Advanced",
+        "widget:box": {
+          "collapsible": true,
+          "collapsed": true,
+          "items": {
+            "compensateZ": {
+              "index": 0,
+              "label": "Compensate Depth",
+              "widget:checkbox": {
+              }
+            },
+            "cropDataBySD": {
+              "index": 1,
+              "label": "Crop data by SD",
+              "widget:checkbox": {
+              }
+            },
+            "polyDegree": {
+              "index": 2,
+              "label": "Poly Degree",
+              "widget:slider": {
+                "step": 1
+              }
+            },
+            "applyReversedLog": {
+              "index": 3,
+              "label": "Reversed log",
+              "widget:checkbox": {
+              }
+            },
+            "reversedLogBase": {
+              "index": 4,
+              "label": "Log base",
+              "widget:slider": {
+                "step": 1
+              }
+            }
+          }
         }
       }
     },

@@ -37,7 +37,11 @@ https://www.w3docs.com/snippets/html/how-to-rotate-the-div-element-by-90-degrees
 }*/
 
 .box-title {
-  font-size: 0.8em;
+  font-size: 0.6em;
+}
+
+.box-body {
+  color: #333;
 }
 
 /*

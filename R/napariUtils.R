@@ -129,11 +129,12 @@ NapariUtils <- R6::R6Class(
     #' @param squeeze boolean to load image as squeezed numpy array
     #' @param showTimestamp boolean to show time interval
     #' @param timeInterval numeric for timelapse interval
+    #' @param resetViewer reset viewer before opening image
     openImage = function(
       imPath, useChannelAxis = TRUE, imChannelNames = NULL, channelColormaps = NULL,
       napariModule = NULL, asDask = TRUE, downsampleZ = FALSE, show3D = FALSE,
       multiscales = NULL, execInteractive = TRUE, layersVisible = TRUE,
-      squeeze = FALSE, showTimestamp = FALSE, timeInterval = 1) {
+      squeeze = FALSE, showTimestamp = FALSE, timeInterval = 1, resetViewer = TRUE) {
       # map path
       imPath <- .dockerMapPathToHost(imPath)
       
@@ -142,8 +143,13 @@ NapariUtils <- R6::R6Class(
       self$clearViewerOutput()
       
       # reset viewer
-      self$closeViewer()
-      self$openViewer()
+      if (resetViewer == TRUE) {
+        self$closeViewer()
+        self$openViewer()
+      } else {
+        # add basename to channel names
+        imChannelNames <- paste(imChannelNames, paste0("(", basename(imPath), ")"))
+      }
       
       # open image
       self$execute(
