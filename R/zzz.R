@@ -3,6 +3,10 @@
 # TODO not sure if there is a better way to do this
 pkg.env <- new.env()
 
+# Temporary fix because reticulate fails to find conda binary
+# https://github.com/rstudio/reticulate/issues/1460#issuecomment-1995795408
+assignInNamespace("is_conda_python", function(x){ return(FALSE) }, ns="reticulate")
+
 # Functions to run when package is loaded
 .onLoad <- function(libname, pkgname) {
   # prepare paths
