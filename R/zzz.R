@@ -6,6 +6,7 @@ pkg.env <- new.env()
 # Temporary fix because reticulate fails to find conda binary
 # Fails on 'normalizePath'
 # https://github.com/rstudio/reticulate/issues/1460#issuecomment-1995795408
+library(reticulate)
 assignInNamespace("is_conda_python", function(x){ return(FALSE) }, ns="reticulate")
 
 # Functions to run when package is loaded
