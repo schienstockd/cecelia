@@ -91,13 +91,6 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   envPresent <- envName %in% reticulate::conda_list()$name
   
   if (envPresent == FALSE || rebuild == TRUE) {
-    # do system check to make sure that ARM64 is installed for conda
-    # otherwise conda installed x86_64 for arm64 in some instances
-    if (any(!is.na(stringr::str_match(Sys.info()['version'], "ARM")))) {
-      warning(">> Set conda-subdir arm64")
-      Sys.setenv(CONDA_SUBDIR = "osx-arm64")
-    }
-    
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
@@ -277,7 +270,7 @@ cciaUse <- function(path = "~/cecelia", initConda = TRUE, initJupyter = FALSE,
     
     message(paste("[CCIA] >> Init conda", pkg.env$cfg$python$conda$env))
     
-    reticulate::use_condaenv(pkg.env$cfg$python$conda$env, required = TRUE)
+    reticulate::use_condaenv(condaenv = pkg.env$cfg$python$conda$env, required = TRUE)
   
     # init jupyter kernel
     if (initJupyter == TRUE) {
