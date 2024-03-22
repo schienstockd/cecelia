@@ -46,4 +46,4 @@ lxml
 # multidimensional sparse matrices
 sparse
 n2v
-tensorflow
+tensorflow<2.16
