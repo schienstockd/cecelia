@@ -83,7 +83,8 @@ def run(params):
     train_epochs = train_epochs,
     train_loss = 'mse', batch_norm = True, 
     train_batch_size = 4, n2v_perc_pix = 0.198, n2v_patch_shape = patch_shape, 
-    n2v_manipulator = 'uniform_withCP', n2v_neighborhood_radius = 5)
+    n2v_manipulator = 'uniform_withCP', n2v_neighborhood_radius = 5,
+    train_checkpoint = "best.weights.h5")
     
   logfile_utils.log('> start training')
   

@@ -24,7 +24,12 @@ CECELIA_PORT=68$((1 + $RANDOM % 9))$((1 + $RANDOM % 9))
 # TODO flowCore load flowCore first, otherwise there is an issue with
 # different versions of Protobuf
 # TODO get 'bad value' in vroom if not loaded before
-R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
+# R_CALL="library(vroom);library(flowCore);library(cecelia);cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
+
+# Temporary fix because reticulate fails to find conda binary
+# Fails on 'normalizePath'
+# https://github.com/rstudio/reticulate/issues/1460#issuecomment-1995795408
+R_CALL="library(vroom);library(flowCore);library(cecelia);assignInNamespace('is_conda_python',function(x){return(FALSE)},ns='reticulate');cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
 
 # export homebrew
 export PATH=/opt/homebrew/bin:$PATH
