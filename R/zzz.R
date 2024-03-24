@@ -468,6 +468,6 @@ cciaApplyPatches <- function() {
   # TODO use legacy optimizer for Metal
   if (any(!is.na(stringr::str_match(Sys.info()['version'], "ARM64"))))
     readLines(n2vModelFile) |>
-      stringr::str_replace_all("tensorflow.keras.optimizers", "tensorflow.keras.legacy.optimizers") |>
+      stringr::str_replace_all("tensorflow.keras.optimizers", "tensorflow.keras.optimizers.legacy") |>
       writeLines(con = n2vModelFile)
 }
