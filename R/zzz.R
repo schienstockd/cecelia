@@ -455,4 +455,13 @@ cciaApplyPatches <- function() {
     file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"),
     basename(from))
   file.copy(from, to, overwrite = TRUE)
+  
+  # path for n2v to write keras v3 compatible filename
+  n2vModelFile <- file.path(
+    cciaCondaPath(), "lib", "python3.9", "site-packages", "n2v", "models", "n2v_standard.py")
+  
+  readLines(n2vModelFile) |>
+    stringr::str_replace_all("weights_now", "now.weights") |>
+    stringr::str_replace_all("weights_last", "last.weights") |>
+    writeLines(con = n2vModelFile)
 }

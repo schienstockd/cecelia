@@ -85,7 +85,7 @@ def run(params):
     train_batch_size = 4, n2v_perc_pix = 0.198, n2v_patch_shape = patch_shape, 
     n2v_manipulator = 'uniform_withCP', n2v_neighborhood_radius = 5)
     # TODO this is a fix because n2v fails on ModelCheckpoint from keras
-    # train_checkpoint = None)
+    train_checkpoint = "best.weights.h5")
     
   logfile_utils.log('> start training')
   
