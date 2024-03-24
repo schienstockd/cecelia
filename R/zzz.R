@@ -464,4 +464,10 @@ cciaApplyPatches <- function() {
     stringr::str_replace_all("weights_now", "now.weights") |>
     stringr::str_replace_all("weights_last", "last.weights") |>
     writeLines(con = n2vModelFile)
+  
+  # TODO use legacy optimizer for Metal
+  if (any(!is.na(stringr::str_match(Sys.info()['version'], "ARM64"))))
+    readLines(n2vModelFile) |>
+      stringr::str_replace_all("tensorflow.keras.optimizers", "tensorflow.keras.legacy.optimizers") |>
+      writeLines(con = n2vModelFile)
 }
