@@ -348,22 +348,16 @@ coordMappings <- rbindlist(coordMappingsList)
 ```
 
 ```{r}
-# now .. can you also shuffle points and angles?
-coordMappingsList <- list()
-bootIterations <- 100
-bootTracksInfo <- copy(tracksInfo)
-
-for (x in unique(bootTracksInfo$uID)) {
-  print(paste(">>", x))
-  
-  y <- cciaObj$cciaObjectByUID(x)[[1]]
+runSim <- function(y) {
+  x <- y$getUID()
   
   sizeX <- y$omeXMLPixels()$SizeX
   sizeY <- y$omeXMLPixels()$SizeY
+  mappingsList <- list()
   
   for (bootID in seq(bootIterations)) {
     if (bootID %% 20 == 0)
-        print(paste(">", bootID))
+        message(paste(">", x, bootID))
     
     # vary angle
     curPopsList <- list()
@@ -384,7 +378,7 @@ for (x in unique(bootTracksInfo$uID)) {
     }
     curPops <- rbindlist(curPopsList)
     
-    coordMapping_rot <- (bootTracksInfo[uID == x] %>%
+    coordMapping_rot <- (tracksInfo[uID == x] %>%
       left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
                 by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
       left_join(
@@ -416,8 +410,13 @@ for (x in unique(bootTracksInfo$uID)) {
       coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
     ), ncol = 2)
     
+    matA_rot <- matrix(c(
+      coords$fibres[[x]]$u[as.integer(coordMapping_rot$rowname)],
+      coords$fibres[[x]]$v[as.integer(coordMapping_rot$rowname)]
+    ), ncol = 2)
+    
     # varied angles
-    matB <- matrix(c(
+    matB_rot <- matrix(c(
       coordMapping_rot$x,
       coordMapping_rot$y
     ), ncol = 2)
@@ -425,7 +424,7 @@ for (x in unique(bootTracksInfo$uID)) {
     matAngles <- c()
     matAniso <-  c()
     for (i in seq(nrow(matA))) {
-      matAngles <- c(matAngles, matlib::angle(as.vector(matA[i, ]), as.vector(matB[i, ]))[1])
+      matAngles <- c(matAngles, matlib::angle(as.vector(matA_rot[i, ]), as.vector(matB_rot[i, ]))[1])
       matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
     }
     
@@ -436,13 +435,32 @@ for (x in unique(bootTracksInfo$uID)) {
     # difference cannot be more than 90 DEG
     coordMapping[angle > 90, angle := 180 - angle]
     
+    coordMapping$uID <- x
     coordMapping$bootID <- bootID
     
-    coordMappingsList[[paste(x, bootID, sep = "-")]] <- copy(coordMapping)
+    mappingsList[[bootID]] <- coordMapping
   }
+  
+  mappingsList
 }
 
-coordMappingsBoot <- rbindlist(coordMappingsList)
+# now .. can you also shuffle points and angles?
+coordMappingsList <- list()
+bootIterations <- 1000
+bootTracksInfo <- copy(tracksInfo)
+uIDs <- unique(bootTracksInfo$uID)
+
+coordMappingsList <- parallel::mclapply(
+# coordMappingsList <- lapply(
+  cciaObj$cciaObjects(uIDs = uIDs),
+  function(x) {
+    message(sprintf("[run sim] >> %s", x$getUID()))
+    runSim(x)
+  }, mc.cores = parallel::detectCores() - 2
+  # }
+)
+
+coordMappingsBoot <- rbindlist(lapply(coordMappingsList, function(x) rbindlist(x)))
 ```
 
 ```{r}
@@ -452,6 +470,29 @@ coordMappings$bootID <- 0
 coordMappingsBoot$type <- "rand"
 
 coordMappingsTotal <- rbindlist(list(coordMappings, coordMappingsBoot), use.names = TRUE, fill = TRUE)
+```
+
+```{r}
+sigValue <- 0.05
+pValues <- list()
+
+# now .. can you test for significance for each simulation?
+for(xID in unique(coordMappingsTotal$uID)[1]) {
+  print(paste(">>", xID))
+  
+  # count number of significant differences
+  xRes <- sapply(seq(bootIterations), function(i) {
+    print(i)
+    
+    t.test(
+      coordMappingsTotal[uID == xID & bootID == 0]$angle,
+      coordMappingsTotal[uID == xID & bootID == i]$angle,
+      na.action = na.omit
+    )$p.value < sigValue
+    })
+  
+  pValues[[xID]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
+}
 ```
 
 
