@@ -503,7 +503,35 @@ for(xRegion in unique(coordMappingsTotal$Region)) {
 
 pValues
 ```
+```{r}
+sigValue <- 0.05
+pValues <- list()
 
+colnames(coordMappingsTotal)
+
+# now .. can you test for significance for each simulation?
+# for(xID in unique(coordMappingsTotal$uID)) {
+for(xRegion in unique(coordMappingsTotal$Region)) {
+  # print(paste(">>", xID))
+  print(paste(">>", xRegion))
+  
+  # count number of significant differences
+  xRes <- sapply(seq(bootIterations), function(i) {
+    t.test(
+      # coordMappingsTotal[uID == xID & bootID == 0]$angle,
+      # coordMappingsTotal[uID == xID & bootID == i]$angle,
+      coordMappingsTotal[Region == xRegion & bootID == 0]$aniso,
+      coordMappingsTotal[Region == xRegion & bootID == i]$aniso,
+      na.action = na.omit
+    )$p.value < sigValue
+    })
+  
+  # pValues[[xID]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
+  pValues[[xRegion]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
+}
+
+pValues
+```
 
 ```{r fig_angles, fig.height=8, fig.width=8}
 # now plot out
@@ -513,20 +541,20 @@ pValues
 #   left_join(exp.info)
 
 # ggplot(datToPlot, aes(Region, mean, color = type)) +
-ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(Region, angle)) +
-# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, angle)) +
+# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(Region, angle)) +
+ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, angle)) +
   theme_classic() +
   # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
-  geom_jitter(width = 0.2) +
+  # geom_jitter(width = 0.2) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
   # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black")
-  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red")
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
   # ylim(0, 100) +
-  # facet_grid(.~Region)
+  facet_grid(.~Region)
 
-ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
-# ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
+ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
 
 # save as CSV
 write.csv(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
@@ -563,20 +591,20 @@ write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_
 #   left_join(exp.info)
 
 # ggplot(datToPlot, aes(Region, mean, color = type)) +
-ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
-# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
   theme_classic() +
   # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
-  geom_jitter(width = 0.2) +
+  # geom_jitter(width = 0.2) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
   # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black") +
   stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
   # ylim(0, 100) +
   facet_grid(.~Region)
 
-ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
-# ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
 ```
 
 ```{r fig_aniso, fig.height=8, fig.width=8}

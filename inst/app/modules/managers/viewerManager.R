@@ -198,7 +198,12 @@ ViewerManager <- R6::R6Class(
       self$viewer()$saveLayerProps(
         file.path(
           private$handleImObj()$persistentObjectDirectory(), "data",
-          paste0(basename(private$handleImObj()$imFilepath()), ".pkl")
+          paste0(basename(
+            if (self$getShowOriginal() == TRUE)
+              private$handleImObj()$imFilepath(valueName = "default")
+            else
+              private$handleImObj()$imFilepath()
+          ), ".pkl")
         )
       )
     },
@@ -208,7 +213,12 @@ ViewerManager <- R6::R6Class(
       # check whether properties exist
       layerFile <- file.path(
         private$handleImObj()$persistentObjectDirectory(), "data",
-        paste0(basename(private$handleImObj()$imFilepath()), ".pkl")
+        paste0(basename(
+          if (self$getShowOriginal() == TRUE)
+            private$handleImObj()$imFilepath(valueName = "default")
+          else
+            private$handleImObj()$imFilepath()
+        ), ".pkl")
       )
       
       if (file.exists(layerFile))
