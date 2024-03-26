@@ -20,5 +20,5 @@ graph plotting engine with napari’s image display.
 ## Documentation
 
 See
-[‘read-the-docs’](https://cecelia.readthedocs.io/en/latest/index.html)
+[`read-the-docs`](https://cecelia.readthedocs.io/en/latest/index.html)
 for installation and tutorials.

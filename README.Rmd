@@ -27,4 +27,4 @@ __This package is pre-alpha__
 
 ## Documentation
 
-See ['read-the-docs'](https://cecelia.readthedocs.io/en/latest/index.html) for installation and tutorials.
+See [`read-the-docs`](https://cecelia.readthedocs.io/en/latest/index.html) for installation and tutorials.
