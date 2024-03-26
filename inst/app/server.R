@@ -546,7 +546,13 @@ server <- function(input, output, session) {
   
   # save layer properties
   observeEvent(input$viewerSaveLayerProps, {
+    progress <- Progress$new()
+    progress$set(message = "Save layer properties ... ", value = 20)
+    
     globalManagers$viewerManager()$saveLayerProps()
+    
+    progress$set(message = "Done ... ", value = 100)
+    progress$close()
   })
   
   # update viewer input
