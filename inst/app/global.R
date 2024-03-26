@@ -62,6 +62,7 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "loadVersion", "createVersion",
   "deleteSelectedProjectConfirmed",
   "shutdown", "restart", "closeViewer", "viewerAddAnimationPane",
+  "viewerSaveLayerProps", 
   "importImages-deleteSetConfirmed",
   "importImages-deleteUIDConfirmed",
   "importImages-taskRunAll",

@@ -298,6 +298,19 @@ coords <- lapply(uns, function(x) {
 ```
 
 ```{r}
+# can you calculate the anisotropy of local track/fibre?
+boxAnisotropy <- abs(uns$fibres$kwLJ2A$ilee_eigval[1,,,1] - uns$fibres$kwLJ2A$ilee_eigval[1,,,2])
+totalLength <- sum(uns$fibres$kwLJ2A$ilee_box_total_length)
+anisotropy <- sum(boxAnisotropy) / totalLength
+```
+
+```{r}
+dim(boxAnisotropy)
+dim(localLength)
+```
+
+
+```{r}
 # round datapoints
 aRad <- 25
 tracksInfo[, centroid_y_tile := round(centroid_y/aRad) * aRad]
@@ -307,6 +320,11 @@ tracksInfo[, centroid_x_tile := round(centroid_x/aRad) * aRad]
 coordMappingsList <- list()
 
 for (x in unique(tracksInfo$uID)) {
+  # can you calculate the anisotropy of local track/fibre?
+  boxAnisotropy <- abs(uns$fibres[[x]]$ilee_eigval[1,,,1] - uns$fibres[[x]]$ilee_eigval[1,,,2])
+  localLength <- uns$fibres[[x]]$ilee_box_total_length
+  localAnisotropy <- boxAnisotropy / localLength[1,,]
+  
   coordMapping <- (tracksInfo[uID == x] %>%
     left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
               by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
@@ -316,7 +334,9 @@ for (x in unique(tracksInfo$uID)) {
         arrange(label) %>%
         filter(row_number() == 1 | row_number() == n()) %>%
         summarise(y = diff(centroid_y), x = diff(centroid_x)), by = c("track_id"))
-
+  
+  matLocalAniso <- as.vector(localAnisotropy)[as.integer(coordMapping$rowname)]
+  
   matA <- matrix(c(
     coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
     coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
@@ -331,7 +351,8 @@ for (x in unique(tracksInfo$uID)) {
   matAniso <-  c()
   for (i in seq(nrow(matA))) {
     matAngles <- c(matAngles, matlib::angle(as.vector(matA[i, ]), as.vector(matB[i, ]))[1])
-    matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+    # matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+    matAniso <- c(matAniso, matLocalAniso[i])
   }
   
   coordMapping$angle <- matAngles
@@ -354,6 +375,11 @@ runSim <- function(y) {
   sizeX <- y$omeXMLPixels()$SizeX
   sizeY <- y$omeXMLPixels()$SizeY
   mappingsList <- list()
+  
+  # can you calculate the anisotropy of local track/fibre?
+  boxAnisotropy <- abs(uns$fibres[[x]]$ilee_eigval[1,,,1] - uns$fibres[[x]]$ilee_eigval[1,,,2])
+  localLength <- uns$fibres[[x]]$ilee_box_total_length
+  localAnisotropy <- boxAnisotropy / localLength[1,,]
   
   for (bootID in seq(bootIterations)) {
     if (bootID %% 20 == 0)
@@ -405,6 +431,8 @@ runSim <- function(y) {
       left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
                 by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x")))
   
+    matLocalAniso <- as.vector(localAnisotropy)[as.integer(coordMapping$rowname)]
+    
     matA <- matrix(c(
       coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
       coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
@@ -425,7 +453,8 @@ runSim <- function(y) {
     matAniso <-  c()
     for (i in seq(nrow(matA))) {
       matAngles <- c(matAngles, matlib::angle(as.vector(matA_rot[i, ]), as.vector(matB_rot[i, ]))[1])
-      matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+      # matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+      matAniso <- c(matAniso, matLocalAniso[i])
     }
     
     coordMapping$angle <- matAngles
@@ -503,6 +532,7 @@ for(xRegion in unique(coordMappingsTotal$Region)) {
 
 pValues
 ```
+
 ```{r}
 sigValue <- 0.05
 pValues <- list()
@@ -591,20 +621,20 @@ write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_
 #   left_join(exp.info)
 
 # ggplot(datToPlot, aes(Region, mean, color = type)) +
-# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
-ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
   theme_classic() +
   # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
-  # geom_jitter(width = 0.2) +
+  geom_jitter(width = 0.2) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
   # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black") +
   stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
-  # ylim(0, 100) +
+  ylim(0, 1) +
   facet_grid(.~Region)
 
-# ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
-ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
+ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+# ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
 ```
 
 ```{r fig_aniso, fig.height=8, fig.width=8}
