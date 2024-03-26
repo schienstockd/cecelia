@@ -500,6 +500,8 @@ for(xRegion in unique(coordMappingsTotal$Region)) {
   # pValues[[xID]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
   pValues[[xRegion]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
 }
+
+pValues
 ```
 
 
