@@ -544,6 +544,11 @@ server <- function(input, output, session) {
     globalManagers$viewerManager()$addAnimationPane()
   })
   
+  # save layer properties
+  observeEvent(input$viewerSaveLayerProps, {
+    globalManagers$viewerManager()$saveLayerProps()
+  })
+  
   # update viewer input
   observeEvent(viewerOuput(), {
     globalManagers$viewerManager()$updateOutput(viewerOuput())

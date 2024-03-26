@@ -469,29 +469,36 @@ coordMappings$type <- "obs"
 coordMappings$bootID <- 0
 coordMappingsBoot$type <- "rand"
 
-coordMappingsTotal <- rbindlist(list(coordMappings, coordMappingsBoot), use.names = TRUE, fill = TRUE)
+coordMappingsTotal <- as.data.table(
+  rbindlist(list(coordMappings, coordMappingsBoot), use.names = TRUE, fill = TRUE) %>%
+    left_join(exp.info[, c("uID", "Region")]))
 ```
 
 ```{r}
 sigValue <- 0.05
 pValues <- list()
 
+colnames(coordMappingsTotal)
+
 # now .. can you test for significance for each simulation?
-for(xID in unique(coordMappingsTotal$uID)[1]) {
-  print(paste(">>", xID))
+# for(xID in unique(coordMappingsTotal$uID)) {
+for(xRegion in unique(coordMappingsTotal$Region)) {
+  # print(paste(">>", xID))
+  print(paste(">>", xRegion))
   
   # count number of significant differences
   xRes <- sapply(seq(bootIterations), function(i) {
-    print(i)
-    
     t.test(
-      coordMappingsTotal[uID == xID & bootID == 0]$angle,
-      coordMappingsTotal[uID == xID & bootID == i]$angle,
+      # coordMappingsTotal[uID == xID & bootID == 0]$angle,
+      # coordMappingsTotal[uID == xID & bootID == i]$angle,
+      coordMappingsTotal[Region == xRegion & bootID == 0]$angle,
+      coordMappingsTotal[Region == xRegion & bootID == i]$angle,
       na.action = na.omit
     )$p.value < sigValue
     })
   
-  pValues[[xID]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
+  # pValues[[xID]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
+  pValues[[xRegion]] <- (bootIterations - sum(xRes, na.rm = TRUE))/bootIterations
 }
 ```
 

@@ -204,6 +204,30 @@ NapariUtils <- R6::R6Class(
       }
     },
     
+    #' @description Save layer properties
+    #' @param layerFile character for filepath to save props
+    #' @param execInteractive boolean to execute interactive
+    saveLayerProps = function(layerFile, execInteractive = TRUE) {
+      self$execute(
+        paste(
+          "if napari_utils.viewer is not None: napari_utils.save_layer_props(",
+          sprintf("filepath = '%s'", reticulate::r_to_py(layerFile)),
+          ")"
+        ), execInteractive = execInteractive)
+    },
+    
+    #' @description Load layer properties
+    #' @param layerFile character for filepath to load props
+    #' @param execInteractive boolean to execute interactive
+    loadLayerProps = function(layerFile, execInteractive = TRUE) {
+      self$execute(
+        paste(
+          "if napari_utils.viewer is not None: napari_utils.load_layer_props(",
+          sprintf("filepath = '%s'", reticulate::r_to_py(layerFile)),
+          ")"
+        ), execInteractive = execInteractive)
+    },
+    
     #' @description Reset labels scale
     #' @param layersStartswith character to match layers
     #' @param execInteractive boolean to execute interactive
@@ -218,7 +242,6 @@ NapariUtils <- R6::R6Class(
           reticulate::r_to_py(layersStartswith)
         ), execInteractive = execInteractive
       )
-      
     },
     
     #' @description Save labels

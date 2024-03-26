@@ -193,6 +193,28 @@ ViewerManager <- R6::R6Class(
       }
     },
     
+    # save layer properties
+    saveLayerProps = function() {
+      self$viewer()$saveLayerProps(
+        file.path(
+          private$handleImObj()$persistentObjectDirectory(), "data",
+          paste0(basename(private$handleImObj()$imFilepath()), ".pkl")
+        )
+      )
+    },
+    
+    # load layer properties
+    loadLayerProps = function() {
+      # check whether properties exist
+      layerFile <- file.path(
+        private$handleImObj()$persistentObjectDirectory(), "data",
+        paste0(basename(private$handleImObj()$imFilepath()), ".pkl")
+      )
+      
+      if (file.exists(layerFile))
+        self$viewer()$loadLayerProps(layerFile)
+    },
+    
     # return currently shown image
     shownImage = function() {
       retVal <- NULL

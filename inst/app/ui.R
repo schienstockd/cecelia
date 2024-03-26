@@ -27,7 +27,10 @@ ui <- function(request) {
         status = "primary",
         width = 12,
         fluidRow(
-          actionButton("viewerAddAnimationPane", "Record Viewer"),
+          fluidRow(
+            column(4, actionButton("viewerSaveLayerProps", "Save")),
+            column(4, actionButton("viewerAddAnimationPane", "Recorder"))
+          ),
           checkboxGroupInput(
             "viewerParams", NULL,
             c(

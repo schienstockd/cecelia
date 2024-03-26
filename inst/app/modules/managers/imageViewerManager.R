@@ -129,6 +129,9 @@ createImageViewerManager <- function(
         shownImage, managerConf$imageViewer$napariModule,
         showLabelsAsNpArray()
         )
+      
+      # reset layer properties
+      globalManagers$viewerManager()$loadLayerProps()
     }
     
     # set image shown

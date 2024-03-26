@@ -11,6 +11,7 @@ import math
 import pandas as pd
 import matplotlib.pyplot as plt
 import datetime
+import pickle
 
 from pathlib import Path
 
@@ -79,6 +80,15 @@ class NapariUtils:
     self._labels_layer = None
     self._points_layer = None
     self._preview_layers = None
+    
+    # define layer properties to get
+    self._layer_props_to_get = {
+      'Image': [
+        'opacity', 'blending', 'visible', 'gamma', 'contrast_limits',
+        'contrast_limits_range', 'colormap', 'interpolation2d', 'interpolation3d',
+        'rendering', 'depiction'
+      ]
+    }
 
   """
   Getters
@@ -150,6 +160,10 @@ class NapariUtils:
   @property
   def preview_layers(self):
     return self._preview_layers
+  
+  @property
+  def layer_props_to_get(self):
+    return self._layer_props_to_get
 
   """
   Setters
@@ -224,6 +238,10 @@ class NapariUtils:
   @preview_layers.setter
   def preview_layers(self, x):
     self._preview_layers = x
+  
+  @layer_props_to_get.setter
+  def layer_props_to_get(self, x):
+    self._layer_props_to_get = x
 
   """
   Open Viewer
@@ -379,6 +397,46 @@ class NapariUtils:
     update_slider(None)
     
     self.viewer.dims.events.current_step.connect(update_slider)
+
+  """
+  Save layer properties
+  """
+  def save_layer_props(self, filepath):
+    # TODO at the moment this will only save image layer properties
+    # Have to see how this could work for other layers
+    
+    # go through layers and save visual attributes
+    layer_props = {
+      'Image': list()
+      }
+    
+    for x in self.viewer.layers:
+      if type(x).__name__ == 'Image':
+        layer_props['Image'].append({i: getattr(x, i).name if i == 'colormap' else
+          getattr(x, i) for i in self.layer_props_to_get['Image']})
+          
+    # pickle back
+    with open(filepath, 'wb') as f:
+      pickle.dump(layer_props, f, pickle.HIGHEST_PROTOCOL)
+
+  """
+  load layer properties
+  """
+  def load_layer_props(self, filepath):
+    # TODO at the moment this will only load image layer properties
+    # Have to see how this could work for other layers
+    
+    with open(filepath, 'rb') as f:
+      layer_data = pickle.load(f)
+      
+    # add properties back
+    layer_data['Image'].reverse()
+    
+    # TODO this assumes that the order is the same and no extra channels are added    
+    for x in self.viewer.layers:
+        if type(x).__name__ == 'Image':
+            for j, y in layer_data['Image'].pop().items():
+                setattr(x, j, y)
 
   """
   Reset scale for labels
