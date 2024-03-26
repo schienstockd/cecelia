@@ -8,6 +8,11 @@
   },
   "spec": {
     "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
 			"filterFun": {
 				"type:list": {
 				}
@@ -24,8 +29,17 @@
   },
   "ui": {
     "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
       "filterFun": {
-        "index": 0,
+        "index": 1,
         "label": "Filtering method",
         "widget:selection": {
           "size": 1,
@@ -36,7 +50,7 @@
         }
       },
 			"filterValue": {
-				"index": 0,
+				"index": 2,
 				"label": "Filtering value",
 				"widget:slider": {
 					"step": 1

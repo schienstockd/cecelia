@@ -31,7 +31,7 @@ ApplyFilter <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         imPath = file.path(
           self$envParams()$dirs$zero,
-          basename(cciaObj$imFilepath())
+          basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         filterFun = self$funParams()$filterFun,
         filterValue = self$funParams()$filterValue,
