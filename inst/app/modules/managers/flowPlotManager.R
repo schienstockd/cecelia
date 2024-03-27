@@ -1172,8 +1172,6 @@ createFlowPlotManager <- function(
             popsToPlot <- x()$getPlotPopPath()
           }
           
-          browser()
-          
           # TODO this assumes only one dif
           # if (difLeaves %in% names(curVal)) {
           #   traceIDs <- which(names(curVal) == difLeaves)
@@ -1450,7 +1448,7 @@ createFlowPlotManager <- function(
   observeEvent(flowGatingPlotsSelected(), {
     req(length(flowGatingPlotsSelected()) > 0)
     req(globalManagers$viewerManager()$viewer())
-
+    
     # get selected labels
     # TODO does this work for multiple plots .. ?
     customdata <- flowGatingPlotsSelected()[[1]]$customdata
