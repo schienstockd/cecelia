@@ -1147,7 +1147,7 @@ createFlowPlotManager <- function(
 
       # reset afterplot
       flowAfterplot(FALSE)
-
+      
       # check which plot was changed
       for (x in flowGatingPlots()) {
         boxIDs <- x()$getBoxIDs()
@@ -1171,10 +1171,18 @@ createFlowPlotManager <- function(
             traceIDs <- c(0)
             popsToPlot <- x()$getPlotPopPath()
           }
-
-          if (difLeaves %in% names(curVal)) {
-            traceIDs <- which(names(curVal) == difLeaves)
-            curVal <- curVal[names(curVal) != difLeaves]
+          
+          browser()
+          
+          # TODO this assumes only one dif
+          # if (difLeaves %in% names(curVal)) {
+          #   traceIDs <- which(names(curVal) == difLeaves)
+          #   curVal <- curVal[names(curVal) != difLeaves]
+          leavesExist <- sum(difLeaves %in% names(curVal))
+          
+          if (leavesExist > 0) {
+            traceIDs <- which(names(curVal) %in% difLeaves)
+            curVal <- curVal[!names(curVal) %in% difLeaves]
           } else {
             # get path for pop
             difPaths <- cciaObj()$popAttr(

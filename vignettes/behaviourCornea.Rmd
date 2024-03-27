@@ -507,8 +507,6 @@ coordMappingsTotal <- as.data.table(
 sigValue <- 0.05
 pValues <- list()
 
-colnames(coordMappingsTotal)
-
 # now .. can you test for significance for each simulation?
 # for(xID in unique(coordMappingsTotal$uID)) {
 for(xRegion in unique(coordMappingsTotal$Region)) {
@@ -621,20 +619,20 @@ write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_
 #   left_join(exp.info)
 
 # ggplot(datToPlot, aes(Region, mean, color = type)) +
-ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
-# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
   theme_classic() +
   # geom_boxplot(outlier.alpha = 1) +
   geom_violin(scale = "width") +
-  geom_jitter(width = 0.2) +
+  # geom_jitter(width = 0.2) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
   # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black") +
   stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
   ylim(0, 1) +
   facet_grid(.~Region)
 
-ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
-# ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
 ```
 
 ```{r fig_aniso, fig.height=8, fig.width=8}
