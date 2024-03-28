@@ -1176,7 +1176,7 @@ createFlowPlotManager <- function(
           # if (difLeaves %in% names(curVal)) {
           #   traceIDs <- which(names(curVal) == difLeaves)
           #   curVal <- curVal[names(curVal) != difLeaves]
-          if (sum(difLeaves %in% names(curVal)) > 0) {
+          if (any(difLeaves %in% names(curVal))) {
             traceIDs <- which(names(curVal) %in% difLeaves)
             curVal <- curVal[!names(curVal) %in% difLeaves]
           } else {

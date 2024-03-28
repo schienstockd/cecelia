@@ -17,7 +17,7 @@
         "type:group": {
           "model": {
             "type:character": {
-              "default": "cyto2"
+              "default": "cyto3"
             }
           },
           "matchAs": {
@@ -288,8 +288,8 @@
               "size": 1,
               "multiple": false,
               "items": {
-                "Cytoplasm (version 2)": "cyto2",
                 "Cytoplasm (version 3)": "cyto3",
+                "Cytoplasm (version 2)": "cyto2",
                 "Cytoplasm Fluorescence": "CP",
                 "Cytoplasm Other": "CPx",
                 "ccia Fluorescent": "ccia.fluo",

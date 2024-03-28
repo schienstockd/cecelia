@@ -449,12 +449,13 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
 cciaApplyPatches <- function() {
   # Cellpose path for MPS
   # https://github.com/MouseLand/cellpose/pull/668
-  from <- list.files(system.file(
-    file.path("patches", "cellpose"), package = "cecelia"), full.names = TRUE)
-  to <- file.path(
-    file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"),
-    basename(from))
-  file.copy(from, to, overwrite = TRUE)
+  # TODO seems ok for Cellpose v3
+  # from <- list.files(system.file(
+  #   file.path("patches", "cellpose"), package = "cecelia"), full.names = TRUE)
+  # to <- file.path(
+  #   file.path(cciaCondaPath(), "lib", "python3.9", "site-packages", "cellpose"),
+  #   basename(from))
+  # file.copy(from, to, overwrite = TRUE)
   
   # path for n2v to write keras v3 compatible filename
   n2vModelFile <- file.path(
