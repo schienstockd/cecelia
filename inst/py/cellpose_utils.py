@@ -68,23 +68,23 @@ class CellposeUtils(SegmentationUtils):
         
         # go through slices
         if self.dim_utils.is_3D():
+          self.logfile_utils.log(f'> Denoise 3D {denoise_name}')
+          
           slices = [slice(None) for _ in range(len(im.shape))]
           im_list = list()
-          z_val = self.dim_utils.dim_val('Z')
-          z_idx = self.dim_utils.dim_idx('Z', squeeze = True)
           
-          for i in range(z_val):
-            slices[0] = slice(i, i+1, 1)
+          for i in range(im.shape[z_axis]):
+            slices[0] = slice(i, i + 1, 1)
         
             im_list.append(np.squeeze(dn.eval(
               [im[tuple(slices)]], channels = channels, diameter = cell_diameter)[0]))
           
           # compile back
-          im np.stack(im_list, axis = z_idx)
+          im = np.stack(im_list, axis = z_axis)
         else:
+          self.logfile_utils.log(f'> Denoise 2D {denoise_name}')
           im = dn.eval([im], channels = channels, diameter = cell_diameter)[0]
         
-      
       if model_name in cfg.data['python']['cellpose']['models']:
         # masks, flows, styles, diams = model.eval(
         masks, flows, styles = model.eval(
