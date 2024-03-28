@@ -65,7 +65,25 @@ class CellposeUtils(SegmentationUtils):
       if denoise_name is not None and denoise_name != 'NONE':
         dn = denoise.DenoiseModel(
           model_type = denoise_name, gpu = self.use_gpu, device = self.gpu_device)
-        im = dn.eval([im], channels = channels, diameter = cell_diameter)[0]
+        
+        # go through slices
+        if self.dim_utils.is_3D():
+          slices = [slice(None) for _ in range(len(im.shape))]
+          im_list = list()
+          z_val = self.dim_utils.dim_val('Z')
+          z_idx = self.dim_utils.dim_idx('Z', squeeze = True)
+          
+          for i in range(z_val):
+            slices[0] = slice(i, i+1, 1)
+        
+            im_list.append(np.squeeze(dn.eval(
+              [im[tuple(slices)]], channels = channels, diameter = cell_diameter)[0]))
+          
+          # compile back
+          im np.stack(im_list, axis = z_idx)
+        else:
+          im = dn.eval([im], channels = channels, diameter = cell_diameter)[0]
+        
       
       if model_name in cfg.data['python']['cellpose']['models']:
         # masks, flows, styles, diams = model.eval(
