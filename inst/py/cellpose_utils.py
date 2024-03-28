@@ -75,7 +75,8 @@ class CellposeUtils(SegmentationUtils):
           do_3D = do_3D,
           stitch_threshold = stitch_threshold,
           batch_size = 4,
-          augment = False, net_avg = False,
+          augment = False,
+          # net_avg = False,
           normalize = normalise_intensity,
           invert = False,
           flow_threshold = 0.99)
@@ -89,7 +90,8 @@ class CellposeUtils(SegmentationUtils):
           # augment = True, net_avg = True,
           # normalize = True, invert = False,
           batch_size = 4,
-          augment = False, net_avg = False,
+          augment = False,
+          # net_avg = False,
           normalize = normalise_intensity,
           invert = False,
           flow_threshold = 0.99)
