@@ -319,13 +319,13 @@
               "size": 1,
               "multiple": false,
               "items": {
-                "No denoise", "NONE",
-                "Denoise cyto3", "denoise_cyto3",
-                "Deblur cyto3", "deblur_cyto3",
-                "Upsample cyto3", "upsample_cyto3",
-                "Denoise nuclei", "denoise_nuclei",
-                "Deblur nuclei", "deblur_nuclei",
-                "Upsample nuclei", "upsample_nuclei"
+                "No denoise": "NONE",
+                "Denoise cyto3": "denoise_cyto3",
+                "Deblur cyto3": "deblur_cyto3",
+                "Upsample cyto3": "upsample_cyto3",
+                "Denoise nuclei": "denoise_nuclei",
+                "Deblur nuclei": "deblur_nuclei",
+                "Upsample nuclei": "upsample_nuclei"
       				}
             }
           },
