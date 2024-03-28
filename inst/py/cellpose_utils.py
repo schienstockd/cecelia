@@ -354,7 +354,7 @@ class CellposeUtils(SegmentationUtils):
           cell_diameter = cell_diameter,
           channels = channels, channel_axis = channel_axis,
           z_axis = z_axis,
-          stitch_threshold = x['stitchThreshold'][0]
+          stitch_threshold = x['stitchThreshold'][0],
           denoise_name = x['denoiseModel'][0]
           )
           # normalise_intensity = normalise_intensity)
