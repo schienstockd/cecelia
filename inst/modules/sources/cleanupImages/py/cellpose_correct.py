@@ -8,8 +8,8 @@ import py.ome_xml_utils as ome_xml_utils
 from py.dim_utils import DimUtils
 import py.script_utils as script_utils
 
-from cellpose import denoise
-import torch
+# from cellpose import denoise
+# import torch
 
 # correct with Cellpose
 def run(params):
@@ -17,9 +17,9 @@ def run(params):
   logfile_utils = script_utils.get_logfile_utils(params)
 
   im_path = script_utils.get_param(params, 'imPath', default = None)
-  cp_params = script_utils.get_param(params, 'cpParams', default = dict())
-  denoise_model = script_utils.get_param(params, 'denoiseModel', default = None)
+  models = script_utils.get_param(params, 'models', default = dict())
   use_gpu = script_utils.get_param(params, 'useGPU', default = False)
+  im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default = None)
 
   # load image
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(
@@ -34,7 +34,7 @@ def run(params):
   dim_utils.calc_image_dimensions(im_dat[0].shape)
 
   logfile_utils.log('>> correct image')
-  logfile_utils.log(cp_params)
+  logfile_utils.log(models)
   
   # get GPU
   gpu_device = None
@@ -50,71 +50,42 @@ def run(params):
   
   # get slices
   # TODO this will process all slices and channels individually
-  slices = dim_utils.create_channel_slices()
+  # slices = dim_utils.create_channel_slices()
   
-  if dim_utils.is_3D():
-    slices = dim_utils.expand_slices(
-      [tuple(x) for x in slices], dim = 'Z')
+  # go through slices and copy into array
+  output_image = im_dat[0].copy()
   
-  # create new image sink
-  # output_image = list()
-  output_image = [input_image[x] for x in slices]
-
-  # denoise
-  for i, x in enumerate(output_image):
-    if filter_fun == 'gaussian':
-      # apply gaussian
-      output_image[i] = dask_image.ndfilters.gaussian_filter(
-        x, sigma = filter_values
-      )
-
-  # combine dask arrays back
-  # https://docs.dask.org/en/latest/array-stack.html
-  output_dask = da.concatenate(output_image, axis = dim_utils.dim_idx('C'))
-
-  # adjust chunksize and data type
-  output_dask = output_dask.rechunk(chunks = input_image.chunksize)
-  output_dask = output_dask.astype(input_image.dtype)
-  
-  # go through slices
-  for cur_slice in slices:
-    logfile_utils.log(f'> slice {cur_slice}')
+  # go through parameters
+  for i, x in models.items():
     
-    slices = [slice(None) for _ in range(len(im.shape))]
-    im_list = list()
+    # get slices for channels
+    slices = list()
+    for j in x['modelChannels']:
+      slices.append(dim_utils.create_channel_slices(channel = j))
     
-    for i in range(im.shape[z_axis]):
-      slices[0] = slice(i, i + 1, 1)
+    if dim_utils.is_3D():
+      slices = dim_utils.expand_slices([list(x) for x in slices], dim = 'Z')
   
-      im_list.append(np.squeeze(dn.eval(
-        [im[tuple(slices)]], channels = channels, diameter = cell_diameter)[0]))
-    
-    # compile back
-    im = np.stack(im_list, axis = z_axis)
-  else:
-    logfile_utils.log(f'> Denoise 2D {denoise_name}')
-    im = dn.eval([im], channels = channels, diameter = cell_diameter)[0]
+    for x in slices:
+      output_image[x] = dn.eval([im_dat[0][x]], channels=[0, 0], diameter=diameter)[0][..., 0]
 
   logfile_utils.log('>> save back')
   
   # save back
   zarr_utils.create_multiscales(
-    corrected_image, params['imCorrectionPath'],
+    output_image, im_correction_path,
     dim_utils = dim_utils, nscales = len(im_dat))
 
   # add metadata
   ome_xml_utils.save_meta_in_zarr(
-    params['imCorrectionPath'], params['imPath'],
-    changed_shape = corrected_image.shape,
+    im_correction_path, im_path,
     dim_utils = dim_utils
   )
 
 def main():
   # get params
   params = script_utils.script_params(
-  	flatten_dict_except = {
-  	  'afCombinations': ['divisionChannels']
-  	  }
+  	flatten_except = ['models']
   )
 
   # run

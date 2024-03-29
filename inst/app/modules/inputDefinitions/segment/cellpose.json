@@ -20,11 +20,6 @@
               "default": "cyto3"
             }
           },
-          "denoiseModel": {
-            "type:character": {
-              "default": "NONE"
-            }
-          },
           "matchAs": {
             "type:character": {
               "default": "none"
@@ -312,25 +307,8 @@
       				}
             }
           },
-  				"denoiseModel": {
-            "index": 1,
-            "label": "Denoise Model",
-            "widget:selection": {
-              "size": 1,
-              "multiple": false,
-              "items": {
-                "No denoise": "NONE",
-                "Denoise cyto3": "denoise_cyto3",
-                "Deblur cyto3": "deblur_cyto3",
-                "Upsample cyto3": "upsample_cyto3",
-                "Denoise nuclei": "denoise_nuclei",
-                "Deblur nuclei": "deblur_nuclei",
-                "Upsample nuclei": "upsample_nuclei"
-      				}
-            }
-          },
   				"matchAs": {
-            "index": 2,
+            "index": 1,
             "label": "Match as",
             "widget:selection": {
               "size": 1,
@@ -343,15 +321,14 @@
             }
           },
           "cellDiameter": {
-            "index": 3,
+            "index": 2,
             "label": "Cell Diameter",
-            "box": "b1",
             "widget:slider": {
               "step": 1
             }
           },
           "cellChannels": {
-            "index": 4,
+            "index": 3,
             "label": "Channels",
             "widget:channelSelection": {
               "size": 1,
@@ -360,7 +337,7 @@
             }
           },
           "nucChannels": {
-            "index": 5,
+            "index": 4,
             "label": "Nuclei channels",
             "widget:channelSelection": {
               "size": 1,
@@ -369,14 +346,14 @@
             }
           },
 					"normalise": {
-						"index": 6,
+						"index": 5,
 						"label": "Normalise",
 						"widget:slider": {
 							"step": 0.1
 						}
 					},
 					"box1": {
-            "index": 7,
+            "index": 6,
             "label": "Advanced",
             "widget:box": {
               "collapsible": true,

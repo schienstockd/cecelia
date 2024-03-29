@@ -26,11 +26,25 @@ CellposeCorrect <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      # get visibility
-      cpVisibilities <- self$funParamVisibilities("cpParams", onlyVisible = TRUE)
+      # convert channels names to numbers
+      models <- lapply(
+        self$funParams()$models, function(x) {
+          self$writeLog(x$modelChannels)
+          
+          x$modelChannels <- sapply(
+            x$modelChannels, function(y) {
+              unname(which(cciaObj$imChannelNames() == y)) - 1
+            }, USE.NAMES = FALSE
+          )
+          
+          x
+        })
       
-      if (!is.null(cpVisibilities))
-        cpParams <- cpParams[names(cpVisibilities)]
+      # get visibility
+      modelVisibilities <- self$funParamVisibilities("models", onlyVisible = TRUE)
+      
+      if (!is.null(modelVisibilities))
+        models <- models[names(modelVisibilities)]
       
       # prepare params
       params <- list(
@@ -39,7 +53,7 @@ CellposeCorrect <- R6::R6Class(
           self$envParams()$dirs$zero,
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
-        cpParams = cpParams,
+        models = models,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,
           "ccidCpCorrected.zarr"
