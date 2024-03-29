@@ -11,6 +11,7 @@ import py.script_utils as script_utils
 from cellpose import denoise
 import torch
 import ome_types
+import numpy as np
 
 # correct with Cellpose
 def run(params):
