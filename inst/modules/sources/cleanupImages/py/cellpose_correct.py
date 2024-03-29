@@ -8,8 +8,8 @@ import py.ome_xml_utils as ome_xml_utils
 from py.dim_utils import DimUtils
 import py.script_utils as script_utils
 
-# from cellpose import denoise
-# import torch
+from cellpose import denoise
+import torch
 
 # correct with Cellpose
 def run(params):

@@ -29,8 +29,6 @@ CellposeCorrect <- R6::R6Class(
       # convert channels names to numbers
       models <- lapply(
         self$funParams()$models, function(x) {
-          self$writeLog(x$modelChannels)
-          
           x$modelChannels <- sapply(
             x$modelChannels, function(y) {
               unname(which(cciaObj$imChannelNames() == y)) - 1
