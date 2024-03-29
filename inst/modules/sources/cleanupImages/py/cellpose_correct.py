@@ -54,6 +54,8 @@ def run(params):
   
   # go through parameters
   for i, x in models.items():
+    logfile_utils.log(f'> Process {i}')
+    
     dn = denoise.DenoiseModel(
       model_type = x['model'][0], gpu = use_gpu, device = gpu_device)
     
@@ -66,6 +68,8 @@ def run(params):
       slices = dim_utils.expand_slices([list(x) for x in slices], dim = 'Z')
   
     for x in slices:
+      logfile_utils.log(x)
+      
       output_image[x] = dn.eval(
         [im_dat[0][x]], channels = [0, 0], diameter = x['modelDiameter'][0])[0][..., 0]
 
