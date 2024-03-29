@@ -59,6 +59,9 @@ def run(params):
   
   if dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.UnitsLength.MILLIMETER:
     scaling_factor *= 1000
+    
+  # get image rescale factor
+  im_rescale_factor = np.iinfo(im_dat[0].dtype).max
   
   # go through parameters
   for i, x in models.items():
@@ -80,7 +83,7 @@ def run(params):
       logfile_utils.log(y)
       
       output_image[y] = dn.eval(
-        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0] * im_rescale_factor
 
   logfile_utils.log('>> save back')
   
