@@ -66,13 +66,13 @@ def run(params):
       slices.append(dim_utils.create_channel_slices(channel = j))
     
     if dim_utils.is_3D():
-      slices = dim_utils.expand_slices([list(x) for x in slices], dim = 'Z')
+      slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'Z')
   
-    for x in slices:
-      logfile_utils.log(x)
+    for y in slices:
+      logfile_utils.log(y)
       
-      output_image[x] = dn.eval(
-        [im_dat[0][x]], channels = [0, 0], diameter = x['modelDiameter'][0])[0][..., 0]
+      output_image[y] = dn.eval(
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0])[0][..., 0]
 
   logfile_utils.log('>> save back')
   
