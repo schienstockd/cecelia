@@ -55,6 +55,7 @@ def run(params):
   # go through parameters
   for i, x in models.items():
     logfile_utils.log(f'> Process {i}')
+    logfile_utils.log(x['model'][0])
     
     dn = denoise.DenoiseModel(
       model_type = x['model'][0], gpu = use_gpu, device = gpu_device)
