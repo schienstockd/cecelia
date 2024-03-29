@@ -63,7 +63,7 @@ def run(params):
     # get slices for channels
     slices = list()
     for j in x['modelChannels']:
-      slices.append(dim_utils.create_channel_slices(channel = j))
+      slices.append([dim_utils.create_channel_slices(channel = j)])
     
     if dim_utils.is_3D():
       slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'Z')
