@@ -53,7 +53,8 @@ def run(params):
   slices = dim_utils.create_channel_slices()
   
   if dim_utils.is_3D():
-    slices = dim_utils.expand_slices(list(slices), dim = 'Z')
+    slices = dim_utils.expand_slices(
+      [tuple(x) for x in slices], dim = 'Z')
   
   # create new image sink
   # output_image = list()

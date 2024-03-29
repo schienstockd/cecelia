@@ -105,7 +105,7 @@ class DimUtils:
       # only use one
       slice_list[c_idx] = slice(channel, channel + 1, 1)
     
-    return tuple(slice_list)
+    return [tuple(x) for x in slice_list]
   
   """
   Expand slice array
@@ -119,10 +119,10 @@ class DimUtils:
     slice_list = [copy(slices[i]) for i in range(len(slices)) for _ in range(dim_val)]
     
     for i in range(len(slices)):
-        for j in range(dim_val):
-            slice_list[(i * dim_val) + j][dim_idx] = slice(j, j + 1, 1)
+      for j in range(dim_val):
+        slice_list[(i * dim_val) + j][dim_idx] = slice(j, j + 1, 1)
     
-    return tuple(slice_list)
+    return [tuple(x) for x in slice_list]
 
   """
   Get pixel type
