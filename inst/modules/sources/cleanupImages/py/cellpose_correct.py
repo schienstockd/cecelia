@@ -84,7 +84,8 @@ def run(params):
       logfile_utils.log(y)
       
       output_image[y] = dn.eval(
-        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0] * im_rescale_factor
+        # [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0] * im_rescale_factor
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0] * 10
 
   logfile_utils.log('>> save back')
   
