@@ -20,9 +20,9 @@
               "default": "cyto3"
             }
           },
-          "deblur_cyto3": {
+          "denoiseModel": {
             "type:character": {
-              "default": "cyto3"
+              "default": "NONE"
             }
           },
           "matchAs": {

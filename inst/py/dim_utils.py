@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from copy import copy
 
 import py.math_helpers as math_helpers
 import py.ome_xml_utils as ome_xml_utils
@@ -88,10 +89,38 @@ class DimUtils:
   """
   Create slice array
   """
-  def create_channel_slices(self, channel):
+  def create_channel_slices(self, channel = None):
     # create slices to access data from store
     slice_list = [slice(None) for i in range(len(self.im_dim))]
-    slice_list[self.dim_idx('C')] = slice(channel, channel + 1, 1)
+    c_val = self.dim_val('C')
+    c_idx = self.dim_idx('C')
+    
+    # go through all channels
+    if channel is None:
+      slice_list = [copy(slice_list) for _ in range(c_val)]
+      
+      for i in range(c_val):
+        slice_list[i][c_idx] = slice(i, i + 1, 1)
+    else:
+      # only use one
+      slice_list[c_idx] = slice(channel, channel + 1, 1)
+    
+    return tuple(slice_list)
+  
+  """
+  Expand slice array
+  """
+  def expand_slices(self, slices, dim):
+    # TODO you need to know the number of slices to be repeated
+    # for now, expand only if one other dimension is there    
+    dim_val = self.dim_val('Z')
+    dim_idx = self.dim_idx('Z')
+    
+    slice_list = [copy(slices[i]) for i in range(len(slices)) for _ in range(dim_val)]
+    
+    for i in range(len(slices)):
+        for j in range(dim_val):
+            slice_list[(i * dim_val) + j][dim_idx] = slice(j, j + 1, 1)
     
     return tuple(slice_list)
 

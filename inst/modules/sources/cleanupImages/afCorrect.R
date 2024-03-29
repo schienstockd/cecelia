@@ -26,8 +26,6 @@ AfCorrect <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      self$writeLog("1")
-      
       # convert AF combination list to integer
       afCombinations <- self$funParams()$afCombinations
       afCombinations <- lapply(
