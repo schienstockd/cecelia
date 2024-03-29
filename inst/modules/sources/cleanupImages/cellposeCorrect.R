@@ -26,6 +26,12 @@ CellposeCorrect <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
+      # use gpu?
+      useGPU <- FALSE
+      
+      if ("useGPU" %in% names(self$envParams()$conf))
+        useGPU <- self$envParams()$conf$useGPU
+      
       # convert channels names to numbers
       models <- lapply(
         self$funParams()$models, function(x) {
@@ -51,6 +57,7 @@ CellposeCorrect <- R6::R6Class(
           self$envParams()$dirs$zero,
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
+        useGPU = useGPU,
         models = models,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,
