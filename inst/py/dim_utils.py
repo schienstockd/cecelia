@@ -101,11 +101,13 @@ class DimUtils:
       
       for i in range(c_val):
         slice_list[i][c_idx] = slice(i, i + 1, 1)
+        
+      slice_list = [tuple(x) for x in slice_list]
     else:
       # only use one
       slice_list[c_idx] = slice(channel, channel + 1, 1)
     
-    return [tuple(x) for x in slice_list]
+    return slice_list
   
   """
   Expand slice array
