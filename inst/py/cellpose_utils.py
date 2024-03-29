@@ -18,7 +18,7 @@ import skimage.segmentation
 import ome_types
 
 # cellpose specifics
-from cellpose import models, denoise
+from cellpose import models
 import torch
 
 class CellposeUtils(SegmentationUtils):
@@ -44,8 +44,7 @@ class CellposeUtils(SegmentationUtils):
   get masks from model
   """
   def get_masks(self, model_name, model, im, cell_diameter, normalise_intensity = False,
-                channels = [0, 0], channel_axis = None, z_axis = None, stitch_threshold = 0.0,
-                denoise_name = None):
+                channels = [0, 0], channel_axis = None, z_axis = None, stitch_threshold = 0.0):
     #TODO is there a better way to do this .. ?
     try:
       masks = np.zeros(1)
@@ -60,30 +59,6 @@ class CellposeUtils(SegmentationUtils):
         # do not use stitching when not 3D
         # otherwise the segmentation will not return masks
         stitch_threshold = 0.0
-        
-      # denoise if defined
-      if denoise_name is not None and denoise_name != 'NONE':
-        dn = denoise.DenoiseModel(
-          model_type = denoise_name, gpu = self.use_gpu, device = self.gpu_device)
-        
-        # go through slices
-        if self.dim_utils.is_3D():
-          self.logfile_utils.log(f'> Denoise 3D {denoise_name}')
-          
-          slices = [slice(None) for _ in range(len(im.shape))]
-          im_list = list()
-          
-          for i in range(im.shape[z_axis]):
-            slices[0] = slice(i, i + 1, 1)
-        
-            im_list.append(np.squeeze(dn.eval(
-              [im[tuple(slices)]], channels = channels, diameter = cell_diameter)[0]))
-          
-          # compile back
-          im = np.stack(im_list, axis = z_axis)
-        else:
-          self.logfile_utils.log(f'> Denoise 2D {denoise_name}')
-          im = dn.eval([im], channels = channels, diameter = cell_diameter)[0]
         
       if model_name in cfg.data['python']['cellpose']['models']:
         # masks, flows, styles, diams = model.eval(
@@ -374,8 +349,7 @@ class CellposeUtils(SegmentationUtils):
           cell_diameter = cell_diameter,
           channels = channels, channel_axis = channel_axis,
           z_axis = z_axis,
-          stitch_threshold = x['stitchThreshold'][0],
-          denoise_name = x['denoiseModel'][0]
+          stitch_threshold = x['stitchThreshold'][0]
           )
           # normalise_intensity = normalise_intensity)
         

@@ -52,6 +52,13 @@ def run(params):
   # go through slices and copy into array
   output_image = im_dat[0].copy()
   
+  # adjust diameter for image resolution
+  # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
+  scaling_factor = dim_utils.im_physical_size('x')
+  
+  if dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.UnitsLength.MILLIMETER:
+    scaling_factor *= 1000
+  
   # go through parameters
   for i, x in models.items():
     logfile_utils.log(f'> Process {i}')
@@ -63,7 +70,7 @@ def run(params):
     # get slices for channels
     slices = list()
     for j in x['modelChannels']:
-      slices.append([dim_utils.create_channel_slices(channel = j)])
+      slices.append(dim_utils.create_channel_slices(channel = j))
     
     if dim_utils.is_3D():
       slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'Z')
@@ -72,7 +79,7 @@ def run(params):
       logfile_utils.log(y)
       
       output_image[y] = dn.eval(
-        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0])[0][..., 0]
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]
 
   logfile_utils.log('>> save back')
   
