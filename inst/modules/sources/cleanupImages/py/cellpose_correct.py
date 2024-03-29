@@ -45,9 +45,6 @@ def run(params):
     gpu_device = torch.device('mps')
 
   # correct with cellpose
-  dn = denoise.DenoiseModel(
-    model_type = denoise_model, gpu = use_gpu, device = gpu_device)
-  
   # get slices
   # TODO this will process all slices and channels individually
   # slices = dim_utils.create_channel_slices()
@@ -57,6 +54,8 @@ def run(params):
   
   # go through parameters
   for i, x in models.items():
+    dn = denoise.DenoiseModel(
+      model_type = x['model'][0], gpu = use_gpu, device = gpu_device)
     
     # get slices for channels
     slices = list()
@@ -67,7 +66,8 @@ def run(params):
       slices = dim_utils.expand_slices([list(x) for x in slices], dim = 'Z')
   
     for x in slices:
-      output_image[x] = dn.eval([im_dat[0][x]], channels=[0, 0], diameter=diameter)[0][..., 0]
+      output_image[x] = dn.eval(
+        [im_dat[0][x]], channels = [0, 0], diameter = x['modelDiameter'][0])[0][..., 0]
 
   logfile_utils.log('>> save back')
   
