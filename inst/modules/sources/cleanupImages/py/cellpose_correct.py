@@ -10,6 +10,7 @@ import py.script_utils as script_utils
 
 from cellpose import denoise
 import torch
+import ome_types
 
 # correct with Cellpose
 def run(params):
