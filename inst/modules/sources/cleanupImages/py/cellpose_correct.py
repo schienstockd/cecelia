@@ -86,20 +86,12 @@ def run(params):
     
     for y in slices:
       logfile_utils.log(y)
-      im = im_dat[0][y].compute()
-      im_max = max(im_max, im.max())
       
-      output_image[y] = dn.eval(
-        [im], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]
+      # TODO this is not ideal
+      output_image[y] = (dn.eval(
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]/10) * im_rescale_factor
     
-    # TODO you need to somehow scale these after correction
-    logfile_utils.log('> rescale correction')
-    
-    # scale to nearest x
-    im_max = math.ceil(im_max / 10.0) * 10
-    
-    for y in slices:
-      output_image[y] = (output_image[y]/im_max) * im_rescale_factor
+    # TODO you need to somehow scale these after correction?
     
   logfile_utils.log('>> save back')
   
