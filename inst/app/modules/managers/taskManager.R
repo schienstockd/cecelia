@@ -1049,12 +1049,18 @@ createTaskManager <- function(
   
   # run selected
   observeEvent(input$taskRunSelected, {
+    req(moduleManagers()$imageSetManager$selectedSet())
+    
     # get row numbers
     if (runTaskCombined() == TRUE || runTaskOnSet() == TRUE) {
       uIDs <- c(moduleManagers()$imageSetManager$selectedSet()$getUID())
     } else {
       uIDs <- moduleManagers()$selectionManager$selectedUIDs()
     }
+    
+    # make sure that it only runs tasks that are shown in the current set
+    uIDs <- uIDs[
+      uIDs %in% names(moduleManagers()$imageSetManager$selectedSet()$cciaObjects())]
     
     # run tasks
     runTasks(uIDs)
