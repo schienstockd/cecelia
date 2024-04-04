@@ -91,7 +91,6 @@ class DimUtils:
   """
   def create_channel_slices(self, channel = None):
     # create slices to access data from store
-    slice_list = [slice(None) for i in range(len(self.im_dim))]
     c_val = self.dim_val('C')
     c_idx = self.dim_idx('C')
     
@@ -104,8 +103,11 @@ class DimUtils:
         
       slice_list = [tuple(x) for x in slice_list]
     else:
+      slice_list = [slice(None) for i in range(len(self.im_dim))]
+      
       # only use one
       slice_list[c_idx] = slice(channel, channel + 1, 1)
+      slice_list = tuple(slice_list)
     
     return slice_list
   

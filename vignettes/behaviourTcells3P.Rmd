@@ -21,9 +21,9 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-pID <- "CV5iNI"
+# pID <- "CV5iNI"
 # pID <- "uh0h3c"
-# pID <- "8BR53W"
+pID <- "8BR53W"
 versionID <- 1
 projectsDir <- "/Volumes/USER/Dominik/cecelia/projects/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
@@ -133,6 +133,23 @@ cciaObj <- initCciaObject(
 cciaObj$valueNames("imFilepath")
 cciaObj$imFilepath()
 ```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "AEL4yM", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$setImLabelsFilepath("gBT.zarr", valueName = "gBT")
+cciaObj$setImLabelPropsFilepath("gBT.h5ad", valueName = "gBT")
+cciaObj$setImLabelsFilepath("OTI.zarr", valueName = "OTI")
+cciaObj$setImLabelPropsFilepath("OTI.h5ad", valueName = "OTI")
+cciaObj$saveState()
+```
+
 
 ```{r}
 devtools::load_all("../")
