@@ -915,8 +915,9 @@ CciaImage <- R6::R6Class(
     #' @param dataTypes list of character to define data types from adata
     #' @param popType character for population type
     #' @param colsStartsWith character to filter for values starting with
+    #' @param trimCols character vector to trim values
     labelPropsCols = function(valueNames = NULL, dataTypes = c("vars", "obs"),
-                              popType = NULL, colsStartsWith = NULL) {
+                              popType = NULL, colsStartsWith = NULL, trimCols = NULL) {
       # get value names
       if (is.null(valueNames)) {
         valueNames <- self$valueNames("imLabelPropsFilepath")
@@ -953,6 +954,13 @@ CciaImage <- R6::R6Class(
       # filter for cols starting with
       if (!is.null(colsStartsWith)) {
         propCols <- propCols[startsWith(propCols, colsStartsWith)]
+      }
+      
+      # trim columns?
+      if (!is.null(trimCols)) {
+        propCols <- sapply(
+          trimCols, function(x) stringr::str_extract(propCols, paste0("(?<=", x, ").*")))
+        propCols <- propCols[!is.na(propCols)]
       }
       
       propCols

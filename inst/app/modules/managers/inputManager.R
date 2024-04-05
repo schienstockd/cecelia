@@ -652,8 +652,17 @@ InputManager <- R6::R6Class(
       uiContent <- uiType[[1]]
       specContent <- specType[[1]]
       
+      # add extra arguments
+      propParams <- list()
+      
+      if ("trimCols" %in% names(uiContent)) {
+        propParams <- append(propParams, list(
+          trimCols = uiContent$trimCols
+          ))
+      }
+      
       # add values to choices?
-      namesChoices <- self$cciaObject()$labelPropsCols()
+      namesChoices <- do.call(self$cciaObject()$labelPropsCols, propParams)
       namesChoices <- self$addChoicesToList(
         namesChoices, uiContent
       )

@@ -1,8 +1,8 @@
 {
   "fun": {
-    "hmmStates": {
+    "hmmTransitions": {
       "category": "Module functions",
-      "label": "HMM States",
+      "label": "HMM Transitions",
       "env": ["local"]
     }
   },
@@ -16,45 +16,15 @@
 					"default": "default"
 				}
 			},
-			"modelMeasurements": {
+			"hmmStates": {
 				"type:list": {}
 			},
-			"numStates": {
-        "type:integer": {
-          "min": 2,
-          "max": 10,
-          "default": 2
-        }
-      },
-      "noiseFilterMeasurements": {
-        "type:integer": {
-          "min": 0,
-          "max": 20,
-          "default": 5
-        }
-      },
-      "postFiltering": {
-        "type:integer": {
-          "min": 0,
-          "max": 20,
-          "default": 0
-        }
-      },
-      "postIterations": {
-        "type:integer": {
-          "min": 1,
-          "max": 5,
-          "default": 1
-        }
-      },
-			"skipTimesteps": {
-				"type:integer": {
-					"min": 0,
-					"max": 10,
-					"default": 0
+			"includeStart": {
+				"type:boolean": {
+					"default": false
 				}
 			},
-			"subtrackOverlap": {
+			"includeSelfTransitions": {
 				"type:boolean": {
 					"default": true
 				}
@@ -78,52 +48,24 @@
 				"widget:textInput": {
 				}
 			},
-			"modelMeasurements": {
+			"hmmStates": {
 				"index": 2,
-				"label": "Properties",
+				"label": "HMM states",
 				"widget:labelPropsColsSelection": {
 					"size": 1,
-					"multiple": true
+					"multiple": true,
+					"trimCols": "live.cell.hmm.state."
 				}
 			},
-			"numStates": {
+			"includeStart": {
 				"index": 3,
-				"label": "Number of States",
-				"widget:slider": {
-					"step": 1
+				"label": "Include start",
+				"widget:checkbox": {
 				}
 			},
-      "noiseFilterMeasurements": {
-        "index": 4,
-        "label": "Noise filtering",
-        "widget:slider": {
-          "step": 1
-        }
-      },
-      "postFiltering": {
-        "index": 5,
-        "label": "Post filtering",
-        "widget:slider": {
-          "step": 1
-        }
-      },
-      "postIterations": {
-        "index": 6,
-        "label": "Post iterations",
-        "widget:slider": {
-          "step": 1
-        }
-      },
-			"skipTimesteps": {
-				"index": 7,
-				"label": "Skip timesteps",
-				"widget:slider": {
-					"step": 1
-				}
-			},
-			"subtrackOverlap": {
-				"index": 8,
-				"label": "Subtrack Overlap",
+			"includeSelfTransitions": {
+				"index": 4,
+				"label": "Self transitions",
 				"widget:checkbox": {
 				}
 			}
