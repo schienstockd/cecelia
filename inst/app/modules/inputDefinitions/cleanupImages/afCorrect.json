@@ -82,12 +82,12 @@
       },
       "applyGaussian": {
 				"type:boolean": {
-					"default": false
+					"default": true
 				}
 			},
       "applyGaussianToOthers": {
 				"type:boolean": {
-					"default": false
+					"default": true
 				}
 			}
     },
