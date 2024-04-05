@@ -80,9 +80,14 @@
 					}
         }
       },
+      "applyGaussian": {
+				"type:boolean": {
+					"default": false
+				}
+			},
       "applyGaussianToOthers": {
 				"type:boolean": {
-					"default": true
+					"default": false
 				}
 			}
     },
@@ -194,8 +199,14 @@
 					}
 				}
 			},
-			"applyGaussianToOthers": {
+			"applyGaussian": {
 				"index": 2,
+				"label": "Apply gaussian",
+				"widget:checkbox": {
+				}
+			},
+			"applyGaussianToOthers": {
+				"index": 3,
 				"label": "Apply gaussian to others",
 				"widget:checkbox": {
 				}

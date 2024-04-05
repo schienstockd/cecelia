@@ -91,12 +91,12 @@
       },
 			"applyGaussian": {
 				"type:boolean": {
-					"default": true
+					"default": false
 				}
 			},
 			"applyGaussianToOthers": {
 				"type:boolean": {
-					"default": true
+					"default": false
 				}
 			},
 			"driftNormalisation": {

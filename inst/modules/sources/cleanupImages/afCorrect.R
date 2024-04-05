@@ -64,6 +64,7 @@ AfCorrect <- R6::R6Class(
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         afCombinations = afCombinations,
+        applyGaussian = self$funParams()$applyGaussian,
         applyGaussianToOthers = self$funParams()$applyGaussianToOthers,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,

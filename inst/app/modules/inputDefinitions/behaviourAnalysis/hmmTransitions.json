@@ -1,0 +1,133 @@
+{
+  "fun": {
+    "hmmStates": {
+      "category": "Module functions",
+      "label": "HMM States",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"pops": {
+				"type:list": {}
+			},
+			"colName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"modelMeasurements": {
+				"type:list": {}
+			},
+			"numStates": {
+        "type:integer": {
+          "min": 2,
+          "max": 10,
+          "default": 2
+        }
+      },
+      "noiseFilterMeasurements": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 5
+        }
+      },
+      "postFiltering": {
+        "type:integer": {
+          "min": 0,
+          "max": 20,
+          "default": 0
+        }
+      },
+      "postIterations": {
+        "type:integer": {
+          "min": 1,
+          "max": 5,
+          "default": 1
+        }
+      },
+			"skipTimesteps": {
+				"type:integer": {
+					"min": 0,
+					"max": 10,
+					"default": 0
+				}
+			},
+			"subtrackOverlap": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"pops": {
+				"index": 0,
+				"label": "Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"colName": {
+				"index": 1,
+				"label": "Name",
+				"widget:textInput": {
+				}
+			},
+			"modelMeasurements": {
+				"index": 2,
+				"label": "Properties",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"numStates": {
+				"index": 3,
+				"label": "Number of States",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+      "noiseFilterMeasurements": {
+        "index": 4,
+        "label": "Noise filtering",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "postFiltering": {
+        "index": 5,
+        "label": "Post filtering",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "postIterations": {
+        "index": 6,
+        "label": "Post iterations",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+			"skipTimesteps": {
+				"index": 7,
+				"label": "Skip timesteps",
+				"widget:slider": {
+					"step": 1
+				}
+			},
+			"subtrackOverlap": {
+				"index": 8,
+				"label": "Subtrack Overlap",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}
