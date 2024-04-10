@@ -52,7 +52,7 @@ Import <- R6::R6Class(
     # reset image information
     resetImageInfo = function() {
       # unlink files in zero dir
-      if (self$funParams()$imType == "primary") {
+      if (!"imType" %in% names(self$funParams()) || self$funParams()$imType == "primary") {
         unlink(
           file.path(self$envParams("local")$dirs$zero,
                     paste0(fileIMAGE_CONVERTED, c(".zarr", ".ome.tiff", ".ome.zarr"))),
@@ -67,7 +67,7 @@ Import <- R6::R6Class(
       cciaObj <- self$cciaTaskObject()
       
       # check type of image to be imported to # set filename
-      if (self$funParams()$imType == "segmentation") {
+      if ("imType" %in% names(self$funParams()) && self$funParams()$imType == "segmentation") {
         cciaObj$setImLabelsFilepath(imFilepath, valueName = self$funParams()$valueName)
       } else {
         # get converted image filename

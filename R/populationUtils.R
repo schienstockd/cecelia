@@ -115,7 +115,8 @@ PopulationUtils <- R6::R6Class(
       
       # get populations
       if (is.null(popDT)) {
-        popDT <- self$popDT(pops, popCols = c(self$getImChannels()[1], "label"))
+        # popDT <- self$popDT(pops, popCols = c(self$getImChannels()[1], "label"))
+        popDT <- self$popDT(pops, popCols = c(self$getImChannels()[1], "label", "track_id"))
       }
       
       # select with DT 
@@ -141,13 +142,19 @@ PopulationUtils <- R6::R6Class(
       pops <- pops[names(pops) != ""]
       
       if (nrow(popDT) > 0) {
+        # define id columns
+        idCol <- c("label", "track_id", if ("track_id" %in% colnames(popDT)) "value_name" else NULL)
+        idCol <- idCol[idCol %in% colnames(popDT)]
+        
         # go through populations and save as CSV
         for (i in names(pops)) {
           x <- pops[[i]]
           
           # save as csv
           write.csv(
-            popDT[pop == x,][, .(label)], file.path(popsDir, paste0(i, ".csv")),
+            # popDT[pop == x,][, .(label)],
+            popDT[pop == x,][, ..idCol],
+            file.path(popsDir, paste0(i, ".csv")),
             row.names = FALSE
           )
         }

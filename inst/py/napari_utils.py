@@ -748,11 +748,6 @@ class NapariUtils:
             
           labels_view.close()
           
-          # TODO make sure the array shape is correct
-          # this might be because the image is 2D
-          if len(self.im_scale) > tracks.shape[1] - 1:
-            tracks = np.insert(tracks, 2, 0, axis = 1)
-          
           # prepare properties
           prop_df = self.label_props_utils.label_props_view(value_name = value_name).exclude_centroid_cols()\
             .exclude_obs_cols(['label'])\
@@ -763,64 +758,81 @@ class NapariUtils:
             # ValueError: Cannot setitem on a Categorical with a new category, set the categories first
             # .fillna(0)\
           
-          # convert categories to numeric
-          # https://stackoverflow.com/a/36107995/13766165
-          cat_columns = prop_df.select_dtypes(['category']).columns
-          prop_df[cat_columns] = prop_df[cat_columns].apply(
-            lambda x: pd.to_numeric(x, errors = 'coerce'))
-            
-          if split_tracks is not None:
-            # go through props and split tracks
-            for i, x in split_tracks.items():
-              for j, y in x.items():
-                # remove layer if shown
-                tracks_layer = f'Tracks {j}' if value_name is None else f'({value_name}) Tracks {j}'
-                self.remove_layer_by_name(tracks_layer)
-                
-                # get binary mask
-                bin_mask = prop_df[i].isin(y['values']).values
-                
-                # get cmap
-                cmap = cmap_utils.cmap_single(['#000000'] + [y['colour']])
-                
-                # value list
-                prop_list = prop_df[bin_mask].fillna(-1).to_dict(orient = 'list')
-                
-                # make sure that clustering starts at one
-                # otherwise 0 will not be shown as colour
-                if i.find('.clusters.') > 0:
-                  prop_list[i] = np.array(prop_list[i]) + 1
-                
-                # add to napari
-                if len(np.unique(bin_mask)) > 1:
-                  self.viewer.add_tracks(
-                      tracks[bin_mask, ::],
-                      properties = prop_list,
-                      name = tracks_layer,
-                      scale = self.im_scale,
-                      color_by = i,
-                      colormaps_dict = {i: cmap},
-                      tail_width = 4,
-                      blending = tracks_blending
-                  )
-            
-          else:
-            # remove layer if shown
-            tracks_layer = 'Tracks' if value_name is None else f'({value_name}) Tracks'
-            self.remove_layer_by_name(tracks_layer)
-            
-            # add to napari
-            self.viewer.add_tracks(
-                tracks,
-                properties = prop_df.fillna(-1).to_dict(orient = 'list'),
-                name = tracks_layer,
-                scale = self.im_scale,
-                tail_width = 4,
-                blending = tracks_blending
-            )
+          self.show_tracks(
+            tracks, prop_df, pop_name = value_name,
+            split_tracks = split_tracks, tracks_blending = tracks_blending)
     
     # define dimension order for napari
     self.viewer.dims.order = self.dim_utils.default_dim_order(ignore_channel = True)
+
+  """
+  Show tracks
+  """
+  def show_tracks(self, tracks, prop_df, pop_name = None,
+                  split_tracks = None, tracks_blending = 'additive',
+                  tracks_cmap = None):
+    # TODO make sure the array shape is correct
+    # this might be because the image is 2D
+    if len(self.im_scale) > tracks.shape[1] - 1:
+      tracks = np.insert(tracks, 2, 0, axis = 1)
+    
+    # convert categories to numeric
+    # https://stackoverflow.com/a/36107995/13766165
+    cat_columns = prop_df.select_dtypes(['category']).columns
+    prop_df[cat_columns] = prop_df[cat_columns].apply(
+      lambda x: pd.to_numeric(x, errors = 'coerce'))
+      
+    if split_tracks is not None:
+      # go through props and split tracks
+      for i, x in split_tracks.items():
+        for j, y in x.items():
+          # remove layer if shown
+          tracks_layer = f'Tracks {j}' if pop_name is None else f'({pop_name}) Tracks {j}'
+          self.remove_layer_by_name(tracks_layer)
+          
+          # get binary mask
+          bin_mask = prop_df[i].isin(y['values']).values
+          
+          # get cmap
+          cmap = cmap_utils.cmap_single(['#000000'] + [y['colour']])
+          
+          # value list
+          prop_list = prop_df[bin_mask].fillna(-1).to_dict(orient = 'list')
+          
+          # make sure that clustering starts at one
+          # otherwise 0 will not be shown as colour
+          if i.find('.clusters.') > 0:
+            prop_list[i] = np.array(prop_list[i]) + 1
+          
+          # add to napari
+          if len(np.unique(bin_mask)) > 1:
+            self.viewer.add_tracks(
+                tracks[bin_mask, ::],
+                properties = prop_list,
+                name = tracks_layer,
+                scale = self.im_scale,
+                color_by = i,
+                colormaps_dict = {i: cmap},
+                tail_width = 4,
+                blending = tracks_blending
+            )
+      
+    else:
+      # remove layer if shown
+      tracks_layer = 'Tracks' if pop_name is None else f'({pop_name}) Tracks'
+      self.remove_layer_by_name(tracks_layer)
+      
+      # add to napari
+      self.viewer.add_tracks(
+          tracks,
+          properties = prop_df.fillna(-1).to_dict(orient = 'list'),
+          name = tracks_layer,
+          scale = self.im_scale,
+          tail_width = 4,
+          color_by = 'dummy' if tracks_cmap is not None else 'track_id',
+          colormaps_dict = {'dummy': tracks_cmap} if tracks_cmap is not None else 'turbo',
+          blending = tracks_blending
+      )
 
   """
   Show channel intensity
@@ -1153,13 +1165,16 @@ class NapariUtils:
   """
   Get pop layer name
   """
-  def pop_layer_name(self, pop_type, pop_item):
+  def pop_layer_name(self, pop_type, pop_item, value_name = 'default'):
     pop_name = pop_item['name'][0]
     pop_parent = pop_item['parent'][0]
     parent_path = pop_parent.split('/')[-1]
     
     # get name
-    return f'({pop_type}) {parent_path}/{pop_name}'
+    if value_name != 'default':
+      return f'({pop_type} {value_name}) {parent_path}/{pop_name}'
+    else:
+      return f'({pop_type}) {parent_path}/{pop_name}'
 
   """
   Set point size of pops
@@ -1187,7 +1202,7 @@ class NapariUtils:
                        points_size = 6, pops = None):
     # get data for populations
     pop_map = self.pop_utils.pop_map(self.task_dir, pop_type)
-    pop_data = self.pop_utils.pop_data(self.task_dir, pop_type)
+    pop_data = self.pop_utils.pop_data(self.task_dir, pop_type, flatten = False)
     
     # hide populations if they are not shown
     # TODO at the moment - this is how populations are renamed
@@ -1211,62 +1226,99 @@ class NapariUtils:
       if i in pop_data.keys():
         x = pop_data[i]
         
+        pop_path = pop['path'][0]
         pop_colour = pop['colour'][0]
         pop_show = pop['show'][0]
-        pop_path = pop['path'][0]
+        pop_is_track = pop['isTrack'][0] if 'isTrack' in pop.keys() else False
         
-        pop_value_name = pop['valueName'][0] if value_name is None else value_name
+        # pop_value_name = pop['valueName'][0] if value_name is None else value_name
+        pop_value_name = pop['valueName'] if value_name is None else value_name
+        multi_value_names = len(pop_value_name) > 1
         filter_measure = pop['filterMeasure'][0] if 'filterMeasure' in pop else None
         
-        # create name
-        pop_layer_name = self.pop_layer_name(pop_type, pop)
-        
-        show_pop = True
-        
-        # if a population is filterd from a dataset,
-        # then take only the relevant populations
-        if filtered_from_value_name is True:
-          # TODO this is a bit hardcoded and is only required
-          # because the function can be called multiple times
-          # in the case of 'live' images with multiple value names
-          if filter_measure is not None and pop_type in cfg.data['populations']['multifile']:
-            show_pop = pop_path.startswith(f'{pop_value_name}/')
-        
-        # show population
-        if show_pop is True:
-          # is population already shown?
-          popLayer = None
-          if pop_layer_name in self.viewer.layers:
-            popLayer = self.viewer.layers[pop_layer_name]
+        for j in pop_value_name:
+          # create name
+          pop_layer_name = self.pop_layer_name(pop_type, pop, value_name = j)
           
-          labels_view = self.label_props_utils.label_props_view(value_name = pop_value_name)
+          show_pop = True
           
-          # add points for cell selection
-          centroid_cols = labels_view.centroid_columns(self.dim_utils.im_dim_order)
-          label_df = labels_view.filter_by_obs(x)\
-            .view_centroid_cols(self.dim_utils.im_dim_order)\
-            .view_label_col()\
-            .as_df()
-        
-          # get coordinates
-          label_points = points_utils.prep_points(
-            label_df, self.dim_utils, centroid_cols,
-            im_scale = self.im_scale
-          )
+          # if a population is filterd from a dataset,
+          # then take only the relevant populations
+          if filtered_from_value_name is True:
+            # TODO this is a bit hardcoded and is only required
+            # because the function can be called multiple times
+            # in the case of 'live' images with multiple value names
+            if filter_measure is not None and (pop_type in cfg.data['populations']['multifile'] or multi_value_names):
+              # show_pop = pop_path.startswith(f'{pop_value_name}/')
+              show_pop = pop_path.startswith(f'{j}/')
           
-          # show on viewer
-          # if popLayer is None:
-          # TODO always add points - to preserve the order of populations?
-          self.viewer.add_points(
-              label_points,
-              face_color = pop_colour,
-              edge_color = 'black',
-              name = pop_layer_name,
-              visible = pop_show,
-              n_dimensional = False if self.dim_utils.is_timeseries() else True,
-              scale = self.im_scale,
-              size = points_size,
-              blending = 'translucent_no_depth')
+          # show population
+          if show_pop is True:
+            # is population already shown?
+            popLayer = None
+            if pop_layer_name in self.viewer.layers:
+              popLayer = self.viewer.layers[pop_layer_name]
+            
+            # labels_view = self.label_props_utils.label_props_view(value_name = pop_value_name)
+            labels_view = self.label_props_utils.label_props_view(value_name = j)
+            
+            if pop_is_track is True:
+              # get tracks
+              tracks = labels_view.filter_by_obs(x[j], filter_by = 'track_id')\
+                .view_centroid_cols(self.dim_utils.im_dim_order)\
+                .view_obs_cols(['track_id'])\
+                .as_df()\
+                .dropna()\
+                .to_numpy()
+            
+              labels_view.close()
+              
+              # prepare properties
+              prop_df = self.label_props_utils.label_props_view(value_name = j)\
+                .filter_by_obs(x[j], filter_by = 'track_id')\
+                .exclude_centroid_cols()\
+                .exclude_obs_cols(['label'])\
+                .as_df()\
+                .dropna(subset=['track_id'])\
+                .replace(False, 0)\
+                .replace(True, 1)
+                # ValueError: Cannot setitem on a Categorical with a new category, set the categories first
+                # .fillna(0)\
+              prop_df['dummy'] = 1
+              
+              # prep colour
+              tracks_cmap = cmap_utils.cmap_single(['#000000'] + [pop_colour])
+              
+              self.show_tracks(
+                tracks, prop_df, pop_name = pop_layer_name,
+                tracks_cmap = tracks_cmap)
+            else:
+              # add points for cell selection
+              centroid_cols = labels_view.centroid_columns(self.dim_utils.im_dim_order)
+              label_df = labels_view.filter_by_obs(x[j])\
+                .view_centroid_cols(self.dim_utils.im_dim_order)\
+                .view_label_col()\
+                .as_df()
+            
+              # get coordinates
+              label_points = points_utils.prep_points(
+                label_df, self.dim_utils, centroid_cols,
+                im_scale = self.im_scale
+              )
+              
+              # show on viewer
+              # if popLayer is None:
+              # TODO always add points - to preserve the order of populations?
+              self.viewer.add_points(
+                  label_points,
+                  face_color = pop_colour,
+                  edge_color = 'black',
+                  name = pop_layer_name,
+                  visible = pop_show,
+                  n_dimensional = False if self.dim_utils.is_timeseries() else True,
+                  scale = self.im_scale,
+                  size = points_size,
+                  blending = 'translucent_no_depth')
       # else:
       #   # replace data
       #   popLayer.data = selected_points

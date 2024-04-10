@@ -267,6 +267,7 @@ CciaImageSet <- R6::R6Class(
     },
     
     #' @description popDTs for images
+    #' @param popType character to specify populatio type
     #' @param asDT boolean to convert to data.table
     #' @param removeNULL boolean to remove NULL
     #' @param uIDs list of character for unique IDs
@@ -275,16 +276,33 @@ CciaImageSet <- R6::R6Class(
     #' @param normPercentile numeric for percentile to normalise
     #' @param mc.cores numeric for workers
     #' @param ... passed to CciaImage$popDT
-    popDT = function(asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
+    popDT = function(popType, asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
                      colsToNormalise = c(), batchGroup = "uID", normPercentile = 0.998,
                      mc.cores = 4, ...) {
+      # TODO at the moment, clustered tracks are saved in one dataset within the set itself
+      if (popType == "clust") {
+        resetUIDs <- FALSE
+        
+        if (private$isReactive() == TRUE)
+          resetUIDs <- attr(self$cciaObjects(uIDs = uIDs)[[1]]()$imAnndataFilepath(), "savedIn") == self$getUID()
+        else
+          resetUIDs <- attr(self$cciaObjects(uIDs = uIDs)[[1]]$imAnndataFilepath(), "savedIn") == self$getUID()
+        
+        if (resetUIDs == TRUE) {
+          if (is.null(uIDs))
+            uIDs <- self$cciaObjectUIDs()[1]
+          else
+            uIDs <- uIDs[1]
+        }
+      }
+      
       # get DTs from images
       if (private$isReactive() == TRUE) {
         popDTs <- lapply(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
             message(sprintf("[popDT] >> %s", x()$getUID()))
-            x()$popDT(...)
+            x()$popDT(popType = popType, ...)
           }
         )
       } else {
@@ -293,7 +311,7 @@ CciaImageSet <- R6::R6Class(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
             message(sprintf("[popDT] >> %s", x$getUID()))
-            x$popDT(...)
+            x$popDT(popType = popType, ...)
           # }
           }, mc.cores = parallel::detectCores() - 2
           # }, mc.cores = mc.cores
@@ -306,8 +324,10 @@ CciaImageSet <- R6::R6Class(
       }
       
       # bind together
-      if (asDT == TRUE) {
-        popDTs <- data.table::rbindlist(popDTs, fill = TRUE, idcol = "uID")
+      if (asDT == TRUE && length(popDTs) > 0) {
+        idcol <- if ("uID" %in% colnames(popDTs[[1]])) NULL else "uID"
+        
+        popDTs <- data.table::rbindlist(popDTs, fill = TRUE, idcol = idcol)
         
         # normalise columns per batch group?
         if (length(colsToNormalise) > 0) {

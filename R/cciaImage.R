@@ -110,15 +110,17 @@ CciaImage <- R6::R6Class(
               jColumns <- jColumns[jColumns != "label"]
               iColumns <- labelColumns
               iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
-            } 
+            }
             
             # merge to population DT
-            if ("value_name" %in% colnames(popDT)) {
-              popDT[labelDT, on = .(value_name == i, label),
-                    (labelColumns) := mget(iColumns)]
-            } else {
-              popDT[labelDT, on = .(label),
-                    (labelColumns) := mget(iColumns)]
+            if ("label" %in% colnames(popDT)) {
+              if ("value_name" %in% colnames(popDT)) {
+                popDT[labelDT, on = .(value_name == i, label),
+                      (labelColumns) := mget(iColumns)]
+              } else {
+                popDT[labelDT, on = .(label),
+                      (labelColumns) := mget(iColumns)]
+              }
             }
           }
         }
@@ -130,8 +132,10 @@ CciaImage <- R6::R6Class(
         # and let the population utils do that
         
         # define sort columns
-        sortCols <- c("pop", "label")
-        sortOrder = c(-1, 1)
+        sortCols <- c("pop", "label", "track_id")
+        sortCols <- sortCols[sortCols %in% colnames(popDT)]
+        sortOrder = c(-1, rep(1, length(sortCols) - 1))
+        
         if ("value_name" %in% colnames(popDT)) {
           sortCols <- c("value_name", sortCols)
           sortOrder <- c(1, sortOrder)
@@ -1175,7 +1179,8 @@ CciaImage <- R6::R6Class(
     #' @param ... passed to self$popUtils
     popPaths = function(popType, includeFiltered = FALSE,
                         filteredOnly = FALSE, includeRoot = FALSE,
-                        tracksOnly = FALSE, cellsOnly = TRUE,
+                        # tracksOnly = FALSE, cellsOnly = TRUE,
+                        tracksOnly = FALSE, cellsOnly = FALSE,
                         parentPops = NULL, filterMeasures = NULL, ...) {
       popUtils <- self$popUtils(popType = popType, ...)
       
@@ -1203,6 +1208,8 @@ CciaImage <- R6::R6Class(
           } else if (cellsOnly == TRUE) {
             popIDs <- self$popIDsByAttr(
               popType, "isTrack", FALSE, includeFiltered = TRUE)
+          } else {
+            popIDs <- names(popPaths)
           }
           
           # get filtered pops
@@ -1217,6 +1224,10 @@ CciaImage <- R6::R6Class(
           } else {
             popPaths <- filteredPops
           }
+          
+          # get pop ids
+          if (is.null(popIDs))
+            popIDs <- names(popPaths)
         }
         
         # filter NULL
@@ -1287,6 +1298,7 @@ CciaImage <- R6::R6Class(
     #' @param includeObs boolean to include 'obs' from adata
     #' @param completeValueNames character for value names to complete DT
     #' @param completePops boolean to complete pops
+    #' @param tracksOnly boolean to get tracks only
     #' @param ... passed to self$popUtils
     popDT = function(popType, pops = NULL, popCols = NULL,
                      dropNA = FALSE, dropPop = FALSE, includeFiltered = FALSE,
@@ -1294,7 +1306,8 @@ CciaImage <- R6::R6Class(
                      flushCache = FALSE, replaceNA = FALSE,
                      completeDT = TRUE, filterMeasures = NULL,
                      includeX = FALSE, replaceX = FALSE, includeObs = TRUE, 
-                     completeValueNames = c(), completePops = TRUE, ...) {
+                     completeValueNames = c(), completePops = TRUE,
+                     tracksOnly = FALSE, ...) {
       # make sure label is in columns
       if (!is.null(popCols)) {
         if (!"label" %in% popCols)
@@ -1348,16 +1361,16 @@ CciaImage <- R6::R6Class(
       
       if (completePops == TRUE && (is.null(pops) || .flowPopIsRoot(pops))) {
         pops <- self$popPaths(popType, includeFiltered = includeFiltered,
-                              includeRoot = FALSE, ...)
+                              includeRoot = FALSE, tracksOnly = tracksOnly, ...)
         
         # set non-filtered populations
         nonFilteredPops <- self$popPaths(
-          popType, includeFiltered = FALSE, includeRoot = TRUE, ...)
+          popType, includeFiltered = FALSE, includeRoot = TRUE, tracksOnly = tracksOnly, ...)
       } else {
         # check that any pops are available
         # popsPresent <- all(pops %in% self$popPaths(popType, includeFiltered = includeFiltered))
         popsPresent <- any(pops %in% self$popPaths(
-          popType, includeFiltered = includeFiltered, includeRoot = TRUE, ...))
+          popType, includeFiltered = includeFiltered, includeRoot = TRUE, tracksOnly = tracksOnly, ...))
       }
       
       if (popsPresent == TRUE) {
@@ -1599,7 +1612,7 @@ CciaImage <- R6::R6Class(
             # https://stackoverflow.com/a/33954334/13766165
             if (!is.null(popDT)) {
               # make sure popCols are in DT
-              mergeCols <- c("value_name", "label")
+              mergeCols <- c("uID", "value_name", "label", "track_id")
               mergeCols <- mergeCols[mergeCols %in% names(popDT)]
               mergeColsFiltered <-  c(mergeCols, "pop")
               
@@ -1624,6 +1637,9 @@ CciaImage <- R6::R6Class(
           }
         }
         
+        # make sure that pop levels are ok
+        popDT[, pop := droplevels(pop)]
+        
         # replace NA with 0
         if (replaceNA == TRUE)
           popDT[is.na(popDT)] <- 0
@@ -1643,9 +1659,11 @@ CciaImage <- R6::R6Class(
     #' @param includeFiltered boolean to include filtered population
     #' @param flushCache boolean to flush cache
     #' @param completeDT boolean to complete data.table with label props
+    #' @param tracksOnly boolean to save tracks only
     #' @param ... passed to self$popUtils(popType = popType)$savePops
     savePops = function(popType, pops = NULL, includeFiltered = FALSE,
-                        flushCache = TRUE, completeDT = TRUE, ...) {
+                        flushCache = TRUE, completeDT = TRUE, tracksOnly = FALSE,
+                        ...) {
       # get pops
       if (is.null(pops) || .flowPopIsRoot(pops)) {
         # pops <- sapply(self$imPopMap(popType = popType,
@@ -1668,14 +1686,19 @@ CciaImage <- R6::R6Class(
       }
       
       # TODO to get a population - get only one column for faster retrieval
-      popCols <- c(self$imChannelNames()[1], "label")
+      # popCols <- c(self$imChannelNames()[1], "label")
+      popCols <- c(self$imChannelNames()[1], "label", "track_id", "value_name", "uID")
       
       # get population DT
       popDT <- self$popDT(popType = popType, pops = pops, popCols = popCols,
                           includeFiltered = includeFiltered,
                           uniqueLabels = FALSE, flushCache = flushCache,
                           # completeDT = completeDT)
-                          completeDT = includeFiltered)
+                          completeDT = includeFiltered, tracksOnly = tracksOnly)
+      
+      # TODO make sure that only tracks from the current image are saved
+      if (all(c("track_id", "uID") %in% colnames(popDT)))
+        popDT <- popDT[uID == self$getUID()]
       
       if (!is.null(popDT)) {
         # add pop column if not present
@@ -3200,11 +3223,13 @@ CciaImage <- R6::R6Class(
       # get absolute path?
       if (!is.null(retVal)) {
         if (absolutePath == TRUE) {
-          if (!is.null(savedIn))
+          if (!is.null(savedIn)) {
             retVal <- file.path(
               dirname(self$persistentObjectDirectory()), savedIn, retVal)
-          else
+            attr(retVal, "savedIn") <- savedIn
+          } else {
             retVal <- self$persistentObjectDirectoryFile(retVal)
+          }
         }
       }
       

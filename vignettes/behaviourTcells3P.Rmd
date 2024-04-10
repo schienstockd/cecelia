@@ -127,11 +127,95 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "RJsT1v", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "0hkIKC", versionID = versionID, initReactivity = FALSE 
 )
 
-cciaObj$valueNames("imFilepath")
-cciaObj$imFilepath()
+cciaObj$setImLabelsFilepath("gBT.h5ad", valueName = "gBT")
+cciaObj$setImLabelsFilepath("OTI.h5ad", valueName = "OTI")
+cciaObj$setImLabelPropsFilepath("gBT.zarr", valueName = "gBT")
+cciaObj$setImLabelPropsFilepath("OTI.zarr", valueName = "OTI")
+cciaObj$saveState()
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6p8l06", versionID = versionID, initReactivity = FALSE 
+)
+
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fYyXay", versionID = versionID, initReactivity = FALSE 
+)
+
+clustDT <- cciaObj$popDT(popType = "clust", includeFiltered = TRUE)
+```
+
+```{r fig_umap, fig.height=3, fig.width=5}
+# plot clustering
+datToPlot <- clustDT %>%
+  # group_by(uID, value_name, pop) %>%
+  group_by(uID, value_name, clusters) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, value_name, clusters, fill = list(freq = 0)) %>%
+  left_join(exp.info) %>%
+  dplyr::filter(!uID %in% c("lNh9nD", "AEL4yM"))
+
+# ggplot(datToPlot, aes(pop, freq, color = value_name)) +
+ggplot(datToPlot, aes(clusters, freq, color = value_name)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0.) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.2, alpha = 0.4) +
+  facet_grid(.~DTx) +
+  # coord_flip() +
+  # xlab("") + ylab("freq") +
+  theme(
+    # axis.text.x = element_blank(),
+    # axis.ticks.x = element_blank(),
+    # strip.background = element_blank(),
+    # strip.text.x = element_blank(),
+  )
+
+# ggsave(file.path(anaDir, "tracking", "iLN", "depth-speeds.png"), height = 1.5, width = 4)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fYyXay", versionID = versionID, initReactivity = FALSE
+)
+
+popType <- "clust"
+
+# get all populations
+# pops <- cciaObj$popPaths(popType, includeFiltered = TRUE)
+pops <- NULL
+includeFiltered <- TRUE
+flushCache <- TRUE
+purge <- TRUE
+
+popCols <- c(cciaObj$imChannelNames()[1], "track_id", "clusters", "valueName")
+
+# cciaObj$popPaths(popType, includeFiltered = includeFiltered)
+
+# save populations
+cciaObj$savePops(
+  popType, c("A", "B"), purge = purge,
+  includeFiltered = TRUE, tracksOnly = TRUE)
 ```
 
 ```{r}

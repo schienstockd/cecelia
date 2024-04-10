@@ -58,6 +58,18 @@
 					"default": true
 				}
 			},
+			"usePaga": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"pagaThreshold": {
+				"type:double": {
+					"min": 0,
+					"max": 0.5,
+					"default": 0.1
+				}
+			},
 			"minTracklength": {
 				"type:integer": {
 					"min": 1,
@@ -172,8 +184,21 @@
 				"widget:checkbox": {
 				}
 			},
-			"minTracklength": {
+			"usePaga": {
 				"index": 11,
+				"label": "Use PAGA",
+				"widget:checkbox": {
+				}
+			},
+			"pagaThreshold": {
+				"index": 12,
+				"label": "PAGA threshold",
+				"widget:slider": {
+					"step": 0.02
+				}
+			},
+			"minTracklength": {
+				"index": 13,
 				"label": "Minimum track length",
 				"widget:slider": {
 					"step": 1

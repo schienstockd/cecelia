@@ -70,6 +70,10 @@ AnndataUtils <- R6::R6Class(
                    paste(columnPrefix, self$getImChannels()[[as.numeric(stringr::str_match(x, "[0-9]+")) + 1]], sep = "_"))
       }
       
+      # remember origin population
+      if ("track_id" %in% colnames(labelsDT))
+        labelsDT$value_name <- stringr::str_extract(labelsDT$pop, "^.+(?=/)")
+      
       # add root as population
       labelsDT$pop <- "root"
       

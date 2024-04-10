@@ -563,10 +563,11 @@
 #' @description Trim path
 #' @param path character for population path
 #' @param pathLevels integer for path levels
+#' @param fromEnd boolean whether to trim from end
 #' @examples
 #' TODO
 #' @export
-.flowTrimPath <- function(path, pathLevels = 1) {
+.flowTrimPath <- function(path, pathLevels = 1, fromEnd = TRUE) {
   # split path
   splitPath <- unlist(stringr::str_split(path, "/"))
   splitPath <- splitPath[splitPath != ""]
@@ -577,7 +578,10 @@
   }
   
   # return levels
-  trimmedPath <- splitPath[(length(splitPath) - pathLevels):length(splitPath)]
+  if (fromEnd == TRUE)
+    trimmedPath <- splitPath[(length(splitPath) - pathLevels):length(splitPath)]
+  else
+    trimmedPath <- splitPath[1:pathLevels]
   
   paste(trimmedPath, collapse = "/")
 }

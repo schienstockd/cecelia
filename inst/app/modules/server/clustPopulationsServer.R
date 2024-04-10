@@ -21,9 +21,8 @@
         
         # save populations
         cciaObj()$savePops(
-          popType(), pops,
-          purge = purge,
-          includeFiltered = TRUE)
+          popType(), pops, purge = purge,
+          includeFiltered = TRUE, tracksOnly = isTrack())
       }
       
       # get umap plot
@@ -93,14 +92,17 @@
             completeDT = FALSE, replaceNA = TRUE,
             flushCache = flushCache,
             # only focus on clustered values
-            filterMeasures = c(clusterColName())
+            filterMeasures = c(clusterColName()),
+            tracksOnly = isTrack()
           )
         } else {
           # anndata
           cciaObj()$popDT(popType(), includeFiltered = TRUE,
                           completeDT = FALSE, replaceNA = TRUE,
+                          flushCache = flushCache,
                           # only focus on clustered values
-                          filterMeasures = c(clusterColName()))
+                          filterMeasures = c(clusterColName()),
+                          tracksOnly = isTrack())
         }
       }
       
@@ -121,7 +123,9 @@
       # population management
       popType <- reactive("clust")
       popTypeProcessing <- reactive(input$popType)
-      valueName <- reactive(input$valueName)
+      # TODO cannot get my head around this
+      # valueName <- reactive(input$valueName)
+      # valueName <- reactive("default")
       clusterColName <- reactive(input$clusterColName)
 
       # add pop type to task variables
@@ -178,6 +182,24 @@
         req(cciaObj())
         
         cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c(clusterColName()))
+      })
+      
+      # get value names 
+      valueName <- reactive({
+        req(adataDT())
+        
+        if ("value_name" %in% colnames(adataDT()))
+          unique(adataDT()$value_name)
+        else
+          c("default")
+      })
+      
+      # is tracking data?
+      isTrack <- reactive({
+        # TODO chicken-egg problem
+        # req(adataDT())
+        # "track_id" %in% colnames(adataDT())
+        globalManagers$projectManager()$getProjectType() == "live"
       })
       
       # population data
@@ -427,6 +449,12 @@
         # init anndata utils with reactivity
         # cciaObj()$adataUtils()$reactive()
         
+        # set population DT
+        adataDT(getAdataDT())
+        
+        # create adata matrix
+        adataMat(adataMatFromPopDT(adataDT(), popKey = clusterColName()))
+        
         if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # init all populations
           clustSavePops(purge = TRUE)
@@ -434,12 +462,6 @@
           # save pop map
           cciaObj()$savePopMap(popType(), includeFiltered = TRUE)
         }
-        
-        # set population DT
-        adataDT(getAdataDT())
-        
-        # create adata matrix
-        adataMat(adataMatFromPopDT(adataDT(), popKey = clusterColName()))
         
         # collapse selection box
         js$collapseBox(session$ns("imageTableBox"))
@@ -615,7 +637,8 @@
               parent = "root",
               filterMeasure = clusterColName(),
               filterFun = "eq",
-              filterValues = list()
+              filterValues = list(),
+              isTrack = isTrack()
             ), includeFiltered = TRUE, invalidate = TRUE
           )
         }
@@ -726,8 +749,10 @@
         
         if (popType() == "live") {
           # this is only relevant for tracking
+          # TODO why is this here?
           choices <- cciaObj()$labelPropsCols(
-            valueNames = c(valueName()),
+            # valueNames = c(valueName()),
+            valueNames = valueName(),
             colsStartsWith = paste0(popType(), ".cell.track.clusters"))
         } else {
           choices <- c("clusters")

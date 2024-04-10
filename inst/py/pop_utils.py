@@ -16,11 +16,26 @@ class PopUtils:
     # population data
     self.__pop_data = dict()
     self.__pop_data_mtimes = dict()
+    self._pop_data_id = 'label'
     
     # population mapping
     self.__pop_map = None
     self.__pop_map_mtime = None
-    
+  
+  """
+  Getters
+  """
+  @property
+  def pop_data_id(self):
+    return self._pop_data_id
+  
+  """
+  Setters
+  """
+  @pop_data_id.setter
+  def pop_data_id(self, x):
+    self._pop_data_id = x
+  
   """
   pop map filepath
   """
@@ -126,7 +141,7 @@ class PopUtils:
   """
   return pop data
   """
-  def pop_data(self, task_dir, pop_type, pops = list()):
+  def pop_data(self, task_dir, pop_type, pops = list(), flatten = True):
     # get pop map
     pop_map = self.pop_map(task_dir, pop_type, pops = pops)
     
@@ -134,7 +149,8 @@ class PopUtils:
     pop_dir = self.pop_dir(task_dir)
     
     # check config
-    reload_all = self.changed_pop_conf(pop_dir, pop_type)
+    # reload_all = self.changed_pop_conf(pop_dir, pop_type)
+    reload_all = True
     reload_pop_data = list()
     
     # check which populations have changed
@@ -150,8 +166,18 @@ class PopUtils:
     # load populations
     for i in reload_pop_data:
       if os.path.exists(self.pop_data_filepath(i)):
-        pop_df = pd.read_csv(self.pop_data_filepath(i)).iloc[:,0]
-        self.__pop_data[i] = list(pop_df)
+        if flatten is True:
+          self.__pop_data[i] = list(pd.read_csv(self.pop_data_filepath(i)).iloc[:,0])
+        else:
+          self.__pop_data[i] = dict()
+          pop_df = pd.read_csv(self.pop_data_filepath(i))
+          
+          # set value id
+          # self.pop_data_id = pop_df.columns[0]
+          
+          # go through value names
+          for j in pop_map[i]['valueName']:
+            self.__pop_data[i][j] = list(pop_df.loc[pop_df['value_name'] == j].iloc[:,0])
     
     # return only populations matching the paths
     if len(pops) > 0:
@@ -215,26 +241,32 @@ class PopUtils:
       if i in pop_data.keys():
         x = pop_data[i]
         
-        pop_value_name = pop['valueName'][0] if value_name is None else value_name
+        # pop_value_name = pop['valueName'][0] if value_name is None else value_name
+        pop_value_name = pop['valueName'] if value_name is None else value_name
+        # pop_value_name = pop_value_name if len(pop_value_name) > 1 else pop_value_name[0]
         pop_path = pop['path'][0]
         
-        # get dataframe for population
-        label_view = label_props_utils.label_props_view(value_name = pop_value_name)
-        
-        if len(cols) > 0:
-          label_view.view_cols(cols = cols)
+        # go through value names
+        for j in pop_value_name:
+          # get dataframe for population
+          # label_view = label_props_utils.label_props_view(value_name = pop_value_name)
+          label_view = label_props_utils.label_props_view(value_name = j)
           
-        # create population df
-        pop_df = label_view.filter_by_obs(
-          x, filter_fun = 'eq' if invert is False else 'neq').as_df()
-        label_view.close()
-        
-        # add value name and population
-        pop_df['value_name'] = pop_value_name
-        pop_df['pop'] = pop_path
-        
-        # add to list
-        pop_dfs.append(pop_df)
+          if len(cols) > 0:
+            label_view.view_cols(cols = cols)
+            
+          # create population df
+          pop_df = label_view.filter_by_obs(
+            x, filter_fun = 'eq' if invert is False else 'neq').as_df()
+          label_view.close()
+          
+          # add value name and population
+          # pop_df['value_name'] = pop_value_name
+          pop_df['value_name'] = j
+          pop_df['pop'] = pop_path
+          
+          # add to list
+          pop_dfs.append(pop_df)
         
     # return concat dataframe
     # TODO this will be redundant
