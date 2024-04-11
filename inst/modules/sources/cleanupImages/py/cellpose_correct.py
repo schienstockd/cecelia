@@ -81,6 +81,9 @@ def run(params):
     if dim_utils.is_3D():
       slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'Z')
     
+    if dim_utils.is_timeseries():
+      slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'T')
+    
     # get max for images to rescale
     im_max = 0
     
