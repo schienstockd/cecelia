@@ -85,14 +85,15 @@ def run(params):
       slices = dim_utils.expand_slices([list(y) for y in slices], dim = 'T')
     
     # get max for images to rescale
-    im_max = 0
+    # im_max = 0
+    im_max = 100
     
     for y in slices:
       logfile_utils.log(y)
       
       # TODO this is not ideal
       output_image[y] = (dn.eval(
-        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]/10) * im_rescale_factor
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]/im_max) * im_rescale_factor
     
     # TODO you need to somehow scale these after correction?
     

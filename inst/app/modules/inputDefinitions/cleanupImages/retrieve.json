@@ -41,6 +41,7 @@
             "Corrected": "ccidCorrected",
             "AF corrected": "ccidAfCorrected",
             "Drift Corrected": "ccidDriftCorrected",
+            "Cellpose Corrected": "ccidCpCorrected",
             "Sliding Window": "ccidSlidingWindow",
             "Registered": "ccidRegistered"
           },
