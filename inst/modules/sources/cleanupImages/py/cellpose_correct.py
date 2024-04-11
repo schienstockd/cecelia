@@ -86,14 +86,14 @@ def run(params):
     
     # get max for images to rescale
     # im_max = 0
-    im_max = 100
+    im_max = 10 + 1
     
     for y in slices:
       logfile_utils.log(y)
       
       # TODO this is not ideal
-      output_image[y] = (dn.eval(
-        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0]/im_max) * im_rescale_factor
+      output_image[y] = ((dn.eval(
+        [im_dat[0][y]], channels = [0, 0], diameter = x['modelDiameter'][0]/scaling_factor)[0][..., 0] + 1)/im_max) * im_rescale_factor
     
     # TODO you need to somehow scale these after correction?
     
