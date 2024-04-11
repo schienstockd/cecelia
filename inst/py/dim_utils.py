@@ -117,8 +117,8 @@ class DimUtils:
   def expand_slices(self, slices, dim):
     # TODO you need to know the number of slices to be repeated
     # for now, expand only if one other dimension is there    
-    dim_val = self.dim_val('Z')
-    dim_idx = self.dim_idx('Z')
+    dim_val = self.dim_val(dim)
+    dim_idx = self.dim_idx(dim)
     
     slice_list = [copy(slices[i]) for i in range(len(slices)) for _ in range(dim_val)]
     
