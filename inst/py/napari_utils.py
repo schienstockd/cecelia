@@ -509,7 +509,7 @@ class NapariUtils:
   """
   def show_labels(self, value_name, show_labels = True, show_points = True,
                   show_label_ids = True, as_np_array = False, show_tracks = True,
-                  points_colour = 'white', cache = True, label_suffixes = [],
+                  points_colour = 'white', cache = False, label_suffixes = [],
                   show_branching = False, branching_property = 'type',
                   slices = None, split_tracks = None,
                   tracks_blending = 'additive', binarise_labels = False):
