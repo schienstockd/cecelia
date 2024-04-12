@@ -1638,7 +1638,8 @@ CciaImage <- R6::R6Class(
         }
         
         # make sure that pop levels are ok
-        popDT[, pop := droplevels(pop)]
+        if (is.factor(popDT[, pop]))
+          popDT[, pop := droplevels(pop)]
         
         # replace NA with 0
         if (replaceNA == TRUE)
