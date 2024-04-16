@@ -201,6 +201,8 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     # split track IDs?
     splitTrackIDs <- !is.null(steps.subtracks)
     
+    browser()
+    
     # convert to DT
     tracks.fun.DT <- lapply(
       tracks.fun.result,
@@ -243,3 +245,19 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
     DT
   }
 }
+
+#' @description Get start and end positions
+#' @param track of celltrackR::tracks
+#' @examples
+#' TODO
+#' @export
+tracks.coords <- function(track) {
+  # TODO this is very convoluted
+  posHead <- head(track, 1)
+  posTail <- tail(track, 1)
+  
+  colnames(posHead) <- paste0("start.", colnames(posHead))
+  colnames(posTail) <- paste0("end.", colnames(posTail))
+  
+  cbind(posHead, posTail)
+} 

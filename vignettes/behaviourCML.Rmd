@@ -8,6 +8,17 @@ date: '2022-08-15'
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+a <- readRDS("/Users/Dominik/R-workspace/cecelia/inst/app/shiny_bookmarks/ee9e0f86258fa510/values.rds")
+a$project$ProjectName <- "CellMigrationLab"
+a$project$ProjectVersionStateID <- "ee9e0f86258fa510"
+a$project$ProjectUID <- "GT9dFc"
+a$project$ProjectPath <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/GT9dFc"
+
+saveRDS(a, "/Users/Dominik/R-workspace/cecelia/inst/app/shiny_bookmarks/ee9e0f86258fa510/values.rds")
+```
+
+
 ## Show transition states of live cell imaging
 
 ```{r}
@@ -28,8 +39,8 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
 ```
 
 ```{r}
-# anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N101/ANALYSIS/CECELIA/"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/3P_TEST/Tissues"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/CellMigrationLab/ANALYSIS/T cells"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/CellMigrationLab/ANALYSIS/Cancer"
 ```
 
 ```{r}
@@ -68,12 +79,17 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
+### T cells
+```
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "VTt2SN", versionID = versionID, initReactivity = FALSE # CD11c
+  # pID = pID, uID = "VTt2SN", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "ODWj0Z", versionID = versionID, initReactivity = FALSE
 )
 
 uIDs <- names(cciaObj$cciaObjects())
@@ -83,15 +99,207 @@ exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 ))
 
-# get popDTs for set
-a <- cciaObj$popDT(
-  popType = "clust",
-  pops = c("A", "B", "C", "D"),
-  includeFiltered = TRUE,
-  completeDT = FALSE,
-  replaceNA = TRUE,
-  uIDs = uIDs)
+pops <- c("default/tracked")
 
-unique(a$pop)
+# get pops
+# popDT <- cciaObj$popDT(
+#   popType = "live", pops = pops,
+#   includeFiltered = TRUE,
+#   flushCache = TRUE,
+#   uIDs = uIDs)
+
+# get tracks info
+tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
 ```
 
+```{r fig_total_transitions, fig.height=5, fig.width=12}
+pivotCols <- colnames(tracksInfo)
+pivotCols <- pivotCols[!pivotCols %in% c("uID", "cell_type", "track_id")]
+
+datToPlot <- tracksInfo %>%
+  pivot_longer(cols = pivotCols, names_to = "measure", values_to = "value") %>%
+  left_join(exp.info)
+
+# show same plots as bioRxiv paper
+ggplot(datToPlot, aes(Coating, value, color = Treatment)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 0) +
+  geom_boxplot(outlier.alpha = 1.0) +
+  # geom_jitter(
+    # width = 0.1, alpha = 0.2) +
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = "Treatment", palette = "Set1") +
+  facet_wrap(.~measure, ncol = 5, scales = "free") +
+  expand_limits(y = 0)
+
+# ggsave(file.path(anaDir, "tracks_measures.png"), width = 10, height = 4)
+ggsave(file.path(anaDir, "tracks_measures.png"), width = 12, height = 4)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "VTt2SN", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "ODWj0Z", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get track clustering
+clustDT <- cciaObj$popDT(
+  popType = "clust",
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
+```
+
+
+```{r fig_umap, fig.height=4, fig.width=4}
+dfToPlot <- copy(clustDT) %>% drop_na(clusters) %>% left_join(exp.info)
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  group_by(clusters) %>%
+  # group_by(clusters.name) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+dfToPlot$clusters <- factor(dfToPlot$clusters)
+
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+
+# plot UMAP
+ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  # geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = Coating)) +
+  geom_point(aes(color = Treatment)) +
+  # geom_point(aes(color = clusters.name)) +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = colPal) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom",
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    aes(label = clusters),
+    # aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    ) +
+  facet_grid(.~Coating)
+
+# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- copy(clustDT)
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "clusters.id", "clusters.name", "UMAP_1", "UMAP_2", "value_name"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+# ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+ggplot(propsSummary %>%
+         # dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         drop_na(clusters), aes(clusters, prop)) +
+         # drop_na(clusters.name), aes(clusters.name, prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4.5, height = 4.5)
+```
+
+```{r fig_clusters_freq, fig.height=4, fig.width=4}
+# save frequencies of track clusters
+summaryDF <- as.data.table(copy(clustDT) %>% left_join(exp.info))
+
+# show frequency of clusters
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, clusters)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, Treatment, clusters)] %>%
+  droplevels() %>%
+  # group_by(uID) %>%
+  # group_by(Coating) %>%
+  group_by(Coating, Treatment) %>%
+  mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
+  ungroup() %>%
+  # complete(uID, clusters, fill = list(freq.clusters = 0))
+  # complete(Coating, clusters, fill = list(freq.clusters = 0))
+  complete(Coating, Treatment, clusters, fill = list(freq.clusters = 0))
+  # complete(uID, pop, clusters.id, fill = list(freq.clusters = 0)) %>%
+  
+
+# summaryDF$clusters <- factor(summaryDF$clusters, levels = c(3,6,0,7,2,5,4))
+
+# ggplot(summaryDF, aes(Coating, freq.clusters, fill = clusters, color = clusters)) +
+ggplot(summaryDF, aes(Treatment, freq.clusters, fill = clusters, color = clusters)) +
+# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 0.8) +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(
+  #   position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = "Cluster", palette = "Set1") +
+  scale_fill_brewer(name = "Cluster", palette = "Set1") +
+  facet_grid(.~Coating)
+
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4.5, height = 4.5)
+```

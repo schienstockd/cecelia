@@ -229,6 +229,7 @@ default:
     labelStats:
       area: "numeric"
       surface_area: "numeric"
+      perimeter: "numeric"
       volume: "numeric"
       bbox_area: "numeric"
       bbox_volume: "numeric"
@@ -243,7 +244,9 @@ default:
       major_axis_length: "numeric"
       minor_axis_length: "numeric"
       interm_axis_length: "numeric"
+      oblate: "numeric"
       ellipticity_oblate: "numeric"
+      prolate: "numeric"
       ellipticity_prolate: "numeric"
       ellipticity_interm_oblate: "numeric"
       ellipticity_interm_prolate: "numeric"

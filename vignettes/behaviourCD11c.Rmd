@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -27,8 +28,78 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/CD11c-YFP/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/CD11c-YFP/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N058/ANALYSIS/CECELIA"
 ```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6p8l06", versionID = versionID, initReactivity = FALSE # CD11c
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- c("fYyXay")
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# get branching
+labels <- lapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) {
+  y <- x$labelProps(valueName = "SHG.branch")
+  uns <- y$values_uns()
+  y$close()
+  
+  uns
+})
+
+# merge summary
+exp.info <- exp.info[rbindlist(lapply(labels, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
+
+# get branching
+branchDT <- cciaObj$popDT(popType = "branch", uIDs = uIDs)
+
+pops <- list(
+  `gBT` = "gBT/tracked",
+  `OTI` = "OTI/tracked"
+)
+
+# get tracks to align with SHG
+# popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
+
+# tracks <- cciaObj$tracks(pop = pops$gBT, uIDs = uIDs, steps.subtracks = 4)
+
+# get tracks info and check parameters
+tracksInfo <- cciaObj$tracksMeasures(
+  pops = pops[1], uIDs = uIDs, measures = c(),
+  # extraMeasures = c("tracks.coords"), steps.subtracks = 4)
+  extraMeasures = c("tracks.coords"))
+# tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
+
+# check where the centre of each track is
+# tracksInfo[
+#   popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
+#   on = c("uID", "track_id"),
+#   `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
+```
+
+```{r}
+# get start and end positions
+# TODO this is very convoluted
+pos <- lapply(tracks$fYyXay, function(x) {
+  posHead <- head(x, 1)
+  posTail <- tail(x, 1)
+  
+  colnames(posHead) <- paste0("start.", colnames(posHead))
+  colnames(posTail) <- paste0("end.", colnames(posTail))
+  
+  cbind(posHead, posTail)
+})
+```
+
 
 ```{r}
 # HMM

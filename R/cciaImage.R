@@ -675,8 +675,10 @@ CciaImage <- R6::R6Class(
     #' @description Tracks measures
     #' @param pops list of character to define populations
     #' @param measures list of character to define measures
-    #' @param forceReload boolean to force reload of values
-    tracksMeasures = function(pops, measures = NULL, forceReload = FALSE) {
+    #' @param extraMeasures list of character to define extra measures (not in celltrackR)
+    #' @param forceReload boolean to force reload of values3
+    #' @param ... passed to tracks
+    tracksMeasures = function(pops, measures = NULL, extraMeasures = NULL, forceReload = FALSE, ...) {
       # get default measures if null
       if (is.null(measures)) {
         measures <- c(
@@ -689,6 +691,7 @@ CciaImage <- R6::R6Class(
       versionedVarName <- paste(
         pops,
         paste(measures, collapse = "&"),
+        paste(extraMeasures, collapse = "&"),
         sep = ":"
       )
       
@@ -708,7 +711,7 @@ CciaImage <- R6::R6Class(
         }
         
         # get tracks
-        tracks <- lapply(pops, function(x) self$tracks(pop = x))
+        tracks <- lapply(pops, function(x) self$tracks(pop = x, ...))
         
         # go through measurements
         for (measure.x in measures) {
@@ -719,6 +722,15 @@ CciaImage <- R6::R6Class(
             result.name = measure.x, idcol = "cell_type")
         }
         
+        # go through extra measurements
+        for (measure.x in extraMeasures) {
+          # get measurements
+          tracks.DTs[[measure.x]] <- tracks.measure.fun(
+            # tracks, get(measure.x), result.name = measure.x, idcol = "cell_type")
+            tracks, eval(parse(text = measure.x)),
+            result.name = measure.x, idcol = "cell_type", ...)
+        }
+
         if (all(lengths(tracks.DTs) > 0))
           tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.DTs)
       }
@@ -730,7 +742,10 @@ CciaImage <- R6::R6Class(
     #' @param pop character to define population
     #' @param forceReload boolean to force reload of tracks
     #' @param minTracklength integer for minimum track length
-    tracks = function(pop, forceReload = FALSE, minTracklength = 0) {
+    #' @param steps.subtracks integer for subtracks
+    #' @param steps.overlap integer for subtracks overlap
+    tracks = function(pop, forceReload = FALSE, minTracklength = 0,
+                      steps.subtracks = NULL, steps.overlap = steps.subtracks - 1) {
       # was this requested before?
       tracks <- .getVersionedVar(
         private$labelTracks, valueName = pop)
@@ -866,6 +881,12 @@ CciaImage <- R6::R6Class(
                 }
               }
             }
+          }
+          
+          # create subtracks?
+          if (!is.null(steps.subtracks)) {
+            tracks <- celltrackR::subtracks(
+              tracks, i = steps.subtracks, overlap = steps.overlap)
           }
           
           # set value

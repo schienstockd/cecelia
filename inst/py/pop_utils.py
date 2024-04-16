@@ -176,8 +176,9 @@ class PopUtils:
           # self.pop_data_id = pop_df.columns[0]
           
           # go through value names
-          for j in pop_map[i]['valueName']:
-            self.__pop_data[i][j] = list(pop_df.loc[pop_df['value_name'] == j].iloc[:,0])
+          if 'value_name' in pop_df.columns:
+            for j in pop_map[i]['valueName']:
+              self.__pop_data[i][j] = list(pop_df.loc[pop_df['value_name'] == j].iloc[:,0])
     
     # return only populations matching the paths
     if len(pops) > 0:
