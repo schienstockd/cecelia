@@ -180,7 +180,7 @@ class PopUtils:
             for j in pop_map[i]['valueName']:
               self.__pop_data[i][j] = list(pop_df.loc[pop_df['value_name'] == j].iloc[:,0])
           else:
-            self.__pop_data[i]['default'] = list(pop_df)
+            self.__pop_data[i]['default'] = list(pop_df.iloc[:,0])
     
     # return only populations matching the paths
     if len(pops) > 0:

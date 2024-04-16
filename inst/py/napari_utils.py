@@ -1236,6 +1236,9 @@ class NapariUtils:
         multi_value_names = len(pop_value_name) > 1
         filter_measure = pop['filterMeasure'][0] if 'filterMeasure' in pop else None
         
+        if not isinstance(pop_value_name, list):
+          pop_value_name = [pop_value_name]
+        
         for j in pop_value_name:
           # create name
           pop_layer_name = self.pop_layer_name(pop_type, pop, value_name = j)
