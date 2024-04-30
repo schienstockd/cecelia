@@ -185,60 +185,76 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
   tracks.fun.result <- lapply(
     tracks,
     function(x) {
+      xRes <- NULL
+      
+      # TODO too convoluted
       # apply subtracks?
       if (!is.null(steps.subtracks)) {
-        return(sapply(celltrackR::subtracks(
-          x, i = steps.subtracks, overlap = steps.overlap), call.FUN, ...))
+        xRes <- sapply(celltrackR::subtracks(
+          x, i = steps.subtracks, overlap = steps.overlap), call.FUN, simplify = FALSE, ...)
       } else {
-        return(sapply(x, call.FUN, ...))
+        xRes <- sapply(x, call.FUN, simplify = FALSE, ...)
       }
+      
+      xRes <- do.call(rbind, xRes)
+      rownames(xRes) <- names(x)
+      
+      xRes
     } 
   )
   
   if (as.dt == FALSE) {
     return(tracks.fun.result)
   } else {
-    # split track IDs?
-    splitTrackIDs <- !is.null(steps.subtracks)
+    DT <- NULL
     
-    browser()
-    
-    # convert to DT
-    tracks.fun.DT <- lapply(
-      tracks.fun.result,
-      function(x) {
-        DT <- as.data.table(as.matrix(x))[
-          # , track_id := as.numeric(names(x))]
-          , track_id := if (splitTrackIDs) names(x) else as.numeric(names(x))]
-        # ] %>% data.table::rename(!!result.name := "V1")
-        setnames(DT, "V1", result.name)
-        
-        if (nrow(DT) > 0) DT else NULL
-      }
-    )
-    
-    # bind together with ID
-    DT <- data.table::rbindlist(tracks.fun.DT, idcol = idcol, fill = TRUE)
-    
-    # split track id?
-    if (splitTrackIDs) {
-      DT[, c("track_id", "cell_id") := lapply(
-        data.table::tstrsplit(track_id, ".", fixed = TRUE),
-        as.numeric
-        )]
+    if (any(lengths(tracks) > 0)) {
+      # split track IDs?
+      # splitTrackIDs <- !is.null(steps.subtracks)
+      # TODO not very elegant though
+      splitTrackIDs <- stringr::str_detect(names(tracks[[1]])[[1]], "[0-9]+\\.[0-9]+")
       
-      # increase cell ID by number of steps for subtracks
-      # a cell at t0 has no speed
-      # a cell at t1 has no angle
-      DT[, cell_id := cell_id + steps.subtracks]
-    }
-    
-    # convert to degrees
-    if (as.degrees == TRUE) {
-      if (any(c("overallAngle", "meanTurningAngle") %in% colnames(DT))) {
-        measure.x <- colnames(DT)[colnames(DT) %in% c("overallAngle", "meanTurningAngle")]
+      # convert to DT
+      tracks.fun.DT <- lapply(
+        tracks.fun.result,
+        function(x) {
+          DT <- as.data.table(as.matrix(x))[
+            # , track_id := as.numeric(names(x))]
+            # , track_id := if (splitTrackIDs) names(x) else as.numeric(names(x))]
+            , track_id := if (splitTrackIDs) rownames(x) else as.numeric(rownames(x))]
+          # ] %>% data.table::rename(!!result.name := "V1")
+          
+          if ("V1" %in% colnames(DT))
+            setnames(DT, "V1", result.name)
+          
+          if (nrow(DT) > 0) DT else NULL
+        }
+      )
+      
+      # bind together with ID
+      DT <- data.table::rbindlist(tracks.fun.DT, idcol = idcol, fill = TRUE)
+      
+      # split track id?
+      if (splitTrackIDs) {
+        DT[, c("track_id", "cell_id") := lapply(
+          data.table::tstrsplit(track_id, ".", fixed = TRUE),
+          as.numeric
+        )]
         
-        DT[, (measure.x) := pracma::rad2deg(get(measure.x))]
+        # TODO why do you need this?
+        # increase cell ID by number of steps for subtracks
+        # a cell at t0 has no speed
+        # a cell at t1 has no angle
+        # DT[, cell_id := cell_id + steps.subtracks]
+      }
+      
+      # convert to degrees
+      if (as.degrees == TRUE) {
+        if (any(c("overallAngle", "meanTurningAngle") %in% colnames(DT))) {
+          measure.x <- colnames(DT)[colnames(DT) %in% c("overallAngle", "meanTurningAngle")]
+          
+          DT[, (measure.x) := pracma::rad2deg(get(measure.x))]
+        }
       }
     }
     
@@ -256,8 +272,8 @@ tracks.coords <- function(track) {
   posHead <- head(track, 1)
   posTail <- tail(track, 1)
   
-  colnames(posHead) <- paste0("start.", colnames(posHead))
-  colnames(posTail) <- paste0("end.", colnames(posTail))
+  colnames(posHead) <- paste0("start_", colnames(posHead))
+  colnames(posTail) <- paste0("end_", colnames(posTail))
   
   cbind(posHead, posTail)
 } 

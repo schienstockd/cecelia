@@ -13,8 +13,10 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
-pID <- "pEdOoZ"
-versionID <- 2
+# pID <- "pEdOoZ"
+pID <- "Fu1zEC"
+# versionID <- 2
+versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
@@ -65,7 +67,8 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/CODEX_THEO/ANALYSIS"
 ```
 
 ```{r}
@@ -128,6 +131,610 @@ clusterRes <- list(
   init = 0.4
   # CD4 = 0.8
   )
+```
+
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
+)
+
+channelNames <- sapply(
+  xml2::xml_attrs(xml2::xml_find_all(
+    cciaObj$omeXML(), cciaObj$omeXMLPath("//Image//Pixels//Channel"))),
+  function(x) {x[[2]]})
+
+# cciaObj$setImChannelNames(channelNames, valueName = "default")
+# cciaObj$saveState()
+```
+
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+)
+
+for (x in cciaObj$cciaObjects()) {
+  print(paste(">>", x$getUID()))
+  
+  # if (stringr::str_detect(x$oriFilepath(), "_core[0-9]+"))
+  #   omexmlFile <- stringr::str_replace(x$oriFilepath(), "_core[0-9]+\\.tif", "-omexml.txt")
+  # else
+  #   omexmlFile <- stringr::str_replace(x$oriFilepath(), ".qptiff", "-omexml.txt")
+  omexmlFile <- stringr::str_replace(x$oriFilepath(), ".ome.tif", ".txt")
+  
+  omeXML <- readLines(omexmlFile, warn = FALSE)
+  channelNames <- stringr::str_extract(omeXML, "(?<=Name=\").+(?=\" )")
+  channelNames <- channelNames[!is.na(channelNames)]
+  
+  x$setImChannelNames(channelNames, valueName = "default")
+  x$saveState()
+}
+```
+
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
+)
+
+cciaObj$setImFilepath("ccidAfCorrected.zarr", "afCorrected")
+cciaObj$saveState()
+```
+
+
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "YuX8GU", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "Ksflg7", versionID = versionID, initReactivity = FALSE # Set
+)
+
+imChannels <- unlist(cciaObj$imChannelNames())
+numChannels <- length(imChannels)
+seqChannels <- seq(numChannels) - 1
+names(seqChannels) <- seqChannels
+
+# prepare af combinations
+afCombinations <- lapply(seqChannels, function(x) {
+  list(
+    # divisionChannels = unname(seqChannels[seqChannels != x]),
+    divisionChannels = unname(seqChannels),
+    channelPercentile = 0,
+    correctionPercentile = 0,
+    correctionMode = 'divide',
+    summaryMode = 'percentile',
+    # summaryPercentile = 75,
+    summaryPercentile = 90,
+    correctionMin = 0.2,
+    correctionMax = 99.8,
+    generateInverse = FALSE,
+    medianFilter = 0,
+    topHatRadius = 0,
+    rollingBallRadius = 0,
+    rollingBallPadding = 0
+  )
+})
+
+# run task
+funParams <- list(
+  valueName = "default",
+  ignoreVisibilities = TRUE,
+  afCombinations = afCombinations,
+  applyGaussian = FALSE,
+  applyGaussianToOthers = FALSE
+)
+
+task <- cciaObj$runTask(
+  funName = "cleanupImages.afCorrect",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
+# run clustering
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Include == "Y"]$uID
+
+# get common channels across images
+channelNames <- sapply(cciaObj$cciaObjects(), function(x) unname(x$imChannelNames()))
+clusterChannels <- Reduce(intersect, channelNames)
+clusterChannels <- clusterChannels[clusterChannels != "DAPI"]
+# clusterChannels <- c("CD3", "CD20")
+
+clusterChannels <- clusterChannels[!clusterChannels %in% c(
+  "CD11c", "LamB1", "CD8", "CD206/MRC1", "CD45",
+  # These markers did not seem to have worked
+  "CD56", "vGLUT1", "PSD-95", "FoxP3"
+  )]
+
+# run task
+funParams <- list(
+  popType = "clust",
+  popsToCluster = c(),
+  savePops = FALSE,
+  keepPops = FALSE,
+  # resolution = 0.2,
+  resolution = 0.6,
+  mergeUmap = TRUE,
+  normalisePercentile = 99,
+  normalisePercentileBottom = 0.0,
+  normaliseAxis = "channels",
+  # normaliseToMedian = FALSE,
+  normaliseToMedian = TRUE,
+  # normaliseIndividually = FALSE,
+  normaliseIndividually = TRUE,
+  transformation = "NONE",
+  # transformation = "log",
+  logBase = 0,
+  correctBatch = "combat",
+  valueName = "default",
+  # valueName = "detailed",
+  uIDs = uIDs,
+  clusterChannels = list(
+    base = list(channels = clusterChannels)
+  ),
+  objectMeasures = list(),
+  usePaga = TRUE,
+  pagaThreshold = 0.1
+)
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# set cluster property files
+# TODO why is this not done.. ?
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+)
+
+uIDs <- exp.info[Include == "Y"]$uID
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
+  x$saveState()
+}
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+# regionUIDs <- names(cciaObj$cciaObjects())
+regionUIDs <- exp.info[Include == "Y"]$uID
+
+# # get objects from selected set
+# regionsDT <- cciaObj$popDT(
+#   popType = "region",
+#   uIDs = regionUIDs,
+#   includeFiltered = TRUE,
+#   completeDT = TRUE, replaceNA = TRUE,
+#   filterMeasures = c("regions")
+# )
+# unique(regionsDT$uID)
+
+# get objects from selected set
+popDT <- cciaObj$popDT(
+  popType = "clust",
+  uIDs = regionUIDs,
+  includeFiltered = TRUE,
+  completeDT = TRUE, replaceNA = TRUE
+)
+```
+
+```{r fig_umap, fig.height=4, fig.width=4}
+dfToPlot <- copy(popDT) %>% drop_na(clusters) %>% left_join(exp.info)
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  group_by(clusters) %>%
+  # group_by(clusters.name) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+dfToPlot$clusters <- factor(dfToPlot$clusters)
+
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+
+markers <- colnames(dfToPlot)
+markers <- markers[!markers %in% c(
+  "label", "clusters", "UMAP_1", "UMAP_2", "pop", "centroid_y", "centroid_x", colnames(exp.info))]
+
+for (i in markers) {
+  print(i)
+  
+    # plot UMAP
+  p1 <- ggplot(
+    dfToPlot,
+    aes(UMAP_1, UMAP_2)
+    ) +
+    # geom_point(aes(color = clusters)) +
+    # geom_point(aes(color = Type)) +
+    geom_point(aes(color = get(i))) +
+    theme_classic() +
+    # scale_color_brewer(name = NULL, palette = "Set1") +
+    # scale_color_manual(values = colPal) +
+    viridis::scale_colour_viridis() +
+    theme(
+      axis.text = element_text(size = 15),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.justification = "right",
+      # legend.position = "bottom",
+      legend.position = "none",
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank()
+      ) +
+    geom_label(
+      data = meanClusterPos,
+      aes(label = clusters),
+      # aes(label = clusters.name),
+      label.size = 0.25,
+      color = "black"
+      ) +
+    ggtitle(i)
+    # facet_grid(.~Type)
+  
+  print(p1)
+}
+
+# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
+```
+
+```{r fig_umap, fig.height=5, fig.width=5}
+# clusterMapping <- list(
+#   `0` = c(0, 7),
+#   `1` = c(1),
+#   `2` = c(2),
+#   `3` = c(3, 8),
+#   `4` = c(4),
+#   `5` = c(5),
+#   `6` = c(6)
+# )
+
+dfToPlot <- copy(popDT) %>% drop_na(clusters) %>% left_join(exp.info)
+# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  group_by(clusters) %>%
+  # group_by(clusters.name) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+dfToPlot$clusters <- factor(dfToPlot$clusters)
+
+colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters.name)))
+
+# plot UMAP
+p1 <- ggplot(
+  dfToPlot,
+  aes(UMAP_1, UMAP_2)
+  ) +
+  geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = clusters.name)) +
+  # geom_point(aes(color = Treatment)) +
+  theme_classic() +
+  # scale_color_brewer(name = "Clusters", palette = "Accent") +
+  scale_color_manual(values = colPal) +
+  # viridis::scale_colour_viridis() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom",
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    aes(label = clusters),
+    # aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    ) +
+  guides(colour = guide_legend(override.aes = list(size=5))) 
+  # facet_wrap(.~Treatment, nrow = 1)
+
+print(p1)
+
+ggsave(file.path(anaDir, "umap.tiff"), width = 4, height = 4)
+# ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
+```
+
+```{r fig_pops_im, fig.height=40, fig.width=20}
+# popClusters <- unique(popDT$clusters)
+# colPal <- randomcoloR::distinctColorPalette(length(popClusters))
+# names(colPal) <- popClusters
+
+uidsToFlip <- c("XFHvVd", "Lm5FOH")
+
+# for (i in unique(popDT$uID)) {
+  # plot out
+# p1 <- ggplot(popDT[uID == i],
+# p1 <- ggplot(popDT,
+p1 <- ggplot(dfToPlot,
+             aes(centroid_x, centroid_y, color = as.factor(clusters))) +
+             # aes(centroid_x, centroid_y, color = as.factor(clusters.name))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 0.2) +
+  # scale_color_brewer(palette = "Set3", name = "Clusters") +
+  scale_color_manual(values = colPal, name = "Clusters") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+    legend.position = "bottom",
+    strip.text = element_text(colour = "black")
+  ) + coord_fixed() + 
+  guides(colour = guide_legend(override.aes = list(size=10))) +
+  facet_wrap(.~uID, nrow = 1)
+  # facet_grid(clusters~uID)
+  # facet_grid(clusters.name~uID)
+  # ggtitle(i)
+
+# if (i %in% uidsToFlip) {
+#   p1 <- p1 + coord_flip()
+# }
+
+print(p1)
+
+ggsave(file.path(anaDir, "clusters_im.tiff"), width = 12, height = 5)
+# }
+```
+
+```{r fig_pops_im, fig.height=10, fig.width=10}
+# popClusters <- unique(popDT$clusters)
+# colPal <- randomcoloR::distinctColorPalette(length(popClusters))
+# names(colPal) <- popClusters
+
+# uidsToFlip <- c("XFHvVd", "Lm5FOH")
+
+for (i in unique(dfToPlot$uID)) {
+  # plot out
+  p1 <- ggplot(dfToPlot[uID == i],
+               aes(centroid_x, centroid_y, color = as.factor(clusters))) +
+               # aes(centroid_x, centroid_y, color = as.factor(clusters.name))) +
+    theme_classic() +
+    plotThemeDark(angle = 0) +
+    geom_point(size = 0.2) +
+    # scale_color_brewer(palette = "Accent", name = "Clusters") +
+    scale_color_manual(values = colPal, name = "Pop") +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.position = "none",
+      # legend.position = "bottom",
+      strip.text = element_text(colour = "black")
+    ) + coord_fixed() +
+    guides(colour = guide_legend(override.aes = list(size=10)))
+    # facet_wrap(.~uID, nrow = 1)
+    # facet_grid(clusters~uID)
+    # facet_grid(clusters.name~uID)
+    # ggtitle(i)
+  
+  ggsave(file.path(anaDir, paste0("clusters_", i, ".tiff")), width = 8, height = 8, plot = p1)
+}
+```
+
+
+```{r}
+clustMarkers <- colnames(dfToPlot)
+clustMarkers <- clustMarkers[!clustMarkers %in% c(
+  "label", "clusters", "clusters.id", "clusters.name", "UMAP_1", "UMAP_2", "pop", "centroid_y", "centroid_x", colnames(exp.info))]
+
+# define populations
+clust <- list(
+  init = c("root")
+)
+
+markers <- list(
+  init = clustMarkers
+)
+
+groupVars <- list(
+  # init = "clusters.name"
+  init = "clusters"
+)
+
+combinePops <- list(
+  init = list()
+)
+
+plotSizes <- list(
+  init = c(12, 10)
+)
+```
+
+```{r fig_clusters_heat, fig.height=4, fig.width=4}
+for (i in names(clust)) {
+  popsToShow <- clust[[i]]
+  markersToShow <- .flowCorrectChannelNames(markers[[i]])
+  groupVar <- groupVars[[i]]
+  popsToCombine <- combinePops[[i]]
+  plotSize <- plotSizes[[i]]
+  
+  markersToShowNoDye <- stringr::str_extract(markersToShow, ".*(?=_)")
+  
+  colsToShow <- c("label", "clusters", "clusters.name", "pop", markersToShow)
+  # colsToShow <- colsToShow[colsToShow %in% colnames(popDT)]
+  colsToShow <- colsToShow[colsToShow %in% colnames(dfToPlot)]
+  
+  # show heatmap
+  # popLymphs <- popDT[pop %in% popsToShow, ..colsToShow]
+  popLymphs <- dfToPlot[pop %in% popsToShow, ..colsToShow]
+  # popLymphs <- popDT[, ..colsToShow]
+  
+  # combine pops
+  if (length(popsToCombine) > 0) {
+    for (j in names(popsToCombine))
+      popLymphs[pop %in% popsToCombine[[j]], pop := j]
+  }
+  
+  markersToPlot <- popLymphs %>%
+    pivot_longer(
+      cols = all_of(markersToShow), names_to = "marker", values_to = "value"
+      )
+  markersToPlot$marker <- as.factor(markersToPlot$marker)
+  
+  # show heatmap for clusters
+  markersSummary <- markersToPlot %>%
+    drop_na() %>%
+    group_by(marker, get(groupVar)) %>%
+    summarise(mean = mean(value, rm.na = TRUE)) %>%
+    mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
+    replace_na(list(norm = 0)) %>%
+    rename_with(~ c(groupVar), all_of(c("get(groupVar)")))
+  
+  # find order for clusters and markers
+  markersMatrix <- markersSummary %>%
+    pivot_wider(names_from = marker, values_from = norm, id_cols = groupVar)
+  
+  hcClusters <- hclust(dist(as.matrix(markersMatrix %>% dplyr::select(-all_of(groupVar)))), "ave")
+  hcMarkers <- hclust(dist(t(as.matrix(markersMatrix %>% dplyr::select(-all_of(groupVar))))), "ave")
+  
+  clustersOrder <- markersMatrix[[groupVar]][hcClusters$order]
+  markerOrder <- colnames(markersMatrix)[2:length(colnames(markersMatrix))][hcMarkers$order]
+  
+  markersSummary[[groupVar]] <- factor(markersSummary[[groupVar]], levels = clustersOrder)
+  
+  p1 <- ggplot(markersSummary %>%
+           mutate(
+             # clusters = factor(clusters, levels = clustersOrder),
+             # clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
+             marker = factor(marker, levels = markerOrder)
+           ), aes(get(groupVar), marker)) +
+    theme_classic() +
+    # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+    geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
+    viridis::scale_fill_viridis(
+      breaks = c(0, 1),
+      labels = c(0, 1)
+    ) +
+    theme(
+      legend.position = "none",
+      legend.title = element_blank(),
+      legend.text = element_text(size = 20),
+      legend.key.size = unit(10, "mm"),
+      axis.text.y = element_text(size = 20),
+      axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
+      # axis.text.x = element_text(size = 20),
+      strip.background = element_blank(),
+      strip.text.x = element_blank()
+      ) +
+    xlab("") + ylab("")
+  plot(p1)
+  
+  ggsave(file.path(anaDir, paste0("clusters_heat_", i, ".pdf")),
+         width = plotSize[[1]], height = plotSize[[2]])
+}
+```
+
+```{r fig_regions_im, fig.height=15, fig.width=40}
+# plot out regions
+p1 <- ggplot(regionsDT,
+             aes(centroid_x, -centroid_y, color = as.factor(regions))) +
+  theme_classic() +
+  plotThemeDark(angle = 0) +
+  geom_point(size = 0.2) +
+  scale_color_brewer(palette = "Set1", name = "Region") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+    legend.position = "bottom"
+  ) + coord_fixed() + coord_flip() +
+  guides(colour = guide_legend(override.aes = list(size=10))) +
+  facet_grid(.~uID)
+
+print(p1)
 ```
 
 

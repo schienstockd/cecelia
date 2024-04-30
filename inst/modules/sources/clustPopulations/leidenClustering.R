@@ -26,10 +26,25 @@ LeidenClustering <- R6::R6Class(
       # get object
       cciaObj <- self$cciaTaskObject()
       
-      self$writeLog("Run clustering")
+      self$writeLog(paste("Run clustering with", self$funParams()$correctBatch ,"Correction"))
       
-      # get channels from first uID
+      # get channels from first uID for measure attribute
       imChannels <- cciaObj$cciaObjects(uIDs = self$funParams()$uIDs)[[1]]$imChannelNames()
+      
+      # channels an be in different order for each image
+      clusterChannels <- lapply(
+        cciaObj$cciaObjects(), function(x) {
+          lapply(
+            self$funParams()$clusterChannels, function(y) {
+              y$channels <- sapply(
+                y$channels, function(z) {
+                  unname(which(x$imChannelNames() == z)) - 1
+                }, USE.NAMES = FALSE
+              )
+              
+              y
+            })
+        })
       
       # prepare params
       params <- list(
@@ -39,17 +54,20 @@ LeidenClustering <- R6::R6Class(
         keepPops = self$funParams()$keepPops,
         resolution = self$funParams()$resolution,
         mergeUmap = self$funParams()$mergeUmap,
-        clusterChannels = self$funParams()$clusterChannels,
+        clusterChannels = clusterChannels,
         objectMeasures = self$funParams()$objectMeasures,
         normaliseAxis = self$funParams()$normaliseAxis,
         normaliseToMedian = self$funParams()$normaliseToMedian,
         normalisePercentile = self$funParams()$normalisePercentile,
         normalisePercentileBottom = self$funParams()$normalisePercentileBottom,
         normaliseIndividually = self$funParams()$normaliseIndividually,
+        correctBatch = self$funParams()$correctBatch,
         intensityMeasure = attr(imChannels, "measure"),
         transformation = self$funParams()$transformation,
         # TODO why is this not converted to numeric automatically?
         logBase = as.numeric(self$funParams()$logBase),
+        pagaThreshold = self$funParams()$pagaThreshold,
+        usePaga = self$funParams()$usePaga,
         uIDs = if ("uIDs" %in% names(self$funParams()))
           self$funParams()$uIDs
         else

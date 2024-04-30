@@ -10,15 +10,16 @@ import py.zarr_utils as zarr_utils
 Extract labels for cores
 """
 def extract_cores_labels(im_dat, median_filter = 5, otsu_adjust = 1, closing_filter = 5,
-                         small_objects_size = 1000, label_expansion = 5, im_min = None, im_max = None):
+                         small_objects_size = 1000, label_expansion = 5, im_min = None, im_max = None,
+                         dtype = np.uint16):
   # get min max if not defined
   if any([im_min is None, im_max is None]):
     im_min, im_max = zarr_utils.get_minmax_from_low_res(im_dat)
   
-  # normalise image to 16 bit
+  # normalise image
   im_new = im_dat[-1].map_blocks(zarr_utils.apply_min, im_min = im_min)
-  im_new = (((im_new - im_min) / (im_max - im_min)) * 2**16)
-  im = zarr_utils.fortify(im_new[0,:,:].astype(np.uint16))
+  im_new = (((im_new - im_min) / (im_max - im_min)) * np.iinfo(dtype).max)
+  im = zarr_utils.fortify(im_new[0,:,:].astype(dtype))
   
   # get labels for cores
   clean_im = median(im, disk(median_filter))

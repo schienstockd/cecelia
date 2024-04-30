@@ -39,6 +39,32 @@
     							"default": "divide"
     						}
     					},
+    					"summaryMode": {
+    						"type:character": {
+    							"default": "maximum"
+    						}
+    					},
+    					"summaryPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 75
+    						}
+    					},
+    					"correctionMin": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 50,
+    							"default": 1
+    						}
+    					},
+    					"correctionMax": {
+    						"type:double": {
+    							"min": 50,
+    							"max": 100,
+    							"default": 99
+    						}
+    					},
         			"generateInverse": {
         				"type:boolean": {
         					"default": false
@@ -150,8 +176,41 @@
       							]
       						}
       					},
+      					"summaryMode": {
+      						"index": 4,
+      						"label": "Summary mode",
+      						"widget:selection": {
+      							"size": 1,
+      							"multiple": false,
+      							"items": [
+      								"maximum",
+      								"percentile"
+      							]
+      						}
+      					},
+      					"summaryPercentile": {
+      		        "index": 5,
+      		        "label": "Summary Percentile",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionMin": {
+      		        "index": 6,
+      		        "label": "Correction Min",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionMax": {
+      		        "index": 7,
+      		        "label": "Correction Max",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
           			"generateInverse": {
-          				"index": 4,
+          				"index": 8,
           				"label": "Generate inverse",
           				"widget:checkbox": {
           				}

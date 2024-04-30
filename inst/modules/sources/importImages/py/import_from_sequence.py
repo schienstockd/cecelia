@@ -11,6 +11,7 @@ import tifffile
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils
 from py.dim_utils import DimUtils
+from ome_types import model
 
 # segment image
 def run(params):

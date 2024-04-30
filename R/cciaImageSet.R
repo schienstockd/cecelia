@@ -288,7 +288,7 @@ CciaImageSet <- R6::R6Class(
         else
           resetUIDs <- attr(self$cciaObjects(uIDs = uIDs)[[1]]$imAnndataFilepath(), "savedIn") == self$getUID()
         
-        if (resetUIDs == TRUE) {
+        if (length(resetUIDs) > 0 && resetUIDs == TRUE) {
           if (is.null(uIDs))
             uIDs <- self$cciaObjectUIDs()[1]
           else

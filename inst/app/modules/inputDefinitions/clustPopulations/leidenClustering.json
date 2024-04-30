@@ -74,6 +74,11 @@
           "default": false
         }
       },
+      "correctBatch": {
+        "type:character": {
+          "default": "NONE"
+        }
+      },
       "transformation": {
         "type:character": {
           "default": "NONE"
@@ -95,6 +100,18 @@
       },
       "objectMeasures": {
 				"type:list": {}
+			},
+			"usePaga": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+			"pagaThreshold": {
+				"type:double": {
+					"min": 0,
+					"max": 0.5,
+					"default": 0.1
+				}
 			}
     },
     "outputs": {}
@@ -184,8 +201,20 @@
         "widget:checkbox": {
         }
       },
-      "transformation": {
+      "correctBatch": {
         "index": 12,
+        "label": "Correct Batch effect",
+        "widget:selection": {
+          "items": {
+            "No Correction": "NONE",
+            "ComBat": "combat"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
+      "transformation": {
+        "index": 13,
         "label": "Transform data",
         "widget:selection": {
           "items": {
@@ -198,7 +227,7 @@
         }
       },
       "logBase": {
-        "index": 13,
+        "index": 14,
         "label": "Log base",
         "widget:selection": {
           "items": {
@@ -211,7 +240,7 @@
         }
       },
       "clusterChannels": {
-				"index": 14,
+				"index": 15,
 				"label": "Use channels for clusterings",
 				"widget:channelSelectionTypeGroup": {
 				  "visible": false,
@@ -220,18 +249,32 @@
             "label": "Channels",
             "widget:channelSelection": {
               "size": 1,
-              "multiple": true
+              "multiple": true,
+              "useNames": true
             }
           }
   			}
       },
       "objectMeasures": {
-				"index": 15,
+				"index": 16,
 				"label": "Object measurements",
 				"widget:labelPropsColsSelection": {
 					"size": 1,
 					"multiple": true,
 					"includeChannels": false
+				}
+			},
+			"usePaga": {
+				"index": 17,
+				"label": "Use PAGA",
+				"widget:checkbox": {
+				}
+			},
+			"pagaThreshold": {
+				"index": 18,
+				"label": "PAGA threshold",
+				"widget:slider": {
+					"step": 0.02
 				}
 			}
     },

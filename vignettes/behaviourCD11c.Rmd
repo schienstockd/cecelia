@@ -43,21 +43,29 @@ cciaObj <- initCciaObject(
 )
 
 uIDs <- names(cciaObj$cciaObjects())
-uIDs <- c("fYyXay")
+# uIDs <- c("fYyXay")
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
-# get branching
-labels <- lapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) {
-  y <- x$labelProps(valueName = "SHG.branch")
-  uns <- y$values_uns()
-  y$close()
-  
-  uns
-})
+# get vector information to plot anisotropy
+unsLabels <- c("SHG", "gBT.tracks", "OTI.tracks")
+uns <- list()
+
+for (i in unsLabels) {
+  uns[[i]] <- list()
+
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    labels <- x$labelProps(valueName = paste0(i, ".branch"))
+
+    if (!is.null(labels)) {
+      uns[[i]][[x$getUID()]] <- labels$values_uns()
+      labels$close()
+    }
+  }
+}
 
 # merge summary
-exp.info <- exp.info[rbindlist(lapply(labels, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
+exp.info <- exp.info[rbindlist(lapply(uns$SHG, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
 
 # get branching
 branchDT <- cciaObj$popDT(popType = "branch", uIDs = uIDs)
@@ -68,38 +76,445 @@ pops <- list(
 )
 
 # get tracks to align with SHG
-# popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
+popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
 
-# tracks <- cciaObj$tracks(pop = pops$gBT, uIDs = uIDs, steps.subtracks = 4)
+clustDT <- cciaObj$popDT(popType = "clust", includeFiltered = TRUE, pops = c("A", "B", "C"), uIDs = uIDs)
 
 # get tracks info and check parameters
 tracksInfo <- cciaObj$tracksMeasures(
-  pops = pops[1], uIDs = uIDs, measures = c(),
-  # extraMeasures = c("tracks.coords"), steps.subtracks = 4)
-  extraMeasures = c("tracks.coords"))
-# tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
+  pops = pops, uIDs = uIDs, measures = list(),
+  # pops = pops[1], uIDs = uIDs,
+  extraMeasures = c("tracks.coords"), steps.subtracks = 2, steps.overlap = 0)
+  # extraMeasures = c("tracks.coords"))
+  # extraMeasures = c("tracks.coords"))
 
 # check where the centre of each track is
 # tracksInfo[
 #   popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
 #   on = c("uID", "track_id"),
 #   `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
+tracksInfo[, `:=` (centroid_x = mean(c(start_x, end_x)),
+                   centroid_y = mean(c(start_y, end_y)),
+                   x = diff(c(end_x, start_x)),
+                   y = diff(c(end_y, start_y))),
+           by = c("uID", "cell_type", "track_id", "cell_id")]
+           # by = c("uID", "cell_type", "track_id")]
+```
+
+```{r fig_clusters_freq, fig.height=4, fig.width=10}
+# save frequencies of track clusters
+summaryDF <- clustDT[, .(n.clusters = .N), by = .(uID, value_name, pop)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+  droplevels() %>%
+  group_by(uID, value_name) %>%
+  mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
+  ungroup() %>%
+  complete(uID, value_name, pop, fill = list(freq.clusters = 0)) %>%
+  # complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Treatment, DTx))) +
+# ggplot(summaryDF %>% dplyr::filter(pop == "tcells.gBT/tracked"),
+ggplot(summaryDF, aes(pop, freq.clusters, color = value_name)) +
+# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~DTx) + ylim(0, 100)
+
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4, height = 3)
+
+# summaryDF$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
+# summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 ```
 
 ```{r}
-# get start and end positions
-# TODO this is very convoluted
-pos <- lapply(tracks$fYyXay, function(x) {
-  posHead <- head(x, 1)
-  posTail <- tail(x, 1)
-  
-  colnames(posHead) <- paste0("start.", colnames(posHead))
-  colnames(posTail) <- paste0("end.", colnames(posTail))
-  
-  cbind(posHead, posTail)
+# show measurements of clusters to compare
+propsToPlot <- copy(clustDT)
+
+# propsToPlot <- propsToPlot %>%
+#   dplyr::rename(
+#     "Movement HMM 1" = "live.cell.hmm.state.movement.1",
+#     "Movement HMM 2" = "live.cell.hmm.state.movement.2",
+#     "Movement HMM 3" = "live.cell.hmm.state.movement.3",
+#     "Movement HMM 4" = "live.cell.hmm.state.movement.4",
+#   )
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "value_name", "pop", "uID", "track_id", "clusters", "clusters.id", "clusters.name", "UMAP_1", "UMAP_2"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+# propsList <- c(
+#   'Movement HMM 1',
+#   'Movement HMM 2',
+#   'Movement HMM 3',
+#   'Movement HMM 4',
+#   'asphericity',
+#   'displacement',
+#   'displacementRatio',
+#   'duration',
+#   'meanTurningAngle',
+#   'outreachRatio',
+#   'overallAngle',
+#   'speed',
+#   'straightness',
+#   'trackLength'
+# )
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  dplyr::filter(
+    # clusters.name != "NONE",
+    # prop %in% propsList
+    ) %>%
+  group_by(pop, prop) %>%
+  # group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+# propsSummary$prop <- factor(
+#   propsSummary$prop, levels = rev(propsList))
+# propsSummary$clusters.name <- factor(
+#   propsSummary$clusters.name, levels = c(
+#     "Directed", "Meandering", "Scanning", "Clustering"
+#   ))
+
+# # sort states
+# propsSummary[!propsSummary$clusters %in% clusterOrder[clusterOrder != 1],]$clusters <- NA
+# # propsSummary$clusters <- factor(propsSummary$clusters, levels = clusterOrder)
+# propsSummary$clusters <- case_match(
+#   as.character(propsSummary$clusters),
+#   c("3") ~ "1",
+#   c("6") ~ "2",
+#   c("0") ~ "3",
+#   c("7") ~ "4",
+#   c("2") ~ "5",
+#   c("5") ~ "6",
+#   c("4") ~ "7",
+# )
+
+# ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
+# ggplot(propsSummary, aes(as.factor(clusters), prop)) +
+ggplot(propsSummary, aes(pop, prop)) +
+         # dplyr::filter(!str_detect(prop, "live.cell")), aes(pop, prop)) +
+         # dplyr::filter(!clusters %in% c(7)) %>%
+         # drop_na(clusters), aes(clusters, prop)) +
+         # drop_na(clusters.name), aes(clusters.name, prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4.5, height = 6)
+# ggsave(file.path(anaDir, "clusters_heat_crop.pdf"), width = 3.2, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
+```
+
+```{r fig_aniso, fig.height=4, fig.width=12}
+# plot vessel measurements for each type
+vesselMeasures <- colnames(exp.info)[!colnames(exp.info) %in% c("uID", "DTx")]
+
+datToPlot <- exp.info %>%
+  pivot_longer(cols = vesselMeasures,
+               names_to = "measure", values_to = "value")
+
+ggplot(datToPlot, aes(DTx, value)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  facet_wrap(.~measure, scales = "free", nrow = 2) +
+  theme(legend.position = "bottom") +
+  scale_color_brewer(palette = "Set1") +
+  expand_limits(y = 0)
+  # scale_color_manual(values = c("#327EBA", "#AA1F5E"))
+
+ggsave(file.path(anaDir, "SHG.pdf"), height = 4, width = 12)
+```
+
+```{r}
+# plot quiver
+coords <- lapply(uns, function(x) {
+  lapply(x, function(y) {
+    coords <- data.frame(
+      y = as.vector(y$ilee_coor_list[1,,,1]),
+      x = as.vector(y$ilee_coor_list[1,,,2])
+    )
+    u <- as.vector(y$ilee_eigval[1,,,2]) * as.vector(y$ilee_eigvec[1,,,2,1])
+    v <- as.vector(y$ilee_eigval[1,,,1]) * as.vector(y$ilee_eigvec[1,,,1,1])
+    
+    list(coords = coords, u = u, v = v)
+  })
 })
 ```
 
+```{r}
+# round datapoints
+aRad <- 25
+tracksInfo[, centroid_y_tile := round(centroid_y/aRad) * aRad]
+tracksInfo[, centroid_x_tile := round(centroid_x/aRad) * aRad]
+           
+# to which anisotropy does the track belong to?
+coordMappingsList <- list()
+
+for (xUID in unique(tracksInfo$uID)) {
+  for (xCellType in unique(tracksInfo$cell_type)) {
+    # can you calculate the anisotropy of local track/fibre?
+    boxAnisotropy <- abs(uns$SHG[[xUID]]$ilee_eigval[1,,,1] - uns$SHG[[xUID]]$ilee_eigval[1,,,2])
+    localLength <- uns$SHG[[xUID]]$ilee_box_total_length
+    localAnisotropy <- boxAnisotropy / localLength[1,,]
+    
+    coordMapping <- tracksInfo[uID == xUID & cell_type == xCellType] %>%
+      left_join(coords$SHG[[xUID]]$coords %>% tibble::rownames_to_column(),
+                by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))
+    
+    matLocalAniso <- as.vector(localAnisotropy)[as.integer(coordMapping$rowname)]
+    
+    matA <- matrix(c(
+      coords$SHG[[xUID]]$u[as.integer(coordMapping$rowname)],
+      coords$SHG[[xUID]]$v[as.integer(coordMapping$rowname)]
+    ), ncol = 2)
+    
+    matB <- matrix(c(
+      coordMapping$x,
+      coordMapping$y
+    ), ncol = 2)
+    
+    matAngles <- c()
+    matAniso <-  c()
+    for (i in seq(nrow(matA))) {
+      matAngles <- c(matAngles, matlib::angle(as.vector(matA[i, ]), as.vector(matB[i, ]))[1])
+      # matAniso <- c(matAniso, norm(matA[i, ], type = "2"))
+      matAniso <- c(matAniso, matLocalAniso[i])
+    }
+    
+    coordMapping$angle <- matAngles
+    coordMapping$aniso <- matAniso
+    coordMapping <- as.data.table(coordMapping)
+    
+    # difference cannot be more than 90 DEG
+    coordMapping[angle > 90, angle := 180 - angle]
+    
+    coordMappingsList[[paste(xUID, xCellType, sep = ".")]] <- copy(coordMapping)
+  }
+}
+
+coordMappings <- rbindlist(coordMappingsList)
+```
+
+```{r fig_angles, fig.height=4, fig.width=18}
+# now plot out
+# datToPlot <- coordMappingsTotal %>%
+#   group_by(uID, type, bootID) %>%
+#   summarise(mean = mean(angle, na.rm = TRUE)) %>%
+#   left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean, color = type)) +
+# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(DTx, angle)) +
+ggplot(coordMappings %>% left_join(clustDT) %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(DTx, angle)) +
+# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, angle)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 1) +
+  geom_violin(scale = "width") +
+  # geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black")
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
+  ylim(0, 100) +
+  # facet_grid(.~cell_type)
+  facet_wrap(pop~cell_type, nrow = 1)
+
+# ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
+# ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
+
+# save as CSV
+# write.csv(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
+```
+
+```{r fig_aniso, fig.height=4, fig.width=18}
+# now plot out
+# datToPlot <- coordMappingsTotal %>%
+#   group_by(uID, type, bootID) %>%
+#   summarise(mean = mean(angle, na.rm = TRUE)) %>%
+#   left_join(exp.info)
+
+# ggplot(datToPlot, aes(Region, mean, color = type)) +
+# ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(DTx, aniso)) +
+ggplot(coordMappings %>% left_join(clustDT) %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(DTx, aniso)) +
+# ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, aniso)) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 1) +
+  geom_violin(scale = "width") +
+  # geom_jitter(width = 0.2) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.20), alpha = 0.1) +
+  # stat_summary(fun=mean, geom="point", size=8, shape=18, color="black")
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
+  ylim(0, 1) +
+  # facet_grid(.~cell_type)
+  facet_wrap(pop~cell_type, nrow = 1)
+  # facet_grid(.~cell_type+uID)
+
+# ggsave(file.path(anaDir, "track_aniso.png"), height = 3, width = 3)
+# ggsave(file.path(anaDir, "track_aniso_boot.png"), height = 3, width = 4)
+```
+
+```{r fig_flows, fig.height=10, fig.width=10}
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  for (xValueName in unique(popDT$value_name)) {
+    p1 <- ggplot(popDT[uID == x$getUID() & value_name == xValueName]) + 
+      # scale_color_brewer(palette = "Set1") +
+      theme_classic() +
+      plotThemeDark() +
+      coord_fixed() +
+      xlim(0, x$omeXMLPixels()$SizeX) +
+      ylim(x$omeXMLPixels()$SizeY, 0) +
+      theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none"
+      ) 
+    
+    xCoords <- coords$OTI.tracks[[x$getUID()]]
+    zCoords <- coords$gBT.tracks[[x$getUID()]]
+    yCoords <- coords$SHG[[x$getUID()]]
+    
+    # if (all(c(!is.null(xCoords), !is.null(yCoords))))
+    if (all(c(!is.null(yCoords))))
+      p1 <- p1 + 
+        # # geom_path(aes(centroid_x, centroid_y, group = track_id, colour = as.factor(track_id)),
+        geom_path(aes(centroid_x, centroid_y, group = track_id),
+          # color = "#AA1F5E", linewidth = 1, alpha = 1) +
+          color = "white", linewidth = 1, alpha = 1) +
+          # linewidth = 2, alpha = 1) +
+        ggquiver::geom_quiver(
+          data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u, v = yCoords$v), color = "#4682b4") 
+        # ggquiver::geom_quiver(
+        #   data = zCoords$coords, aes(x = x, y = y, u = -zCoords$u, v = zCoords$v), color = "white") +
+        # ggquiver::geom_quiver(
+        #   data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "#AA1F5E")
+    
+    y <- exp.info[uID == x$getUID()]
+    
+    # ggsave(file.path(anaDir, "flows", paste0(y$DTx, "-", xValueName, "-", x$getUID(), ".pdf")), plot = p1, height = 8, width = 8)
+    ggsave(file.path(anaDir, "flows", paste0(x$getUID(), "-", y$DTx, "-", xValueName, ".pdf")), plot = p1, height = 8, width = 8)
+    # ggsave(file.path(anaDir, "flows-all", paste0(x$getUID(), "-", y$DTx, "-", xValueName, ".pdf")), plot = p1, height = 8, width = 8)
+  }
+}
+
+# ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", cciaObj$getUID(), ".pdf")), height = 8, width = 8)
+```
+
+```{r}
+# get angles relative to SHG
+coords.i <- "SHG"
+vecDiffs <- list()
+
+for (i in names(coords)[names(coords) != coords.i]) {
+  vecDiffs[[i]] <- list()
+  x <- coords[[i]]
+    
+  for (j in names(x)) {
+    if (!is.null(coords[[coords.i]][[j]]) > 0) {
+      for (k in seq(length(x[[j]]$u))) {
+        matA <- matrix(c(coords[[coords.i]][[j]]$u[[k]], coords[[coords.i]][[j]]$v[[k]]), nrow = 2)
+        matB <- matrix(c(x[[j]]$u[[k]], x[[j]]$v[[k]]), nrow = 2)
+        vecDiffs[[i]][[j]] <- c(vecDiffs[[i]][[j]], 180 - matlib::angle(as.vector(matA), as.vector(matB)))
+      }
+    }
+  }
+}
+```
+
+```{r}
+# plot correlation between fibres and tracks
+# https://stackoverflow.com/a/39923381
+structNames <- names(coords)[names(coords) != coords.i]
+
+# go through images
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  i <- x$getUID()
+  
+  for (xValueName in unique(popDT$value_name)) {
+    xTrackName <- paste0(xValueName, ".tracks")
+    
+    diffsDT <- as.data.table(cbind(coords[[xTrackName]][[i]]$coords, vecDiffs[[xTrackName]][[i]]))
+    diffsDT[is.na(diffsDT), ] <- 0 
+    setnames(diffsDT, "vecDiffs[[xTrackName]][[i]]", xTrackName)
+    # diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = xTrackName]
+    # diffsDT[fibres == 0, max := NA]
+    
+    p1 <- ggplot(diffsDT, aes(x, y)) +
+      theme_classic() +
+      plotThemeDark() +
+      coord_fixed() +
+      xlim(-10, x$omeXMLPixels()$SizeX + 10) +
+      ylim(x$omeXMLPixels()$SizeY + 10, -10) +
+      theme(
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.line = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        legend.position = "none"
+      ) +
+      geom_tile(aes(fill = get(xTrackName)), colour = "black", size = 0.5) +
+      # viridis::scale_fill_viridis(
+      #   breaks = c(0, 180), labels = c(0, 180), na.value = "black") +
+      scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 90) +
+      # ggquiver::geom_quiver(
+      #   data = coords$IJ.manual.tracks[[i]]$coords, aes(
+      #     x = x, y = y, u = -coords$IJ.manual.tracks[[i]]$u, v = coords$IJ.manual.tracks[[i]]$v),
+      #   color = "white", size = 1)
+      geom_path(data = popDT[uID == i & value_name == xValueName],
+                aes(centroid_x, centroid_y, group = track_id),
+        # color = "#AA1F5E", linewidth = 1, alpha = 1) +
+        color = "black", linewidth = 1, alpha = 1)
+        # linewidth = 2, alpha = 1) +
+    
+    y <- exp.info[uID == x$getUID()]
+        
+    ggsave(file.path(anaDir, "angle-diff", paste0(x$getUID(), "-", y$DTx, "-", xValueName, ".pdf")),
+         height = 10, width = 10, plot = p1)
+  }
+}
+```
 
 ```{r}
 # HMM

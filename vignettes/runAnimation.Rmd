@@ -26,7 +26,7 @@ viewer$initNapari()
 generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
                            splitTracks = NULL, splitPops = NULL, matchChannels = FALSE, fps = 10,
                            generateMovie = TRUE, tracksBlending = "additive", pointsSize = 8,
-                           showTracks = TRUE) {
+                           showTracks = TRUE, valueName = NULL) {
   # go through images and save movies
   for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
     i <- x$getUID()
@@ -62,7 +62,7 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
     
     # open image
     viewer$openImage(
-      x$imFilepath(),
+      x$imFilepath(valueName = valueName),
       imChannelNames = imChannelNames,
       show3D = TRUE,
       layersVisible = layersVisible,
@@ -161,6 +161,29 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
     }
   }
 }
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N058/ANALYSIS/CECELIA"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "8BR53W", uID = "6p8l06", versionID = 1, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+channelsToShow <- list(
+  "one" = "cyan",
+  "two" = "gray",
+  "three" = "magenta",
+  "four" = "yellow"
+  )
+fileAttrs <- c("DTx")
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, c(), fileAttrs,
+               # generateMovie = TRUE, valueName = NULL)
+               generateMovie = TRUE, valueName = "default")
 ```
 
 

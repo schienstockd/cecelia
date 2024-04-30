@@ -139,7 +139,8 @@ def find_populations(
   axis = 'channels', to_median = False, max_fraction = 0,
   percentile = cfg.data['images']['normalise']['percentile'],
   percentile_bottom = 0, create_umap = True,
-  paga_threshold = 0.1, use_paga = False, transformation = 'NONE', log_base = 0):
+  paga_threshold = 0.1, use_paga = False, transformation = 'NONE', log_base = 0,
+  correct_batch = None):
   # transform data
   apply_transform(adata, transformation = transformation, log_base = log_base)
       
@@ -150,6 +151,11 @@ def find_populations(
     max_fraction = max_fraction,
     percentile = percentile,
     percentile_bottom = percentile_bottom)
+    
+  # run batch effect
+  if correct_batch is not None:
+    if correct_batch == 'combat':
+      sc.pp.combat(adata, key = 'uID')
   
   # run umap and leiden
   # sc.pp.pca(adata)

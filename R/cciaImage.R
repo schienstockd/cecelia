@@ -730,7 +730,7 @@ CciaImage <- R6::R6Class(
             tracks, eval(parse(text = measure.x)),
             result.name = measure.x, idcol = "cell_type", ...)
         }
-
+        
         if (all(lengths(tracks.DTs) > 0))
           tracksMeasures <- Reduce(function(...) merge(..., all = TRUE), tracks.DTs)
       }
@@ -1658,13 +1658,15 @@ CciaImage <- R6::R6Class(
           }
         }
         
-        # make sure that pop levels are ok
-        if (is.factor(popDT[, pop]))
-          popDT[, pop := droplevels(pop)]
-        
-        # replace NA with 0
-        if (replaceNA == TRUE)
-          popDT[is.na(popDT)] <- 0
+        if (!is.null(popDT)) {
+          # make sure that pop levels are ok
+          if (is.factor(popDT[, pop]))
+            popDT[, pop := droplevels(pop)]
+          
+          # replace NA with 0
+          if (replaceNA == TRUE)
+            popDT[is.na(popDT)] <- 0
+        }
         
         return(popDT)
       } else {

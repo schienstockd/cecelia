@@ -474,57 +474,81 @@ def af_correct_channel(
   data, channel_idx, correction_channel_idx, dim_utils,
   channel_percentile = 80, correction_percentile = 40,
   gaussian_sigma = 1, apply_gaussian = True, use_dask = True,
-  correction_mode = 'divide', median_filter = 0, generate_inverse = False):
+  correction_mode = 'divide', median_filter = 0, generate_inverse = False,
+  summary_mode = 'maximum', summary_percentile = 75, correction_range = (1, 99)):
   # get slices to access data
   slices = dim_utils.create_channel_slices(channel_idx)
 
   # create correction image
-  correction_slices = dim_utils.create_channel_slices(correction_channel_idx[0])
-
-  # create copy
-  correction_im = copy(data[correction_slices])
-
-  if len(correction_channel_idx) > 1:
-    for x in correction_channel_idx[1:]:
-      correction_slices = dim_utils.create_channel_slices(x)
-      correction_im = da.maximum(correction_im, data[correction_slices])
+  correction_im = da.stack(
+    [data[dim_utils.create_channel_slices(x)] for x in correction_channel_idx],
+    axis = 0)
+  
+  if summary_mode == 'percentile':
+    # correction_im = da.percentile(correction_im, summary_percentile, axis = 0)
+    correction_im = correction_im.map_blocks(
+      percentile, q = summary_percentile, axis = 0, drop_axis = 0)
+  else:
+    correction_im = da.max(correction_im, axis = 0)
 
   # subtract background
   if use_dask is True:
-    cleaned_image = data[slices].map_blocks(
-      subtract_background,
-      percentile_min = channel_percentile,
-      dtype = '>u2')
-
-    cleaned_correction = correction_im.map_blocks(
-      subtract_background,
-      percentile_min = correction_percentile,
-      dtype = '>u2')
+    if channel_percentile > 0:
+      cleaned_image = data[slices].map_blocks(
+        subtract_background,
+        percentile_min = channel_percentile,
+        dtype = '>u2')
+    else:
+      cleaned_image = data[slices]
+    
+    if correction_percentile > 0:
+      cleaned_correction = correction_im.map_blocks(
+        subtract_background,
+        percentile_min = correction_percentile,
+        dtype = '>u2')
+    else:
+      cleaned_correction = correction_im
   else:
     # this will cause the percentile to be calculated
     # on the whole image rather than individual blocks
     # this should help to alleviate the flickering
     # in the signal when correcting
-    cleaned_image = subtract_background(
-      data[slices].compute(),
-      percentile_min = channel_percentile)
+    if channel_percentile > 0:
+      cleaned_image = subtract_background(
+        data[slices].compute(),
+        percentile_min = channel_percentile)
+        
+      cleaned_image = da.from_array(
+        cleaned_image, chunks = data[slices].chunksize)
+    else:
+      cleaned_image = data[slices]
 
-    cleaned_correction = subtract_background(
-      correction_im.compute(),
-      percentile_min = correction_percentile)
+    if correction_percentile > 0:
+      cleaned_correction = subtract_background(
+        correction_im.compute(),
+        percentile_min = correction_percentile)
+        
+      cleaned_correction = da.from_array(
+        cleaned_correction, chunks = data[slices].chunksize)
+    else:
+      cleaned_correction = correction_im
 
-    # create dask arrays
-    cleaned_image = da.from_array(
-      cleaned_image, chunks = data[slices].chunksize)
-    cleaned_correction = da.from_array(
-      cleaned_correction, chunks = data[slices].chunksize)
-
-    cleaned_image.astype('>u2')
-    cleaned_correction.astype('>u2')
+    # cleaned_image = cleaned_image.astype('>u2')
+    # cleaned_correction = cleaned_correction.astype('>u2')
 
   # remove AF from channel
   if correction_mode == 'divide':
     corrected_data = (cleaned_image + 1) / (cleaned_correction + 1)
+    
+    # normalise and rescale
+    corr_rescale_factor = np.iinfo(cleaned_image.dtype).max
+    corr_min = da.percentile(corrected_data.ravel(), correction_range[0])
+    corr_max = da.percentile(corrected_data.ravel(), correction_range[1])
+    corrected_data = ((corrected_data - corr_min) / (corr_max - corr_min)) * corr_rescale_factor
+    
+    # adjust
+    corrected_data[corrected_data < 0] = 0
+    corrected_data[corrected_data > corr_rescale_factor] = corr_rescale_factor
   else:
     corrected_data = cleaned_image
 
@@ -595,10 +619,15 @@ def subtract_background(array, percentile_min = 80):
 
   return array
 
+# get percentile from axis
+def percentile(a, q = 80, axis = 0):
+  return np.percentile(a, q, axis = axis)
+
 """
 Correct autofluoresence of image for multiple channels
 """
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
+# def af_correct_image(input_image, af_combinations, dim_utils,
                      gaussian_sigma = 1, use_dask = True,
                      apply_gaussian = True, apply_gaussian_to_others = True):
   # create channel list
@@ -642,6 +671,9 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
         channel_percentile = x['channelPercentile'],
         correction_percentile = x['correctionPercentile'],
         correction_mode = x['correctionMode'],
+        summary_mode = x['summaryMode'],
+        summary_percentile = x['summaryPercentile'],
+        correction_range = (x['correctionMin'], x['correctionMax']),
         # TODO is there a good way to correct for SHG?
         median_filter = x['medianFilter'],
         generate_inverse = x['generateInverse'],

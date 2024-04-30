@@ -26,7 +26,7 @@ def run(params):
   resolution = script_utils.get_param(params, 'resolution', default = 1)
   merge_umap = script_utils.get_param(params, 'mergeUmap', default = True)
   cluster_channels = script_utils.get_param(params, 'clusterChannels', default = {})
-  object_measures = script_utils.get_param(params, 'objectMeasures', default = {})
+  object_measures = script_utils.get_param(params, 'objectMeasures', default = [])
   pop_type = script_utils.get_param(params, 'popType', default = None)
   pops_to_cluster = script_utils.get_param(params, 'popsToCluster', default = [])
   keep_pops = script_utils.get_param(params, 'keepPops', default = False)
@@ -36,32 +36,24 @@ def run(params):
   normalise_percentile = script_utils.get_param(params, 'normalisePercentile', default = 100)
   normalise_percentile_bottom = script_utils.get_param(params, 'normalisePercentileBottom', default = 0)
   normalise_individually = script_utils.get_param(params, 'normaliseIndividually', default = False)
+  correct_batch = script_utils.get_param(params, 'correctBatch', default = False)
   intensity_measure = script_utils.get_param(params, 'intensityMeasure', default = 'mean')
   transformation = script_utils.get_param(params, 'transformation', default = 'NONE')
   log_base = script_utils.get_param(params, 'logBase', default = 10)
+  paga_threshold = script_utils.get_param(params, 'pagaThreshold', default = 0.1)
+  use_paga = script_utils.get_param(params, 'usePaga', default = True)
   uIDs = script_utils.get_param(params, 'uIDs', default = [])
   
-  # prepare cluster channels
-  # should be a dict of channel types with lists
-  column_names = []
-
-  logfile_utils.log(cluster_channels)
-  logfile_utils.log(object_measures)
-
-  for i, x in cluster_channels.items():
-    # get column names
-    column_names += [f'{i}_{intensity_measure}_intensity_{y}' if i != 'base' else f'{intensity_measure}_intensity_{y}' for y in x['channels']]
-  
-  # add object measurements to column names
-  column_names += object_measures
-  
-  logfile_utils.log(f'>> Find clusters for {column_names} at {resolution}')
+  logfile_utils.log(f'>> Find clusters at {resolution}')
   logfile_utils.log(f'>> Normalise by {normalise_percentile} with {normalise_axis} for individual images ({normalise_individually})')
   logfile_utils.log(f'>> Transform by {transformation}')
   logfile_utils.log(f'>> Normalise to median {normalise_to_median}')
   logfile_utils.log(f'>> Create UMAP {merge_umap}')
 
   image_task_dirs = dict()
+
+  # remember cluster channel mapping
+  cluster_channels_map = dict()
 
   # get label properties from uIDs if running on set
   if len(uIDs) > 0:
@@ -72,10 +64,31 @@ def run(params):
 
     # make task dirs
     task_dir_split = task_dir.split(os.sep)
-
+    
     # get dataframes
     for x in uIDs:
       logfile_utils.log(f'> Get data for {x} with {normalise_axis}')
+      
+      # prepare cluster channels
+      # should be a dict of channel types with lists
+      column_names = []
+      channel_columns = []
+      
+      for j, y in cluster_channels[x].items():
+        # get column names
+        channel_columns += [f'{j}_{intensity_measure}_intensity_{z}' if j != 'base' else f'{intensity_measure}_intensity_{z}' for z in y['channels']]
+      
+      # set cluster map
+      cluster_channels_map[x] = {y: f'intensity-{j}' for j, y in enumerate(channel_columns)}
+      
+      # make sure object measures is a list
+      if len(object_measures) == 0:
+        object_measures = list()
+      
+      # add object measurements to column names
+      column_names = channel_columns + object_measures
+      
+      logfile_utils.log(f'> {column_names}')
       
       # create task directory
       task_dir_split[-1] = x
@@ -93,6 +106,9 @@ def run(params):
         normalise_percentile = normalise_percentile if normalise_individually is True else 0,
         normalise_percentile_bottom = normalise_percentile_bottom if normalise_individually is True else 0
         )
+        
+      # rename channel columns
+      image_df.rename(columns = cluster_channels_map[x], inplace = True)
       
       # append
       image_dfs.append(image_df)
@@ -110,12 +126,12 @@ def run(params):
     adata = LabelPropsUtils(task_dir)\
       .label_props(image_df, obs_cols = ['uID', 'label'])\
       .as_adata()
-  else:
-    # run clustering on single image
-    adata, max_clusters = get_adata(
-      task_dir, value_name, column_names, logfile_utils,
-      pops_to_cluster = pops_to_cluster, pop_type = pop_type,
-      keep_pops = keep_pops)
+  # else:
+  #   # run clustering on single image
+  #   adata, max_clusters = get_adata(
+  #     task_dir, value_name, column_names, logfile_utils,
+  #     pops_to_cluster = pops_to_cluster, pop_type = pop_type,
+  #     keep_pops = keep_pops)
   
   logfile_utils.log(f'>> increase cluster numbering by {max_clusters}')
   logfile_utils.log(f'>> find populations')
@@ -130,9 +146,12 @@ def run(params):
     max_fraction = max_fraction,
     percentile = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile,
     percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom,
-    create_umap = merge_umap
+    correct_batch = correct_batch,
+    create_umap = merge_umap,
+    paga_threshold = paga_threshold,
+    use_paga = use_paga
     )
-    
+
   logfile_utils.log(f'>> save back')
 
   # save data
@@ -142,6 +161,10 @@ def run(params):
 
       # filter by uID
       image_adata = adata[adata.obs['uID'] == i]
+      
+      # rename columns back
+      channel_map_inv = {y: j for j, y in cluster_channels_map[i].items()}
+      image_adata.var_names = [channel_map_inv[y] if y in channel_map_inv.keys() else y for y in image_adata.var_names]
 
       # remove uID
       image_adata.obs.drop('uID', axis = 1, inplace = True)
@@ -154,13 +177,13 @@ def run(params):
         image_adata.write_h5ad(os.path.join(
           x, 'labelProps', f'{value_name}.clust.h5ad'))
           
-  else:
-    if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-      merge_new_adata(adata, task_dir, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
-        task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
-    else:
-      adata.write_h5ad(os.path.join(
-        task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
+  # else:
+  #   if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
+  #     merge_new_adata(adata, task_dir, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
+  #       task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
+  #   else:
+  #     adata.write_h5ad(os.path.join(
+  #       task_dir, 'labelProps', f'{value_name}.clust.h5ad'))
 
   # close
   adata.file.close()

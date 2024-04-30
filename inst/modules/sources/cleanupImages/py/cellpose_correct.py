@@ -75,6 +75,12 @@ def run(params):
     
     # get slices for channels
     slices = list()
+    
+    # slices = slice_utils.create_slices(
+    #   zarr_shape, self.dim_utils, self.block_size, self.overlap,
+    #   block_size_z = self.block_size_z, overlap_z = self.overlap_z,
+    #   timepoints = self.timepoints, integrate_time = self.integrate_time)
+      
     for j in x['modelChannels']:
       slices.append(dim_utils.create_channel_slices(channel = j))
     

@@ -92,11 +92,12 @@ def run(params):
       im_new = (((im_new - im_min) / (im_max - im_min)) * 2**16)
       im = zarr_utils.fortify(im_new.astype(np.uint16))
     else:
-      im = zarr_utils.fortify(im_new)
+      im = zarr_utils.fortify(im)
     
     # save back
     tiff_utils.save_as_tiff(
-      im_path = os.path.join(ori_path_info.parent, f'{ori_path_info.stem}_core{i:03d}{ori_path_info.suffix}'),
+      # im_path = os.path.join(ori_path_info.parent, f'{ori_path_info.stem}_core{i:03d}{ori_path_info.suffix}'),
+      im_path = os.path.join(ori_path_info.parent, f'{ori_path_info.stem}_core{i:03d}.tif'),
       im_data = im,
       physical_sizes = im_res_size,
       physical_units = im_res_unit,
