@@ -45,7 +45,7 @@ HPC_CONF <-  list(
       numGPUperTask = 1,
       memory = 50,
       walltime = "00-01:00:00",
-      projectPartitions = "physical",
+      projectPartitions = "cascade,sapphire",
       # projectPartitions = "shortgpgpu,gpgpu",
       projectID = "punim1124",
       # projectID = "punim1031",
@@ -140,16 +140,21 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
 )
 
-channelNames <- sapply(
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c("1I5oli")]
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  channelNames <- sapply(
   xml2::xml_attrs(xml2::xml_find_all(
-    cciaObj$omeXML(), cciaObj$omeXMLPath("//Image//Pixels//Channel"))),
+    x$omeXML(), x$omeXMLPath("//Image//Pixels//Channel"))),
   function(x) {x[[2]]})
 
-# cciaObj$setImChannelNames(channelNames, valueName = "default")
-# cciaObj$saveState()
+  x$setImChannelNames(channelNames, valueName = "default")
+  x$saveState()
+}
 ```
 
 ```{r}
@@ -203,53 +208,60 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "YuX8GU", versionID = versionID, initReactivity = FALSE # Set
-  # pID = pID, uID = "Ksflg7", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
 )
 
-imChannels <- unlist(cciaObj$imChannelNames())
-numChannels <- length(imChannels)
-seqChannels <- seq(numChannels) - 1
-names(seqChannels) <- seqChannels
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[uIDs %in% c("Rl72En", "lNNoqO", "J7z78G", "CcIXqP", "7iyMr9")]
 
-# prepare af combinations
-afCombinations <- lapply(seqChannels, function(x) {
-  list(
-    # divisionChannels = unname(seqChannels[seqChannels != x]),
-    divisionChannels = unname(seqChannels),
-    channelPercentile = 0,
-    correctionPercentile = 0,
-    correctionMode = 'divide',
-    summaryMode = 'percentile',
-    # summaryPercentile = 75,
-    summaryPercentile = 90,
-    correctionMin = 0.2,
-    correctionMax = 99.8,
-    generateInverse = FALSE,
-    medianFilter = 0,
-    topHatRadius = 0,
-    rollingBallRadius = 0,
-    rollingBallPadding = 0
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  print(paste(">>", x$getUID()))
+  
+  imChannels <- unlist(x$imChannelNames())
+  numChannels <- length(imChannels)
+  seqChannels <- seq(numChannels) - 1
+  names(seqChannels) <- seqChannels
+  
+  # prepare af combinations
+  afCombinations <- lapply(seqChannels, function(y) {
+    list(
+      # divisionChannels = unname(seqChannels[seqChannels != x]),
+      divisionChannels = unname(seqChannels),
+      channelPercentile = 0,
+      correctionPercentile = 0,
+      correctionMode = 'divide',
+      summaryMode = 'percentile',
+      summaryPercentile = 75,
+      correctionMin = 0.1,
+      correctionMax = 99.9,
+      generateInverse = FALSE,
+      medianFilter = 0,
+      topHatRadius = 0,
+      rollingBallRadius = 0,
+      rollingBallPadding = 0
+    )
+  })
+  
+  # run task
+  funParams <- list(
+    valueName = "default",
+    ignoreVisibilities = TRUE,
+    afCombinations = afCombinations,
+    applyGaussian = FALSE,
+    applyGaussianToOthers = FALSE
   )
-})
-
-# run task
-funParams <- list(
-  valueName = "default",
-  ignoreVisibilities = TRUE,
-  afCombinations = afCombinations,
-  applyGaussian = FALSE,
-  applyGaussianToOthers = FALSE
-)
-
-task <- cciaObj$runTask(
-  funName = "cleanupImages.afCorrect",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1
-)
+  
+  task <- x$runTask(
+    funName = "cleanupImages.afCorrect",
+    funParams = funParams,
+    envVars = HPC_CONF,
+    hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+    env = "hpc",
+    # env = "local",
+    runInplace = FALSE,
+    taskID = 1
+  )
+}
 ```
 
 

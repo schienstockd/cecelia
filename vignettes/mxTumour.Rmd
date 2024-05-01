@@ -34,20 +34,37 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/ZOE/tumours"
 ```
 
 ```{r}
-# HMM
+# Generate average
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "mmEf5V", versionID = versionID, initReactivity = FALSE, projectsDir = projectsDir
+  pID = pID, uID = "auDGLN", versionID = versionID, initReactivity = FALSE # edge in the middle
 )
 
-testDT <- cciaObj$popDT("clust", pops = c("MHCII+"), includeFiltered = TRUE)
-testDT <- cciaObj$popDT("clust", includeFiltered = TRUE, flushCache = FALSE)
+cciaObj$imChannelNames()
 
-testDT[label == "35265",]
+# run task
+funParams <- list(
+  valueName = "default",
+  ignoreVisibilities = TRUE,
+  avgChannels = list("GR-1"),
+  tileXY = 2000,
+  tileOffset = 1500
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "cleanupImages.avgCorrect",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+  # uIDs = uIDs
+)
 ```
+
 
 ```{r}
 # HMM

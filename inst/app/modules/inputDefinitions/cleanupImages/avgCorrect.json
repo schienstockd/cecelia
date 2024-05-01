@@ -1,0 +1,74 @@
+{
+  "fun": {
+    "avgCorrect": {
+      "category": "Module functions",
+      "label": "Average Correction",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+      "avgChannels": {
+        "type:list": {
+        }
+      },
+			"tileXY": {
+				"type:integer": {
+					"min": 0,
+					"max": 2000,
+					"default": 200
+				}
+			},
+			"tileOffset": {
+				"type:integer": {
+					"min": 0,
+					"max": 400,
+					"default": 20
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+      "avgChannels": {
+        "index": 1,
+        "label": "Channels",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+          "useNames": true
+        }
+      },
+			"tileXY": {
+				"index": 2,
+				"label": "Tile size",
+				"widget:slider": {
+					"step": 20
+				}
+			},
+			"tileOffset": {
+				"index": 2,
+				"label": "Tile offset",
+				"widget:slider": {
+					"step": 5
+				}
+			}
+    },
+    "outputs": {}
+  }
+}
