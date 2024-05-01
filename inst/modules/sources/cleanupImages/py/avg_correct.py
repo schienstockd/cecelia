@@ -67,8 +67,8 @@ def run(params):
       tile_list.append(np.zeros(cur_im.shape, dtype = cur_im.dtype))
       logfile_utils.log(k)
       
-      for i, x in enumerate(range(0 + (z * tile_offset), x_val + (z * tile_offset), tile_xy)):
-        for j, y in enumerate(range(0 + (z * tile_offset), y_val + (z * tile_offset), tile_xy)):
+      for i, x in enumerate(range(0 + (z * tile_offset) - int(tile_xy/2), x_val + (z * tile_offset), tile_xy)):
+        for j, y in enumerate(range(0 + (z * tile_offset) - int(tile_xy/2), y_val + (z * tile_offset), tile_xy)):
           slices[dim_utils.dim_idx('X', ignore_channel = True)] = slice(x, x + tile_xy, 1)
           slices[dim_utils.dim_idx('Y', ignore_channel = True)] = slice(y, y + tile_xy, 1)
           
@@ -81,8 +81,8 @@ def run(params):
       tile_list.append(np.zeros(cur_im.shape, dtype = cur_im.dtype))
       logfile_utils.log(k)
       
-      for i, x in enumerate(range(x_val - (z * tile_offset), 0 - (z * tile_offset), -tile_xy)):
-        for j, y in enumerate(range(y_val - (z * tile_offset), 0 - (z * tile_offset), -tile_xy)):
+      for i, x in enumerate(range(x_val - (z * tile_offset), 0 - (z * tile_offset) - int(tile_xy/2), -tile_xy)):
+        for j, y in enumerate(range(y_val - (z * tile_offset), 0 - (z * tile_offset) - int(tile_xy/2), -tile_xy)):
           slices[dim_utils.dim_idx('X', ignore_channel = True)] = slice(x - tile_xy, x, 1)
           slices[dim_utils.dim_idx('Y', ignore_channel = True)] = slice(y - tile_xy, y, 1)
           
