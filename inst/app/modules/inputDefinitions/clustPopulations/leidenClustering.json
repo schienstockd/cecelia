@@ -207,7 +207,8 @@
         "widget:selection": {
           "items": {
             "No Correction": "NONE",
-            "ComBat": "combat"
+            "ComBat": "combat",
+            "Harmony": "harmony"
           },
           "multiple": false,
           "size": 1
