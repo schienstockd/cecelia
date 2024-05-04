@@ -68,7 +68,8 @@ HPC_CONF <-  list(
 
 ```{r}
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/CODEX_THEO/ANALYSIS"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/CODEX_THEO/ANALYSIS"
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/HuBMAP/ANALYSIS"
 ```
 
 ```{r}
@@ -165,23 +166,32 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
 )
 
-for (x in cciaObj$cciaObjects()) {
+uIDs <- names(cciaObj$cciaObjects())
+uIDs <- uIDs[!uIDs %in% c("1I5oli")]
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   print(paste(">>", x$getUID()))
   
   # if (stringr::str_detect(x$oriFilepath(), "_core[0-9]+"))
   #   omexmlFile <- stringr::str_replace(x$oriFilepath(), "_core[0-9]+\\.tif", "-omexml.txt")
   # else
   #   omexmlFile <- stringr::str_replace(x$oriFilepath(), ".qptiff", "-omexml.txt")
-  omexmlFile <- stringr::str_replace(x$oriFilepath(), ".ome.tif", ".txt")
+  # omexmlFile <- stringr::str_replace(x$oriFilepath(), ".ome.tif", ".txt")
+  omexmlFile <- stringr::str_replace(x$oriFilepath(), ".tif", ".txt")
   
   omeXML <- readLines(omexmlFile, warn = FALSE)
-  channelNames <- stringr::str_extract(omeXML, "(?<=Name=\").+(?=\" )")
-  channelNames <- channelNames[!is.na(channelNames)]
+  # channelNames <- stringr::str_extract(omeXML, "(?<=Name=\").+(?=\" )")
+  # channelNames <- channelNames[!is.na(channelNames)]
   
-  x$setImChannelNames(channelNames, valueName = "default")
+  # correct channel names
+  omeXML[omeXML == "HLADR"] <- "HLA-DR"
+  
+  # x$setImChannelNames(channelNames, valueName = "default")
+  x$setImChannelNames(omeXML, valueName = "default")
   x$saveState()
 }
 ```
@@ -193,11 +203,13 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "1I5oli", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
 )
 
-cciaObj$setImFilepath("ccidAfCorrected.zarr", "afCorrected")
-cciaObj$saveState()
+for (x in cciaObj$cciaObjects()) {
+  x$setImFilepath("ccidAfCorrected.zarr", "afCorrected")
+  x$saveState()
+}
 ```
 
 
@@ -212,7 +224,7 @@ cciaObj <- initCciaObject(
 )
 
 uIDs <- names(cciaObj$cciaObjects())
-uIDs <- uIDs[uIDs %in% c("Rl72En", "lNNoqO", "J7z78G", "CcIXqP", "7iyMr9")]
+# uIDs <- uIDs[uIDs %in% c("Rl72En", "lNNoqO", "J7z78G", "CcIXqP", "7iyMr9")]
 
 for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   print(paste(">>", x$getUID()))
@@ -266,7 +278,8 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
 
 
 ```{r}
-# run clustering
+# set cluster property files
+# TODO why is this not done.. ?
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
@@ -275,23 +288,52 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
 )
 
+uIDs <- exp.info[Include == "Y"]$uID
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
+  x$saveState()
+}
+```
+
+```{r}
+# run clustering
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+)
+
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 ))
 
-uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info[Stain == "A"]$uID
+# uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
+# uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
 # get common channels across images
-channelNames <- sapply(cciaObj$cciaObjects(), function(x) unname(x$imChannelNames()))
+channelNames <- sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
 clusterChannels <- Reduce(intersect, channelNames)
-clusterChannels <- clusterChannels[clusterChannels != "DAPI"]
+# clusterChannels <- channelNames
+# clusterChannels <- clusterChannels[clusterChannels != "DAPI"]
+clusterChannels <- clusterChannels[clusterChannels != "DAPI-02"]
 # clusterChannels <- c("CD3", "CD20")
 
+# exclude channels
 clusterChannels <- clusterChannels[!clusterChannels %in% c(
-  "CD11c", "LamB1", "CD8", "CD206/MRC1", "CD45",
-  # These markers did not seem to have worked
-  "CD56", "vGLUT1", "PSD-95", "FoxP3"
+  # "CD11c", "LamB1", "CD8", "CD206/MRC1", "CD45",
+  # # These markers did not seem to have worked
+  # "CD56", "vGLUT1", "PSD-95", "FoxP3"
+  # "Lyve1", "SMActin", "Vimentin", "ECAD", "CollagenIV", "Podoplanin"
+  "ECAD", "CollagenIV", "IgM"
   )]
 
 # run task
@@ -301,6 +343,7 @@ funParams <- list(
   savePops = FALSE,
   keepPops = FALSE,
   # resolution = 0.2,
+  # resolution = 0.6,
   resolution = 0.6,
   mergeUmap = TRUE,
   normalisePercentile = 99,
@@ -335,32 +378,14 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
-# set cluster property files
-# TODO why is this not done.. ?
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
-)
-
-uIDs <- exp.info[Include == "Y"]$uID
-
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
-  x$saveState()
-}
-```
-
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
 )
 
 # get experimental info
@@ -368,8 +393,11 @@ exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 ))
 
-# regionUIDs <- names(cciaObj$cciaObjects())
-regionUIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Stain == "A"]$uID
+# uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
+uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
 # # get objects from selected set
 # regionsDT <- cciaObj$popDT(
@@ -384,7 +412,7 @@ regionUIDs <- exp.info[Include == "Y"]$uID
 # get objects from selected set
 popDT <- cciaObj$popDT(
   popType = "clust",
-  uIDs = regionUIDs,
+  uIDs = uIDs,
   includeFiltered = TRUE,
   completeDT = TRUE, replaceNA = TRUE
 )
@@ -451,7 +479,7 @@ for (i in markers) {
   print(p1)
 }
 
-# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
 ```
@@ -489,11 +517,13 @@ p1 <- ggplot(
   aes(UMAP_1, UMAP_2)
   ) +
   geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = uID)) +
   # geom_point(aes(color = clusters.name)) +
   # geom_point(aes(color = Treatment)) +
   theme_classic() +
   # scale_color_brewer(name = "Clusters", palette = "Accent") +
-  scale_color_manual(values = colPal) +
+  # scale_color_brewer(name = "Clusters", palette = "Set1") +
+  scale_color_manual(name = "Clusters", values = colPal) +
   # viridis::scale_colour_viridis() +
   theme(
     axis.text = element_text(size = 15),
@@ -515,12 +545,13 @@ p1 <- ggplot(
     label.size = 0.25,
     color = "black"
     ) +
-  guides(colour = guide_legend(override.aes = list(size=5))) 
-  # facet_wrap(.~Treatment, nrow = 1)
+  guides(colour = guide_legend(override.aes = list(size=5)))
+  # facet_wrap(.~uID, nrow = 1)
 
-print(p1)
+# print(p1)
 
-ggsave(file.path(anaDir, "umap.tiff"), width = 4, height = 4)
+ggsave(file.path(anaDir, paste("umap-", cciaObj$getUID(), ".tiff")), width = 4, height = 4, plot = p1)
+# ggsave(file.path(anaDir, "umap-uids.tiff"), width = 30, height = 4, plot = p1)
 # ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
 ```
@@ -586,7 +617,8 @@ for (i in unique(dfToPlot$uID)) {
                # aes(centroid_x, centroid_y, color = as.factor(clusters.name))) +
     theme_classic() +
     plotThemeDark(angle = 0) +
-    geom_point(size = 0.2) +
+    # geom_point(size = 0.4, alpha = 0.4) +
+    geom_point(size = 0.4, alpha = 1) +
     # scale_color_brewer(palette = "Accent", name = "Clusters") +
     scale_color_manual(values = colPal, name = "Pop") +
     theme(
@@ -602,12 +634,13 @@ for (i in unique(dfToPlot$uID)) {
       strip.text = element_text(colour = "black")
     ) + coord_fixed() +
     guides(colour = guide_legend(override.aes = list(size=10)))
-    # facet_wrap(.~uID, nrow = 1)
+    # facet_wrap(.~clusters, ncol = 4)
     # facet_grid(clusters~uID)
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
   
-  ggsave(file.path(anaDir, paste0("clusters_", i, ".tiff")), width = 8, height = 8, plot = p1)
+  ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".tiff")), width = 12, height = 12, plot = p1)
+  # ggsave(file.path(anaDir, "maps", paste0("clusters_facet_", i, ".png")), width = 20, height = 20, plot = p1)
 }
 ```
 
@@ -636,7 +669,8 @@ combinePops <- list(
 )
 
 plotSizes <- list(
-  init = c(12, 10)
+  # init = c(6, 10)
+  init = c(8, 8)
 )
 ```
 
@@ -724,6 +758,99 @@ for (i in names(clust)) {
 }
 ```
 
+```{r}
+# can you cluster and check if there is a difference in R and N?
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+)
+
+regionUIDs <- names(cciaObj$cciaObjects())
+# regionUIDs <- regionUIDs[!regionUIDs %in% c(
+#   # "84kEUg", "LQFVZD", "6zeSiS"
+#   "84kEUg"
+# )]
+
+# get pops
+pops <- cciaObj$popPaths(uIDs = regionUIDs[[1]], popType = "clust", includeFiltered = TRUE)
+pops <- pops[is.na(stringr::str_match(pops, "/"))]
+# pops <- pops[!pops %in% c("none", "other")]
+
+# run task
+funParams <- list(
+  uIDs = names(cciaObj$cciaObjects()),
+  popType = c("clust"),
+  pops = c("root"),
+  # pops = c("CD4"),
+  # pops = pops,
+  objectMeasures = c(),
+  # objectMeasures = c("nuc_Ki.67"),
+  includeCounts = FALSE,
+  # includeCounts = TRUE,
+  # includeTotalCount = FALSE,
+  includeTotalCount = TRUE,
+  colName = "default",
+  valueName = "default",
+  excludeSelfConnections = FALSE,
+  useClusters = TRUE,
+  # useClusters = FALSE,
+  expandPops = FALSE,
+  # numClusters = 10,
+  numClusters = 4,
+  uIDs = regionUIDs
+)
+
+task <- cciaObj$runTask(
+  funName = "clustRegions.kmeansClust",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+)
+
+regionUIDs <- names(cciaObj$cciaObjects())
+# regionUIDs <- regionUIDs[!regionUIDs %in% c(
+#   # "84kEUg", "LQFVZD", "6zeSiS"
+#   "84kEUg"
+# )]
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+# regionUIDs <- names(cciaObj$cciaObjects())
+# regionUIDs <- exp.info[Include == "Y"]$uID
+# regionUIDs <- exp.info[Stain == "A"]$uID
+# regionUIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
+regionUIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
+
+# get objects from selected set
+regionsDT <- cciaObj$popDT(
+  popType = "region",
+  uIDs = regionUIDs,
+  includeFiltered = TRUE,
+  completeDT = TRUE, replaceNA = TRUE,
+  filterMeasures = c("regions")
+)
+```
+
 ```{r fig_regions_im, fig.height=15, fig.width=40}
 # plot out regions
 p1 <- ggplot(regionsDT,
@@ -732,6 +859,7 @@ p1 <- ggplot(regionsDT,
   plotThemeDark(angle = 0) +
   geom_point(size = 0.2) +
   scale_color_brewer(palette = "Set1", name = "Region") +
+  # scale_color_brewer(palette = "Accent", name = "Region") +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
@@ -742,13 +870,73 @@ p1 <- ggplot(regionsDT,
     axis.title.y = element_blank(),
     # legend.position = "none"
     legend.position = "bottom"
-  ) + coord_fixed() + coord_flip() +
+  ) + coord_fixed() +
   guides(colour = guide_legend(override.aes = list(size=10))) +
-  facet_grid(.~uID)
+  facet_wrap(.~uID, ncol = 4)
 
-print(p1)
+ggsave(file.path(anaDir, "maps", paste0("regions_SPLEEN.png")), width = 24, height = 12, plot = p1)
 ```
 
+```{r fig_regions_heat, fig.height=5, fig.width=8}
+colsToShow <- colnames(regionsDT)
+colsToShow <- colsToShow[!colsToShow %in% c("uID", "label", "regions", "pop", "centroid_x", "centroid_y")]
+colsToPlot <- regionsDT %>%
+  pivot_longer(
+    cols = all_of(colsToShow), names_to = "col", values_to = "value"
+    )
+colsToPlot$col <- as.factor(colsToPlot$col)
+colsToPlot$value <- as.numeric(colsToPlot$value)
+
+# show heatmap for clusters
+colsSummary <- colsToPlot %>%
+  drop_na() %>%
+  group_by(col, regions) %>%
+  # group_by(regions, col) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  mutate(norm = (mean - min(mean))/(max(mean) - min(mean))) %>%
+  replace_na(list(norm = 0))
+
+# find order for clusters and markers
+colsMatrix <- colsSummary %>%
+  pivot_wider(names_from = col, values_from = norm, id_cols = regions)
+
+hcClusters <- hclust(dist(as.matrix(colsMatrix %>% dplyr::select(-all_of("regions")))), "ave")
+hcMarkers <- hclust(dist(t(as.matrix(colsMatrix %>% dplyr::select(-all_of("regions"))))), "ave")
+
+clustersOrder <- colsMatrix[["regions"]][hcClusters$order]
+colsOrder <- colnames(colsMatrix)[2:length(colnames(colsMatrix))][hcMarkers$order]
+
+colsSummary[["regions"]] <- factor(colsSummary[["regions"]], levels = clustersOrder)
+
+p1 <- ggplot(colsSummary %>%
+         mutate(
+           # clusters = factor(clusters, levels = clustersOrder),
+           # clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
+           col = factor(col, levels = colsOrder)
+         ), aes(col, regions)) +
+  theme_classic() +
+  # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+  geom_tile(aes(fill = norm), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 20),
+    legend.key.size = unit(10, "mm"),
+    axis.text.y = element_text(size = 20),
+    # axis.text.x = element_text(size = 20),
+    axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+plot(p1)
+
+ggsave(file.path(anaDir, "regions_heat.pdf"), width = 6, height = 3)
+```
 
 ```{r}
 # run clustering
@@ -1145,84 +1333,6 @@ summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <
 # save as csv for plotting in Prism
 write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 # write.csv(summaryDF, file.path(anaDir, "pop_freq.csv"))
-```
-
-```{r}
-# can you cluster and check if there is a difference in R and N?
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
-)
-
-regionUIDs <- names(cciaObj$cciaObjects())
-regionUIDs <- regionUIDs[!regionUIDs %in% c(
-  # "84kEUg", "LQFVZD", "6zeSiS"
-  "84kEUg"
-)]
-
-# get pops
-pops <- cciaObj$popPaths(uIDs = regionUIDs[[1]], popType = "clust", includeFiltered = TRUE)
-pops <- pops[is.na(stringr::str_match(pops, "/"))]
-# pops <- pops[!pops %in% c("none", "other")]
-
-# run task
-funParams <- list(
-  uIDs = names(cciaObj$cciaObjects()),
-  popType = c("clust"),
-  pops = c("root"),
-  # pops = c("CD4"),
-  # pops = pops,
-  objectMeasures = c(),
-  # objectMeasures = c("nuc_Ki.67"),
-  includeCounts = FALSE,
-  # includeCounts = TRUE,
-  # includeTotalCount = FALSE,
-  includeTotalCount = TRUE,
-  colName = "default",
-  valueName = "default",
-  excludeSelfConnections = FALSE,
-  useClusters = TRUE,
-  # useClusters = FALSE,
-  expandPops = FALSE,
-  numClusters = 10,
-  uIDs = regionUIDs
-)
-
-task <- cciaObj$runTask(
-  funName = "clustRegions.kmeansClust",
-  funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
-  taskID = 1
-)
-```
-
-```{r}
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "diRenc", versionID = versionID, initReactivity = FALSE # Set
-)
-
-regionUIDs <- names(cciaObj$cciaObjects())
-regionUIDs <- regionUIDs[!regionUIDs %in% c(
-  # "84kEUg", "LQFVZD", "6zeSiS"
-  "84kEUg"
-)]
-
-# get objects from selected set
-regionsDT <- cciaObj$popDT(
-  popType = "region",
-  uIDs = regionUIDs,
-  includeFiltered = TRUE,
-  completeDT = FALSE, replaceNA = TRUE,
-  filterMeasures = c("regions")
-)
 ```
 
 
