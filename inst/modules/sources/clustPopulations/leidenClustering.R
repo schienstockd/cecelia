@@ -46,6 +46,14 @@ LeidenClustering <- R6::R6Class(
             })
         })
       
+      # use gpu?
+      useGPU <- FALSE
+      
+      if ("useGPU" %in% names(self$envParams()$conf))
+        useGPU <- self$envParams()$conf$useGPU
+      
+      self$writeLog(paste(">> Use GPU", useGPU))
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -68,6 +76,7 @@ LeidenClustering <- R6::R6Class(
         logBase = as.numeric(self$funParams()$logBase),
         pagaThreshold = self$funParams()$pagaThreshold,
         usePaga = self$funParams()$usePaga,
+        useGPU = useGPU,
         uIDs = if ("uIDs" %in% names(self$funParams()))
           self$funParams()$uIDs
         else

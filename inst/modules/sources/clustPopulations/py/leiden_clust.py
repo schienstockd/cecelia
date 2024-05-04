@@ -42,6 +42,7 @@ def run(params):
   log_base = script_utils.get_param(params, 'logBase', default = 10)
   paga_threshold = script_utils.get_param(params, 'pagaThreshold', default = 0.1)
   use_paga = script_utils.get_param(params, 'usePaga', default = True)
+  use_gpu = script_utils.get_param(params, 'useGPU', default = False)
   uIDs = script_utils.get_param(params, 'uIDs', default = [])
   
   logfile_utils.log(f'>> Find clusters at {resolution}')
@@ -136,22 +137,42 @@ def run(params):
   logfile_utils.log(f'>> increase cluster numbering by {max_clusters}')
   logfile_utils.log(f'>> find populations')
   
-  # find populations
-  scanpy_utils.find_populations(
-    adata, resolution,
-    transformation = 'NONE' if len(uIDs) > 0 and normalise_individually is True else transformation,
-    log_base = log_base,
-    axis = normalise_axis,
-    to_median = False if len(uIDs) > 0 and normalise_individually is True else normalise_to_median,
-    max_fraction = max_fraction,
-    percentile = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile,
-    percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom,
-    correct_batch = correct_batch,
-    create_umap = merge_umap,
-    paga_threshold = paga_threshold,
-    use_paga = use_paga
-    )
-
+  # use GPU version?
+  if use_gpu is True:
+    import py.rapid_sc_utils as rsc_utils 
+    
+    # find populations
+    rsc_utils.find_populations(
+      adata, resolution,
+      transformation = 'NONE' if len(uIDs) > 0 and normalise_individually is True else transformation,
+      log_base = log_base,
+      axis = normalise_axis,
+      to_median = False if len(uIDs) > 0 and normalise_individually is True else normalise_to_median,
+      max_fraction = max_fraction,
+      percentile = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile,
+      percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom,
+      correct_batch = correct_batch,
+      create_umap = merge_umap,
+      paga_threshold = paga_threshold,
+      use_paga = use_paga
+      )
+  else:
+    # find populations
+    scanpy_utils.find_populations(
+      adata, resolution,
+      transformation = 'NONE' if len(uIDs) > 0 and normalise_individually is True else transformation,
+      log_base = log_base,
+      axis = normalise_axis,
+      to_median = False if len(uIDs) > 0 and normalise_individually is True else normalise_to_median,
+      max_fraction = max_fraction,
+      percentile = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile,
+      percentile_bottom = 0 if len(uIDs) > 0 and normalise_individually is True else normalise_percentile_bottom,
+      correct_batch = correct_batch,
+      create_umap = merge_umap,
+      paga_threshold = paga_threshold,
+      use_paga = use_paga
+      )
+      
   logfile_utils.log(f'>> save back')
 
   # save data
