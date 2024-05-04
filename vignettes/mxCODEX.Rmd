@@ -367,8 +367,8 @@ funParams <- list(
     base = list(channels = clusterChannels)
   ),
   objectMeasures = list(),
-  usePaga = TRUE,
-  # usePaga = FALSE,
+  # usePaga = TRUE,
+  usePaga = FALSE,
   pagaThreshold = 0.1
 )
 

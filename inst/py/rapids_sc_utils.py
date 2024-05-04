@@ -37,7 +37,7 @@ def find_populations(
     percentile_bottom = percentile_bottom)
   
   # apply PCA
-  # rsc.pp.pca(adata)
+  rsc.pp.pca(adata)
   
   # run batch effect
   if correct_batch is not None:
@@ -53,8 +53,8 @@ def find_populations(
   # reset NaN
   # adata.fillna(0, inplace = True)
   adata.X[np.isnan(adata.X)] = 0
-  rsc.pp.neighbors(adata, use_rep = 'X')
-  # rsc.pp.neighbors(adata)
+  # rsc.pp.neighbors(adata, use_rep = 'X')
+  rsc.pp.neighbors(adata)
   
   if clusterMethod == "leiden":
     rsc.tl.leiden(
