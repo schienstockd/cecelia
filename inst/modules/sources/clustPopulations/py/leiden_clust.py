@@ -139,7 +139,7 @@ def run(params):
   
   # use GPU version?
   if use_gpu is True:
-    import py.rapid_sc_utils as rsc_utils 
+    import py.rapids_sc_utils as rsc_utils 
     
     # find populations
     rsc_utils.find_populations(
