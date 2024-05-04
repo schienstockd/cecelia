@@ -35,11 +35,15 @@ def find_populations(
     max_fraction = max_fraction,
     percentile = percentile,
     percentile_bottom = percentile_bottom)
-    
+  
+  # apply PCA
+  rsc.pp.pca(adata)
+  
   # run batch effect
   if correct_batch is not None:
+    if correct_batch == 'combat':
+      sc.pp.combat(adata, key = 'uID')
     if correct_batch == 'harmony':
-      rsc.pp.pca(adata)
       rsc.pp.harmony_integrate(adata, key = 'uID')
   
   # Use the indicated representation. 'X' or any key for .obsm is valid.

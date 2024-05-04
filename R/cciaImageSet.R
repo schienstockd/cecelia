@@ -306,14 +306,14 @@ CciaImageSet <- R6::R6Class(
           }
         )
       } else {
-        # popDTs <- lapply(
-        popDTs <- parallel::mclapply(
+        popDTs <- lapply(
+        # popDTs <- parallel::mclapply(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
             message(sprintf("[popDT] >> %s", x$getUID()))
             x$popDT(popType = popType, ...)
-          # }
-          }, mc.cores = parallel::detectCores() - 2
+          }
+          # }, mc.cores = parallel::detectCores() - 2
           # }, mc.cores = mc.cores
         )
       }

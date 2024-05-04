@@ -35,7 +35,7 @@ Upload <- R6::R6Class(
       taskVars$fun <- list(
         localFiles = file.path(
           localDir,
-          c(cfg$files$labels, cfg$files$labelProps)),
+          c(cciaConf()$files$labels, cciaConf()$files$labelProps)),
         localDir = localDir,
         remoteDir = remoteDir
       )
@@ -45,7 +45,7 @@ Upload <- R6::R6Class(
       runInplace <- TRUE
       
       self$initLog()
-      self$writeLog(paste("Upload", c(cfg$files$labels, cfg$files$labelProps)))
+      self$writeLog(paste("Upload", c(cciaConf()$files$labels, cciaConf()$files$labelProps)))
       
       taskLauncher$initTask(
         "hpc.upload", taskVars, inplace = runInplace)

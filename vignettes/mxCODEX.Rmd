@@ -319,6 +319,9 @@ uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
+# similar LN
+uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
+
 # get common channels across images
 channelNames <- sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
 clusterChannels <- Reduce(intersect, channelNames)
@@ -343,11 +346,10 @@ funParams <- list(
   savePops = FALSE,
   keepPops = FALSE,
   # resolution = 0.2,
-  # resolution = 0.6,
-  resolution = 0.6,
+  resolution = 0.5,
   mergeUmap = TRUE,
-  normalisePercentile = 99,
-  normalisePercentileBottom = 0.0,
+  normalisePercentile = 99.8,
+  normalisePercentileBottom = 0.2,
   normaliseAxis = "channels",
   # normaliseToMedian = FALSE,
   normaliseToMedian = TRUE,
@@ -356,12 +358,11 @@ funParams <- list(
   transformation = "NONE",
   # transformation = "log",
   logBase = 0,
-  # correctBatch = "combat",
-  correctBatch = "harmony",
+  correctBatch = "combat",
+  # correctBatch = "harmony",
   valueName = "default",
   # valueName = "detailed",
-  # uIDs = uIDs,
-  uIDs = uIDs[1],
+  uIDs = uIDs,
   clusterChannels = list(
     base = list(channels = clusterChannels)
   ),
@@ -389,8 +390,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 # init ccia object
 cciaObj <- initCciaObject(
   # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
-  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
 )
 
 # get experimental info
@@ -400,9 +401,12 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # uIDs <- names(cciaObj$cciaObjects())
 # uIDs <- exp.info[Include == "Y"]$uID
-# uIDs <- exp.info[Stain == "A"]$uID
+uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
-uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
+# uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
+
+# similar LN
+uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
 
 # # get objects from selected set
 # regionsDT <- cciaObj$popDT(
@@ -522,7 +526,7 @@ p1 <- ggplot(
   aes(UMAP_1, UMAP_2)
   ) +
   geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = uID)) +
+  # geom_point(aes(color = uID), alpha = 0.2) +
   # geom_point(aes(color = clusters.name)) +
   # geom_point(aes(color = Treatment)) +
   theme_classic() +
@@ -555,10 +559,10 @@ p1 <- ggplot(
 
 # print(p1)
 
-ggsave(file.path(anaDir, paste("umap-", cciaObj$getUID(), ".tiff")), width = 4, height = 4, plot = p1)
-# ggsave(file.path(anaDir, "umap-uids.tiff"), width = 30, height = 4, plot = p1)
-# ggsave(file.path(anaDir, "umap_coating.tiff"), width = 2, height = 2)
-# ggsave(file.path(anaDir, "umap_coating_treatment.tiff"), width = 4, height = 2.5)
+ggsave(file.path(anaDir, paste0("umap-", cciaObj$getUID(), ".png")), width = 4, height = 4, plot = p1)
+# ggsave(file.path(anaDir, "umap-uids.png"), width = 40, height = 4, plot = p1)
+# ggsave(file.path(anaDir, "umap_coating.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_coating_treatment.png"), width = 4, height = 2.5)
 ```
 
 ```{r fig_pops_im, fig.height=40, fig.width=20}
@@ -593,7 +597,7 @@ p1 <- ggplot(dfToPlot,
     strip.text = element_text(colour = "black")
   ) + coord_fixed() + 
   guides(colour = guide_legend(override.aes = list(size=10))) +
-  facet_wrap(.~uID, nrow = 1)
+  facet_wrap(.~uID, ncol = 4)
   # facet_grid(clusters~uID)
   # facet_grid(clusters.name~uID)
   # ggtitle(i)
@@ -602,9 +606,9 @@ p1 <- ggplot(dfToPlot,
 #   p1 <- p1 + coord_flip()
 # }
 
-print(p1)
+# print(p1)
 
-ggsave(file.path(anaDir, "clusters_im.tiff"), width = 12, height = 5)
+ggsave(file.path(anaDir, "clusters_im.png"), width = 40, height = 20, plot = p1)
 # }
 ```
 
@@ -623,7 +627,7 @@ for (i in unique(dfToPlot$uID)) {
     theme_classic() +
     plotThemeDark(angle = 0) +
     # geom_point(size = 0.4, alpha = 0.4) +
-    geom_point(size = 0.4, alpha = 1) +
+    geom_point(size = 0.1, alpha = 1) +
     # scale_color_brewer(palette = "Accent", name = "Clusters") +
     scale_color_manual(values = colPal, name = "Pop") +
     theme(
@@ -644,7 +648,7 @@ for (i in unique(dfToPlot$uID)) {
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
   
-  ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".tiff")), width = 12, height = 12, plot = p1)
+  ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".png")), width = 12, height = 12, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_facet_", i, ".png")), width = 20, height = 20, plot = p1)
 }
 ```
