@@ -320,7 +320,7 @@ uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
 # similar LN
-uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
+# uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
 
 # get common channels across images
 channelNames <- sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
@@ -349,7 +349,7 @@ funParams <- list(
   resolution = 0.6,
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
-  normalisePercentileBottom = 0.2,
+  normalisePercentileBottom = 0.0,
   normaliseAxis = "channels",
   normaliseToMedian = FALSE,
   # normaliseToMedian = TRUE,
@@ -358,7 +358,8 @@ funParams <- list(
   transformation = "NONE",
   # transformation = "log",
   logBase = 0,
-  correctBatch = "combat",
+  correctBatch = "NONE",
+  # correctBatch = "combat",
   # correctBatch = "harmony",
   valueName = "default",
   # valueName = "detailed",
@@ -642,8 +643,8 @@ for (i in unique(dfToPlot$uID)) {
       # legend.position = "bottom",
       strip.text = element_text(colour = "black")
     ) + coord_fixed() +
-    guides(colour = guide_legend(override.aes = list(size=10)))
-    # facet_wrap(.~clusters, ncol = 4)
+    guides(colour = guide_legend(override.aes = list(size=10))) +
+    facet_wrap(.~clusters, ncol = 4)
     # facet_grid(clusters~uID)
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
@@ -716,6 +717,8 @@ for (i in names(clust)) {
   
   # show heatmap for clusters
   markersSummary <- markersToPlot %>%
+    # !! MANUAL FILTER
+    # dplyr::filter(get(groupVar) != 3) %>%
     drop_na() %>%
     group_by(marker, get(groupVar)) %>%
     summarise(mean = mean(value, rm.na = TRUE)) %>%
