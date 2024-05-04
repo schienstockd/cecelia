@@ -38,10 +38,8 @@ def find_populations(
   # run batch effect
   if correct_batch is not None:
     if correct_batch == 'harmony':
+      rsc.pp.pca(adata)
       rsc.pp.harmony_integrate(adata, key = 'uID')
-  
-  # run umap and leiden
-  # sc.pp.pca(adata)
   
   # Use the indicated representation. 'X' or any key for .obsm is valid.
   # If None, the representation is chosen automatically:
@@ -50,7 +48,8 @@ def find_populations(
   # reset NaN
   # adata.fillna(0, inplace = True)
   adata.X[np.isnan(adata.X)] = 0
-  rsc.pp.neighbors(adata, use_rep = 'X')
+  # rsc.pp.neighbors(adata, use_rep = 'X')
+  rsc.pp.neighbors(adata)
   
   if clusterMethod == "leiden":
     rsc.tl.leiden(
