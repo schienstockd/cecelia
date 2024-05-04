@@ -37,7 +37,7 @@ def find_populations(
     percentile_bottom = percentile_bottom)
   
   # apply PCA
-  rsc.pp.pca(adata)
+  # rsc.pp.pca(adata)
   
   # run batch effect
   if correct_batch is not None:
