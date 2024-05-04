@@ -45,12 +45,12 @@ HPC_CONF <-  list(
       numGPUperTask = 1,
       memory = 50,
       walltime = "00-01:00:00",
-      projectPartitions = "cascade,sapphire",
-      # projectPartitions = "shortgpgpu,gpgpu",
-      projectID = "punim1124",
-      # projectID = "punim1031",
-      useGPU = FALSE
-      # useGPU = TRUE
+      # projectPartitions = "cascade,sapphire",
+      projectPartitions = "gpu-a100,gpu-a100-short",
+      # projectID = "punim1124",
+      projectID = "punim1031",
+      # useGPU = FALSE
+      useGPU = TRUE
     )
   ),
   utils = list(
@@ -356,23 +356,28 @@ funParams <- list(
   transformation = "NONE",
   # transformation = "log",
   logBase = 0,
-  correctBatch = "combat",
+  # correctBatch = "combat",
+  correctBatch = "harmony",
   valueName = "default",
   # valueName = "detailed",
-  uIDs = uIDs,
+  # uIDs = uIDs,
+  uIDs = uIDs[1],
   clusterChannels = list(
     base = list(channels = clusterChannels)
   ),
   objectMeasures = list(),
-  usePaga = TRUE,
+  # usePaga = TRUE,
+  usePaga = FALSE,
   pagaThreshold = 0.1
 )
 
 task <- cciaObj$runTask(
   funName = "clustPopulations.leidenClustering",
   funParams = funParams,
-  env = "local",
-  runInplace = TRUE,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "hpc",
+  runInplace = FALSE,
   taskID = 1
 )
 ```

@@ -68,6 +68,6 @@ def find_populations(
       sc.pl.paga(adata, plot = False, show = False, threshold = paga_threshold)
       
       # then UMAP based on paga
-      sc.tl.umap(adata, init_pos = 'paga')
+      rsc.tl.umap(adata, init_pos = 'paga')
     else:
-      sc.tl.umap(adata)
+      rsc.tl.umap(adata)
