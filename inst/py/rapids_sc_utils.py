@@ -36,13 +36,14 @@ def find_populations(
     percentile = percentile,
     percentile_bottom = percentile_bottom)
   
+  # apply PCA
+  rsc.pp.pca(adata)
+  
   # run batch effect
   if correct_batch is not None:
     if correct_batch == 'combat':
       sc.pp.combat(adata, key = 'uID')
     if correct_batch == 'harmony':
-      # apply PCA before harmony
-      rsc.pp.pca(adata)
       rsc.pp.harmony_integrate(adata, key = 'uID')
   
   # Use the indicated representation. 'X' or any key for .obsm is valid.
@@ -52,8 +53,8 @@ def find_populations(
   # reset NaN
   # adata.fillna(0, inplace = True)
   adata.X[np.isnan(adata.X)] = 0
-  rsc.pp.neighbors(adata, use_rep = 'X')
-  # rsc.pp.neighbors(adata)
+  # rsc.pp.neighbors(adata, use_rep = 'X')
+  rsc.pp.neighbors(adata)
   
   if clusterMethod == "leiden":
     rsc.tl.leiden(
