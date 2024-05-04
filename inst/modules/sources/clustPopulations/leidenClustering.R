@@ -113,7 +113,7 @@ LeidenClustering <- R6::R6Class(
       }
       
       # call python
-      self$pyScript("leiden_clust", params)
+      # self$pyScript("leiden_clust", params)
       
       # TODO set populations by default to all resulting pops if reLeiden is used
       if (self$funParams()$keepPops == TRUE &&
