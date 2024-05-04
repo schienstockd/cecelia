@@ -1,9 +1,10 @@
 import scanpy as sc
 import py.scanpy_utils as scanpy_utils
+import numpy as np
+
 import cupy as cp
 import rapids_singlecell as rsc
 import py.config_utils as cfg
-
 import rmm
 from rmm.allocators.cupy import rmm_cupy_allocator
 
