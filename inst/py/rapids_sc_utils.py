@@ -73,6 +73,11 @@ def find_populations(
       sc.pl.paga(adata, plot = False, show = False, threshold = paga_threshold)
       
       # then UMAP based on paga
-      rsc.tl.umap(adata, init_pos = 'paga')
+      # File "[...]/r-cecelia-env/lib/python3.9/site-packages/cuml/internals/api_decorators.py", line 382, in processor
+      # return init_func(self, *args, **filtered_kwargs)
+      # File "umap.pyx", line 368, in cuml.manifold.umap.UMAP.__init__
+      # TypeError: %d format: a number is required, not str
+      # rsc.tl.umap(adata, init_pos = 'paga')
+      sc.tl.umap(adata, init_pos = 'paga')
     else:
       rsc.tl.umap(adata)

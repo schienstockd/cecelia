@@ -346,13 +346,13 @@ funParams <- list(
   savePops = FALSE,
   keepPops = FALSE,
   # resolution = 0.2,
-  resolution = 0.5,
+  resolution = 0.6,
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0.2,
   normaliseAxis = "channels",
-  # normaliseToMedian = FALSE,
-  normaliseToMedian = TRUE,
+  normaliseToMedian = FALSE,
+  # normaliseToMedian = TRUE,
   # normaliseIndividually = FALSE,
   normaliseIndividually = TRUE,
   transformation = "NONE",
@@ -367,8 +367,8 @@ funParams <- list(
     base = list(channels = clusterChannels)
   ),
   objectMeasures = list(),
-  # usePaga = TRUE,
-  usePaga = FALSE,
+  usePaga = TRUE,
+  # usePaga = FALSE,
   pagaThreshold = 0.1
 )
 
