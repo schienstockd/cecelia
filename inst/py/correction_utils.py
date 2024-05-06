@@ -19,7 +19,7 @@ import py.zarr_utils as zarr_utils
 import py.slice_utils as slice_utils
 
 # will there be a non-prototype version at some point?
-import pyclesperanto_prototype as cle
+# import pyclesperanto_prototype as cle
 
 """
 Get drift correction shift
