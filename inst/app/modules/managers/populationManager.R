@@ -125,6 +125,7 @@ createPopulationManager <- function(
   ### Reactive values
   popTable <- reactiveVal()
   popTableColumns <- reactiveVal()
+  popTableUID <- reactiveVal()
   
   # values for modules to listen on
   deletedPops <- reactiveVal()
@@ -734,12 +735,15 @@ createPopulationManager <- function(
     
     # set pop table columns
     if (!is.null(popTableDF)) {
-      if (is.null(popTableColumns()) || !any(colnames(popTableColumns()) %in% colnames(popTableDF))) {
+      if (is.null(popTableColumns()) ||
+          !any(colnames(popTableColumns()) %in% colnames(popTableDF)) ||
+          popTableUID() != cciaObj()$getUID()) {
         cols <- as.data.frame(
           rep(list(""), length(colnames(popTableDF))))
         colnames(cols) <- colnames(popTableDF)
         
         popTableColumns(cols)
+        popTableUID(cciaObj()$getUID())
       }
     } else {
       popTableColumns(NULL)

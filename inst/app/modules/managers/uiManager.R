@@ -481,8 +481,6 @@ UIManager <- R6::R6Class(
         defaultOptions <- append(defaultOptions, options)
       }
       
-      browser()
-
       datatable(
         if (is.list(datCols)) do.call(cbind, datCols) else datCols,
         options = defaultOptions,
