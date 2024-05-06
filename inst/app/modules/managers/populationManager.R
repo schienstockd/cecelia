@@ -777,7 +777,7 @@ createPopulationManager <- function(
     moduleManagers()$uiManager$dataTable(
       popTableColumns(), options = options, rownames = TRUE, editable = TRUE,
       ordering = tableOpts$ordering, pageLength = tableOpts$pageLength, dom = tableOpts$dom)
-  })
+  }, server = TRUE)
   
   # update table without triggering redraw
   observeEvent(c(

@@ -541,7 +541,10 @@ def af_correct_channel(
     corrected_data = (cleaned_image + 1) / (cleaned_correction + 1)
     
     # normalise and rescale
-    corr_rescale_factor = np.iinfo(cleaned_image.dtype).max
+    if np.issubdtype(cleaned_image, np.integer):
+      corr_rescale_factor = np.iinfo(cleaned_image.dtype).max
+    else:
+      corr_rescale_factor = np.finfo(cleaned_image.dtype).max
     corr_min = da.percentile(corrected_data.ravel(), correction_range[0])
     corr_max = da.percentile(corrected_data.ravel(), correction_range[1])
     corrected_data = ((corrected_data - corr_min) / (corr_max - corr_min)) * corr_rescale_factor

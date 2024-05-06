@@ -44,7 +44,7 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      walltime = "00-01:00:00",
+      walltime = "00-00:01:00",
       # projectPartitions = "cascade,sapphire",
       projectPartitions = "gpu-a100,gpu-a100-short",
       # projectID = "punim1124",
@@ -346,7 +346,7 @@ funParams <- list(
   savePops = FALSE,
   keepPops = FALSE,
   # resolution = 0.2,
-  resolution = 0.6,
+  resolution = 0.4,
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0.0,
@@ -373,16 +373,53 @@ funParams <- list(
   pagaThreshold = 0.1
 )
 
-task <- cciaObj$runTask(
-  funName = "clustPopulations.leidenClustering",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  runInplace = FALSE,
-  taskID = 1
-)
+# go through and cluster individually
+i <- 1
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  funParams$uIDs <- c(x$getUID())
+  
+  task <- cciaObj$runTask(
+    funName = "clustPopulations.leidenClustering",
+    funParams = funParams,
+    envVars = HPC_CONF,
+    hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+    env = "hpc",
+    runInplace = FALSE,
+    taskID = i
+  )
+  
+  i <- i + 1
+}
 ```
+
+```{r}
+# run clustering
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info[Stain == "A"]$uID
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  x$setImAnndataFilepath("default.clust.h5ad")
+  x$valuePartOf("imAnndataFilepath")
+  x$saveState()
+}
+```
+
 
 ```{r}
 devtools::load_all("../")
@@ -405,9 +442,6 @@ exp.info <- as.data.table(cciaObj$summary(
 uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
-
-# similar LN
-uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
 
 # # get objects from selected set
 # regionsDT <- cciaObj$popDT(
@@ -505,63 +539,64 @@ ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
 #   `6` = c(6)
 # )
 
-dfToPlot <- copy(popDT) %>% drop_na(clusters) %>% left_join(exp.info)
-# dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
-
-# get mean positions of clusters
-meanClusterPos <- dfToPlot %>%
-  group_by(clusters) %>%
-  # group_by(clusters.name) %>%
-  summarise(
-    UMAP_1 = mean(UMAP_1),
-    UMAP_2 = mean(UMAP_2)
-  )
-dfToPlot$clusters <- factor(dfToPlot$clusters)
-
-colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
-# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters.name)))
-
-# plot UMAP
-p1 <- ggplot(
-  dfToPlot,
-  aes(UMAP_1, UMAP_2)
-  ) +
-  geom_point(aes(color = clusters)) +
-  # geom_point(aes(color = uID), alpha = 0.2) +
-  # geom_point(aes(color = clusters.name)) +
-  # geom_point(aes(color = Treatment)) +
-  theme_classic() +
-  # scale_color_brewer(name = "Clusters", palette = "Accent") +
-  # scale_color_brewer(name = "Clusters", palette = "Set1") +
-  scale_color_manual(name = "Clusters", values = colPal) +
-  # viridis::scale_colour_viridis() +
-  theme(
-    axis.text = element_text(size = 15),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    legend.justification = "right",
-    # legend.position = "bottom",
-    legend.position = "none",
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank()
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  dfToPlot <- popDT[uID == x$getUID()] %>% drop_na(clusters) %>% left_join(exp.info)
+  # dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+  
+  # get mean positions of clusters
+  meanClusterPos <- dfToPlot %>%
+    group_by(clusters) %>%
+    # group_by(clusters.name) %>%
+    summarise(
+      UMAP_1 = mean(UMAP_1),
+      UMAP_2 = mean(UMAP_2)
+    )
+  dfToPlot$clusters <- factor(dfToPlot$clusters)
+  
+  colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+  # colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters.name)))
+  
+  # plot UMAP
+  p1 <- ggplot(
+    dfToPlot,
+    aes(UMAP_1, UMAP_2)
     ) +
-  geom_label(
-    data = meanClusterPos,
-    aes(label = clusters),
-    # aes(label = clusters.name),
-    label.size = 0.25,
-    color = "black"
-    ) +
-  guides(colour = guide_legend(override.aes = list(size=5)))
-  # facet_wrap(.~uID, nrow = 1)
-
-# print(p1)
-
-ggsave(file.path(anaDir, paste0("umap-", cciaObj$getUID(), ".png")), width = 4, height = 4, plot = p1)
-# ggsave(file.path(anaDir, "umap-uids.png"), width = 40, height = 4, plot = p1)
+    geom_point(aes(color = clusters)) +
+    # geom_point(aes(color = uID), alpha = 0.2) +
+    # geom_point(aes(color = clusters.name)) +
+    # geom_point(aes(color = Treatment)) +
+    theme_classic() +
+    # scale_color_brewer(name = "Clusters", palette = "Accent") +
+    # scale_color_brewer(name = "Clusters", palette = "Set1") +
+    scale_color_manual(name = "Clusters", values = colPal) +
+    # viridis::scale_colour_viridis() +
+    theme(
+      axis.text = element_text(size = 15),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      legend.justification = "left",
+      # legend.position = "bottom",
+      legend.position = "none",
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank()
+      ) +
+    geom_label(
+      data = meanClusterPos,
+      aes(label = clusters),
+      # aes(label = clusters.name),
+      label.size = 0.25,
+      color = "black"
+      ) +
+    guides(colour = guide_legend(override.aes = list(size=5)))
+    # facet_wrap(.~uID, nrow = 1)
+    # facet_wrap(.~uID, ncol = 4)
+  
+  ggsave(file.path(anaDir, paste0("umap-", x$getUID(), ".png")), width = 4, height = 4, plot = p1)
+}
+# ggsave(file.path(anaDir, "umap-uids.png"), width = 15, height = 15, plot = p1)
 # ggsave(file.path(anaDir, "umap_coating.png"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_coating_treatment.png"), width = 4, height = 2.5)
 ```
@@ -643,8 +678,8 @@ for (i in unique(dfToPlot$uID)) {
       # legend.position = "bottom",
       strip.text = element_text(colour = "black")
     ) + coord_fixed() +
-    guides(colour = guide_legend(override.aes = list(size=10))) +
-    facet_wrap(.~clusters, ncol = 4)
+    guides(colour = guide_legend(override.aes = list(size=10)))
+    # facet_wrap(.~clusters, ncol = 4)
     # facet_grid(clusters~uID)
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
@@ -717,8 +752,6 @@ for (i in names(clust)) {
   
   # show heatmap for clusters
   markersSummary <- markersToPlot %>%
-    # !! MANUAL FILTER
-    # dplyr::filter(get(groupVar) != 3) %>%
     drop_na() %>%
     group_by(marker, get(groupVar)) %>%
     summarise(mean = mean(value, rm.na = TRUE)) %>%
@@ -762,6 +795,7 @@ for (i in names(clust)) {
       strip.background = element_blank(),
       strip.text.x = element_blank()
       ) +
+    facet_wrap(.~uID, ncol = 4)
     xlab("") + ylab("")
   plot(p1)
   
