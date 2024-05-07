@@ -359,12 +359,24 @@
             # change props to pop DT
             propCols <- colnames(popDT())
           }
+          
+          # TODO this should be cleaner
+          if (popType() == "region") {
+            # change props to pop DT
+            propCols <- colnames(popDT())
+            propCols <- propCols[!propCols %in% c(
+              "uID", "label", "regions", "centroid_z", "centroid_y", "centroid_x", "centroid_t", "pop")]
+          }
         }
+        
+        browser()
         
         # add pop and clustering to X-axis
         if (length(popDT()) > 0) {
           if ("clusters" %in% colnames(popDT()))
             popTypeCols <- c("clusters", popTypeCols)
+          if ("regions" %in% colnames(popDT()))
+            popTypeCols <- c("regions", popTypeCols)
           if ("pop" %in% colnames(popDT()))
             popTypeCols <- c("pop", popTypeCols)
           

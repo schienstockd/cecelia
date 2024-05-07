@@ -285,15 +285,19 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
 )
 
-uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info[Stain == "A"]$uID
 
 for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
-  x$saveState()
+  # x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
+  # x$saveState()
 }
+
+x$imNeighboursFilepath()
 ```
 
 ```{r}
@@ -443,24 +447,60 @@ uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
-# # get objects from selected set
-# regionsDT <- cciaObj$popDT(
-#   popType = "region",
-#   uIDs = regionUIDs,
-#   includeFiltered = TRUE,
-#   completeDT = TRUE, replaceNA = TRUE,
-#   filterMeasures = c("regions")
-# )
-# unique(regionsDT$uID)
+pops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "clust", includeFiltered = TRUE)
+pops <- pops[is.na(stringr::str_match(pops, "/"))]
 
 # get objects from selected set
-popDT <- cciaObj$popDT(
-  popType = "clust",
+regionsDT <- cciaObj$popDT(
+  popType = "region",
   uIDs = uIDs,
   includeFiltered = TRUE,
-  completeDT = TRUE, replaceNA = TRUE
+  completeDT = TRUE, replaceNA = TRUE,
+  filterMeasures = c("regions")
 )
+unique(regionsDT$uID)
+
+# # get objects from selected set
+# popDT <- cciaObj$popDT(
+#   popType = "clust",
+#   uIDs = uIDs,
+#   pops = pops,
+#   includeFiltered = TRUE,
+#   completeDT = TRUE, replaceNA = TRUE
+# )
 ```
+
+```{r fig_regions, fig.height=4, fig.width=5}
+# library(cecelia)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = "Fu1zEC", uID = "pN5QJi", versionID = 1, initReactivity = FALSE # LN Set
+# )
+# 
+# # get experimental info
+# exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+# uIDs <- exp.info[Stain == "A"]$uID
+# 
+# popDT <- cciaObj$popDT(
+#   popType = "clust", uIDs = uIDs, includeFiltered = TRUE, completeDT = TRUE)
+# 
+# # get colours
+# colPal <- randomcoloR::distinctColorPalette(length(unique(popDT$clusters)))
+# 
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   # plot UMAP
+#   p1 <- ggplot(popDT[uID == x$getUID()], aes(UMAP_1, UMAP_2)) +
+#     geom_point(aes(color = clusters)) +
+#     theme_classic() +
+#     scale_color_manual(name = "Clusters", values = colPal) +
+#     guides(colour = guide_legend(override.aes = list(size=5))) +
+#     ggtitle(x$getUID())
+#   
+#   print(p1)
+# }
+```
+
 
 ```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(popDT) %>% drop_na(clusters) %>% left_join(exp.info)
@@ -655,17 +695,28 @@ ggsave(file.path(anaDir, "clusters_im.png"), width = 40, height = 20, plot = p1)
 
 # uidsToFlip <- c("XFHvVd", "Lm5FOH")
 
-for (i in unique(dfToPlot$uID)) {
+x <- cciaObj$cciaObjects(uIDs = uIDs[[1]])[[1]]
+
+# imPopMap <- x$imPopMap(popType = "clust", includeFiltered = TRUE)
+imPopMap <- x$imPopMap(popType = "region", includeFiltered = TRUE)
+popColours <- sapply(imPopMap, function(x) {x$colour})
+names(popColours) <- sapply(imPopMap, function(x) {x$path})
+
+# for (i in unique(dfToPlot$uID)) {
+for (i in unique(regionsDT$uID)) {
   # plot out
-  p1 <- ggplot(dfToPlot[uID == i],
-               aes(centroid_x, centroid_y, color = as.factor(clusters))) +
+  # p1 <- ggplot(dfToPlot[uID == i],
+  p1 <- ggplot(regionsDT[uID == i],
+               # aes(centroid_x, centroid_y, color = as.factor(clusters))) +
+               aes(centroid_x, centroid_y, color = as.factor(pop))) +
                # aes(centroid_x, centroid_y, color = as.factor(clusters.name))) +
     theme_classic() +
     plotThemeDark(angle = 0) +
     # geom_point(size = 0.4, alpha = 0.4) +
     geom_point(size = 0.1, alpha = 1) +
     # scale_color_brewer(palette = "Accent", name = "Clusters") +
-    scale_color_manual(values = colPal, name = "Pop") +
+    # scale_color_manual(values = colPal, name = "Pop") +
+    scale_color_manual(values = popColours, name = "Pop") +
     theme(
       axis.text.x = element_blank(),
       axis.ticks.x = element_blank(),
@@ -684,7 +735,9 @@ for (i in unique(dfToPlot$uID)) {
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
   
-  ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".png")), width = 12, height = 12, plot = p1)
+  # ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".png")), width = 12, height = 12, plot = p1)
+  # ggsave(file.path(anaDir, "maps", paste0("pops_", i, ".png")), width = 12, height = 12, plot = p1)
+  ggsave(file.path(anaDir, "maps", paste0("regions_", i, ".png")), width = 8, height = 8, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_facet_", i, ".png")), width = 20, height = 20, plot = p1)
 }
 ```
@@ -830,23 +883,23 @@ pops <- pops[is.na(stringr::str_match(pops, "/"))]
 funParams <- list(
   uIDs = names(cciaObj$cciaObjects()),
   popType = c("clust"),
-  pops = c("root"),
+  # pops = c("root"),
   # pops = c("CD4"),
-  # pops = pops,
+  pops = pops,
   objectMeasures = c(),
   # objectMeasures = c("nuc_Ki.67"),
   includeCounts = FALSE,
   # includeCounts = TRUE,
-  # includeTotalCount = FALSE,
-  includeTotalCount = TRUE,
+  includeTotalCount = FALSE,
+  # includeTotalCount = TRUE,
   colName = "default",
   valueName = "default",
   excludeSelfConnections = FALSE,
-  useClusters = TRUE,
-  # useClusters = FALSE,
+  # useClusters = TRUE,
+  useClusters = FALSE,
   expandPops = FALSE,
   # numClusters = 10,
-  numClusters = 4,
+  numClusters = 5,
   uIDs = regionUIDs
 )
 
