@@ -426,7 +426,7 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   #   # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
   #   # c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
   #   # c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
-    c("S4Vectors"), Ncpus = ncpus, ...)
+    c("S4Vectors", "S4Arrays", "XVector", "SparseArray", "DelayedArray"), Ncpus = ncpus, ...)
   
   # install protobuf separately
   # remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
