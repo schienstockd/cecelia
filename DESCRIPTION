@@ -72,14 +72,14 @@ Imports:
     remotes,
     randomcoloR,
     purrr,
-    S4Vectors,
     ggpubr,
     DescTools,
     depmixS4,
     ggrepel,
     geometry,
     lubridate,
-    ggquiver
+    ggquiver,
+    concaveman
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.2.3
