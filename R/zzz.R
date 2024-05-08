@@ -422,11 +422,11 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   # https://github.com/rstudio/reticulate/issues/1155
   # remotes::install_version("reticulate", "1.22", repos = "https://cloud.r-project.org")
   
-  # BiocManager::install(
-  # #   # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
-  # #   # c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
-  # #   # c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
-  #   c("S4Vectors"), Ncpus = ncpus, ...)
+  BiocManager::install(
+  #   # c("openCyto", "ggcyto", "flowCore", "flowWorkspace", "aoles/RBioFormats", "EBImage")
+  #   # c("S4Vectors", "openCyto", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+  #   # c("S4Vectors", "ggcyto", "flowCore", "flowWorkspace"), Ncpus = ncpus, ...)
+    c("S4Vectors"), Ncpus = ncpus, ...)
   
   # install protobuf separately
   # remotes::install_github("rglab/RProtoBufLib", upgrade = "never", ...)
