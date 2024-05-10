@@ -1805,10 +1805,11 @@ CciaImage <- R6::R6Class(
     #' @param usePhysicalScale boolean to convert to physical scale
     #' @param hullType character to define type of hull
     #' @param concavity numeric to define concavity for concave hull
+    #' @param splitWindowBy character to split windowDT
     #' @param ... passed to self$popDT
     ppp = function(windowPops = NULL, pops = NULL, usePops = NULL,
                    usePhysicalScale = TRUE, hullType = "convex",
-                   concavity = 2, ...) {
+                   concavity = 2, splitWindowBy = NULL, ...) {
       # get popDT
       popDT <- self$popDT(pops = pops, ...)
       
@@ -1835,33 +1836,32 @@ CciaImage <- R6::R6Class(
         x = popDT$centroid_x,
         y = popDT$centroid_y
       )
-      windowDF <- data.frame(
-        x = popWindow$centroid_x,
-        y = popWindow$centroid_y
-      )
-      
-      # create rectangle
-      # TODO should this be a polygon?
-      # get pixel info
-      # omePixels <- self$omeXMLPixels()
-      # W <- spatstat.geom::owin(c(0, omePixels$SizeX), c(0, omePixels$SizeY))
       
       if (nrow(pointsDF) > 0) {
         # create polygon window
-        if (hullType == "concave") {
-          # https://stackoverflow.com/a/33299920
-          polyCoords <- concaveman::concaveman(as.matrix(windowDF), concavity = concavity)
-          # reverse coordinates for owin ie/ anti-clockwise
-          polyCoords <- polyCoords[nrow(polyCoords):1, ]
+        if (!is.null(splitWindowBy)) {
+          windowSplit <- unique(popWindow[, get(splitWindowBy)])
+          names(windowSplit) <- windowSplit
           
-          W <- spatstat.geom::owin(poly = list(x = polyCoords[,1], y = polyCoords[,2]))
+          # split window
+          lapply(windowSplit, function (x) {
+            windowDF <- data.frame(
+              x = popWindow[get(splitWindowBy) == x, ]$centroid_x,
+              y = popWindow[get(splitWindowBy) == x, ]$centroid_y
+            )
+            
+            createPPP(
+              pointsDF, windowDF, marks = factor(popDT$pop),
+              hullType = hullType, concavity = concavity)
+          })
         } else {
-          polyCoords <- windowDF[chull(as.matrix(windowDF)),] %>%
-            arrange(desc(row_number()))
-          W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
+          createPPP(
+            pointsDF, data.frame(
+              x = popWindow$centroid_x,
+              y = popWindow$centroid_y
+            ), marks = factor(popDT$pop),
+            hullType = hullType, concavity = concavity)
         }
-        
-        spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
       } else {
         NULL
       }

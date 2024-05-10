@@ -633,6 +633,32 @@ convertPixelToPhysical <- function(DT, pixelRes) {
   DT
 }
 
+#' @description Create ppp object from DT
+#' @param pointsDF dataframe for pops
+#' @param windowDF dataframe for window
+#' @param marks character to define marks for ppp
+#' @param hullType character to define type of hull
+#' @param concavity numeric to define concavity for concave hull
+#' @examples
+#' TODO
+#' @export
+createPPP <- function(pointsDF, windowDF, marks, hullType = "convex", concavity = 2) {
+  if (hullType == "concave") {
+    # https://stackoverflow.com/a/33299920
+    polyCoords <- concaveman::concaveman(as.matrix(windowDF), concavity = concavity)
+    # reverse coordinates for owin ie/ anti-clockwise
+    polyCoords <- polyCoords[nrow(polyCoords):1, ]
+    
+    W <- spatstat.geom::owin(poly = list(x = polyCoords[,1], y = polyCoords[,2]))
+  } else {
+    polyCoords <- windowDF[chull(as.matrix(windowDF)),] %>%
+      arrange(desc(row_number()))
+    W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
+  }
+  
+  spatstat.geom::as.ppp(pointsDF, marks = marks, W = W)
+}
+
 #' @description Get first selected image from set
 #' @param selectedUIDs list of character for selected unique IDs
 #' @param selectedSet reactivePersistentObjectSet

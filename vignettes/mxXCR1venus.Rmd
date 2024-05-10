@@ -13,9 +13,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
-# pID <- "Bi2995"
+pID <- "Bi2995"
 # pID <- "rMeKCv"
-pID <- "Kr5So2"
+# pID <- "Kr5So2"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -257,6 +257,62 @@ popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFilter
 
 unique(popDT$pop)
 ```
+
+```{r}
+# test to show regions of clustered T cells
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# only get first LCMV samples
+uIDs <- exp.info$uID
+
+pops <- c("/nonDebris/P14")
+
+popDT <- cciaObj$popDT(
+  popType = "flow", uIDs = uIDs[2], pops = pops, includeFiltered = FALSE)
+
+popPPP <- cciaObj$ppp(
+  popType = "flow", pops = pops, uIDs = uIDs[2], usePhysicalScale = TRUE,
+  hullType = "concave", concavity = 2, splitWindowBy = "flow.cell.clust.id")
+```
+
+```{r fig_regions, fig.height=10, fig.width=8}
+# plot regions
+x <- sapply(popPPP$y0IE8s, function(x) x$window$bdry[[1]]$x)
+y <- sapply(popPPP$y0IE8s, function(x) x$window$bdry[[1]]$y)
+
+spatDF <- data.frame(x = unname(unlist(x)), y = unname(unlist(y)))
+spatDF$id <- unname(unlist(mapply(function(x, i) rep(i, x), lengths(x), names(popPPP$y0IE8s))))
+
+sum(sapply(popPPP$y0IE8s[names(popPPP$y0IE8s) != 0], function(x) spatstat.geom::area(x)))
+
+ggplot(spatDF, aes(x, -y, colour = id)) + 
+  theme_classic() +
+  # scale_color_brewer(name = NULL, palette = "Dark2") +
+  geom_path() +
+  coord_fixed() +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "bottom"
+  )
+```
+
 
 ```{r fig_maps, fig.height=3, fig.width=6}
 # show XCR1, LCMV and P14?

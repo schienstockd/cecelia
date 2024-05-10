@@ -37,6 +37,11 @@
     					"default": false
     				}
     			},
+          "stackImage": {
+    				"type:boolean": {
+    					"default": false
+    				}
+    			},
           "skipTiles": {
     				"type:integer": {
               "min": 0,
@@ -140,22 +145,28 @@
       				"widget:checkbox": {
       				}
       			},
+      			"stackImage": {
+      				"index": 3,
+      				"label": "Stack images",
+      				"widget:checkbox": {
+      				}
+      			},
       			"skipTiles": {
-              "index": 3,
+              "index": 4,
               "label": "Skip tiles",
               "widget:slider": {
                 "step": 1
               }
             },
       			"physicalStackScale": {
-              "index": 4,
+              "index": 5,
               "label": "Stack Scale",
               "widget:slider": {
                 "step": 0.01
               }
             },
       			"stackDim": {
-              "index": 5,
+              "index": 6,
               "label": "Stack Dimension",
               "widget:selection": {
                 "items": {

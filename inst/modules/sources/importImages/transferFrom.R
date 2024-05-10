@@ -33,6 +33,8 @@ TransferFrom <- R6::R6Class(
       extraFiles <- c()
       if (self$funParams()$specialType == "tenxXenium")
         extraFiles <- c("transcripts.csv.gz")
+      if (file.exists(file.path(dirname(cciaObj$oriFilepath()), "ome.xml")))
+        extraFiles <- c("ome.xml")
       
       # get files to copy
       filesToCopy <- prepFilelistToSync(

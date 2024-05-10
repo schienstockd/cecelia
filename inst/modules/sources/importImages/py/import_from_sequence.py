@@ -4,6 +4,7 @@ sys.path.append('./')
 
 import os
 import numpy as np
+import glob
 
 import py.script_utils as script_utils
 
@@ -11,7 +12,7 @@ import tifffile
 import py.zarr_utils as zarr_utils
 import py.ome_xml_utils as ome_xml_utils
 from py.dim_utils import DimUtils
-from ome_types import model
+from ome_types import model, from_xml
 
 # segment image
 def run(params):
@@ -20,6 +21,7 @@ def run(params):
   zarr_path = script_utils.get_param(params, 'zarrPath')
   seq_rexp = script_utils.get_param(params, 'seqREXP', default = None)
   is_stacked = script_utils.get_param(params, 'isStacked', default = False)
+  stack_im = script_utils.get_param(params, 'stackImage', default = False)
   skip_tiles = script_utils.get_param(params, 'skipTiles', default = 0)
   nscales = script_utils.get_param(params, 'nscales', default = 1)
   physical_stack_scale = script_utils.get_param(params, 'physicalStackScale', default = 1)
@@ -39,9 +41,17 @@ def run(params):
     # ... )
     # https://stackoverflow.com/a/56985941
     im = tifffile.TiffSequence(
-      os.path.join(os.path.dirname(im_path), '*.tif'), pattern = r'%s' %seq_rexp)
+      os.path.join(os.path.dirname(im_path), '*.tif*'), pattern = r'%s' %seq_rexp)
     
     logfile_utils.log(f'> sequence shape {im.shape}')
+  if stack_im is True:
+    # go through images
+    im = list()
+    
+    for i, x in enumerate(glob.glob(os.path.join(os.path.dirname(im_path), '*.tif*'))):
+      im.append(tifffile.TiffFile(x).asarray())
+      
+    im = np.stack(im, axis=0)
   else:  
     im = tifffile.TiffFile(im_path)
   
@@ -118,6 +128,8 @@ def run(params):
     # add metadata
     if hasattr(im, 'ome_metadata'):
       im_metadata = im.ome_metadata
+    else if os.path.isfile(os.path.join(os.path.dirname(im_path), 'ome.xml')):
+      im_metadata = from_xml(os.path.join(os.path.dirname(im_path), 'ome.xml'))
     else:
       len_dims = len(im.dims)
       len_shape = len(im_array.shape) - len_dims

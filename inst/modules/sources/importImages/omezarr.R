@@ -125,6 +125,7 @@ Omezarr <- R6::R6Class(
           imPath = imPathIn,
           zarrPath = imPathOut,
           isStacked = self$funParams()$isStacked,
+          stackImage = self$funParams()$stackImage,
           nscales = self$funParams()$pyramidScale,
           skipTiles = self$funParams()$skipTiles,
           physicalStackScale = self$funParams()$physicalStackScale,
