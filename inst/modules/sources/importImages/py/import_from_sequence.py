@@ -131,8 +131,12 @@ def run(params):
     im_chunks = [1] * len(im.shape)
     im_chunks[-1] = min(im.shape[-1], 1024)
     im_chunks[-2] = min(im.shape[-2], 1024)
+    x_idx = len(im.shape) - 1
+    y_idx = x_idx -1
     
-    zarr_utils.create_multiscales(im, zarr_path, nscales = nscales, im_chunks = im_chunks)
+    zarr_utils.create_multiscales(
+      im, zarr_path, nscales = nscales, im_chunks = im_chunks,
+      x_idx = x_idx, y_idx = y_idx)
     
     # add metadata
     if hasattr(im, 'ome_metadata'):
