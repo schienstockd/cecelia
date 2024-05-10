@@ -128,7 +128,7 @@ def run(params):
     # add metadata
     if hasattr(im, 'ome_metadata'):
       im_metadata = im.ome_metadata
-    else if os.path.isfile(os.path.join(os.path.dirname(im_path), 'ome.xml')):
+    elif os.path.isfile(os.path.join(os.path.dirname(im_path), 'ome.xml')):
       im_metadata = from_xml(os.path.join(os.path.dirname(im_path), 'ome.xml'))
     else:
       len_dims = len(im.dims)
