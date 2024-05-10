@@ -122,8 +122,11 @@ def run(params):
   else:
     # save back
     logfile_utils.log(f'>> save as zarr {zarr_path}')
-    im_array = im.asarray()
-    zarr_utils.create_multiscales(im_array, zarr_path, nscales = nscales)
+    
+    if hasattr(im, 'asarray'):
+      im = im.asarray()
+    
+    zarr_utils.create_multiscales(im, zarr_path, nscales = nscales)
     
     # add metadata
     if hasattr(im, 'ome_metadata'):
@@ -132,16 +135,16 @@ def run(params):
       im_metadata = from_xml(os.path.join(os.path.dirname(im_path), 'ome.xml'))
     else:
       len_dims = len(im.dims)
-      len_shape = len(im_array.shape) - len_dims
+      len_shape = len(im.shape) - len_dims
       
       # create metadata
       # TODO anything else?
       pixels = model.pixels.Pixels(
         size_c = im.dims.index('c') if 'c' in im.dims and im.dims.index('c') else 0,
-        size_x = im_array.shape[-1],
-        size_y = im_array.shape[-2],
+        size_x = im.shape[-1],
+        size_y = im.shape[-2],
         size_t = im.dims.index('t') if 't' in im.dims and im.dims.index('t') else 0,
-        size_z = im_array.shape[0] if len_shape > 2 else 0,
+        size_z = im.shape[0] if len_shape > 2 else 0,
         physical_size_x = 1,
         physical_size_y = 1,
         physical_size_x_unit = model.UnitsLength.MICROMETER,
