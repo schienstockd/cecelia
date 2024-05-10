@@ -125,8 +125,14 @@ def run(params):
     
     if hasattr(im, 'asarray'):
       im = im.asarray()
+      
+    # generate chunks
+    # TODO this is guessing
+    im_chunks = [1] * len(im.shape)
+    im_chunks[-1] = min(im.shape[-1], 1024)
+    im_chunks[-2] = min(im.shape[-2], 1024)
     
-    zarr_utils.create_multiscales(im, zarr_path, nscales = nscales)
+    zarr_utils.create_multiscales(im, zarr_path, nscales = nscales, im_chunks = im_chunks)
     
     # add metadata
     if hasattr(im, 'ome_metadata'):
