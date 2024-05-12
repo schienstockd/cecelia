@@ -47,11 +47,16 @@ def run(params):
   if stack_im is True:
     # go through images
     im = list()
+    im_list = glob.glob(os.path.join(os.path.dirname(im_path), '*.tif*'))
     
-    for i, x in enumerate(glob.glob(os.path.join(os.path.dirname(im_path), '*.tif*'))):
+    for i, x in enumerate(im_list):
       im.append(tifffile.TiffFile(x).asarray())
       
     im = np.stack(im, axis=0)
+    
+    # TODO this is only needed for one use-case and should be deleted afterwards
+    logfile_utils.log(f'> channels')
+    logfile_utils("\n".join([re.search('(?<=ch[0-9]{3}_).*(?=\\.tif)', x, re.IGNORECASE).group() for x in im_list))
   else:  
     im = tifffile.TiffFile(im_path)
   
@@ -132,7 +137,7 @@ def run(params):
     im_chunks[-1] = min(im.shape[-1], 1024)
     im_chunks[-2] = min(im.shape[-2], 1024)
     x_idx = len(im.shape) - 1
-    y_idx = x_idx -1
+    y_idx = x_idx - 1
     
     zarr_utils.create_multiscales(
       im, zarr_path, nscales = nscales, im_chunks = im_chunks,
