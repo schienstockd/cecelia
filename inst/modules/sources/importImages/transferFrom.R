@@ -36,6 +36,10 @@ TransferFrom <- R6::R6Class(
       if (file.exists(file.path(dirname(cciaObj$oriFilepath()), "ome.xml")))
         extraFiles <- c("ome.xml")
       
+      self$writeLog("ad")
+      self$writeLog(cciaObj$oriFilepath())
+      self$writeLog(xfun::file_ext(cciaObj$oriFilepath()))
+      
       # get files to copy
       filesToCopy <- prepFilelistToSync(
         cciaObj$oriFilepath(),
@@ -46,7 +50,7 @@ TransferFrom <- R6::R6Class(
       
       self$writeLog(smbCmd)
       self$writeLog("Transfer from SMB server")
-      # self$writeLog(unlist(filesToCopy))
+      self$writeLog(unlist(filesToCopy))
       
       # create directory
       self$writeLog(">> create directory")

@@ -117,6 +117,10 @@
         newImages <- list()
         
         for (x in input$selectedFolders) {
+          # get first file that is an image
+          oriFilepath <- list.files(x, full.names = TRUE, no.. = TRUE)
+          oriFilepath <- oriFilepath[!endsWith(oriFilepath), c(".xml")]
+          
           # TODO this assumes that the first file is the one
           # that is used to create the image
           curParams <- list(
@@ -124,7 +128,7 @@
             Type = "Image",
             Class = "CciaImage",
             Meta = list(
-              "oriFilepath" = list.files(x, full.names = TRUE, no.. = TRUE)[[1]]
+              "oriFilepath" = oriFilepath[[1]]
             )
           )
           

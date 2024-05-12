@@ -141,6 +141,22 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE # Set
+)
+
+for (x in cciaObj$cciaObjects()) {
+  x$setOriFilepath(paste0("/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/CODEX_HCC/", x$getCciaName(), "/reg001_cyc002_ch001_HOECHST 2.tif"))
+  x$saveState()
+}
+```
+
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
 )
 
