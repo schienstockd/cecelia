@@ -57,7 +57,7 @@ def run(params):
     
     # TODO this is only needed for one use-case and should be deleted afterwards
     logfile_utils.log(f'> channels')
-    logfile_utils("\n".join([re.search('(?<=ch[0-9]{3}_).*(?=\\.tif)', x, re.IGNORECASE).group() for x in im_list]))
+    logfile_utils.log("\n".join([re.search('(?<=ch[0-9]{3}_).*(?=\\.tif)', x, re.IGNORECASE).group() for x in im_list]))
   else:  
     im = tifffile.TiffFile(im_path)
   
