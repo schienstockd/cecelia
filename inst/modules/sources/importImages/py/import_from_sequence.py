@@ -5,6 +5,7 @@ sys.path.append('./')
 import os
 import numpy as np
 import glob
+import re
 
 import py.script_utils as script_utils
 
@@ -55,8 +56,8 @@ def run(params):
     im = np.stack(im, axis=0)
     
     # TODO this is only needed for one use-case and should be deleted afterwards
-    # logfile_utils.log(f'> channels')
-    # logfile_utils("\n".join([re.search('(?<=ch[0-9]{3}_).*(?=\\.tif)', x, re.IGNORECASE).group() for x in im_list]))
+    logfile_utils.log(f'> channels')
+    logfile_utils("\n".join([re.search('(?<=ch[0-9]{3}_).*(?=\\.tif)', x, re.IGNORECASE).group() for x in im_list]))
   else:  
     im = tifffile.TiffFile(im_path)
   
