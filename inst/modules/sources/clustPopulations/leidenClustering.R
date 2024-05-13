@@ -33,7 +33,7 @@ LeidenClustering <- R6::R6Class(
       
       # channels an be in different order for each image
       clusterChannels <- lapply(
-        cciaObj$cciaObjects(), function(x) {
+        cciaObj$cciaObjects(uIDs = self$funParams()$uIDs), function(x) {
           lapply(
             self$funParams()$clusterChannels, function(y) {
               y$channels <- sapply(

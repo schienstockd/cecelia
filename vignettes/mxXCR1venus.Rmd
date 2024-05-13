@@ -145,8 +145,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
 )
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
@@ -157,15 +157,15 @@ paste(cciaObj$imChannelNames(), collapse = "', '")
 
 # get raster contours
 p1s <- .flowPlotGatedRaster(
-  cciaObj, popPaths = "root", labelSize = 8, labelBorder = 1.1,
+  cciaObj, popPaths = "root", labelSize = 6, labelBorder = 1.1,
   xTitleSize = 16, yTitleSize = 16,
-  asContours = TRUE, plotTitleSize = 0)
+  asContours = TRUE, plotTitleSize = 20)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
 
-# ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
-ggsave(file.path(anaDir, "TK5dex_gating.png"), width = 8, height = 8)
+ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
+# ggsave(file.path(anaDir, "TK5dex_gating.png"), width = 8, height = 8)
 ```
 
 ```{r}
@@ -244,16 +244,16 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # uIDs <- exp.info$uID[!exp.info$uID %in% c()]
 uIDs <- exp.info$uID
 
-pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
-# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = TRUE)
+# pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs, includeFiltered = FALSE)
+pops <- cciaObj$popPaths(popType = "flow", uIDs = uIDs[2], includeFiltered = TRUE)
 
 # exclude 'O' pops
 pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
 # pops <- pops[pops != "/nonDebris"]
 
 # get pops
-popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
-# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
+# popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+popDT <- cciaObj$popDT(popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
 
 unique(popDT$pop)
 ```
@@ -322,7 +322,7 @@ nonDT <- popDT %>% dplyr::filter(uID == "XBAokO", pop != "/nonDebris/O/LCMV")
 infDT <- popDT %>% dplyr::filter(uID == "NjumBK")
 
 ggplot(nonDT,
-       aes(centroid_x, centroid_y), size = 0.3) +
+       aes(centroid_x, -centroid_y), size = 0.3) +
   # geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/B"), color = "magenta", alpha = 0.05) +
   geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/O/B220"), color = "orange", alpha = 0.05) +
   # geom_point(data = nonDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#2A52BE", alpha = 0.2) +
@@ -350,7 +350,7 @@ ggplot(nonDT,
 ggsave(file.path(anaDir, "non_pops.png"), width = 6, height = 6)
 
 ggplot(infDT,
-       aes(centroid_x, centroid_y), size = 0.3) +
+       aes(centroid_x, -centroid_y), size = 0.3) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/B220"), color = "orange", alpha = 0.01) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#66A266", alpha = 0.2) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "red") +
@@ -373,7 +373,7 @@ ggplot(infDT,
     legend.position = "bottom"
   )
 
-ggsave(file.path(anaDir, "inf_pops.png"), width = 6, height = 6)
+ggsave(file.path(anaDir, "NjumBK_pops.png"), width = 6, height = 6)
 ```
 
 ```{r fig_maps, fig.height=3, fig.width=6}

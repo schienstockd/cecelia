@@ -44,7 +44,7 @@ HPC_CONF <-  list(
       numCPUperTask = 1,
       numGPUperTask = 1,
       memory = 50,
-      walltime = "00-00:01:00",
+      walltime = "00-01:00:00",
       # projectPartitions = "cascade,sapphire",
       projectPartitions = "gpu-a100,gpu-a100-short",
       # projectID = "punim1124",
@@ -228,6 +228,61 @@ for (x in cciaObj$cciaObjects()) {
 }
 ```
 
+```{r}
+# check that the channel names are fine
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE # Human HCC
+)
+
+uIDs <- exp.info[Include == "Y"]$uID
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  imChannelNames <- x$imChannelNames()
+  imChannelNames[imChannelNames == "pancyto"] <- "pancytokeratin"
+  imChannelNames[imChannelNames == "TCRValpha"] <- "TCRVa"
+  imChannelNames[imChannelNames == "FOXP3"] <- "FoxP3"
+  imChannelNames[imChannelNames == "CD4 good"] <- "CD4"
+  imChannelNames[imChannelNames == "ILR18a"] <- "IL18Ra"
+  x$setImChannelNames(imChannelNames)
+  x$saveState()
+}
+```
+
+```{r}
+# upload objects
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE 
+)
+
+uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- uIDs[!uIDs %in% c("AtIzds")]
+
+# run task
+funParams <- list(
+)
+
+# run task
+task <- cciaObj$runTasks(
+  funName = "hpc.uploadCciaObj",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = uIDs,
+  mc.cores = 3
+)
+```
+
 
 ```{r}
 # check that the channel names are fine
@@ -325,7 +380,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 cciaObj <- initCciaObject(
   # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
   # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Human LN
+  pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE # Human HCC
 )
 
 # get experimental info
@@ -334,20 +390,23 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 uIDs <- names(cciaObj$cciaObjects())
-# uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- exp.info[Stain == "A"]$uID
+uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
 # similar LN
 # uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
 
+# not processed yet
+uIDs <- uIDs[!uIDs %in% c("AtIzds")]
+
 # get common channels across images
-channelNames <- sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
+channelNames <- lapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
 clusterChannels <- Reduce(intersect, channelNames)
 # clusterChannels <- channelNames
 # clusterChannels <- clusterChannels[clusterChannels != "DAPI"]
-clusterChannels <- clusterChannels[clusterChannels != "DAPI-02"]
+clusterChannels <- clusterChannels[!clusterChannels %in% c("DAPI-02", "HOECHST")]
 # clusterChannels <- c("CD3", "CD20")
 
 # exclude channels
@@ -366,7 +425,8 @@ funParams <- list(
   savePops = FALSE,
   keepPops = FALSE,
   # resolution = 0.2,
-  resolution = 0.4,
+  # resolution = 0.4, # Human LN
+  resolution = 1.0, # Human HCC
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0.0,
@@ -378,8 +438,8 @@ funParams <- list(
   transformation = "NONE",
   # transformation = "log",
   logBase = 0,
-  correctBatch = "NONE",
-  # correctBatch = "combat",
+  # correctBatch = "NONE",
+  correctBatch = "combat",
   # correctBatch = "harmony",
   valueName = "default",
   # valueName = "detailed",
@@ -393,23 +453,33 @@ funParams <- list(
   pagaThreshold = 0.1
 )
 
-# go through and cluster individually
-i <- 1
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  funParams$uIDs <- c(x$getUID())
-  
-  task <- cciaObj$runTask(
-    funName = "clustPopulations.leidenClustering",
-    funParams = funParams,
-    envVars = HPC_CONF,
-    hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-    env = "hpc",
-    runInplace = FALSE,
-    taskID = i
-  )
-  
-  i <- i + 1
-}
+# # go through and cluster individually
+# i <- 1
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   funParams$uIDs <- c(x$getUID())
+#   
+#   task <- cciaObj$runTask(
+#     funName = "clustPopulations.leidenClustering",
+#     funParams = funParams,
+#     envVars = HPC_CONF,
+#     hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+#     env = "hpc",
+#     runInplace = FALSE,
+#     taskID = i
+#   )
+#   
+#   i <- i + 1
+# }
+
+task <- cciaObj$runTask(
+  funName = "clustPopulations.leidenClustering",
+  funParams = funParams,
+  envVars = HPC_CONF,
+  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+  env = "hpc",
+  runInplace = FALSE,
+  taskID = 1
+)
 ```
 
 ```{r}
