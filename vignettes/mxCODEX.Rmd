@@ -270,17 +270,27 @@ funParams <- list(
 )
 
 # run task
-task <- cciaObj$runTasks(
+task <- cciaObj$runTask(
   funName = "hpc.uploadCciaObj",
   funParams = funParams,
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
   env = "local",
   runInplace = TRUE,
-  taskID = 1,
-  uIDs = uIDs,
-  mc.cores = 3
+  taskID = 1
 )
+
+# task <- cciaObj$runTasks(
+#   funName = "hpc.uploadCciaObj",
+#   funParams = funParams,
+#   envVars = HPC_CONF,
+#   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+#   env = "local",
+#   runInplace = TRUE,
+#   taskID = 1,
+#   uIDs = uIDs,
+#   mc.cores = 3
+# )
 ```
 
 
@@ -398,9 +408,6 @@ uIDs <- exp.info[Include == "Y"]$uID
 # similar LN
 # uIDs <- c("1oBdEQ", "Eqiklk", "BnSXJp", "gDCQ7s", "sZBvMm", "TMy4g4", "YbP2O0")
 
-# not processed yet
-uIDs <- uIDs[!uIDs %in% c("AtIzds")]
-
 # get common channels across images
 channelNames <- lapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) unname(x$imChannelNames()))
 clusterChannels <- Reduce(intersect, channelNames)
@@ -477,7 +484,9 @@ task <- cciaObj$runTask(
   envVars = HPC_CONF,
   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
   env = "hpc",
+  # env = "local",
   runInplace = FALSE,
+  # runInplace = TRUE,
   taskID = 1
 )
 ```
