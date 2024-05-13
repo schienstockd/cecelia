@@ -69,7 +69,8 @@ HPC_CONF <-  list(
 ```{r}
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/Phillips2021_CODEX/CECELIA"
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/CODEX_THEO/ANALYSIS"
-anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/HuBMAP/ANALYSIS"
+# anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/HuBMAP/ANALYSIS"
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/CODEX_HCC/ANALYSIS"
 ```
 
 ```{r}
@@ -433,7 +434,7 @@ funParams <- list(
   keepPops = FALSE,
   # resolution = 0.2,
   # resolution = 0.4, # Human LN
-  resolution = 1.0, # Human HCC
+  resolution = 0.4, # Human HCC
   mergeUmap = TRUE,
   normalisePercentile = 99.8,
   normalisePercentileBottom = 0.0,
@@ -460,35 +461,35 @@ funParams <- list(
   pagaThreshold = 0.1
 )
 
-# # go through and cluster individually
-# i <- 1
-# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-#   funParams$uIDs <- c(x$getUID())
-#   
-#   task <- cciaObj$runTask(
-#     funName = "clustPopulations.leidenClustering",
-#     funParams = funParams,
-#     envVars = HPC_CONF,
-#     hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-#     env = "hpc",
-#     runInplace = FALSE,
-#     taskID = i
-#   )
-#   
-#   i <- i + 1
-# }
+# go through and cluster individually
+i <- 1
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  funParams$uIDs <- c(x$getUID())
 
-task <- cciaObj$runTask(
-  funName = "clustPopulations.leidenClustering",
-  funParams = funParams,
-  envVars = HPC_CONF,
-  hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
-  env = "hpc",
-  # env = "local",
-  runInplace = FALSE,
-  # runInplace = TRUE,
-  taskID = 1
-)
+  task <- cciaObj$runTask(
+    funName = "clustPopulations.leidenClustering",
+    funParams = funParams,
+    envVars = HPC_CONF,
+    hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+    env = "hpc",
+    runInplace = FALSE,
+    taskID = i
+  )
+
+  i <- i + 1
+}
+
+# task <- cciaObj$runTask(
+#   funName = "clustPopulations.leidenClustering",
+#   funParams = funParams,
+#   envVars = HPC_CONF,
+#   hpcDir = paste(hpcDir, pID, "ANALYSIS", sep = "/"),
+#   env = "hpc",
+#   # env = "local",
+#   runInplace = FALSE,
+#   # runInplace = TRUE,
+#   taskID = 1
+# )
 ```
 
 ```{r}
@@ -528,7 +529,8 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 cciaObj <- initCciaObject(
   # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # Set
   # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
-  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
+  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Human LN
+  pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE # Human HCC
 )
 
 # get experimental info
@@ -537,13 +539,14 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 # uIDs <- names(cciaObj$cciaObjects())
-# uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- exp.info[Stain == "A"]$uID
+uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 
 pops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "clust", includeFiltered = TRUE)
 pops <- pops[is.na(stringr::str_match(pops, "/"))]
+pops <- c("root")
 
 # get objects from selected set
 regionsDT <- cciaObj$popDT(
@@ -565,10 +568,8 @@ unique(regionsDT$uID)
 # )
 ```
 
-```{r fig_regions, fig.height=4, fig.width=5}
-# library(cecelia)
-# 
-# # init ccia object
+```{r fig_regions, fig.height=20, fig.width=30}
+# init ccia object
 # cciaObj <- initCciaObject(
 #   pID = "Fu1zEC", uID = "pN5QJi", versionID = 1, initReactivity = FALSE # LN Set
 # )
@@ -579,10 +580,10 @@ unique(regionsDT$uID)
 # 
 # popDT <- cciaObj$popDT(
 #   popType = "clust", uIDs = uIDs, includeFiltered = TRUE, completeDT = TRUE)
-# 
-# # get colours
-# colPal <- randomcoloR::distinctColorPalette(length(unique(popDT$clusters)))
-# 
+
+# get colours
+colPal <- randomcoloR::distinctColorPalette(length(unique(popDT$clusters)))
+
 # for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
 #   # plot UMAP
 #   p1 <- ggplot(popDT[uID == x$getUID()], aes(UMAP_1, UMAP_2)) +
@@ -591,9 +592,18 @@ unique(regionsDT$uID)
 #     scale_color_manual(name = "Clusters", values = colPal) +
 #     guides(colour = guide_legend(override.aes = list(size=5))) +
 #     ggtitle(x$getUID())
-#   
+# 
 #   print(p1)
 # }
+
+p1 <- ggplot(popDT, aes(UMAP_1, UMAP_2)) +
+  geom_point(aes(color = clusters)) +
+  theme_classic() +
+  scale_color_manual(name = "Clusters", values = colPal) +
+  guides(colour = guide_legend(override.aes = list(size=5))) +
+  facet_wrap(.~uID, ncol = 4)
+
+print(p1)
 ```
 
 

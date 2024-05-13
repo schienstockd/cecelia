@@ -13,6 +13,13 @@ import py.scanpy_utils as scanpy_utils
 import py.script_utils as script_utils
 import py.config_utils as cfg
 
+import importlib.util
+
+# check whether to use GPU clustering
+rsc_utils = None
+if importlib.util.find_spec('rapids_singlecell') is not None:
+  import py.rapids_sc_utils as rsc_utils 
+
 # segment image
 def run(params):
   # logging
@@ -138,9 +145,7 @@ def run(params):
   logfile_utils.log(f'>> find populations')
   
   # use GPU version?
-  if use_gpu is True:
-    import py.rapids_sc_utils as rsc_utils 
-    
+  if use_gpu is True and rsc_utils is not None:
     # find populations
     rsc_utils.find_populations(
       adata, resolution,
