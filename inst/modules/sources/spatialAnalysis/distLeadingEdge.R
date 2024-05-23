@@ -157,10 +157,10 @@ DistLeadingEdge <- R6::R6Class(
         
         # copy information to root data table
         popDT[, c(distCol) := sf::st_distance(points, lines)]
-        min(sf::st_distance(points, lines))
+        # min(sf::st_distance(points, lines))
         
         # save line
-        saveRDS(popPPP$window, file.path(
+        saveRDS(lines, file.path(
           cciaObj$persistentObjectDirectory(), "data",
           paste0(popFile, "-line.rds")))
         
