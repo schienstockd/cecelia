@@ -49,7 +49,7 @@ DistLeadingEdge <- R6::R6Class(
       
       for (i in popsForEdge) {
         # get file to save
-        popFile <- stringr::str_replace_all(i, "/", "__")
+        popFile <- paste0(self$funParams()$popType, ".", stringr::str_replace_all(i, "/", "__"))
         
         # This does not return filtered populations
         # popDT <- popUtils$popDT(i)
