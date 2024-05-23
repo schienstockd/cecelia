@@ -197,7 +197,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
       }
       
       xRes <- do.call(rbind, xRes)
-      rownames(xRes) <- names(x)
+      # rownames(xRes) <- names(x)
       
       xRes
     } 
@@ -212,7 +212,7 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
       # split track IDs?
       # splitTrackIDs <- !is.null(steps.subtracks)
       # TODO not very elegant though
-      splitTrackIDs <- stringr::str_detect(names(tracks[[1]])[[1]], "[0-9]+\\.[0-9]+")
+      splitTrackIDs <- stringr::str_detect(rownames(tracks.fun.result[[1]])[[1]], "[0-9]+\\.[0-9]+")
       
       # convert to DT
       tracks.fun.DT <- lapply(

@@ -158,6 +158,8 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
         file.path(anaDir, "movies", paste0(
           paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
         windowSizeX = 1200, windowSizeY = 1000, fps = fps)
+    } else {
+      browser()
     }
   }
 }
@@ -426,14 +428,15 @@ exp.info <- as.data.table(cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 ))
 
-uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
+# uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
+uIDs <- c("Ws5sVa")
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
     track.clustering = list(values = list(1), colour = "#ffff00"),
-    track.scanning = list(values = list(0), colour = "#327EBA"),
-    track.meandering = list(values = list(2,3), colour = "#AA1F5E"),
-    track.others = list(values = list(4,5,6), colour = "#B3BCC2")
+    track.scanning = list(values = list(0,5), colour = "#327EBA"),
+    track.meandering = list(values = list(2,6), colour = "#AA1F5E"),
+    track.others = list(values = list(3,4), colour = "#B3BCC2")
     )
   )
 
@@ -444,7 +447,8 @@ channelsToShow <- list(
 popsToShow <- c("gBT", "gDT")
 fileAttrs <- c("Treatment", "dpi")
 
-generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks)
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitTracks = splitTracks, generateMovie = FALSE)
 ```
 
 ```{r}
@@ -526,8 +530,8 @@ cciaObj <- initCciaObject(
 )
 
 # GCAMP
-uIDs <- names(cciaObj$cciaObjects())[[8]]
-# uIDs <- c("ZmxDlj")
+# uIDs <- names(cciaObj$cciaObjects())[[8]]
+uIDs <- c("ZmxDIj")
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_alt = list(
@@ -550,7 +554,7 @@ popsToShow <- c("tcells.gBT", "tcells.gDT", "dcs.all")
 fileAttrs <- c()
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-               splitTracks = splitTracks)
+               splitTracks = splitTracks, generateMovie = FALSE)
 ```
 
 ```{r}

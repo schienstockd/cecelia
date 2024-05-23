@@ -162,6 +162,7 @@ def run(params):
       use_paga = use_paga
       )
   else:
+    None
     # find populations
     scanpy_utils.find_populations(
       adata, resolution,
@@ -188,20 +189,21 @@ def run(params):
       # filter by uID
       image_adata = adata[adata.obs['uID'] == i]
       
-      # rename columns back
-      channel_map_inv = {y: j for j, y in cluster_channels_map[i].items()}
-      image_adata.var_names = [channel_map_inv[y] if y in channel_map_inv.keys() else y for y in image_adata.var_names]
-
-      # remove uID
-      image_adata.obs.drop('uID', axis = 1, inplace = True)
-
-      # save back
-      if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
-         merge_new_adata(image_adata, x, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
-          x, 'labelProps', f'{value_name}.clust.h5ad'))
-      else:
-        image_adata.write_h5ad(os.path.join(
-          x, 'labelProps', f'{value_name}.clust.h5ad'))
+      if image_adata.X.size > 0:
+        # rename columns back
+        channel_map_inv = {y: j for j, y in cluster_channels_map[i].items()}
+        image_adata.var_names = [channel_map_inv[y] if y in channel_map_inv.keys() else y for y in image_adata.var_names]
+  
+        # remove uID
+        image_adata.obs.drop('uID', axis = 1, inplace = True)
+  
+        # save back
+        if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
+           merge_new_adata(image_adata, x, value_name, logfile_utils, merge_umap = merge_umap, max_clusters = max_clusters).write_h5ad(os.path.join(
+            x, 'labelProps', f'{value_name}.clust.h5ad'))
+        else:
+          image_adata.write_h5ad(os.path.join(
+            x, 'labelProps', f'{value_name}.clust.h5ad'))
           
   # else:
   #   if keep_pops is True and pop_type == 'clust' and len(pops_to_cluster) > 0:
@@ -338,45 +340,49 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
     
     pop_labels += [y for x in pop_data.values() for y in x]
     
-  # filter labels
-  if len(pop_labels) > 0:
+    # filter labels
+    # if len(pop_labels) > 0:
     label_view.filter_by_obs(pop_labels)
     
   # get max clusters
   max_clusters = 0
   
-  if keep_pops is True:
-    clust_label_view = LabelPropsUtils(task_dir = task_dir)\
-      .label_props_view(value_name = f'{value_name}.clust')
+  if label_view.adata.X.size > 0:
+    if keep_pops is True:
+      clust_label_view = LabelPropsUtils(task_dir = task_dir)\
+        .label_props_view(value_name = f'{value_name}.clust')
+        
+      if 'clusters' in clust_label_view.values_obs().keys():
+        max_clusters = clust_label_view.values_obs().loc[
+          ~clust_label_view.values_obs()['label'].isin(pop_labels), 'clusters'].astype(np.int32).max()
       
-    if 'clusters' in clust_label_view.values_obs().keys():
-      max_clusters = clust_label_view.values_obs().loc[
-        ~clust_label_view.values_obs()['label'].isin(pop_labels), 'clusters'].astype(np.int32).max()
+      clust_label_view.close()
     
-    clust_label_view.close()
+    # get data for clustering
+    # label_view.view_vars_cols(column_names)\
+    label_view.view_cols(column_names)\
+      .view_label_col()\
+      .exclude_spatial_temporal()
+    
+    # transform columns?
+    scanpy_utils.apply_transform(label_view.adata, transformation = transformation, log_base = log_base)
   
-  # get data for clustering
-  # label_view.view_vars_cols(column_names)\
-  label_view.view_cols(column_names)\
-    .view_label_col()\
-    .exclude_spatial_temporal()
+    # normalise columns?
+    scanpy_utils.normalise_adata(
+      label_view.adata,
+      axis = normalise_axis,
+      to_median = normalise_to_median,
+      max_fraction = max_fraction,
+      percentile = normalise_percentile,
+      percentile_bottom = normalise_percentile_bottom)
   
-  # transform columns?
-  scanpy_utils.apply_transform(label_view.adata, transformation = transformation, log_base = log_base)
-
-  # normalise columns?
-  scanpy_utils.normalise_adata(
-    label_view.adata,
-    axis = normalise_axis,
-    to_median = normalise_to_median,
-    max_fraction = max_fraction,
-    percentile = normalise_percentile,
-    percentile_bottom = normalise_percentile_bottom)
-
-  if as_df is True:
-    adata = label_view.as_df()
+    if as_df is True:
+      adata = label_view.as_df()
+    else:
+      adata = label_view.as_adata()
   else:
-    adata = label_view.as_adata()
+    logfile_utils.log("NONE")
+    adata = None
 
   label_view.close()
 

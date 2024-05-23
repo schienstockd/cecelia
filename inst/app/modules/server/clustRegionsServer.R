@@ -366,7 +366,7 @@
         adataDT(getAdataDT())
         
         # create adata matrix
-        adataMat(adataMatFromPopDT(adataDT(), popKey = "regions"))
+        adataMat(adataMatFromPopDT(adataDT(), popKeys = "regions"))
         
         # collapse selection box
         js$collapseBox(session$ns("imageTableBox"))

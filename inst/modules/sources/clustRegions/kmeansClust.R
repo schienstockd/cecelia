@@ -72,13 +72,20 @@ KmeansClust <- R6::R6Class(
       groupFrom <- "pop.from"
       groupTo <- "pop.to"
       
-      if (self$funParams()$popType == "clust" && self$funParams()$useClusters == TRUE) {
-        spatialDT[popDT[, c("uID", "label", "clusters")],
+      if (self$funParams()$popType == "clust" && (self$funParams()$useClusters == TRUE || self$funParams()$useClustersGroup == TRUE)) {
+        clustersCol <- "clusters"
+        
+        if (self$funParams()$useClustersGroup == TRUE)
+          clustersCol <- "clusters.group"
+        
+        popCols <- c("uID", "label", clustersCol)
+        
+        spatialDT[popDT[, ..popCols],
                   on = c("uID", "to" = "label"),
-                  clusters.to := clusters]
-        spatialDT[popDT[, c("uID", "label", "clusters")],
+                  clusters.to := get(clustersCol)]
+        spatialDT[popDT[, ..popCols],
                   on = c("uID", "from" = "label"),
-                  clusters.from := clusters]
+                  clusters.from := get(clustersCol)]
         
         groupFrom <- "clusters.from"
         groupTo <- "clusters.to"

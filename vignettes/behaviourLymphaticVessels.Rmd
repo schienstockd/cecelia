@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -703,7 +704,7 @@ ggplot(datToPlot, aes(clusters.name, min.dist,
     width = 0.3, alpha = 0.6) +
   ylab("Distance from lymphatics (μm)") + xlab("") +
   # ylim(0, 5) +
-  scale_color_brewer(name = NULL, palette = "Dark2")
+  scale_color_brewer(name = NULL, palette = "Set1")
 
 # ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, max.dist,
 #                      color = `live.cell.track.clusters.hmm_transitions_movement`)) +
@@ -716,7 +717,7 @@ ggplot(datToPlot, aes(clusters.name, max.dist,
     width = 0.3, alpha = 0.6) +
   ylab("Distance from lymphatics (μm)") + xlab("") +
   # ylim(0, 5) +
-  scale_color_brewer(name = NULL, palette = "Dark2")
+  scale_color_brewer(name = NULL, palette = "Set1")
 
 # ggplot(datToPlot, aes(`live.cell.track.clusters.hmm_transitions_movement`, median.dist,
 #                      color = `live.cell.track.clusters.hmm_transitions_movement`)) +
@@ -729,7 +730,7 @@ ggplot(datToPlot, aes(clusters.name, median.dist,
     width = 0.3, alpha = 0.6) +
   ylab("Distance from lymphatics (μm)") + xlab("") +
   # ylim(0, 5) +
-  scale_color_brewer(name = NULL, palette = "Dark2")
+  scale_color_brewer(name = NULL, palette = "Set1")
 write.csv(datToPlot, file = file.path(anaDir, "hmm_dist.csv"))
 ```
 

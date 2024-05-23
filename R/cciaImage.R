@@ -1806,10 +1806,12 @@ CciaImage <- R6::R6Class(
     #' @param hullType character to define type of hull
     #' @param concavity numeric to define concavity for concave hull
     #' @param splitWindowBy character to split windowDT
+    #' @param popWindow data.frame to define window for population
     #' @param ... passed to self$popDT
     ppp = function(windowPops = NULL, pops = NULL, usePops = NULL,
                    usePhysicalScale = TRUE, hullType = "convex",
-                   concavity = 2, splitWindowBy = NULL, ...) {
+                   concavity = 2, splitWindowBy = NULL,
+                   popWindow = NULL, ...) {
       # get popDT
       popDT <- self$popDT(pops = pops, ...)
       
@@ -1822,13 +1824,15 @@ CciaImage <- R6::R6Class(
         convertPixelToPhysical(popDT, self$omeXMLPixelRes())
       
       # get convex hull population
-      if (length(windowPops) > 0) {
-        popWindow <- self$popDT(pops = windowPops, ...)
-        
-        if (usePhysicalScale == TRUE)
-          convertPixelToPhysical(popWindow, self$omeXMLPixelRes())
-      } else {
-        popWindow <- popDT
+      if (is.null(popWindow)) {
+        if (length(windowPops) > 0) {
+          popWindow <- self$popDT(pops = windowPops, ...)
+          
+          if (usePhysicalScale == TRUE)
+            convertPixelToPhysical(popWindow, self$omeXMLPixelRes())
+        } else {
+          popWindow <- popDT
+        }
       }
       
       # create 2D spatial dataframe

@@ -251,7 +251,7 @@ class LabelPropsView:
   """
   Save adata
   """
-  def save(self, filename = None, close = True):
+  def save(self, filename = None, close = True, revert_channel_names = True):
     if filename is None:
       # does not work if creating a new dataset
       # which has not yet been saved
@@ -273,10 +273,11 @@ class LabelPropsView:
       move_file_back = True
       
     # change channel names back to mean intensity
-    numeric_channels = self.channel_columns(as_numeric = True)
-    
-    if len(numeric_channels) > 0:
-      self.change_channel_names(numeric_channels)
+    if revert_channel_names is True:
+      numeric_channels = self.channel_columns(as_numeric = True)
+      
+      if len(numeric_channels) > 0:
+        self.change_channel_names(numeric_channels)
     
     # save file
     # remove if exists otherwise there will be:

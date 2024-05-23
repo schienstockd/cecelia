@@ -21,6 +21,9 @@ projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
 ```
 
 ```{r}
+library(flowWorkspace)
+
+# Load cluster data
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -100,30 +103,31 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
+  pID = pID, uID = "Ynvgzy", versionID = versionID, initReactivity = FALSE # Tcells
   # pID = pID, uID = "bQ4XcX", versionID = versionID, initReactivity = FALSE # wrong side
-  pID = pID, uID = "mmqrqO", versionID = versionID, initReactivity = FALSE # edge in the middle
+  # pID = pID, uID = "mmqrqO", versionID = versionID, initReactivity = FALSE # edge in the middle
 )
 
 # uIDs <- names(cciaObj$cciaObjects())
-# uIDs <- c("2Lb1kQ")
+uIDs <- c("2Lb1kQ")
 
 # run task
 funParams <- list(
   popType = "flow",
   popsForEdge = c("/nondebris/included"),
-  borderCutoff = 10
+  borderCutoff = 10,
+  concavity = 10
 )
 
 # run task
-# task <- cciaObj$runTasks(
-task <- cciaObj$runTask(
+task <- cciaObj$runTasks(
+# task <- cciaObj$runTask(
   funName = "spatialAnalysis.distLeadingEdge",
   funParams = funParams,
   env = "local",
   runInplace = TRUE,
-  taskID = 1
-  # uIDs = uIDs
+  taskID = 1,
+  uIDs = uIDs
 )
 ```
 

@@ -453,7 +453,7 @@
         adataDT(getAdataDT())
         
         # create adata matrix
-        adataMat(adataMatFromPopDT(adataDT(), popKey = clusterColName()))
+        adataMat(adataMatFromPopDT(adataDT(), popKeys = clusterColName()))
         
         if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
           # init all populations

@@ -48,6 +48,9 @@ DistLeadingEdge <- R6::R6Class(
       popsForEdge <- self$funParams()$popsForEdge
       
       for (i in popsForEdge) {
+        # get file to save
+        popFile <- stringr::str_replace_all(i, "/", "__")
+        
         # This does not return filtered populations
         # popDT <- popUtils$popDT(i)
         popDT <- cciaObj$popDT(self$funParams()$popType, pops = i,
@@ -71,6 +74,11 @@ DistLeadingEdge <- R6::R6Class(
           x = popPPP$window$bdry[[1]]$x,
           y = popPPP$window$bdry[[1]]$y
         )
+        
+        # save window
+        saveRDS(popPPP$window, file.path(
+          cciaObj$persistentObjectDirectory(), "data",
+          paste0(popFile, "-window.rds")))
         
         pppChull <- spatstat.geom::as.ppp(pointsDF, W = popsBbox)
         
@@ -150,6 +158,11 @@ DistLeadingEdge <- R6::R6Class(
         # copy information to root data table
         popDT[, c(distCol) := sf::st_distance(points, lines)]
         min(sf::st_distance(points, lines))
+        
+        # save line
+        saveRDS(popPPP$window, file.path(
+          cciaObj$persistentObjectDirectory(), "data",
+          paste0(popFile, "-line.rds")))
         
         # join to root
         # https://stackoverflow.com/a/34600831/13766165

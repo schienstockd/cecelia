@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -22,7 +23,7 @@ library(tidyverse)
 # set test variables
 pID <- "8BR53W"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
@@ -683,10 +684,14 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
 
 ```{r}
 clusterMapping <- list(
+  # Clustering = c(1),
+  # Directed = c(2,6),
+  # Meandering = c(3,4),
+  # Scanning = c(0,5)
   Clustering = c(1),
-  Directed = c(2,6),
-  Meandering = c(3,4),
-  Scanning = c(0,5)
+  Scanning = c(0,5),
+  Meandering = c(2,6),
+  Others = c(4,3)
 )
 ```
 
@@ -706,7 +711,13 @@ meanClusterPos <- dfToPlot %>%
   )
 dfToPlot$clusters <- factor(dfToPlot$clusters)
 
-colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+colPal <- c(
+  Clustering = "#ffff00",
+  Scanning = "#327EBA",
+  Meandering = "#AA1F5E",
+  Others = "#B3BCC2"
+)
 
 # plot UMAP
 ggplot(
@@ -716,8 +727,8 @@ ggplot(
   # geom_point(aes(color = clusters)) +
   geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
-  # scale_color_manual(values = colPal) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
@@ -864,7 +875,7 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+# propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -889,8 +900,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  # group_by(clusters, prop) %>%
-  group_by(clusters.name, prop) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -923,8 +934,8 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
          dplyr::filter(!str_detect(prop, "live.cell")) %>%
-         # drop_na(clusters), aes(clusters, prop)) +
-         drop_na(clusters.name), aes(clusters.name, prop)) +
+         drop_na(clusters), aes(clusters, prop)) +
+         # drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -944,8 +955,8 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
-ggsave(file.path(anaDir, "pops_heat.pdf"), width = 2.7, height = 3)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+# ggsave(file.path(anaDir, "pops_heat.pdf"), width = 2.7, height = 3)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 

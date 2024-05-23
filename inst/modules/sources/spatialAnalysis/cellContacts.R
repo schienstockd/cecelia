@@ -112,7 +112,8 @@ CellContacts <- R6::R6Class(
           
           if (!is.null(labels)) {
             # extend root by labels if size does not match
-            labelsDT <- as.data.table(labels$view_label_col()$values_obs())
+            # labelsDT <- as.data.table(labels$view_label_col()$values_obs())
+            labelsDT <- as.data.table(labels$values_obs())
             
             # TODO is there an in memory version for that?
             # rootDT <- labelsDT[rootDT[, c("label", obsCols)], on = c("label")]

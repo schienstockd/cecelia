@@ -990,31 +990,33 @@ genUID <- function(uIDLength, numValues = 1){
 #' @description Create average matrix
 # TODO is there a better way to do this?
 #' @param popDT data.table of population
-#' @param popKey character to find population
+#' @param popKeys character to find population
 #' @examples
 #' TODO
 #' @export
-adataMatFromPopDT <- function(popDT, popKey = "clusters") {
+adataMatFromPopDT <- function(popDT, popKeys = c("clusters")) {
   if (nrow(popDT) > 0) {
     # convert chanels to matrix
     # https://stackoverflow.com/a/43834005/13766165
     adataSummary <- popDT[
-      order(get(popKey)), sapply(.SD, function(x) list(mean = mean(as.numeric(x), na.rm = TRUE))),
+      # order(popKeys), sapply(.SD, function(x) list(mean = mean(as.numeric(x), na.rm = TRUE))),
+      , sapply(.SD, function(x) list(mean = mean(as.numeric(x), na.rm = TRUE))),
       .SDcols = colnames(popDT)[
         !colnames(popDT) %in% c(
-          "uID", "label", popKey, "clusters", "region", "regions", "pop", "track_id",
-          paste("UMAP", seq(2), sep = "_"))
-      ], by = get(popKey)]
-    setnames(adataSummary, "get", popKey)
+          "uID", "label", popKeys, "clusters", "region", "regions", "pop", "track_id",
+          paste("UMAP", seq(2), sep = "_"), paste("centroid", c("x", "y", "z"), sep = "_"))
+      ], by = popKeys]
+    # setnames(adataSummary, "get", popKey)
     
     # replace names with readable channel names
     colnames(adataSummary) <- stringr::str_replace(colnames(adataSummary), ".mean", "")
     
     # remove key and transform matrix
-    anndataMat <- t(as.matrix(adataSummary[, !c(..popKey)]))
+    anndataMat <- t(as.matrix(adataSummary[, !c(..popKeys)]))
     
     # set names
-    colnames(anndataMat) <- adataSummary[[popKey]]
+    colnames(anndataMat) <- do.call(
+      paste, c(lapply(popKeys, function(x) {adataSummary[[x]]}), sep = "."))
     
     # replace inf
     anndataMat[is.infinite(anndataMat)] = 0

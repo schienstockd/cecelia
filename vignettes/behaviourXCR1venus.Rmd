@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -368,7 +369,14 @@ meanClusterPos <- dfToPlot %>%
   )
 dfToPlot$clusters <- factor(dfToPlot$clusters)
 
-colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+colPal <- c(
+  Scanning = "#E42328",
+  `Meandering prolate` = "#327EBA",
+  `Meandering oblate` = "#974D9E",
+  Directed = "#4CAF48",
+  Clustering = "#ffff00"
+)
 
 # plot UMAP
 ggplot(
@@ -378,8 +386,8 @@ ggplot(
   # geom_point(aes(color = clusters)) +
   geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
-  # scale_color_manual(values = colPal) +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
     axis.text.x = element_blank(),
