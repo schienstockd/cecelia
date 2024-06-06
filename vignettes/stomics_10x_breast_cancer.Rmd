@@ -1775,3 +1775,151 @@ for (x in c("eccentricity", "orientation", "extent", "solidity", "oblate",
 }
 ```
 
+```{r}
+# show pops on image
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+# cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+
+# start ipython kernel
+viewer <- NapariUtils$new()
+
+viewer$initNapari()
+```
+
+```{r}
+generateScreenshots <- function(
+    anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+    valueName = "default", matchChannels = FALSE, save = TRUE, pointsSize = NULL, ...) {
+  
+  # go through images and save movies
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    i <- x$getUID()
+    viewer$setTaskDir(x$persistentObjectDirectory())
+    
+    # get channels
+    imChannelNames <- x$imChannelNames()
+    
+    # match channels
+    curChannelsToShow <- channelsToShow
+    if (matchChannels == TRUE) {
+      # TODO this is very crude    
+      names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+        imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+      })
+    }
+
+    # get cmaps
+    layersVisible <- imChannelNames %in% names(curChannelsToShow)
+    channelColormaps <- rep("gray", length(layersVisible))
+    
+    for (j in names(curChannelsToShow))
+      channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+    
+    names(layersVisible) <- seq(length(layersVisible))
+    
+    # open image
+    viewer$openImage(
+      x$imFilepath(),
+      imChannelNames = imChannelNames,
+      show3D = FALSE,
+      layersVisible = layersVisible,
+      channelColormaps = channelColormaps
+      # multiscales = as.integer(1)
+    )
+    
+    # add populations
+    popsAdded <- list()
+    
+    # show on image
+    removePrevious <- TRUE
+    
+    if (is.null(pointsSize)) {
+      pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+      # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
+    }
+    
+    # add populations to popMap
+    for (popType in names(popsToShow)) {
+      popMap <- x$imPopMap(popType, includeFiltered = TRUE)
+      curPops <- popsToShow[[popType]]
+    
+      # get popIDs for paths
+      popIDs <- lapply(names(curPops), function(y) x$popIDsByAttr(popType, "path", y, includeFiltered = TRUE))
+      names(popIDs) <- names(curPops)
+      
+      for (pop in names(curPops)) {
+        x$editPopColour(popType, popIDs[[pop]], curPops[[pop]], includeFiltered = TRUE)
+      }
+    
+      # save to disk
+      x$savePopMap(popType, includeFiltered = TRUE)
+      x$savePops(popType, pops = names(popIDs),
+                 purge = TRUE, includeFiltered = TRUE)
+      
+      for (j in names(curPops)) {
+        viewer$showPopMapping(popType, valueName = popMap[[popIDs[[j]]]]$valueName,
+                              pops = list(j), pointsSize = pointsSize,
+                              execInteractive = FALSE, removePrevious = removePrevious)
+        removePrevious <- FALSE
+      }
+    }
+    
+    # adjust channel intensities
+    browser()
+  
+    # save screenshot
+    if (save == TRUE)
+      viewer$saveScreenshot(
+        file.path(anaDir, paste0(
+          paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+        ...)
+  }
+}
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "dpLvQE", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- c("aSf5Rr")
+
+channelsToShow <- list(
+  "CD4" = "yellow",
+  "CD8A" = "cyan",
+  "CD68" = "green",
+  "ERBB2" = "red",
+  "CEACAM6" = "bop orange",
+  "AQP1" = "blue",
+  "KRT14" = "gray"
+  )
+popsToShow <- list(
+  region = list(
+    "region.C" = "#ffd700",
+    "region.E" = "#00fa9a",
+    "region.G" = "#ff0000",
+    "region.F" = "#e9967a",
+    "region.A" = "#0000cd",
+    "region.B" = "#f0e68c",
+    "region.D" = "#ff1493"
+  )
+)
+fileAttrs <- c()
+
+# [1] "DCIS :  3"
+# [1] "invasive :  0"
+# [1] "others :  9, 10, 1, 2, 26, 19, 21, 20, 25, 12, 27, 16, 18, 17, 22, 11, 15, 23, 14, 13, 24"
+# [1] "myoepithelium :  5"
+# [1] "endothelial :  4"
+# [1] "cd4 :  7"
+# [1] "cd8 :  8"
+# [1] "macs :  6"
+
+generateScreenshots(
+  file.path(anaDir, "images"), cciaObj, uIDs, channelsToShow,
+  # file.path(anaDir, "pops"), cciaObj, uIDs, list(),
+  # list(), fileAttrs, size = list(800, 800), save = TRUE)
+  popsToShow, fileAttrs, size = NULL, save = TRUE, pointsSize = 40)
+  # popsToShow, fileAttrs, size = list(1200, 1200), save = TRUE)
+```

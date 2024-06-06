@@ -49,9 +49,6 @@ GenerateTrainingImages <- R6::R6Class(
         self$funParams()$maximumProjection
       ))
       
-      a <- as.list(self$funParams()$crop)
-      saveRDS(a$crop, "~/Downloads/a.rds")
-      
       # get root
       rootDir <- cciaObj$persistentObjectDirectory(root = TRUE)
       zeroRootDir <- cciaObj$persistentObjectDirectory(root = TRUE, zero = TRUE)

@@ -20,6 +20,7 @@ CciaImage <- R6::R6Class(
     # ome XML
     handleOmeXML = NULL,
     handleOmeXMLPixels = NULL,
+    handleOmeXMLChannels = NULL,
     handleTimelapseInfo = NULL,
     
     # labels
@@ -127,7 +128,7 @@ CciaImage <- R6::R6Class(
       }
       
       # remove duplicates
-      if (uniqueLabels == TRUE) {
+      if (uniqueLabels == TRUE && nrow(popDT) > 0) {
         # TODO it would be better to do this in place
         # and let the population utils do that
         
@@ -163,6 +164,11 @@ CciaImage <- R6::R6Class(
       private$invalidate(invalidate = invalidate)
     },
     
+    setOmeXMLChannels = function(x, invalidate = TRUE, reset = FALSE) {
+      private$handleOmeXMLChannels <- x
+      private$invalidate(invalidate = invalidate)
+    },
+    
     # getters
     getOmeXML = function() {
       private$handleOmeXML 
@@ -170,6 +176,10 @@ CciaImage <- R6::R6Class(
     
     getOmeXMLPixels = function() {
       private$handleOmeXMLPixels 
+    },
+    
+    getOmeXMLChannels = function() {
+      private$handleOmeXMLChannels
     }
   ),
   
@@ -298,6 +308,25 @@ CciaImage <- R6::R6Class(
       } else {
         return(x)
       }
+    },
+    
+    #' @description channels information
+    #' @param reset boolean to reset value
+    omeXMLChannels = function(reset = FALSE, omeXML = NULL) {
+      # is content already set?
+      if (is.null(private$getOmeXMLChannels()) || reset == TRUE) {
+        pixelInfo <- as.list(xml2::xml_attrs(
+          xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels//Channel"))
+        ))
+        
+        # get channel names
+        channelNames <- sapply(pixelInfo, function(x) x[["Name"]])
+        
+        # set
+        private$setOmeXMLChannels(channelNames)
+      }
+      
+      private$getOmeXMLChannels()
     },
     
     #' @description pixel information
@@ -450,16 +479,21 @@ CciaImage <- R6::R6Class(
       if (!is.null(self$imFilepath()) &&
           !purrr::is_empty(self$imFilepath()) &&
           file.exists(self$imFilepath())) {
+        # get channel names
+        channelNames <- self$omeXMLChannels()
+        
         # get pixel information
-        pixelInfo <- self$omeXMLPixels()
-        
-        # set image channels
-        # extract names from file if present
-        # else assign 1 2 3 .. as names
-        
-        # get channel size
-        channelNames <- xfun::numbers_to_words(
-          seq(as.integer(pixelInfo$SizeC)))
+        if (!length(channelNames) > 0) {
+          pixelInfo <- self$omeXMLPixels()
+          
+          # set image channels
+          # extract names from file if present
+          # else assign 1 2 3 .. as names
+          
+          # get channel size
+          channelNames <- xfun::numbers_to_words(
+            seq(as.integer(pixelInfo$SizeC)))
+        }
         
         # # get global metadata
         # if ("globalMetadata" %in% names(imMeta)) {
@@ -475,10 +509,8 @@ CciaImage <- R6::R6Class(
         #   channelNames <- channelNames[sort(names(channelNames))]
         # }
         
-        imChannelNames <- channelNames
-        
         # push back to object
-        self$setImChannelNames(imChannelNames)
+        self$setImChannelNames(channelNames)
       }
     },
     
@@ -2138,10 +2170,16 @@ CciaImage <- R6::R6Class(
       if (init == TRUE) {
         if (!is.null(self$valueNames("imLabelPropsFilepath"))) {
           if (is.null(private$handleLivePopUtils) || forceReload == TRUE) {
+            # get value Names
+            valueNames <- self$valueNames("imLabelPropsFilepath", valueType = "live")
+            
+            # exclude tracks and branching
+            valueNames <- valueNames[is.na(stringr::str_match(valueNames, "\\.tracks$|\\.branch$"))]
+            
             # init object
             private$handleLivePopUtils <- MultifileLabelPopUtils$new(
               self$persistentObjectDirectory(),
-              self$valueNames("imLabelPropsFilepath", valueType = "live"),
+              valueNames,
               self$imChannelNames(includeTypes = TRUE)
             )
             
@@ -3122,6 +3160,16 @@ CciaImage <- R6::R6Class(
             attr(retVal, "modified") <- TRUE
           }
         }
+      }
+      
+      retVal
+    },
+    
+    imSeries = function() {
+      retVal = NULL
+      
+      if ("imSeries" %in% names(self$getCciaMeta())) {
+        retVal <- self$getCciaMeta()$imSeries
       }
       
       retVal

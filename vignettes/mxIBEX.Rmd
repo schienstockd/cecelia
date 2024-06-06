@@ -560,15 +560,13 @@ popNN <- dbscan::kNN(
   x, k = 1, query = as.matrix(regionDT[, c('centroid_z', 'centroid_y', 'centroid_x')]))
 
 # filter long distances
-# regionVals <- regionDT[popNN$id, ]$regions
-# regionVals <- branchDT[popNN$id, ]$`branch-type`
 regionDT[, branch.id := popNN$id]
 regionDT[, branch.dist := popNN$dist]
 regionDT[branchDT[, c("label", "branch-type")], on = c("branch.id" = "label"),
       `branch-type` := `branch-type`]
 ```
 
-```{r fig_pop_branching, fig.height=1, fig.width=2.5}
+```{r fig_pop_branching, fig.height=4, fig.width=5}
 summaryDT <- copy(regionDT)
 summaryDT[branch.dist > (6 / cciaObj$omeXMLPixelRes()$x), `branch-type` := -1]
 

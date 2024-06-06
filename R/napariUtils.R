@@ -173,12 +173,14 @@ NapariUtils <- R6::R6Class(
           # List (16 items) will be used if there are many names ..
           # reticulate::r_to_py(forceAsFlatList(imChannelNames)), 
           sprintf("['%s']", paste(c(unname(imChannelNames)), collapse = "', '")),
-          reticulate::r_to_py(channelColormaps),
+          # reticulate::r_to_py(channelColormaps),
+          if (length(channelColormaps) > 0) sprintf("['%s']", paste(c(unname(channelColormaps)), collapse = "', '")) else "None",
           if (!is.null(multiscales)) reticulate::r_to_py(as.integer(multiscales)) else reticulate::r_to_py(NULL),
           reticulate::r_to_py(asDask),
           reticulate::r_to_py(downsampleZ),
           reticulate::r_to_py(show3D),
-          reticulate::r_to_py(layersVisible),
+          # reticulate::r_to_py(layersVisible),
+          if (length(layersVisible) > 1) sprintf("[%s]", paste(sapply(layersVisible, function(x) if (x) "True" else "False"), collapse = ", ")) else reticulate::r_to_py(layersVisible),
           reticulate::r_to_py(squeeze)
           ), execInteractive = execInteractive
         )

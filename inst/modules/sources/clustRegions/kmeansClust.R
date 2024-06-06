@@ -72,10 +72,12 @@ KmeansClust <- R6::R6Class(
       groupFrom <- "pop.from"
       groupTo <- "pop.to"
       
-      if (self$funParams()$popType == "clust" && (self$funParams()$useClusters == TRUE || self$funParams()$useClustersGroup == TRUE)) {
+      useClustersGroup <- "useClustersGroup" %in% names(self$funParams()) && self$funParams()$useClustersGroup == TRUE
+      
+      if (self$funParams()$popType == "clust" && (self$funParams()$useClusters == TRUE || useClustersGroup)) {
         clustersCol <- "clusters"
         
-        if (self$funParams()$useClustersGroup == TRUE)
+        if (useClustersGroup == TRUE)
           clustersCol <- "clusters.group"
         
         popCols <- c("uID", "label", clustersCol)
@@ -196,7 +198,7 @@ KmeansClust <- R6::R6Class(
         # get data
         y <- freqRegionsWider[uID == x$getUID()]
         
-        self$writeLog(sprintf("save %s", x$getUID()))
+        self$writeLog(sprintf("save %s: %s", x$getUID(), nrow(y)))
         
         # exclude columns
         exclCols <- colnames(y)[colnames(y) %in% c("uID", "pop.from", "clusters.from")]

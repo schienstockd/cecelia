@@ -6,6 +6,9 @@ createImageViewerManager <- function(
   # get image from set
   getImageFromSet <- function(uID) {
     curSelected <- NULL
+    
+    browser()
+    
     if (length(moduleManagers()$imageSetManager$selectedSet()$cciaObjects()) > 0) {
       curSelected <- moduleManagers()$imageSetManager$selectedSet()$cciaObjectByUID(uID)
       if (length(curSelected) > 0) {

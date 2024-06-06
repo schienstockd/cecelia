@@ -65,6 +65,19 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Immunemap_expID_49/CECELIA"
 ```
 
 ```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mrMpi5", versionID = versionID, initReactivity = FALSE # Immunemap
+)
+
+cciaObj$tracks("T")
+```
+
+
+```{r}
 # HMM
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
@@ -613,7 +626,7 @@ ggplot(datToPlot, aes(as.factor(from), as.factor(to), size = freq * 2, fill = fr
 ggsave(file.path(anaDir, "clusters_transitions_heat.pdf"), width = 3.5, height = 3)
 ```
 
-```{r fig_clusters_freq, fig.height=4, fig.width=15}
+```{r fig_clusters_freq, fig.height=4, fig.width=8}
 # save frequencies of track clusters
 summaryDF <- copy(tcells.sc)
 

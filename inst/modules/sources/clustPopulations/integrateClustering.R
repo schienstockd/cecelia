@@ -45,7 +45,8 @@ IntegrateClustering <- R6::R6Class(
       popDT <- cciaObj$popDT(
         popType = popType,
         pops = pops,
-        includeFiltered = TRUE,
+        # includeFiltered = TRUE,
+        includeFiltered = FALSE,
         uIDs = uIDs)
       
       # get matrix
@@ -76,16 +77,16 @@ IntegrateClustering <- R6::R6Class(
       # umapDF$clusters.group <- as.factor(clusters$cluster)
       
       # https://mclust-org.github.io/mclust/articles/mclust.html
-      library(mclust)
-      BIC <- mclustBIC(popMat, clustToFind)
-      mod1 <- Mclust(popMat, x = BIC)
-      umapDF$clusters.group <- as.factor(mod1$classification)
+      # library(mclust)
+      # BIC <- mclustBIC(popMat, clustToFind)
+      # mod1 <- Mclust(popMat, x = BIC)
+      # umapDF$clusters.group <- as.factor(mod1$classification)
       
       # TODO not sure about this
       # find clusters on UMAP
-      # clusters <- dbscan::dbscan(
-      #   umapDF[, c("V1", "V2")], eps = 0.4, minPts = 3, borderPoints = TRUE)
-      # umapDF$clusters.group <- as.factor(clusters$cluster)
+      clusters <- dbscan::dbscan(
+        umapDF[, c("V1", "V2")], eps = 0.6, minPts = 3, borderPoints = TRUE)
+      umapDF$clusters.group <- as.factor(clusters$cluster)
       
       # TODO not cool
       saveRDS(umapDF, file = file.path(

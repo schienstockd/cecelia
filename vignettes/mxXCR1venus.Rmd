@@ -223,7 +223,10 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$popDT(popType = "labels")
+# cciaObj$popDT(popType = "labels")
+
+for (x in cciaObj$cciaObjects())
+  print(x$imFilepath())
 ```
 
 
@@ -276,11 +279,11 @@ uIDs <- exp.info$uID
 pops <- c("/nonDebris/P14")
 
 popDT <- cciaObj$popDT(
-  popType = "flow", uIDs = uIDs[2], pops = pops, includeFiltered = FALSE)
+  popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
 
-popPPP <- cciaObj$ppp(
-  popType = "flow", pops = pops, uIDs = uIDs[2], usePhysicalScale = TRUE,
-  hullType = "concave", concavity = 2, splitWindowBy = "flow.cell.clust.id")
+# popPPP <- cciaObj$ppp(
+#   popType = "flow", pops = pops, uIDs = uIDs[2], usePhysicalScale = TRUE,
+#   hullType = "concave", concavity = 2, splitWindowBy = "flow.cell.clust.id")
 ```
 
 ```{r fig_regions, fig.height=10, fig.width=8}
@@ -555,7 +558,7 @@ popDT.spatial[
 popDT.spatial[is.na(pop.to), pop.to := "NONE"]
 ```
 
-```{r fig_p14, fig.height=1.5, fig.width=2}
+```{r fig_p14, fig.height=4, fig.width=4}
 # summaryAssociation <- summaryAssociation %>%
 summaryAssociation <- copy(popDT.spatial)
 # summaryAssociation[startsWith(pop, "/nonDebris/P14"), pop := "/nonDebris/P14"]

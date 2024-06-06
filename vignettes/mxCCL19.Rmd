@@ -87,9 +87,9 @@ for (x in cciaObj$cciaObjects()) {
                   gateID = 1, xChannel = "AF", yChannel = "B220.PB")
   ))
   
-  x$setImGatingSetFilepath("default.gs", "default")
-  x$imGatingSetFilepath()
-  x$saveState()
+  # x$setImGatingSetFilepath("default.gs", "default")
+  # x$imGatingSetFilepath()
+  # x$saveState()
   
   # run task
   funParams <- list(
@@ -110,7 +110,7 @@ for (x in cciaObj$cciaObjects()) {
     funName = "segment.createBranching",
     funParams = funParams,
     env = "local",
-    runInplace = TRUE,
+    runInplace = FALSE,
     taskID = 1
     # uIDs = names(cciaObj$cciaObjects()),
     # mc.cores = 4
@@ -217,12 +217,11 @@ for (x in cciaObj$cciaObjects()) {
     # get raster contours
   p1s <- .flowPlotGatedRaster(
     x, popPaths = "root", labelSize = 5, labelBorder = 1, labelAlpha = 0.8,
-    xTitleSize = 16, yTitleSize = 16,
-    asContours = TRUE, plotTitleSize = 16)
+    xTitleSize = 16, yTitleSize = 16, asContours = TRUE, plotTitleSize = 16)
   
   p1 <- ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
   
-  ggsave(file.path(anaDir, "gating", paste0(x$getCciaAttr(attrName = "DTx"), "_", x$getUID(), ".png")),
+  ggsave(file.path(anaDir, "gating", paste0(x$getCciaAttr(attrName = "DTx"), "_", x$getUID(), ".pdf")),
          width = 8, height = 8, plot = p1)
 }
 ```
@@ -331,7 +330,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_interactions.pdf"), width = 3, height = 2)
-write.csv(datToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
+write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
 ```
 
 ```{r fig_triplet, fig.height=3, fig.width=3}
@@ -358,7 +357,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_CD11c_interactions.pdf"), width = 3, height = 2)
-write.csv(datToPlot, file.path(anaDir, "P14_triplet_CD11c_interactions.csv"))
+write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_CD11c_interactions.csv"))
 ```
 
 ```{r fig_triplet, fig.height=3, fig.width=3}
@@ -384,7 +383,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_XCR1_interactions.pdf"), width = 3, height = 2)
-write.csv(datToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
+write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
 ```
 
 
@@ -435,8 +434,8 @@ generateScreenshots <- function(
       imChannelNames = imChannelNames,
       show3D = TRUE,
       layersVisible = layersVisible,
-      channelColormaps = channelColormaps
-      # multiscales = as.integer(1)
+      channelColormaps = channelColormaps,
+      multiscales = as.integer(2)
     )
     
     # add populations
@@ -474,7 +473,7 @@ generateScreenshots <- function(
     }
     
     # adjust channel intensities
-    # browser()
+    browser()
   
     # save screenshot
     if (save == TRUE)
@@ -492,6 +491,8 @@ cciaObj <- initCciaObject(
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 uIDs <- names(cciaObj$cciaObjects())
+
+uIDs <- c("gLtekp", "f7ncxo")
 
 channelsToShow <- list(
   "P14" = "gray",
@@ -516,7 +517,7 @@ fileAttrs <- c("DTx")
 
 generateScreenshots(
   # file.path(anaDir, "images"), cciaObj, uIDs, channelsToShow,
-  file.path(anaDir, "populations"), cciaObj, uIDs, list(),
+  file.path(anaDir, "populations"), cciaObj, uIDs, channelsToShow,
   # list(), fileAttrs, size = list(1200, 1200), save = TRUE)
-  popsToShow, fileAttrs, size = list(1200, 1200), save = TRUE)
+  popsToShow, fileAttrs, size = list(1200, 1200), save = FALSE)
 ```

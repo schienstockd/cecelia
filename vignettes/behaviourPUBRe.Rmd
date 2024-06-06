@@ -367,8 +367,10 @@ uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 funParams <- list(
   popType = "live",
   popsToCluster = c("gBT/tracked", "gDT/tracked"),
-  valueName = "tracks.clusters.tcells.hmm_transitions_movement",
-  clusterColName = "hmm_transitions_movement",
+  # valueName = "tracks.clusters.tcells.hmm_transitions_movement",
+  # clusterColName = "hmm_transitions_movement",
+  valueName = "tracks.clusters.tcells.movement",
+  clusterColName = "movement",
   # valueName = "tracks.clusters.tcells.hmm_transitions_movement_shape",
   # clusterColName = "hmm_transitions_movement_shape",
   # valueName = "tracks.clusters.tcells.hmm_movement",
@@ -397,8 +399,8 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
-    "live.cell.hmm.state.movement",
-    "live.cell.hmm.transitions.movement"
+    # "live.cell.hmm.state.movement",
+    # "live.cell.hmm.transitions.movement"
     # "live.cell.hmm.state.shape",
     # "live.cell.hmm.transitions.shape"
     ),
@@ -446,6 +448,8 @@ uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   cciaObj$persistentObjectDirectory(),
+  # value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_movement.sc")$label_props_view()$as_df())
   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
@@ -511,6 +515,10 @@ ggplot(
     label.size = 0.25,
     color = "black"
     )
+
+# ggsave(file.path(anaDir, "umap_movement.tiff"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_hmm_movement.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_hmm_transitions_movement.tiff"), width = 2, height = 2)
 ```
 
 ```{r}

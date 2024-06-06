@@ -995,7 +995,7 @@ genUID <- function(uIDLength, numValues = 1){
 #' TODO
 #' @export
 adataMatFromPopDT <- function(popDT, popKeys = c("clusters")) {
-  if (nrow(popDT) > 0) {
+  if (!is.null(popDT) && nrow(popDT) > 0) {
     # convert chanels to matrix
     # https://stackoverflow.com/a/43834005/13766165
     adataSummary <- popDT[

@@ -1,0 +1,32 @@
+{
+  "fun": {
+    "splitSeries": {
+      "category": "Module functions",
+      "label": "Split series",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "splitSetID": {
+				"type:character": {
+					"default": ""
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "splitSetID": {
+        "index": 0,
+        "label": "Image set",
+        "widget:imageSetSelection": {
+          "size": 1,
+          "multiple": false
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

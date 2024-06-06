@@ -375,12 +375,10 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Set
 )
 
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-
 # uIDs <- exp.info[Include == "Y"]$uID
 uIDs <- exp.info[Stain == "A"]$uID
 
-for (x in cciaObj$cciaObjects(uIDs = uIDs[1])) {
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   # x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
   # x$saveState()
 }
@@ -561,7 +559,7 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 uIDs <- names(cciaObj$cciaObjects())
-uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info[Analyse == "Y"]$uID
 
 # run task
 funParams <- list(
@@ -700,7 +698,7 @@ uIDs <- exp.info[Analyse == "Y"]$uID
 
 pops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "clust", includeFiltered = TRUE)
 pops <- pops[is.na(stringr::str_match(pops, "/"))]
-# pops <- c("root")
+pops <- c("root")
 
 # regionPops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "region", includeFiltered = TRUE)
 
@@ -720,7 +718,8 @@ popDT <- cciaObj$popDT(
   popType = "clust",
   uIDs = uIDs,
   pops = pops,
-  includeFiltered = TRUE,
+  # includeFiltered = TRUE,
+  includeFiltered = FALSE,
   completeDT = TRUE, replaceNA = TRUE
 )
 ```
@@ -1216,8 +1215,7 @@ for (i in unique(popDT$uID)) {
   print(paste(">>", i))
   
   # go through clusters
-  # for (j in unique(x$clusters)) {
-  for (j in unique(x$pop)) {
+  for (j in unique(x$clusters)) {
     print(paste(">", j))
     
     # plot out
@@ -1229,8 +1227,7 @@ for (i in unique(popDT$uID)) {
       plotThemeDark(angle = 0) +
       # geom_point(size = 0.2) +
       geom_point(data = x, size = 0.2, color = "darkgrey") +
-      # geom_point(data = x[clusters == j], size = 0.2, color = "red") +
-      geom_point(data = x[pop == j], size = 0.2, color = "red") +
+      geom_point(data = x[clusters == j], size = 0.2, color = "red") +
       # scale_color_brewer(palette = "Set3", name = "Clusters") +
       # scale_color_manual(values = colPal, name = "Clusters") +
       theme(
@@ -1258,33 +1255,15 @@ for (i in unique(popDT$uID)) {
     # print(p1)
     
     # ggsave(file.path(anaDir, "clusters_im.png"), width = 40, height = 20, plot = p1)
-    # ggsave(file.path(anaDir, "maps", paste0("clusters-", exp.info[uID == i]$Treatment, "-", i, "-", j, ".png")), width = 5, height = 5, plot = p1)
-    ggsave(file.path(anaDir, "maps", paste0("pop-", exp.info[uID == i]$Treatment, "-", i, "-", j, ".png")), width = 5, height = 5, plot = p1)
+    ggsave(file.path(anaDir, "maps", paste0("clusters-", exp.info[uID == i]$Treatment, "-", i, "-", j, ".png")), width = 5, height = 5, plot = p1)
   }
 }
 ```
 
-```{r}
-popDefs <- list()
-
-# print out population definitions
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  popDef <- sapply(
-    x$imPopMap("clust", includeFiltered = TRUE),
-    function(y) if (length(y$filterValues) > 0)paste(y$path, paste(y$filterValues, collapse = ","), sep = ": "))
-  
-  popDefs[[x$getUID()]] <- as.data.table(t(as.data.frame(popDef[lengths(popDef) > 0])))
-}
-
-write.csv(rbindlist(popDefs, idcol = "uID"), file.path(anaDir, "population_definitions.csv"))
-```
-
-
 ```{r fig_clusters_freq, fig.height=5, fig.width=15}
 # show frequency of populations for treatments
 summaryDF <- popDT %>%
-  # group_by(uID, clusters) %>%
-  group_by(uID, pop) %>%
+  group_by(uID, clusters) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
   ungroup() %>%
@@ -1293,22 +1272,16 @@ summaryDF <- popDT %>%
 levelOrder <- unique(exp.info[uID %in% uIDs]$Treatment)
 summaryDF$Treatment <- factor(summaryDF$Treatment, levels = levelOrder)
 
-colPal <- as.list(randomcoloR::distinctColorPalette(length(unique(summaryDF$pop))))
-
 # plot
 ggplot(summaryDF,
-       # aes(paste(Treatment, uID), freq, fill = clusters)) +
-       aes(paste(Treatment, uID), freq, fill = pop)) +
+       aes(paste(Treatment, uID), freq, fill = clusters)) +
   theme_classic() +
   geom_col() +
   coord_flip() +
-  # scale_fill_manual(values = colPal, name = "Clusters") +
-  # xlab("") + ylab("Clusters (%)")
-  scale_fill_manual(values = colPal, name = "Pops") +
-  xlab("") + ylab("Population (%)")
+  scale_fill_manual(values = colPal, name = "Clusters") +
+  xlab("") + ylab("Clusters (%)")
 
-# ggsave(file.path(anaDir, "clusters-freq.png"), width = 8, height = 4)
-ggsave(file.path(anaDir, "pops-freq.png"), width = 8, height = 5)
+ggsave(file.path(anaDir, "clusters-freq.png"), width = 8, height = 4)
 ```
 
 
@@ -1560,6 +1533,63 @@ ggplot(freqInt, aes(as.factor(pop.from), as.factor(pop.to))) +
 ```
 
 ```{r}
+# read marker definitions
+marker.def <- as.data.table(read.csv(file.path(anaDir, "Mouse_CODEX Neuro Panel_Biomarkers_Cell Type.csv")))
+
+marker.def[, desc := paste(Cell.Type.level.1, Cell.Type.level.2, sep = ">")]
+# marker.def[, desc := Cell.Type.level.1]
+setnames(marker.def, "X", "marker")
+
+marker.def <- marker.def[, c("marker", "desc")]
+marker.def[, marker := .flowCorrectChannelNames(marker)]
+
+# remove trailing separator
+marker.def[, desc := stringr::str_replace(desc, ">$", "")]
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # THEO Mouse
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- exp.info[Analyse == "Y"]$uID
+x <- cciaObj$cciaObjects(uIDs = uIDs)[[1]]
+
+# pre-create populations to be added for each image
+# then go through and define them
+popNames <- unique(marker.def$desc)
+
+# get colours
+popColours <- randomcoloR::distinctColorPalette(length(popsToAdd))
+popsToAdd <- lapply(popColours, function(x) {
+  list(
+    filterMeasure = "clusters",
+    filterValues = c(),
+    filterFun = "eq",
+    colour = x
+  )
+})
+names(popsToAdd) <- popNames
+
+# add populations
+x$delPopsByPath("clust", pops = names(popsToAdd), includeFiltered = TRUE)
+x$addFilteredPops("clust", "root", popsToAdd, valueName = "default")
+x$saveState()
+
+# then propagate
+cciaObj$propagatePopMap("clust", x$getUID(), uIDs[uIDs != x$getUID()], saveState = TRUE)
+```
+
+```{r}
 # clustMarkers <- colnames(dfToPlot)
 clustMarkers <- colnames(popDT)
 # clustMarkers <- colnames(regionsDT)
@@ -1593,13 +1623,14 @@ combinePops <- list(
 plotSizes <- list(
   # init = c(6, 10)
   # init = c(6, 10)
-  # init = c(8, 12) # THEO Mouse
-  init = c(8, 16) # THEO Human
+  init = c(14, 16) # THEO Mouse
+  # init = c(14, 16) # THEO Human
   # regions = c(4, 10)
 )
 ```
 
-```{r fig_clusters_heat, fig.height=4, fig.width=4}
+
+```{r fig_clusters_heat, fig.height=10, fig.width=10}
 for (i in names(clust)) {
   popsToShow <- clust[[i]]
   markersToShow <- .flowCorrectChannelNames(markers[[i]])
@@ -1633,7 +1664,11 @@ for (i in names(clust)) {
     markersToPlot <- popLymphs %>%
       pivot_longer(
         cols = all_of(markersToShow), names_to = "marker", values_to = "value"
-        )
+        ) %>%
+      # add marker definitions
+      left_join(marker.def) %>%
+      mutate(marker = paste(desc, marker))
+
     markersToPlot$marker <- as.factor(markersToPlot$marker)
     
     # show heatmap for clusters
@@ -1658,6 +1693,7 @@ for (i in names(clust)) {
     markersSummary[[groupVar]] <- factor(markersSummary[[groupVar]], levels = clustersOrder)
     
     p1 <- ggplot(markersSummary %>%
+    # ggplot(markersSummary %>%
              mutate(
                # clusters = factor(clusters, levels = clustersOrder),
                # clusters = factor(clusters, levels = sort(as.numeric(levels(clustersOrder)))),
@@ -1679,10 +1715,11 @@ for (i in names(clust)) {
         axis.text.x = element_text(size = 20, angle = 45, hjust = 1, vjust = 1),
         # axis.text.x = element_text(size = 20),
         strip.background = element_blank(),
-        strip.text.x = element_blank()
-        ) + xlab("") + ylab("")
+        # strip.text.x = element_blank()
+        ) + xlab("") + ylab("") +
+      scale_y_discrete(position = "right")
     
-    plot(p1)
+    # plot(p1)
     
     # ggsave(file.path(anaDir, "heat", paste0("clusters_heat_", i, ".pdf")),
     ggsave(file.path(anaDir, "heat", paste0("clusters_heat_", exp.info[uID == j]$Treatment, "-", j, "-", i, ".pdf")),

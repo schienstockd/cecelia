@@ -1,0 +1,51 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# set test variables
+pID <- "LXXd5L" # ALI
+versionID <- 1
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+```
+
+```{r}
+library(flowWorkspace)
+
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/gut"
+```
+
+```{r}
+# Generate average
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "3fsf7u", versionID = versionID, initReactivity = FALSE 
+)
+
+x <- cciaObj$cciaObjects()[[1]]
+
+x$resetMetaFromFile()
+x$imChannelNames()
+```
+

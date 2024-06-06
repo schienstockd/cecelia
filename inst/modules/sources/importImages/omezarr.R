@@ -157,6 +157,9 @@ Omezarr <- R6::R6Class(
           dimOrderStr <- sprintf("--dimension-order %s", self$funParams()$dimOrder)
         }
         
+        # get image series
+        imSeries <- cciaObj$imSeries()
+        
         cmd <- paste(
           # sprintf("cd \"%s\";", self$envParams()$dirs$zero),
           # go to file directory
@@ -168,7 +171,8 @@ Omezarr <- R6::R6Class(
           sprintf(imPathInPattern, basename(imPathIn)),
           sprintf("\"%s\"", imPathOut),
           pyramidScaleStr,
-          dimOrderStr
+          dimOrderStr,
+          if (!is.null(imSeries)) paste("--series", imSeries)
         )
         
         # add blosc library if needed

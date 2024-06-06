@@ -297,15 +297,15 @@ class NapariUtils:
       # check that viewer is open
       if self.viewer is None:
         self.open_viewer()
-
+      
+      # get channel axis
+      channel_axis = self.dim_utils.dim_idx('C', squeeze = squeeze)
+      
       # this has to be set to the channel when used
       # if channel_names is not None and len(channel_names) == 1:
       #   use_channel_axis = False
       #   channel_names = None
-      self.use_channel_axis = use_channel_axis
-      
-      # get channel axis
-      channel_axis = self.dim_utils.dim_idx('C', squeeze = squeeze)
+      self.use_channel_axis = use_channel_axis and channel_axis is not None
       
       if squeeze is True:
         # squeeze data
@@ -314,12 +314,12 @@ class NapariUtils:
         # set scale
         self.im_scale = self.dim_utils.im_scale(
           dims = self.dim_utils.trimmed_default_dim_order(
-            ignore_channel = use_channel_axis, squeeze = True))
+            ignore_channel = self.use_channel_axis, squeeze = True))
       else:
         self.im_scale = self.dim_utils.im_scale()
       
         # remove channel
-        if use_channel_axis is True:
+        if self.use_channel_axis is True:
           self.im_scale.pop(channel_axis)
       
       # TODO this is hard coded for SLIDE-SEQ
@@ -352,9 +352,9 @@ class NapariUtils:
       # https://forum.image.sc/t/viewing-a-volume-as-2d-pyramids/38383/2
       self.viewer.add_image(
         [x.compute() for x in self.im_data] if compute_dask is True else self.im_data,
-        channel_axis = channel_axis if use_channel_axis else None,
-        name = channel_names if use_channel_axis else None,
-        colormap = channel_colormaps if use_channel_axis else None,
+        channel_axis = channel_axis if self.use_channel_axis else None,
+        name = channel_names if self.use_channel_axis else None,
+        colormap = channel_colormaps if self.use_channel_axis else None,
         contrast_limits = contrast_limits,
         scale = self.im_scale, visible = visible)
       

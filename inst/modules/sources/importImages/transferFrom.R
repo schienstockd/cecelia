@@ -36,10 +36,6 @@ TransferFrom <- R6::R6Class(
       if (file.exists(file.path(dirname(cciaObj$oriFilepath()), "ome.xml")))
         extraFiles <- c("ome.xml")
       
-      self$writeLog("ad")
-      self$writeLog(cciaObj$oriFilepath())
-      self$writeLog(xfun::file_ext(cciaObj$oriFilepath()))
-      
       # get files to copy
       filesToCopy <- prepFilelistToSync(
         cciaObj$oriFilepath(),
