@@ -7,12 +7,12 @@ createImageViewerManager <- function(
   getImageFromSet <- function(uID) {
     curSelected <- NULL
     
-    browser()
-    
-    if (length(moduleManagers()$imageSetManager$selectedSet()$cciaObjects()) > 0) {
-      curSelected <- moduleManagers()$imageSetManager$selectedSet()$cciaObjectByUID(uID)
-      if (length(curSelected) > 0) {
-        curSelected <- curSelected[[1]]()
+    if (length(moduleManagers()$imageSetManager$selectedSet()) > 0 ) {
+      if (length(moduleManagers()$imageSetManager$selectedSet()$cciaObjects()) > 0) {
+        curSelected <- moduleManagers()$imageSetManager$selectedSet()$cciaObjectByUID(uID)
+        if (length(curSelected) > 0) {
+          curSelected <- curSelected[[1]]()
+        }
       }
     }
     
