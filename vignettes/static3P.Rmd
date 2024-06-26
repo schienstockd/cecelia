@@ -77,4 +77,6 @@ cciaObj <- initCciaObject(
 
 cciaObj$resetMetaFromFile()
 cciaObj$saveState()
+
+cciaObj$imChannelNames()
 ```

@@ -319,18 +319,18 @@ class NapariUtils:
         self.im_scale = self.dim_utils.im_scale()
         
         # TODO this is a manual fix to reverse scale
-        # self.im_scale[self.dim_utils.dim_idx('X')] = self.im_scale[self.dim_utils.dim_idx('X')] * -1
+        self.im_scale[self.dim_utils.dim_idx('X')] = self.im_scale[self.dim_utils.dim_idx('X')] * -1
           
         # remove channel
         if self.use_channel_axis is True:
           self.im_scale.pop(channel_axis)
       
-      # # TODO do I need this?
-      # idx_x = self.dim_utils.dim_idx('X', ignore_channel = self.use_channel_axis)
-      # idx_y = self.dim_utils.dim_idx('Y', ignore_channel = self.use_channel_axis)
-      # 
-      # self.im_scale[idx_x] = 1/self.im_scale[idx_x]
-      # self.im_scale[idx_y] = 1/self.im_scale[idx_y]
+      # TODO do I need this?
+      idx_x = self.dim_utils.dim_idx('X', ignore_channel = self.use_channel_axis)
+      idx_y = self.dim_utils.dim_idx('Y', ignore_channel = self.use_channel_axis)
+
+      self.im_scale[idx_x] = 1/self.im_scale[idx_x]
+      self.im_scale[idx_y] = 1/self.im_scale[idx_y]
       
       # TODO this is hard coded for SLIDE-SEQ
       if contrast_limits is None and self.im_data[0].dtype == np.float16:
