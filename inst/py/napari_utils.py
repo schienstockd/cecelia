@@ -319,7 +319,7 @@ class NapariUtils:
         self.im_scale = self.dim_utils.im_scale()
         
         # TODO this is a manual fix to reverse scale
-        self.im_scale[self.dim_utils.dim_idx('X')] = self.im_scale[self.dim_utils.dim_idx('X')] * -1
+        # self.im_scale[self.dim_utils.dim_idx('X')] = self.im_scale[self.dim_utils.dim_idx('X')] * -1
           
         # remove channel
         if self.use_channel_axis is True:
