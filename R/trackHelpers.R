@@ -213,10 +213,11 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
       # splitTrackIDs <- !is.null(steps.subtracks)
       # TODO not very elegant though
       splitTrackIDs <- stringr::str_detect(rownames(tracks.fun.result[[1]])[[1]], "[0-9]+\\.[0-9]+")
+      splitTrackIDs <- if (length(splitTrackIDs) > 0) splitTrackIDs else FALSE
       
       # convert to DT
       tracks.fun.DT <- lapply(
-        tracks.fun.result,
+        tracks.fun.result[lengths(tracks.fun.result) > 0],
         function(x) {
           DT <- as.data.table(as.matrix(x))[
             # , track_id := as.numeric(names(x))]

@@ -201,6 +201,7 @@ cciaObj <- initCciaObject(
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 popDT <- cciaObj$popDT(popType = "flow", pops = c("/cells/P14"))
+# popDT <- cciaObj$popDT(popType = "flow")
 ```
 
 ```{r fig_gating, fig.height=6, fig.width=6}
@@ -384,6 +385,174 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
 
 ggsave(file.path(anaDir, "P14_triplet_XCR1_interactions.pdf"), width = 3, height = 2)
 write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "TtEFdZ", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+# pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE, uIDs = uIDs[1])
+pops <- cciaObj$popPaths(popType = "flow", includeFiltered = TRUE, uIDs = uIDs[1])
+pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
+pops <- pops[pops != "/cells"]
+
+# can you show a similar trend with SPIAT?
+spe <- cciaObj$spe(popType = "flow", pops = pops, uIDs = uIDs, includeFiltered = TRUE)
+```
+
+```{r}
+entropies <- list()
+
+gradient_pos <- seq(50, 500, 50) ##radii
+spe_pops <- c(
+  "/cells/P14/clustered",
+  "/cells/P14/non.clustered",
+  "/cells/O1/XCR1",
+  "/cells/O1/CD11c"
+)
+
+for (i in names(spe)) {
+  print(paste(">>", i))
+  
+  x <- spe[[i]]
+  
+  entropies[[i]] <- as.data.table(SPIAT::entropy_gradient_aggregated(
+    x, cell_types_of_interest = spe_pops,
+    feature_colname = "Phenotype", radii = gradient_pos)$gradient_df)
+}
+
+entropiesDT <- rbindlist(entropies, idcol = "uID")
+```
+
+```{r fig_spe_entity, fig.height=10, fig.width=10}
+datToPlot <- entropiesDT %>%
+  pivot_longer(
+    cols = starts_with("Pos_"),
+    names_to = "radius",
+    names_pattern = ".*_(.*)",
+    values_to = "value") %>%
+  mutate(radius = as.numeric(radius)) %>%
+  left_join(exp.info)
+
+ggplot(datToPlot, aes(radius, value, color = DTx, group = uID)) +
+  theme_classic() +
+  geom_line() +
+  # ylim(0, 1) +
+  facet_wrap(Celltype1~Celltype2, ncol = 3, scales = "free_y")
+```
+
+```{r fig_spe_colocalisation, fig.height=5, fig.width=8}
+# is there anything that you can use to find a difference between PBS/DTx?
+spe_pops <- c(
+  "/cells/P14/clustered",
+  "/cells/P14/non.clustered",
+  "/cells/O1/XCR1"
+  # "/cells/O1/CD11c"
+)
+
+# Average pairwise distance (APD)
+# Average minimum distance (AMD)
+spiat.amd <- lapply(spe, function(x) {
+  # SPIAT::calculate_pairwise_distances_between_celltypes(
+  as.data.table(SPIAT::calculate_minimum_distances_between_celltypes(
+    spe_object = x, 
+    cell_types_of_interest = spe_pops,
+    feature_colname = "Phenotype"))
+})
+spiat.amdDT <- rbindlist(spiat.amd, idcol = "uID")
+
+ggplot(spiat.amdDT %>% left_join(exp.info), aes(Pair, Distance, fill = DTx)) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  # geom_jitter(
+  #   position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  coord_flip()
+    # width = 0.2, alpha = 1.0)
+  # ylim(0, 1)
+```
+
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=3}
+# Normalized mixing score (NMS)
+spiat.nms <- lapply(spe, function(x) {
+  as.data.table(SPIAT::mixing_score_summary(
+    spe_object = x, 
+    # reference_celltype = "/cells/P14/clustered",
+    reference_celltype = "/cells/P14/non.clustered",
+    target_celltype = "/cells/O1/XCR1",
+    feature_colname = "Phenotype"))
+})
+spiat.nmsDT <- rbindlist(spiat.nms, idcol = "uID")
+
+ggplot(spiat.nmsDT %>% left_join(exp.info), aes(DTx, Mixing_score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+
+ggplot(spiat.nmsDT %>% left_join(exp.info), aes(DTx, Normalised_mixing_score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+```
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=3}
+# Cross-K AUC
+spiat.ckauc <- lapply(spe, function(x) {
+  SPIAT::AUC_of_cross_function(SPIAT::calculate_cross_functions(
+    spe_object = x, 
+    method = "Kcross", cell_types_of_interest = c(
+      # "/cells/P14/clustered", "/cells/O1/XCR1"),
+      "/cells/P14/non.clustered", "/cells/O1/XCR1"),
+      # "/cells/P14/non.clustered", "/cells/O1/CD11c"),
+    dist = 100,
+    feature_colname = "Phenotype"))
+})
+spiat.ckaucDT <- as.data.frame(unlist(spiat.ckauc)) %>% rownames_to_column()
+colnames(spiat.ckaucDT) <- c("uID", "value")
+
+ggplot(spiat.ckaucDT %>% left_join(exp.info), aes(DTx, value)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+  # ylim(0, 1)
+```
+
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=3}
+# Cross-K intersection (CKI)
+spiat.cki <- lapply(spe, function(x) {
+  SPIAT::crossing_of_crossK(SPIAT::calculate_cross_functions(
+    spe_object = x, 
+    method = "Kcross", cell_types_of_interest = c(
+      # "/cells/P14/clustered", "/cells/O1/XCR1"),
+      "/cells/P14/non.clustered", "/cells/O1/XCR1"),
+      # "/cells/P14/non.clustered", "/cells/O1/CD11c"),
+    dist = 100,
+    feature_colname = "Phenotype"))
+})
+spiat.ckiDT <- as.data.frame(unlist(spiat.cki)) %>% rownames_to_column()
+colnames(spiat.ckiDT) <- c("uID", "value")
+
+ggplot(spiat.ckiDT %>% left_join(exp.info), aes(DTx, value)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+  # ylim(0, 1)
 ```
 
 

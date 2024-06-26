@@ -320,7 +320,7 @@ CciaImage <- R6::R6Class(
         ))
         
         # get channel names
-        channelNames <- sapply(pixelInfo, function(x) x[["Name"]])
+        channelNames <- sapply(pixelInfo, function(x) if ("Name" %in% names(x)) x[["Name"]] else NULL)
         
         # set
         private$setOmeXMLChannels(channelNames)
@@ -481,18 +481,20 @@ CciaImage <- R6::R6Class(
           file.exists(self$imFilepath())) {
         # get channel names
         channelNames <- self$omeXMLChannels()
+        channelNames <- channelNames[lengths(channelNames) > 0]
+        pixelInfo <- self$omeXMLPixels()
+        
+        numChannels <- as.integer(pixelInfo$SizeC)
         
         # get pixel information
-        if (!length(channelNames) > 0) {
-          pixelInfo <- self$omeXMLPixels()
-          
+        # if (!length(channelNames) > 0) {
+        if (length(channelNames) != numChannels) {
           # set image channels
           # extract names from file if present
           # else assign 1 2 3 .. as names
           
           # get channel size
-          channelNames <- xfun::numbers_to_words(
-            seq(as.integer(pixelInfo$SizeC)))
+          channelNames <- xfun::numbers_to_words(seq(numChannels))
         }
         
         # # get global metadata
@@ -1898,6 +1900,39 @@ CciaImage <- R6::R6Class(
             ), marks = factor(popDT$pop),
             hullType = hullType, concavity = concavity)
         }
+      } else {
+        NULL
+      }
+    },
+    
+    #' @description Generate spatialExperiment to play around with SPIAT
+    #' https://trigosteam.github.io/SPIAT/articles/data_reading-formatting.html
+    #' @param valueName character for value name
+    #' @param ... passed to self$popDT
+    spe = function(valueName = "default", ...) {
+      # get pops
+      popDT <- self$popDT(valueName = valueName, ...)
+      
+      # get columns
+      matCols <- self$imChannelNames(valueName = valueName, correctChannelNames = TRUE)
+      matCols <- matCols[matCols %in% colnames(popDT)]
+      
+      if (!is.null(matCols)) {
+        # Construct a dummy marker intensity matrix
+        ## rows are markers, columns are cells
+        intensity_matrix <- t(as.matrix(popDT[, ..matCols]))
+        
+        # define cell IDs as colnames
+        colnames(intensity_matrix) <- popDT$label
+        
+        # Construct a dummy metadata (phenotypes, x/y coordinates)
+        # the order of the elements in these vectors correspond to the cell order 
+        # in `intensity matrix`
+        # TODO this is 2D for now
+        SPIAT::format_image_to_spe(
+          format = "general", intensity_matrix = intensity_matrix,
+          phenotypes = popDT$pop, coord_x = popDT$centroid_x,
+          coord_y = popDT$centroid_y)
       } else {
         NULL
       }

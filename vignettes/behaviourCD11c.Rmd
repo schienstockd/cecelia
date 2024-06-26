@@ -88,17 +88,17 @@ tracksInfo <- cciaObj$tracksMeasures(
   # extraMeasures = c("tracks.coords"))
   # extraMeasures = c("tracks.coords"))
 
-# check where the centre of each track is
-# tracksInfo[
-#   popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
-#   on = c("uID", "track_id"),
-#   `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
-tracksInfo[, `:=` (centroid_x = mean(c(start_x, end_x)),
-                   centroid_y = mean(c(start_y, end_y)),
-                   x = diff(c(end_x, start_x)),
-                   y = diff(c(end_y, start_y))),
-           by = c("uID", "cell_type", "track_id", "cell_id")]
-           # by = c("uID", "cell_type", "track_id")]
+# # check where the centre of each track is
+# # tracksInfo[
+# #   popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
+# #   on = c("uID", "track_id"),
+# #   `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
+# tracksInfo[, `:=` (centroid_x = mean(c(start_x, end_x)),
+#                    centroid_y = mean(c(start_y, end_y)),
+#                    x = diff(c(end_x, start_x)),
+#                    y = diff(c(end_y, start_y))),
+#            by = c("uID", "cell_type", "track_id", "cell_id")]
+#            # by = c("uID", "cell_type", "track_id")]
 ```
 
 ```{r fig_clusters_freq, fig.height=4, fig.width=10}
@@ -125,6 +125,7 @@ ggplot(summaryDF, aes(pop, freq.clusters, color = value_name)) +
   facet_grid(.~DTx) + ylim(0, 100)
 
 ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4, height = 3)
+write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 
 # summaryDF$Treatment.DTx <- 0
 # summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 0

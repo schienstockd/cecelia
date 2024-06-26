@@ -193,6 +193,38 @@ CciaImageSet <- R6::R6Class(
       ppps
     },
     
+    #' @description spe for images
+    #' @param removeNULL boolean to remove NULL
+    #' @param uIDs list of character for unique IDs
+    #' @param ... passed to CciaImage$spe
+    spe = function(removeNULL = TRUE, uIDs = NULL, ...) {
+      # get spes from images
+      if (private$isReactive() == TRUE) {
+        spes <- lapply(
+          self$cciaObjects(uIDs = uIDs),
+          function(x) {
+            message(sprintf("[spe] >> %s", x()$getUID()))
+            x()$spe(...)
+          }
+        )
+      } else {
+        spes <- lapply(
+          self$cciaObjects(uIDs = uIDs),
+          function(x) {
+            message(sprintf("[spe] >> %s", x$getUID()))
+            x$spe(...)
+          }
+        )
+      }
+      
+      # remove null
+      if (removeNULL == TRUE) {
+        spes <- spes[lengths(spes) != 0]
+      }
+      
+      spes
+    },
+    
     #' @description Spatial DTs for images
     #' @param asDT boolean to convert to data.table
     #' @param removeNULL boolean to remove NULL
@@ -242,7 +274,7 @@ CciaImageSet <- R6::R6Class(
         popPaths <- lapply(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
-            message(sprintf("[popDT] >> %s", x()$getUID()))
+            message(sprintf("[popPaths] >> %s", x()$getUID()))
             x()$popPaths(...)
           }
         )
@@ -251,7 +283,7 @@ CciaImageSet <- R6::R6Class(
         popPaths <- parallel::mclapply(
           self$cciaObjects(uIDs = uIDs),
           function(x) {
-            message(sprintf("[popDT] >> %s", x$getUID()))
+            message(sprintf("[popPaths] >> %s", x$getUID()))
             x$popPaths(...)
             # }
             # }, mc.cores = parallel::detectCores()

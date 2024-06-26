@@ -305,9 +305,93 @@ task <- cciaObj$runTask(
 )
 ```
 
+# SPIAT TEST
+
 ```{r}
-a <- readRDS("/Volumes/Analysis_SSD/Dominik/cecelia/projects/wEsnzt/ANALYSIS/1/n22foC/ccid.rds")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "n22foC", versionID = versionID, initReactivity = FALSE # Human LN
+)
+
+pops <- cciaObj$popPaths(popType = "clust", includeFiltered = TRUE)
+pops <- pops[is.na(stringr::str_match(pops, "/"))]
+pops <- pops[pops != "Undef"]
+
+spe <- cciaObj$spe(
+  popType = "clust", pops = pops, includeFiltered = TRUE, completeDT = TRUE)
 ```
+
+```{r fig_spiat_pops, fig.height=6, fig.width=10}
+imPopMap <- cciaObj$imPopMap(popType = "clust", includeFiltered = TRUE)
+popColours <- sapply(imPopMap, function(x) {x$colour})
+names(popColours) <- sapply(imPopMap, function(x) {x$path})
+
+phenotypes <- unique(spe$Phenotype)
+popColours <- popColours[names(popColours) %in% phenotypes]
+
+SPIAT::plot_cell_categories(
+  spe, phenotypes, unname(popColours), "Phenotype", cex = 0.1) +
+  coord_fixed() +
+  facet_wrap(.~Phenotype, ncol = 3)
+
+ggsave(file.path(anaDir, "SPIAT", paste0(cciaObj$getUID(), "_map.png")), height = 8, width = 15)
+```
+
+```{r}
+gradient_pos <- seq(20, 500, 20) # radii
+
+spiat.entropies <- as.data.table(SPIAT::entropy_gradient_aggregated(
+  spe, cell_types_of_interest = pops,
+  feature_colname = "Phenotype", radii = gradient_pos)$gradient_df)
+```
+
+```{r fig_spe_entity, fig.height=4, fig.width=12}
+datToPlot <- spiat.entropies %>%
+  pivot_longer(
+    cols = starts_with("Pos_"),
+    names_to = "radius",
+    names_pattern = ".*_(.*)",
+    values_to = "value") %>%
+  mutate(radius = as.numeric(radius))
+
+p1 <- ggplot(datToPlot, aes(radius, value, color = Celltype2, fill = Celltype2, group = Celltype2)) +
+  theme_classic() +
+  geom_line(size = 1.5) +
+  # geom_smooth() +
+  facet_wrap(.~Celltype1, ncol = 3) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") 
+
+print(p1)
+```
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=3}
+# Normalized mixing score (NMS)
+spiat.nms <- as.data.table(SPIAT::mixing_score_summary(
+    spe_object = spe, 
+    reference_celltype = "CD3+CD8+",
+    target_celltype = "CD3+CD4+",
+    feature_colname = "Phenotype"))
+
+ggplot(spiat.nmsDT, aes(DTx, Mixing_score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+
+ggplot(spiat.nmsDT %>% left_join(exp.info), aes(DTx, Normalised_mixing_score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0)
+```
+
+# NORMAL PROCESSING
 
 
 ```{r}

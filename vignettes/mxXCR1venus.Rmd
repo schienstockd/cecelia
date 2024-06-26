@@ -262,6 +262,160 @@ unique(popDT$pop)
 ```
 
 ```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  # pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+)
+
+pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE)
+```
+
+```{r}
+# SPIAT test
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "6QzZsl", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "TK5dex", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get pops
+pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE, uIDs = uIDs[1])
+
+# # exclude 'O' pops
+pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
+pops <- pops[is.na(str_match(pops, "/nonDebris$"))]
+names(pops) <- pops
+
+# spe <- cciaObj$spe(popType = "flow", pops = pops, uIDs = names(cciaObj$cciaObjects())[2])
+spe <- cciaObj$spe(popType = "flow", pops = pops, uIDs = uIDs)
+```
+
+
+```{r fig_spe_map, fig.height=4, fig.width=7}
+x <- cciaObj$cciaObjects(uIDs = c("NjumBK"))[[1]]
+imPopMap <- x$imPopMap(popType = "flow", includeFiltered = TRUE)
+popColours <- sapply(imPopMap, function(x) {x$colour})
+names(popColours) <- sapply(imPopMap, function(x) {x$path})
+
+phenotypes <- unique(spe[[1]]$Phenotype)
+popColours <- popColours[names(popColours) %in% phenotypes]
+
+# plot populations
+SPIAT::plot_cell_categories(spe$NjumBK, pops, popColours, "Phenotype") +
+  facet_wrap(.~Phenotype)
+
+ggsave(file.path(anaDir, "SPIAT", paste0(x$getUID(), "_map.png")),
+       height = 6, width = 10)
+```
+
+```{r}
+gradient_pos <- seq(20, 300, 20) # radii
+
+spiat.entropies <- lapply(spe[names(spe) == "NjumBK"], function(x) {
+  as.data.table(SPIAT::entropy_gradient_aggregated(
+    x, cell_types_of_interest = pops,
+    feature_colname = "Phenotype", radii = gradient_pos)$gradient_df)
+})
+
+entropiesDT <- rbindlist(spiat.entropies, idcol = "uID")
+```
+
+```{r fig_spe_entity, fig.height=3, fig.width=12}
+datToPlot <- entropiesDT %>%
+  pivot_longer(
+    cols = starts_with("Pos_"),
+    names_to = "radius",
+    names_pattern = ".*_(.*)",
+    values_to = "value") %>%
+  mutate(radius = as.numeric(radius))
+
+ggplot(datToPlot, aes(radius, value, color = Celltype2, fill = Celltype2, group = Celltype2)) +
+  theme_classic() +
+  geom_line(size = 1.5) +
+  # geom_smooth() +
+  facet_grid(uID~Celltype1) +
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1")
+
+ggsave(file.path(anaDir, "SPIAT", "entropy.png"), height = 2.5, width = 12)
+```
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=4}
+# Normalized mixing score (NMS)
+target_pops <- pops[pops != "/nonDebris/P14"]
+spiat.nms <- lapply(target_pops, function(x) {
+  nsm <- lapply(spe, function(y) {
+    as.data.table(SPIAT::mixing_score_summary(
+      spe_object = y, 
+      reference_celltype = "/nonDebris/P14",
+      target_celltype = x,
+      feature_colname = "Phenotype"))
+  })
+  
+  rbindlist(nsm, idcol = "uID")
+})
+names(spiat.nms) <- target_pops
+spiat.nmsDT <- rbindlist(spiat.nms, idcol = "target")
+
+# ggplot(spiat.nmsDT, aes(target, Mixing_score)) +
+#   theme_classic() +
+#   geom_boxplot(outlier.alpha = 0) +
+#   geom_jitter(
+#     # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+#     width = 0.2, alpha = 1.0) +
+#   coord_flip()
+
+ggplot(spiat.nmsDT, aes(target, Normalised_mixing_score)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0) +
+  coord_flip()
+
+ggsave(file.path(anaDir, "SPIAT", "nms.png"), height = 2.5, width = 4)
+```
+
+```{r fig_spe_colocalisation, fig.height=3, fig.width=3}
+# Cross-K AUC
+spiat.auc <- lapply(target_pops, function(x) {
+  auc <- lapply(spe, function(y) {
+    SPIAT::AUC_of_cross_function(SPIAT::calculate_cross_functions(
+      spe_object = y, 
+      method = "Kcross", cell_types_of_interest = c("/nonDebris/P14", x),
+      dist = 100,
+      feature_colname = "Phenotype"))
+  })
+  
+  DT <- as.data.table(as.data.frame(unlist(auc)) %>% rownames_to_column())
+  colnames(DT) <- c("uID", "value")
+  DT
+})
+names(spiat.auc) <- target_pops
+spiat.aucDT <- rbindlist(spiat.auc, idcol = "target")
+
+ggplot(spiat.aucDT, aes(target, value)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.2, alpha = 1.0) +
+  coord_flip()
+
+ggsave(file.path(anaDir, "SPIAT", "auc.png"), height = 2.5, width = 4)
+```
+
+```{r}
 # test to show regions of clustered T cells
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
@@ -276,15 +430,66 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # only get first LCMV samples
 uIDs <- exp.info$uID
 
-pops <- c("/nonDebris/P14")
+# get pops
+pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE, uIDs = uIDs[1])
 
-popDT <- cciaObj$popDT(
-  popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+# # exclude 'O' pops
+pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
+pops <- pops[is.na(str_match(pops, "/nonDebris$"))]
+windowPops <- c("root")
 
-# popPPP <- cciaObj$ppp(
-#   popType = "flow", pops = pops, uIDs = uIDs[2], usePhysicalScale = TRUE,
-#   hullType = "concave", concavity = 2, splitWindowBy = "flow.cell.clust.id")
+# popDT <- cciaObj$popDT(
+#   popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+
+# get ppp for all populations
+popPPP <- lapply(pops, function(x) {
+  cciaObj$ppp(
+    popType = "flow", pops = x, uIDs = uIDs, usePhysicalScale = FALSE, windowPops = windowPops)
+})
+names(popPPP) <- pops
 ```
+
+```{r}
+png(filename = file.path(anaDir, "spatstat", "NjumBK_maps.png"), height = 300, width = 1200)
+
+# plot populations out
+layout(matrix(1:5, ncol = 5))
+plot(popPPP$`/nonDebris/O/B220`$NjumBK, main = "B220")
+plot(popPPP$`/nonDebris/O/O1/CD3`$NjumBK, main = "CD3")
+plot(popPPP$`/nonDebris/O/LCMV`$NjumBK, main = "LCMV")
+plot(popPPP$`/nonDebris/XCR1`$NjumBK, main = "XCR1")
+plot(popPPP$`/nonDebris/P14`$NjumBK, main = "P14")
+
+dev.off()
+```
+
+```{r}
+# test for spatial randomness
+ce.results <- list()
+for (i in names(popPPP)) {
+  message(paste(">> Test CSR for", i))
+  # test for randomness
+  ce.results[[i]] <- unlist(parallel::mclapply(popPPP[[i]], function(x) {
+    spatstat.explore::clarkevans.test(x, method = "MonteCarlo", nsim = 99)$statistic
+  }))
+}
+```
+
+```{r fig_ce.results, fig.height=4, fig.width=4}
+cdDF <- as.data.frame(ce.results)
+colnames(cdDF) <- stringr::str_extract(colnames(cdDF), "(?<=\\.)[^\\.]*$")
+rownames(cdDF) <- stringr::str_extract(rownames(cdDF), ".+(?=\\.R)")
+
+ggplot(cdDF %>% pivot_longer(cols = everything(), names_to = "pop", values_to = "ce"),
+       aes(pop, ce)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(width = 0.2, alpha = 1.0) +
+  expand_limits(y = 0) + geom_hline(yintercept = 1)
+
+ggsave(file.path(anaDir, "spatstat", "ce_results.png"), height = 3, width = 3)
+```
+
 
 ```{r fig_regions, fig.height=10, fig.width=8}
 # plot regions
