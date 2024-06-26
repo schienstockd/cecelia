@@ -383,7 +383,7 @@ class NapariUtils:
       self.viewer.scale_bar.visible = True
       self.viewer.scale_bar.ticks = False
       
-      # toggle 3D view?
+      # toggle 3D view? 
       if show_3D is True:
         self.viewer.dims.ndisplay = 3
 
