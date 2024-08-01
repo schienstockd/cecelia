@@ -9,7 +9,8 @@ from py.dim_utils import DimUtils
 import py.correction_utils as correction_utils
 import py.script_utils as script_utils
 
-from scipy.ndimage import binary_fill_holes
+# from scipy.ndimage import binary_fill_holes
+from skimage.morphology import closing, disk
 import zarr
 import numpy as np
 
@@ -46,9 +47,10 @@ def run(params):
     im_slices = dim_utils.create_channel_slices(i)
     
     # get minimum across time
-    im_min = np.min(im_dat[0][im_slices], axis = t_idx)
+    im_min = np.squeeze(np.min(im_dat[0][im_slices], axis = t_idx))
     
-    crop_masks.append(binary_fill_holes(im_min > np.percentile(im_min, 0.01)))
+    # crop_masks.append(binary_fill_holes(im_min > np.percentile(im_min, 0.01)))
+    crop_masks.append(closing(im_min > np.percentile(im_min, 0.01), footprint = disk(10)))
     
   # combine
   crop_mask = np.max(np.stack(crop_masks), axis = 0)
@@ -65,7 +67,8 @@ def run(params):
   # crop zero edges
   # TODO this assumes 2D!
   # https://stackoverflow.com/a/39466129
-  true_points = np.argwhere(np.squeeze(crop_mask))
+  # true_points = np.argwhere(np.squeeze(crop_mask))
+  true_points = np.argwhere(crop_mask)
   top_left = true_points.min(axis = 0)
   bottom_right = true_points.max(axis = 0)
   
