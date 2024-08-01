@@ -1,0 +1,56 @@
+{
+  "fun": {
+    "crop": {
+      "category": "Module functions",
+      "label": "Crop",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+	    "imChannels": {
+        "type:list": {}
+      },
+  		"toCommonArea": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to crop",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+	    "imChannels": {
+        "index": 1,
+        "label": "Channels",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": true,
+					"useNames": true
+        }
+      },
+      "toCommonArea": {
+				"index": 2,
+				"label": "To common area",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

@@ -32,7 +32,7 @@ def run(params):
   )
 
   # save everything into first multilevel
-  corrected_path = os.path.join(params['imCorrectionPath'], "0")
+  corrected_path = os.path.join(params['imCorrectionPath'], '0')
 
   # save back
   zarr_utils.create_multiscales(

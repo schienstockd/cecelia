@@ -1,5 +1,5 @@
-TimeDeltaCorrect <- R6::R6Class(
-  "TimeDeltaCorrect",
+Crop <- R6::R6Class(
+  "crop",
   inherit = CleanupImages,
   
   private = list(
@@ -10,7 +10,7 @@ TimeDeltaCorrect <- R6::R6Class(
     funName = function() {
       paste(
         super$funName(),
-        "timeDeltaCorrect",
+        "crop",
         sep = cecelia:::CCID_CLASS_SEP
       )
     },
@@ -21,12 +21,10 @@ TimeDeltaCorrect <- R6::R6Class(
       self$resetImageInfo()
       
       self$initLog()
-      self$writeLog("Start time delta correction")
+      self$writeLog("Start cropping")
       
       # get object
       cciaObj <- self$cciaTaskObject()
-      
-      self$writeLog(self$funParams()$valueName)
       
       # convert channels names to numbers
       if (length(self$funParams()$imChannels) > 0)
@@ -39,36 +37,23 @@ TimeDeltaCorrect <- R6::R6Class(
           as.integer(unname(which(cciaObj$imChannelNames() == x)) - 1)
         }, USE.NAMES = FALSE)
       
-      # prepare new channel names if they should be added
-      channelsToAdd <- c() 
-      if (self$funParams()$createNewChannels == TRUE) {
-        channelsToAdd <- paste("Delta", imChannelNames)
-        
-        if (self$funParams()$createSummaryChannel == TRUE) {
-          channelsToAdd <- c(channelsToAdd, paste("Summary", imChannelNames))
-        }
-      }
-      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
         imPath = file.path(
           self$envParams()$dirs$zero,
-          # basename(cciaObj$imFilepath(valueName = "default"))
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
-        imCorrectionPath = file.path(
-          self$envParams()$dirs$zero, "ccidTimeDelta.zarr"),
-        timeDelta = self$funParams()$timeDelta,
-        allTimepoints = self$funParams()$allTimepoints,
-        sumMethod = self$funParams()$sumMethod,
-        createSummaryChannel = self$funParams()$createSummaryChannel,
+        toCommonArea = self$funParams()$toCommonArea,
         imChannels = imChannels,
-        createNewChannels = self$funParams()$createNewChannels
+        imCorrectionPath = file.path(
+          self$envParams()$dirs$zero,
+          "ccidCropped.zarr"
+        ) 
       )
       
       # call python
-      self$pyScript("time_delta_correct", params)
+      self$pyScript("crop", params)
       
       # DONE
       self$writeLog("Done")
@@ -76,8 +61,7 @@ TimeDeltaCorrect <- R6::R6Class(
       
       # update image information
       self$updateImageInfo(
-        filename = "ccidTimeDelta", valueName = "timeDelta", 
-        addChannels = channelsToAdd
+        filename = "ccidCropped", valueName = "cropped", 
       )
     }
   )
