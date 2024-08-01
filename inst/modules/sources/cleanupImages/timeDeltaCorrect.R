@@ -45,6 +45,10 @@ TimeDeltaCorrect <- R6::R6Class(
       channelsToAdd <- c() 
       if (self$funParams()$createNewChannels == TRUE) {
         channelsToAdd <- paste("Delta", imChannelNames)
+        
+        if (self$funParams()$createSummaryChannel == TRUE) {
+          channelsToAdd <- c(channelsToAdd, paste("Summary", imChannelNames))
+        }
       }
       
       # prepare params
@@ -58,6 +62,9 @@ TimeDeltaCorrect <- R6::R6Class(
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero, "ccidTimeDelta.zarr"),
         timeDelta = self$funParams()$timeDelta,
+        allTimepoints = self$funParams()$allTimepoints,
+        sumMethod = self$funParams()$sumMethod,
+        createSummaryChannel = self$funParams()$createSummaryChannel,
         imChannels = imChannels,
         createNewChannels = self$funParams()$createNewChannels
       )

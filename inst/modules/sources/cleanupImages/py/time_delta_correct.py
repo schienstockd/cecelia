@@ -22,6 +22,9 @@ def run(params):
   im_path = script_utils.get_param(params, 'imPath', default = None)
   im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default = None)
   time_delta = script_utils.get_param(params, 'timeDelta', default = 1)
+  all_timepoints = script_utils.get_param(params, 'allTimepoints', default = False)
+  sum_method = script_utils.get_param(params, 'sumMethod', default = 'min')
+  create_summary_channel = script_utils.get_param(params, 'createSummaryChannel', default = False)
   im_channels = script_utils.get_param(params, 'imChannels', default = None)
   create_new_channels = script_utils.get_param(params, 'createNewChannels', default = False)
   
@@ -51,10 +54,15 @@ def run(params):
   # get im shape
   im_shape = im_dat[0].shape
   if create_new_channels is True:
-    logfile_utils.log(f'> add {len(im_channels)} new channels')
+    channels_to_add = len(im_channels)
+    
+    if create_summary_channel is True:
+      channels_to_add *= 2
+      
+    logfile_utils.log(f'> add {channels_to_add} new channels')
     
     im_shape = list(im_shape)
-    im_shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + len(im_channels)
+    im_shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + channels_to_add
     im_shape = tuple(im_shape)
   
   # prepare image taking into account any channels that need adding
@@ -73,11 +81,42 @@ def run(params):
     for i in range(dim_utils.dim_val('C')):
       im_slice = dim_utils.create_channel_slices(i)
       sum_zarr[im_slice] = im_dat[0][im_slice]
-      
+  
   # go through timepoints and channels
-  for i in tqdm(range(dim_utils.dim_val('T'))):
-    # for j in range(dim_utils.dim_val('C')):
-    for j, k in enumerate(im_channels):
+  for j, k in enumerate(im_channels):
+    # use all timepoints?
+    sum_im = None 
+    if all_timepoints is True:
+      t_idx = dim_utils.dim_idx('T')
+      
+      # get slices
+      sum_slices = dim_utils.create_channel_slices(k)
+      
+      if sum_method == 'min':
+        sum_im = np.min(im_dat[0][sum_slices], axis = t_idx)
+      elif sum_method == 'max':
+        sum_im = np.max(im_dat[0][sum_slices], axis = t_idx)
+      elif sum_method == 'median':
+        sum_im = np.median(im_dat[0][sum_slices], axis = t_idx)
+      else:
+        sum_im = np.mean(im_dat[0][sum_slices], axis = t_idx)
+      
+      sum_im = np.squeeze(sum_im)
+      
+      # add summary to image
+      if create_summary_channel is True:
+        sum_slices = list(sum_slices)
+        sum_slices[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + len(im_channels) + j
+        
+        # go through timepoints to propagate
+        # TODO is there a better way?
+        for t in range(dim_utils.dim_val('T')):
+          sum_slices[t_idx] = t
+          if dim_utils.is_3D() is False:
+            sum_slices[dim_utils.dim_idx('Z')] = 0
+          sum_zarr[tuple(sum_slices)] = sum_im
+    
+    for i in tqdm(range(dim_utils.dim_val('T'))):
       # build average image over time for warping 
       d_start = i
       d_end = i + time_delta
@@ -120,8 +159,9 @@ def run(params):
       # so it is currently limited to images that
       # can fit into memory with zarr
       # sum_zarr[sum_slices] = np.squeeze(cv2.absdiff(
-      sum_zarr[sum_slices] = np.squeeze(cv2.subtract(
-        im_dat[0][start_slices], im_dat[0][end_slices]))
+      sum_zarr[sum_slices] = cv2.subtract(
+        np.squeeze(im_dat[0][start_slices]),
+        sum_im if sum_im is not None else np.squeeze(im_dat[0][end_slices]))
 
   logfile_utils.log('>> save back')
   

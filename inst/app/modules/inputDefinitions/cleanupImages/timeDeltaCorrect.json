@@ -20,6 +20,20 @@
 					"default": 1
 				}
 			},
+  		"allTimepoints": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+  		"createSummaryChannel": {
+				"type:boolean": {
+					"default": false
+				}
+			},
+      "sumMethod": {
+				"type:character": {
+				}
+			},
 	    "imChannels": {
         "type:list": {}
       },
@@ -49,8 +63,34 @@
 					"step": 1
 				}
   		},
+      "allTimepoints": {
+				"index": 2,
+				"label": "Across all timepoints",
+				"widget:checkbox": {
+				}
+			},
+      "createSummaryChannel": {
+				"index": 3,
+				"label": "Create summary channel",
+				"widget:checkbox": {
+				}
+			},
+      "sumMethod": {
+        "index": 4,
+        "label": "Summarise by",
+        "widget:selection": {
+          "items": {
+            "Minimum": "min",
+            "Maximum": "max",
+            "Median": "median",
+            "Mean": "mean"
+          },
+          "multiple": false,
+          "size": 1
+        }
+      },
 	    "imChannels": {
-        "index": 2,
+        "index": 5,
         "label": "Channels",
         "widget:channelSelection": {
           "size": 1,
@@ -59,7 +99,7 @@
         }
       },
       "createNewChannels": {
-				"index": 3,
+				"index": 6,
 				"label": "Create new channels",
 				"widget:checkbox": {
 				}
