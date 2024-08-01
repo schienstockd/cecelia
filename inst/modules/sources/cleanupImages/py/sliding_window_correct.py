@@ -68,10 +68,17 @@ def run(params):
   
   # fill in image channels if others are being added
   # TODO is there a better way to do this .. ?
-  if create_new_channels is True:
-    for i in range(dim_utils.dim_val('C')):
-      im_slice = dim_utils.create_channel_slices(i)
-      sum_zarr[im_slice] = im_dat[0][im_slice]
+  channels_to_add = list(range(dim_utils.dim_val('C')))
+  
+  if create_new_channels is False:
+    for i in im_channels:
+      channels_to_add.pop(i)
+      
+  logfile_utils.log(f'> add channels {channels_to_add}')
+  
+  for i in channels_to_add:
+    im_slice = dim_utils.create_channel_slices(i)
+    sum_zarr[im_slice] = im_dat[0][im_slice]
       
   # go through timepoints and channels
   for i in tqdm(range(dim_utils.dim_val('T'))):

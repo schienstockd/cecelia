@@ -51,7 +51,8 @@ InputManager <- R6::R6Class(
     
     # get json type
     jsonType = function(uiDef, defName) {
-      if (!is.null(uiDef)) {
+      # if (!is.null(uiDef)) {
+      if (length(names(uiDef)) > 0) {
         # get name
         typeID <- names(uiDef)[startsWith(names(uiDef), defName)]
         typeName <- stringr::str_split(typeID, ":")[[1]][[2]]
@@ -274,7 +275,7 @@ InputManager <- R6::R6Class(
       uiGroupElements <- list()
       
       # TODO this is not good
-      reservedNames <- c("items", "numItems", "dynItems", "sortable", "type", "visible", "collapsible", "collapsed")
+      reservedNames <- c("items", "numItems", "dynItems", "sortable", "type", "visible", "collapsible", "collapsed", "condition")
       
       # go through elements
       for (j in names(uiContent)[!names(uiContent) %in% reservedNames]) {
@@ -286,7 +287,9 @@ InputManager <- R6::R6Class(
         
         # get element
         uiGroupElements[[j]] <- self$createUIElement(
-          curElmntName, curUI, curSpecs, idPrefix = if (uiType == "box") idPrefix else NULL)
+          # curElmntName, curUI, curSpecs, idPrefix = if (uiType == "box") idPrefix else NULL)
+          curElmntName, curUI, curSpecs, idPrefix = if (uiType %in% c(
+            "box", "conditionalPanel")) idPrefix else NULL)
         
         #add input to list
         nameList <- c(nameList, uiGroupElements[[j]]$names)
@@ -347,119 +350,129 @@ InputManager <- R6::R6Class(
       
       uiElement <- NULL
       
+      if (elmntName == "afCombinations_0_wavelet")
+        browser()
+      
       elmntName <- self$uiElementName(elmntName)
       
       # build element
-      if (names(uiType) == "slider") {
-        uiElement <- self$createUISlider(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "sliderGroup") {
-        uiElement <- self$createUISliderGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "group") {
-        uiElement <- self$createUIGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "box") {
-        uiElement <- self$createUIBox(
-          elmntName, uiType, specType, uiDef$label, idPrefix)
-      } else if (names(uiType) == "sliderImageIntensity") {
-        uiElement <- self$createUISliderImageIntensity(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "sliderTimepoints") {
-        uiElement <- self$createUISliderTimepoints(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "imageSourceSelection") {
-        uiElement <- self$createUIImageSourceSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "valueNameSelection") {
-        uiElement <- self$createUIValueNameSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "imageSetSelection") {
-        uiElement <- self$createUIImageSetSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "imageSelection") {
-        uiElement <- self$createUIImageSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "clSelection") {
-        uiElement <- self$createUIClSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "clSelectionGroup") {
-        uiElement <- self$createUIClSelectionGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "modelSelectionGroup") {
-        uiElement <- self$createUIModelSelectionGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "channelSelection") {
-        uiElement <- self$createUIChannelSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "channelSelectionTypeGroup") {
-        uiElement <- self$createUIChannelSelectionTypeGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "labelPropsColsSelection") {
-        uiElement <- self$createUILabelPropsColsSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "channelCombinations") {
-        uiElement <- self$createUIChannelCombinations(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "popSelection") {
-        uiElement <- self$createUIPopSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "popSelectionGroup") {
-        uiElement <- self$createUIPopSelectionGroup(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "shapesSelection") {
-        uiElement <- self$createUIShapesSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "popTypeSelection") {
-        uiElement <- self$createUIPopTypeSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "moduleFunSelection") {
-        uiElement <- self$createUIModuleFunSelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "selection") {
-        uiElement <- self$createUISelection(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "radioButtons") {
-        uiElement <- self$createUIRadioButtons(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "textInput") {
-        uiElement <- self$createUITextInput(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "checkbox") {
-        uiElement <- self$createUICheckbox(
-          elmntName, uiType, specType)
-      } else if (names(uiType) == "channelGroup") {
-        uiElement <- self$createUIChannelGroup(
-          elmntName, uiType, specType)
-      }
-      
-      # create ui
-      # if (any(endsWith(tolower(names(uiType)), c("group", "box")))) {
-      if (endsWith(tolower(names(uiType)), "group")) {
-        uiList <- list(
-          fluidRow(column(12, tags$label(uiDef$label))),
-          fluidRow(column(12, uiElement$ui))
-        )
-      } else if (names(uiType) == "box") {
-        uiList <- list(
-          # fluidRow(column(12, tags$label(uiDef$label))),
-          fluidRow(column(12, uiElement$ui))
+      if (!is.null(uiType)) {
+        if (names(uiType) == "slider") {
+          uiElement <- self$createUISlider(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "sliderGroup") {
+          uiElement <- self$createUISliderGroup(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "group") {
+          uiElement <- self$createUIGroup(
+            elmntName, uiType, specType, idPrefix = NULL)
+        } else if (names(uiType) == "box") {
+          uiElement <- self$createUIBox(
+            elmntName, uiType, specType, uiDef$label, idPrefix)
+        } else if (names(uiType) == "conditionalPanel") {
+          uiElement <- self$createUIConditionalPanel(
+            elmntName, uiType, specType, uiDef$label, idPrefix)
+        } else if (names(uiType) == "sliderImageIntensity") {
+          uiElement <- self$createUISliderImageIntensity(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "sliderTimepoints") {
+          uiElement <- self$createUISliderTimepoints(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "imageSourceSelection") {
+          uiElement <- self$createUIImageSourceSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "valueNameSelection") {
+          uiElement <- self$createUIValueNameSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "imageSetSelection") {
+          uiElement <- self$createUIImageSetSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "imageSelection") {
+          uiElement <- self$createUIImageSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "clSelection") {
+          uiElement <- self$createUIClSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "clSelectionGroup") {
+          uiElement <- self$createUIClSelectionGroup(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "modelSelectionGroup") {
+          uiElement <- self$createUIModelSelectionGroup(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "channelSelection") {
+          uiElement <- self$createUIChannelSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "channelSelectionTypeGroup") {
+          uiElement <- self$createUIChannelSelectionTypeGroup(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "labelPropsColsSelection") {
+          uiElement <- self$createUILabelPropsColsSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "channelCombinations") {
+          uiElement <- self$createUIChannelCombinations(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "popSelection") {
+          uiElement <- self$createUIPopSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "popSelectionGroup") {
+          uiElement <- self$createUIPopSelectionGroup(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "shapesSelection") {
+          uiElement <- self$createUIShapesSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "popTypeSelection") {
+          uiElement <- self$createUIPopTypeSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "moduleFunSelection") {
+          uiElement <- self$createUIModuleFunSelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "selection") {
+          uiElement <- self$createUISelection(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "radioButtons") {
+          uiElement <- self$createUIRadioButtons(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "textInput") {
+          uiElement <- self$createUITextInput(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "checkbox") {
+          uiElement <- self$createUICheckbox(
+            elmntName, uiType, specType)
+        } else if (names(uiType) == "channelGroup") {
+          uiElement <- self$createUIChannelGroup(
+            elmntName, uiType, specType)
+        }
+        
+        # create ui
+        # if (any(endsWith(tolower(names(uiType)), c("group", "box")))) {
+        if (endsWith(tolower(names(uiType)), "group")) {
+          uiList <- list(
+            fluidRow(column(12, tags$label(uiDef$label))),
+            fluidRow(column(12, uiElement$ui))
+          )
+        } else if (names(uiType) == "box") {
+          uiList <- list(
+            # fluidRow(column(12, tags$label(uiDef$label))),
+            fluidRow(column(12, uiElement$ui))
+          )
+        } else {
+          uiList <- list(
+            column(4, tags$label(uiDef$label)),
+            column(8, uiElement$ui)
+          )
+        }
+        
+        # add label
+        list(
+          ui = uiList,
+          # convert names back
+          names = sapply(uiElement$names, .trimModuleFunName, USE.NAMES = FALSE),
+          observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL,
+          vars = if ("vars" %in% names(uiElement)) uiElement$vars else NULL
         )
       } else {
-        uiList <- list(
-          column(4, tags$label(uiDef$label)),
-          column(8, uiElement$ui)
-        )
+        NULL
       }
-      
-      # add label
-      list(
-        ui = uiList,
-        # convert names back
-        names = sapply(uiElement$names, .trimModuleFunName, USE.NAMES = FALSE),
-        observers = if ("observers" %in% names(uiElement)) uiElement$observers else NULL,
-        vars = if ("vars" %in% names(uiElement)) uiElement$vars else NULL
-      )
     },
     
     # selection list
@@ -860,7 +873,7 @@ InputManager <- R6::R6Class(
     },
     
     # group
-    createUIGroup = function(elmntName, uiType, specType) {
+    createUIGroup = function(elmntName, uiType, specType, idPrefix = NULL) {
       uiContent <- uiType[[1]]
       specContent <- specType[[1]]
       
@@ -949,6 +962,19 @@ InputManager <- R6::R6Class(
         toggleVis <- TRUE
       }
       
+      # # go through group items and build elements
+      # uiElements <- list()
+      # nameList <- c()
+      # 
+      # # get items
+      # for (i in names(uiContent$items)) {
+      #   uiElements[[i]] <- self$createUIElement(
+      #     paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
+      #     # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
+      # }
+      # 
+      # nameList <- append(nameList, unlist(xElements$names))
+      
       for (i in names(groupItems)) {
         # generate elements from definition
         x <- groupItems[[i]]
@@ -1014,6 +1040,7 @@ InputManager <- R6::R6Class(
       for (i in names(uiContent$items)) {
         uiElements[[i]] <- self$createUIElement(
           paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
+          # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
       }
       
       # make box
@@ -1022,6 +1049,53 @@ InputManager <- R6::R6Class(
         solidHeader = TRUE,
         collapsible = uiContent$collapsible, 
         collapsed = uiContent$collapsed,
+        title = boxLabel,
+        # success Green
+        # info Blue
+        # warning Orange
+        # danger Red
+        status = "warning",
+        width = 12,
+        tagList(sapply(uiElements, function(x) x$ui)))
+      
+      list(
+        ui = uiBox,
+        names = unname(sapply(uiElements, function(x) x$names))
+      )
+    },
+    
+    # conditionalPanel
+    createUIConditionalPanel = function(elmntName, uiType, specType, boxLabel, idPrefix = NULL) {
+      uiContent <- uiType[[1]]
+      specContent <- specType[[1]]
+      
+      # go through group items and build elements
+      uiElements <- list()
+      nameList <- c()
+      
+      # get items
+      for (i in names(uiContent$items)) {
+        uiElements[[i]] <- self$createUIElement(
+          # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
+          paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
+      }
+      
+      # TODO there are no names on the elements
+      browser()
+      
+      # make panel
+      uiElements <- tagList(
+        elementRow[[1]],
+        conditionalPanel(
+          # condition = sprintf("input['%s'] == true", private$getSession()$ns(visName)),
+          # condition = sprintf("input['%s'] == true && input['%s'] == true",
+          condition = sprintf("input['%s'] == true || input['%s'] == true",
+                              visName, visItemName),
+          elementRow[[2]])
+      )
+      uiBox <- box(
+        # id = ns("id"),
+        solidHeader = TRUE,
         title = boxLabel,
         # success Green
         # info Blue

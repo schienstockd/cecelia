@@ -25,7 +25,7 @@ def run(params):
   # create dim utils for image
   dim_utils = DimUtils(omexml, use_channel_axis = True)
   dim_utils.calc_image_dimensions(im_dat[0].shape)
-
+  
   logfile_utils.log('>> correct image')
   logfile_utils.log(params['afCombinations'])
 

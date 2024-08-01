@@ -429,26 +429,29 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 # uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y"]$uID
-uIDs <- c("Ws5sVa")
+uIDs <- exp.info[Cells == "gDT_gBT" & Include == "Y" & Treatment == "Naive"]$uID
+# uIDs <- c("Ws5sVa")
 
-splitTracks <- list(
-  live.cell.track.clusters.hmm_transitions_movement = list(
-    track.clustering = list(values = list(1), colour = "#ffff00"),
-    track.scanning = list(values = list(0,5), colour = "#327EBA"),
-    track.meandering = list(values = list(2,6), colour = "#AA1F5E"),
-    track.others = list(values = list(3,4), colour = "#B3BCC2")
-    )
-  )
+# splitTracks <- list(
+#   live.cell.track.clusters.hmm_transitions_movement = list(
+#     track.clustering = list(values = list(1), colour = "#ffff00"),
+#     track.scanning = list(values = list(0,5), colour = "#327EBA"),
+#     track.meandering = list(values = list(2,6), colour = "#AA1F5E"),
+#     track.others = list(values = list(3,4), colour = "#B3BCC2")
+#     )
+#   )
+splitTracks <- NULL
 
 channelsToShow <- list(
   "gBT-dsRed" = "gray",
   "gDT-uGFP" = "cyan"
   )
-popsToShow <- c("gBT", "gDT")
+# popsToShow <- c("gBT", "gDT")
+popsToShow <- NULL
 fileAttrs <- c("Treatment", "dpi")
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
-               splitTracks = splitTracks, generateMovie = FALSE)
+               splitTracks = splitTracks, generateMovie = TRUE)
 ```
 
 ```{r}

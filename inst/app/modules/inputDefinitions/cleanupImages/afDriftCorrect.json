@@ -101,6 +101,11 @@
     							"max": 10,
     							"default": 4
     						}
+    					},
+    					"denoiseFun": {
+    						"type:character": {
+    							"default": "default"
+    						}
     					}
             }
 					}
@@ -266,6 +271,18 @@
       						"widget:slider": {
       							"step": 1
       						}
+      					},
+      					"denoiseFun": {
+      						"index": 4,
+      						"label": "Denoise method",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "No denoise": "NONE",
+                      "Wavelet": "wavelet"
+            				}
+                  }
       					}
               }
             }

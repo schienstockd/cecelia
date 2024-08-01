@@ -3,6 +3,9 @@ blosc==1.11.1
 jupyter
 napari[all]
 napari-animation
+lxml_html_clean
+# M1 issue https://github.com/yuqiyuqitan/SPACEc/issues/48
+fastremap==1.13
 # napari-accelerated-pixel-and-object-classification
 # apoc
 h5py

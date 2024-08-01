@@ -119,7 +119,8 @@ def run(params):
       # TODO this is very slow with im_dat as dask
       # so it is currently limited to images that
       # can fit into memory with zarr
-      sum_zarr[sum_slices] = np.squeeze(cv2.absdiff(
+      # sum_zarr[sum_slices] = np.squeeze(cv2.absdiff(
+      sum_zarr[sum_slices] = np.squeeze(cv2.subtract(
         im_dat[0][start_slices], im_dat[0][end_slices]))
 
   logfile_utils.log('>> save back')

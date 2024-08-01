@@ -28,7 +28,8 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/3P/Tcells_across"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/3P/Tcells_across"
+anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/DS_N060-3P-naive/ANALYSIS/plots"
 ```
 
 ```{r}
@@ -75,6 +76,19 @@ a$CciaObjectUIDs <- c(
 names(a$CciaObjectUIDs) <- a$CciaObjectUIDs
 
 saveRDS(a, "/Volumes/USER_data/Dominik/CECELIA_BACKUP/3gzzkZ/ANALYSIS/1/KnSDpd/ccid.rds")
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "qI6XzC", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+cciaObj$imFilepath()
 ```
 
 
@@ -245,11 +259,11 @@ pops <- list(
   `3P-SPLEEN-gBT` = "gBT-uGFP/tracked"
 )
 
-# popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
+popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uIDs = uIDs)
 
 # get tracks info and check parameters
 # tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
-# tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
+tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
 
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
@@ -265,6 +279,9 @@ datToPlot <- tracksInfo %>%
 
 # plot basics
 ggplot(datToPlot %>% left_join(exp.info), aes(interaction(Source, Tissue), value, color = cell_type)) +
+# ggplot(datToPlot %>% left_join(exp.info) %>% dplyr::filter(Source == "3P", Tissue == "SPLEEN"),
+#        aes(interaction(Source, Tissue), value, color = cell_type)) +
+       # aes(uID, value, color = cell_type)) +
   theme_classic() +
   geom_jitter(
     position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
@@ -377,18 +394,17 @@ ggsave(file.path(anaDir, "HMM_freq.pdf"), width = 5, height = 2)
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
 clusterMapping <- list(
-  Directed = c(2),
-  Meandering = c(0,1,3,5),
-  Scanning = c(4)
-  # Aggregating = c()
+  Directed = c(1),
+  Meandering = c(4,0,3),
+  Scanning = c(2)
 )
 
 dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
 meanClusterPos <- dfToPlot %>%
-  group_by(clusters) %>%
-  # group_by(clusters.name) %>%
+  # group_by(clusters) %>%
+  group_by(clusters.name) %>%
   summarise(
     UMAP_1 = median(UMAP_1),
     UMAP_2 = median(UMAP_2)
@@ -402,9 +418,9 @@ ggplot(
   dfToPlot,
   aes(UMAP_1, UMAP_2)
   ) +
-  geom_point(aes(color = clusters)) +
+  # geom_point(aes(color = clusters)) +
   # geom_point(aes(color = interaction(Source, Tissue))) +
-  # geom_point(aes(color = clusters.name)) +
+  geom_point(aes(color = clusters.name)) +
   theme_classic() +
   scale_color_brewer(name = NULL, palette = "Set1") +
   # scale_color_manual(values = colPal) +
@@ -423,8 +439,8 @@ ggplot(
     ) +
   geom_label(
     data = meanClusterPos,
-    aes(label = clusters),
-    # aes(label = clusters.name),
+    # aes(label = clusters),
+    aes(label = clusters.name),
     label.size = 0.25,
     color = "black"
     )
@@ -481,8 +497,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -514,8 +530,8 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
          # dplyr::filter(!str_detect(prop, "live.cell")) %>%
-         drop_na(clusters), aes(clusters, prop)) +
-         # drop_na(clusters.name), aes(clusters.name, prop)) +
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -545,8 +561,8 @@ summaryDF <- copy(tcells.sc)
 summaryDF <- .mapClustNames(summaryDF, clusterMapping, "clusters")
 
 # show frequency of clusters
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
@@ -555,14 +571,14 @@ summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
   # complete(uID, pop, clusters.name, fill = list(freq.clusters = 0)) %>%
   left_join(exp.info)
 
-ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Source, Tissue))) +
-# ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Source, Tissue))) +
+# ggplot(summaryDF, aes(clusters, freq.clusters, color = interaction(Source, Tissue))) +
+ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Source, Tissue))) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
   geom_jitter(
     position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
   scale_color_brewer(name = "Treatment", palette = "Set1") +
-  ylim(0, 100)
+  ylim(0, 100) + xlab("") + ylab("Behaviour (%)")
 
-# ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 10, height = 3)
+ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4, height = 2.5)
 ```

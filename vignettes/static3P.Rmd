@@ -72,11 +72,11 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "UeIv3F", versionID = versionID, initReactivity = FALSE # Tissues
+  pID = pID, uID = "l22Bk9", versionID = versionID, initReactivity = FALSE # Tissues
 )
 
-cciaObj$resetMetaFromFile()
-cciaObj$saveState()
+# cciaObj$resetMetaFromFile()
+# cciaObj$saveState()
 
-cciaObj$imChannelNames()
+cciaObj$oriFilepath()
 ```

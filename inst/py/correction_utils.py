@@ -19,7 +19,7 @@ import py.zarr_utils as zarr_utils
 import py.slice_utils as slice_utils
 
 # will there be a non-prototype version at some point?
-# import pyclesperanto_prototype as cle
+import pyclesperanto_prototype as cle
 
 """
 Get drift correction shift
@@ -438,6 +438,41 @@ def apply_rolling_ball(data, dim_utils, logfile_utils, radius = 40, padding = 4)
   return data
 
 """
+Apply denoise
+"""
+def apply_denoise(data, dim_utils, denoise_fun = 'wavelet', denoise_params = {'method': 'BayesShrink', 'mode': 'soft'}):
+  slices = slice_utils.create_slices(data.shape, dim_utils)
+  
+  # go through slices
+  for x in tqdm(slices):
+    if denoise_fun == 'tv':
+      denoise_result = skimage.restoration.denoise_tv_chambolle(
+        np.squeeze(zarr_utils.fortify(data[x])),
+        weight = denoise_params['weight'],
+        channel_axis = None) * np.iinfo(data.dtype).max
+    elif denoise_fun == 'wavelet':
+      denoise_result = skimage.restoration.denoise_wavelet(
+        np.squeeze(zarr_utils.fortify(data[x])),
+        channel_axis = None,
+        convert2ycbcr = False,
+        method = denoise_params['method'],
+        mode = denoise_params['mode'],
+        rescale_sigma = True) * np.iinfo(data.dtype).max
+      
+    # expand dims?
+    dims_diff = len(data[x].shape) - len(denoise_result.shape)
+    
+    # TODO is there a better way? This is likely to fail for different images
+    if dims_diff > 0:
+      denoise_result = np.expand_dims(denoise_result, axis = dim_utils.dim_idx('T'))
+    if dims_diff > 1:
+      denoise_result = np.expand_dims(denoise_result, axis = dim_utils.dim_idx('C'))
+    
+    data[x] = denoise_result
+        
+  return data
+
+"""
 Apply top hat
 """
 def apply_top_hat(data, dim_utils, radius = 40):
@@ -668,6 +703,12 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
   # if more items are assigned than present
   # for i in range(dim_utils.dim_val('C')):
   #   x = af_combinations[i]
+    
+    # denoise
+    if 'denoiseFun' in x.keys() and x['denoiseFun'] != 'NONE':
+      output_image[i] = apply_denoise(
+        output_image[i], dim_utils, x['denoiseFun'], x['denoiseParams'])
+        # output_image[i], dim_utils, x['denoiseFun'])
     
     # output_image[i], new_af_im = af_correct_channel(
     if len(x['divisionChannels']) > 0:
