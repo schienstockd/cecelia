@@ -70,8 +70,8 @@ def run(params):
   bottom_right = true_points.max(axis = 0)
   
   crop_slices = [slice(None) for _ in range(len(corrected_image.shape))]
-  crop_slices[x_idx] = slice(top_left[0], bottom_right[0] + 1, 1)
-  crop_slices[y_idx] = slice(top_left[1], bottom_right[1] + 1, 1)
+  crop_slices[y_idx] = slice(top_left[0], bottom_right[0] + 1, 1)
+  crop_slices[x_idx] = slice(top_left[1], bottom_right[1] + 1, 1)
   
   corrected_image = corrected_image[tuple(crop_slices)]
   
