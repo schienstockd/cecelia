@@ -50,7 +50,7 @@ def run(params):
     im_min = np.squeeze(np.min(im_dat[0][im_slices], axis = t_idx))
     
     # crop_masks.append(binary_fill_holes(im_min > np.percentile(im_min, 0.01)))
-    crop_masks.append(closing(im_min > np.percentile(im_min, 0.01), footprint = disk(10)))
+    crop_masks.append(closing(im_min > np.percentile(im_min, 0.01), footprint = disk(50)))
     
   # combine
   crop_mask = np.max(np.stack(crop_masks), axis = 0)
