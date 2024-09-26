@@ -49,8 +49,16 @@ def run(params):
     # get minimum across time
     im_min = np.squeeze(np.min(im_dat[0][im_slices], axis = t_idx))
     
+    logfile_utils.log(np.percentile(im_min, 0.5))
+    logfile_utils.log(np.percentile(im_min, 1))
+    logfile_utils.log(np.percentile(im_min, 2))
+    logfile_utils.log(np.percentile(im_min, 3))
+    logfile_utils.log(np.percentile(im_min, 4))
+    logfile_utils.log(np.percentile(im_min, 5))
+    logfile_utils.log(np.percentile(im_min, 10))
+    
     # crop_masks.append(binary_fill_holes(im_min > np.percentile(im_min, 0.01), structure = disk(10)))
-    crop_masks.append(closing(im_min > np.percentile(im_min, 0.01), footprint = disk(50)))
+    crop_masks.append(closing(im_min > np.percentile(im_min, 5), footprint = disk(50)))
     
   # combine
   crop_mask = np.max(np.stack(crop_masks), axis = 0)
@@ -75,6 +83,9 @@ def run(params):
   crop_slices = [slice(None) for _ in range(len(corrected_image.shape))]
   crop_slices[y_idx] = slice(top_left[0], bottom_right[0] + 1, 1)
   crop_slices[x_idx] = slice(top_left[1], bottom_right[1] + 1, 1)
+  
+  logfile_utils.log(top_left)
+  logfile_utils.log(bottom_right)
   
   corrected_image = corrected_image[tuple(crop_slices)]
   

@@ -412,8 +412,7 @@ UIManager <- R6::R6Class(
                                       customdata = NULL, useFlowColours = TRUE, reverseRange = NULL,
                                       plotType = "pseudocolour", ...) {
       # prepare layout
-      layoutList <- self$flowPlot_lyLayoutList(
-        xlab = x, ylab = y, ...)
+      # layoutList <- self$flowPlot_lyLayoutList(xlab = x, ylab = y, ...)
 
       # remove traces
       if (removeTraces == TRUE) {

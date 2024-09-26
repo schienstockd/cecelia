@@ -70,28 +70,42 @@
         req(cciaObj())
         req(globalManagers$viewerManager()$viewer())
         
-        # set labels path
-        labelsPath <- file.path(
-          cciaObj()$persistentObjectDirectory(),
-          cciaConf()$dirs$tasks$labels,
-          'manual.zarr'
-        )
+        # get all labels
+        # was the layer created or loaded from previous labelling?
+        labelValueNames <- cciaObj()$valueNames("imLabelsFilepath")
+        layerNames <- if (length(labelValueNames) > 0) labelValueNames else c("Labels")
         
-        # was the layer created or loaded from a 
-        # previous labelling?
-        layerName <- "Labels"
-        if ("manual" %in% cciaObj()$valueNames("imLabelsFilepath")) {
-          layerName <- sprintf("(manual) base %s", layerName)
+        # go through labels and save
+        for (x in layerNames) {
+          if (x == "Labels") {
+            # set labels path
+            labelsPath <- file.path(
+              cciaObj()$persistentObjectDirectory(),
+              cciaConf()$dirs$tasks$labels,
+              paste0('manual.zarr')
+            )
+            
+            # save into object
+            cciaObj()$setImLabelsFilepath(
+              labelsPath, valueName = "manual", invalidate = FALSE)
+            cciaObj()$saveState()
+            
+            layerName <- "Labels"
+          } else {
+            # set labels path
+            labelsPath <- file.path(
+              cciaObj()$persistentObjectDirectory(),
+              cciaConf()$dirs$tasks$labels,
+              paste0(x, '.zarr')
+            )
+            
+            layerName <- sprintf("(%s) base Labels", x)
+          }
+          
+          # save labels to currently selected image as zarr
+          globalManagers$viewerManager()$viewer()$saveLabels(
+            labelsPath, layerName = layerName)
         }
-        
-        # save labels to currently selected image as zarr
-        globalManagers$viewerManager()$viewer()$saveLabels(
-          labelsPath, layerName = layerName)
-        
-        # save into object
-        cciaObj()$setImLabelsFilepath(
-          labelsPath, valueName = "manual", invalidate = FALSE)
-        cciaObj()$saveState()
       })
       
       # observe controls for image selection
@@ -128,6 +142,8 @@
         } else {
           curIdx <- as.integer(rownames(imageData()[
             imageData()$uID == moduleManagers()$imageViewer$shownImage()$getUID(),]))
+          
+          # browser()
           
           # select previous
           if (curIdx < nrow(imageData())) 

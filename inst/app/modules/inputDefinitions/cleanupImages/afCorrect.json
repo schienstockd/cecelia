@@ -101,6 +101,28 @@
     							"max": 10,
     							"default": 4
     						}
+    					},
+    					"denoiseFun": {
+    						"type:character": {
+    							"default": "NONE"
+    						}
+    					},
+    					"waveletMethod": {
+    						"type:character": {
+    							"default": "BayesShrink"
+    						}
+    					},
+    					"waveletMode": {
+    						"type:character": {
+    							"default": "soft"
+    						}
+    					},
+    					"tvWeight": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 20,
+    							"default": 10
+    						}
     					}
             }
 					}
@@ -249,6 +271,50 @@
       					"rollingBallPadding": {
       						"index": 3,
       						"label": "Rolling ball padding",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"denoiseFun": {
+      						"index": 4,
+      						"label": "Denoise method",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "No denoise": "NONE",
+                      "Wavelet": "wavelet",
+                      "TV": "tv"
+            				}
+                  }
+      					},
+      					"waveletMethod": {
+      						"index": 5,
+      						"label": "Wavelet method",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "BayesShrink": "BayesShrink",
+                      "VisuShrink": "VisuShrink"
+            				}
+                  }
+      					},
+      					"waveletMode": {
+      						"index": 6,
+      						"label": "Wavelet mode",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "Soft": "soft",
+                      "Hard": "hard"
+            				}
+                  }
+      					},
+      					"tvWeight": {
+      						"index": 7,
+      						"label": "TV Weight x1/10,000",
       						"widget:slider": {
       							"step": 1
       						}

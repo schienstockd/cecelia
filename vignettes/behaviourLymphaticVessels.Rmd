@@ -23,7 +23,8 @@ library(tidyverse)
 # set test variables
 pID <- "8BR53W"
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+# projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
@@ -230,7 +231,7 @@ task <- cciaObj$runTask(
 ```{r}
 # adjust segmentation names
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -251,12 +252,12 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
-popDTs <- cciaObj$popDT(
-  # popType = "live", pops = c("T/tracked", "DC/tracked"),
-  popType = "live", pops = c("T/tracked"),
-  includeFiltered = TRUE,
-  flushCache = TRUE,
-  uIDs = uIDs)
+# popDTs <- cciaObj$popDT(
+#   # popType = "live", pops = c("T/tracked", "DC/tracked"),
+#   popType = "live", pops = c("T/tracked"),
+#   includeFiltered = TRUE,
+#   flushCache = TRUE,
+#   uIDs = uIDs)
 ```
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
@@ -362,7 +363,8 @@ ggplot(
   # geom_point(aes(color = clusters)) +
   geom_point(aes(color = clusters.name)) +
   theme_classic() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
   # scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),

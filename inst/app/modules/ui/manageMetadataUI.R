@@ -131,6 +131,16 @@
                 actionButton(
                   ns("copyChannelNamesToAll"), "Copy Channel names to all")
               )
+            ),
+            tags$br(),
+            fluidRow(
+              column(
+                12,
+                fileInput(
+                  ns("assignTimeIntervals"), "Assign time intervals",
+                  buttonLabel = "Select",
+                  accept = c(".csv", ".tsv"))
+              )
             )
           )
         )

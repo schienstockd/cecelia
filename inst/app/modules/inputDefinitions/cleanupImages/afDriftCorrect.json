@@ -106,6 +106,23 @@
     						"type:character": {
     							"default": "default"
     						}
+    					},
+    					"waveletMethod": {
+    						"type:character": {
+    							"default": "BayesShrink"
+    						}
+    					},
+    					"waveletMode": {
+    						"type:character": {
+    							"default": "soft"
+    						}
+    					},
+    					"tvWeight": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 20,
+    							"default": 10
+    						}
     					}
             }
 					}
@@ -283,6 +300,37 @@
                       "Wavelet": "wavelet"
             				}
                   }
+      					},
+			      		"waveletMethod": {
+      						"index": 5,
+      						"label": "Wavelet method",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "BayesShrink": "BayesShrink",
+                      "VisuShrink": "VisuShrink"
+            				}
+                  }
+      					},
+      					"waveletMode": {
+      						"index": 6,
+      						"label": "Wavelet mode",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "Hard": "hard",
+                      "Soft": "soft"
+            				}
+                  }
+      					},
+      					"tvWeight": {
+      						"index": 7,
+      						"label": "TV Weight x1/10,000",
+      						"widget:slider": {
+      							"step": 1
+      						}
       					}
               }
             }

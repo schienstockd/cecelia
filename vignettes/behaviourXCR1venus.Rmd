@@ -20,16 +20,20 @@ library(tidyverse)
 ```
 
 ```{r}
-# set test variables
-pID <- "8BR53W"
-versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
-hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+for (x in cciaObj$cciaObjects()) {
+  print(x$oriFilepath())
+}
 ```
 
-```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
-```
 
 ```{r}
 # HMM
@@ -350,7 +354,7 @@ ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3.5, height = 3)
 dfToPlot <- copy(types.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
 clusterMapping <- list(
-  Clustering = c(5),
+  Aggregating = c(5),
   Directed = c(2),
   `Meandering oblate` = c(3),
   `Meandering prolate` = c(1,4),
@@ -369,13 +373,18 @@ meanClusterPos <- dfToPlot %>%
   )
 dfToPlot$clusters <- factor(dfToPlot$clusters)
 
-# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters.name)))
 colPal <- c(
-  Scanning = "#E42328",
-  `Meandering prolate` = "#327EBA",
-  `Meandering oblate` = "#974D9E",
-  Directed = "#4CAF48",
-  Clustering = "#ffff00"
+  # Scanning = "#E42328",
+  # `Meandering prolate` = "#327EBA",
+  # `Meandering oblate` = "#974D9E",
+  # Directed = "#4CAF48",
+  # Clustering = "#ffff00"
+  Scanning = "#327EBA",
+  `Meandering prolate` = "#1B9E77",
+  `Meandering oblate` = "#B3BCC2",
+  Directed = "#AA1F5E",
+  Aggregating = "#FFFF00"
 )
 
 # plot UMAP
@@ -387,6 +396,7 @@ ggplot(
   geom_point(aes(color = clusters.name)) +
   theme_classic() +
   # scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_brewer(name = NULL, palette = "Dark2") +
   scale_color_manual(values = colPal) +
   theme(
     axis.text = element_text(size = 15),
@@ -410,7 +420,7 @@ ggplot(
   #   )
 
 # ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_wo_labels.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap_wo_labels.png"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_shape_wo_labels.tiff"), width = 2, height = 2)
@@ -499,7 +509,7 @@ plot.p1(datToPlot, list(
   list(data = datToPlot %>% dplyr::filter(pop == "tcells.gBT/tracked"),
     colramp = "#AA1F5E")
 ))
-ggsave(file.path(anaDir, paste0("umap_HSV.tiff")), width = 2, height = 2)
+ggsave(file.path(anaDir, paste0("umap_HSV.png")), width = 2, height = 2)
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
@@ -623,11 +633,11 @@ propsToPlot <- propsToPlot %>%
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
 
-propsToPlot$clusters.name <- "NONE"
-propsToPlot[propsToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
-propsToPlot[propsToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
-propsToPlot[propsToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
-propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
+# propsToPlot$clusters.name <- "NONE"
+# propsToPlot[propsToPlot$clusters %in% c(2,3,6,7), ]$clusters.name <- "Directed"
+# propsToPlot[propsToPlot$clusters %in% c(5), ]$clusters.name <- "Meandering"
+# propsToPlot[propsToPlot$clusters %in% c(0,4), ]$clusters.name <- "Scanning"
+# propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -646,7 +656,7 @@ propsToPlot[propsToPlot$clusters %in% c(1), ]$clusters.name <- "Clustering"
 #   'trackLength'
 # )
 
-propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, removeNone = FALSE)
 
 # show heatmap for clusters
 propsSummary <- propsToPlot %>%

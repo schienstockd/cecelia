@@ -350,9 +350,6 @@ InputManager <- R6::R6Class(
       
       uiElement <- NULL
       
-      if (elmntName == "afCombinations_0_wavelet")
-        browser()
-      
       elmntName <- self$uiElementName(elmntName)
       
       # build element
@@ -461,6 +458,9 @@ InputManager <- R6::R6Class(
             column(8, uiElement$ui)
           )
         }
+        
+        # if (elmntName == "cleanupImages-cleanupImages.afCorrect.afCombinations_0_wavelet")
+        #   browser()
         
         # add label
         list(
@@ -973,15 +973,16 @@ InputManager <- R6::R6Class(
       #     # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
       # }
       # 
-      # nameList <- append(nameList, unlist(xElements$names))
+      # nameList <- append(nameList, unlist(uiElements$names))
       
       for (i in names(groupItems)) {
         # generate elements from definition
         x <- groupItems[[i]]
-        
+
         xElements <- self$createUIElements(elmntName, i, x, uiContent, specContent)
-        
-        uiElements[[x]] <- xElements$ui
+        # xElements <- self$createUIElement(elmntName, i, x, uiContent, specContent)
+
+        uiElements[[i]] <- xElements$ui
         nameList <- append(nameList, unlist(xElements$names))
       }
       
@@ -1039,8 +1040,8 @@ InputManager <- R6::R6Class(
       # get items
       for (i in names(uiContent$items)) {
         uiElements[[i]] <- self$createUIElement(
-          paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
-          # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
+          # paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]])
+          paste0(idPrefix, i), uiContent$items[[i]], specContent[[i]], idPrefix = idPrefix)
       }
       
       # make box
@@ -1081,7 +1082,7 @@ InputManager <- R6::R6Class(
       }
       
       # TODO there are no names on the elements
-      browser()
+      # browser()
       
       # make panel
       uiElements <- tagList(

@@ -798,7 +798,7 @@ ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(
   xlab("") + ylab("") +
   facet_grid(.~hmm_type)
 
-ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
+# ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
 # ggsave(file.path(anaDir, "HMM_heat_shape.pdf"), width = 2.3, height = 3)
 ```
 
@@ -808,10 +808,10 @@ clusterMapping <- list(
   # Directed = c(2,6),
   # Meandering = c(3,4),
   # Scanning = c(0,5)
-  Clustering = c(1),
+  Aggregating = c(1),
   Scanning = c(0,5),
-  Meandering = c(2,6),
-  Others = c(4,3)
+  Directed = c(2,6),
+  Meandering = c(4,3)
 )
 ```
 
@@ -974,7 +974,9 @@ ggsave(file.path(anaDir, paste0("umap_HSV_2.tiff")), width = 2, height = 2)
 
 ```{r}
 # show measurements of clusters to compare
-propsToPlot <- copy(tcells.sc)
+propsToPlot <- copy(tcells.sc) %>% drop_na(clusters)
+
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsToPlot <- propsToPlot %>%
 #   dplyr::rename(
@@ -985,7 +987,7 @@ propsToPlot <- copy(tcells.sc)
 #   )
 
 colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
-  "pop", "uID", "track_id", "clusters", "UMAP_1", "UMAP_2"
+  "pop", "uID", "track_id", "clusters", "clusters.name", "clusters.id", "UMAP_1", "UMAP_2"
   )]
 
 propsToPlot <- propsToPlot %>%
@@ -994,8 +996,6 @@ propsToPlot <- propsToPlot %>%
     )
 
 propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
-
-# propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
 
 # propsList <- c(
 #   'Movement HMM 1',
@@ -1020,8 +1020,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  group_by(clusters, prop) %>%
-  # group_by(clusters.name, prop) %>%
+  # group_by(clusters, prop) %>%
+  group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
@@ -1054,8 +1054,8 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
          dplyr::filter(!str_detect(prop, "live.cell")) %>%
-         drop_na(clusters), aes(clusters, prop)) +
-         # drop_na(clusters.name), aes(clusters.name, prop)) +
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   viridis::scale_fill_viridis(
@@ -1075,28 +1075,30 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
-# ggsave(file.path(anaDir, "pops_heat.pdf"), width = 2.7, height = 3)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 2.5)
+ggsave(file.path(anaDir, "pops_heat.pdf"), width = 2.7, height = 3)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```
 
 ```{r fig_clusters_heat, fig.height=2, fig.width=6}
 # get frequencies of HMM for each cluster
 # and plot as bar graphs
-datToPlot <- popDTs %>%
-  mutate(live.cell.track.clusters.hmm_transitions_movement = as.numeric(as.character(
-    live.cell.track.clusters.hmm_transitions_movement))) %>%
-  drop_na(live.cell.track.clusters.hmm_transitions_movement) %>%
+datToPlot <- copy(popDTs)
+
+datToPlot <- .mapClustNames(datToPlot, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement")
+
+datToPlot <- datToPlot %>%
   drop_na(live.cell.hmm.state.movement) %>%
-  group_by(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement) %>%
+  group_by(clusters.name, live.cell.hmm.state.movement) %>%
   summarise(n = n()) %>%
   mutate(freq = n / sum(n) * 1) %>%
   ungroup() %>%
-  complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
+  complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+# write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
-ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
+# ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
+ggplot(datToPlot, aes(as.factor(clusters.name), freq,
                       fill = as.factor(live.cell.hmm.state.movement))) +
   theme_classic() +
   # scale_fill_brewer(palette = "Accent") +
@@ -1118,9 +1120,10 @@ ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movemen
     ) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   # scale_fill_discrete(name = "HMM State") +
-  xlab("") + ylab("") 
+  xlab("") + ylab("") + coord_flip()
 
-ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 1.5)
+# ggsave(file.path(anaDir, "clusters_hmm_heat.pdf"), width = 3, height = 1.5)
+ggsave(file.path(anaDir, "pops_hmm_heat.pdf"), width = 3, height = 1.5)
 ```
 
 ```{r fig_clusters_heat, fig.height=3, fig.width=8}

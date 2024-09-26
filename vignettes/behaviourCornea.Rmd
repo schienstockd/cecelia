@@ -34,46 +34,148 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/Mengliang/CECELIA"
 ```
 
 ```{r}
-# devtools::load_all("../")
-# cciaUse("~/cecelia/dev", initConda = FALSE)
-# 
-# # init ccia object
-# cciaObj <- initCciaObject(
-#   pID = pID, uID = "4i3bxX", versionID = versionID, initReactivity = FALSE
-# )
-# 
-# # run task
-# funParams <- list(
-#   valueName = "default", 
-#   imChannels = c("one"),
-#   timeDelta = 1,
-#   createNewChannels = TRUE
-# )
-# 
-# task <- cciaObj$runTask(
-#   funName = "cleanupImages.timeDeltaCorrect",
-#   funParams = funParams,
-#   env = "local",
-#   runInplace = TRUE,
-#   taskID = 1
-# )
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  valueName = "afCorrected",
+  imChannels = c("one"),
+  timeDelta = 2,
+  allTimepoints = TRUE,
+  sumMethod = "min",
+  createSummaryChannel = TRUE,
+  createNewChannels = TRUE
+)
+
+task <- cciaObj$runTask(
+  funName = "cleanupImages.timeDeltaCorrect",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
 ```
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "v7oSIV", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE
 )
 
+cciaObj$imFilepath()
 # cciaObj$setImFilepath(paste0("ccidAvgCorrected", ".zarr"), valueName = "avgCorrected")
-cciaObj$setImChannelNames(c("one", "Avg", "Delta one", "Summary one"), valueName = "timeDelta")
+# cciaObj$setImChannelNames(c("one", "Avg", "Delta one", "Summary one"), valueName = "timeDelta")
 # cciaObj$setImChannelNames(c("one", "Avg"), valueName = "avgCorrected")
-cciaObj$saveState()
+# cciaObj$saveState()
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# read in file with time intervals
+timeIntervalsDF <- vroom::vroom(
+  "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/MENGLIANG/FunIVCM_Examples/time_intervals.csv")
+
+# match filenames to objects
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "XanqUy", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Name", "Attr")))
+
+# merge
+timeIntervalsDT <- as.data.table(timeIntervalsDF %>% left_join(exp.info, by = c("Filename" = "Name")))
+
+# now save in object
+for (x in cciaObj$cciaObjects(uIDs = c("MZen4N"))) {
+  x$setImTimeIntervals(diff(unname(unlist(
+    timeIntervalsDT[uID == x$getUID(), grep("t", names(timeIntervalsDT)), with = FALSE]))))
+  x$saveState()
+}
+```
+
+```{r}
+# ok .. now how can you define the speed and between timepoints?
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$tracks("cells")
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# upload local files
+funParams <- list(
+   valueName = "cells",
+   maxSearchRadius = 20,
+   maxLost = 1,
+   accuracy = 0.8,
+   probToAssign = 0.8,
+   noiseInital = 300,
+   noiseProcessing = 100,
+   noiseMeasurements = 100,
+   distThresh = 10,
+   timeThresh = 5,
+   segmentationMissRate = 0.1,
+   lambdaLink = 5,
+   lambdaTime = 5,
+   lambdaDist = 5,
+   lambdaBranch = 50,
+   thetaTime = 5,
+   thetaDist = 5,
+   minTimepoints = 0,
+   minDisplacement = 0,
+   maxMeanTurningAngle = 0,
+   filters = list(),
+   calcTrackingStats = TRUE,
+   trackBranching = FALSE
+)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+cciaObj$runTask(
+  funName = "tracking.bayesianTracking",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+cciaObj$tracks("cells")
+```
 
 ```{r}
 # show numbers of cells per area

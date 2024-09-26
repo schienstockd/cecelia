@@ -67,7 +67,9 @@ MultifileLabelPopUtils <- R6::R6Class(
       
       # go through label prop utils and build datatable
       for (x in pops[pops != "root"]) {
-        labelsView <- self$getPopObj()[[x]]$label_props_view()
+        # TODO this is too much
+        labelsView <- self$getPopObj(x)
+        labelsView <- if (!is.null(labelsView)) labelsView$label_props_view() else NULL
         
         if (!is.null(labelsView)) {
           # rename channels

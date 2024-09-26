@@ -246,6 +246,45 @@
         }
       })
       
+      # assign time intervals
+      observeEvent(input$assignTimeIntervals, {
+        # https://mastering-shiny.org/action-transfer.html
+        req(input$assignTimeIntervals)
+        
+        # get extension
+        ext <- tools::file_ext(input$assignTimeIntervals$name)
+        
+        # read data
+        timeIntervalsDF <- switch(ext,
+               csv = vroom::vroom(input$assignTimeIntervals$datapath, delim = ","),
+               tsv = vroom::vroom(input$assignTimeIntervals$datapath, delim = "\t"),
+               validate("Invalid file; Please upload a .csv or .tsv file")
+        )
+        
+        # get selected objects
+        uIDs <- moduleManagers()$selectionManager$selectedUIDs()
+        
+        # match filenames to objects
+        exp.info <- as.data.table(
+          moduleManagers()$imageSetManager$selectedSet()$summary(withSelf = FALSE, fields = c("Name", "Attr")))
+        
+        # merge
+        timeIntervalsDT <- as.data.table(timeIntervalsDF %>% left_join(exp.info, by = c("Filename" = "Name")))
+        
+        progress <- Progress$new()
+        progress$set(message = "Assign time intervals ... ", value = 0)
+        
+        # now save in object
+        for (x in moduleManagers()$imageSetManager$selectedSet()$cciaObjects(uIDs = uIDs)) {
+          # x()$setImTimeIntervals(60 * diff(unname(unlist(
+          x()$setImTimeIntervals(diff(unname(unlist(
+            timeIntervalsDT[uID == x()$getUID(), grep("t", names(timeIntervalsDT)), with = FALSE]))))
+          x()$saveState()
+        }
+        
+        progress$close()
+      })
+      
       ## Generic
       
       ### UI Outputs

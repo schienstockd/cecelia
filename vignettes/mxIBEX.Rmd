@@ -410,7 +410,7 @@ cciaObj <- initCciaObject(
 popDT.clust <- cciaObj$popDT(
   "clust", includeFiltered = TRUE, completeDT = TRUE,
   pops = unlist(unname(cciaObj$popPaths("clust", includeFiltered = TRUE, includeRoot = TRUE))))
-popDT.clust[popDT.flow[, c("label", "pop")], on = c("label"), pop.flow := i.pop]
+# popDT.clust[popDT.flow[, c("label", "pop")], on = c("label"), pop.flow := i.pop]
 ```
 
 ```{r}
@@ -538,7 +538,7 @@ ggplot(regionDT %>% filter(
   plotThemeDark(angle = 0) +
   geom_point(size = 3) +
   coord_fixed() +
-  scale_color_brewer(palette = "Set1") +
+  scale_color_brewer(palette = "Accent") +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),

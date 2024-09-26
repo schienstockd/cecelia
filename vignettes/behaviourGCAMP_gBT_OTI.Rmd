@@ -38,6 +38,34 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  # pID = pID, uID = "BeddcR", versionID = versionID, initReactivity = FALSE #  GCAMP
+  pID = pID, uID = "yl78XL", versionID = versionID, initReactivity = FALSE #  GCAMP
+)
+
+cciaObj$imLabelsFilepath()
+
+# # get experimental info
+# exp.info <- as.data.table(cciaObj$summary(
+#   withSelf = FALSE, fields = c("Attr")
+# ))
+# 
+# # GCAMP
+# uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
+# 
+# for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+#   x$setImChannelNames(
+#     c("gBT-CTDR", "AF", "GCAMP", "OTI-CTV", "Sliding GCAMP"), valueName = "slidingWindow")
+#   x$saveState()
+# }
+```
+
+```{r}
+# GCAMP detection
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "BeddcR", versionID = versionID, initReactivity = FALSE #  GCAMP
   # pID = pID, uID = "n8W6bT", versionID = versionID, initReactivity = FALSE #  GCAMP
   # pID = pID, uID = "tseI8L", versionID = versionID, initReactivity = FALSE #  GCAMP
@@ -51,19 +79,20 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 
 # upload local files
 funParams <- list(
   popType = "live",
   pops = c(
-    "tcells.gBT/tracked"
-    # "tcells.OTI/tracked"
+    "tcells.gBT/tracked",
+    "tcells.OTI/tracked"
     ),
   signalName = "GCAMP",
   channelSignal = "GCAMP",
   # channelDivision = "gBT-CTV",
-  channelDivision = "gBT-CTDR",
+  # channelDivision = "gBT-CTDR",
+  channelDivision = "Sliding GCAMP",
   # channelDivision = "OTI-CTV",
   normOrder = 5,
   peakThreshold = 1.5,
@@ -71,7 +100,8 @@ funParams <- list(
   # sumContactWith = c("dcs.TRITC/tracked"),
   sumContactWith = c(""),
   # channelSubtract = "TRITC",
-  channelSubtract = "AF",
+  channelSubtract = "",
+  # channelSubtract = "AF",
   channelSubtractPercentile = 95
 )
 
@@ -83,21 +113,6 @@ cciaObj$runTasks(
   runInplace = TRUE,
   mc.cores = 1
 )
-```
-
-```{r}
-# HMM
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "tseI8L", versionID = versionID, initReactivity = FALSE #  GCAMP
-)
-
-popDT <- cciaObj$popDT("live", pops = c("tcells.gBT/tracked"), includeFiltered = TRUE)
-
-b <- popDT[track_id == 101]
 ```
 
 
@@ -118,22 +133,26 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # run task
 funParams <- list(
   popType = "live",
   pops = c("tcells.gBT/tracked", "tcells.OTI/tracked"),
-  modelMeasurements = c("live.cell.peak.ratio.GCAMP"),
+  # modelMeasurements = c("live.cell.peak.ratio.GCAMP"),
+  modelMeasurements = c("live.cell.peak.norm.GCAMP"),
+  # modelMeasurements = c("live.cell.peak.ratio.GCAMP", "live.cell.peak.norm.GCAMP"),
   colName = "gcamp",
   appendStates = list(),
+  # skipTimesteps = 2,
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
-  noiseFilterMeasurements = 5,
+  # noiseFilterMeasurements = 5,
+  noiseFilterMeasurements = 0,
   postFiltering = 0,
   postIterations = 0,
-  numStates = 3,
+  numStates = 2,
   uIDs = uIDs
 )
 
@@ -164,7 +183,7 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # run task
@@ -173,7 +192,8 @@ funParams <- list(
   pops = c("tcells.gBT/tracked", "tcells.OTI/tracked"),
   # pops = c("tcells.gBT/tracked"),
   modelMeasurements = c("live.cell.speed", "live.cell.angle"),
-  scaleMeasurements = c("live.cell.speed", "live.cell.angle"),
+  # scaleMeasurements = c("live.cell.speed", "live.cell.angle"),
+  scaleMeasurements = c(),
   # modelMeasurements = c(
   #   "surface_area", "volume", "extent", "solidity",
   #   "ellipticity_interm_oblate", "ellipticity_interm_prolate",
@@ -181,8 +201,8 @@ funParams <- list(
   # ),
   colName = "movement",
   # colName = "shape",
-  appendStates = list(live.cell.is.clust = TRUE),
-  # appendStates = list(),
+  # appendStates = list(live.cell.is.clust = TRUE),
+  appendStates = list(),
   skipTimesteps = 2,
   subtrackOverlap = TRUE,
   noiseFilterMeasurements = 5,
@@ -206,7 +226,7 @@ task <- cciaObj$runTask(
 ```{r}
 # get HMM transitions
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -220,7 +240,7 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # run task
@@ -250,7 +270,7 @@ task <- cciaObj$runTask(
 ```{r}
 # get HMM transitions
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -264,7 +284,7 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # run task
@@ -274,6 +294,8 @@ funParams <- list(
   # pops = c("tcells.gBT/tracked"),
   colName = "movement",
   hmmStates = c("movement"),
+  # colName = "gcamp",
+  # hmmStates = c("gcamp"),
   # colName = "shape",
   # hmmStates = c("shape"),
   includeStart = FALSE,
@@ -294,7 +316,7 @@ task <- cciaObj$runTask(
 ```{r}
 # cluster tracks based on transitions
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -308,7 +330,7 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # run task
@@ -322,8 +344,8 @@ funParams <- list(
   # clusterColName = "hmm_movement_OTI",
   # resolution = 0.45,
   # resolution = 0.40,
-  resolution = 0.4,
-  percentile = 99.8,
+  resolution = 0.3,
+  percentile = 99.9,
   trackMeasures = c(
     "speed",
     "duration",
@@ -346,21 +368,19 @@ funParams <- list(
     # "ellipticity_interm_prolate",
     # "sphericity",
     # HMM states
+    "live.cell.hmm.state.gcamp",
+    # "live.cell.hmm.transitions.gcamp",
     "live.cell.hmm.state.movement",
-    # "live.cell.hmm.state.gcamp",
-    # "live.cell.peak.ratio.GCAMP",
     "live.cell.hmm.transitions.movement"
-    # "live.cell.hmm.transitions.gcamp"
+    # "live.cell.hmm.state.shape",
+    # "live.cell.peak.ratio.GCAMP",
     # "live.cell.hmm.transitions.shape"
     ),
-  nMeasures = c(
-    ),
-  sumMeasures = c(
-    ),
-  calcMeasures = list(
-  ),
-  addPops = c(
-    ),
+  diffMeasures = list("live.cell.hmm.state.gcamp"),
+  nMeasures = c(),
+  sumMeasures = c(),
+  calcMeasures = list(),
+  addPops = c(),
   calcLabelProps = TRUE,
   # usePaga = FALSE,
   usePaga = TRUE,
@@ -394,7 +414,7 @@ exp.info <- as.data.table(cciaObj$summary(
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI"]$uID
+uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
 
 # get clustering
@@ -444,21 +464,21 @@ tracks.info.OTI$pop <- "tcells.OTI/tracked"
 
 tracks.info <- rbind(tracks.info.gBT, tracks.info.OTI)
 
-tcells.sc.info <- as.data.table(copy(tcells.sc) %>% left_join(tracks.info))
-tcells.sc.info[, clusters := as.character(clusters)]
-tcells.sc.info[clusters %in% clusterMapping$`GCAMP+` & live.cell.hmm.state.gcamp.3.n < 2, clusters := clusterMapping$Scanning[[1]]]
+tcells.sc.info <- as.data.table(
+  copy(tcells.sc) %>% left_join(tracks.info, by = c("uID", "pop", "track_id")))
+# tcells.sc.info[, clusters := as.character(clusters)]
+# tcells.sc.info[clusters %in% clusterMapping$`GCAMP+` & live.cell.hmm.state.gcamp.3.n < 2, clusters := clusterMapping$Scanning[[1]]]
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
-datToPlot <- tcells.sc %>%
-  left_join(tracks.info.gBT) %>%
+# datToPlot <- tcells.sc %>%
+datToPlot <- tracks.info.gBT %>%
   left_join(tracks.info.OTI) %>%
-  left_join(exp.info) %>%
-  dplyr::filter(clusters == 2)
+  left_join(exp.info)
 
 datToPlot$peaks <- "Background"
-datToPlot[datToPlot$live.cell.hmm.state.gcamp.3.n > 0, ]$peaks <- "1"
-datToPlot[datToPlot$live.cell.hmm.state.gcamp.3.n > 1, ]$peaks <- ">= 2"
+datToPlot[datToPlot$live.cell.hmm.state.gcamp.2.n > 0, ]$peaks <- "1"
+datToPlot[datToPlot$live.cell.hmm.state.gcamp.2.n > 1, ]$peaks <- ">= 2"
 # datToPlot[datToPlot$live.cell.hmm.state.gcamp.3.n > 2, ]$peaks <- 3
 
 ggplot(
@@ -490,7 +510,7 @@ ggplot(
     # strip.text.x = element_blank()
   )
 
-ggsave(file.path(anaDir, "GCAMP_peaks.tiff"), width = 3, height = 2)
+# ggsave(file.path(anaDir, "GCAMP_peaks.png"), width = 3, height = 2)
 ```
 
 ```{r}
@@ -576,9 +596,16 @@ ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.5, height = 3)
 ```
 
-```{r fig_umap, fig.height=8, fig.width=8}
+```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)
 
+# clusterMapping <- list(
+#   Directed = c(2),
+#   Meandering = c(8,0,1,7,3),
+#   Scanning = c(4),
+#   Aggregating = c(6)
+# )
+# 
 # dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
 # get mean positions of clusters
@@ -592,6 +619,7 @@ meanClusterPos <- dfToPlot %>%
 dfToPlot$clusters <- factor(dfToPlot$clusters)
 
 colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters.name)))
 
 # plot UMAP
 ggplot(
@@ -615,17 +643,19 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) 
-  # geom_label(
-  #   data = meanClusterPos,
-  #   aes(label = clusters),
-  #   # aes(label = clusters.name),
-  #   label.size = 0.25,
-  #   color = "black"
-  #   )
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    aes(label = clusters),
+    # aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    )
 
-# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_wo_label.tiff"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_wo_label.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_grouped.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "umap_wo_label_grouped.png"), width = 2, height = 2)
 ```
 
 ```{r fig_umap_props, fig.height=4, fig.width=4}
@@ -692,22 +722,23 @@ plot.p1(datToPlot, datToPlot %>% dplyr::filter(pop != "tcells.gBT/tracked"))
 ggsave(file.path(anaDir, paste0("umap_OTI.tiff")), width = 2, height = 2)
 ```
 
-```{r fig_umap, fig.height=8, fig.width=8}
+```{r fig_umap, fig.height=4, fig.width=4}
 # show contact of T cells to DCs
-tracksInfo <- rbind(
-  cciaObj$tracksInfo("live.cell.hmm.state.gcamp",parentPop = "tcells.gBT/tracked", uIDs = uIDs),
-  cciaObj$tracksInfo("live.cell.hmm.state.gcamp",parentPop = "tcells.OTI/tracked", uIDs = uIDs)
-)
+# tracksInfo <- rbind(
+#   cciaObj$tracksInfo("live.cell.hmm.state.gcamp",parentPop = "tcells.gBT/tracked", uIDs = uIDs),
+#   cciaObj$tracksInfo("live.cell.hmm.state.gcamp",parentPop = "tcells.OTI/tracked", uIDs = uIDs)
+# )
 
-dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(tracksInfo)
+# dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(tracksInfo)
+dfToPlot <- copy(tcells.sc.info)
 dfToPlot$gcamp.track <- FALSE
-dfToPlot[dfToPlot$live.cell.hmm.state.gcamp.3.n >= 2, ]$gcamp.track <- TRUE
+dfToPlot[dfToPlot$live.cell.hmm.state.gcamp.1.n >= 2, ]$gcamp.track <- TRUE
 
 datToPlot <- dfToPlot %>% left_join(exp.info)
 
 # plot UMAP
 curDatToPlot <- datToPlot[datToPlot$gcamp.track == TRUE,]
-plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::mako)
+plotCols <- .flowColours(curDatToPlot$UMAP_1, curDatToPlot$UMAP_2, colramp = viridisLite::inferno)
 
 # plot UMAP
 ggplot(
@@ -731,7 +762,7 @@ ggplot(
     axis.title.y = element_blank()
     )
 
-ggsave(file.path(anaDir, paste0("umap_GCAMP.tiff")), width = 2, height = 2)
+ggsave(file.path(anaDir, paste0("umap_GCAMP.png")), width = 2, height = 2)
 ```
 
 ```{r fig_GCAMP_freq, fig.height=3, fig.width=4}
@@ -749,79 +780,64 @@ ggplot(datToPlot,
        aes(pop, freq, color = pop)) +
   theme_classic() +
   geom_boxplot(outlier.alpha = 0) +
-  geom_jitter(
-    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_line(aes(group = uID)) +
+  geom_point() +
+  # geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
     # width = 2, alpha = 1.0) +
   scale_color_brewer(name = "Pop", palette = "Set1")
 
-datToPlot$cell_ID <- 0
-datToPlot[datToPlot$pop == "tcells.gBT/tracked",]$cell_ID <- 0
-datToPlot[datToPlot$pop == "tcells.OTI/tracked",]$cell_ID <- 1
+# datToPlot$cell_ID <- 0
+# datToPlot[datToPlot$pop == "tcells.gBT/tracked",]$cell_ID <- 0
+# datToPlot[datToPlot$pop == "tcells.OTI/tracked",]$cell_ID <- 1
 
-ggsave(file.path(anaDir, paste0("GCAMP_freq.tiff")), width = 4, height = 2)
-write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
+# ggsave(file.path(anaDir, paste0("GCAMP_freq.tiff")), width = 4, height = 2)
+# write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp.csv"))
 ```
 
-```{r fig_GCAMP_behaviour, fig.height=3, fig.width=5}
+```{r fig_GCAMP_behaviour, fig.height=4, fig.width=6}
 # in total - what is the behaviour of GCAMP+?
 # datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping)
+
 datToPlot <- dfToPlot %>%
   left_join(exp.info) %>%
+  # dplyr::filter(Treatment != "PBS") %>%
   # dplyr::filter(clusters != 5) %>%
-  group_by(pop, gcamp.track, clusters) %>%
+  # group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters.name) %>%
+  # group_by(uID, pop, clusters.name, gcamp.track) %>%
+  group_by(uID, pop, gcamp.track, clusters) %>%
+  # group_by(uID, pop, clusters, gcamp.track) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters) %>%
   # group_by(gcamp.track, clusters.name) %>%
   summarise(n = n()) %>%
-  mutate(freq = n / sum(n) * 1)
-  # dplyr::filter(gcamp.track == TRUE)
+  mutate(freq = n / sum(n) * 100) %>%
+  dplyr::filter(gcamp.track == TRUE)
   # ungroup() %>%
-  # complete(Treatment, DTx, gcamp.track, clusters, fill = list(freq = 0))
+  # complete(uID, pop, clusters.name, gcamp.track, fill = list(freq = 0))
 
-datToPlot$gcamp.track <- case_match(
-  datToPlot$gcamp.track, c(TRUE) ~ ">= 2", c(FALSE) ~ "0")
-
-# colPal <- randomcoloR::distinctColorPalette(length(unique(dfToPlot$clusters)))
-
-datToPlot$pop <- case_match(
-  as.character(datToPlot$pop),
-  c("tcells.gBT/tracked") ~ "gBT-I",
-  c("tcells.OTI/tracked") ~ "OT-I"
-)
-
-# ggplot(datToPlot, aes(interaction(Treatment, DTx), freq,
-ggplot(datToPlot, aes(gcamp.track, freq, fill = clusters)) +
+ggplot(datToPlot,
+       # aes(clusters.name, freq, color = pop)) +
+       aes(clusters, freq, color = pop)) +
   theme_classic() +
-  scale_fill_manual(values = colPal) +
-  # scale_fill_brewer(palette = "Set3") +
-  # scale_fill_manual(values = wesanderson::wes_palette(name = "Darjeeling2")) +
-  theme_classic() +
-  geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
-  theme(
-    # legend.position = "none",
-    legend.position = "right",
-    legend.key.size = unit(6, "mm"),
-    legend.title = element_blank(),
-    legend.text = element_text(size = 12),
-    axis.text.y = element_text(size = 12),
-    axis.text.x = element_text(size = 12),
-    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
-    strip.background = element_blank(),
-    # strip.text.x = element_blank()
-    strip.text.x = element_text(size = 12)
-    ) +
-  scale_y_continuous(breaks = c(0, 0.5, 1)) +
-  # scale_fill_discrete(name = "HMM State") +
-  xlab("GCAMP peaks") + ylab("") +
-  facet_grid(.~pop) +
-  guides(fill = guide_legend(ncol = 2))
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) 
+    # width = 0.1, alpha = 1.0) 
 
-ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 3.5, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.pdf"), width = 2, height = 2.5)
 
-# datToPlot$Treatment.DTx <- -1
-# datToPlot[datToPlot$Treatment == "PBS" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 0
-# datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "PBS",]$Treatment.DTx <- 1
-# datToPlot[datToPlot$Treatment == "HSV" & datToPlot$DTx == "DTx",]$Treatment.DTx <- 2
+# datToPlot$clust.ID <- -1
+# datToPlot[datToPlot$clusters.name == "Directed",]$clust.ID <- 0
+# datToPlot[datToPlot$clusters.name == "Meandering",]$clust.ID <- 1
+# datToPlot[datToPlot$clusters.name == "Scanning",]$clust.ID <- 2
+# datToPlot[datToPlot$clusters.name == "Aggregating",]$clust.ID <- 3
+# 
+# datToPlot$pop.ID <- 0
+# datToPlot[datToPlot$pop == "tcells.OTI/tracked",]$clust.ID <- 1
 # 
 # write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour_total.csv"))
 ```
@@ -1039,7 +1055,7 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
-         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         # dplyr::filter(!str_detect(prop, "live.cell")) %>%
          drop_na(clusters)
          , aes(clusters, prop)) +
   theme_classic() +
@@ -1061,7 +1077,7 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3.2, height = 2.5)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4.5, height = 5)
 ```
 
 ```{r fig_clusters_heat, fig.height=2, fig.width=6}
@@ -1167,8 +1183,8 @@ summaryDF$clusters.name <- "NONE"
 # summaryDF <- .mapClustNames(summaryDF, clusterMapping)
 
 # show frequency of clusters - exclude clusters
-# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
-summaryDF <- summaryDF[clusters != 6, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
+# summaryDF <- summaryDF[clusters != 6, .(n.clusters = .N), by = .(uID, pop, clusters)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, pop, clusters.name)] %>%
   droplevels() %>%
   group_by(uID, pop) %>%
@@ -1189,17 +1205,118 @@ ggplot(summaryDF, aes(clusters, freq.clusters, color = pop)) +
   scale_color_brewer(name = "Treatment", palette = "Set1")
   # facet_grid(.~pop)
 
-ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 8, height = 3)
-
-summaryDF$cell_ID <- 0
-summaryDF[summaryDF$pop == "tcells.gBT/tracked",]$cell_ID <- 0
-summaryDF[summaryDF$pop == "tcells.OTI/tracked",]$cell_ID <- 1
-
+# ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 8, height = 3)
+# 
+# summaryDF$cell_ID <- 0
+# summaryDF[summaryDF$pop == "tcells.gBT/tracked",]$cell_ID <- 0
+# summaryDF[summaryDF$pop == "tcells.OTI/tracked",]$cell_ID <- 1
+# 
 write.csv(
   summaryDF,
-  # file = file.path(anaDir, "freq_clusters.csv")
-  file = file.path(anaDir, "freq_clusters_wo_clusters.csv")
+  file = file.path(anaDir, "freq_clusters.csv")
+  # file = file.path(anaDir, "freq_clusters_wo_clusters.csv")
 )
+```
+
+```{r fig_GCAMP_behaviour, fig.height=4, fig.width=8}
+# in total - what is the behaviour of GCAMP+?
+# datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping)
+
+datToPlot <- dfToPlot %>%
+  left_join(exp.info) %>%
+  # dplyr::filter(Treatment != "PBS") %>%
+  # dplyr::filter(clusters != 5) %>%
+  # group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters.name) %>%
+  # group_by(uID, clusters.name, gcamp.track) %>%
+  group_by(uID, pop, clusters, gcamp.track) %>%
+  # group_by(uID, gcamp.track, clusters) %>%
+  # group_by(uID, gcamp.track, clusters.name) %>%
+  # group_by(uID, clusters.name, gcamp.track) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(gcamp.track, clusters) %>%
+  # group_by(gcamp.track, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  dplyr::filter(gcamp.track == TRUE) %>%
+  ungroup() %>%
+  # complete(uID, clusters.name, gcamp.track, fill = list(freq = 0))
+  # complete(uID, clusters, gcamp.track, fill = list(freq = 0))
+  complete(uID, pop, gcamp.track, clusters, fill = list(freq = 0))
+  # complete(uID, gcamp.track, clusters.name, fill = list(freq = 0))
+
+ggplot(datToPlot %>% left_join(exp.info),
+       # aes(clusters.name, freq)) +
+       aes(clusters, freq, color = pop)) +
+       # aes(clusters.name, freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    # width = 0.1, alpha = 1.0) 
+
+# ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.png"), width = 5, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_behaviour_GCAMP.png"), width = 5, height = 2.5)
+
+# datToPlot$clust.ID <- -1
+# datToPlot[datToPlot$clusters.name == "Directed",]$clust.ID <- 0
+# datToPlot[datToPlot$clusters.name == "Meandering",]$clust.ID <- 1
+# datToPlot[datToPlot$clusters.name == "Scanning",]$clust.ID <- 2
+# datToPlot[datToPlot$clusters.name == "Aggregating",]$clust.ID <- 3
+# 
+# write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour_total.csv"))
+```
+```{r fig_GCAMP_behaviour, fig.height=4, fig.width=8}
+# in total - what is the behaviour of GCAMP+?
+# datToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
+
+dfToPlot <- .mapClustNames(dfToPlot, clusterMapping)
+
+datToPlot <- dfToPlot %>%
+  left_join(exp.info) %>%
+  # dplyr::filter(Treatment != "PBS") %>%
+  # dplyr::filter(clusters != 5) %>%
+  # group_by(Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters.name) %>%
+  # group_by(uID, clusters.name, gcamp.track) %>%
+  group_by(uID, pop, gcamp.track, clusters) %>%
+  # group_by(uID, gcamp.track, clusters) %>%
+  # group_by(uID, gcamp.track, clusters.name) %>%
+  # group_by(uID, clusters.name, gcamp.track) %>%
+  # group_by(uID, Treatment, DTx, gcamp.track, clusters) %>%
+  # group_by(gcamp.track, clusters) %>%
+  # group_by(gcamp.track, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n / sum(n) * 100) %>%
+  dplyr::filter(gcamp.track == TRUE) %>%
+  ungroup() %>%
+  # complete(uID, clusters.name, gcamp.track, fill = list(freq = 0))
+  # complete(uID, clusters, gcamp.track, fill = list(freq = 0))
+  complete(uID, pop, clusters, gcamp.track, fill = list(freq = 0))
+  # complete(uID, gcamp.track, clusters.name, fill = list(freq = 0))
+
+ggplot(datToPlot %>% left_join(exp.info),
+       # aes(clusters.name, freq)) +
+       aes(clusters, freq, color = pop)) +
+       # aes(clusters.name, freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    # width = 0.1, alpha = 1.0) 
+
+# ggsave(file.path(anaDir, "clusters_GCAMP_behaviour.png"), width = 5, height = 2.5)
+# ggsave(file.path(anaDir, "clusters_behaviour_GCAMP.png"), width = 5, height = 2.5)
+
+# datToPlot$clust.ID <- -1
+# datToPlot[datToPlot$clusters.name == "Directed",]$clust.ID <- 0
+# datToPlot[datToPlot$clusters.name == "Meandering",]$clust.ID <- 1
+# datToPlot[datToPlot$clusters.name == "Scanning",]$clust.ID <- 2
+# datToPlot[datToPlot$clusters.name == "Aggregating",]$clust.ID <- 3
+# 
+# write.csv(datToPlot, file = file.path(anaDir, "freq_gcamp_behaviour_total.csv"))
 ```
 
 ```{r}

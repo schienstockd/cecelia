@@ -369,7 +369,7 @@
           }
         }
         
-        browser()
+        # browser()
         
         # add pop and clustering to X-axis
         if (length(popDT()) > 0) {

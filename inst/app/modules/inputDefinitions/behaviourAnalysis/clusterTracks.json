@@ -44,6 +44,9 @@
 			"objectMeasures": {
 				"type:list": {}
 			},
+			"diffMeasures": {
+				"type:list": {}
+			},
 			"nMeasures": {
 				"type:list": {}
 			},
@@ -153,8 +156,16 @@
 					"addChoices": ["pop"]
 				}
 			},
-			"nMeasures": {
+			"diffMeasures": {
 				"index": 8,
+				"label": "Time diff measurements",
+				"widget:labelPropsColsSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"nMeasures": {
+				"index": 9,
 				"label": "Absolute count measurements",
 				"widget:labelPropsColsSelection": {
 					"size": 1,
@@ -162,7 +173,7 @@
 				}
 			},
 			"sumMeasures": {
-				"index": 8,
+				"index": 10,
 				"label": "Sum measurements",
 				"widget:labelPropsColsSelection": {
 					"size": 1,
@@ -170,7 +181,7 @@
 				}
 			},
 			"addPops": {
-				"index": 9,
+				"index": 11,
 				"label": "Add population frequencies",
 				"widget:popSelection": {
 					"size": 1,
@@ -179,26 +190,26 @@
 				}
 			},
 			"calcLabelProps": {
-				"index": 10,
+				"index": 12,
 				"label": "Calculate label props",
 				"widget:checkbox": {
 				}
 			},
 			"usePaga": {
-				"index": 11,
+				"index": 13,
 				"label": "Use PAGA",
 				"widget:checkbox": {
 				}
 			},
 			"pagaThreshold": {
-				"index": 12,
+				"index": 14,
 				"label": "PAGA threshold",
 				"widget:slider": {
 					"step": 0.02
 				}
 			},
 			"minTracklength": {
-				"index": 13,
+				"index": 15,
 				"label": "Minimum track length",
 				"widget:slider": {
 					"step": 1

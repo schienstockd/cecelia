@@ -52,6 +52,9 @@ CciaImage <- R6::R6Class(
     handleSpatialDT = NULL,
     handleSpatialGraph = NULL,
     
+    # tracks
+    handleTracksGraph = NULL,
+    
     #' @description Complete population DT
     #' @param popUtils PopulationUtils
     #' @param popUtils PopulationUtils
@@ -367,7 +370,7 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Timelapse information
-    omeXMLTimelapseInfo = function() {
+    omeXMLTimelapseInfo = function(rawIntervals = FALSE) {
       tInfo <- private$handleTimelapseInfo
       
       if (is.null(tInfo)) {
@@ -436,10 +439,21 @@ CciaImage <- R6::R6Class(
       # if the interval is '0', take the information
       # from the metadata
       if (is.na(tInfo$interval) || length(tInfo$interval) == 0 || tInfo$interval == 0) {
-        if (length(self$getCciaAttr("TimelapseInterval")) > 0)
+        if (length(self$getCciaAttr("TimelapseInterval")) > 0) {
           tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
-        else
-          tInfo$interval <- 1
+        } else {
+          # are any time intervals set?
+          timeIntervals <- self$imTimeIntervals()
+          
+          if (length(timeIntervals) > 0) {
+            if (rawIntervals == TRUE)
+              tInfo$interval <- c(0, timeIntervals)
+            else
+              tInfo$interval <- mean(timeIntervals)
+          } else {
+            tInfo$interval <- 1
+          }
+        }
       } 
       
       tInfo
@@ -606,7 +620,12 @@ CciaImage <- R6::R6Class(
                 }
                 
                 # group
-                DT.grouped <- popDT[, .(n = .N), by = .(track_id, get(i))]
+                popDT[, centroid_t := centroid_t * self$omeXMLTimelapseInfo()$interval * 60]
+                
+                DT.grouped <- popDT[
+                  # , .(n = .N, diff = mean(diff(.SD$centroid_t))),
+                  , .(n = .N, diff = median(diff(.SD$centroid_t))),
+                  by = .(track_id, get(i))]
                 
                 # average
                 DT.grouped[, freq := n/sum(n), by = .(track_id)]
@@ -630,23 +649,25 @@ CciaImage <- R6::R6Class(
                 # https://stackoverflow.com/a/65048192/13766165
                 DT.grouped.freq <- dcast(DT.grouped %>% drop_na(), track_id~get, value.var = "freq")
                 DT.grouped.n <- dcast(DT.grouped %>% drop_na(), track_id~get, value.var = "n")
+                DT.grouped.diff <- dcast(DT.grouped %>% drop_na(), track_id~get, value.var = "diff")
                 
                 # rename columns
                 for (j in names(obsColNames)) {
                   setnames(DT.grouped.freq, j, obsColNames[[j]])
                   setnames(DT.grouped.n, j, paste0(obsColNames[[j]], ".n"))
+                  setnames(DT.grouped.diff, j, paste0(obsColNames[[j]], ".diff"))
                 }
                 
                 # merge frequency and n
-                DT.grouped <- merge(DT.grouped.freq,
-                                    DT.grouped.n)
+                # DT.grouped <- merge(DT.grouped.freq, DT.grouped.n)
+                DT.grouped <- Reduce(
+                  merge, list(DT.grouped.freq, DT.grouped.n, DT.grouped.diff))
                 
                 # add n for column names
                 obsColNames <- c(
                   obsColNames,
-                  sapply(obsColNames, function(x) sprintf(
-                    "%s.n", x
-                  ))
+                  sapply(obsColNames, function(x) sprintf("%s.n", x)),
+                  sapply(obsColNames, function(x) sprintf("%s.diff", x))
                 )
               } else if (x == "numeric") {
                 # group and average
@@ -690,6 +711,12 @@ CciaImage <- R6::R6Class(
             tracksInfo <- tracksInfo[, mget(c("track_id", "pop", obsCols))]
           else
             tracksInfo <- tracksInfo[, mget(c("track_id", obsCols))]
+          
+          # remove NA columns
+          # https://stackoverflow.com/a/19504279
+          na.cols <- stringr::str_match(colnames(tracksInfo), "\\.NA(\\.|$)")
+          rm.col <- colnames(tracksInfo)[apply(na.cols, 1, function(x) !any(is.na(x)))]
+          tracksInfo[, (rm.col) := NULL] 
           
           # replace NA
           if (replaceNA == TRUE)
@@ -804,7 +831,13 @@ CciaImage <- R6::R6Class(
         popDT <- self$popDT(
           "live", pops = valueName, popCols = c(
             "centroids", "track_id"
-          ), dropNA = TRUE, includeFiltered = TRUE)
+          # ), dropNA = TRUE, includeFiltered = TRUE)
+          ), dropNA = FALSE, includeFiltered = TRUE)
+        
+        # remove non-tracks
+        popDT <- na.omit(popDT, cols = c("track_id"))
+        # https://stackoverflow.com/a/29928592
+        # popDT[, track_id := !rowSums(.SD == 0)][(track_id)]
         
         if (!is.null(popDT) && "track_id" %in% colnames(popDT)){
           # get column definitions
@@ -817,19 +850,40 @@ CciaImage <- R6::R6Class(
           pos.columns.z <- which(colnames(popDT) == "centroid_z")
           pos.columns <- c(pos.columns.x, pos.columns.y, pos.columns.z)
           
+          # get intervals
+          timeIntervals <- self$omeXMLTimelapseInfo(rawIntervals = TRUE)$interval
+          
           # convert to physical units for tracks
-          suppressWarnings({
-            tracks <- celltrackR::as.tracks(
-              convertPixelToPhysical(popDT, self$omeXMLPixelRes()),
-              id.column = id.column,
-              time.column = time.column,
-              pos.columns = pos.columns,
-              scale.t = self$omeXMLTimelapseInfo()$interval
-              # scale.p = (
-              #   self$omeXMLPixelRes()$x * self$omeXMLPixelRes()$y * self$omeXMLPixelRes()$z
-              # )
-            )
-          })
+          if (length(timeIntervals) > 1) {
+            # get populations
+            popTracks <- convertPixelToPhysical(popDT, self$omeXMLPixelRes())
+            
+            # add time intervals
+            popTracks[, centroid_t := timeIntervals[popTracks$centroid_t + 1]]
+            
+            # get tracks
+            suppressWarnings({
+              tracks <- celltrackR::as.tracks(
+                popTracks,
+                id.column = id.column,
+                time.column = time.column,
+                pos.columns = pos.columns
+              )
+            })
+          } else {
+            suppressWarnings({
+              tracks <- celltrackR::as.tracks(
+                convertPixelToPhysical(popDT, self$omeXMLPixelRes()),
+                id.column = id.column,
+                time.column = time.column,
+                pos.columns = pos.columns,
+                scale.t = timeIntervals
+                # scale.p = (
+                #   self$omeXMLPixelRes()$x * self$omeXMLPixelRes()$y * self$omeXMLPixelRes()$z
+                # )
+              )
+            })
+          }
           
           # filter tracks by length
           if (minTracklength > 0) {
@@ -1988,7 +2042,7 @@ CciaImage <- R6::R6Class(
     #' @param ... passed to self$spatialDT
     spatialGraph = function(popType, valueName = "default", ...) {
       # was this requested before?
-      spatialGraph <- .getVersionedVar(
+      tracksGraph <- .getVersionedVar(
         private$handleSpatialGraph, valueName = valueName)
       
       if (is.null(spatialGraph) || forceReload == TRUE) {
@@ -2015,6 +2069,45 @@ CciaImage <- R6::R6Class(
       }
       
       spatialGraph
+    },
+    
+    #' @description Tracks graph
+    #' @param pop character for value population
+    #' @param extraAttr character vector to add vertex attributes
+    #' @param ... passed to self$popDT
+    tracksGraph = function(pop, extraAttr = c(), ...) {
+      # was this requested before?
+      tracksGraph <- .getVersionedVar(
+        private$handleTracksGraph, valueName = pop)
+      
+      if (is.null(tracksGraph) || forceReload == TRUE) {
+        # get populations
+        popDT <- cciaObj$popDT(
+          popType = "live", pops = c(pop), includeFiltered = TRUE, ...)
+        
+        if (!is.null(popDT)) {
+          # connect labels in tracks
+          popDT[, to := shift(.SD$label, 1L, type = "lead"), by = c("track_id")]
+          
+          # remove ends
+          extraAttr <- c("label", "centroid_t", extraAttr)
+          
+          # create graph
+          tracksGraph <- igraph::graph_from_data_frame(
+            na.omit(popDT[, c("label", "to", "track_id")], cols = "to"),
+            directed = TRUE,
+            vertices = popDT[, ..extraAttr]
+          )
+          
+          # set value
+          private$handleTracksGraph <- .setVersionedVar(
+            private$handleTracksGraph, tracksGraph,
+            valueName = pop
+          )
+        }
+      }
+      
+      tracksGraph
     },
     
     #' @description FlowFrame
@@ -2974,6 +3067,14 @@ CciaImage <- R6::R6Class(
       }
     },
     
+    setImTimeIntervals = function(x, invalidate = TRUE) {
+      objMeta <- self$getCciaMeta()
+      
+      objMeta$imTimeIntervals <- x
+      
+      self$setCciaMeta(objMeta, invalidate = invalidate)
+    },
+    
     setImLabelsFilepath = function(x, valueName = NULL, setDefault = TRUE,
                                    invalidate = TRUE, reset = FALSE) {
       objMeta <- self$getCciaMeta()
@@ -3205,6 +3306,16 @@ CciaImage <- R6::R6Class(
       
       if ("imSeries" %in% names(self$getCciaMeta())) {
         retVal <- self$getCciaMeta()$imSeries
+      }
+      
+      retVal
+    },
+    
+    imTimeIntervals = function() {
+      retVal = NULL
+      
+      if ("imTimeIntervals" %in% names(self$getCciaMeta())) {
+        retVal <- self$getCciaMeta()$imTimeIntervals
       }
       
       retVal

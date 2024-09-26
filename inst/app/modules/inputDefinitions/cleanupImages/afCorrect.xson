@@ -1,0 +1,379 @@
+{
+  "fun": {
+    "afCorrect": {
+      "category": "Module functions",
+      "label": "Autofluorescence Correction",
+      "env": ["local", "hpc"]
+    }
+  },
+  "spec": {
+    "inputs": {
+      "valueName": {
+				"type:character": {
+					"default": "default"
+				}
+			},
+			"afCombinations": {
+        "type:group": {
+					"divisionChannels": {
+						"type:list": {}
+					},
+					"box1": {
+            "type:box": {
+    					"channelPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 60
+    						}
+    					},
+    					"correctionPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 95
+    						}
+    					},
+    					"correctionMode": {
+    						"type:character": {
+    							"default": "divide"
+    						}
+    					},
+    					"summaryMode": {
+    						"type:character": {
+    							"default": "maximum"
+    						}
+    					},
+    					"summaryPercentile": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 100,
+    							"default": 75
+    						}
+    					},
+    					"correctionMin": {
+    						"type:double": {
+    							"min": 0,
+    							"max": 50,
+    							"default": 1
+    						}
+    					},
+    					"correctionMax": {
+    						"type:double": {
+    							"min": 50,
+    							"max": 100,
+    							"default": 99
+    						}
+    					},
+        			"generateInverse": {
+        				"type:boolean": {
+        					"default": false
+        				}
+        			}
+            }
+					},
+					"box2": {
+            "type:box": {
+    					"medianFilter": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 10,
+    							"default": 0
+    						}
+    					},
+    					"topHatRadius": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 40,
+    							"default": 0
+    						}
+    					},
+    					"rollingBallRadius": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 40,
+    							"default": 0
+    						}
+    					},
+    					"rollingBallPadding": {
+    						"type:integer": {
+    							"min": 0,
+    							"max": 10,
+    							"default": 4
+    						}
+    					},
+    					"denoiseFun": {
+    						"type:character": {
+    							"default": "NONE"
+    						}
+    					},
+							"denoiseParams": {
+                "type:conditionalPanel": {
+                  "wavelet": {
+                    "type:group": {
+            					"method": {
+            						"type:character": {
+            							"default": "BayesShrink"
+            						}
+            					},
+            					"mode": {
+            						"type:character": {
+            							"default": "soft"
+            						}
+            					}
+                    }
+                  },
+                  "tv": {
+                    "type:group": {
+            					"rollingBallPadding": {
+            						"type:integer": {
+            							"min": 0,
+            							"max": 20,
+            							"default": 10
+            						}
+            					}
+                    }
+                  }
+                }
+							}
+            }
+					}
+        }
+      },
+      "applyGaussian": {
+				"type:boolean": {
+					"default": true
+				}
+			},
+      "applyGaussianToOthers": {
+				"type:boolean": {
+					"default": true
+				}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+      "valueName": {
+				"index": 0,
+				"label": "Image to correct",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imFilepath"
+				}
+			},
+			"afCombinations": {
+				"index": 1,
+				"label": "Channel combinations",
+				"widget:channelGroup": {
+				  "visible": false,
+					"divisionChannels": {
+						"index": 0,
+						"label": "Channels",
+						"widget:channelSelection": {
+							"size": 1,
+							"multiple": true
+						}
+					},
+					"box1": {
+            "index": 1,
+            "label": "Advanced",
+            "widget:box": {
+              "collapsible": true,
+              "collapsed": true,
+              "items": {
+      					"channelPercentile": {
+      		        "index": 1,
+      		        "label": "Channel Percentile",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionPercentile": {
+      						"index": 2,
+      						"label": "Correction Percentile",
+      						"widget:slider": {
+      							"step": 0.5
+      						}
+      					},
+      					"correctionMode": {
+      						"index": 3,
+      						"label": "Correction mode",
+      						"widget:selection": {
+      							"size": 1,
+      							"multiple": false,
+      							"items": [
+      								"divide",
+      								"none"
+      							]
+      						}
+      					},
+      					"summaryMode": {
+      						"index": 4,
+      						"label": "Summary mode",
+      						"widget:selection": {
+      							"size": 1,
+      							"multiple": false,
+      							"items": [
+      								"maximum",
+      								"percentile"
+      							]
+      						}
+      					},
+      					"summaryPercentile": {
+      		        "index": 5,
+      		        "label": "Summary Percentile",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionMin": {
+      		        "index": 6,
+      		        "label": "Correction Min",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+      					"correctionMax": {
+      		        "index": 7,
+      		        "label": "Correction Max",
+      		        "widget:slider": {
+      		          "step": 0.5
+      		        }
+      		      },
+          			"generateInverse": {
+          				"index": 8,
+          				"label": "Generate inverse",
+          				"widget:checkbox": {
+          				}
+          			}
+              }
+            }
+					},
+					"box2": {
+            "index": 1,
+            "label": "Filters",
+            "widget:box": {
+              "collapsible": true,
+              "collapsed": true,
+              "items": {
+      					"medianFilter": {
+      						"index": 0,
+      						"label": "Median Filter",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"topHatRadius": {
+      						"index": 1,
+      						"label": "Top hat radius",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"rollingBallRadius": {
+      						"index": 2,
+      						"label": "Rolling ball radius",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"rollingBallPadding": {
+      						"index": 3,
+      						"label": "Rolling ball padding",
+      						"widget:slider": {
+      							"step": 1
+      						}
+      					},
+      					"denoiseFun": {
+      						"index": 4,
+      						"label": "Denoise method",
+                  "widget:selection": {
+                    "size": 1,
+                    "multiple": false,
+                    "items": {
+                      "No denoise": "NONE",
+                      "Wavelet": "wavelet",
+                      "TV": "tv"
+            				}
+                  }
+      					},
+								"denoiseParams": {
+                  "index": 5,
+                  "label": "Denoise params",
+                  "condition": "denoiseFun",
+                  "widget:conditionalPanel": {
+                    "items": {
+                      "wavelet": {
+                				"index": 0,
+                				"label": "Wavelet parameters",
+                				"widget:group": {
+  				                "items": {
+                  					"method": {
+                  						"index": 0,
+                  						"label": "Wavelet method",
+                              "widget:selection": {
+                                "size": 1,
+                                "multiple": false,
+                                "items": {
+                                  "BayesShrink": "BayesShrink",
+                                  "VisuShrink": "VisuShrink"
+                        				}
+                              }
+                  					},
+                  					"mode": {
+                  						"index": 1,
+                  						"label": "Wavelet mode",
+                              "widget:selection": {
+                                "size": 1,
+                                "multiple": false,
+                                "items": {
+                                  "Hard": "hard",
+                                  "Soft": "soft"
+                        				}
+                              }
+                  					}
+  				                }
+                				}
+                      },
+                      "tv": {
+                				"index": 0,
+                				"label": "TV parameters",
+                				"widget:group": {
+  				                "items": {
+                  					"weight": {
+                  						"index": 0,
+                  						"label": "Weight x1/10,000",
+                  						"widget:slider": {
+                  							"step": 1
+                  						}
+                  					}
+  				                }
+                				}
+                      }
+                    }
+                  }
+								}
+              }
+            }
+					}
+				}
+			},
+			"applyGaussian": {
+				"index": 2,
+				"label": "Apply gaussian",
+				"widget:checkbox": {
+				}
+			},
+			"applyGaussianToOthers": {
+				"index": 3,
+				"label": "Apply gaussian to others",
+				"widget:checkbox": {
+				}
+			}
+    },
+    "outputs": {}
+  }
+}

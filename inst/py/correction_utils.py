@@ -706,8 +706,21 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     
     # denoise
     if 'denoiseFun' in x.keys() and x['denoiseFun'] != 'NONE':
+      # prepare denoise params
+      # TODO ideally this would be passed from the GUI directly
+      if x['denoiseFun'] == 'wavelet':
+        denoise_params = {
+          'method': x['waveletMethod'],
+          'mode': x['waveletMode']
+        }
+      elif x['denoiseFun'] == 'tv':
+        denoise_params = {
+          'weight': x['tvWeight']
+        }
+      
       output_image[i] = apply_denoise(
-        output_image[i], dim_utils, x['denoiseFun'], x['denoiseParams'])
+        # output_image[i], dim_utils, x['denoiseFun'], x['denoiseParams'])
+        output_image[i], dim_utils, x['denoiseFun'], denoise_params)
         # output_image[i], dim_utils, x['denoiseFun'])
     
     # output_image[i], new_af_im = af_correct_channel(

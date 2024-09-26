@@ -59,7 +59,7 @@ FindSignalPeaks <- R6::R6Class(
       
       # define columns for joining
       joinCols <- c(
-        # signalNormCol,
+        signalNormCol,
         signalRatioCol,
         signalBooleanCol,
         signalAccCol,
@@ -113,8 +113,10 @@ FindSignalPeaks <- R6::R6Class(
         #       by = track_id]
         
         # normalise to mean
-        meanSignal <- mean(popDT[[channelSignal]], na.rm = TRUE)
-        meanDivison <- mean(popDT[[channelDivision]], na.rm = TRUE)
+        # meanSignal <- mean(popDT[[channelSignal]], na.rm = TRUE)
+        # meanDivison <- mean(popDT[[channelDivision]], na.rm = TRUE)
+        meanSignal <- median(popDT[[channelSignal]], na.rm = TRUE)
+        meanDivison <- median(popDT[[channelDivision]], na.rm = TRUE)
         
         self$writeLog(sprintf("> Mean signal %0.2f", meanSignal))
         self$writeLog(sprintf("> Mean division %0.2f", meanDivison))
@@ -127,7 +129,8 @@ FindSignalPeaks <- R6::R6Class(
         self$writeLog(sprintf("> Mean signal ratio %0.2f", meanSignalRatioCol))
         
         # normalise by minimum
-        popDT[, c(signalNormCol) := get(signalRatioCol) - min(.SD[[signalRatioCol]]),
+        # popDT[, c(signalNormCol) := get(signalRatioCol) - min(.SD[[signalRatioCol]]),
+        popDT[, c(signalNormCol) := get(signalRatioCol) - median(.SD[[signalRatioCol]]),
               by = track_id]
         
         # popDT[, c(signalNormCol) :=

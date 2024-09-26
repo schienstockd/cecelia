@@ -43,13 +43,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "fJOCk6", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "NjumBK", versionID = versionID, initReactivity = FALSE
 )
 
-spaceholder <- "SPACEHOLDER"
-valueName <- "T-Bcells"
-
-cciaObj$imLabelsFilepath(valueName = valueName)
+cciaObj$oriFilepath()
 
 # # reset values
 # cciaObj$setImLabelsFilepath(
@@ -151,6 +148,9 @@ cciaObj <- initCciaObject(
 
 paste(cciaObj$imChannelNames(), collapse = "', '")
 
+cciaObj$editPopColour(
+  popType = "flow", colour = "magenta",
+  popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/nonDebris/O/LCMV"))
 # cciaObj$editPopColour(
 #   popType = "flow", colour = "#ff1493",
 #   popID = cciaObj$popIDFromPath(cciaObj$imPopMap("flow"), "/gBT+/CD69+"))
@@ -164,7 +164,7 @@ p1s <- .flowPlotGatedRaster(
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 2, ncol = 2)
 
-ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 6.5, height = 6.5)
+ggsave(file.path(anaDir, "NjumBK_gating.pdf"), width = 7, height = 7)
 # ggsave(file.path(anaDir, "TK5dex_gating.png"), width = 8, height = 8)
 ```
 
@@ -431,22 +431,24 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 uIDs <- exp.info$uID
 
 # get pops
-pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE, uIDs = uIDs[1])
+# pops <- cciaObj$popPaths(popType = "flow", includeFiltered = FALSE, uIDs = uIDs[1])
+pops <- cciaObj$popPaths(popType = "flow", includeFiltered = TRUE, uIDs = uIDs[3])
 
 # # exclude 'O' pops
 pops <- pops[is.na(str_match(pops, "/O[0-9]*$"))]
 pops <- pops[is.na(str_match(pops, "/nonDebris$"))]
 windowPops <- c("root")
 
-# popDT <- cciaObj$popDT(
-#   popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+popDT <- cciaObj$popDT(
+  # popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = FALSE)
+  popType = "flow", uIDs = uIDs, pops = pops, includeFiltered = TRUE)
 
 # get ppp for all populations
-popPPP <- lapply(pops, function(x) {
-  cciaObj$ppp(
-    popType = "flow", pops = x, uIDs = uIDs, usePhysicalScale = FALSE, windowPops = windowPops)
-})
-names(popPPP) <- pops
+# popPPP <- lapply(pops, function(x) {
+#   cciaObj$ppp(
+#     popType = "flow", pops = x, uIDs = uIDs, usePhysicalScale = FALSE, windowPops = windowPops)
+# })
+# names(popPPP) <- pops
 ```
 
 ```{r}
@@ -561,7 +563,7 @@ ggplot(infDT,
        aes(centroid_x, -centroid_y), size = 0.3) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/B220"), color = "orange", alpha = 0.01) +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/XCR1"), color = "#66A266", alpha = 0.2) +
-  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "red") +
+  geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/O/LCMV"), color = "magenta") +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/P14/non.clustered"), color = "white") +
   geom_point(data = infDT %>% dplyr::filter(pop == "/nonDebris/P14/clustered"), color = "#4169e1") +
   theme_classic() +

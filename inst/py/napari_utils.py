@@ -461,6 +461,13 @@ class NapariUtils:
           x.scale = self.dim_utils.im_scale(dims = ['X', 'Y'])
 
   """
+  Save all labels
+  """
+  def save_labels_all(self, **kwargs):
+    # TODO this is a bit convoluted
+    self.save_labels(exclude_names = '', **kwargs)
+
+  """
   Save labels
   """
   def save_labels(self, filepath, layer_name = 'Labels', exclude_names = None,
@@ -580,12 +587,16 @@ class NapariUtils:
           
           # TODO Do we need to convert to numpy array to edit labels?
           if as_np_array is True or binarise_labels is True:
+            print('>> Load as np array')
+            
             if self.as_dask is True:
-              # self.im_labels[0] = self.im_labels[0].compute()
-              self.im_labels = [y.compute() for y in self.im_labels]
+              self.im_labels = self.im_labels[0].compute()
+              # self.im_labels = [y.compute() for y in self.im_labels]
+              # self.im_labels = [y.compute().astype(np.uint8) for y in self.im_labels]
             else:
-              # self.im_labels[0] = self.im_labels[0][:]
-              self.im_labels = [y[:] for y in self.im_labels]
+              self.im_labels = self.im_labels[0][:]
+              # self.im_labels = [y[:] for y in self.im_labels]
+              # self.im_labels = [y[:].astype(np.uint16) for y in self.im_labels]
             
             # binarise labels
             # TODO this is hard coded
@@ -632,7 +643,7 @@ class NapariUtils:
           
           # show labels
           # make sure it is labels and not float
-          if self.im_labels[0].dtype in [bool, np.uint32]:
+          if self.im_labels[0].dtype in [bool, np.uint8, np.uint16, np.uint32]:
             labels_layer = self.viewer.add_labels(
                 self.im_labels, properties = properties,
                 # metadata = metadata,
@@ -641,6 +652,7 @@ class NapariUtils:
                 cache = cache,
                 opacity = opacity,
                 visible = visible
+                # mode = 'PAN_ZOOM' if as_np_array is False else 'PAINT'
                 # rendering = "translucent"
             )
           else:
@@ -697,7 +709,8 @@ class NapariUtils:
             
             # convert to dict
             labels_layer.color = {x: labels_cm[layer_chnl_colours[i]] for i, x in enumerate(label_ids)}
-    
+            
+            
     # show points
     if show_points is True:
       labels_view = self.label_props_utils.label_props_view(value_name = value_name)
@@ -739,7 +752,7 @@ class NapariUtils:
           # n_dimensional = True,
           scale = self.im_scale,
           face_color = points_colour,
-          edge_color = 'black',
+          border_color = 'black',
           text = points_text
           )
         
@@ -1023,7 +1036,7 @@ class NapariUtils:
         label_points, size = 6,
         properties = properties,
         face_color = 'magenta',
-        edge_color = 'black',
+        border_color = 'black',
         name = 'selection',
         n_dimensional = False if self.dim_utils.is_timeseries() else True,
         scale = self.im_scale
@@ -1327,7 +1340,7 @@ class NapariUtils:
               self.viewer.add_points(
                   label_points,
                   face_color = pop_colour,
-                  edge_color = 'black',
+                  border_color = 'black',
                   name = pop_layer_name,
                   visible = pop_show,
                   n_dimensional = False if self.dim_utils.is_timeseries() else True,
@@ -1442,7 +1455,7 @@ class NapariUtils:
     self.viewer.add_vectors(
       vector_array,
       scale = self.im_scale,
-      edge_color = color,
+      border_color = color,
       edge_width = 2,
       name = f'({pop_type}) Neighbours'
     )

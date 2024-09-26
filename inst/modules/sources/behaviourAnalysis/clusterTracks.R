@@ -142,7 +142,7 @@ ClusterTracks <- R6::R6Class(
 
         # bind together
         tracksInfo.DT <- data.table::rbindlist(tracksInfo.DTs, fill = TRUE, idcol = "pop")
-
+      
         # bind to tracks
         if (!is.null(tracks.DT)) {
           tracks.DT[, track_id := as.double(track_id)]
@@ -198,6 +198,7 @@ ClusterTracks <- R6::R6Class(
         trackMeasures = self$funParams()$trackMeasures,
         objectMeasures = self$funParams()$objectMeasures[measureTypes == FALSE],
         logicalMeasures = self$funParams()$objectMeasures[measureTypes == TRUE],
+        diffMeasures = self$funParams()$diffMeasures,
         nMeasures = self$funParams()$nMeasures,
         sumMeasures = self$funParams()$sumMeasures,
         calcMeasures = as.list(names(self$funParams()$calcMeasures)),

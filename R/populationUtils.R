@@ -211,8 +211,12 @@ PopulationUtils <- R6::R6Class(
     ## setters
     
     ## getters
-    getPopObj = function() {
-      private$popObj
+    getPopObj = function(x = NULL) {
+      if (!is.null(x)) {
+        if (x %in% names(private$popObj)) private$popObj[[x]] else NULL
+      } else {
+        private$popObj
+      }
     },
     
     getPopObjFilepath = function() {

@@ -147,12 +147,12 @@ BayesianTracking <- R6::R6Class(
         labels$close()
       }
       
+      # update image information
+      self$updateImageInfo()
+      
       # DONE
       self$writeLog("Done")
       self$exitLog()
-      
-      # update image information
-      self$updateImageInfo()
     }
   )
 )

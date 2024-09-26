@@ -23,6 +23,7 @@ def run(params):
   object_measures = script_utils.get_param(params, 'objectMeasures', default = list())
   logical_measures = script_utils.get_param(params, 'logicalMeasures', default = list())
   track_measures = script_utils.get_param(params, 'trackMeasures', default = list())
+  diff_measures = script_utils.get_param(params, 'diffMeasures', default = list())
   n_measures = script_utils.get_param(params, 'nMeasures', default = list())
   sum_measures = script_utils.get_param(params, 'sumMeasures', default = list())
   calc_measures = script_utils.get_param(params, 'calcMeasures', default = list())
@@ -39,7 +40,7 @@ def run(params):
   adata = LabelPropsUtils(task_dir, value_name = value_name).label_props_view(read_only = False)\
     .as_adata()\
     .to_memory()
-
+    
   # add mean and sd to object measures
   object_measures_adj = [f'{x}.mean' for x in object_measures]
   object_measures_adj += [f'{x}.sd' for x in object_measures]
@@ -47,28 +48,35 @@ def run(params):
   # object_measures_adj += [f'{x}.sum' for x in object_measures]
   object_measures_adj += [f'{x}.qUp' for x in object_measures]
   object_measures_adj += [f'{x}.qLow' for x in object_measures]
-
+  var_names = list(adata.var_names)
+  
   # selected columns for logicals
   logical_measures_adj = list()
   for x in logical_measures:
-    logical_measures_adj += [y for y in list(adata.var_names) if y.startswith(f'{x}.')\
-      and not y.endswith('.n') and not y.endswith('.NA')]
+    logical_measures_adj += [y for y in var_names if y.startswith(f'{x}.')\
+      and not y.endswith('.n') and not y.endswith('.diff') and not y.endswith('.sum') and not y.endswith('.NA')]
+
+  # add diff to n measures
+  diff_measures_adj = list()
+  for x in diff_measures:
+    diff_measures_adj += [y for y in var_names if y.startswith(f'{x}.')\
+      and y.endswith('.diff')]
 
   # add n to n measures
   n_measures_adj = list()
   for x in n_measures:
-    n_measures_adj += [y for y in list(adata.var_names) if y.startswith(f'{x}.')\
-      and not y.endswith('.NA') and not y.endswith('.NA.n')]
+    n_measures_adj += [y for y in var_names if y.startswith(f'{x}.')\
+      and y.endswith('.n')]
 
   # add sum to sum measures
   sum_measures_adj = list()
   for x in sum_measures:
-    sum_measures_adj += [y for y in list(adata.var_names) if y.startswith(f'{x}.')\
+    sum_measures_adj += [y for y in var_names if y.startswith(f'{x}.')\
       and y.endswith('.sum')]
 
   # set columns to cluster
   cols_for_clust = track_measures + logical_measures_adj\
-                     + n_measures_adj + sum_measures_adj\
+                     + diff_measures_adj + n_measures_adj + sum_measures_adj\
                      + object_measures_adj + calc_measures
 
   # only select cluster columns
