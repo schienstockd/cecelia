@@ -3,7 +3,6 @@
 
 <figure>
 <img src="./im/cciaLogo.png" alt="Image" />
-<figcaption aria-hidden="true">Image</figcaption>
 </figure>
 
 <!-- badges: start -->
