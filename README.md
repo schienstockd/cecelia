@@ -17,9 +17,9 @@ graph plotting engine with napari’s image display.
 
 **This package is pre-alpha**
 
-## Genereal installation guidelines
+# Genereal installation guidelines
 
-# System requirements
+## System requirements
 
 Software dependencies will be installed during the installation
 processing of the R-package. The framework has primarily been tested on
@@ -30,7 +30,7 @@ shiny requires a UNIX system. For cell segmentation and deep learning
 denoising we recommend a GPU that is recognised by
 [`torch`](https://pytorch.org/get-started/locally/).
 
-# Installation guide
+## Installation guide
 
 See
 [`read-the-docs`](https://cecelia.readthedocs.io/en/latest/index.html)
