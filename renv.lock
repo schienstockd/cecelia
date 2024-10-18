@@ -602,10 +602,14 @@
     },
     "RProtoBufLib": {
       "Package": "RProtoBufLib",
-      "Version": "2.16.0",
-      "Source": "Bioconductor",
-      "Repository": "Bioconductor 3.19",
-      "Hash": "b61c1ff5d792ea3e2e3b5a2bb0850fb7"
+      "Version": "2.13.1",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "RProtoBufLib",
+      "RemoteUsername": "rglab",
+      "RemoteSha": "e3138e734c03913d742ebc6347c463a56afa9976",
+      "Hash": "2105b2856c0e4a0e7bf19e46cc606f14"
     },
     "RSQLite": {
       "Package": "RSQLite",
@@ -1602,16 +1606,20 @@
     },
     "cytolib": {
       "Package": "cytolib",
-      "Version": "2.16.0",
-      "Source": "Bioconductor",
-      "Repository": "Bioconductor 3.19",
+      "Version": "2.15.3",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "cytolib",
+      "RemoteUsername": "rglab",
+      "RemoteSha": "4f42d8550fe80c52dbc08b45c7c454feee036a33",
       "Requirements": [
         "BH",
         "R",
         "RProtoBufLib",
         "Rhdf5lib"
       ],
-      "Hash": "9750ceab190b3f63f6e55168b9bacdb0"
+      "Hash": "db90e3ea525277594c7af6067cc47348"
     },
     "dagR": {
       "Package": "dagR",
@@ -2083,9 +2091,13 @@
     },
     "flowViz": {
       "Package": "flowViz",
-      "Version": "1.68.0",
-      "Source": "Bioconductor",
-      "Repository": "Bioconductor 3.19",
+      "Version": "1.61.1",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "flowViz",
+      "RemoteUsername": "rglab",
+      "RemoteSha": "bb81ab4fb54feae00d6cc6327c45da970fd78b05",
       "Requirements": [
         "Biobase",
         "IDPmisc",
@@ -2105,7 +2117,7 @@
         "stats4",
         "utils"
       ],
-      "Hash": "d7c604afd83e87d8939f4a7f66cd5935"
+      "Hash": "6ff8c25520fe15ee7b78816292c580e6"
     },
     "flowWorkspace": {
       "Package": "flowWorkspace",
@@ -2348,9 +2360,13 @@
     },
     "ggcyto": {
       "Package": "ggcyto",
-      "Version": "1.32.0",
-      "Source": "Bioconductor",
-      "Repository": "Bioconductor 3.19",
+      "Version": "1.31.2",
+      "Source": "GitHub",
+      "RemoteType": "github",
+      "RemoteHost": "api.github.com",
+      "RemoteRepo": "ggcyto",
+      "RemoteUsername": "rglab",
+      "RemoteSha": "3e9462cad26bd2f6e29f886675c2957f77058a04",
       "Requirements": [
         "RColorBrewer",
         "data.table",
@@ -2365,7 +2381,7 @@
         "rlang",
         "scales"
       ],
-      "Hash": "678091f2eb79775c785a026f7ecd5698"
+      "Hash": "280e8f4b03feb82ff3f1a4988b9a4a0e"
     },
     "ggforce": {
       "Package": "ggforce",
