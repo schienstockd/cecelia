@@ -278,3 +278,91 @@ tracks.coords <- function(track) {
   
   cbind(posHead, posTail)
 } 
+
+## Functions to modify tracks
+# delete track
+tracks.rm <- function(popDT, trackIDs) {
+  # should work in place
+  # popDT[track_id == trackID, track_id := NA]
+  popDT[track_id %in% trackIDs, track_id := NA]
+}
+
+# join tracks
+tracks.join <- function(popDT, trackID.A, trackID.B) {
+  # get last point of first track
+  t.a <- popDT[track_id == trackID.A]$centroid_t
+  t.b <- popDT[track_id == trackID.B]$centroid_t
+  # t.a.last <- t.a[length(t.a)] 
+  
+  # get first element of B that is not in A
+  t.intersect <- intersect(t.a, t.b)
+  t.b.unique <- t.b[!t.b %in% t.intersect]
+  
+  # now merge track points in place
+  popDT[track_id == trackID.B & centroid_t %in% t.b.unique, track_id := trackID.A]
+}
+
+# save modified tracks file
+# TODO this is really only for viewing in napari
+tracks.save.mod <- function(cciaObj, popDT, valueName, ext.mod = "-mod") {
+  # get labels
+  labels <- cciaObj$labelProps(valueName = valueName)
+  
+  if (length(labels) > 0) {
+    labels.path <- labels$adata_filepath()
+    
+    labels.new.base <- stringr::str_replace(basename(labels.path), ".h5ad", paste0(ext.mod, ".h5ad"))
+    labels.new.path <- file.path(dirname(labels.path), labels.new.base)
+    
+    # add to labels
+    labels$add_obs(as.list(popDT[, .(track_id)]))
+    
+    # save
+    labels$save(filename = labels.new.path)
+    labels$close()
+  }
+}
+
+# save modified tracks file
+# TODO this is really only for viewing in napari
+tracks.save.mod.tracks <- function(cciaObj, trackIDs, valueName, ext.mod = "-mod") {
+  # get labels
+  labels <- cciaObj$labelProps(valueName = valueName)
+  
+  if (length(labels) > 0) {
+    labels.path <- labels$adata_filepath()
+    
+    labels.new.base <- stringr::str_replace(basename(labels.path), ".h5ad", paste0(ext.mod, ".h5ad"))
+    labels.new.path <- file.path(dirname(labels.path), labels.new.base)
+    
+    # add to labels
+    # labels$add_obs(as.list(popDT[, .(track_id)]))
+    # the other values will be removed upon save
+    # labels$view_cols(list("track_id"))
+    trackDT <- as.data.table(labels$values_obs())
+    trackDT[!track_id %in% trackIDs, track_id := NaN]
+    labels$add_obs(as.list(trackDT[, .(track_id)]))
+    
+    # save
+    labels$save(filename = labels.new.path)
+    labels$close()
+  }
+}
+
+# get track position
+tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {
+  # get coordinates for tracks to centre camera
+  centroid.cols <- c("centroid_t", "centroid_y", "centroid_x")
+  
+  # https://stackoverflow.com/a/43834005
+  tracks.centroids <- unlist(
+    popDT[track_id %in% tracksIDs,
+          sapply(.SD, function(x) list(median = round(median(x)))),
+          .SDcols = centroid.cols])
+  
+  # set resolution for coordinates
+  tracks.centroids[2:length(tracks.centroids)] <- tracks.centroids[2:length(tracks.centroids)] * pixRes
+  
+  names(tracks.centroids) <- centroid.cols
+  tracks.centroids
+}

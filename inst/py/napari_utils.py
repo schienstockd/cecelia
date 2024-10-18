@@ -931,6 +931,22 @@ class NapariUtils:
     )
 
   """
+  Zoom camera to new position
+  """
+  def centre(self, pos, tp = None, zoom = None):
+    self.viewer.camera.center = pos
+    
+    # set time if given
+    if tp is not None:
+      c_tp = list(self.viewer.dims.current_step)
+      c_tp[0] = tp
+      self.viewer.dims.current_step = c_tp
+      
+    # set zoom if given
+    if zoom is not None:
+      self.viewer.camera.zoom = zoom
+
+  """
   Highlight tracks
   """
   def highlight_tracks(self, value_name, track_ids,
@@ -964,10 +980,12 @@ class NapariUtils:
     # add to napari
     self.viewer.add_tracks(
         tracks,
+        tail_width = 4,
         properties = properties,
         name = tracks_layer,
         scale = self.im_scale,
-        color_by = color_by
+        color_by = color_by,
+        colormap = 'viridis'
     )
     
     # show surfaces
@@ -1334,11 +1352,16 @@ class NapariUtils:
                 im_scale = self.im_scale
               )
               
+              properties = {
+                'label_id': label_df.label.tolist()
+              }
+              
               # show on viewer
               # if popLayer is None:
               # TODO always add points - to preserve the order of populations?
               self.viewer.add_points(
                   label_points,
+                  properties = properties,
                   face_color = pop_colour,
                   border_color = 'black',
                   name = pop_layer_name,
@@ -1546,14 +1569,28 @@ class NapariUtils:
   Push selected cells to output file
   """
   def selected_points_to_output(self, moduleID):
-      # get selected points
-      selected_points_idx = np.array(list(self.points_layer.selected_data))
-      selected_points_ids = self.points_layer.properties['label_id'][selected_points_idx]
-      selected_points_dict = dict()
-      selected_points_dict[moduleID] = selected_points_ids.tolist()
-      
-      # send to output
-      self.write_to_output(selected_points_dict)
+    # can you get the points from the currently selected points layer?
+    # otherwise this will be confusing and sometimes the
+    # points layer might not be explicitly set
+    # TODO get first in list by default?
+    current_selection = self.viewer.layers.selection.active
+  
+    # get selected points
+    selected_points_idx = np.array(list(current_selection.selected_data))
+    selected_points_ids = current_selection.properties['label_id'][selected_points_idx]
+    selected_points_dict = dict()
+    selected_points_dict[moduleID] = selected_points_ids.tolist()
+    
+    # send to output
+    self.write_to_output(selected_points_dict)
+
+  """
+  Create bindings for track correction
+  """
+  def create_tracking_images_module(self):
+    @self.viewer.bind_key('k', overwrite = True)
+    def save_selected_points(event = None):
+      self.selected_points_to_output('trackingImagesSelectPoints')
 
   """
   Create bindings for cell mapping

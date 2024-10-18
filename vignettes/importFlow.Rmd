@@ -718,24 +718,24 @@ cciaTo <- initCciaObject(
 ```{r}
 # visualise gating
 # CytoExploreR 
-devtools::install_github("DillonHammill/CytoExploreR")
+# devtools::install_github("DillonHammill/CytoExploreR")
 ```
 
 ```{r}
-library(CytoExploreR)
-
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
-  pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
-)
-
-# Gating scheme
-cyto_plot_gating_scheme(
-  cciaObj$flowGatingSet()$getPopObj(),
-  back_gate = TRUE, gate_track = TRUE)
+# library(CytoExploreR)
+# 
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "nNwqEC", versionID = versionID, initReactivity = FALSE
+# )
+# 
+# # Gating scheme
+# cyto_plot_gating_scheme(
+#   cciaObj$flowGatingSet()$getPopObj(),
+#   back_gate = TRUE, gate_track = TRUE)
 ```
 
 ```{r}

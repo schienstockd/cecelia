@@ -1159,21 +1159,21 @@ ggsave(file.path(anaDir, "CD11c_distance.tiff"), width = 4, height = 4)
 ```
 
 ```{r fig_contact_bins, fig.height=3, fig.width=5}
-# summaryDF <- copy(tcells.sc) %>% left_join(tracks.info)
-summaryDF <- copy(popDTs) %>%
-  dplyr::filter(
-    !is.na(live.cell.hmm.state.movement),
-    `live.cell.min_distance#live.dcs.CD11c/tracked` <= 40
-    )
-
-# distance by HMM states rather than track clusters?
-ggplot(summaryDF,
-       aes(`live.cell.min_distance#live.dcs.CD11c/tracked`,
-           as.factor(live.cell.hmm.state.movement),
-           fill = as.factor(live.cell.hmm.state.movement))) +
-  theme_classic() +
-  ggridges::geom_density_ridges(alpha = 0.8) +
-  scale_fill_brewer(name = "Treatment", palette = "Set3")
-
-ggsave(file.path(anaDir, "CD11c_distance_hmm.tiff"), width = 4, height = 4)
+# # summaryDF <- copy(tcells.sc) %>% left_join(tracks.info)
+# summaryDF <- copy(popDTs) %>%
+#   dplyr::filter(
+#     !is.na(live.cell.hmm.state.movement),
+#     `live.cell.min_distance#live.dcs.CD11c/tracked` <= 40
+#     )
+# 
+# # distance by HMM states rather than track clusters?
+# ggplot(summaryDF,
+#        aes(`live.cell.min_distance#live.dcs.CD11c/tracked`,
+#            as.factor(live.cell.hmm.state.movement),
+#            fill = as.factor(live.cell.hmm.state.movement))) +
+#   theme_classic() +
+#   ggridges::geom_density_ridges(alpha = 0.8) +
+#   scale_fill_brewer(name = "Treatment", palette = "Set3")
+# 
+# ggsave(file.path(anaDir, "CD11c_distance_hmm.tiff"), width = 4, height = 4)
 ```

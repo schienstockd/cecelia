@@ -117,20 +117,20 @@ for (i in c("73d2Y7", "i37o6P", "fD6yGF")) {
 
 
 ```{r}
-for (curObj in selectedSet()$cciaObjects()) {
-    globalManagers$projectManager()$deleteHPCpersistentObjectDirectory(
-      curObj()$getUID()
-    )
-  }
-  
-  progress$close()
-}
-
-# remove set and its child objects
-selectedSet()$removeCciaObjects()
-selectedSet()$deleteObjectDirectory()
-globalManagers$dataManager()$cciaImageCollection()$removeCciaObjectByUID(selectedSet()$getUID())
-
-removeCciaObjects
+# for (curObj in selectedSet()$cciaObjects()) {
+#     globalManagers$projectManager()$deleteHPCpersistentObjectDirectory(
+#       curObj()$getUID()
+#     )
+#   }
+#   
+#   progress$close()
+# }
+# 
+# # remove set and its child objects
+# selectedSet()$removeCciaObjects()
+# selectedSet()$deleteObjectDirectory()
+# globalManagers$dataManager()$cciaImageCollection()$removeCciaObjectByUID(selectedSet()$getUID())
+# 
+# removeCciaObjects
 ```
 

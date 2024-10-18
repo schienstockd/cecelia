@@ -243,7 +243,8 @@ CciaImage <- R6::R6Class(
     
     #' @description OME xml
     #' @param reset boolean to reset values
-    omeXML = function(reset = FALSE) {
+    #' @param ... passed to setOmeXML
+    omeXML = function(reset = FALSE, ...) {
       # is content already set?
       if (is.null(private$getOmeXML()) || reset == TRUE) {
         omeXMLFilepath <- NULL
@@ -271,7 +272,8 @@ CciaImage <- R6::R6Class(
             tryCatch(
               expr = {
                 # get XML
-                omeXMLContent <- RBioFormats::read.omexml(omeXMLFilepath)
+                # TODO there is no alternative option for this
+                # omeXMLContent <- RBioFormats::read.omexml(omeXMLFilepath)
               },
               error = function(e) { 
                 message(">> Get XML content again")
@@ -297,7 +299,7 @@ CciaImage <- R6::R6Class(
         xml2::xml_ns_strip(omeXML)
         
         # set
-        private$setOmeXML(omeXML)
+        private$setOmeXML(omeXML, ...)
       }
       
       private$getOmeXML()
@@ -334,11 +336,12 @@ CciaImage <- R6::R6Class(
     
     #' @description pixel information
     #' @param reset boolean to reset value
-    omeXMLPixels = function(reset = FALSE, omeXML = NULL) {
+    #' @param ... passed to omeXML and setOmeXMLPixels
+    omeXMLPixels = function(reset = FALSE, omeXML = NULL, ...) {
       # is content already set?
       if (is.null(private$getOmeXMLPixels()) || reset == TRUE) {
         pixelInfo <- as.list(unlist(xml2::xml_attrs(
-          xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels"))
+          xml2::xml_find_all(self$omeXML(reset = reset, ...), self$omeXMLPath("//Image//Pixels"))
         )))
         
         # convert to numeric
@@ -363,7 +366,7 @@ CciaImage <- R6::R6Class(
             pixelContent[[x]] <- 1
         
         # set
-        private$setOmeXMLPixels(pixelContent)
+        private$setOmeXMLPixels(pixelContent, ...)
       }
       
       private$getOmeXMLPixels()
@@ -460,8 +463,9 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Pixel resolution
-    omeXMLPixelRes = function() {
-      pixelInfo <- self$omeXMLPixels()
+    #' @param ... passed to omeXMLPixels
+    omeXMLPixelRes = function(...) {
+      pixelInfo <- self$omeXMLPixels(...)
       
       # get scaling factor
       scaleFactorX <- 1
@@ -542,10 +546,13 @@ CciaImage <- R6::R6Class(
     #' @param colsToNormalise list of character to define columns to normalise
     #' @param normPercentile numeric to define normalisation percentile 0-1
     #' @param addPop boolean to add population to DT
+    #' @param popDT data.table of populations, this is really to correct tracks
+    #' @param diffMax numeric to define max value for diff of categorical
     tracksInfo = function(trackStatsNames, parentPop, pop = NULL,
                           addPops = NULL, forceReload = FALSE, flushCache = FALSE,
                           replaceNA = TRUE, quantiles = c(0.95, 0.05),
-                          colsToNormalise = c(), normPercentile = 0.998, addPop = FALSE) {
+                          colsToNormalise = c(), normPercentile = 0.998, addPop = FALSE,
+                          popDT = NULL, diffMax = NA) {
       versionedVarName <- if (!is.null(pop)) pop else parentPop
       if (!is.null(trackStatsNames)) {
         versionedVarName <- paste(
@@ -572,9 +579,11 @@ CciaImage <- R6::R6Class(
         popCols <- c("centroids", "track_id", trackStatsNames)
         
         # get population DT
-        popDT <- self$popDT("live", pops = pops, includeFiltered = TRUE,
-                            popCols = popCols, forceReload = forceReload,
-                            flushCache = flushCache)
+        if (is.null(popDT)) {
+          popDT <- self$popDT("live", pops = pops, includeFiltered = TRUE,
+                              popCols = popCols, forceReload = forceReload,
+                              flushCache = flushCache)
+        }
         
         # normalise DT
         if (length(colsToNormalise) > 0) {
@@ -620,11 +629,16 @@ CciaImage <- R6::R6Class(
                 }
                 
                 # group
-                popDT[, centroid_t := centroid_t * self$omeXMLTimelapseInfo()$interval * 60]
+                # TODO this does not work with varying time intervals between timepoints
+                # popDT[, centroid_t := centroid_t * self$omeXMLTimelapseInfo()$interval * 60]
+                popDT[, centroid_t := centroid_t * self$omeXMLTimelapseInfo()$interval]
                 
                 DT.grouped <- popDT[
                   # , .(n = .N, diff = mean(diff(.SD$centroid_t))),
-                  , .(n = .N, diff = median(diff(.SD$centroid_t))),
+                  , .(n = .N, diff = if (!is.na(diffMax))
+                    sum(diff(.SD$centroid_t) <= diffMax)
+                    else median(diff(.SD$centroid_t))),
+                  # , .(n = .N, diff = sum(diff(.SD$centroid_t))),
                   by = .(track_id, get(i))]
                 
                 # average
@@ -805,8 +819,10 @@ CciaImage <- R6::R6Class(
     #' @param minTracklength integer for minimum track length
     #' @param steps.subtracks integer for subtracks
     #' @param steps.overlap integer for subtracks overlap
+    #' @param popDT data.table of populations, this is really to correct tracks
     tracks = function(pop, forceReload = FALSE, minTracklength = 0,
-                      steps.subtracks = NULL, steps.overlap = steps.subtracks - 1) {
+                      steps.subtracks = NULL, steps.overlap = steps.subtracks - 1,
+                      popDT = NULL) {
       # was this requested before?
       tracks <- .getVersionedVar(
         private$labelTracks, valueName = pop)
@@ -828,11 +844,13 @@ CciaImage <- R6::R6Class(
         }
         
         # get population
-        popDT <- self$popDT(
-          "live", pops = valueName, popCols = c(
-            "centroids", "track_id"
-          # ), dropNA = TRUE, includeFiltered = TRUE)
-          ), dropNA = FALSE, includeFiltered = TRUE)
+        if (is.null(popDT)) {
+          popDT <- self$popDT(
+            "live", pops = valueName, popCols = c(
+              "centroids", "track_id"
+              # ), dropNA = TRUE, includeFiltered = TRUE)
+            ), dropNA = FALSE, includeFiltered = TRUE)
+        }
         
         # remove non-tracks
         popDT <- na.omit(popDT, cols = c("track_id"))
@@ -2074,16 +2092,19 @@ CciaImage <- R6::R6Class(
     #' @description Tracks graph
     #' @param pop character for value population
     #' @param extraAttr character vector to add vertex attributes
+    #' @param popDT data.table with populations
     #' @param ... passed to self$popDT
-    tracksGraph = function(pop, extraAttr = c(), ...) {
+    tracksGraph = function(pop, extraAttr = c(), popDT = NULL, ...) {
       # was this requested before?
       tracksGraph <- .getVersionedVar(
         private$handleTracksGraph, valueName = pop)
       
       if (is.null(tracksGraph) || forceReload == TRUE) {
         # get populations
-        popDT <- cciaObj$popDT(
-          popType = "live", pops = c(pop), includeFiltered = TRUE, ...)
+        if (is.null(popDT)) {
+          popDT <- cciaObj$popDT(
+            popType = "live", pops = c(pop), includeFiltered = TRUE, ...)
+        }
         
         if (!is.null(popDT)) {
           # connect labels in tracks

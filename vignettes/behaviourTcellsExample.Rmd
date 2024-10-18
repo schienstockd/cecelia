@@ -37,15 +37,292 @@ cciaObj <- initCciaObject(
 popsList <- cciaObj$popPaths(popType = "live", includeFiltered = TRUE)
 popsTracked <- popsList[!is.na(stringr::str_match(popsList, "/tracked$"))]
 
-popDT <- cciaObj$popDT("live", pops = c(popsTracked[[1]]), includeFiltered = TRUE)
+popDT <- cciaObj$popDT("live", pops = c(popsTracked[[3]]), includeFiltered = TRUE)
+# popRoot <- cciaObj$popDT("live", pops = c("OTI", "OTI/tracked"), includeFiltered = TRUE)
+# popRoot <- cciaObj$popDT("live", pops = c("P14", "P14/tracked"), includeFiltered = TRUE)
+popRoot <- cciaObj$popDT("live", pops = c("gBT", "gBT/tracked"), includeFiltered = TRUE)
 
 g <- cciaObj$tracksGraph(
   completeDT = TRUE,
   replaceNA = TRUE,
-  pop = popsTracked[[1]],
+  pop = popsTracked[[3]],
   extraAttr = c("label")
 )
+
+# tracks.OTI <- cciaObj$tracks(popsTracked[[1]])
+# tracks.P14 <- cciaObj$tracks(popsTracked[[2]])
+tracks.gBT <- cciaObj$tracks(popsTracked[[3]])
 ```
+
+```{r}
+# for each track - can you get the median speed and angle?
+# then see which points are total outliers
+tracks.info <- cciaObj$tracksInfo(
+  c("live.cell.speed", "live.cell.angle"),
+  # parentPop = popsTracked[[1]]
+  # parentPop = popsTracked[[2]]
+  parentPop = popsTracked[[3]]
+)
+```
+
+```{r fig_points_qc, fig.height=8, fig.width=8}
+speed.thresh <- 9
+angle.thresh <- 1
+# popDT[, id := ""]
+# popDT[live.cell.speed.dev >= speed.thresh | live.cell.angle.dev >= angle.thresh, id := track_id]
+tracks.info[, id := ""]
+tracks.info[live.cell.speed.sd >= speed.thresh | live.cell.angle.sd >= angle.thresh, id := track_id]
+
+# ggplot(popDT, aes(live.cell.speed.dev, live.cell.angle.dev)) +
+ggplot(tracks.info, aes(live.cell.speed.sd, live.cell.angle.sd)) +
+  theme_classic() +
+  geom_point() +
+  geom_text(aes(label = id), color = "red", hjust = -0.1) +
+  geom_vline(xintercept = speed.thresh, col = "blue", lty = 2) +
+  geom_hline(yintercept = angle.thresh, col = "blue", lty = 2)
+```
+
+```{r fig_tracks_points, fig.height=8, fig.width=18}
+# can you plot the pairs
+# or could you even zoom into them with napari?
+# you would just need XY and then set the coordinates with a buffer
+
+# track.pairs <- popDT[!is.na(id),]$id
+# track.pairs <- popDT[id != "",]$id
+track.pairs <- tracks.info[id != "",]$id
+track.pairs <- unlist(table(track.pairs))
+track.pairs <- sort(track.pairs, decreasing = TRUE)
+
+xRes <- cciaObj$omeXMLPixelRes()$x
+
+par.m <- 6
+par.n <- ceiling(length(track.pairs)/par.m)
+
+par(mfrow=c(par.n, par.m))
+
+for (i in names(track.pairs)) {
+  # x <- popDT[track_id == i & id != ""]
+  
+  # plot(tracks.OTI[i], main = paste(i, track.pairs[[i]], sep = "-"))
+  # plot(tracks.P14[i], main = paste(i, track.pairs[[i]], sep = "-"))
+  plot(tracks.gBT[i], main = paste(i, track.pairs[[i]], sep = "-"))
+  # points(x$centroid_x * xRes, x$centroid_y * xRes, cex = 2, pch = 6, col ="red") 
+}
+
+# to highlight in napari
+paste(names(track.pairs), collapse = ",")
+```
+
+```{r fig_tracks_qc, fig.height=8, fig.width=8}
+library(celltrackR)
+
+# df <- analyzeCellPairs(tracks.OTI)
+# df <- analyzeCellPairs(tracks.P14)
+df <- analyzeCellPairs(tracks.gBT)
+
+# these thresholds should be dynamic and set by the user to delete tracks
+# not sure you need a sort of gating here
+# label cellpairs that have both angle and distance below threshold
+angle.thresh <- 90 # in degrees
+dist.thresh <- 10 # this should be the expected cell radius
+df$id <- paste0( df$cell1,"-",df$cell2 )
+df$id[ !(df$angle < angle.thresh & df$dist < dist.thresh) ] <- "" 
+# df[is.na(df$dist), ]$dist <- 0
+
+# Plot; zoom in on the region with small angles and distances
+ggplot( df, aes( x = dist, y = angle ) ) +
+  geom_point( color = "gray40" ) +
+  geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
+  labs( x = "distance between cell pairs",
+        y = "angle between cell pairs" ) +
+  coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
+  geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
+  geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
+  theme_classic()
+```
+
+```{r fig_tracks_traces, fig.height=5, fig.width=5}
+# plot tracks in plotly
+# there is no standard way to do this
+library(dplyr)
+library(plotly)
+
+nonDF <- df[df$id != "" & !is.na(df$dist),]
+tracks.A <- unique(nonDF$cell1)
+tracks.B <- unique(nonDF$cell2)
+popTracks <- as.data.table(popDT[track_id %in% c(tracks.A, tracks.B), ])
+popTracks[, track.side := "0"]
+popTracks[track_id %in% tracks.B, track.side := "1"]
+
+# df %>% distinct(id) %>%
+#   `[<-`(,c(2,4),NA) %>%
+#   rbind(df) %>%
+#   arrange (id)
+
+plot_ly(popTracks) %>%
+  add_trace(data = popTracks[track.side == "0", ],
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE,
+            line = list(color = "black")) %>%
+  add_trace(data = popTracks[track.side == "1", ],
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE,
+            line = list(color = "red")) %>%
+  layout(xaxis = list(scaleanchor = "y", scaleratio = 1))
+```
+
+
+```{r fig_tracks_pairs, fig.height=8, fig.width=10}
+# can you plot the pairs
+# or could you even zoom into them with napari?
+# you would just need XY and then set the coordinates with a buffer
+
+track.pairs <- df[!is.na(df$dist),]$id
+track.pairs <- unique(track.pairs[track.pairs != ""])
+track.pairs <- stringr::str_split(track.pairs, "-")
+
+track.border <- list(
+  title = "",
+  zeroline = FALSE,
+  showline = TRUE,
+  showticklabels = FALSE,
+  showgrid = FALSE
+)
+
+plots <- lapply(track.pairs, function(x) {
+  plot_ly(popDT[track_id %in% x], x = ~centroid_x, y = ~centroid_y,
+        split = ~track_id, type = "scatter", mode = "lines+markers",
+        colors = c("black", "red"), color = ~track_id) %>% hide_guides() %>%
+    layout(xaxis = track.border, yaxis = track.border)
+})
+
+subplot(plots, nrows = 4)
+```
+
+
+```{r fig_tracks_pairs, fig.height=8, fig.width=10}
+par.m <- 4
+par.n <- ceiling(length(track.pairs)/par.m)
+
+par(mfrow=c(par.n, par.m))
+
+for (x in track.pairs) {
+  # plot(tracks.OTI[c(x[[1]], x[[2]])], main = paste(x, collapse = "-"))
+  # plot(tracks.P14[c(x[[1]], x[[2]])], main = paste(x, collapse = "-"))
+  plot(tracks.gBT[c(x[[1]], x[[2]])], main = paste(x, collapse = "-"))
+}
+
+# to highlight in napari
+paste(unique(unlist(track.pairs)), collapse = ",")
+```
+
+
+```{r}
+# ok, once you selected tracks - how do you change them?
+# these functions should work on the popDT for now
+# not sure whether I need to do anything else for that
+# popDT.local <- copy(popDT)
+popDT.local <- copy(popRoot)
+
+# ok go through and correct, check on image and then make an interface for it
+
+## Functions
+# delete track
+tracks.rm <- function(popDT, trackID) {
+  # should work in place
+  popDT[track_id == trackID, track_id := NA]
+}
+
+# join tracks
+tracks.join <- function(popDT, trackID.A, trackID.B) {
+  # get last point of first track
+  t.a <- popDT[track_id == trackID.A]$centroid_t
+  t.b <- popDT[track_id == trackID.B]$centroid_t
+  # t.a.last <- t.a[length(t.a)] 
+  
+  # get first element of B that is not in A
+  t.intersect <- intersect(t.a, t.b)
+  t.b.unique <- t.b[!t.b %in% t.intersect]
+  
+  # now merge track points in place
+  popDT[track_id == trackID.B & centroid_t %in% t.b.unique, track_id := trackID.A]
+}
+
+# save modified tracks file
+# TODO this is really only for viewing in napari
+tracks.save.mod <- function(popDT, valueName, ext.mod = "-mod") {
+  # get labels
+  labels <- cciaObj$labelProps(valueName = valueName)
+  
+  if (length(labels) > 0) {
+    labels.path <- labels$adata_filepath()
+    
+    labels.new.base <- stringr::str_replace(basename(labels.path), ".h5ad", paste0(ext.mod, ".h5ad"))
+    labels.new.path <- file.path(dirname(labels.path), labels.new.base)
+    
+    # add to labels
+    labels$add_obs(as.list(popDT[, .(track_id)]))
+    
+    # save
+    labels$save(filename = labels.new.path)
+    labels$close()
+  }
+}
+
+# get track position
+tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {
+  # get coordinates for tracks to centre camera
+  centroid.cols <- c("centroid_t", "centroid_y", "centroid_x")
+  
+  # https://stackoverflow.com/a/43834005
+  tracks.centroids <- unlist(
+    popDT[track_id %in% tracksIDs,
+          sapply(.SD, function(x) list(median = round(median(x)))),
+          .SDcols = centroid.cols])
+  
+  # set resolution for coordinates
+  tracks.centroids[2:length(tracks.centroids)] <- tracks.centroids[2:length(tracks.centroids)] * pixRes
+  
+  names(tracks.centroids) <- centroid.cols
+  tracks.centroids
+}
+```
+
+```{r}
+x <- c(113)
+
+tracks.pos(popDT.local, x, cciaObj$omeXMLPixelRes()$x)
+```
+
+
+```{r}
+popDT.local <- copy(popRoot)
+
+# join tracks
+# this is done by default on the last point of the first track, and
+# then the first point of the second track that is not in the same frame
+# TODO this might vary as you encounter other scenarios
+x <- c(88, 111)
+
+tracks.join(popDT.local, x[[1]], x[[2]])
+tracks.rm(popDT.local, x[[2]])
+tracks.save.mod(popDT.local, "OTI")
+```
+
+```{r}
+x <- c(77, 113)
+
+tracks.join(popDT.local, x[[1]], x[[2]])
+tracks.rm(popDT.local, x[[2]])
+tracks.save.mod(popDT.local, "OTI")
+```
+
+
+```{r}
+# split track at point
+```
+
+
 
 ```{r fig_tracks_traces, fig.height=25, fig.width=25}
 trackIDs <- unique(popDT$track_id)

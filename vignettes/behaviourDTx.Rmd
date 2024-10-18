@@ -568,11 +568,11 @@ tcells.sc <- tcells.sc[[1]]
 ```
 
 ```{r}
-# now follow the tutorial to plot
-# https://lazappi.github.io/clustree/articles/clustree.html
-library(clustree)
-
-clustree(tcells.sc, prefix = "clusters_", node_colour = "sc3_stability")
+# # now follow the tutorial to plot
+# # https://lazappi.github.io/clustree/articles/clustree.html
+# library(clustree)
+# 
+# clustree(tcells.sc, prefix = "clusters_", node_colour = "sc3_stability")
 ```
 
 

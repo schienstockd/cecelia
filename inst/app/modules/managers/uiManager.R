@@ -463,15 +463,14 @@ UIManager <- R6::R6Class(
     # generate data table
     dataTable = function(datCols, options = NULL, rownames = FALSE,
                          editable = FALSE, ordering = FALSE, pageLength = -1,
-                         dom = 'ti') {
-
+                         dom = "ti", selection = "none") {
       # set default options
       # https://datatables.net/reference/option/dom
       defaultOptions <- list(
         dom = dom, ordering = ordering, lengthChange = if (pageLength > 0) FALSE else TRUE,
         scrollX = TRUE, scrollY = TRUE, scrollCollapse = TRUE,
-        preDrawCallback = JS('function() { Shiny.unbindAll(this.api().table().node()); }'),
-        drawCallback = JS('function() { Shiny.bindAll(this.api().table().node()); } '),
+        preDrawCallback = JS("function() { Shiny.unbindAll(this.api().table().node()); }"),
+        drawCallback = JS("function() { Shiny.bindAll(this.api().table().node()); } "),
         pageLength = pageLength
       )
 
@@ -483,7 +482,7 @@ UIManager <- R6::R6Class(
       datatable(
         if (is.list(datCols)) do.call(cbind, datCols) else datCols,
         options = defaultOptions,
-        rownames = rownames, escape = FALSE, selection = 'none',
+        rownames = rownames, escape = FALSE, selection = selection,
         editable = editable)
     }
   )
