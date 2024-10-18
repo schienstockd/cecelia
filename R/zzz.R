@@ -135,7 +135,8 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
     # cvxopt and others
     # https://github.com/civisanalytics/python-glmnet/issues/45#issuecomment-421094649
     reticulate::conda_install(
-      envname = envName, packages = c("cvxopt", "numcodecs", "glmnet"),
+      # envname = envName, packages = c("cvxopt", "numcodecs", "glmnet"),
+      envname = envName, packages = c("cvxopt", "numcodecs"),
       channel = c("conda-forge")
     )
     
@@ -438,9 +439,9 @@ cciaBiocRequirements <- function(ncpus = 4, ...) {
   
   # install separately
   remotes::install_github("rglab/cytolib", upgrade = "never", ...)
-  remotes::install_github("rglab/flowCore", upgrade = "never", ...)
+  # remotes::install_github("rglab/flowCore", upgrade = "never", ...)
   remotes::install_github("rglab/flowViz", upgrade = "never", ...)
-  remotes::install_github("rglab/flowWorkspace", upgrade = "never", ...)
+  # remotes::install_github("rglab/flowWorkspace", upgrade = "never", ...)
   remotes::install_github("rglab/ggcyto", upgrade = "never", ...)
 }
 

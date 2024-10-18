@@ -2062,13 +2062,9 @@
     },
     "flowCore": {
       "Package": "flowCore",
-      "Version": "2.17.1",
-      "Source": "GitHub",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteRepo": "flowCore",
-      "RemoteUsername": "rglab",
-      "RemoteSha": "152b8e4903039aceb32e7393a98ee2dc69f89759",
+      "Version": "2.16.0",
+      "Source": "Bioconductor",
+      "Repository": "Bioconductor 3.19",
       "Requirements": [
         "BH",
         "Biobase",
@@ -2087,7 +2083,7 @@
         "stats4",
         "utils"
       ],
-      "Hash": "9e6ca0d5bc1087dc85784a8fc4a1ac29"
+      "Hash": "1f65b07a6ae2277f65a5ef3aa7248a07"
     },
     "flowViz": {
       "Package": "flowViz",
@@ -5112,6 +5108,18 @@
       "Source": "Repository",
       "Repository": "CRAN",
       "Hash": "25cfab6cf405c15bccf7e69ec39df090"
+    },
+    "terra": {
+      "Package": "terra",
+      "Version": "1.7-78",
+      "Source": "Repository",
+      "Repository": "CRAN",
+      "Requirements": [
+        "R",
+        "Rcpp",
+        "methods"
+      ],
+      "Hash": "8f020def0792119cb98bd8f696dab22d"
     },
     "testthat": {
       "Package": "testthat",
