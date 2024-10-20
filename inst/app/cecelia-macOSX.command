@@ -29,7 +29,7 @@ CECELIA_PORT=68$((1 + $RANDOM % 9))$((1 + $RANDOM % 9))
 # Temporary fix because reticulate fails to find conda binary
 # Fails on 'normalizePath'
 # https://github.com/rstudio/reticulate/issues/1460#issuecomment-1995795408
-R_CALL="library(vroom);library(flowCore);library(cecelia);assignInNamespace('is_conda_python',function(x){return(FALSE)},ns='reticulate');cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
+R_CALL="renv::load('$CECELIA_DIR');library(vroom);library(flowCore);library(cecelia);assignInNamespace('is_conda_python',function(x){return(FALSE)},ns='reticulate');cciaUse('$CECELIA_DIR',initJupyter=TRUE);cciaRunApp(port=$CECELIA_PORT,launch.browser=TRUE)"
 
 # export homebrew
 export PATH=/opt/homebrew/bin:$PATH

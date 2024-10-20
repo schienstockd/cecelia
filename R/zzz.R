@@ -90,7 +90,7 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   # create conda environment
   envPresent <- envName %in% reticulate::conda_list()$name
   
-  if (envPresent == FALSE || rebuild == TRUE) {
+  if (envPresent == TRUE && rebuild == TRUE) {
     # reticulate::install_miniconda()
     reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
