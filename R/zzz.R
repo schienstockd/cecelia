@@ -64,27 +64,35 @@ cciaSetup <- function(path = "~/cecelia") {
 #' @param rebuild boolean to rebuild environment
 #' @param preinstallNapari boolean to 'dummy' install napari for M1
 #' @param extraIndexUrl character extra index url for pip install
+#' @param frozen boolean to install python libraries from `pip freeze`
 #' @export
 cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
                             rebuild = FALSE, preinstallNapari = FALSE,
-                            extraIndexUrl = "https://download.pytorch.org/whl/cu117") {
+                            extraIndexUrl = "https://download.pytorch.org/whl/cu117",
+                            frozen = TRUE) {
   envFile <- system.file(
     file.path("py-env", "conda-env.yml"),
     package = "cecelia")
   
-  pyModulesFile <- system.file(
-    file.path("py-env", "init-py-modules-image.txt"),
-    package = "cecelia")
-  
-  # use environment.yml for type
-  if (envType == "flow") {
+  if (frozen == TRUE) {
     pyModulesFile <- system.file(
-      file.path("py-env", "init-py-modules-flow.txt"),
+      file.path("py-env", "requirements.txt"),
       package = "cecelia")
-  } else if (envType == "image-nogui") {
+  } else {
     pyModulesFile <- system.file(
-      file.path("py-env", "init-py-modules-image-nogui.txt"),
+      file.path("py-env", "init-py-modules-image.txt"),
       package = "cecelia")
+    
+    # use environment.yml for type
+    if (envType == "flow") {
+      pyModulesFile <- system.file(
+        file.path("py-env", "init-py-modules-flow.txt"),
+        package = "cecelia")
+    } else if (envType == "image-nogui") {
+      pyModulesFile <- system.file(
+        file.path("py-env", "init-py-modules-image-nogui.txt"),
+        package = "cecelia")
+    }
   }
   
   # create conda environment
