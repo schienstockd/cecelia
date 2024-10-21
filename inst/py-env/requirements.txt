@@ -78,7 +78,6 @@ fsspec==2023.6.0
 gast==0.6.0
 geopandas==1.0.1
 get-annotations==0.1.2
-glmnet==2.2.1
 google-auth==2.34.0
 google-auth-oauthlib==1.2.1
 google-pasta==0.2.0
