@@ -20,6 +20,32 @@ library(tidyverse)
 ```
 
 ```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "lMxxOE", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+cciaObj$setImChannelNames(c("gBT-CTDR", "TRITC", "XCR1-Venus", "gDT-CTV"))
+cciaObj$saveState()
+```
+
+```{r}
 # HMM
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
@@ -30,7 +56,7 @@ cciaObj <- initCciaObject(
 )
 
 for (x in cciaObj$cciaObjects()) {
-  print(x$oriFilepath())
+  print(paste(x$getUID(), x$oriFilepath()))
 }
 ```
 

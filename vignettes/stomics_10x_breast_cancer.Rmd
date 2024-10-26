@@ -1139,39 +1139,29 @@ spatialDT[regionDT[, c("label", "clusters.name")],
 spatialDT <- spatialDT[pop.to != pop.from]
 ```
 
-```{r fig_interactions, fig.height=2, fig.width=6}
-# get "i-niches" and determine a given number of defined clusters
-freqInt <- spatialDT %>%
-  group_by(pop.from, pop.to) %>%
-  summarise(n = n()) %>%
-  mutate(freq = n/sum(n) * 100) %>%
-  drop_na() %>%
-  ungroup() %>%
-  complete(pop.from, pop.to, fill = list(freq = 0))
-  # left_join(exp.info)
+```{r}
+regionDT.spatial <- copy(regionDT)
 
-# show interactions of individuals
-for (i in unique(freqInt$pop.from)) {
-  x <- freqInt %>% dplyr::filter(pop.from == i) 
-  
-  p1 <- ggplot(x, aes(as.factor(pop.to), freq)) +
-    theme_classic() +
-    geom_boxplot(outlier.alpha = 0) +
-    geom_jitter(
-      # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
-      width = 0.3, alpha = 0.6) +
-    # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
-    ylab("Population (%)") + xlab("") +
-    # ylim(0, 1) +
-    scale_fill_brewer(name = NULL, palette = "Set3") +
-    ggtitle(i)
+# then join closest contact if present
+regionDT.spatial[
+  spatialDT[,
+    # [!] this will only select the cells in closest proximity
+    .SD[which.min(dist)], by = c("from")][, c("from", "pop.from", "pop.to")],
+  on = c("label" = "from"), `:=` (pop.from = pop.from, pop.to = pop.to)
+]
 
-  print(p1)
-}
+regionDT.spatial[is.na(pop.to), pop.to := "NONE"]
+regionDT.spatial[is.na(pop.from), pop.from := "NONE"]
 ```
 
 ```{r fig_interactions_heat, fig.height=7, fig.width=7}
-freqInt <- spatialDT %>%
+# freqInt <- spatialDT %>%
+freqInt <- regionDT.spatial %>%
+  dplyr::filter(pop.from != "NONE" & pop.to != "NONE") %>%
+  mutate(
+    pop.from = as.character(pop.from),
+    pop.to = as.character(pop.to)
+  ) %>%
   group_by(pop.from, pop.to) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
@@ -1199,6 +1189,38 @@ ggplot(freqInt, aes(as.factor(pop.from), as.factor(pop.to))) +
     ) + xlab("") + ylab("")
 
 ggsave(file.path(anaDir, "regions_interaction.pdf"), width = 5, height = 4)
+```
+
+```{r fig_interactions, fig.height=2, fig.width=6}
+# get "i-niches" and determine a given number of defined clusters
+# freqInt <- spatialDT %>%
+freqInt <- regionDT.spatial %>%
+  group_by(pop.from, pop.to) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  drop_na() %>%
+  ungroup() %>%
+  complete(pop.from, pop.to, fill = list(freq = 0))
+  # left_join(exp.info)
+
+# show interactions of individuals
+for (i in unique(freqInt$pop.from)) {
+  x <- freqInt %>% dplyr::filter(pop.from == i) 
+  
+  p1 <- ggplot(x, aes(as.factor(pop.to), freq)) +
+    theme_classic() +
+    geom_boxplot(outlier.alpha = 0) +
+    geom_jitter(
+      # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+      width = 0.3, alpha = 0.6) +
+    # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+    ylab("Population (%)") + xlab("") +
+    # ylim(0, 1) +
+    scale_fill_brewer(name = NULL, palette = "Set3") +
+    ggtitle(i)
+
+  print(p1)
+}
 ```
 
 ```{r fig_regions_heat, fig.height=5, fig.width=8}

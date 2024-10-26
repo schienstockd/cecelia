@@ -248,25 +248,16 @@ class CellposeUtils(SegmentationUtils):
       self.logfile_utils.log(f'>> Evaluate {i}: {cp_model}')
       self.logfile_utils.log(x['cellChannels'])
       
+      # normalise_intensity = x['normalise'][0]
+      normalise_percentile = x['normalise'][0]
+      
       if len(x['cellChannels']) > 0:
         # TODO this should be one function call for both zero and norm image
-        im = np.zeros(label_shape, dtype = np.uint32)
-        nuc_im = None
+        im_to_predict = np.zeros(label_shape, dtype = np.uint32)
+        nuc_im_to_predict = None
         norm_cyto_im = None
         norm_nuc_im = None
         
-        for y in x['cellChannels']:
-          im = np.maximum(
-            im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
-              
-        # add nuclei channel?
-        if len(x['nucChannels']) > 0:
-          nuc_im = np.zeros(label_shape, dtype = np.uint32)
-          
-          for y in x['nucChannels']:
-            nuc_im = np.maximum(
-              nuc_im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
-              
         # prepare normalisation image
         if norm_im is not None:
           norm_cyto_im = np.zeros(norm_shape, dtype = np.uint32)
@@ -282,10 +273,26 @@ class CellposeUtils(SegmentationUtils):
             for y in x['nucChannels']:
               norm_nuc_im = np.maximum(
                 norm_nuc_im, np.squeeze(np.take(norm_im, y, axis = c_idx)))
-
+        
+        for y in x['cellChannels']:
+          im_to_predict = np.maximum(
+            # im, np.squeeze(np.take(cur_im_dat, y, axis = c_idx)))
+            # TODO is this ok? This will prepare each image before merge
+            im_to_predict, self.prepare_im(
+              np.squeeze(np.take(cur_im_dat, y, axis = c_idx)),
+              x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
+              
+        # add nuclei channel?
+        if len(x['nucChannels']) > 0:
+          nuc_im_to_predict = np.zeros(label_shape, dtype = np.uint32)
+          
+          for y in x['nucChannels']:
+            nuc_im_to_predict = np.maximum(
+              nuc_im_to_predict, self.prepare_im(
+                np.squeeze(np.take(cur_im_dat, y, axis = c_idx)),
+                x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
+              
         cell_diameter = x['cellDiameter'][0]
-        # normalise_intensity = x['normalise'][0]
-        normalise_percentile = x['normalise'][0]
         
         # adjust diameter for image resolution
         # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
@@ -301,9 +308,11 @@ class CellposeUtils(SegmentationUtils):
         channels = [0, 0]
         channel_axis = None
         z_axis = None
-        im_to_predict = self.prepare_im(
-          im, x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
-        nuc_im_to_predict = None
+        
+        # Done this already above
+        # im_to_predict = self.prepare_im(
+        #   im, x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
+        # nuc_im_to_predict = None
         
         if self.dim_utils.is_3D():
           # z_axis = self.dim_utils.dim_idx('Z', ignore_time = True, squeeze = True)

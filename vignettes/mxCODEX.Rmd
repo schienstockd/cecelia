@@ -678,9 +678,9 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # TEHO Mouse
+  # pID = pID, uID = "jGcZHp", versionID = versionID, initReactivity = FALSE # TEHO Mouse
   # pID = pID, uID = "akAcC1", versionID = versionID, initReactivity = FALSE # Set
-  # pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Human LN
+  pID = pID, uID = "pN5QJi", versionID = versionID, initReactivity = FALSE # Human LN
   # pID = pID, uID = "oUPuBX", versionID = versionID, initReactivity = FALSE # Human HCC
   # pID = pID, uID = "DPKHD7", versionID = versionID, initReactivity = FALSE # THEO Human
 )
@@ -692,8 +692,8 @@ exp.info <- as.data.table(cciaObj$summary(
 
 uIDs <- names(cciaObj$cciaObjects())
 # uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- exp.info[Analyse == "Y"]$uID
-# uIDs <- exp.info[Stain == "A"]$uID
+# uIDs <- exp.info[Analyse == "Y"]$uID
+uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 # uIDs <- c("XFHvVd")
@@ -705,24 +705,24 @@ pops <- pops[is.na(stringr::str_match(pops, "/"))]
 # regionPops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "region", includeFiltered = TRUE)
 
 # get objects from selected set
-# regionsDT <- cciaObj$popDT(
-#   popType = "region",
-#   uIDs = uIDs,
-#   pops = regionPops,
-#   includeFiltered = TRUE,
-#   completeDT = TRUE, replaceNA = TRUE,
-#   filterMeasures = c("regions")
-# )
-# unique(regionsDT$regions)
+regionsDT <- cciaObj$popDT(
+  popType = "region",
+  uIDs = uIDs,
+  # pops = regionPops,
+  includeFiltered = TRUE,
+  completeDT = TRUE, replaceNA = TRUE,
+  filterMeasures = c("regions")
+)
+unique(regionsDT$regions)
 
 # get objects from selected set
-popDT <- cciaObj$popDT(
-  popType = "clust",
-  uIDs = uIDs,
-  pops = pops,
-  includeFiltered = TRUE,
-  completeDT = TRUE, replaceNA = TRUE
-)
+# popDT <- cciaObj$popDT(
+#   popType = "clust",
+#   uIDs = uIDs,
+#   pops = pops,
+#   includeFiltered = TRUE,
+#   completeDT = TRUE, replaceNA = TRUE
+# )
 ```
 
 ```{r}

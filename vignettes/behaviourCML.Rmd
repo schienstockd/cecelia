@@ -226,7 +226,7 @@ exp.info <- exp.info[rbindlist(lapply(uns$default.tracks, function(x) x$ilee_sum
 branchDT <- cciaObj$popDT(popType = "branch", uIDs = uIDs)
 
 # get tracks info
-# tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
+tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
 ```
 
 ```{r fig_total_transitions, fig.height=5, fig.width=12}
@@ -251,6 +251,32 @@ ggplot(datToPlot, aes(Coating, value, color = Treatment)) +
 
 # ggsave(file.path(anaDir, "tracks_measures.png"), width = 10, height = 4)
 ggsave(file.path(anaDir, "tracks_measures.png"), width = 12, height = 4)
+```
+
+
+```{r fig_total_transitions, fig.height=5, fig.width=12}
+# compare track measurements across the different samples
+pivotCols <- colnames(tracksInfo)
+pivotCols <- pivotCols[!pivotCols %in% c("uID", "cell_type", "track_id")]
+
+datToPlot <- tracksInfo %>%
+  pivot_longer(cols = pivotCols, names_to = "measure", values_to = "value") %>%
+  group_by(uID, measure) %>%
+  dplyr::summarise(mean = mean(value, na.rm = TRUE)) %>%
+  left_join(exp.info)
+  
+ggplot(datToPlot, aes(Coating, mean, color = Treatment)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  # geom_boxplot(outlier.alpha = 1.0) +
+  geom_jitter(
+    # width = 0.1, alpha = 0.2) +
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = "Treatment", palette = "Set1") +
+  facet_wrap(.~measure, ncol = 5, scales = "free") +
+  expand_limits(y = 0)
+  
+write.csv(datToPlot %>% dplyr::filter(Coating == "Collagen"), file.path(anaDir, "tracks_measures.csv"))
 ```
 
 ```{r}
@@ -471,37 +497,40 @@ summaryDF <- .mapClustNames(summaryDF, clusterMapping, "clusters")
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, clusters)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, clusters)] %>%
 # summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, Treatment, clusters)] %>%
-summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, Treatment, clusters.name)] %>%
+# summaryDF <- summaryDF[, .(n.clusters = .N), by = .(Coating, Treatment, clusters.name)] %>%
+summaryDF <- summaryDF[, .(n.clusters = .N), by = .(uID, clusters.name)] %>%
   droplevels() %>%
-  # group_by(uID) %>%
+  group_by(uID) %>%
   # group_by(Coating) %>%
-  group_by(Coating, Treatment) %>%
+  # group_by(Coating, Treatment) %>%
   mutate(freq.clusters = n.clusters/sum(n.clusters) * 100) %>%
   ungroup() %>%
   # complete(uID, clusters, fill = list(freq.clusters = 0))
   # complete(Coating, clusters, fill = list(freq.clusters = 0))
   # complete(Coating, Treatment, clusters, fill = list(freq.clusters = 0))
-  complete(Coating, Treatment, clusters.name, fill = list(freq.clusters = 0))
+  # complete(Coating, Treatment, clusters.name, fill = list(freq.clusters = 0))
+  complete(uID, clusters.name, fill = list(freq.clusters = 0)) %>%
   # complete(uID, pop, clusters.id, fill = list(freq.clusters = 0)) %>%
-  
+  left_join(exp.info)
 
 # summaryDF$clusters <- factor(summaryDF$clusters, levels = c(3,6,0,7,2,5,4))
 
 # ggplot(summaryDF, aes(Coating, freq.clusters, fill = clusters, color = clusters)) +
 # ggplot(summaryDF, aes(Treatment, freq.clusters, fill = clusters, color = clusters)) +
-ggplot(summaryDF, aes(Treatment, freq.clusters, fill = clusters.name, color = clusters.name)) +
+# ggplot(summaryDF, aes(Treatment, freq.clusters, fill = clusters.name, color = clusters.name)) +
+ggplot(summaryDF, aes(Treatment, freq.clusters, color = clusters.name)) +
 # ggplot(summaryDF, aes(clusters.name, freq.clusters, color = interaction(Treatment, DTx))) +
   theme_classic() +
-  geom_bar(stat = "identity", width = 0.8) +
-  # geom_boxplot(outlier.alpha = 0) +
-  # geom_jitter(
-  #   position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  # geom_bar(stat = "identity", width = 0.8) +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
   scale_color_brewer(name = "Cluster", palette = "Set1") +
   scale_fill_brewer(name = "Cluster", palette = "Set1") +
   facet_grid(.~Coating)
 
-ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4.5, height = 4.5)
-write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+# ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4.5, height = 4.5)
+# write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r fig_aniso, fig.height=4, fig.width=12}

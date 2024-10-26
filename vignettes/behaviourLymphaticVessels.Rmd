@@ -252,12 +252,12 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 
 # get popDTs for set
-# popDTs <- cciaObj$popDT(
-#   # popType = "live", pops = c("T/tracked", "DC/tracked"),
-#   popType = "live", pops = c("T/tracked"),
-#   includeFiltered = TRUE,
-#   flushCache = TRUE,
-#   uIDs = uIDs)
+popDTs <- cciaObj$popDT(
+  # popType = "live", pops = c("T/tracked", "DC/tracked"),
+  popType = "live", pops = c("T/tracked"),
+  includeFiltered = TRUE,
+  flushCache = TRUE,
+  uIDs = uIDs)
 ```
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
@@ -422,6 +422,9 @@ ggsave(file.path(anaDir, paste0("umap_Velocity.tiff")), width = 2, height = 2)
 ```
 
 ```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
 # show measurements of clusters to compare
 propsToPlot <- copy(tcells.sc)
 
@@ -461,7 +464,7 @@ propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasin
 #   'trackLength'
 # )
 
-propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, "clusters")
+propsToPlot <- .mapClustNames(propsToPlot, clusterMapping, removeNone = FALSE)
 
 # show heatmap for clusters
 propsSummary <- propsToPlot %>%
@@ -503,10 +506,11 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
-         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         # dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         dplyr::filter(!str_detect(prop, "live.cell.hmm")) %>%
          # dplyr::filter(str_detect(prop, "live.cell"), !str_detect(prop, "live.cell.hmm")) %>%
-         # mutate(prop = stringr::str_replace(
-         #   prop, "live.cell.min_distance#live.LV/accepted.", "Distance to lymphatics ")) %>%
+         mutate(prop = stringr::str_replace(
+           prop, "live.cell.min_distance#live.LV/accepted.", "distance to lymphatics ")) %>%
          # drop_na(clusters), aes(clusters, prop)) +
          drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
@@ -528,7 +532,7 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 2.8, height = 3.8)
+ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3.7, height = 4.5)
 # ggsave(file.path(anaDir, "clusters_heat_dist.pdf"), width = 3.7, height = 2)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 14)
 ```

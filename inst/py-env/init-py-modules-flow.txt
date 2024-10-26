@@ -14,4 +14,3 @@ python-fcl
 cpython
 leidenalg
 squidpy
-pstree
