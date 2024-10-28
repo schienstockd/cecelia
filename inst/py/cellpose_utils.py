@@ -290,7 +290,7 @@ class CellposeUtils(SegmentationUtils):
             nuc_im_to_predict = np.maximum(
               nuc_im_to_predict, self.prepare_im(
                 np.squeeze(np.take(cur_im_dat, y, axis = c_idx)),
-                x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
+                x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im))
               
         cell_diameter = x['cellDiameter'][0]
         
