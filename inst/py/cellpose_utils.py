@@ -318,10 +318,12 @@ class CellposeUtils(SegmentationUtils):
           # z_axis = self.dim_utils.dim_idx('Z', ignore_time = True, squeeze = True)
           z_axis = 0
         
-        if nuc_im is not None:
-          nuc_im_to_predict = self.prepare_im(
-            nuc_im, x, normalise_percentile = normalise_percentile, norm_im = norm_nuc_im)
-          
+        # this is already done
+        # if nuc_im is not None:
+        #   nuc_im_to_predict = self.prepare_im(
+        #     nuc_im, x, normalise_percentile = normalise_percentile, norm_im = norm_nuc_im)
+        
+        if nuc_im_to_predict is not None:
           # add nucleus channel to image
           im_to_predict = np.stack((im_to_predict, nuc_im_to_predict), axis = -1)
           channels = [1, 2]
