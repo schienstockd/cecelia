@@ -280,7 +280,7 @@ class CellposeUtils(SegmentationUtils):
             # TODO is this ok? This will prepare each image before merge
             im_to_predict, self.prepare_im(
               np.squeeze(np.take(cur_im_dat, y, axis = c_idx)),
-              x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im)
+              x, normalise_percentile = normalise_percentile, norm_im = norm_cyto_im))
               
         # add nuclei channel?
         if len(x['nucChannels']) > 0:
