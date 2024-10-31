@@ -406,11 +406,32 @@ CciaImage <- R6::R6Class(
             axisValue <- valueChildren[!is.na(stringr::str_match(as.character(valueChildren), sprintf("step #%s", axisNum)))]
             
             # put information into list
-            tInfo <- list(
-              interval = as.numeric(stringr::str_extract(
+            timeValue <- as.numeric(stringr::str_extract(
                 as.character(xml2::xml_contents(xml2::xml_contents(axisValue)[2])),
                 "[0-9]+\\.[0-9]+")) / 60
-            )
+            
+            # check whether this worked
+            # TODO is there an ante check before doing all of this?
+            if (timeValue == 0) {
+              # get time delta
+              valueChildren <- xml2::xml_children(xml2::xml_find_all(
+                self$omeXML(), self$omeXMLPath("//Image//Pixels")))
+              
+              timeDelta <- valueChildren[!is.na(
+                stringr::str_match(as.character(valueChildren), "TheZ=\"0\" TheT=\"1\""))]
+              
+              timeValue <- as.numeric(stringr::str_extract(
+                as.character(timeDelta[[1]]), "(?<=DeltaT=\")[0-9]+\\.[0-9]+"))
+              timeUnit <- stringr::str_extract(
+                as.character(timeDelta[[1]]), "(?<=DeltaTUnit=\")[a-z]+")
+              
+              # convert to time interval
+              if (timeUnit == "ms")
+                timeValue <- timeValue / 1000 / 60
+            }
+            
+            # put information into list
+            tInfo <- list(interval = timeValue)
           })
         } else if (stringr::str_ends(basenameOriFilepath, "\\.lsm|tif")) {
           # get interval from pixel information

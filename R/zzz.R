@@ -97,10 +97,12 @@ cciaCondaCreate <- function(envName = "r-cecelia-env", envType = "image",
   
   # create conda environment
   envPresent <- envName %in% reticulate::conda_list()$name
+  rebuild <- envPresent == TRUE && rebuild == TRUE
   
-  if (envPresent == TRUE && rebuild == TRUE) {
+  if (envPresent == FALSE || rebuild == TRUE) {
     # reticulate::install_miniconda()
-    reticulate::conda_remove(envName)
+    if (rebuild == TRUE)
+      reticulate::conda_remove(envName)
     reticulate::conda_create(envName, environment = envFile)
     
     # upgrade pip wheels and setuptools?

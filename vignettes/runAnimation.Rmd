@@ -539,7 +539,7 @@ cciaObj <- initCciaObject(
 uIDs <- c("ZmxDIj")
 
 splitTracks <- list(
-  live.cell.track.clusters.hmm_transitions_alt = list(
+  live.cell.track.clusters.hmm_transitions = list(
     # zero = list(values = list(0), colour = "#E42328"),
     # zero = list(values = list(0), colour = "magenta"),
     # one = list(values = list(1), colour = "#327EBA"),
@@ -547,10 +547,10 @@ splitTracks <- list(
     # three = list(values = list(3), colour = "#974D9E"),
     # four = list(values = list(4), colour = "#F47F20"),
     # five = list(values = list(5), colour = "#ffff00")
-    Scanning = list(values = list(0), colour = "#327EBA"),
-    `Meandering prolate` = list(values = list(1,4), colour = "#1B9E77"),
-    `Meandering oblate` = list(values = list(3), colour = "#B3BCC2"),
-    Directed = list(values = list(2), colour = "#AA1F5E"),
+    Scanning = list(values = list(0,3), colour = "#327EBA"),
+    `Meandering prolate` = list(values = list(4), colour = "#1B9E77"),
+    `Meandering oblate` = list(values = list(1,6), colour = "#B3BCC2"),
+    Directed = list(values = list(2,7), colour = "#AA1F5E"),
     Aggregating = list(values = list(5), colour = "#FFFF00")
     )
   )
