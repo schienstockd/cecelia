@@ -3,12 +3,9 @@ default:
     gating:
       defaultPlotType: "raster"
   dirs:
-    bioformats2raw: "/Applications/glencoe/bioformats2raw-0.3.0/"
-    projects: "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
-    mfluxClients: "/Applications/unimelb-mf-clients-0.7.6/bin/unix"
+    bioformats2raw: "/REPLACE/WITH/YOUR/PATH/bioformats2raw-0.9.0/"
+    projects: "/REPLACE/WITH/YOUR/PATH/cecelia/projects/"
   volumes:
-    SSD: "/Volumes/Analysis_SSD/Dominik/cecelia/"
-    USER: "/Volumes/USER_data/Dominik/"
     home: "~/"
     computer: "/"
   python:
@@ -17,4 +14,4 @@ default:
       source:
         env: "r-cecelia-env"
   imagej:
-    path: "/Applications/Fiji.app/Contents/MacOS/ImageJ-macosx"
+    path: ""

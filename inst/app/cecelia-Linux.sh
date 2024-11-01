@@ -1,6 +1,8 @@
 #!/bin/bash
 # params
-if [ -d ~/opt/anaconda3 ]; then
+if [ -d ~/.local/share/r-miniconda ]; then
+  CONDA_DIR=~/.local/share/r-miniconda
+elif [ -d ~/opt/anaconda3 ]; then
   CONDA_DIR=~/opt/anaconda3
 elif [ -d ~/anaconda3 ]; then
   CONDA_DIR=~/anaconda3
@@ -8,8 +10,6 @@ elif [ -d ~/opt/miniconda3 ]; then
   CONDA_DIR=~/opt/miniconda3
 elif [ -d ~/miniconda3 ]; then
   CONDA_DIR=~/miniconda3
-elif [ -d ~/.local/share/r-miniconda ]; then
-  CONDA_DIR=~/.local/share/r-miniconda
 elif [ -d /opt/miniconda3 ]; then
   CONDA_DIR=/opt/miniconda3
 elif [ -d /opt/miniconda ]; then

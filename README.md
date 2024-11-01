@@ -3,6 +3,7 @@
 
 <figure>
 <img src="./im/cciaLogo.png" alt="Image" />
+<figcaption aria-hidden="true">Image</figcaption>
 </figure>
 
 <!-- badges: start -->
@@ -24,10 +25,9 @@ Software dependencies will be installed during the installation
 processing of the R-package. The framework has primarily been tested on
 an old MacOS 12.7.6 (with HPC access) and new M2 14.6.1. To install the
 software on Windows PCs you must install the
-[`Docker`](https://github.com/schienstockd/ceceliaDocker) version as
-shiny requires a UNIX system. For cell segmentation and deep learning
-denoising we recommend a GPU that is recognised by
-[`torch`](https://pytorch.org/get-started/locally/).
+[`Docker`](https://github.com/schienstockd/ceceliaDocker) version. For
+cell segmentation and deep learning denoising we recommend a GPU that is
+recognised by [`torch`](https://pytorch.org/get-started/locally/).
 
 ## Installation guide
 
@@ -36,4 +36,4 @@ See
 for installation and tutorials. Installation of the R-package with all
 shiny and python dependencies should require less than 1 h. The Docker
 based installation depends on the user’s bandwidth but typically
-requires less than 10 min.
+requires less than 20 min.

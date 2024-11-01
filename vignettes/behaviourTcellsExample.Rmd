@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -22,10 +23,8 @@ library(tidyverse)
 # set test variables
 pID <- "Co3HDh"
 versionID <- 1
-```
+anaDir <- "~/Downloads"
 
-```{r}
-# HMM
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
@@ -34,25 +33,40 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "lWinrY", versionID = versionID, initReactivity = FALSE # Tcells
 )
 
-popsList <- cciaObj$popPaths(popType = "live", includeFiltered = TRUE)
-popsTracked <- popsList[!is.na(stringr::str_match(popsList, "/tracked$"))]
+pops <- unname(unlist(cciaObj$popPaths(
+  popType = "live", filteredOnly = TRUE, filterMeasures = c("track_id"))))
 
-popDT <- cciaObj$popDT("live", pops = c(popsTracked[[3]]), includeFiltered = TRUE)
+# popDT <- cciaObj$popDT("live", pops = c(popsTracked[[3]]), includeFiltered = TRUE)
+popDT <- cciaObj$popDT("live", pops = c(pops), includeFiltered = TRUE)
+popDT
 # popRoot <- cciaObj$popDT("live", pops = c("OTI", "OTI/tracked"), includeFiltered = TRUE)
 # popRoot <- cciaObj$popDT("live", pops = c("P14", "P14/tracked"), includeFiltered = TRUE)
-popRoot <- cciaObj$popDT("live", pops = c("gBT", "gBT/tracked"), includeFiltered = TRUE)
+# popRoot <- cciaObj$popDT("live", pops = c("gBT", "gBT/tracked"), includeFiltered = TRUE)
 
-g <- cciaObj$tracksGraph(
-  completeDT = TRUE,
-  replaceNA = TRUE,
-  pop = popsTracked[[3]],
-  extraAttr = c("label")
-)
+# g <- cciaObj$tracksGraph(
+#   completeDT = TRUE,
+#   replaceNA = TRUE,
+#   pop = popsTracked[[3]],
+#   extraAttr = c("label")
+# )
 
 # tracks.OTI <- cciaObj$tracks(popsTracked[[1]])
 # tracks.P14 <- cciaObj$tracks(popsTracked[[2]])
-tracks.gBT <- cciaObj$tracks(popsTracked[[3]])
+# tracks.gBT <- cciaObj$tracks(popsTracked[[3]])
 ```
+
+```{r fig_tracks_points, fig.height=3, fig.width=10}
+# plot out tracks
+ggplot(popDT, aes(centroid_x, centroid_y, group = track_id,
+                  colour = pracma::rad2deg(live.cell.angle))) +
+  theme_classic() +
+  geom_path() +
+  facet_grid(.~pop) +
+  viridis::scale_colour_viridis(option = "inferno", name = "Angle (°)") 
+
+ggsave(file.path(anaDir, "pop_tracks.png"), width = 9, height = 3)
+```
+
 
 ```{r}
 # for each track - can you get the median speed and angle?
@@ -64,6 +78,41 @@ tracks.info <- cciaObj$tracksInfo(
   parentPop = popsTracked[[3]]
 )
 ```
+
+```{r}
+# get tracks measurements for each population
+tracksInfo <- cciaObj$tracksMeasures(pops)
+tracksInfo
+```
+
+```{r}
+colnames(tracksInfo)
+```
+
+
+```{r fig_tracks_measures, fig.height=3, fig.width=10}
+colsToPivot <- colnames(tracksInfo)
+colsToPivot <- colsToPivot[!colsToPivot %in% c("cell_type", "track_id")]
+
+datToPlot <- tracksInfo %>%
+  pivot_longer(cols = colsToPivot,
+               names_to = "measure", values_to = "value")
+
+ggplot(datToPlot, aes(cell_type, value, color = cell_type)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
+  facet_wrap(.~measure, scales = "free", nrow = 2) +
+  theme(
+    legend.position = "none",
+    axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)
+    ) +
+  scale_color_brewer(palette = "Set1") +
+  coord_flip() + xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "tracks_measures.png"), width = 11, height = 4)
+```
+
 
 ```{r fig_points_qc, fig.height=8, fig.width=8}
 speed.thresh <- 9

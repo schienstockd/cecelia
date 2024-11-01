@@ -21,6 +21,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/SAPNA_SNS_2P/CECELIA"
 ```
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
