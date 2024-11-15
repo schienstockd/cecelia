@@ -258,7 +258,34 @@ popDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
+
+tracksMeasures <- cciaObj$tracksMeasures(pops = c("T/tracked"))
+
+paramsToGet <- c("live.cell.min_distance#live.LV/accepted")
+tracksInfo <- cciaObj$tracksInfo(paramsToGet, parentPop = "T/tracked", uIDs = uIDs)
 ```
+
+```{r}
+colnames(tracksInfo)
+```
+
+
+```{r fig_dist_thresh, fig.height=3, fig.width=3}
+# can you set a distance threshold and show speed?
+datToPlot <- tracksMeasures[tracksInfo, on = c("uID", "track_id")]
+datToPlot[, contact := "Away"]
+datToPlot[`live.cell.min_distance#live.LV/accepted.median` <= 10, contact := "Close"]
+
+ggplot(datToPlot, aes(contact, speed)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    width = 0.4) +
+  geom_boxplot(outlier.alpha = 0)
+
+write.csv(datToPlot, file.path(anaDir, "dist_tresh.csv"))
+```
+
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare

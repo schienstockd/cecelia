@@ -116,11 +116,19 @@ def clear_border_from_labels(labels_array, dim_utils, context, clear_borders,
   base_key = label_utils.get_base_key(labels_array)
     
   # clear borders from base
-  labels_array[base_key] = clear_border_labels(
-    labels_array[base_key], dim_utils, context = context,
-    clear_borders = clear_borders,
-    clear_touching_border = clear_touching_border,
-    clear_depth = clear_depth)
+  # account for timeseries that is tiled and 3D
+  if dim_utils.is_timeseries() and dim_utils.is_3D() and len(labels_array[base_key].shape) > 3:
+    labels_array[base_key][0, ...] = clear_border_labels(
+      np.squeeze(labels_array[base_key]), dim_utils, context = context,
+      clear_borders = clear_borders,
+      clear_touching_border = clear_touching_border,
+      clear_depth = clear_depth)
+  else:
+    labels_array[base_key] = clear_border_labels(
+      labels_array[base_key], dim_utils, context = context,
+      clear_borders = clear_borders,
+      clear_touching_border = clear_touching_border,
+      clear_depth = clear_depth)
   
   # propagate to others
   label_utils.match_label_ids(labels_array, match_to = base_key)

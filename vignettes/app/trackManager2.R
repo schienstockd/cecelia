@@ -319,6 +319,9 @@ server <- function(input, output, session) {
           pops = c(.flowPopParent(resultParamsPops()), resultParamsPops())
         )
         
+        # set order
+        setorder(DT, cell_id)
+        
         # popDT(DT)
         rootDT(DT)
         
@@ -524,6 +527,7 @@ server <- function(input, output, session) {
         plot_ly(source = "trackTraces") %>%
           add_trace(
             data = popTracksFiltered(),
+            # data = popDT(),
             x = ~centroid_x, y = ~centroid_y, split = ~track_id,
             type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
           layout(

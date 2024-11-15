@@ -47,9 +47,18 @@ TaskLauncher <- R6::R6Class(
       parentSourceFile <- file.path(
         system.file(cciaConf()$tasks$sources, package = "cecelia"),
         paste(parentClassPath, "R", sep = "."))
+      
+      # check whether there is a source file in user directory
+      # TODO user directory has a precedent?
       moduleSourceFile <- file.path(
-        system.file(cciaConf()$tasks$sources, package = "cecelia"),
+        cciaPath(), cciaConf()$tasks$sources,
         paste(moduleClassPath, "R", sep = "."))
+      
+      # get source file from package
+      if (!file.exists(moduleSourceFile))
+        moduleSourceFile <- file.path(
+          system.file(cciaConf()$tasks$sources, package = "cecelia"),
+          paste(moduleClassPath, "R", sep = "."))
       
       cmd <- sprintf(paste(
         "parentSourceFile <- \"%s\"",

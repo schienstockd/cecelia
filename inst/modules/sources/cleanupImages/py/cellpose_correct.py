@@ -26,8 +26,8 @@ def run(params):
 
   # load image
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(
-    im_path, as_dask = True)
-    # im_path, as_dask = False)
+    # im_path, as_dask = True)
+    im_path, as_dask = False)
 
   # get OME-XML
   omexml = ome_xml_utils.parse_meta(im_path)
@@ -53,7 +53,10 @@ def run(params):
   # slices = dim_utils.create_channel_slices()
   
   # go through slices and copy into array
-  output_image = im_dat[0].copy()
+  # output_image = zarr_utils.copy(im_dat[0])
+  # TODO somehow when processing as dask this will overload the system
+  # and the process gets killed for larger images
+  output_image = zarr_utils.fortify(im_dat[0])
   
   # adjust diameter for image resolution
   # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
@@ -108,7 +111,9 @@ def run(params):
   # save back
   zarr_utils.create_multiscales(
     output_image, im_correction_path,
-    dim_utils = dim_utils, nscales = len(im_dat))
+    dim_utils = dim_utils,
+    reference_zarr = im_dat[0],
+    nscales = len(im_dat))
 
   # add metadata
   ome_xml_utils.save_meta_in_zarr(

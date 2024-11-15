@@ -1,3 +1,5 @@
+renv::load("~/R-workspace/cecelia/")
+
 library(shiny)
 library(tidyverse)
 library(ggplot2)
@@ -48,7 +50,7 @@ g <- cciaObj$tracksGraph(
 set.seed(1984)
 L.DT <- as.data.table(igraph::layout_as_tree(g))
 colnames(L.DT) <- c("L1", "L2")
-L.DT[, label := get.vertex.attribute(g, "label")]
+L.DT[, label := igraph::get.vertex.attribute(g, "label")]
 popDT[L.DT, on = c("label"), `:=` (L1 = L1, L2 = L2)]
 
 id <- "celltrackViewer"

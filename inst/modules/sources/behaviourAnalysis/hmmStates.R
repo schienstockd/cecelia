@@ -109,14 +109,17 @@ HmmStates <- R6::R6Class(
       }
       
       # drop cells at the beginning of the track
-      for (x in c("live.cell.speed", "live.cell.angle")) {
-        if (x %in% self$funParams()$modelMeasurements) {
-          tracks.DT <- tracks.DT %>%
-            drop_na(all_of(x)) %>%
-            # drop inf
-            # https://stackoverflow.com/a/55198108/13766165
-            filter_all(all_vars(!is.infinite(.)))
-        }
+      # TODO this will not work if people start to make their own measurements
+      # for (x in c("live.cell.speed", "live.cell.angle")) {
+      #   if (x %in% self$funParams()$modelMeasurements) {
+      
+      # drop na from measurements
+      for (x in self$funParams()$modelMeasurements) {
+        tracks.DT <- tracks.DT %>%
+          drop_na(all_of(x)) %>%
+          # drop inf
+          # https://stackoverflow.com/a/55198108/13766165
+          filter_all(all_vars(!is.infinite(.)))
       }
       
       # filter noise for measurements

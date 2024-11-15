@@ -180,7 +180,7 @@ tracks.calc.fun <- function(tracks, call.FUN, idcol = "uID") {
 tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
                                as.dt = TRUE, steps.subtracks = NULL,
                                steps.overlap = steps.subtracks - 1, idcol = "uID",
-                               as.degrees = TRUE, ...) {
+                               as.degrees = TRUE, increment.cell.id = FALSE, ...) {
   # apply function
   tracks.fun.result <- lapply(
     tracks,
@@ -246,7 +246,8 @@ tracks.measure.fun <- function(tracks, call.FUN, result.name = "measure",
         # increase cell ID by number of steps for subtracks
         # a cell at t0 has no speed
         # a cell at t1 has no angle
-        # DT[, cell_id := cell_id + steps.subtracks]
+        if (increment.cell.id == TRUE)
+          DT[, cell_id := cell_id + steps.subtracks]
       }
       
       # convert to degrees
@@ -365,4 +366,39 @@ tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {
   
   names(tracks.centroids) <- centroid.cols
   tracks.centroids
+}
+
+# get difference between track IDs for history
+track.diffs <- function(a, b, short = "") {
+  # get differences between lists
+  # TODO doesn't work for NA; probably would need to time which solution is better
+  # https://stackoverflow.com/a/78724307
+  # `%!=na%` <- function(e1, e2) (e1 != e2 | (is.na(e1) & !is.na(e2)) | (is.na(e2) & !is.na(e1))) & !(is.na(e1) & is.na(e2))
+  # listDiff <- a != b
+  # listDiff <- a %!=na% b
+  # https://stackoverflow.com/a/61248968
+  # list.diff <- (a == b) | (is.na(a) & is.na(b))
+  # list.diff[is.na(list.diff)] <- FALSE
+  list.diff <- paste(a) != paste(b)
+  
+  # a = previous values, b = current values, i = index
+  list(a = a[list.diff], b = b[list.diff], i = which(list.diff), short = short)
+}
+
+# roll back changes
+track.edits.rollback <- function(x, edit.history, i) {
+  # get changes in reverse order
+  track.changes <- edit.history[length(edit.history):i]
+  
+  # apply changes
+  for (y in track.changes) {
+    for (j in seq(length(y$i))) {
+      x[y$i[j]] <- y$a[j]
+    }
+  }
+  
+  list(
+    x = x,
+    edit.history = if (i-1 > 0) edit.history[1:(i-1)] else list()
+  )
 }

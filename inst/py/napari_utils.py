@@ -768,16 +768,21 @@ class NapariUtils:
           tracks = labels_view.view_centroid_cols(self.dim_utils.im_dim_order)\
             .view_obs_cols(['track_id'])\
             .as_df()\
-            .dropna()\
-            .to_numpy()
+            .dropna()
             
+          # make sure that tracks start at 1
+          # TODO this is really if this function is called with value_name and not 
+          # the tracked population name
+          tracks = tracks.loc[tracks['track_id'] > 0].to_numpy()
           labels_view.close()
           
           # prepare properties
           prop_df = self.label_props_utils.label_props_view(value_name = value_name).exclude_centroid_cols()\
             .exclude_obs_cols(['label'])\
             .as_df()\
-            .dropna(subset=['track_id'])\
+            .dropna(subset=['track_id'])
+          
+          prop_df = prop_df.loc[prop_df['track_id'] > 0]\
             .replace(False, 0)\
             .replace(True, 1)
             # ValueError: Cannot setitem on a Categorical with a new category, set the categories first
@@ -1629,6 +1634,14 @@ class NapariUtils:
     @self.viewer.bind_key('k', overwrite = True)
     def save_selected_points(event = None):
       self.selected_points_to_output('trackingImagesSelectPoints')
+      
+  """
+  Create bindings for cell mapping
+  """
+  def create_tracking_correction_module(self):
+    @self.viewer.bind_key('k', overwrite = True)
+    def save_selected_points(event = None):
+      self.selected_points_to_output('trackingCorrectionSelectPoints')
       
   """
   Create bindings for cell mapping

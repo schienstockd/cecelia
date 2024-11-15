@@ -1095,7 +1095,7 @@ datToPlot <- datToPlot %>%
   ungroup() %>%
   complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-# write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 # ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
 ggplot(datToPlot, aes(as.factor(clusters.name), freq,

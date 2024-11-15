@@ -51,6 +51,7 @@ btnICON_SHOW_IMAGE <- "image"
 btnICON_DELETE <- "trash-alt"
 btnICON_SHOWN <- "eye"
 btnICON_HIDDEN <- "eye-slash"
+btnICON_POINT_LEFT <- "hand-point-left"
 
 btnLABEL_DOWN <- "\U25BC"
 btnLABEL_UP <- "\U25B2"

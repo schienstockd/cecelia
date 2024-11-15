@@ -203,6 +203,10 @@ ui <- function(request) {
         .trackingImagesUI("tracking")
       ),
       tabItem(
+        tabName = "trackingCorrection",
+        .trackingCorrectionUI("trackingCorrection")
+      ),
+      tabItem(
         tabName = "behaviourAnalysis",
         .behaviourAnalysisUI("behaviourAnalysis")
       ),

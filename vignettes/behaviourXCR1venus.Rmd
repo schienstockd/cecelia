@@ -31,6 +31,66 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
 ```
 
+### Comparison to IMARIS
+
+```{r}
+# load Cecelia tracking measures
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "ikPuIK", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+pops <- c("tcells.gBT", "tcells.gDT", "dcs.all")
+
+tracksMeasures <- cciaObj$tracksMeasures(pops)
+```
+
+```{r}
+# load Imaris tracking measures
+# get cell types
+imsDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re/COMPARE/M3-2b 53-5h XCR1-venus TRITC gDT-CTV gBT-CTDR 175-225/"
+imsTypes <- c("gBT", "gDT", "TRITC", "XCR1")
+
+imsMeasures <- lapply(imsTypes, function(x) {
+  read.csv(file.path(imsDir, paste0(x, "_Statistics"), paste0(x, "_Track_Speed_Mean_Reference_Frame.csv")), skip = 3)
+})
+names(imsMeasures) <- c("tcells.gBT", "tcells.gDT", "dcs.all", "dcs.all")
+
+# combine
+imsMeasuresDT <- data.table::rbindlist(imsMeasures, idcol = "cell_type")
+setnames(imsMeasuresDT, "Track.Speed.Mean.Reference.Frame", "speed")
+
+# adjust Imaris speed which is um/s to um/min
+imsMeasuresDT[, speed := speed * 60]
+```
+
+```{r fig_ims_v_ccia, fig.height=4, fig.width=4}
+# compare
+vMeasures <- rbindlist(list(
+  Cecelia = tracksMeasures[, c("cell_type", "speed")],
+  Imaris = imsMeasuresDT[, c("cell_type", "speed")]),
+  idcol = "source")
+
+ggplot(vMeasures, aes(cell_type, speed, color = source)) +
+# ggplot(imsMeasuresDT, aes(cell_type, Speed * 100)) +
+  theme_classic() +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10),
+    # width = 0.2,
+    ) +
+  geom_boxplot(outlier.alpha = 0) 
+  # scale_color_brewer(name = "Treatment", palette = "Set3") 
+  # facet_grid(.~pop)
+
+write.csv(vMeasures, file.path(anaDir, "vMeasures.csv"))
+```
+
+
+### END
+
 ```{r}
 # HMM
 devtools::load_all("../")
@@ -649,6 +709,8 @@ sumPlot <- dfToPlot %>%
   group_by(clusters.name, type) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100)
+
+write.csv(datToPlot, file = file.path(anaDir, "freq_clusters.csv"))
 
 ggplot(sumPlot,
   # aes(clusters, freq, fill = type)) +

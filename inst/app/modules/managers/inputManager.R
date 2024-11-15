@@ -172,14 +172,24 @@ InputManager <- R6::R6Class(
     
     # go through source directory and load definition files
     initFunDefinitions = function() {
+      # get user files
       defFiles <- list.files(
+        file.path(cciaPath(), private$getSourceDirectory()),
+        pattern = ".json", full.names = TRUE)
+            
+      # get system files
+      defFiles.sys <- list.files(
         private$getSourceDirectory(), pattern = ".json", full.names = TRUE)
       
+      # combine with user priority
+      defFiles <- c(
+        defFiles, defFiles.sys[!basename(defFiles.sys) %in% basename(defFiles)])
+      
       # go through files and add definitions to list
-      for (curFile in defFiles) {
+      for (x in defFiles) {
         private$addInputDefinition(
-          tools::file_path_sans_ext(basename(curFile)),
-          jsonlite::fromJSON(readLines(curFile))
+          tools::file_path_sans_ext(basename(x)),
+          jsonlite::fromJSON(readLines(x))
         )
       }
     },

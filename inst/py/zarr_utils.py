@@ -258,26 +258,26 @@ def create_multiscales(im_array, filepath, dim_utils = None,
                        nscales = 1, keyword = 'datasets',
                        ignore_channel = False, reference_zarr = None,
                        mode = 'w', squeeze = False):
-  # create multiscales
+  # # create multiscales
   multiscales_zarr = zarr.open(filepath, mode = mode)
-  
+
   # add path information to attributes
   multiscales_zarr.attrs['multiscales'] = [{keyword: [
     # {'path': f'labels/{x:02d}'} for x in range(0, nscales)
     {'path': f'{x}'} for x in range(0, nscales)
   ]}]
-  
+
   # add first scales
   if isinstance(im_array, dask.array.core.Array):
     im_array.to_zarr(
       os.path.join(filepath, '0'),
       # dimension_separator = "/"
     )
-    
+
     im_chunks = chunks(im_array)
   elif isinstance(im_array, zarr.core.Array):
     multiscales_zarr[0] = im_array
-    
+
     im_chunks = chunks(im_array)
   else:
     multiscales_zarr[0], im_chunks = create_zarr_from_ndarray(

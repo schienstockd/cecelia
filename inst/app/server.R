@@ -954,6 +954,10 @@ server <- function(input, output, session) {
         icon = icon("hat-wizard"),
         tabName = "trackingImages"),
       menuSubItem(
+        "Track Correction (TEST)",
+        icon = icon("route"),
+        tabName = "trackingCorrection"),
+      menuSubItem(
         "Cell Behaviour",
         icon = icon("rocket"),
         tabName = "behaviourAnalysis"),
@@ -1094,6 +1098,7 @@ server <- function(input, output, session) {
   .cleanupImagesServer("cleanupImages", session, globalManagers)
   .trainModelsServer("trainModels", session, globalManagers)
   .trackingImagesServer("tracking", session, globalManagers)
+  .trackingCorrectionServer("trackingCorrection", session, globalManagers)
   
   .pixelClassificationServer("pixcl", session, globalManagers)
   .spatialAnalysisServer("spatialAnalysis", session, globalManagers)

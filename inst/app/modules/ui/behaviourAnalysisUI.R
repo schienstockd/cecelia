@@ -68,7 +68,7 @@
           box(
             solidHeader = TRUE,
             collapsible = TRUE, 
-            title = "Gating parameters",
+            title = "Function parameters",
             status = "primary",
             width = 12,
             fluidRow(

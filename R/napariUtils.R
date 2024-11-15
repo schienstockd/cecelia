@@ -392,6 +392,21 @@ NapariUtils <- R6::R6Class(
       )
     },
     
+    #' @description Centre camera
+    #' @param pos numeric list of XY position
+    #' @param tp numeric for timepoint
+    #' @param zoom numeric for zoom
+    #' @param execInteractive boolean to execute interactive
+    centre = function(pos, tp = NULL, zoom = NULL, execInteractive = FALSE) {
+      # centre camera
+      self$execute(
+        sprintf(
+          "if napari_utils.viewer is not None: napari_utils.centre(%s, %s, %s)",
+          reticulate::r_to_py(pos), tp, zoom
+        ), execInteractive = execInteractive
+      )
+    },
+    
     #' @description Save screenshot
     #' @param filePath character to save screenshot
     #' @param size list for resolution

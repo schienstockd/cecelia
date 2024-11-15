@@ -841,9 +841,10 @@ CciaImage <- R6::R6Class(
     #' @param steps.subtracks integer for subtracks
     #' @param steps.overlap integer for subtracks overlap
     #' @param popDT data.table of populations, this is really to correct tracks
+    #' @param convertToPhysical boolean to convert to physical distance values
     tracks = function(pop, forceReload = FALSE, minTracklength = 0,
                       steps.subtracks = NULL, steps.overlap = steps.subtracks - 1,
-                      popDT = NULL) {
+                      popDT = NULL, convertToPhysical = TRUE) {
       # was this requested before?
       tracks <- .getVersionedVar(
         private$labelTracks, valueName = pop)
@@ -895,7 +896,8 @@ CciaImage <- R6::R6Class(
           # convert to physical units for tracks
           if (length(timeIntervals) > 1) {
             # get populations
-            popTracks <- convertPixelToPhysical(popDT, self$omeXMLPixelRes())
+            if (convertToPhysical == TRUE)
+              popTracks <- convertPixelToPhysical(popDT, self$omeXMLPixelRes())
             
             # add time intervals
             popTracks[, centroid_t := timeIntervals[popTracks$centroid_t + 1]]

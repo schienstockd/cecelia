@@ -589,10 +589,11 @@
 #' @description Parent from population
 #' @param path character for population path
 #' @param root character for root population
+#' @param getRoot boolean to return root
 #' @examples
 #' TODO
 #' @export
-.flowPopParent <- function(pop, root = "") {
+.flowPopParent <- function(pop, root = "", getRoot = TRUE) {
   # replace last population with empty string
   # popParent <- stri_replace_last(pop, "", regex = "/.+$")
   if (!.flowPopIsRoot(pop)) {
@@ -603,8 +604,12 @@
   }
   
   # is root parent?
-  if (popParent == "")
-    popParent <- root
+  if (popParent == "") {
+    if (getRoot == TRUE)
+      popParent <- root
+    else
+      popParent <- pop
+  }
   
   popParent
 }
