@@ -58,9 +58,9 @@ popDT
 #   extraAttr = c("label")
 # )
 
-# tracks.OTI <- cciaObj$tracks(popsTracked[[1]])
-# tracks.P14 <- cciaObj$tracks(popsTracked[[2]])
-# tracks.gBT <- cciaObj$tracks(popsTracked[[3]])
+# tracks.OTI <- cciaObj$tracks(pops[[1]])
+# tracks.P14 <- cciaObj$tracks(pops[[2]])
+tracks.gBT <- cciaObj$tracks(pops[[3]])
 ```
 
 ```{r fig_tracks_points, fig.height=3, fig.width=10}
@@ -360,9 +360,39 @@ paste(names(track.pairs), collapse = ",")
 ```{r fig_tracks_qc, fig.height=8, fig.width=8}
 library(celltrackR)
 
+# just as a test, can you blow up the data to see how long that takes?
+# https://ingewortel.github.io/celltrackR/vignettes-out/QC.html
+# then check how long plotting takes with plotly v ggplot
+tracks.gBT.sim <- copy(tracks.gBT)
+
+for (i in seq(8)) {
+  tracks.gBT.dup <- copy(tracks.gBT.sim)
+  
+  # Add some noise to coordinates
+  for (i in names(tracks.gBT.dup)) {
+    tracks.gBT.dup[[i]][,"x"] <- tracks.gBT.dup[[i]][,"x"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+    tracks.gBT.dup[[i]][,"y"] <- tracks.gBT.dup[[i]][,"y"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+    tracks.gBT.dup[[i]][,"z"] <- tracks.gBT.dup[[i]][,"z"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+  }
+  
+  # Wrap the track in a tracks object and add it to the TCell data with
+  # a unique id number
+  max.id <- max(as.numeric(names(tracks.gBT.sim)))
+  new.ids <- seq(max.id + 1, max.id + length(tracks.gBT.sim))
+  names(tracks.gBT.dup) <- as.character(new.ids)
+  tracks.gBT.sim <- c(tracks.gBT.sim, tracks.gBT.dup)
+  
+  print(length(tracks.gBT.sim))
+}
+```
+
+
+```{r fig_tracks_qc, fig.height=8, fig.width=8}
 # df <- analyzeCellPairs(tracks.OTI)
 # df <- analyzeCellPairs(tracks.P14)
-df <- analyzeCellPairs(tracks.gBT)
+# df <- analyzeCellPairs(tracks.gBT)
+# TODO this takes a long time .. 
+df <- analyzeCellPairs(tracks.gBT.sim, searchRadius = 20)
 
 # these thresholds should be dynamic and set by the user to delete tracks
 # not sure you need a sort of gating here
@@ -374,15 +404,15 @@ df$id[ !(df$angle < angle.thresh & df$dist < dist.thresh) ] <- ""
 # df[is.na(df$dist), ]$dist <- 0
 
 # Plot; zoom in on the region with small angles and distances
-ggplot( df, aes( x = dist, y = angle ) ) +
-  geom_point( color = "gray40" ) +
-  geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
-  labs( x = "distance between cell pairs",
-        y = "angle between cell pairs" ) +
-  coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
-  geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
-  geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
-  theme_classic()
+# ggplot( df, aes( x = dist, y = angle ) ) +
+#   geom_point( color = "gray40" ) +
+#   geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
+#   labs( x = "distance between cell pairs",
+#         y = "angle between cell pairs" ) +
+#   coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
+#   geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
+#   geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
+#   theme_classic()
 ```
 
 ```{r fig_tracks_traces, fig.height=5, fig.width=5}
