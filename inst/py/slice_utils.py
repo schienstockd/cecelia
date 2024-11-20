@@ -96,6 +96,7 @@ def combine_time_frame_slices(frame_slices, dim_utils, timepoints = None, integr
   
   # get length of frame slices
   len_frame_slices = len(frame_slices['slices'])
+  len_time_vals = len(time_vals)
   
   # convert frame tuples to list
   frame_slices['slices'] = [list(x) for x in frame_slices['slices']]

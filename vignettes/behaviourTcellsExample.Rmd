@@ -363,27 +363,52 @@ library(celltrackR)
 # just as a test, can you blow up the data to see how long that takes?
 # https://ingewortel.github.io/celltrackR/vignettes-out/QC.html
 # then check how long plotting takes with plotly v ggplot
-tracks.gBT.sim <- copy(tracks.gBT)
+# tracks.gBT.sim <- copy(tracks.gBT)
+tracks.gBT.sim <- celltrackR::as.tracks(list())
 
-for (i in seq(8)) {
-  tracks.gBT.dup <- copy(tracks.gBT.sim)
+# shift tracks so that you get a larger field
+# get max for adding tracks
+centroid.max <- colMax(popDT[pop == "gBT/tracked", c("centroid_x", "centroid_y")])
+tracks.rows.n <- 6
+tracks.total <- tracks.rows.n * 9
+
+# for (i in seq(8)) {
+for (i in seq(tracks.total)) {
+  row.idx <- floor((i - 1)/tracks.rows.n) + 1
+  col.idx <- i %% tracks.rows.n + 1
+
+  x.shift <- row.idx * centroid.max[[1]]
+  y.shift <- col.idx * centroid.max[[2]]
   
+  tracks.gBT.dup <- copy(tracks.gBT)
+
   # Add some noise to coordinates
-  for (i in names(tracks.gBT.dup)) {
-    tracks.gBT.dup[[i]][,"x"] <- tracks.gBT.dup[[i]][,"x"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
-    tracks.gBT.dup[[i]][,"y"] <- tracks.gBT.dup[[i]][,"y"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
-    tracks.gBT.dup[[i]][,"z"] <- tracks.gBT.dup[[i]][,"z"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+  for (i in names(tracks.gBT)) {
+    # tracks.gBT.dup[[i]][,"x"] <- tracks.gBT.dup[[i]][,"x"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+    # tracks.gBT.dup[[i]][,"y"] <- tracks.gBT.dup[[i]][,"y"] + rnorm(nrow(tracks.gBT.dup[[i]]), sd = 0.5)
+    tracks.gBT.dup[[i]][,"x"] <- tracks.gBT[[i]][,"x"] + x.shift
+    tracks.gBT.dup[[i]][,"y"] <- tracks.gBT[[i]][,"y"] + y.shift
+    tracks.gBT.dup[[i]][,"z"] <- tracks.gBT[[i]][,"z"] + rnorm(nrow(tracks.gBT[[i]]), sd = 0.5)
   }
-  
+
   # Wrap the track in a tracks object and add it to the TCell data with
   # a unique id number
-  max.id <- max(as.numeric(names(tracks.gBT.sim)))
-  new.ids <- seq(max.id + 1, max.id + length(tracks.gBT.sim))
-  names(tracks.gBT.dup) <- as.character(new.ids)
-  tracks.gBT.sim <- c(tracks.gBT.sim, tracks.gBT.dup)
-  
+  if (length(tracks.gBT.sim) > 0) {
+    max.id <- max(as.numeric(names(tracks.gBT.sim)))
+    new.ids <- seq(max.id + 1, max.id + length(tracks.gBT.dup))
+    names(tracks.gBT.dup) <- as.character(new.ids)
+    tracks.gBT.sim <- c(tracks.gBT.sim, tracks.gBT.dup)
+  } else {
+    tracks.gBT.sim <- tracks.gBT.dup
+  }
+
   print(length(tracks.gBT.sim))
 }
+```
+
+
+```{r}
+plot(tracks.gBT.sim)
 ```
 
 
@@ -391,12 +416,73 @@ for (i in seq(8)) {
 # df <- analyzeCellPairs(tracks.OTI)
 # df <- analyzeCellPairs(tracks.P14)
 # df <- analyzeCellPairs(tracks.gBT)
-# TODO this takes a long time .. 
-df <- analyzeCellPairs(tracks.gBT.sim, searchRadius = 20)
+# TODO this takes a long time .. even with search radius
+# because search radius doesn't do anything pre-distance
+# it's just a filter after ALL distances have been measures
+# df <- analyzeCellPairs(tracks.gBT.sim, searchRadius = 20)
 
+# could you.. pre-filter tracks somehow or do the pairs analysis by tiles?
+# the tiles wouldn't have to be overlapping.. ?
+```
+
+```{r}
+# get dimensions of tracks
+tracks.gBT.sim.dt <- as.data.table(tracks.gBT.sim)
+tracks.gBT.sim.max <- colMax(tracks.gBT.sim.dt[, c("x", "y")])
+```
+
+
+```{r}
+# can you translate that into R?
+block.size <- 512
+x.max <- tracks.gBT.sim.max[["x"]]
+y.max <- tracks.gBT.sim.max[["y"]]
+
+tiles.m <- ceiling(y.max/block.size)
+tiles.n <- ceiling(x.max/block.size)
+# M <- floor(y.max/tiles.m)
+# N <- floor(x.max/tiles.n)
+M <- y.max/tiles.m
+N <- x.max/tiles.n
+
+block.list <- list()
+
+for (x in seq(0, x.max, M)) {
+  for (y in seq(0, y.max, N)) {
+    block.list <- append(block.list, list(list(x1 = x, x2 = x + M, y1 = y, y2 = y + N)))
+  }
+}
+
+# block.dt <- do.call(rbind, block.list)
+```
+
+```{r}
+# then go through all tracks that are touching these blocks
+pairs.results <- list()
+
+for (block.coords in block.list) {
+  x.ids <- unique(
+    tracks.gBT.sim.dt[x >= block.coords$x1 & x <= block.coords$x2 &
+                        y >= block.coords$y1 & y <= block.coords$y2,]$id)
+  
+  print(block.coords)
+  
+  pairs.results <- append(
+    pairs.results, list(analyzeCellPairs(tracks.gBT.sim[names(tracks.gBT.sim) %in% x.ids])))
+}
+
+# TODO is unique required?
+# pairs.DT <- unique(rbindlist(pairs.results))
+pairs.DT <- rbindlist(pairs.results)
+```
+
+
+```{r fig_tracks_qc, fig.height=8, fig.width=8}
 # these thresholds should be dynamic and set by the user to delete tracks
 # not sure you need a sort of gating here
 # label cellpairs that have both angle and distance below threshold
+df <- copy(pairs.DT)
+
 angle.thresh <- 90 # in degrees
 dist.thresh <- 10 # this should be the expected cell radius
 df$id <- paste0( df$cell1,"-",df$cell2 )
@@ -404,15 +490,15 @@ df$id[ !(df$angle < angle.thresh & df$dist < dist.thresh) ] <- ""
 # df[is.na(df$dist), ]$dist <- 0
 
 # Plot; zoom in on the region with small angles and distances
-# ggplot( df, aes( x = dist, y = angle ) ) +
-#   geom_point( color = "gray40" ) +
-#   geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
-#   labs( x = "distance between cell pairs",
-#         y = "angle between cell pairs" ) +
-#   coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
-#   geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
-#   geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
-#   theme_classic()
+ggplot( df, aes( x = dist, y = angle ) ) +
+  geom_point( color = "gray40" ) +
+  geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
+  labs( x = "distance between cell pairs",
+        y = "angle between cell pairs" ) +
+  coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
+  geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
+  geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
+  theme_classic()
 ```
 
 ```{r fig_tracks_traces, fig.height=5, fig.width=5}

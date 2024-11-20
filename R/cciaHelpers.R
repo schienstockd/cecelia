@@ -18,6 +18,7 @@ fileIMAGE_TO_IMPORT <- "ImageToImport"
 # https://stackoverflow.com/a/39611375
 floor_dec <- function(x, level=1) round(x - 5*10^(-level-1), level)
 ceiling_dec <- function(x, level=1) round(x + 5*10^(-level-1), level)
+colMax <- function(data) sapply(data, max, na.rm = TRUE)
 
 #' @description Init ccia object
 #' @param cciaObjDir character of object directory
