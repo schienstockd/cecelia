@@ -198,7 +198,6 @@ pooch==1.8.2
 prometheus_client==0.20.0
 prompt_toolkit==3.0.47
 protobuf==4.25.4
-pstree==0.1.2
 psutil==6.0.0
 psygnal==0.11.1
 ptyprocess==0.7.0
@@ -303,6 +302,7 @@ tornado==6.4.1
 tqdm==4.66.5
 traitlets==5.14.3
 transforms3d==0.4.2
+git+https://github.com/drufat/triangle.git
 trimesh==3.23.5
 typeguard==4.3.0
 typer==0.12.3
