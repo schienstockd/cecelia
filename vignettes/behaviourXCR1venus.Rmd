@@ -31,6 +31,19 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
 anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
 ```
 
+```{r}
+# load Cecelia tracking measures
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "pPlT5i", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
+a <- cciaObj$imPopMap("live", includeFiltered = TRUE)
+```
+
 ### Comparison to IMARIS
 
 ```{r}

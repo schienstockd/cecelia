@@ -852,6 +852,8 @@ class NapariUtils:
       tracks_layer = 'Tracks' if pop_name is None else f'({pop_name}) Tracks'
       self.remove_layer_by_name(tracks_layer)
       
+      print(prop_df)
+      
       # add to napari
       self.viewer.add_tracks(
           tracks,

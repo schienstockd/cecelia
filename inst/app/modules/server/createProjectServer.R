@@ -72,7 +72,13 @@
             type = msgPROJECT_UNIQUE_NAME[2])
         } else {
           # get uID
+          # make sure the uID is not already used
+          uIDs <- list.dirs(cciaConf()$dirs$projects, recursive = FALSE, full.names = FALSE)
           projectUID <- genUID(6)
+          
+          while (projectUID %in% uIDs) {
+            projectUID <- genUID(6)
+          }
           
           # create uID
           globalManagers$projectManager()$setProjectUID(projectUID)
