@@ -317,7 +317,7 @@ CciaImage <- R6::R6Class(
     
     #' @description channels information
     #' @param reset boolean to reset value
-    omeXMLChannels = function(reset = FALSE, omeXML = NULL) {
+    omeXMLChannels = function(...) {
       # is content already set?
       if (is.null(private$getOmeXMLChannels()) || reset == TRUE) {
         channelNames <- NULL
@@ -326,14 +326,14 @@ CciaImage <- R6::R6Class(
         # is there a way to check type beforehand?
         # MACSIMA
         valueChildren <- xml2::xml_children(xml2::xml_children(xml2::xml_find_all(
-          cciaObj$omeXML(), cciaObj$omeXMLPath("//StructuredAnnotations//MapAnnotation"))))
+          self$omeXML(...), self$omeXMLPath("//StructuredAnnotations//MapAnnotation"))))
         
         if (length(valueChildren) > 0) {
           dyeLabels <- as.character(valueChildren[!is.na(stringr::str_match(as.character(valueChildren), "Dye"))])
           channelNames <- stringr::str_extract(dyeLabels, "(?<=[>]).+(?=[<])")
         } else {
           pixelInfo <- as.list(xml2::xml_attrs(
-            xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels//Channel"))
+            xml2::xml_find_all(self$omeXML(...), self$omeXMLPath("//Image//Pixels//Channel"))
           ))
           
           # get channel names
