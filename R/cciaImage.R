@@ -527,12 +527,12 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Reset meta information from file
-    resetMetaFromFile = function() {
+    resetMetaFromFile = function(...) {
       if (!is.null(self$imFilepath()) &&
           !purrr::is_empty(self$imFilepath()) &&
           file.exists(self$imFilepath())) {
         # get channel names
-        channelNames <- self$omeXMLChannels()
+        channelNames <- self$omeXMLChannels(...)
         channelNames <- channelNames[lengths(channelNames) > 0]
         pixelInfo <- self$omeXMLPixels()
         

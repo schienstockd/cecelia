@@ -125,7 +125,7 @@ Import <- R6::R6Class(
         }
         
         # get metadata
-        cciaObj$resetMetaFromFile()
+        cciaObj$resetMetaFromFile(reset = TRUE)
       }
         
       # save object
