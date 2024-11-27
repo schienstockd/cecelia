@@ -320,12 +320,25 @@ CciaImage <- R6::R6Class(
     omeXMLChannels = function(reset = FALSE, omeXML = NULL) {
       # is content already set?
       if (is.null(private$getOmeXMLChannels()) || reset == TRUE) {
-        pixelInfo <- as.list(xml2::xml_attrs(
-          xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels//Channel"))
-        ))
+        channelNames <- NULL
         
-        # get channel names
-        channelNames <- sapply(pixelInfo, function(x) if ("Name" %in% names(x)) x[["Name"]] else NULL)
+        # TODO this is specific to some data formats
+        # is there a way to check type beforehand?
+        # MACSIMA
+        valueChildren <- xml2::xml_children(xml2::xml_children(xml2::xml_find_all(
+          cciaObj$omeXML(), cciaObj$omeXMLPath("//StructuredAnnotations//MapAnnotation"))))
+        
+        if (length(valueChildren) > 0) {
+          dyeLabels <- as.character(valueChildren[!is.na(stringr::str_match(as.character(valueChildren), "Dye"))])
+          channelNames <- stringr::str_extract(dyeLabels, "(?<=[>]).+(?=[<])")
+        } else {
+          pixelInfo <- as.list(xml2::xml_attrs(
+            xml2::xml_find_all(self$omeXML(reset = reset), self$omeXMLPath("//Image//Pixels//Channel"))
+          ))
+          
+          # get channel names
+          channelNames <- sapply(pixelInfo, function(x) if ("Name" %in% names(x)) x[["Name"]] else NULL)
+        }
         
         # set
         private$setOmeXMLChannels(channelNames)
