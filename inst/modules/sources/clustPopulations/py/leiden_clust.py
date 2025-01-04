@@ -1,6 +1,7 @@
 # add CCIA modules
 import sys
 import os
+import re
 import numpy as np
 import pandas as pd
 sys.path.append('./')
@@ -33,9 +34,11 @@ def run(params):
   resolution = script_utils.get_param(params, 'resolution', default = 1)
   merge_umap = script_utils.get_param(params, 'mergeUmap', default = True)
   cluster_channels = script_utils.get_param(params, 'clusterChannels', default = {})
+  ref_channel = script_utils.get_param(params, 'refChannel', default = {})
   object_measures = script_utils.get_param(params, 'objectMeasures', default = [])
   pop_type = script_utils.get_param(params, 'popType', default = None)
   pops_to_cluster = script_utils.get_param(params, 'popsToCluster', default = [])
+  ref_pops = script_utils.get_param(params, 'refPops', default = [])
   keep_pops = script_utils.get_param(params, 'keepPops', default = False)
   normalise_axis = script_utils.get_param(params, 'normaliseAxis', default = 'channels')
   normalise_to_median = script_utils.get_param(params, 'normaliseToMedian', default = False)
@@ -96,7 +99,12 @@ def run(params):
       # add object measurements to column names
       column_names = channel_columns + object_measures
       
-      logfile_utils.log(f'> {column_names}')
+      # get reference column name
+      # TODO this assumes that base will be taken
+      # this is probably not good if using a nuclei channel as reference
+      ref_column_name = None
+      if len(ref_channel[x]) > 0:
+        ref_column_name = f'{intensity_measure}_intensity_{ref_channel[x][0]}'
       
       # create task directory
       task_dir_split[-1] = x
@@ -104,15 +112,16 @@ def run(params):
 
       image_df, image_clusters = get_adata(
         image_task_dirs[x], value_name, column_names, logfile_utils,
-        pops_to_cluster = pops_to_cluster, pop_type = pop_type,
-        keep_pops = keep_pops, as_df = True,
+        pops_to_cluster = pops_to_cluster, ref_pops = ref_pops,
+        pop_type = pop_type, keep_pops = keep_pops, as_df = True,
         transformation = transformation if normalise_individually is True else 'NONE',
         log_base = log_base,
         normalise_axis = normalise_axis if normalise_individually is True else 'NONE',
         normalise_to_median = normalise_to_median if normalise_individually is True else False,
         max_fraction = max_fraction,
         normalise_percentile = normalise_percentile if normalise_individually is True else 0,
-        normalise_percentile_bottom = normalise_percentile_bottom if normalise_individually is True else 0
+        normalise_percentile_bottom = normalise_percentile_bottom if normalise_individually is True else 0,
+        ref_column_name = ref_column_name
         )
         
       # rename channel columns
@@ -323,15 +332,25 @@ def merge_new_adata(new_adata, task_dir, value_name, logfile_utils, merge_umap =
 
 # get adata from image
 def get_adata(task_dir, value_name, column_names, logfile_utils,
-              pops_to_cluster = None, pop_type = None,
+              pops_to_cluster = None, ref_pops = None, pop_type = None,
               keep_pops = False, as_df = False,
               normalise_axis = 'channels', normalise_to_median = False, max_fraction = 0,
               normalise_percentile = 100, normalise_percentile_bottom = 0,
-              transformation = 'NONE', log_base = 10):
+              transformation = 'NONE', log_base = 10, ref_column_name = None):
   label_view = LabelPropsUtils(task_dir, value_name = value_name).label_props_view(read_only = False)
   
   # get population for clustering
   pop_labels = []
+  ref_labels = []
+  
+  # get reference labels for normalisation
+  if ref_pops is not None and len(ref_pops) > 0:
+    pop_utils = PopUtils()
+    pop_map = pop_utils.pop_map(task_dir, pop_type, pops = ref_pops)
+    pop_data = pop_utils.pop_data(task_dir, pop_type, pops = ref_pops)
+    
+    ref_labels += [y for x in pop_data.values() for y in x]
+    
   if pops_to_cluster is not None and len(pops_to_cluster) > 0:
     # get the requested population from here
     pop_utils = PopUtils()
@@ -342,7 +361,7 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
     
     # filter labels
     # if len(pop_labels) > 0:
-    label_view.filter_by_obs(pop_labels)
+    label_view.filter_by_obs(pop_labels + ref_labels)
     
   # get max clusters
   max_clusters = 0
@@ -360,13 +379,24 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
     
     # get data for clustering
     # label_view.view_vars_cols(column_names)\
-    label_view.view_cols(column_names)\
+    label_view.view_cols(column_names + [ref_column_name])\
       .view_label_col()\
       .exclude_spatial_temporal()
     
     # transform columns?
     scanpy_utils.apply_transform(label_view.adata, transformation = transformation, log_base = log_base)
   
+    # normalise to reference column
+    # divide values by reference column
+    if ref_column_name is not None:
+      # get idx of columns
+      # https://stackoverflow.com/a/39593126
+      # only use intensity channels
+      r = re.compile(".*intensity.*")
+      channel_names = list(filter(r.search, column_names))
+      
+      label_view.adata[:, channel_names] = label_view.adata[:, channel_names].X/label_view.adata[:, ref_column_name].X
+    
     # normalise columns?
     scanpy_utils.normalise_adata(
       label_view.adata,
@@ -375,7 +405,11 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
       max_fraction = max_fraction,
       percentile = normalise_percentile,
       percentile_bottom = normalise_percentile_bottom)
-  
+    
+    # remove reference column and labels
+    label_view.view_cols(column_names)\
+      .filter_by_obs(pop_labels)
+    
     if as_df is True:
       adata = label_view.as_df()
     else:
@@ -391,7 +425,7 @@ def get_adata(task_dir, value_name, column_names, logfile_utils,
 def main():
   # get params
   params = script_utils.script_params(
-    flatten_except = ['clusterChannels', 'objectMeasures', 'uIDs', 'popsToCluster']
+    flatten_except = ['clusterChannels', 'refChannel', 'objectMeasures', 'uIDs', 'popsToCluster']
   )
 
   # run

@@ -59,6 +59,7 @@ def run(params):
     'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
     'integrate_time_mode': params['integrateTimeMode'] if 'integrateTimeMode' in params else 'max',
     'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False,
+    'top_hat': params['topHat'] if 'topHat' in params else 0,
     'clear_depth': params['clearDepth'] if 'clearDepth' in params else False,
     'clear_touching_border': params['clearTouchingBorder'] if 'clearTouchingBorder' in params else False,
     'rank_labels': params['rankLabels'] if 'rankLabels' in params else True,

@@ -9,6 +9,11 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 ```{r}
+library(flowCore)
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# NotImplementedError: The operator 'aten::to_mkldnn' is not currently implemented for the MPS device.
+Sys.setenv(PYTORCH_ENABLE_MPS_FALLBACK = "1")
+
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -30,6 +35,8 @@ x <- config::get(file = dockerConf)
 
 ```{r}
 # adjust windows path
-str_replace_all(x$docker$pathMapping$to, "\\\\", "\\\\\\\\")
+lapply(x$docker$pathMapping, function(y) {
+  list(from = y$from, to = stringr::str_replace_all(y$to, "\\\\", "\\\\\\\\"))
+})
 ```
 

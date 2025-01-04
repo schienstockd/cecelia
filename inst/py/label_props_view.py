@@ -500,10 +500,11 @@ class LabelPropsView:
     if add_obs is True:
       # drop index
       # https://stackoverflow.com/a/51710480/13766165
-      self.adata.obs.reset_index(drop = True, inplace = True)
+      # self.adata.obs.reset_index(drop = True, inplace = True)
       
       if adata_df is not None:
-        adata_df.reset_index(drop = True, inplace = True)
+        # adata_df.reset_index(drop = True, inplace = True)
+        # dfs_to_concat = [self.adata.obs, adata_df.reset_index(drop = True)]
         dfs_to_concat = [self.adata.obs, adata_df]
       else:
         dfs_to_concat = [self.adata.obs]
@@ -541,7 +542,9 @@ class LabelPropsView:
         # drop index
         # https://stackoverflow.com/a/51710480/13766165
         for i, x in dfs.items():
-          x.reset_index(drop = True, inplace = True)
+          # TODO not sure why dropping index does not work here
+          # dfs_to_concat.append(x.reset_index(drop = True))
+          x.index = self.adata.obs.index
           dfs_to_concat.append(x)
       
       adata_df = pd.concat(dfs_to_concat, axis = 1)
@@ -756,27 +759,27 @@ class LabelPropsView:
       filter_by = filter_by[0]
     
     # filter for equal
-    if filter_fun == "eq":
+    if filter_fun == 'eq':
       filter_idx = np.isin(self.adata[:, filter_by].X, filter_vals)
     
     # filter for not equal
-    if filter_fun == "neq":
+    if filter_fun == 'neq':
       filter_idx = ~np.isin(self.adata[:, filter_by].X, filter_vals)
         
     # greater than
-    elif filter_fun == "gt":
+    elif filter_fun == 'gt':
       filter_idx = self.adata[:, filter_by].X > filter_vals
         
     # greater than or equal
-    elif filter_fun == "gte":
+    elif filter_fun == 'gte':
       filter_idx = self.adata[:, filter_by].X >= filter_vals
         
     # less than
-    elif filter_fun == "lt":
+    elif filter_fun == 'lt':
       filter_idx = self.adata[:, filter_by].X < filter_vals
         
     # less than or equal
-    elif filter_fun == "lte":
+    elif filter_fun == 'lte':
       filter_idx = self.adata[:, filter_by].X <= filter_vals
     
     # apply filter
@@ -795,27 +798,27 @@ class LabelPropsView:
       filter_by = filter_by[0]
     
     # filter for equal
-    if filter_fun == "eq":
+    if filter_fun == 'eq':
       filter_idx = self.adata.obs[filter_by].isin(filter_vals)
         
     # filter for not equal
-    if filter_fun == "neq":
+    if filter_fun == 'neq':
       filter_idx = ~self.adata.obs[filter_by].isin(filter_vals)
         
     # greater than
-    elif filter_fun == "gt":
+    elif filter_fun == 'gt':
       filter_idx = self.adata.obs[filter_by] > filter_vals
         
     # greater than or equal
-    elif filter_fun == "gte":
+    elif filter_fun == 'gte':
       filter_idx = self.adata.obs[filter_by] >= filter_vals
         
     # less than
-    elif filter_fun == "lt":
+    elif filter_fun == 'lt':
       filter_idx = self.adata.obs[filter_by] < filter_vals
         
     # less than or equal
-    elif filter_fun == "lte":
+    elif filter_fun == 'lte':
       filter_idx = self.adata.obs[filter_by] <= filter_vals
         
     # apply filter

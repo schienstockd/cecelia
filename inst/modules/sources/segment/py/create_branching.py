@@ -271,7 +271,8 @@ def run(params):
       nscales = nscales,
       keyword = 'labels',
       ignore_channel = True,
-      squeeze = True
+      # squeeze = True # TODO not sure if needed
+      squeeze = False
     )
 
     # remove previous labels and rename multiscales

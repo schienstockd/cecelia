@@ -204,6 +204,8 @@ def create_slices_2D(im_dim, dim_utils, block_size = None, overlap = None, ignor
     overlap = 0
     
   # adjust block size to make equally spaced tiles
+  # tiles_m = math.floor(im_dim[y_idx] / block_size)
+  # tiles_n = math.floor(im_dim[x_idx] / block_size)
   tiles_m = math.ceil(im_dim[y_idx] / block_size)
   tiles_n = math.ceil(im_dim[x_idx] / block_size)
   M = im_dim[y_idx]//tiles_m

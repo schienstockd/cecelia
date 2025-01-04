@@ -75,8 +75,10 @@ CciaImage <- R6::R6Class(
           valueNames <- popUtils$getValueNames()
         
         # get value names for populations
-        for (i in valueNames) {
-          labels <- self$labelProps(valueName = i)
+        for (i in seq(length(valueNames))) {
+          x <- valueNames[[i]]
+          
+          labels <- self$labelProps(valueName = x)
           
           if (!is.null(labels)) {
             # focus on selected columns
@@ -86,7 +88,7 @@ CciaImage <- R6::R6Class(
             
             # filter on labels to reduce reading
             if ("value_name" %in% colnames(popDT)) {
-              # TODO not sure how to do this for this case
+              # TODO not sure how to do that for this case
             } else {
               labels$filter_rows(popDT$label)
             }
@@ -109,6 +111,7 @@ CciaImage <- R6::R6Class(
               labelColumns <- labelColumns[!labelColumns %in% self$imChannelNames(
                 correctChannelNames = TRUE, includeTypes = TRUE)]
               iColumns <- labelColumns
+              iColumns <- iColumns[iColumns != "label"]
             } else {
               jColumns <- labelColumns[labelColumns %in% colnames(popDT)]
               jColumns <- jColumns[jColumns != "label"]
@@ -116,10 +119,20 @@ CciaImage <- R6::R6Class(
               iColumns[iColumns %in% jColumns] <- paste0("i.", jColumns)
             }
             
+            # exclude label
+            labelColumns <- labelColumns[labelColumns != "label"]
+            
             # merge to population DT
             if ("label" %in% colnames(popDT)) {
               if ("value_name" %in% colnames(popDT)) {
-                popDT[labelDT, on = .(value_name == i, label),
+                # add i to columns
+                if (i > 1 && replaceX == FALSE)
+                  iColumns <- paste0("i.", iColumns)
+                
+                labelDT[, value_name := x]
+                # popDT[labelDT, on = .(value_name == i, label),
+                # TODO this doesn't work if there are already columns present
+                popDT[labelDT, on = .(value_name, label),
                       (labelColumns) := mget(iColumns)]
               } else {
                 popDT[labelDT, on = .(label),
@@ -1800,7 +1813,8 @@ CciaImage <- R6::R6Class(
           }
         }
         
-        if (!is.null(popDT)) {
+        # if (!is.null(popDT)) {
+        if (length(popDT) > 0) {
           # make sure that pop levels are ok
           if (is.factor(popDT[, pop]))
             popDT[, pop := droplevels(pop)]

@@ -697,7 +697,7 @@ NapariUtils <- R6::R6Class(
       x <- .dockerMapPathToHost(x)
       
       self$execute(
-        sprintf("napari_utils.task_dir = '%s'", x),
+        sprintf("napari_utils.task_dir = r'%s'", x),
         execInteractive = execInteractive
       )
     }

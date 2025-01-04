@@ -47,6 +47,7 @@ class SegmentationUtils:
     self.integrate_time = script_utils.get_param(params, 'integrate_time', default = False)
     self.integrate_time_mode = script_utils.get_param(params, 'integrate_time_mode', default = 'max')
     self.normalise_to_whole = script_utils.get_param(params, 'normalise_to_whole', default = False)
+    self.top_hat = script_utils.get_param(params, 'top_hat', default = 0)
     
     self.cell_size_min = script_utils.get_param(params, 'remove_small_objects', default = 0)
     self.cell_size_min = script_utils.get_param(params, 'cell_size_min', default = self.cell_size_min)
@@ -182,7 +183,8 @@ class SegmentationUtils:
           save_meshes = self.save_meshes,
           extended_measures = self.extended_measures,
           calc_median_intensities = self.calc_median_intensities,
-          integrate_time = self.integrate_time
+          integrate_time = self.integrate_time,
+          top_hat = self.top_hat
         )
         
         # get spatial and temporal columns from props

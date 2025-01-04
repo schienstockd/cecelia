@@ -46,6 +46,12 @@ LeidenClustering <- R6::R6Class(
             })
         })
       
+      # get reference channel
+      refChannel <- lapply(
+        cciaObj$cciaObjects(uIDs = self$funParams()$uIDs), function(x) {
+          unname(which(x$imChannelNames() == self$funParams()$refChannel)) - 1
+        })
+      
       # use gpu?
       useGPU <- FALSE
       
@@ -59,10 +65,12 @@ LeidenClustering <- R6::R6Class(
         taskDir = self$envParams()$dirs$task,
         popType = self$funParams()$popType,
         popsToCluster = self$funParams()$popsToCluster,
+        refPops = self$funParams()$refPops,
         keepPops = self$funParams()$keepPops,
         resolution = self$funParams()$resolution,
         mergeUmap = self$funParams()$mergeUmap,
         clusterChannels = clusterChannels,
+        refChannel = refChannel,
         objectMeasures = self$funParams()$objectMeasures,
         normaliseAxis = self$funParams()$normaliseAxis,
         normaliseToMedian = self$funParams()$normaliseToMedian,

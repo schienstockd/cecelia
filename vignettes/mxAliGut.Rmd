@@ -30,8 +30,78 @@ library(tidyverse)
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/gut"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/gut"
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/"
 ```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "rQ8fni", versionID = versionID, initReactivity = FALSE 
+)
+
+popCols <- c(
+  "value_name", "neighbour_value_name", "neighbour_label",
+  "neighbour_dist", "centroid_x", "centroid_y")
+completeValueNames <- c("CD31.branch", "stroma.branch", "dcs.branch")
+
+# get regions
+regionsDT <- cciaObj$popDT(
+  "region", valueName = "structures", completeDT = FALSE, replaceNA = TRUE,
+  completeValueNames = completeValueNames, popCols = popCols)
+
+# get positions
+# TODO this should actually be in one call
+posDT <- cciaObj$popDT(
+  "region", valueName = "structures", completeDT = TRUE, replaceNA = TRUE,
+  completeValueNames = completeValueNames, popCols = popCols)
+```
+
+```{r}
+colnames(regionsDT)
+```
+
+
+```{r}
+# .. now can you run kmeans to get regions by density and type
+# summaryDF <- regionsDT %>%
+summaryDF <- regionsDT[value_name != "dcs.branch" & neighbour_value_name != "dcs.branch"] %>%
+  # group_by(uID, pop) %>%
+  group_by(value_name, label, neighbour_value_name) %>%
+  summarise(n = n()) %>%
+  # mutate(freq = n/sum(n) * 100) %>%
+  pivot_wider(names_from = neighbour_value_name, values_from = n)
+```
+
+```{r}
+clusters.to.find <- 2
+
+# get x and find clusters
+# x <- as.matrix(summaryDF[, completeValueNames])
+x <- as.matrix(summaryDF[, completeValueNames[completeValueNames != "dcs.branch"]])
+x[is.na(x)] <- 0
+
+# posDT[, cluster := as.factor(kmeans(x, clusters.to.find)$cluster)]
+posDT.CD31 <- copy(posDT[value_name != "dcs.branch"])
+posDT.CD31[, cluster := as.factor(kmeans(x, clusters.to.find)$cluster)]
+```
+
+
+```{r fig_clusters, fig.height=8, fig.width=8}
+# show clusters
+# ggplot(posDT, aes(centroid_x, -centroid_y, color = cluster)) +
+ggplot(posDT.CD31, aes(centroid_x, -centroid_y, color = cluster)) +
+  theme_classic() +
+  geom_point(size = 0.5) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  plotThemeDark() +
+  coord_fixed() 
+  # facet_grid(.~cluster)
+```
+
 
 ```{r}
 # Generate average
@@ -40,12 +110,25 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "3fsf7u", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "rQ8fni", versionID = versionID, initReactivity = FALSE 
 )
 
-x <- cciaObj$cciaObjects()[[1]]
+labelsView <- cciaObj$labelProps(valueName = "default")
+labelsView$channel_types()
+labelsView$close()
+```
 
-x$resetMetaFromFile()
-x$imChannelNames()
+```{r fig_shifts, fig.height=10, fig.width=8}
+# get shifts
+shiftsDT <- read.csv(file.path(anaDir, "shifts.csv"), )
+
+ggplot(shiftsDT, aes(centroid_x, -centroid_y, fill = median.shift, color = median.shift)) +
+  theme_classic() +
+  geom_tile(color = "#222222") +
+  scale_fill_viridis_c(option = "inferno") +
+  plotThemeDark(bgColor = "black") +
+  coord_fixed()
+
+ggsave(file.path(anaDir, "shifts.pdf"), width = 12, height = 14)
 ```
 

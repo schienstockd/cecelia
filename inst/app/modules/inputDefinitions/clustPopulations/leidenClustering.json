@@ -16,6 +16,9 @@
 			"popsToCluster": {
 				"type:list": {}
 			},
+			"refPops": {
+				"type:list": {}
+			},
 			"savePops": {
 				"type:boolean": {
 					"default": true
@@ -98,6 +101,10 @@
           }
         }
       },
+      "refChannel": {
+        "type:character": {
+        }
+      },
       "objectMeasures": {
 				"type:list": {}
 			},
@@ -132,33 +139,41 @@
 					"multiple": true
 				}
 			},
-			"savePops": {
+			"refPops": {
 				"index": 2,
+				"label": "Reference Populations",
+				"widget:popSelection": {
+					"size": 1,
+					"multiple": true
+				}
+			},
+			"savePops": {
+				"index": 3,
 				"label": "Save pops",
 				"widget:checkbox": {
 				}
 			},
 			"keepPops": {
-				"index": 3,
+				"index": 4,
 				"label": "Keep other populations",
 				"widget:checkbox": {
 				}
 			},
       "resolution": {
-        "index": 4,
+        "index": 5,
         "label": "Resolution",
         "widget:slider": {
           "step": 0.05
         }
       },
       "mergeUmap": {
-        "index": 5,
+        "index": 6,
         "label": "Calculate UMAP",
 				"widget:checkbox": {
 				}
       },
       "normaliseAxis": {
-        "index": 6,
+        "index": 7,
         "label": "Normalisation Axis",
         "widget:radioButtons": {
           "items": {
@@ -169,40 +184,40 @@
         }
       },
       "normaliseToMedian": {
-        "index": 7,
+        "index": 8,
         "label": "Normalise to median",
         "widget:checkbox": {
         }
       },
       "maxFraction": {
-        "index": 8,
+        "index": 9,
         "label": "Maximum fraction",
         "widget:slider": {
           "step": 0.01
         }
       },
       "normalisePercentile": {
-        "index": 9,
+        "index": 10,
         "label": "Normalisation Top",
         "widget:slider": {
           "step": 0.1
         }
       },
       "normalisePercentileBottom": {
-        "index": 10,
+        "index": 11,
         "label": "Normalisation Bottom",
         "widget:slider": {
           "step": 0.1
         }
       },
       "normaliseIndividually": {
-        "index": 11,
+        "index": 12,
         "label": "Individual normalisation",
         "widget:checkbox": {
         }
       },
       "correctBatch": {
-        "index": 12,
+        "index": 13,
         "label": "Correct Batch effect",
         "widget:selection": {
           "items": {
@@ -215,7 +230,7 @@
         }
       },
       "transformation": {
-        "index": 13,
+        "index": 14,
         "label": "Transform data",
         "widget:selection": {
           "items": {
@@ -228,7 +243,7 @@
         }
       },
       "logBase": {
-        "index": 14,
+        "index": 15,
         "label": "Log base",
         "widget:selection": {
           "items": {
@@ -241,7 +256,7 @@
         }
       },
       "clusterChannels": {
-				"index": 15,
+				"index": 16,
 				"label": "Use channels for clusterings",
 				"widget:channelSelectionTypeGroup": {
 				  "visible": false,
@@ -256,8 +271,18 @@
           }
   			}
       },
+      "refChannel": {
+        "index": 17,
+        "label": "Reference channel",
+        "widget:channelSelection": {
+          "size": 1,
+          "multiple": false,
+          "useNames": true,
+					"addZeroChoice": true
+        }
+      },
       "objectMeasures": {
-				"index": 16,
+				"index": 18,
 				"label": "Object measurements",
 				"widget:labelPropsColsSelection": {
 					"size": 1,
@@ -266,13 +291,13 @@
 				}
 			},
 			"usePaga": {
-				"index": 17,
+				"index": 19,
 				"label": "Use PAGA",
 				"widget:checkbox": {
 				}
 			},
 			"pagaThreshold": {
-				"index": 18,
+				"index": 20,
 				"label": "PAGA threshold",
 				"widget:slider": {
 					"step": 0.02

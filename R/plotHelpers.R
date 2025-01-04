@@ -49,7 +49,8 @@ plotThemeBar <- function(p1, ...) {
 }
 
 #' @export
-plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "left") {
+plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "left",
+                          bgColor = "#222222") {
   # adjust vertical and horizontal
   if (angle > 0) {
     vjust = 1
@@ -63,14 +64,14 @@ plotThemeDark <- function(angle = 30, fontSize = 15, legend.justification = "lef
     legend.direction = "horizontal",
     legend.position = "top",
     legend.justification = legend.justification,
-    legend.background = element_rect(fill = "#222222"),
+    legend.background = element_rect(fill = bgColor),
     legend.text = element_text(
       colour = "white", size = fontSize),
     legend.title = element_text(
       colour = "white", size = fontSize),
-    panel.background = element_rect(fill = "#222222"),
+    panel.background = element_rect(fill = bgColor),
     plot.background = element_rect(
-      fill = "#222222", color = "#222222"
+      fill = bgColor, color = bgColor
     ),
     axis.text.x = element_text(
       angle = angle, vjust = vjust, hjust = hjust,

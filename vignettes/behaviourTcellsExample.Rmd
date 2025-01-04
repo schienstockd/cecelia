@@ -32,7 +32,33 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 pID <- "Co3HDh"
 versionID <- 1
 anaDir <- "~/Downloads"
+```
 
+```{r}
+# set test datasets
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "lWinrY", versionID = versionID, initReactivity = FALSE # Tcells
+)
+
+cciaObj$setImLabelPropsFilepath("T.h5ad", "T")
+# cciaObj$setImPopMap()
+
+a <- cciaObj$imPopMap("live", includeFiltered = TRUE)
+b <- a$hwn2dV
+b$parent <- "T"
+b$path <- "T/tracked"
+b$valueName <- "T"
+a$P2k4WJ <- b
+cciaObj$setImPopMap("live", a)
+cciaObj$saveState()
+```
+
+
+```{r}
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
@@ -46,7 +72,6 @@ pops <- unname(unlist(cciaObj$popPaths(
 
 # popDT <- cciaObj$popDT("live", pops = c(popsTracked[[3]]), includeFiltered = TRUE)
 popDT <- cciaObj$popDT("live", pops = c(pops), includeFiltered = TRUE)
-popDT
 # popRoot <- cciaObj$popDT("live", pops = c("OTI", "OTI/tracked"), includeFiltered = TRUE)
 # popRoot <- cciaObj$popDT("live", pops = c("P14", "P14/tracked"), includeFiltered = TRUE)
 # popRoot <- cciaObj$popDT("live", pops = c("gBT", "gBT/tracked"), includeFiltered = TRUE)
@@ -60,8 +85,10 @@ popDT
 
 # tracks.OTI <- cciaObj$tracks(pops[[1]])
 # tracks.P14 <- cciaObj$tracks(pops[[2]])
-tracks.gBT <- cciaObj$tracks(pops[[3]])
+# tracks.gBT <- cciaObj$tracks(pops[[3]])
+tracks.T <- cciaObj$tracks(pops[[4]])
 ```
+
 
 ```{r fig_tracks_points, fig.height=3, fig.width=10}
 # plot out tracks
@@ -83,7 +110,8 @@ tracks.info <- cciaObj$tracksInfo(
   c("live.cell.speed", "live.cell.angle"),
   # parentPop = popsTracked[[1]]
   # parentPop = popsTracked[[2]]
-  parentPop = popsTracked[[3]]
+  # parentPop = popsTracked[[3]]
+  parentPop = pops[[4]]
 )
 ```
 
@@ -293,10 +321,12 @@ task <- cciaObj$runTask(
 )
 ```
 ```{r}
+library(plotly)
+
 # plot out tracks
 plot_ly(source = "trackTraces") %>%
   add_trace(
-    data = popDT[value_name == "OTI"],
+    data = popDT[value_name == "T"],
     x = ~centroid_x, y = ~centroid_y, split = ~track_id,
     type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
   layout(
@@ -427,16 +457,18 @@ plot(tracks.gBT.sim)
 
 ```{r}
 # get dimensions of tracks
-tracks.gBT.sim.dt <- as.data.table(tracks.gBT.sim)
-tracks.gBT.sim.max <- colMax(tracks.gBT.sim.dt[, c("x", "y")])
-```
+# tracks.gBT.sim.dt <- as.data.table(tracks.gBT.sim)
+# tracks.gBT.sim.max <- colMax(tracks.gBT.sim.dt[, c("x", "y")])
+tracks.T.dt <- as.data.table(tracks.T)
+tracks.T.max <- colMax(tracks.T.dt[, c("x", "y")])
 
-
-```{r}
 # can you translate that into R?
-block.size <- 512
-x.max <- tracks.gBT.sim.max[["x"]]
-y.max <- tracks.gBT.sim.max[["y"]]
+# block.size <- 512
+block.size <- 128
+# x.max <- tracks.gBT.sim.max[["x"]]
+# y.max <- tracks.gBT.sim.max[["y"]]
+x.max <- tracks.T.max[["x"]]
+y.max <- tracks.T.max[["y"]]
 
 tiles.m <- ceiling(y.max/block.size)
 tiles.n <- ceiling(x.max/block.size)
@@ -457,18 +489,22 @@ for (x in seq(0, x.max, M)) {
 ```
 
 ```{r}
+library(celltrackR)
+
 # then go through all tracks that are touching these blocks
 pairs.results <- list()
 
 for (block.coords in block.list) {
   x.ids <- unique(
-    tracks.gBT.sim.dt[x >= block.coords$x1 & x <= block.coords$x2 &
-                        y >= block.coords$y1 & y <= block.coords$y2,]$id)
+    # tracks.gBT.sim.dt[x >= block.coords$x1 & x <= block.coords$x2 &
+    tracks.T.dt[x >= block.coords$x1 & x <= block.coords$x2 &
+                  y >= block.coords$y1 & y <= block.coords$y2,]$id)
   
   print(block.coords)
   
   pairs.results <- append(
-    pairs.results, list(analyzeCellPairs(tracks.gBT.sim[names(tracks.gBT.sim) %in% x.ids])))
+    # pairs.results, list(analyzeCellPairs(tracks.gBT.sim[names(tracks.gBT.sim) %in% x.ids])))
+    pairs.results, list(analyzeCellPairs(tracks.T[names(tracks.T) %in% x.ids])))
 }
 
 # TODO is unique required?
@@ -495,7 +531,8 @@ ggplot( df, aes( x = dist, y = angle ) ) +
   geom_text( aes( label = id ), color = "red", hjust = -0.1 ) +
   labs( x = "distance between cell pairs",
         y = "angle between cell pairs" ) +
-  coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
+  # coord_cartesian( xlim=c(0,400), ylim=c(0,180) ) +
+  coord_cartesian( xlim=c(0,20), ylim=c(0,180) ) +
   geom_hline( yintercept = angle.thresh, col = "blue",lty=2 ) +
   geom_vline( xintercept = dist.thresh, col = "blue", lty=2) +
   theme_classic()

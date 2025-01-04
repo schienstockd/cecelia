@@ -71,15 +71,6 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/IBEX/CECELIA"
 ```
 
 ```{r}
-x <- config::get(file = "/Users/Dominik/R-workspace/ceceliaDocker/datashare/docker.yml")
-
-lapply(x$docker$pathMapping, function(y) {
-  list(from = y$from, to = stringr::str_replace_all(y$to, "\\\\", "\\\\\\\\"))
-})
-```
-
-
-```{r}
 # upload 
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)

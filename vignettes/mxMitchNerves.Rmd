@@ -1,0 +1,84 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# set test variables
+pID <- "gbN4tj"
+versionID <- 1
+# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+```
+
+```{r}
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/MITCH_TH/Analysis"
+```
+
+```{r}
+library(flowWorkspace)
+
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# get populations and show maps
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "Up2znz", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+
+# only get first LCMV samples
+# uIDs <- exp.info$uID[1:3]
+# uIDs <- exp.info$uID[!exp.info$uID %in% c()]
+uIDs <- exp.info$uID
+
+pops <- cciaObj$popPaths(popType = "clust", uIDs = uIDs[2], includeFiltered = TRUE)
+
+# get pops
+popDT <- cciaObj$popDT(popType = "clust", uIDs = uIDs, pops = pops,
+                       includeFiltered = TRUE, includeX = TRUE)
+
+popDT
+```
+
+
+```{r fig_pop_area, fig.height=3, fig.width=5}
+# get size of image
+imSizes <- lapply(cciaObj$cciaObjects(), function(x) {
+  y <- x$omeXMLPixels()
+  (y$SizeX * y$PhysicalSizeX) * (y$SizeY * y$PhysicalSizeY)
+})
+
+imSizesDT <- as.data.table(do.call(rbind, imSizes))
+colnames(imSizesDT) <- c("im.size")
+imSizesDT[, uID := names(imSizes)]
+
+summaryDF <- popDT %>%
+  group_by(uID, pop) %>%
+  summarise(area.sum = sum(area)) %>%
+  left_join(exp.info, by = c("uID")) %>%
+  left_join(imSizesDT) %>%
+  mutate(area = (area.sum/im.size) * 100)
+
+paste(summaryDF$Sample, summaryDF$area)
+```
+

@@ -43,7 +43,8 @@ def run(params):
     'normalise': params['normalise'] if 'normalise' in params else 0,
     'integrate_time': params['integrateTime'] if 'integrateTime' in params else False,
     'integrate_time_mode': params['integrateTimeMode'] if 'integrateTimeMode' in params else 'max',
-    'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False
+    'normalise_to_whole': params['normaliseToWhole'] if 'normaliseToWhole' in params else False,
+    'top_hat': params['topHat'] if 'topHat' in params else 0
   }
 
   # call ilee

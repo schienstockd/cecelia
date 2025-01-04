@@ -18,17 +18,6 @@ Cellpose <- R6::R6Class(
     
     # run
     run = function() {
-      # check whether to use suffixes or not
-      labelSuffixes <- list()
-      
-      if (all(c("cyto", "nuc") %in% sapply(self$funParams()$models, function(x) x$matchAs))) {
-        labelSuffixes <- c("cyto", "nuc")
-      }
-      
-      # reset image information
-      # self$resetImageInfo()
-      labelSuffixes <- self$resetImageInfo(labelSuffixes = labelSuffixes)
-      
       self$initLog()
       self$writeLog("Start Cellpose segmentation")
       
@@ -72,6 +61,17 @@ Cellpose <- R6::R6Class(
       if (!is.null(modelVisibilities))
         models <- models[names(modelVisibilities)]
       
+      # check whether to use suffixes or not
+      labelSuffixes <- list()
+      
+      if (all(c("cyto", "nuc") %in% sapply(models, function(x) x$matchAs))) {
+        labelSuffixes <- c("cyto", "nuc")
+      }
+      
+      # reset image information
+      # self$resetImageInfo()
+      labelSuffixes <- self$resetImageInfo(labelSuffixes = labelSuffixes)
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -108,7 +108,8 @@ Cellpose <- R6::R6Class(
         calcMedianIntensities = self$funParams()$calcMedianIntensities,
         integrateTime = self$funParams()$integrateTime,
         integrateTimeMode = if ("integrateTimeMode" %in% names(self$funParams())) self$funParams()$integrateTimeMode else "max",
-        normaliseToWhole = self$funParams()$normaliseToWhole
+        normaliseToWhole = self$funParams()$normaliseToWhole,
+        topHat = self$funParams()$topHat
       )
       
       # add optional parameters

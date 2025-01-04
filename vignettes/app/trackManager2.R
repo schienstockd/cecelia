@@ -30,11 +30,16 @@ track.border <- list(
   showticklabels = FALSE,
   showgrid = FALSE
 )
+# 
+# # 2P tutorial
+# pID <- "Co3HDh"
+# versionID <- 1
+# uID <- "QnkxJE"
 
-# 2P tutorial
+# WEHI BONE - many cells example
 pID <- "Co3HDh"
 versionID <- 1
-uID <- "QnkxJE"
+uID <- "lWinrY"
 
 # start ipython kernel
 # viewer <- NapariUtils$new()
@@ -130,6 +135,41 @@ server <- function(input, output, session) {
         req(resultParamsPops())
         
         cciaObj()$tracks(resultParamsPops(), popDT = popDT())
+      })
+      
+      # get blocks of tracks
+      # when the number of tracks gets large, getting cell pairs from all
+      # cells does not work
+      popTracksBlocks <- reactive({
+        req(popTracks())
+        
+        # get dimensions of tracks
+        # tracks.gBT.sim.dt <- as.data.table(tracks.gBT.sim)
+        # tracks.gBT.sim.max <- colMax(tracks.gBT.sim.dt[, c("x", "y")])
+        tracks.dt <- as.data.table(popTracks())
+        tracks.max <- colMax(tracks.dt[, c("x", "y")])
+        
+        # get blocks
+        # TODO this should be a reactive
+        block.size <- 128
+        x.max <- tracks.max[["x"]]
+        y.max <- tracks.max[["y"]]
+        
+        tiles.m <- ceiling(y.max/block.size)
+        tiles.n <- ceiling(x.max/block.size)
+        # M <- floor(y.max/tiles.m)
+        # N <- floor(x.max/tiles.n)
+        M <- y.max/tiles.m
+        N <- x.max/tiles.n
+        
+        block.list <- list()
+        
+        # get block list
+        for (x in seq(0, x.max, M)) {
+          for (y in seq(0, y.max, N)) {
+            block.list <- append(block.list, list(list(x1 = x, x2 = x + M, y1 = y, y2 = y + N)))
+          }
+        }
       })
       
       # track pairs
@@ -353,7 +393,8 @@ server <- function(input, output, session) {
         
         # save tracks
         # tracks.save.mod(cciaObj(), popTracksFiltered(), "OTI")
-        tracks.save.mod.tracks(cciaObj(), popTracksFiltered()$track_id, "OTI")
+        # tracks.save.mod.tracks(cciaObj(), popTracksFiltered()$track_id, "OTI")
+        tracks.save.mod.tracks(cciaObj(), popTracksFiltered()$track_id, "T")
         
         # call napari
         # viewer$highlightTracks(paste0(valueName, "-mod"), popTracksFiltered()$track_id, "filtered")
@@ -409,7 +450,8 @@ server <- function(input, output, session) {
               # multiple = TRUE,
               multiple = FALSE,
               # selected = isolate(resultParamsPops())
-              selected = c("OTI/tracked")
+              # selected = c("OTI/tracked")
+              selected = c("T/tracked")
               # selected = c("gBT+", "gBT+/clustered")
             )
           ),

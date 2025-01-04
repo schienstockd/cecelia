@@ -19,6 +19,9 @@ from skimage.morphology import remove_small_objects, convex_hull_image
 import py.script_utils as script_utils
 import py.config_utils as cfg
 
+# will there be a non-prototype version at some point?
+import pyclesperanto_prototype as cle
+
 """
 Convert coordinates to physical units
 """
@@ -257,7 +260,7 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   block_size = -1, overlap = -1, context = 1, gaussian_sigma = 1,
   clear_touching_border = True, clear_depth = False, timepoints = None, save_meshes = False,
   extended_measures = False, calc_median_intensities = False, integrate_time = False,
-  calc_intensities = True, slices = None):
+  calc_intensities = True, slices = None, top_hat = 0):
   # define base labels
   base_labels = 'base'
   labels_mode = 'default'
@@ -336,14 +339,27 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
       # channel should be at last position
       channel_idx = cur_im_dat.ndim - 1
       
+      # run top hat
+      if top_hat > 0:
+        logfile_utils.log(f'> Run TOP HAT {top_hat}')
+        
+        for i in range(cur_im_dat.shape[channel_idx]):
+          # construct index
+          idx = [slice(None)] * cur_im_dat.ndim
+          idx[channel_idx] = i
+          
+          cur_im_dat[tuple(idx)] = cle.nparray(cle.top_hat_box(
+            cur_im_dat[tuple(idx)], radius_x = top_hat, radius_y = top_hat, radius_z = 1))
+      
       # run gaussian
       if gaussian_sigma > 0:
+        logfile_utils.log(f'> Run GAUSSIAN {gaussian_sigma}')
+        
         # go through channels and run gaussian
         # not very elegant.. but ok
         # https://stackoverflow.com/a/42657219/13766165
         for i in range(cur_im_dat.shape[channel_idx]):
           # construct index
-          idx = [slice(None)] * cur_im_dat.ndim
           idx = [slice(None)] * cur_im_dat.ndim
           idx[channel_idx] = i
           
