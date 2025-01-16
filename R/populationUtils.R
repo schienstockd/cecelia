@@ -151,7 +151,7 @@ PopulationUtils <- R6::R6Class(
           x <- pops[[i]]
           
           # save as csv
-          write.csv(
+          data.table::fwrite(
             # popDT[pop == x,][, .(label)],
             popDT[pop == x,][, ..idCol],
             file.path(popsDir, paste0(i, ".csv")),

@@ -327,7 +327,7 @@ ggplot(datSummary, aes(location, freq, color = location)) +
 
 ggsave(file.path(anaDir, "YAP_positive.png"), width = 2, height = 2)
 
-write.csv(datSummary, file.path(anaDir, "YAP_positive.csv"))
+data.table::fwrite(datSummary, file.path(anaDir, "YAP_positive.csv"))
 ```
 
 ```{r}
@@ -611,7 +611,7 @@ ggplot(popToPlot %>% dplyr::filter(uID == "79ncGd"), aes(as.factor(1), ratio)) +
 # ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP.png"), height = 2, width = 2)
 # ggsave(file.path(anaDir, "ratio_nuc_cyto_YAP_indv.png"), height = 4, width = 20)
 
-# write.csv(popToPlot, file.path(anaDir, "ratio_nuc_cyto_YAP.csv"))
+# data.table::fwrite(popToPlot, file.path(anaDir, "ratio_nuc_cyto_YAP.csv"))
 ```
 
 ```{r}

@@ -121,7 +121,7 @@ ApplyAutospill <- R6::R6Class(
         fcs.names$wavelength <- ""
 
         # write marker file
-        write.csv(fcs.names, marker.file)
+        data.table::fwrite(fcs.names, marker.file)
 
         # calculate controls
         self$writeLog(">> Calculate controls")

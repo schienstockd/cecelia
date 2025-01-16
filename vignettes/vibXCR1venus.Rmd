@@ -204,7 +204,7 @@ t.test(
   paired = TRUE
 )
 
-write.csv(summaryDF, file.path(anaDir, "XCR1-contact.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "XCR1-contact.csv"))
 ```
 
 ```{r fig_clust_TRITC, fig.height=2, fig.width=1.5}
@@ -236,7 +236,7 @@ t.test(
   paired = TRUE
 )
 
-write.csv(summaryDF, file.path(anaDir, "TRITC-contact.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "TRITC-contact.csv"))
 ```
 
 ```{r fig_gating, fig.height=2, fig.width=2}

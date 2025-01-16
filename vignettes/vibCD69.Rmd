@@ -392,7 +392,7 @@ ggplot(dataToPlot, aes(Treatment, value, fill = spatial)) +
   # ylim(0, 1.5)
   # ylim(0, 1)
 
-write.csv(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
+data.table::fwrite(dataToPlot, file.path(anaDir, "spatial_stats.csv"))
 # ggsave(file.path(anaDir, "spatial_stats.tiff"), height = 2, width = 3)
 ```
 
@@ -465,7 +465,7 @@ ggplot(summaryToPlot, aes(
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 
-write.csv(summaryToPlot, file.path(anaDir, "CD69_all.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "CD69_all.csv"))
 ```
 
 ```{r fig_CD69_stats, fig.height = 1, fig.width = 1}
@@ -491,7 +491,7 @@ ggplot(summaryToPlot, aes(
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 
-write.csv(summaryToPlot, file.path(anaDir, "CD69_non-clustered.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "CD69_non-clustered.csv"))
 ```
 
 ```{r fig_CD69_TRITC_stats, fig.height = 3, fig.width = 5}
@@ -523,7 +523,7 @@ ggplot(summaryToPlot, aes(Treatment, freq, colour = pop)) +
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 
-write.csv(summaryToPlot, file.path(anaDir, "TRITC_contact.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "TRITC_contact.csv"))
 ```
 
 ```{r}
@@ -566,5 +566,5 @@ ggplot(summaryToPlot, aes(
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "DTx",]$Treatment.ID <- 2
 
-write.csv(summaryToPlot, file.path(anaDir, "gBT_clusters.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "gBT_clusters.csv"))
 ```

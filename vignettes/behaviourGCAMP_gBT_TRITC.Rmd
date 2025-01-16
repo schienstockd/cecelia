@@ -674,7 +674,7 @@ t.B <- t.test(
 print(paste("PBS-HSV", round(t.A$p.value, digits = 4)))
 print(paste("PBS-DTx", round(t.B$p.value, digits = 4)))
 
-# write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+# data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 ```
 
 ```{r fig_umap, fig.height=2, fig.width=2}
@@ -1062,7 +1062,7 @@ datToPlot <- datToPlot %>%
   complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
   # complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-# write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+# data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
 # ggplot(datToPlot, aes(clusters.name, freq,
@@ -1164,7 +1164,7 @@ datToPlot <- popDTs %>%
   ungroup() %>%
   complete(live.cell.track.clusters.hmm_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 ```
 
 ```{r fig_total_transitions, fig.height=1, fig.width=5}
@@ -1343,8 +1343,8 @@ ggsave(file.path(anaDir, "clusters_freq.png"), width = 5, height = 3)
 # summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 # summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
-write.csv(summaryDF, file = file.path(anaDir, "freq_clusters.csv"))
-# write.csv(summaryDF, file = file.path(anaDir, "freq_clusters_wo_clusters.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_clusters.csv"))
+# data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_clusters_wo_clusters.csv"))
 
 # t.A <- t.test(
 #   summaryDF[Treatment == "PBS" & DTx == "PBS" & clusters == 2]$freq.clusters,
@@ -1619,22 +1619,22 @@ ggplot(summaryDF,
 
 ggsave(file.path(anaDir, "clusters_GCAMP_freq.pdf"), width = 12, height = 3)
 
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 0),
 #           file.path(anaDir, "gcamp_behaviour_Mea.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 1),
 #           file.path(anaDir, "gcamp_behaviour_Dir.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 2),
 #           file.path(anaDir, "gcamp_behaviour_Sca.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 0),
 #           file.path(anaDir, "gcamp_behaviour_Uninf.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 1),
 #           file.path(anaDir, "gcamp_behaviour_PBS.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 2),
 #           file.path(anaDir, "gcamp_behaviour_DTx.csv"))
 ```
@@ -1704,13 +1704,13 @@ ggplot(summaryDF,
   # ylim(0, 1) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 0),
 #           file.path(anaDir, "Mea_gcamp.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 1),
 #           file.path(anaDir, "Dir_gcamp.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 2),
 #           file.path(anaDir, "Sca_gcamp.csv"))
 ```

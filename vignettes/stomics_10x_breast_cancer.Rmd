@@ -391,8 +391,8 @@ popDT.clust <- cciaObj$popDT("clust", pops = pops, includeFiltered = TRUE)
 # a <- popDT.labels[label %in% c(31572, 31579)]
 #b <- popDT.clust[clusters %in% c(5)]
 
-# write.csv(popDT.labels, file.path(anaDir, "pop.csv"))
-# write.csv(DT, file.path(anaDir, "pop.csv"))
+# data.table::fwrite(popDT.labels, file.path(anaDir, "pop.csv"))
+# data.table::fwrite(DT, file.path(anaDir, "pop.csv"))
 ```
 
 ```{r}
@@ -678,7 +678,7 @@ ggplot(summaryDT %>% drop_na(), aes(reorder(pop, freq), freq, fill = `branch-typ
 # ggsave(file.path(anaDir, 'stroma', 'aSf5Rr_branching_and_regions.png'), plot = p1, height = 4, width = 4)
 # ggsave(file.path(anaDir, 'stroma', 'aSf5Rr_branching_and_regions.png'), height = 4, width = 4)
 
-write.csv(summaryDT, file.path(anaDir, "aSf5Rr", "stroma_and_regions.csv"))
+data.table::fwrite(summaryDT, file.path(anaDir, "aSf5Rr", "stroma_and_regions.csv"))
 ```
 
 

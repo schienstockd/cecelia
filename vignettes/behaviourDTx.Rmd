@@ -657,7 +657,7 @@ datToPlot[datToPlot$DTx == "DTx",]$Treatment.ID <- 1
 datToPlot$pop.ID <- 0
 datToPlot[datToPlot$live.cell.is.clust == TRUE,]$pop.ID <- 1
 
-# write.csv(datToPlot, file.path(anaDir, "TRITC_contact.csv"))
+# data.table::fwrite(datToPlot, file.path(anaDir, "TRITC_contact.csv"))
 ```
 
 
@@ -1088,7 +1088,7 @@ datToPlot <- .mapClustNames(datToPlot, clusterMapping, "live.cell.track.clusters
   complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
   # complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
 # ggplot(datToPlot, aes(clusters.name, freq,
@@ -1360,16 +1360,16 @@ summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx 
 summaryDF$cell_id <- 0
 summaryDF[summaryDF$pop == "tcells.gDT/tracked",]$cell_id <- 1
 
-# write.csv(summaryDF %>% drop_na(clusters) %>% dplyr::filter(cell_id == 0),
-write.csv(summaryDF %>% drop_na(clusters.id) %>% dplyr::filter(cell_id == 0),
+# data.table::fwrite(summaryDF %>% drop_na(clusters) %>% dplyr::filter(cell_id == 0),
+data.table::fwrite(summaryDF %>% drop_na(clusters.id) %>% dplyr::filter(cell_id == 0),
           # file = file.path(anaDir, "freq_clusters_gBT.csv"))
           file = file.path(anaDir, "freq_clusters_gBT_wo_clusters.csv"))
-# write.csv(summaryDF %>% drop_na(clusters) %>% dplyr::filter(cell_id == 1),
-write.csv(summaryDF %>% drop_na(clusters.id) %>% dplyr::filter(cell_id == 1),
+# data.table::fwrite(summaryDF %>% drop_na(clusters) %>% dplyr::filter(cell_id == 1),
+data.table::fwrite(summaryDF %>% drop_na(clusters.id) %>% dplyr::filter(cell_id == 1),
           # file = file.path(anaDir, "freq_clusters_gDT.csv"))
           file = file.path(anaDir, "freq_clusters_gDT_wo_clusters.csv"))
 
-write.csv(summaryDF, file = file.path(anaDir, "freq_clusters.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_clusters.csv"))
 ```
 
 ```{r fig_gDT_behaviour, fig.height=4, fig.width=6}

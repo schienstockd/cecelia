@@ -576,7 +576,7 @@ summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx 
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
-write.csv(
+data.table::fwrite(
   summaryDF,
   file = file.path(anaDir, "freq_clusters.csv")
 )
@@ -780,22 +780,22 @@ ggplot(summaryDF,
 
 ggsave(file.path(anaDir, "clusters_GCAMP_freq.pdf"), width = 12, height = 3)
 
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 0),
 #           file.path(anaDir, "gcamp_behaviour_Mea.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 1),
 #           file.path(anaDir, "gcamp_behaviour_Dir.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 2),
 #           file.path(anaDir, "gcamp_behaviour_Sca.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 0),
 #           file.path(anaDir, "gcamp_behaviour_Uninf.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 1),
 #           file.path(anaDir, "gcamp_behaviour_PBS.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(Treatment.DTx == 2),
 #           file.path(anaDir, "gcamp_behaviour_DTx.csv"))
 ```
@@ -865,13 +865,13 @@ ggplot(summaryDF,
   # ylim(0, 1) +
   scale_fill_brewer(name = NULL, palette = "Set3")
 
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 0),
 #           file.path(anaDir, "Mea_gcamp.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 1),
 #           file.path(anaDir, "Dir_gcamp.csv"))
-# write.csv(summaryDF %>%
+# data.table::fwrite(summaryDF %>%
 #             dplyr::filter(live.cell.track.clusters.skip3 == 2),
 #           file.path(anaDir, "Sca_gcamp.csv"))
 ```

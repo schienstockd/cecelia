@@ -793,15 +793,19 @@
 #' @param yRange numeric(2) for y range
 #' @param plot_height numeric for plot height
 #' @param plot_width numeric for plot width
+#' @param flowColour character for coor palette
 #' @examples
 #' TODO
 #' @export
 .flowRasterBuild <- function(DT, flowX, flowY, colorMode = "dark", color = NULL,
                              reduction_func = NULL, colorBy = NULL,
                              xRange = NULL, yRange = NULL, plot_height = 256,
-                             plot_width = 256, ...) {
+                             plot_width = 256, flowColour = "Spectral", ...) {
   # dummy for reduction function
   DT[, on := 1]
+  
+  # get max colours
+  maxColours <- RColorBrewer::brewer.pal.info[flowColour,]$maxcolors
   
   # set range
   if (is.null(xRange))
@@ -828,7 +832,7 @@
     r1 <- r1 %>% rasterly::rasterly_points(
       # color = if (is.null(color)) rev(RColorBrewer::brewer.pal(11, "Spectral")) else color,
       color = if (is.null(color) && is.null(colorBy)) c(
-        "black", rev(RColorBrewer::brewer.pal(11, "Spectral"))
+        "black", rev(RColorBrewer::brewer.pal(maxColours, flowColour))
       ) else color,
       background = "#00000000",
       glyph = "square",
@@ -839,7 +843,7 @@
   } else {
     r1 <- r1 %>% rasterly::rasterly_points(
       color = if (is.null(color) && is.null(colorBy)) rev(
-        RColorBrewer::brewer.pal(11, "Spectral")) else color,
+        RColorBrewer::brewer.pal(maxColours, flowColour)) else color,
       background = "#22222200",
       glyph = "square",
       xlim = xRange,

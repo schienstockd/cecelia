@@ -606,7 +606,7 @@ datToPlot <- .mapClustNames(datToPlot, clusterMapping, "live.cell.track.clusters
   # complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
   complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 # ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
 ggplot(datToPlot, aes(clusters.name, freq,
@@ -716,7 +716,7 @@ datToPlot$clusters <- case_match(
   c("3") ~ "5",
 )
 
-write.csv(datToPlot %>% 
+data.table::fwrite(datToPlot %>% 
             drop_na(clusters) %>%
             arrange(clusters),
           file = file.path(anaDir, "freq_hmm.csv"))
@@ -905,13 +905,13 @@ summaryDF$cell.id <- 0
 summaryDF[summaryDF$clusters.name == "Meandering",]$cell.id <- 1
 summaryDF[summaryDF$clusters.name == "Scanning",]$cell.id <- 2
 
-# write.csv(summaryDF %>% drop_na(clusters) %>%
-write.csv(summaryDF %>% drop_na(clusters.name) %>%
+# data.table::fwrite(summaryDF %>% drop_na(clusters) %>%
+data.table::fwrite(summaryDF %>% drop_na(clusters.name) %>%
             dplyr::filter(Genotype.ID == 0),
           file = file.path(anaDir, "freq_clusters_B6.csv"))
           # file = file.path(anaDir, "freq_clusters_B6_wo_clusters.csv"))
-# write.csv(summaryDF %>% drop_na(clusters) %>%
-write.csv(summaryDF %>% drop_na(clusters.name) %>%
+# data.table::fwrite(summaryDF %>% drop_na(clusters) %>%
+data.table::fwrite(summaryDF %>% drop_na(clusters.name) %>%
             dplyr::filter(Genotype.ID == 1),
           file = file.path(anaDir, "freq_clusters_H2Kb.csv"))
           # file = file.path(anaDir, "freq_clusters_H2Kb_wo_clusters.csv"))
@@ -1029,5 +1029,5 @@ ggsave(file.path(anaDir, "HMM_freq.pdf"), width = 5, height = 2)
 datToPlot$Genotype.ID <- 1
 datToPlot[datToPlot$Genotype == "H2-Kb", ]$Genotype.ID <- 2
 
-write.csv(datToPlot, file.path(anaDir, "HMM_freq.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "HMM_freq.csv"))
 ```

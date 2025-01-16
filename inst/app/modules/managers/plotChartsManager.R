@@ -135,7 +135,7 @@ createPlotChartsManager <- function(
       paste("cciaPlot", Sys.time(), ".csv", sep = "")
     },
     content <- function(file) {
-      write.csv(managerConf$plotCharts$summaryData(), file)
+      data.table::fwrite(managerConf$plotCharts$summaryData(), file)
     },
     contentType = "text/csv" # MIME type of the file
   )

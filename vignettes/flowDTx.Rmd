@@ -109,7 +109,7 @@ for (x in unique(datToPlot$measure)) {
   counter <- counter + 1
 }
 
-write.csv(datToPlot, file.path(anaDir, "freq_measures_CTVpos.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "freq_measures_CTVpos.csv"))
 ```
 
 ```{r fig_act, fig.height=1.5, fig.width=5}
@@ -151,7 +151,7 @@ for (x in unique(datToPlot$measure)) {
   counter <- counter + 1
 }
 
-write.csv(datToPlot, file.path(anaDir, "freq_measures.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "freq_measures.csv"))
 ```
 
 
@@ -393,7 +393,7 @@ datToPlot$pop.ID <- 0
 datToPlot[datToPlot$pop == "CTV+CD69-",]$pop.ID <- 1
 datToPlot[datToPlot$pop == "CTV-",]$pop.ID <- 2
 
-write.csv(datToPlot %>% mutate(freq = freq * 100), file.path(anaDir, "freq_pops.csv"))
+data.table::fwrite(datToPlot %>% mutate(freq = freq * 100), file.path(anaDir, "freq_pops.csv"))
 ```
 
 ```{r fig_CTV, fig.height=3, fig.width=12}

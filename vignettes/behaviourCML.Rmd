@@ -276,7 +276,7 @@ ggplot(datToPlot, aes(Coating, mean, color = Treatment)) +
   facet_wrap(.~measure, ncol = 5, scales = "free") +
   expand_limits(y = 0)
   
-write.csv(datToPlot %>% dplyr::filter(Coating == "Collagen"), file.path(anaDir, "tracks_measures.csv"))
+data.table::fwrite(datToPlot %>% dplyr::filter(Coating == "Collagen"), file.path(anaDir, "tracks_measures.csv"))
 ```
 
 ```{r}
@@ -530,7 +530,7 @@ ggplot(summaryDF, aes(Treatment, freq.clusters, color = clusters.name)) +
   facet_grid(.~Coating)
 
 # ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 4.5, height = 4.5)
-# write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+# data.table::fwrite(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r fig_aniso, fig.height=4, fig.width=12}
@@ -557,7 +557,7 @@ t.test(
   )
 
 ggsave(file.path(anaDir, "Fields.pdf"), height = 4, width = 12)
-write.csv(datToPlot, file.path(anaDir, "Fields.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "Fields.csv"))
 ```
 
 ```{r}

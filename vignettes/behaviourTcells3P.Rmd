@@ -1620,7 +1620,7 @@ datToPlot <- popDTs %>%
   ungroup() %>%
   complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
                       fill = as.factor(live.cell.hmm.state.movement))) +
@@ -1881,7 +1881,7 @@ summaryDF[summaryDF$Treatment == "PBS" & summaryDF$DTx == "PBS",]$Treatment.DTx 
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
-write.csv(
+data.table::fwrite(
   summaryDF,
   file = file.path(anaDir, "freq_clusters.csv")
 )

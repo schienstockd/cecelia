@@ -114,6 +114,6 @@ ggplot(pbtClusters %>% left_join(exp.info), aes(Mouse, gfp)) +
 ```
 
 ```{r}
-write.csv(pbtClusters %>% left_join(exp.info), file.path(anaDir, "GFP_clusters.csv"))
+data.table::fwrite(pbtClusters %>% left_join(exp.info), file.path(anaDir, "GFP_clusters.csv"))
 ```
 

@@ -735,7 +735,7 @@ summaryDF <- regionsDT %>%
   complete(uID, pop, fill = list(freq = 0)) %>%
   left_join(exp.info)
 
-write.csv(summaryDF, file = file.path(anaDir, "freq_regions.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_regions.csv"))
 ```
 
 ```{r}
@@ -1345,7 +1345,7 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   popDefs[[x$getUID()]] <- as.data.table(t(as.data.frame(popDef[lengths(popDef) > 0])))
 }
 
-write.csv(rbindlist(popDefs, idcol = "uID"), file.path(anaDir, "population_definitions.csv"))
+data.table::fwrite(rbindlist(popDefs, idcol = "uID"), file.path(anaDir, "population_definitions.csv"))
 ```
 
 
@@ -2333,8 +2333,8 @@ summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <
 # summaryDF$pop.ID <- unname(sapply(summaryDF$pop, function(x) which(pops == x)))
 
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
-# write.csv(summaryDF, file.path(anaDir, "pop_freq.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+# data.table::fwrite(summaryDF, file.path(anaDir, "pop_freq.csv"))
 ```
 
 
@@ -2373,7 +2373,7 @@ summaryDF[summaryDF$Biopsy == "Pre" & summaryDF$Response == "y",]$Response.ID <-
 summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <- 3
 
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "regions_freq.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "regions_freq.csv"))
 ```
 
 ```{r fig_regions_heat, fig.height=5, fig.width=8}
@@ -2498,7 +2498,7 @@ ggplot(summaryDF,
 # summaryDF[summaryDF$Biopsy == "Post" & summaryDF$Response == "y",]$Response.ID <- 3
 
 # save as csv for plotting in Prism
-# write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+# data.table::fwrite(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r fig_pop_contact, fig.height=1.5, fig.width=4}
@@ -2558,7 +2558,7 @@ datToPlot[datToPlot$Biopsy == "Post" & datToPlot$Response == "y",]$Response.ID <
 datToPlot$pop.ID <- 0
 datToPlot[datToPlot$pop.contact == "Th.malignant.contact", ]$pop.ID <- 1
 
-write.csv(datToPlot, file.path(anaDir, "Th_ae_contact.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "Th_ae_contact.csv"))
 ```
 
 ```{r fig_pop_dist, fig.height=1.5, fig.width=4}
@@ -2614,7 +2614,7 @@ datToPlot[datToPlot$Biopsy == "Post" & datToPlot$Response == "y",]$Response.ID <
 datToPlot$pop.ID <- 0
 datToPlot[datToPlot$pop.dist == "Th.malignant.dist", ]$pop.ID <- 1
 
-write.csv(datToPlot, file.path(anaDir, "Th_ae_dist.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "Th_ae_dist.csv"))
 ```
 
 ```{r fig_pop_dist_ratio, fig.height=1.5, fig.width=4}
@@ -2657,7 +2657,7 @@ datToPlot[datToPlot$Biopsy == "Post" & datToPlot$Response == "y",]$Response.ID <
 datToPlot$pop.ID <- 0
 datToPlot[datToPlot$pop.ratio == "Th.malignant.v.Treg", ]$pop.ID <- 1
 
-write.csv(datToPlot, file.path(anaDir, "Th_ae_dist_ratio.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "Th_ae_dist_ratio.csv"))
 ```
 
 ```{r}
@@ -2740,6 +2740,6 @@ for (i in unique(freqRegions$pop.from)) {
   x[x$pop.to == "Treg", ]$pop.to.ID <- 2
   
   # save as csv for plotting in Prism
-  write.csv(x, file.path(anaDir, "interactions", paste0("interactions_freq_", i, ".csv")))
+  data.table::fwrite(x, file.path(anaDir, "interactions", paste0("interactions_freq_", i, ".csv")))
 }
 ```

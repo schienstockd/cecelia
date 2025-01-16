@@ -819,7 +819,7 @@ summaryDF$Treatment <- 0
 summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
 
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}
@@ -911,7 +911,7 @@ for (i in unique(freqRegions$clusters.from)) {
   x[x$Cohort == "ICI" & x$Response == "Yes",]$Treatment <- 1
   
   # save as csv for plotting in Prism
-  write.csv(x, file.path(anaDir, paste0("interactions_freq", i, ".csv")))
+  data.table::fwrite(x, file.path(anaDir, paste0("interactions_freq", i, ".csv")))
 }
 ```
 
@@ -1009,7 +1009,7 @@ summaryDF$Treatment <- 0
 summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
 
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "cluster_regions.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "cluster_regions.csv"))
 ```
 
 ```{r}
@@ -1104,7 +1104,7 @@ clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "No",]$Treatme
 clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "Yes",]$Treatment <- 2
 
 # save as csv for plotting in Prism
-write.csv(clusterDist, file.path(anaDir, "cluster_dist.csv"))
+data.table::fwrite(clusterDist, file.path(anaDir, "cluster_dist.csv"))
 ```
 
 ```{r fig_cluster_contact, fig.height=1.5, fig.width=14}

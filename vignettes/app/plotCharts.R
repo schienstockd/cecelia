@@ -1471,7 +1471,7 @@ server <- function(input, output, session) {
           paste("cciaPlot", Sys.time(), ".csv", sep = "")
         },
         content <- function(file) {
-          write.csv(pointsData(), file)
+          data.table::fwrite(pointsData(), file)
         },
         contentType = "text/csv" # MIME type of the file
       )

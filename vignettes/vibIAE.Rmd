@@ -199,5 +199,5 @@ ggplot(summaryDF, aes(Genotype, freq)) +
 summaryDF$Genotype.ID <- 0
 summaryDF[summaryDF$Genotype == "IAE",]$Genotype.ID <- 1
 
-write.csv(summaryDF, file.path(anaDir, "IAE_clusters.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "IAE_clusters.csv"))
 ```

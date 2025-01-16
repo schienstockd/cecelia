@@ -225,8 +225,8 @@ ggplot(data = summaryAssociation,
   facet_wrap(~pop.from, nrow = 1) +
   expand_limits(y = 0)
 
-# write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions.csv"))
-# write.csv(summaryAssociation, file.path(anaDir, "spatial_interactions_bin.csv"))
+# data.table::fwrite(summaryAssociation, file.path(anaDir, "spatial_interactions.csv"))
+# data.table::fwrite(summaryAssociation, file.path(anaDir, "spatial_interactions_bin.csv"))
 ```
 
 

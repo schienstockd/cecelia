@@ -59,7 +59,7 @@ Cellpose <- R6::R6Class(
       modelVisibilities <- self$funParamVisibilities("models", onlyVisible = TRUE)
       
       if (!is.null(modelVisibilities))
-        models <- models[names(modelVisibilities)]
+        models <- models[names(models) %in% names(modelVisibilities)]
       
       # check whether to use suffixes or not
       labelSuffixes <- list()

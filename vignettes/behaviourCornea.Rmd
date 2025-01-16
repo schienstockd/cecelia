@@ -704,7 +704,7 @@ ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), 
 ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
 
 # save as CSV
-write.csv(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
+data.table::fwrite(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
 ```
 
 ```{r fig_angles, fig.height=8, fig.width=8}
@@ -727,7 +727,7 @@ ggplot(datToPlot %>% left_join(exp.info), aes(Region, angle.norm)) +
 ggsave(file.path(anaDir, "track_alignment_boot_norm.png"), height = 4, width = 4)
 
 # save as CSV
-write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_norm.csv"))
+data.table::fwrite(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_alignment_norm.csv"))
 ```
 
 ```{r fig_aniso, fig.height=8, fig.width=8}
@@ -773,14 +773,14 @@ ggplot(datToPlot %>% left_join(exp.info), aes(Region, aniso.norm)) +
 ggsave(file.path(anaDir, "track_aniso_boot_norm.png"), height = 6, width = 4)
 
 # save as CSV
-write.csv(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_aniso_norm.csv"))
+data.table::fwrite(datToPlot %>% left_join(exp.info), file.path(anaDir, "track_aniso_norm.csv"))
 ```
 
 ```{r fig_aniso, fig.height=4, fig.width=12}
 # plot vessel measurements for each type
 vesselMeasures <- colnames(exp.info)[!colnames(exp.info) %in% c("uID", "Patient", "Region")]
 
-write.csv(exp.info, file.path(anaDir, "fibres.csv"))
+data.table::fwrite(exp.info, file.path(anaDir, "fibres.csv"))
 
 datToPlot <- exp.info %>%
   pivot_longer(cols = vesselMeasures,
@@ -1085,7 +1085,7 @@ datToPlot <- tracksMeasures %>%
                names_to = "measure", values_to = "value") %>%
   left_join(exp.info)
 
-write.csv(tracksMeasures %>%
+data.table::fwrite(tracksMeasures %>%
             left_join(exp.info[, c("uID", "Patient", "Type", "Group")]),
           file.path(anaDir, "tracks_summary.csv"))
 

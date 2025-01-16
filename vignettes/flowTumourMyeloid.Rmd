@@ -207,7 +207,7 @@ ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 14, height = 2)
 summaryToPlot$Treatment.ID <- 1
 summaryToPlot[summaryToPlot$Treatment == "B",]$Treatment.ID <- 2
 
-write.csv(summaryToPlot, file.path(anaDir, "clusters_freq.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}

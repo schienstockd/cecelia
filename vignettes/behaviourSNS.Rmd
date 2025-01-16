@@ -377,7 +377,7 @@ ggplot(summaryDF, aes(live.cell.track.clusters.hmm_transitions_movement, freq,
 # summaryDF[summaryDF$clusters.name == "Meandering", ]$cluster.ID <- 3
 # summaryDF[summaryDF$clusters.name == "Directed", ]$cluster.ID <- 4
 
-write.csv(summaryDF %>% arrange(live.cell.track.clusters.hmm_transitions_movement),
+data.table::fwrite(summaryDF %>% arrange(live.cell.track.clusters.hmm_transitions_movement),
           file.path(anaDir, "clusters_freq.csv"))
 ```
 
@@ -886,7 +886,7 @@ datToPlot <- datToPlot %>%
   ungroup() %>%
   complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 ggplot(datToPlot, aes(as.factor(clusters.name), freq,
                       fill = as.factor(live.cell.hmm.state.movement))) +
@@ -1193,7 +1193,7 @@ ggplot(baseSummary, aes(live.cell.hmm.state.movement, freq.base,
 
 ggsave(file.path(anaDir, "hmm_baseline.png"), height = 2, width = 2)
 
-write.csv(baseSummary %>% mutate(freq.base = freq.base * 100),
+data.table::fwrite(baseSummary %>% mutate(freq.base = freq.base * 100),
           file.path(anaDir, "hmm_baseline.csv"))
 ```
 

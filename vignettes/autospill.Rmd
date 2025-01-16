@@ -73,7 +73,7 @@ fcs.names$dye <- paste0(
 fcs.names$antigen <- "bead"
 fcs.names$wavelength <- ""
 
-# write.csv(fcs.names, marker.file)
+# data.table::fwrite(fcs.names, marker.file)
 ```
 
 

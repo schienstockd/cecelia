@@ -40,6 +40,228 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE 
+)
+
+for (x in cciaObj$cciaObjects()) {
+  print(paste(x$getUID(), x$imFilepath()))
+}
+```
+```{r fig_flow_gating, fig.height=8, fig.width=12}
+# plot out gating strategy
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE # Set
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- c("k5TJmF")
+
+# positions for population labels
+labelPos <- list(
+  # "/nonDebris" = list(x = 5000, y = 500),
+)
+
+plotWidth <- 8
+plotHeight <- 5
+nRow <- 2
+nCol <- 3
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs[uIDs != "pxKIwV"])) {
+  p1s <- .flowPlotGatedRaster(
+    x,
+    labelPos = labelPos, asContours = TRUE, showPopColours = FALSE,
+    labelBorder = 0.2, labelAlpha = 0.8)
+    # plot_height = 128, plot_width = 128)
+    # flowColour = "RdYlBu")
+    # flowColour = "Greys")
+  
+  p2 <- ggpubr::ggarrange(plotlist = p1s, nrow = nRow, ncol = nCol)
+  ggsave(file.path(anaDir, "gating", paste0(x$getUID(), ".pdf")), plot = p2, width = plotWidth, height = plotHeight)
+}
+```
+
+```{r}
+# plot out positions of populations
+# show branching populations
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[Include == "Y"]$uID
+
+popDT.all <- cciaObj$popDT(
+  popType = "flow", pops = c(
+    "/cells/qc", "/cells/qc/CD8", "/cells/qc/CD8/CD103", "/cells/qc/CD8/Tcirc",
+    "/cells/qc/CD8/CD103/Trm", "/cells/qc/CD8/CD103/Tex"),
+  uIDs = uIDs, uniqueLabels = FALSE)
+
+popDT <- cciaObj$popDT(
+  popType = "flow", pops = c(
+    "/cells/qc", "/cells/qc/CD8", "/cells/qc/CD8/CD103", "/cells/qc/CD8/Tcirc",
+    "/cells/qc/CD8/CD103/Trm", "/cells/qc/CD8/CD103/Tex"),
+  uIDs = uIDs)
+
+# add boolean gates
+pop.Trx <- dplyr::inner_join(
+  popDT.all[pop == "/cells/qc/CD8/CD103/Trm", c("uID", "label")],
+  popDT.all[pop == "/cells/qc/CD8/CD103/Tex", c("uID", "label")]
+)
+pop.Trx$pop <- "/cells/qc/CD8/CD103/Tundef"
+
+popDT[pop.Trx, on = c("uID", "label"), pop := i.pop]
+```
+
+```{r fig_flow_pops, fig.height=12, fig.width=32}
+# plot out
+
+# boolean gate on both
+ggplot(popDT, aes(centroid_x, -centroid_y)) +
+  theme_classic() +
+  coord_fixed() +
+  geom_point(data = popDT[pop == "/cells/qc"], color = "#36454F") +
+  geom_point(data = popDT[pop == "/cells/qc/CD8"], color = "darkgrey") +
+  # geom_point(data = popDT[pop == "/cells/qc/CD8/CD103"], color = "#327EBA") +
+  # geom_point(data = popDT[pop == "/cells/qc/CD8/Tcirc"], color = "#1B9E77") +
+  geom_point(data = popDT[pop == "/cells/qc/CD8/CD103/Trm"], color = "#FFFF00") +
+  geom_point(data = popDT[pop == "/cells/qc/CD8/CD103/Tex"], color = "#AA1F5E") +
+  geom_point(data = popDT[pop == "/cells/qc/CD8/CD103/Tundef"], color = "#327EBA") +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "none",
+    # strip.background = element_rect(fill = NA, color = "black", size = 2)
+    strip.text = element_text(color = "black")
+  ) + facet_wrap(.~uID, ncol = 2)
+
+ggsave(file.path(anaDir, "pop_pos.png"), width = 12, height = 16)
+```
+
+```{r fig_markers, fig.height=20, fig.width=20}
+# plot sanity checks for Trm, Tex, Trx
+x <- "GZMB"
+pops <- c("/cells/qc/CD8/CD103", "/cells/qc/CD8/CD103/Trm", "/cells/qc/CD8/CD103/Tex", "/cells/qc/CD8/CD103/Tundef")
+pop.colours <- list(
+  `/cells/qc/CD8/CD103` = "darkgrey",
+  `/cells/qc/CD8/CD103/Trm` = "#FFFF00",
+  `/cells/qc/CD8/CD103/Tex` = "#AA1F5E",
+  `/cells/qc/CD8/CD103/Tundef` = "#327EBA"
+)
+
+# get channel names
+channelNames <- unique(unlist(sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) x$imChannelNames())))
+channelNames <- channelNames[channelNames != "DNA3"]
+channelNames <- channelNames[!startsWith(channelNames, "DNA")]
+channelNames <- channelNames[!startsWith(channelNames, "bg")]
+# channelNames <- channelNames[1:5]
+
+popDT.pops <- copy(popDT[pop %in% pops])
+datToPlot <- as.data.table(popDT.pops %>%
+  pivot_longer(cols = channelNames, names_to = "marker", values_to = "mfi"))
+
+# for (i in uIDs) {
+for (i in channelNames) {
+  # p1 <- ggplot(datToPlot, aes(mfi, DNA3, colour = pop)) +
+  # p1 <- ggplot(datToPlot[uID == i], aes(mfi, fill = pop)) +
+  p1 <- ggplot(datToPlot[marker == i], aes(mfi, fill = pop)) +
+  # ggplot(datToPlot, aes(mfi, DNA3, colour = pop)) +
+  # ggplot(datToPlot, aes(mfi, fill = pop)) +
+    theme_classic() +
+    # geom_point() +
+    geom_density(color = "black", alpha = 0.8) +
+    scale_color_manual(values = pop.colours) +
+    scale_fill_manual(values = pop.colours) +
+    # facet_wrap(.~marker, ncol = 10, scales = "free_y") +
+    facet_wrap(.~uID, ncol = 10, scales = "free_y") +
+    theme(
+      legend.justification = "center",
+      legend.position = "bottom"
+    )
+  
+  # ggsave(file.path(anaDir, "CD103_marker_mfi", paste(i, ".png")), plot = p1, width = 14, height = 8)
+  ggsave(file.path(anaDir, "CD103_marker_mfi", "markers", paste(i, ".png")), plot = p1, width = 12, height = 2.5)
+}
+
+data.table::fwrite(popDT.pops, file.path(anaDir, "pops.csv"))
+```
+
+
+```{r}
+# show branching populations
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "pxKIwV", versionID = versionID, initReactivity = FALSE 
+)
+
+pops <- cciaObj$popPaths("branch", includeFiltered = TRUE, includeRoot = FALSE)
+pops <- pops[stringr::str_detect(pops, "(one|two)$")]
+
+# get branching pops
+popDT <- cciaObj$popDT("branch", pops = pops, includeFiltered = TRUE)
+```
+
+```{r}
+# get colours
+popDT[, density := .flowColours(.SD$centroid_x, .SD$centroid_y),
+      # by = c("uID", "value_name"), .SDcols = c("centroid_x", "centroid_y")]
+      by = c("value_name"), .SDcols = c("centroid_x", "centroid_y")]
+```
+
+
+```{r fig_branch_pops, fig.height=8, fig.width=24}
+# plot out
+ggplot(popDT, aes(centroid_x, -centroid_y)) +
+  theme_classic() +
+  coord_fixed() +
+  geom_point(color = popDT$density) +
+  plotThemeDark() +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    legend.justification = "center",
+    legend.position = "none",
+    # strip.background = element_rect(fill = NA, color = "black", size = 2)
+    strip.text = element_text(color = "black")
+  ) + facet_grid(value_name~.)
+
+ggsave(file.path(anaDir, "branch_pops.png"), height = 12, width = 6)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   pID = pID, uID = "rQ8fni", versionID = versionID, initReactivity = FALSE 
 )
 

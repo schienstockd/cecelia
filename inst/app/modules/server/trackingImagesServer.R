@@ -416,7 +416,10 @@
         }
         
         # return layout
-        tagList(tracksPlots)
+        tagList(
+          list(tracksPlots, br(), br(),
+               downloadButton(session$ns("downloadTracksStatsCSV"), "Download csv-file"))
+        )
       })
       
       # show same stats for each image that is selected
@@ -504,7 +507,8 @@
               "tracksPlotsSetLayoutAxisCellTypes", input,
               cciaObj()$valueNames("imLabelPropsFilepath")
             )
-          ))
+          )),
+          column(2, br(), downloadButton(session$ns("downloadTracksStatsSetCSV"), "Download csv-file"))
         )
       })
       
@@ -551,6 +555,27 @@
       output$tracksPlotsSummary <- renderUI({
         tags$label("TODO Overview table with mice and treatments here")
       })
+      
+      # CSV download
+      output$downloadTracksStatsCSV <- downloadHandler(
+        filename <- function() {
+          paste("cciaPlot", Sys.time(), ".csv", sep = "")
+        },
+        content <- function(file) {
+          data.table::fwrite(data.table::rbindlist(tracksStats(), idcol = "measure"), file)
+        },
+        contentType = "text/csv" # MIME type of the file
+      )
+      
+      output$downloadTracksStatsSetCSV <- downloadHandler(
+        filename <- function() {
+          paste("cciaPlot", Sys.time(), ".csv", sep = "")
+        },
+        content <- function(file) {
+          data.table::fwrite(data.table::rbindlist(tracksStatsSet(), idcol = "measure"), file)
+        },
+        contentType = "text/csv" # MIME type of the file
+      )
       
       ## Other
       

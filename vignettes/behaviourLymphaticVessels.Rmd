@@ -283,7 +283,7 @@ ggplot(datToPlot, aes(contact, speed)) +
     width = 0.4) +
   geom_boxplot(outlier.alpha = 0)
 
-write.csv(datToPlot, file.path(anaDir, "dist_tresh.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "dist_tresh.csv"))
 ```
 
 
@@ -578,7 +578,7 @@ datToPlot <- popDTs %>%
   ungroup() %>%
   complete(live.cell.track.clusters.hmm_transitions_movement, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
                       fill = as.factor(live.cell.hmm.state.movement))) +
@@ -694,7 +694,7 @@ ggsave(file.path(anaDir, "clusters_freq.pdf"), width = 10, height = 3)
 # summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "PBS",]$Treatment.DTx <- 1
 # summaryDF[summaryDF$Treatment == "HSV" & summaryDF$DTx == "DTx",]$Treatment.DTx <- 2
 
-write.csv(
+data.table::fwrite(
   summaryDF,
   file = file.path(anaDir, "freq_clusters.csv")
 )
@@ -777,7 +777,7 @@ ggplot(datToPlot, aes(clusters.name, median.dist,
   ylab("Distance from lymphatics (μm)") + xlab("") +
   # ylim(0, 5) +
   scale_color_brewer(name = NULL, palette = "Set1")
-write.csv(datToPlot, file = file.path(anaDir, "hmm_dist.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "hmm_dist.csv"))
 ```
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
@@ -978,7 +978,7 @@ dfToPlot <- popDTs %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100)
 
-write.csv(dfToPlot, file.path(anaDir, "clusters_freq.csv"))
+data.table::fwrite(dfToPlot, file.path(anaDir, "clusters_freq.csv"))
 
 ggplot(dfToPlot,
        aes(
@@ -1011,7 +1011,7 @@ dfToPlot <- tracksInfo %>%
   # group_by(uID, live.cell.track.clusters.movement) %>%
   # summarise(mean.contact = time.interval * mean(`live.cell.contact#live.DC/tracked.TRUE.n`))
 
-write.csv(dfToPlot, file.path(anaDir, "tracks_contact_DC.csv"))
+data.table::fwrite(dfToPlot, file.path(anaDir, "tracks_contact_DC.csv"))
 
 ggplot(dfToPlot, aes(live.cell.track.clusters.movement, DC.contact)) +
   theme_classic() +
@@ -1062,7 +1062,7 @@ occupancyDT <- popDC %>%
 
 ```{r fig_DC_occupancy, fig.height=1, fig.width=1}
 # plot out
-write.csv(occupancyDT, file.path(anaDir, "DC_occupancy.csv"))
+data.table::fwrite(occupancyDT, file.path(anaDir, "DC_occupancy.csv"))
 
 ggplot(occupancyDT, aes(clusters, freq)) +
   theme_classic() +
@@ -1090,7 +1090,7 @@ dfToPlot <- tracksInfo %>%
   group_by(uID, live.cell.track.clusters.movement) %>%
   summarise(mean.contact = time.interval * mean(`live.cell.contact#live.DC/tracked.TRUE.n`))
 
-write.csv(dfToPlot, file.path(anaDir, "clusters_contact_DC.csv"))
+data.table::fwrite(dfToPlot, file.path(anaDir, "clusters_contact_DC.csv"))
 
 ggplot(dfToPlot,
        aes(
@@ -1151,7 +1151,7 @@ dfToPlot <- tracksInfo %>%
     mean.time.per.DC = mean(time.per.DC, na.rm = TRUE)
     )
 
-write.csv(dfToPlot, file.path(anaDir, "clusters_contacts_DC.csv"))
+data.table::fwrite(dfToPlot, file.path(anaDir, "clusters_contacts_DC.csv"))
 
 ggplot(dfToPlot,
        aes(

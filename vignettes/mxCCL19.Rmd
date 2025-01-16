@@ -245,7 +245,7 @@ ggplot(datToPlot, aes(DTx, freq)) +
   ylim(0, 100)
 
 ggsave(file.path(anaDir, "P14_clustering.pdf"), width = 2, height = 2)
-write.csv(datToPlot, file.path(anaDir, "P14_clustering.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "P14_clustering.csv"))
 ```
 
 ```{r}
@@ -284,7 +284,7 @@ ggplot(datToPlot, aes(DTx, freq, color = contact_type)) +
   facet_grid(.~popState)
 
 ggsave(file.path(anaDir, "P14_cluster_interactions.pdf"), width = 5, height = 2)
-write.csv(datToPlot, file.path(anaDir, "P14_cluster_interactions.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "P14_cluster_interactions.csv"))
 ```
 
 ```{r}
@@ -331,7 +331,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_interactions.pdf"), width = 3, height = 2)
-write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "P14_triplet_interactions.csv"))
 ```
 
 ```{r fig_triplet, fig.height=3, fig.width=3}
@@ -358,7 +358,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_CD11c_interactions.pdf"), width = 3, height = 2)
-write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_CD11c_interactions.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "P14_triplet_CD11c_interactions.csv"))
 ```
 
 ```{r fig_triplet, fig.height=3, fig.width=3}
@@ -384,7 +384,7 @@ ggplot(summaryToPlot, aes(DTx, freq, color = popState)) +
   scale_color_brewer(palette = "Set2")
 
 ggsave(file.path(anaDir, "P14_triplet_XCR1_interactions.pdf"), width = 3, height = 2)
-write.csv(summaryToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
+data.table::fwrite(summaryToPlot, file.path(anaDir, "P14_triplet_XCR1_interactions.csv"))
 ```
 
 

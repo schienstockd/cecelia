@@ -1101,7 +1101,7 @@ ggplot(hmmTime,
   # scale_x_continuous(limits = c(5, 40), breaks = seq(0, 120, 20)) +
   # scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, 50))
 
-# write.csv(hmmTime %>% mutate(
+# data.table::fwrite(hmmTime %>% mutate(
 #   time = centroid_t * time.interval
 #   ), file.path(anaDir, "hmm_time.csv"))
 ```
@@ -1298,7 +1298,7 @@ ggplot(hmmTime %>% dplyr::filter(uID == "dFQ1N7"),
 # ggsave(file.path(anaDir, "tbh61I_hmm_time.pdf"), height = 2, width = 3)
 ggsave(file.path(anaDir, "dFQ1N7_hmm_time.pdf"), height = 2, width = 2)
 
-# write.csv(hmmTime %>% mutate(
+# data.table::fwrite(hmmTime %>% mutate(
 #   time = centroid_t * time.interval
 #   ), file.path(anaDir, "hmm_time.csv"))
 ```
@@ -1369,5 +1369,5 @@ ggplot(datToPlot,
 
 ggsave(file.path(anaDir, "base_freq.pdf"), width = 5, height = 4)
 
-write.csv(datToPlot, file.path(anaDir, "hmm_window.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "hmm_window.csv"))
 ```

@@ -585,7 +585,7 @@ summaryDF <- popDTs %>%
   mutate(freq = 100 - freq) %>%
   left_join(exp.info)
 
-write.csv(summaryDF, file = file.path(anaDir, "freq_clust.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_clust.csv"))
 ```
 
 ```{r fig_umap, fig.height=4, fig.width=4}
@@ -699,7 +699,7 @@ summaryDF$cell_ID <- 0
 summaryDF[summaryDF$pop == "gBT/tracked",]$cell_ID <- 0
 summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
 
-write.csv(summaryDF, file = file.path(anaDir, "freq_clust.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "freq_clust.csv"))
 ```
 
 ```{r}
@@ -726,7 +726,7 @@ summaryDF$cell_ID <- 0
 summaryDF[summaryDF$pop == "gBT/tracked",]$cell_ID <- 0
 summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
 
-write.csv(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
 ```
 
 
@@ -1095,7 +1095,7 @@ datToPlot <- datToPlot %>%
   ungroup() %>%
   complete(clusters.name, live.cell.hmm.state.movement, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 # ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_movement), freq,
 ggplot(datToPlot, aes(as.factor(clusters.name), freq,
@@ -1217,9 +1217,9 @@ summaryDF[summaryDF$pop == "gDT/tracked",]$cell_ID <- 1
 
 summaryDF$clusters.id <- as.numeric(summaryDF$clusters.name)
 
-write.csv(summaryDF[summaryDF$cell_ID == 0,],
+data.table::fwrite(summaryDF[summaryDF$cell_ID == 0,],
           file = file.path(anaDir, "freq_clusters_gBT.csv"))
-write.csv(summaryDF[summaryDF$cell_ID == 1,],
+data.table::fwrite(summaryDF[summaryDF$cell_ID == 1,],
           file = file.path(anaDir, "freq_clusters_gDT.csv"))
 ```
 

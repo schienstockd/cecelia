@@ -529,8 +529,8 @@ ProjectManager <- R6::R6Class(
       projectInfo <- self$projectTable(onlyProject = TRUE)
       bookmarkInfo <- self$projectVersionTable()
       
-      write.csv(projectInfo, projectFile, row.names = FALSE)
-      write.csv(bookmarkInfo, bookmarksFile, row.names = FALSE)
+      data.table::fwrite(projectInfo, projectFile)
+      data.table::fwrite(bookmarkInfo, bookmarksFile)
       
       # save bookmarks
       bookmarkDirs <- sapply(

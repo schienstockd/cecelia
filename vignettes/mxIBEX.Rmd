@@ -681,7 +681,7 @@ ggplot(summaryDT %>% drop_na(), aes(reorder(pop, freq), freq, fill = `branch-typ
 # ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_and_regions.png'), plot = p1, height = 4, width = 4)
 ggsave(file.path(anaDir, 'stroma', 'n22foC_branching_and_regions.png'), height = 4, width = 4)
 
-write.csv(summaryDT, file.path(anaDir, "stroma", "stroma_and_regions.csv"))
+data.table::fwrite(summaryDT, file.path(anaDir, "stroma", "stroma_and_regions.csv"))
 ```
 
 ```{r}
@@ -911,7 +911,7 @@ ggplot(summaryDF,
   ylab("Population (%)") + xlab("") +
   scale_fill_brewer(name = NULL, palette = "Set3")
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "clusters_freq.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "clusters_freq.csv"))
 ```
 
 ```{r}
@@ -1001,7 +1001,7 @@ for (i in unique(freqRegions$clusters.from)) {
   print(p1)
   
   # save as csv for plotting in Prism
-  write.csv(x, file.path(anaDir, paste0("interactions_freq", i, ".csv")))
+  data.table::fwrite(x, file.path(anaDir, paste0("interactions_freq", i, ".csv")))
 }
 ```
 
@@ -1112,7 +1112,7 @@ ggplot(summaryDF,
 summaryDF$Treatment <- 0
 summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
 # save as csv for plotting in Prism
-write.csv(summaryDF, file.path(anaDir, "cluster_regions.csv"))
+data.table::fwrite(summaryDF, file.path(anaDir, "cluster_regions.csv"))
 ```
 
 ```{r}
@@ -1196,7 +1196,7 @@ clusterDist$Treatment <- 0
 clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "No",]$Treatment <- 1
 clusterDist[clusterDist$Cohort == "ICI" & clusterDist$Response == "Yes",]$Treatment <- 2
 # save as csv for plotting in Prism
-write.csv(clusterDist, file.path(anaDir, "cluster_dist.csv"))
+data.table::fwrite(clusterDist, file.path(anaDir, "cluster_dist.csv"))
 ```
 
 ```{r fig_cluster_contact, fig.height=1.5, fig.width=14}

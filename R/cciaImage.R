@@ -2195,9 +2195,13 @@ CciaImage <- R6::R6Class(
       labelsView <- self$labelProps(valueName = valueName)
       
       # get extra columns
-      if (length(labelsView$channel_types()) > 0) {
+      # channelTypes <- 
+      channelTypes <- reticulate::py_eval(
+        paste("list(", labelsView$channel_types(), ")"))
+      
+      if (length(channelTypes) > 0) {
         extraChannelColumns <- unlist(lapply(
-          labelsView$channel_types(), function(x) {
+          channelTypes, function(x) {
             labelsView$channel_columns(prefix = x)
           }))
       }

@@ -291,7 +291,7 @@ ggplot(datToPlot, aes(interaction, pos, color = treatment)) +
 ggsave(file.path(anaDir, "gating", "analysis", "interactions.png"),
        width = 6, height = 5)
 
-write.csv(datToPlot, file.path(anaDir, "gating", "analysis", "interactions.csv"))
+data.table::fwrite(datToPlot, file.path(anaDir, "gating", "analysis", "interactions.csv"))
 ```
 
 ```{r fig_regions, fig.height=3, fig.width=8}

@@ -98,7 +98,7 @@ ggplot(vMeasures, aes(cell_type, speed, color = source)) +
   # scale_color_brewer(name = "Treatment", palette = "Set3") 
   # facet_grid(.~pop)
 
-write.csv(vMeasures, file.path(anaDir, "vMeasures.csv"))
+data.table::fwrite(vMeasures, file.path(anaDir, "vMeasures.csv"))
 ```
 
 
@@ -421,7 +421,7 @@ summaryDF[summaryDF$pop == "gBT",]$cell_ID <- 0
 summaryDF[summaryDF$pop == "gDT",]$cell_ID <- 1
 summaryDF[summaryDF$pop == "DCs",]$cell_ID <- 2
 
-write.csv(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
+data.table::fwrite(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
 ```
 
 
@@ -723,7 +723,7 @@ sumPlot <- dfToPlot %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100)
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_clusters.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_clusters.csv"))
 
 ggplot(sumPlot,
   # aes(clusters, freq, fill = type)) +
@@ -903,7 +903,7 @@ datToPlot <- popDTs %>%
   # complete(live.cell.track.clusters.hmm_transitions_alt, hmm_type, hmm_value, fill = list(freq = 0))
   complete(live.cell.track.clusters.hmm_transitions, hmm_type, hmm_value, fill = list(freq = 0))
 
-write.csv(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
+data.table::fwrite(datToPlot, file = file.path(anaDir, "freq_hmm.csv"))
 
 # ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions_alt), freq,
 ggplot(datToPlot, aes(as.factor(live.cell.track.clusters.hmm_transitions), freq,
