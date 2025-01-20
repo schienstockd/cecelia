@@ -31,7 +31,9 @@ library(tidyverse)
 
 ```{r}
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/gut"
-anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/"
+# anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/"
+# anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/MACSIMA/ANALYSIS/"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/MACSIMA/ANALYSIS/"
 ```
 
 ```{r}
@@ -47,6 +49,7 @@ for (x in cciaObj$cciaObjects()) {
   print(paste(x$getUID(), x$imFilepath()))
 }
 ```
+
 ```{r fig_flow_gating, fig.height=8, fig.width=12}
 # plot out gating strategy
 devtools::load_all("../")
@@ -67,12 +70,13 @@ labelPos <- list(
   # "/nonDebris" = list(x = 5000, y = 500),
 )
 
-plotWidth <- 8
+plotWidth <- 10
 plotHeight <- 5
 nRow <- 2
-nCol <- 3
+nCol <- 4
 
-for (x in cciaObj$cciaObjects(uIDs = uIDs[uIDs != "pxKIwV"])) {
+# for (x in cciaObj$cciaObjects(uIDs = uIDs[uIDs != "pxKIwV"])) {
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   p1s <- .flowPlotGatedRaster(
     x,
     labelPos = labelPos, asContours = TRUE, showPopColours = FALSE,
@@ -94,34 +98,113 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE 
+  # pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE # CyCIF
+  pID = pID, uID = "eUh2KP", versionID = versionID, initReactivity = FALSE # MACSima
 )
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info$uID
+# uIDs <- c("pxKIwV")
 
-popDT.all <- cciaObj$popDT(
-  popType = "flow", pops = c(
-    "/cells/qc", "/cells/qc/CD8", "/cells/qc/CD8/CD103", "/cells/qc/CD8/Tcirc",
-    "/cells/qc/CD8/CD103/Trm", "/cells/qc/CD8/CD103/Tex"),
-  uIDs = uIDs, uniqueLabels = FALSE)
-
-popDT <- cciaObj$popDT(
-  popType = "flow", pops = c(
-    "/cells/qc", "/cells/qc/CD8", "/cells/qc/CD8/CD103", "/cells/qc/CD8/Tcirc",
-    "/cells/qc/CD8/CD103/Trm", "/cells/qc/CD8/CD103/Tex"),
-  uIDs = uIDs)
-
-# add boolean gates
-pop.Trx <- dplyr::inner_join(
-  popDT.all[pop == "/cells/qc/CD8/CD103/Trm", c("uID", "label")],
-  popDT.all[pop == "/cells/qc/CD8/CD103/Tex", c("uID", "label")]
+pops <- c(
+  # CyCIF
+  # "/cells/qc", "/cells/qc/CD8+/CD103-", "/cells/qc/CD8+/Tcirc",
+  # "/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-",
+  # "/cells/qc/O1/CD4+/Treg", "/cells/qc/O1/CD4+/Tconv",
+  # "/cells/qc/O1/O2/pCK"
+  # MACSima
+  # "/cells/CD8+", "/cells/CD8+/CD103+"
+  "/cells/CD8+/CD103+"
 )
-pop.Trx$pop <- "/cells/qc/CD8/CD103/Tundef"
 
-popDT[pop.Trx, on = c("uID", "label"), pop := i.pop]
+popDT <- cciaObj$popDT(popType = "flow", pops = pops, uIDs = uIDs)
+
+# # get region information
+# regionDT <- cciaObj$popDT(
+#   popType = "region", pops = c("A", "B", "C"), includeFiltered = TRUE, uIDs = uIDs)
+# 
+# # get spatial
+# spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
+# 
+# # join pops
+# spatialDT[popDT[, c("uID", "label", "pop")],
+#           on = c("uID", "to" = "label"),
+#           pop.to := pop]
+# spatialDT[popDT[, c("uID", "label", "pop")],
+#           on = c("uID", "from" = "label"),
+#           pop.from := pop]
+# spatialDT[regionDT[, c("uID", "label", "pop")],
+#           on = c("uID", "to" = "label"),
+#           region.to := pop]
+# spatialDT[regionDT[, c("uID", "label", "pop")],
+#           on = c("uID", "from" = "label"),
+#           region.from := pop]
+
+# popDT.all <- cciaObj$popDT(
+#   popType = "flow", pops = pops,
+#   uIDs = uIDs, uniqueLabels = FALSE)
+# 
+# # add boolean gates
+# pop.Trx <- dplyr::inner_join(
+#   popDT.all[pop == "/cells/qc/CD8/CD103/Trm", c("uID", "label")],
+#   popDT.all[pop == "/cells/qc/CD8/CD103/Tex", c("uID", "label")]
+# )
+# pop.Trx$pop <- "/cells/qc/CD8/CD103/Tundef"
+# 
+# popDT[pop.Trx, on = c("uID", "label"), pop := i.pop]
 ```
+
+```{r fig_gating_markers, fig.height=20, fig.width=20}
+# ok .. can you plot out TRM/TEX markers and see which ones
+# you could use for gating
+markers <- c(
+  "CD45RO", "TCR_Valpha7_2", "CD103", "Ki_67", "CD45RA", "CD69", "TOX",
+  "CD244", "CD39", "CD94", "CD101", "CD61", "PD.1", "GNLY", "GrzB"
+)
+
+datToPlot <- popDT %>%
+  pivot_longer(cols = markers, names_to = "marker", values_to = "intensity")
+
+popDT[uID == x$getUID()]
+
+unique(popDT$uID)
+
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  p1 <- ggpairs(popDT[uID == x$getUID()], columns = markers,
+                aes(color = pop, alpha = 0.5)) +
+    scale_color_brewer(name = NULL, palette = "Set1")
+  
+  ggsave(file.path(anaDir, paste0(x$getUID(), "_marker_pairs.png")),
+         height = 20, width = 26, plot = p1)
+}
+```
+
+
+```{r}
+# ok .. distance of GNLY+ to GNLY-
+# pops.to.analyse <- c("/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-")
+pops.from <- c("/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-")
+pops.to <- c("/cells/qc/O1/O2/pCK")
+
+spatialPopsDT <- spatialDT[pop.from %in% pops.from & pop.to %in% pops.to]
+```
+
+```{r fig_pops_dist, fig.height=3, fig.width=5}
+# ggplot(spatialPopsDT, aes(pop.from, dist, fill = region.to)) +
+ggplot(spatialPopsDT, aes(region.to, dist, fill = pop.from)) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  theme(
+    legend.justification = "left",
+    legend.position = "bottom"
+    # legend.position = "none"
+  ) 
+```
+
 
 ```{r fig_flow_pops, fig.height=12, fig.width=32}
 # plot out
@@ -154,6 +237,52 @@ ggplot(popDT, aes(centroid_x, -centroid_y)) +
   ) + facet_wrap(.~uID, ncol = 2)
 
 ggsave(file.path(anaDir, "pop_pos.png"), width = 12, height = 16)
+```
+
+```{r fig_markers, fig.height=12, fig.width=20}
+# plot sanity checks for Trm, Tex, Trx
+channelNames <- unique(unlist(sapply(cciaObj$cciaObjects(uIDs = uIDs), function(x) x$imChannelNames())))
+channelNames <- channelNames[channelNames != "DNA3"]
+channelNames <- channelNames[!startsWith(channelNames, "DNA")]
+channelNames <- channelNames[!startsWith(channelNames, "bg")]
+# channelNames <- channelNames[1:2]
+
+popDT.pops <- copy(popDT[pop %in% pops[pops != "/cells/qc"]])
+datToPlot <- as.data.table(popDT.pops %>%
+  pivot_longer(cols = channelNames, names_to = "marker", values_to = "mfi"))
+
+# for (i in uIDs) {
+# for (i in channelNames) {
+  p1 <- ggplot(datToPlot, aes(pop, mfi, fill = pop)) +
+  # p1 <- ggplot(datToPlot[uID == i], aes(pop, mfi, fill = pop)) +
+  # p1 <- ggplot(datToPlot[marker == i], aes(pop, mfi, fill = pop)) +
+  # ggplot(datToPlot, aes(mfi, DNA3, colour = pop)) +
+  # ggplot(datToPlot, aes(mfi, fill = pop)) +
+    theme_classic() +
+    geom_violin(scale = "width") +
+    # geom_point() +
+    # geom_density(color = "black", alpha = 0.8) +
+    scale_fill_brewer(name = NULL, palette = "Set1") +
+    # scale_color_manual(values = pop.colours) +
+    # scale_fill_manual(values = pop.colours) +
+    # facet_wrap(.~marker, ncol = 10, scales = "free_x") +
+    facet_wrap(.~marker, ncol = 10) +
+    # facet_wrap(.~uID, ncol = 10) +
+    theme(
+      legend.justification = "center",
+      # legend.position = "bottom"
+      legend.position = "none"
+    ) +
+    xlab("") +
+    coord_flip()
+  
+  # ggsave(file.path(anaDir, "marker_mfi", paste(i, ".png")), plot = p1, width = 14, height = 8)
+  # ggsave(file.path(anaDir, "marker_mfi", "markers", paste(i, ".png")), plot = p1, width = 12, height = 2.5)
+# }
+
+ggsave(file.path(anaDir, "marker_mfi", paste("all.png")), plot = p1, width = 14, height = 8)
+
+data.table::fwrite(popDT, file.path(anaDir, "pops.csv"))
 ```
 
 ```{r fig_markers, fig.height=20, fig.width=20}

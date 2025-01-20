@@ -97,11 +97,15 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Name", "
 # merge
 timeIntervalsDT <- as.data.table(timeIntervalsDF %>% left_join(exp.info, by = c("Filename" = "Name")))
 
+diff(unname(unlist(
+    timeIntervalsDT[uID == x$getUID(), grep("t", names(timeIntervalsDT)), with = FALSE])))
+
 # now save in object
 for (x in cciaObj$cciaObjects(uIDs = c("MZen4N"))) {
   x$setImTimeIntervals(diff(unname(unlist(
     timeIntervalsDT[uID == x$getUID(), grep("t", names(timeIntervalsDT)), with = FALSE]))))
-  x$saveState()
+  print(x$imTimeIntervals())
+  # x$saveState()
 }
 ```
 
@@ -115,7 +119,8 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE
 )
 
-cciaObj$tracks("cells")
+tracksMeasuresDT <- cciaObj$tracksMeasures("cells")
+tracksMeasuresDT
 ```
 
 

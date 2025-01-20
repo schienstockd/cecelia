@@ -399,7 +399,7 @@ CciaImage <- R6::R6Class(
     },
     
     #' @description Timelapse information
-    omeXMLTimelapseInfo = function(rawIntervals = FALSE) {
+    omeXMLTimelapseInfo = function(rawIntervals = FALSE, integrateIntervals = FALSE) {
       tInfo <- private$handleTimelapseInfo
       
       if (is.null(tInfo)) {
@@ -496,8 +496,12 @@ CciaImage <- R6::R6Class(
           timeIntervals <- self$imTimeIntervals()
           
           if (length(timeIntervals) > 0) {
-            if (rawIntervals == TRUE)
-              tInfo$interval <- c(0, timeIntervals)
+            if (rawIntervals == TRUE) {
+              if (integrateIntervals == TRUE)
+                tInfo$interval <- c(0, cumsum(timeIntervals))
+              else
+                tInfo$interval <- c(0, timeIntervals)
+            }
             else
               tInfo$interval <- mean(timeIntervals)
           } else {
@@ -798,7 +802,7 @@ CciaImage <- R6::R6Class(
     #' @param pops list of character to define populations
     #' @param measures list of character to define measures
     #' @param extraMeasures list of character to define extra measures (not in celltrackR)
-    #' @param forceReload boolean to force reload of values3
+    #' @param forceReload boolean to force reload of values
     #' @param ... passed to tracks
     tracksMeasures = function(pops, measures = NULL, extraMeasures = NULL, forceReload = FALSE, ...) {
       # get default measures if null
@@ -917,7 +921,8 @@ CciaImage <- R6::R6Class(
           pos.columns <- c(pos.columns.x, pos.columns.y, pos.columns.z)
           
           # get intervals
-          timeIntervals <- self$omeXMLTimelapseInfo(rawIntervals = TRUE)$interval
+          timeIntervals <- self$omeXMLTimelapseInfo(
+            rawIntervals = TRUE, integrateIntervals = TRUE)$interval
           
           # convert to physical units for tracks
           if (length(timeIntervals) > 1) {
