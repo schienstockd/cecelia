@@ -68,13 +68,14 @@ server <- function(input, output, session) {
                      class = errCLASS)
           },
           textInput(session$ns("exportProjectPath"), "Directory to export"),
-          shinyDirButton(
-            session$ns("exportProjectPath"), label = "Select directory",
-            title = "Select directory"
-          ),
-          # actionButton(
-          #   session$ns("exportProjectSubmit"),
-          #   "Export Project")
+          # shinyDirButton(
+          #   session$ns("exportProjectPath"), label = "Select directory",
+          #   title = "Select directory"
+          # ),
+          checkboxInput(session$ns("exportProjectSaveData"), "Save data", value = TRUE),
+          actionButton(
+            session$ns("exportProjectSubmit"),
+            "Export Project")
         )
       ),
       easyClose = TRUE
@@ -95,9 +96,9 @@ server <- function(input, output, session) {
           shinyFilesButton(
             session$ns("importProjectPath"),
             "Select File", NULL, multiple = FALSE),
-          # actionButton(
-          #   session$ns("importProjectSubmit"),
-          #   "Import Project")
+          actionButton(
+            session$ns("importProjectSubmit"),
+            "Import Project")
         )
       ),
       easyClose = TRUE
@@ -752,9 +753,9 @@ server <- function(input, output, session) {
     failedInputs <- c()
     
     # TODO make sure that shiny directory selection works
-    exportPath <- joinSelectedPath(
-      input$exportProjectPath, useConfigVolumes = TRUE)
-    # exportPath <- input$exportProjectPath
+    # exportPath <- joinSelectedPath(
+    #   input$exportProjectPath, useConfigVolumes = TRUE)
+    exportPath <- input$exportProjectPath
     
     if (input$exportProjectPath == "") {
       failedInputs <- c(
@@ -768,7 +769,8 @@ server <- function(input, output, session) {
       progress <- Progress$new()
       progress$set(message = "Export project ... ", value = 0)
       
-      globalManagers$projectManager()$exportProject(exportPath)
+      globalManagers$projectManager()$exportProject(
+        exportPath, saveData = input$exportProjectSaveData)
       
       progress$set(message = "Project exported", value = 100)
       progress$close()  

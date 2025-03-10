@@ -76,12 +76,12 @@ popDT <- cciaObj$popDT("live", pops = c(pops), includeFiltered = TRUE)
 # popRoot <- cciaObj$popDT("live", pops = c("P14", "P14/tracked"), includeFiltered = TRUE)
 # popRoot <- cciaObj$popDT("live", pops = c("gBT", "gBT/tracked"), includeFiltered = TRUE)
 
-# g <- cciaObj$tracksGraph(
-#   completeDT = TRUE,
-#   replaceNA = TRUE,
-#   pop = popsTracked[[3]],
-#   extraAttr = c("label")
-# )
+g <- cciaObj$tracksGraph(
+  completeDT = TRUE,
+  replaceNA = TRUE,
+  pop = pops[[1]],
+  extraAttr = c("label")
+)
 
 # tracks.OTI <- cciaObj$tracks(pops[[1]])
 # tracks.P14 <- cciaObj$tracks(pops[[2]])

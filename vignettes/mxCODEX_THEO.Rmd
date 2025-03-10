@@ -970,7 +970,7 @@ generateScreenshots <- function(
     
     # show on image
     removePrevious <- TRUE
-    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.005
+    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.01
     # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
     
     # add populations to popMap

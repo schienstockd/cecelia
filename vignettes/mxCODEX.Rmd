@@ -380,12 +380,13 @@ exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 # uIDs <- exp.info[Include == "Y"]$uID
 uIDs <- exp.info[Stain == "A"]$uID
 
-for (x in cciaObj$cciaObjects(uIDs = uIDs[1])) {
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   # x$setImAnndataFilepath("default.clust.h5ad", valueName = "default")
   # x$saveState()
+  print(paste(x$getUID(), x$oriFilepath()))
 }
 
-x$imNeighboursFilepath()
+# x$imNeighboursFilepath()
 ```
 
 ```{r}
@@ -697,6 +698,7 @@ uIDs <- exp.info[Stain == "A"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "B"]$uID
 # uIDs <- exp.info[Include == "Y" & Stain == "A"]$uID
 # uIDs <- c("XFHvVd")
+uIDs <- c("3J78wt")
 
 pops <- cciaObj$popPaths(uIDs = uIDs[[1]], popType = "clust", includeFiltered = TRUE)
 pops <- pops[is.na(stringr::str_match(pops, "/"))]
@@ -711,6 +713,7 @@ regionsDT <- cciaObj$popDT(
   # pops = regionPops,
   includeFiltered = TRUE,
   completeDT = TRUE, replaceNA = TRUE,
+  convertToPhysical = TRUE,
   filterMeasures = c("regions")
 )
 unique(regionsDT$regions)
@@ -1388,9 +1391,9 @@ x <- cciaObj$cciaObjects(uIDs = uIDs[[1]])[[1]]
 xres <- x$omeXMLPixelRes()$x
 
 # # imPopMap <- x$imPopMap(popType = "clust", includeFiltered = TRUE)
-# imPopMap <- x$imPopMap(popType = "region", includeFiltered = TRUE)
-# popColours <- sapply(imPopMap, function(x) {x$colour})
-# names(popColours) <- sapply(imPopMap, function(x) {x$path})
+imPopMap <- x$imPopMap(popType = "region", includeFiltered = TRUE)
+popColours <- sapply(imPopMap, function(x) {x$colour})
+names(popColours) <- sapply(imPopMap, function(x) {x$path})
 
 # channelCols <- unname(x$imChannelNames(correctChannelNames = TRUE))
 # channelCols <- channelCols[channelCols %in% colnames(popDT)]
@@ -1408,7 +1411,7 @@ popClusters <- unique(popDT$clusters)
 # popClusters <- unique(popDT$clusters.name)
 # popClusters <- unique(regionsDT$regions)
 # popClusters <- clusters.groups
-colPal <- as.list(randomcoloR::distinctColorPalette(length(popClusters)))
+# colPal <- as.list(randomcoloR::distinctColorPalette(length(popClusters)))
 # colPal <- list("#4169e1", "#ff1493", "#ffd700", "#00fa9a", "#ff8c00", "#d8bfd8", "#e9967a", "#ff0000")
 # colPal <- list("#ff0000", "#ff8c00", "#ffd700", "#0000cd", "#00ff00", "#00fa9a",
 #                "#4169e1", "#e9967a", "#00ffff", "#ff1493", "#d8bfd8", "#ff00ff",
@@ -1416,8 +1419,8 @@ colPal <- as.list(randomcoloR::distinctColorPalette(length(popClusters)))
 names(colPal) <- popClusters
 
 # for (i in unique(dfToPlot$uID)) {
-# for (i in unique(regionsDT$uID)) {
-for (i in unique(popDT$uID)) {
+for (i in unique(regionsDT$uID)) {
+# for (i in unique(popDT$uID)) {
 # for (i in c("XFHvVd")) {
 # for (i in c("SiaqvM")) { 
   # x <- popDT[uID == i & clusters.name == "CD68.CD11c"] %>%
@@ -1431,7 +1434,7 @@ for (i in unique(popDT$uID)) {
   # p1 <- ggplot(dfToPlot[uID == i],
   # p1 <- ggplot(spatialDT[uID == i & pop.from == "CD3" & pop.to == "CD11c"] %>%
   # p1 <- ggplot(x,
-  p1 <- ggplot(popDT[uID == i],
+  # p1 <- ggplot(popDT[uID == i],
   # p1 <- ggplot(popDT[uID == i & clusters.group %in% clusters.groups],
   # p1 <- ggplot(popDT[uID == i &
   # p1 <- ggplot(popDT[uID == i & !clusters %in% seq(0,7) &
@@ -1440,11 +1443,11 @@ for (i in unique(popDT$uID)) {
                        # centroid_y >= 2096/xres & centroid_y <= 4406/xres &
                        # centroid_x >= 1200/xres & centroid_x <= 4597/xres],
   # p1 <- ggplot(popDT[uID == i & !clusters.group %in% c(3, 12, 5, 13)],
-  # p1 <- ggplot(regionsDT[uID == i],
-               aes(centroid_x, -centroid_y, color = as.factor(clusters))) +
+  p1 <- ggplot(regionsDT[uID == i],
+               # aes(centroid_x, -centroid_y, color = as.factor(clusters))) +
                # aes(centroid_x, -centroid_y, color = as.factor(regions))) +
                # aes(centroid_x, -centroid_y, color = GFAP)) +
-               # aes(centroid_x, -centroid_y, color = as.factor(pop))) +
+               aes(centroid_x, -centroid_y, color = as.factor(pop))) +
                # aes(centroid_x, -centroid_y, color = as.factor(clusters.group))) +
                # aes(centroid_x, -centroid_y, color = as.factor(clusters.name))) +
                # aes(centroid_x, -centroid_y)) +
@@ -1452,14 +1455,16 @@ for (i in unique(popDT$uID)) {
     plotThemeDark(angle = 0) +
     # geom_point(size = 0.1, alpha = 1) +
     geom_point(size = 0.5, alpha = 1) +
+    geom_line(data = data.frame(centroid_x = c(10, 510),  centroid_y = c(10, 10)), color = "white", size = 5) +
     # geom_point(aes(color = intensity), size = 0.1, alpha = 1) +
     # geom_point(data = z, color = .flowColours(z$centroid_x, z$centroid_y, colramp = viridisLite::inferno)) +
     # geom_point(data = y, color = .flowColours(y$centroid_x, y$centroid_y, colramp = viridisLite::inferno)) +
     # scale_color_brewer(palette = "Accent", name = "Clusters") +
     # scale_color_brewer(palette = "Set1", name = "Clusters") +
-    scale_color_manual(values = colPal, name = "Clusters") +
+    # scale_color_manual(values = colPal, name = "Clusters") +
+    # scale_color_manual(values = colPal, name = "Regions") +
     # scale_color_manual(values = clusterColours, name = "pop") +
-    # scale_color_manual(values = popColours, name = "Pop") +
+    scale_color_manual(values = popColours, name = "Pop") +
     # scale_color_manual(values = c("NA" = "grey", "CD3" = "red"), name = "Pop") +
     # viridis::scale_color_viridis() +
     # scale_color_gradient2(low = "blue", high = "red", mid = "white", midpoint = 25) +
@@ -1471,8 +1476,8 @@ for (i in unique(popDT$uID)) {
       axis.line = element_blank(),
       axis.title.x = element_blank(),
       axis.title.y = element_blank(),
-      # legend.position = "none",
-      legend.position = "bottom",
+      legend.position = "none",
+      # legend.position = "bottom",
       strip.text = element_text(colour = "black")
     ) + coord_fixed() +
     guides(colour = guide_legend(override.aes = list(size=10))) 
@@ -1486,14 +1491,14 @@ for (i in unique(popDT$uID)) {
     # facet_grid(clusters.name~uID)
     # ggtitle(i)
   
-  ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".png")), width = 6, height = 8, plot = p1)
+  # ggsave(file.path(anaDir, "maps", paste0("clusters_", i, ".png")), width = 6, height = 8, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_group_", i, ".png")), width = 6, height = 8, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_name_", i, ".png")), width = 12, height = 16, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("labels_", i, ".png")), width = 30, height = 20, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_", i, "-dist.png")), width = 8, height = 5, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_", i, "-zoom.png")), width = 12, height = 16, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("pops_", i, ".png")), width = 12, height = 12, plot = p1)
-  # ggsave(file.path(anaDir, "maps", paste0("regions_", i, ".png")), width = 6, height = 8, plot = p1)
+  ggsave(file.path(anaDir, "maps", paste0("regions_", i, ".png")), width = 12, height = 12, plot = p1)
   # ggsave(file.path(anaDir, "maps", paste0("clusters_facet_", i, ".png")), width = 20, height = 20, plot = p1)
 }
 ```

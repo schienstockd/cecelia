@@ -31,10 +31,24 @@ library(tidyverse)
 
 ```{r}
 # anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/gut"
-# anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/"
+# anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS"
+# anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/20250131"
+anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/CYCIF/ANALYSIS/20250212"
 # anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/ALI/MACSIMA/ANALYSIS/"
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/MACSIMA/ANALYSIS/"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/ALI/MACSIMA/ANALYSIS/"
 ```
+
+```{r}
+# a <- readRDS("/Users/Dominik/R-workspace/cecelia/inst/app/shiny_bookmarks/74aee7aa61a4e222/values.rds")
+# a$project$ProjectName <- "Tests for Ali"
+# a$project$ProjectVersionStateID <- "74aee7aa61a4e222"
+# a$project$ProjectUID <- "LXXd5L"
+# a$project$ProjectType <- "static"
+# a$project$ProjectPath <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/LXXd5L"
+# 
+# saveRDS(a, "/Users/Dominik/R-workspace/cecelia/inst/app/shiny_bookmarks/74aee7aa61a4e222/values.rds")
+```
+
 
 ```{r}
 devtools::load_all("../")
@@ -49,6 +63,60 @@ for (x in cciaObj$cciaObjects()) {
   print(paste(x$getUID(), x$imFilepath()))
 }
 ```
+
+```{r}
+# # plot out gating strategy
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "Pc6Y7V", versionID = versionID, initReactivity = FALSE # Set
+# )
+# 
+# cciaObj$setImLabelsFilepath("default.zarr", valueName = "default")
+# cciaObj$setImLabelPropsFilepath("default.h5ad", valueName = "default")
+# cciaObj$saveState()
+```
+
+```{r}
+# get contacts
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE # CyCIF
+  # pID = pID, uID = "eUh2KP", versionID = versionID, initReactivity = FALSE # MACSima
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[Include == "Y"]$uID
+
+cciaObj$cciaObjects(uIDs = uIDs)[[2]]$popPaths("branch", includeFiltered = TRUE)
+
+# run task
+funParams <- list(
+  popsA = c("flow./cells/qc/CD8+/CD103+"),
+  popsB = c("branch.stroma.branch/two", "branch.dcs.branch/two",
+            "branch.macs.branch/two", "branch.CD31.branch/two"),
+  maxContactDist = 5
+)
+
+# run task
+task <- cciaObj$runTasks(
+# task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellContacts",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = uIDs[2],
+  mc.cores = 1
+)
+```
+
 
 ```{r fig_flow_gating, fig.height=8, fig.width=12}
 # plot out gating strategy
@@ -70,12 +138,13 @@ labelPos <- list(
   # "/nonDebris" = list(x = 5000, y = 500),
 )
 
-plotWidth <- 10
-plotHeight <- 5
-nRow <- 2
-nCol <- 4
+plotWidth <- 8
+nCol <- 3
+plotHeight <- 8
+nRow <- 3
 
 # for (x in cciaObj$cciaObjects(uIDs = uIDs[uIDs != "pxKIwV"])) {
+# for (x in cciaObj$cciaObjects(uIDs = uIDs[uIDs == "pxKIwV"])) {
 for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   p1s <- .flowPlotGatedRaster(
     x,
@@ -98,43 +167,52 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE # CyCIF
-  pID = pID, uID = "eUh2KP", versionID = versionID, initReactivity = FALSE # MACSima
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE # CyCIF
+  # pID = pID, uID = "eUh2KP", versionID = versionID, initReactivity = FALSE # MACSima
 )
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-# uIDs <- exp.info[Include == "Y"]$uID
-uIDs <- exp.info$uID
+uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info$uID
 # uIDs <- c("pxKIwV")
+# uIDs <- c("PwYMS2")
 
 pops <- c(
   # CyCIF
+  # "/cells/qc/CD8+/CD103+",
   # "/cells/qc", "/cells/qc/CD8+/CD103-", "/cells/qc/CD8+/Tcirc",
-  # "/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-",
+  "/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-",
+  "/cells/qc/CD8+/CD103+/GNLY+/clustered", "/cells/qc/CD8+/CD103+/GNLY-/clustered"
   # "/cells/qc/O1/CD4+/Treg", "/cells/qc/O1/CD4+/Tconv",
   # "/cells/qc/O1/O2/pCK"
   # MACSima
   # "/cells/CD8+", "/cells/CD8+/CD103+"
-  "/cells/CD8+/CD103+"
+  # "/cells/CD8+/CD103+"
 )
 
-popDT <- cciaObj$popDT(popType = "flow", pops = pops, uIDs = uIDs)
+# popDT <- cciaObj$popDT(popType = "flow", pops = pops, uIDs = uIDs, includeFiltered = TRUE)
+popDT <- cciaObj$popDT(popType = "flow", pops = pops, uIDs = uIDs, includeFiltered = TRUE)
+popDT.pJERK <- cciaObj$popDT(popType = "flow", pops = c("/cells/qc/CD8+/CD103+/pJERK"), uIDs = uIDs, uniqueLabels = FALSE)
 
-# # get region information
+# mix match populations
+popDT[, pJERK := FALSE]
+popDT[popDT.pJERK, on = c("uID", "label"), pJERK := TRUE]
+
+# # get distance information
 # regionDT <- cciaObj$popDT(
 #   popType = "region", pops = c("A", "B", "C"), includeFiltered = TRUE, uIDs = uIDs)
 # 
-# # get spatial
-# spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
-# 
-# # join pops
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "to" = "label"),
-#           pop.to := pop]
-# spatialDT[popDT[, c("uID", "label", "pop")],
-#           on = c("uID", "from" = "label"),
-#           pop.from := pop]
+# get spatial
+spatialDT <- cciaObj$spatialDT(valueName = "default", uIDs = uIDs)
+
+# join pops
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "to" = "label"),
+          pop.to := pop]
+spatialDT[popDT[, c("uID", "label", "pop")],
+          on = c("uID", "from" = "label"),
+          pop.from := pop]
 # spatialDT[regionDT[, c("uID", "label", "pop")],
 #           on = c("uID", "to" = "label"),
 #           region.to := pop]
@@ -157,6 +235,8 @@ popDT <- cciaObj$popDT(popType = "flow", pops = pops, uIDs = uIDs)
 ```
 
 ```{r fig_gating_markers, fig.height=20, fig.width=20}
+library(GGally)
+
 # ok .. can you plot out TRM/TEX markers and see which ones
 # you could use for gating
 markers <- c(
@@ -166,10 +246,6 @@ markers <- c(
 
 datToPlot <- popDT %>%
   pivot_longer(cols = markers, names_to = "marker", values_to = "intensity")
-
-popDT[uID == x$getUID()]
-
-unique(popDT$uID)
 
 for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
   p1 <- ggpairs(popDT[uID == x$getUID()], columns = markers,
@@ -181,12 +257,321 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
 }
 ```
 
+```{r}
+# write out populations with distance to tumour cells
+data.table::fwrite(popDT, file.path(anaDir, "pops.csv"))
+data.table::fwrite(spatialDT, file.path(anaDir, "spatial.csv"))
+```
+
+```{r fig_pops_clust, fig.height=3, fig.width=3}
+# check how many cell clusters
+datToPlot <- as.data.table(
+  popDT %>%
+    # clustered is a separate population
+    mutate(pop = replace(pop, pop == "/cells/qc/CD8+/CD103+/GNLY-/clustered", "/cells/qc/CD8+/CD103+/GNLY-")) %>%
+    group_by(uID, pop, flow.cell.is.clust) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n/sum(n)) %>%
+    dplyr::filter(flow.cell.is.clust == FALSE) %>%
+    mutate(freq = (1-freq) * 100)
+  )
+
+datToPlot[, pop := stringr::str_extract(pop, "[^/]+(?=$)")]
+
+ggplot(datToPlot[pop != "CD103+"], aes(pop, freq)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  geom_boxplot() +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.7) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  xlab("") +
+  ylab("Clustering cells (%)") + ylim(-0.1, 40)
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+
+ggsave(file.path(anaDir, "pops_clust.png"), width = 3, height = 3)
+```
+
+```{r fig_pops_pjek, fig.height=3, fig.width=5}
+# show proportion of pJERK in populations
+# check how many cell clusters
+datToPlot <- as.data.table(
+  popDT %>% group_by(uID, pop, pJERK) %>%
+    summarise(n = n()) %>%
+    mutate(freq = n/sum(n)) %>%
+    dplyr::filter(pJERK == FALSE) %>%
+    mutate(freq = (1-freq) * 100)
+    # ungroup() %>%
+    # complete(uID, pop, fill = list(freq = 0))
+  )
+
+# datToPlot[, pop := stringr::str_extract(pop, "[^/]+(?=$)")]
+datToPlot[, pop := str_extract(pop, "(?<=CD103\\+\\/).+$")]
+
+ggplot(datToPlot[pop != "CD103+"], aes(pop, freq)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  geom_boxplot() +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.7) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  xlab("") +
+  ylab("pJERK cells (%)") + ylim(-0.1, 40) +
+  coord_flip()
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+
+ggsave(file.path(anaDir, "pops_pJERK.png"), width = 4.5, height = 2)
+```
+
+```{r fig_pops_dist, fig.height=3, fig.width=5}
+datToPlot <- spatialDT[pop.to == "/cells/qc/CD8+/CD103+/GNLY-", .SD[which.min(dist)], by = c("uID", "from")]
+# datToPlot[, pop.from := str_extract(pop.from, "[^\\/]+$")]
+# datToPlot[, pop.from := str_extract(pop.from, "[^\\/CD103]+$")]
+datToPlot[, pop.from := str_extract(pop.from, "(?<=CD103\\+\\/).+$")]
+
+ggplot(datToPlot[!is.na(pop.from)], aes(pop.from, dist)) +
+  theme_classic() +
+  # geom_boxplot() +
+  geom_violin(scale = "width") +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.4) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  stat_summary(fun=median, geom="point", size=5, shape=18, color="#E42328") +
+  xlab("") + ylab("Distance to GNLY- (um)") +
+  # facet_wrap(.~dist.pop, scales = "free_y") +
+  theme(
+    legend.justification = "left",
+    legend.position = "right"
+    # legend.position = "none"
+  ) + coord_flip()
+
+ggsave(file.path(anaDir, "to_GNLY-.png"), width = 4.5, height = 3)
+
+datToPlot <- spatialDT[pop.to == "/cells/qc/CD8+/CD103+/GNLY+", .SD[which.min(dist)], by = c("uID", "from")]
+datToPlot[, pop.from := str_extract(pop.from, "(?<=CD103\\+\\/).+$")]
+
+ggplot(datToPlot[!is.na(pop.from)], aes(pop.from, dist)) +
+  theme_classic() +
+  # geom_boxplot() +
+  geom_violin(scale = "width") +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.4) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  stat_summary(fun=median, geom="point", size=5, shape=18, color="#E42328") +
+  xlab("") + ylab("Distance to GNLY+ (um)") +
+  # facet_wrap(.~dist.pop, scales = "free_y") +
+  theme(
+    legend.justification = "left",
+    legend.position = "right"
+    # legend.position = "none"
+  ) + coord_flip()
+
+ggsave(file.path(anaDir, "to_GNLY+.png"), width = 4.5, height = 3)
+
+datToPlot <- spatialDT[pop.to == "/cells/qc/CD8+/CD103+/GNLY-/clustered", .SD[which.min(dist)], by = c("uID", "from")]
+datToPlot[, pop.from := str_extract(pop.from, "(?<=CD103\\+\\/).+$")]
+
+ggplot(datToPlot[!is.na(pop.from)], aes(pop.from, dist)) +
+  theme_classic() +
+  # geom_boxplot() +
+  geom_violin(scale = "width") +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.4) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  stat_summary(fun=median, geom="point", size=5, shape=18, color="#E42328") +
+  xlab("") + ylab("Distance to GNLY-/clustered (um)") +
+  # facet_wrap(.~dist.pop, scales = "free_y") +
+  theme(
+    legend.justification = "left",
+    legend.position = "right"
+    # legend.position = "none"
+  ) + coord_flip()
+
+ggsave(file.path(anaDir, "to_GNLY-clustered.png"), width = 4.5, height = 3)
+```
+
+
+```{r fig_pops_dist, fig.height=3, fig.width=7}
+local.popDT <- copy(popDT)
+
+setnames(local.popDT, "flow.cell.min_distance#flow.__cells/qc/O1/O2/pCK", "dist.panCK")
+setnames(local.popDT, "flow.cell.min_distance#flow.__cells/qc/CD8+/CD103+/GNLY+", "dist.GNLY+")
+setnames(local.popDT, "flow.cell.min_distance#flow.__cells/qc/CD8+/CD103+/GNLY-", "dist.GNLY-")
+# local.popDT[, pop := stringr::str_extract(pop, "[^/]+(?=$)")]
+local.popDT[, pop := stringr::str_extract(pop, "(?<=CD103\\+\\/).+$")]
+
+colsToPivot <- c("dist.panCK", "dist.GNLY+", "dist.GNLY-")
+
+datToPlot <- as.data.table(local.popDT %>% pivot_longer(
+  cols = colsToPivot, names_to = "dist.pop", values_to = "dist.value"))
+
+# filter self connections
+datToPlot <- datToPlot[!(dist.pop == "dist.GNLY-" & pop == "GNLY-") & !(dist.pop == "dist.GNLY+" & pop == "GNLY+") & dist.value <= 200,]
+
+# ggplot(datToPlot[pop != "CD103+" & dist.pop == "dist.panCK"], aes(pop, dist.value)) +
+ggplot(datToPlot[pop != "CD103+" & dist.pop == "dist.panCK"], aes(pJERK, dist.value)) +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.4) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  stat_summary(fun=median, geom="point", size=5, shape=18, color="#E42328") +
+  xlab("pJERK") + ylab("Distance to panCK (um)") +
+  # facet_wrap(.~pJERK, scales = "free_y") +
+  facet_wrap(.~pop) +
+  theme(
+    legend.justification = "left",
+    legend.position = "right"
+    # legend.position = "none"
+  )
+  # ) + coord_flip()
+
+ggsave(file.path(anaDir, "to_panCK.png"), width = 6, height = 2.5)
+```
+
+```{r fig_pops_dist, fig.height=3, fig.width=7}
+local.popDT <- copy(popDT)
+
+setnames(local.popDT, "flow.cell.min_distance#flow.__cells/qc/O1/O2/pCK", "dist.panCK")
+# local.popDT[, pop := stringr::str_extract(pop, "[^/]+(?=$)")]
+local.popDT[, pop := stringr::str_extract(pop, "(?<=CD103\\+\\/).+$")]
+local.popDT[, contact.panCK := FALSE]
+local.popDT[dist.panCK <= 10, contact.panCK := TRUE]
+
+# summarise
+datToPlot <- local.popDT %>%
+  group_by(uID, pop, contact.panCK) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  dplyr::filter(contact.panCK == FALSE) %>%
+  mutate(freq = (1-freq) * 100)
+
+ggplot(datToPlot, aes(pop, freq)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  geom_boxplot() +
+  geom_jitter(aes(color = uID), width = 0.2, alpha = 0.7) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  xlab("") +
+  ylab("Contact panCK (%)") + ylim(-0.1, 50) +
+  coord_flip()
+
+ggsave(file.path(anaDir, "contact_panCK.png"), width = 5, height = 2)
+```
+
+```{r}
+# make UMAP/heatmap of close and far away cells
+local.popDT <- copy(popDT)
+local.popDT[, pop := stringr::str_extract(pop, "[^/]+(?=$)")]
+
+local.popDT[, pCK.contact := FALSE]
+local.popDT[`flow.cell.min_distance#flow.__cells/qc/O1/O2/pCK` < 10, pCK.contact := TRUE]
+
+# get matrix
+colsToClust <- c(
+  "CD45RO", "CD25", "CD73", "KI67", "GZMB",
+  "LAG3", "TIM3", "TCF1", "GNLY", "pJUN", "pERK", "YAP1",
+  "PCNA", "IBA1", "KLF2", "CD7", "CD94"
+)
+
+popKeys <- c("uID", "label", "pop", "pCK.contact")
+
+# remove key and transform matrix
+popMat <- as.matrix(local.popDT[, ..colsToClust])
+
+# set names
+rownames(popMat) <- do.call(
+  paste, c(lapply(popKeys, function(x) {local.popDT[[x]]}), sep = "."))
+
+# replace inf
+popMat[is.infinite(popMat)] <- 0
+
+# remove na
+# https://stackoverflow.com/a/6471927
+# popMat <- popMat[rowSums(is.na(popMat)) != ncol(popMat), ]
+popMat <- popMat[colSums(is.na(popMat)) != nrow(popMat), ]
+
+# run UMAP
+# TODO this is a bit arbitrary ...
+popUMAP <- umap::umap(popMat)
+
+umapDF <- as.data.frame(popUMAP$layout) %>%
+  rownames_to_column() %>%
+  separate_wider_delim(cols = rowname, delim = ".", names = c("uID", "label", "pop", "pCK.contact"))
+```
+
+
+```{r fig_pops_umap, fig.height=4.5, fig.width=4}
+# plot UMAP
+ggplot(umapDF, aes(V1, V2)) +
+  # geom_point(aes(color = pop)) +
+  geom_point(data = umapDF[umapDF$pCK.contact == FALSE,], color = "grey") +
+  geom_point(data = umapDF[umapDF$pCK.contact == TRUE,], color = "blue") +
+  theme_classic() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # scale_color_manual(values = colPal) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    legend.position = "bottom",
+    # legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) 
+  # facet_grid(.~pCK.contact)
+
+ggsave(file.path(anaDir, "contact_umap.png"), width = 2, height = 2)
+```
+
+```{r}
+# show measurements of clusters to compare
+propsToPlot <- local.popDT %>%
+  pivot_longer(
+    cols = colsToClust, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToClust, decreasing = TRUE))
+
+# show heatmap for pops
+propsSummary <- propsToPlot %>%
+  group_by(pCK.contact, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  # group_by(prop) %>%
+  group_by(pCK.contact) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+```
+
+```{r fig_clusters_heat, fig.height=6, fig.width=3}
+ggplot(propsSummary, aes(as.factor(pCK.contact), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    # legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 14, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "contact_heat.png"), width = 3, height = 6)
+```
 
 ```{r}
 # ok .. distance of GNLY+ to GNLY-
 # pops.to.analyse <- c("/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-")
 pops.from <- c("/cells/qc/CD8+/CD103+/GNLY+", "/cells/qc/CD8+/CD103+/GNLY-")
 pops.to <- c("/cells/qc/O1/O2/pCK")
+
 
 spatialPopsDT <- spatialDT[pop.from %in% pops.from & pop.to %in% pops.to]
 ```
@@ -461,7 +846,7 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "rQ8fni", versionID = versionID, initReactivity = FALSE 
+  pID = pID, uID = "XAuN5j", versionID = versionID, initReactivity = FALSE 
 )
 
 labelsView <- cciaObj$labelProps(valueName = "default")
@@ -483,3 +868,127 @@ ggplot(shiftsDT, aes(centroid_x, -centroid_y, fill = median.shift, color = media
 ggsave(file.path(anaDir, "shifts.pdf"), width = 12, height = 14)
 ```
 
+## SCREENSHOTS
+
+```{r}
+# show pops on image
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = TRUE, initJupyter = TRUE)
+# cciaUse("~/cecelia/dev", initConda = FALSE, initJupyter = TRUE)
+
+# start ipython kernel
+viewer <- NapariUtils$new()
+
+viewer$initNapari()
+```
+
+```{r}
+generateScreenshots <- function(
+    anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+    valueName = "default", matchChannels = FALSE, save = TRUE, ...) {
+  # go through images and save movies
+  for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+    i <- x$getUID()
+    viewer$setTaskDir(x$persistentObjectDirectory())
+    
+    # get channels
+    imChannelNames <- x$imChannelNames()
+    
+    # match channels
+    curChannelsToShow <- channelsToShow
+    if (matchChannels == TRUE) {
+      # TODO this is very crude    
+      names(curChannelsToShow) <- sapply(names(channelsToShow), function(y) {
+        imChannelNames[!is.na(stringr::str_extract(imChannelNames, y))][[1]]
+      })
+    }
+
+    # get cmaps
+    layersVisible <- imChannelNames %in% names(curChannelsToShow)
+    channelColormaps <- rep("gray", length(layersVisible))
+    
+    for (j in names(curChannelsToShow))
+      channelColormaps[[which(imChannelNames == j)]] <- curChannelsToShow[[j]]
+    
+    names(layersVisible) <- seq(length(layersVisible))
+    
+    # open image
+    viewer$openImage(
+      x$imFilepath(),
+      imChannelNames = imChannelNames,
+      show3D = FALSE,
+      layersVisible = layersVisible,
+      channelColormaps = channelColormaps
+      # multiscales = as.integer(1)
+    )
+    
+    # add populations
+    popsAdded <- list()
+    
+    # show on image
+    removePrevious <- TRUE
+    pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.01
+    # pointsSize <- max(x$omeXMLPixels()$SizeX, x$omeXMLPixels()$SizeY) * 0.003
+    
+    # add populations to popMap
+    for (popType in names(popsToShow)) {
+      popMap <- x$imPopMap(popType, includeFiltered = TRUE)
+      curPops <- popsToShow[[popType]]
+    
+      # get popIDs for paths
+      popIDs <- lapply(names(curPops), function(y) x$popIDsByAttr(popType, "path", y, includeFiltered = TRUE))
+      names(popIDs) <- names(curPops)
+      
+      for (pop in names(curPops)) {
+        x$editPopColour(popType, popIDs[[pop]], curPops[[pop]], includeFiltered = TRUE)
+      }
+    
+      # save to disk
+      x$savePopMap(popType, includeFiltered = TRUE)
+      x$savePops(popType, pops = names(popIDs),
+                 purge = TRUE, includeFiltered = TRUE)
+      
+      for (j in names(curPops)) {
+        viewer$showPopMapping(popType, valueName = popMap[[popIDs[[j]]]]$valueName,
+                              pops = list(j), pointsSize = pointsSize,
+                              execInteractive = FALSE, removePrevious = removePrevious)
+        removePrevious <- FALSE
+      }
+    }
+    
+    # adjust channel intensities
+    browser()
+  
+    # save screenshot
+    if (save == TRUE)
+      viewer$saveScreenshot(
+        file.path(anaDir, paste0(
+          paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".png")),
+        ...)
+  }
+}
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "kUIjMW", versionID = versionID, initReactivity = FALSE
+)
+
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[Include == "Y"]$uID
+
+channelsToShow <- list(
+  "panCK" = "gray",
+  "VIM" = "bop orange"
+  )
+popsToShow <- list(
+  flow = list(
+    "/cells/qc/CD8+/CD103+/GNLY-" = "#4682b4",
+    "/cells/qc/CD8+/CD103+/GNLY+" = "#AA1F5E"
+  )
+)
+
+generateScreenshots(
+  file.path(anaDir, "20250131", "shots"), cciaObj, uIDs, channelsToShow,
+  popsToShow, list(), size = NULL, save = TRUE)
+```

@@ -119,9 +119,54 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE
 )
 
-tracksMeasuresDT <- cciaObj$tracksMeasures("cells")
-tracksMeasuresDT
+# get root for editing
+rootDT <- cciaObj$popDT("live", c("cells", "cells/tracked"), includeFiltered = TRUE)
 ```
+
+```{r fig_track_edits, fig.height=4, fig.width=5}
+show.tracks <- function(popDT) {
+  ggplot(popDT[!is.na(track_id) & !is.nan(track_id)],
+         aes(centroid_x, -centroid_y, group = track_id, colour = as.factor(track_id))) +
+    theme_classic() +
+    geom_path()
+}
+
+# join points
+tracks.points.add <- function(popDT, labelIDs) {
+  # get highest track number
+  trackID.hi <- max(popDT$track_id, na.rm = TRUE) + 1
+  
+  popDT[label %in% labelIDs, track_id := trackID.hi]
+}
+
+# remove points
+tracks.points.rm <- function(popDT, labelIDs) {
+  # should work in place
+  popDT[label %in% labelIDs, track_id := NA]
+}
+
+points.to.join <- c(22, 49, 89, 130, 190, 232)
+
+localDT <- copy(rootDT)
+
+# show tracks
+show.tracks(localDT)
+
+# remove
+tracks.points.rm(localDT, points.to.join)
+
+# show tracks
+show.tracks(localDT)
+
+# add back
+tracks.points.add(localDT, points.to.join)
+
+# show tracks
+show.tracks(localDT)
+
+# now integrate into the GUI
+```
+
 
 
 ```{r}

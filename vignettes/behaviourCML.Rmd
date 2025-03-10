@@ -186,7 +186,8 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "ODWj0Z", versionID = versionID, initReactivity = FALSE
 )
 
-uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- names(cciaObj$cciaObjects())
+uIDs <- c("sJIKRF")
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
@@ -587,6 +588,7 @@ for (x in cciaObj$cciaObjects(uIDs = uIDs)[1]) {
       coord_fixed() +
       xlim(0, x$omeXMLPixels()$SizeX) +
       ylim(x$omeXMLPixels()$SizeY, 0) +
+      geom_line(aes(centroid_x, centroid_y), data = data.frame(centroid_x = c(10, 210),  centroid_y = c(10, 10)), color = "white", size = 5) +
       theme(
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank(),

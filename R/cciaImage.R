@@ -487,28 +487,26 @@ CciaImage <- R6::R6Class(
       }
       
       # if the interval is '0', take the information
-      # from the metadata
-      if (is.na(tInfo$interval) || length(tInfo$interval) == 0 || tInfo$interval == 0) {
-        if (length(self$getCciaAttr("TimelapseInterval")) > 0) {
-          tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
-        } else {
-          # are any time intervals set?
-          timeIntervals <- self$imTimeIntervals()
-          
-          if (length(timeIntervals) > 0) {
-            if (rawIntervals == TRUE) {
-              if (integrateIntervals == TRUE)
-                tInfo$interval <- c(0, cumsum(timeIntervals))
-              else
-                tInfo$interval <- c(0, timeIntervals)
-            }
+      # from the metadata or from what the user has given
+      if (length(self$getCciaAttr("TimelapseInterval")) > 0) {
+        tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
+      } else if (is.na(tInfo$interval) || length(tInfo$interval) == 0 || tInfo$interval == 0) {
+        # are any time intervals set?
+        timeIntervals <- self$imTimeIntervals()
+        
+        if (length(timeIntervals) > 0) {
+          if (rawIntervals == TRUE) {
+            if (integrateIntervals == TRUE)
+              tInfo$interval <- c(0, cumsum(timeIntervals))
             else
-              tInfo$interval <- mean(timeIntervals)
-          } else {
-            tInfo$interval <- 1
+              tInfo$interval <- c(0, timeIntervals)
           }
+          else
+            tInfo$interval <- mean(timeIntervals)
+        } else {
+          tInfo$interval <- 1
         }
-      } 
+      }
       
       tInfo
     },
@@ -929,6 +927,8 @@ CciaImage <- R6::R6Class(
             # get populations
             if (convertToPhysical == TRUE)
               popTracks <- convertPixelToPhysical(popDT, self$omeXMLPixelRes())
+            else
+              popTracks <- popDT
             
             # add time intervals
             popTracks[, centroid_t := timeIntervals[popTracks$centroid_t + 1]]
@@ -2157,7 +2157,7 @@ CciaImage <- R6::R6Class(
       if (is.null(tracksGraph) || forceReload == TRUE) {
         # get populations
         if (is.null(popDT)) {
-          popDT <- cciaObj$popDT(
+          popDT <- self$popDT(
             popType = "live", pops = c(pop), includeFiltered = TRUE, ...)
         }
         

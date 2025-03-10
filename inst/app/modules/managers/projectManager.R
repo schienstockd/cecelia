@@ -553,6 +553,15 @@ ProjectManager <- R6::R6Class(
         
         # switch back
         setwd(wd)
+      } else {
+        # export dir for uID
+        exportDirUID <- file.path(exportDir, self$getProjectUID())
+        dir.create(exportDirUID)
+        
+        # copy data to export directory
+        file.copy(projectFile, exportDirUID)
+        file.copy(bookmarksFile, exportDirUID)
+        file.copy(bookmarkDir, exportDirUID, recursive = TRUE)
       }
       
       # # remove temporary files from project directory

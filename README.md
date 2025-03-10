@@ -37,3 +37,8 @@ for installation and tutorials. Installation of the R-package with all
 shiny and python dependencies should require less than 1 h. The Docker
 based installation depends on the user’s bandwidth but typically
 requires less than 20 min.
+
+## Citation
+
+Refer to our publication:
+[`https://doi.org/10.1038/s41467-025-57193-y`](https://doi.org/10.1038/s41467-025-57193-y).

@@ -307,10 +307,11 @@ CciaImageSet <- R6::R6Class(
     #' @param batchGroup character to identify batch groups
     #' @param normPercentile numeric for percentile to normalise
     #' @param mc.cores numeric for workers
+    #' @param convertToPhysical boolean to convert pixels to physical scale
     #' @param ... passed to CciaImage$popDT
     popDT = function(popType, asDT = TRUE, removeNULL = TRUE, uIDs = NULL,
                      colsToNormalise = c(), batchGroup = "uID", normPercentile = 0.998,
-                     mc.cores = 4, ...) {
+                     mc.cores = 4, convertToPhysical = FALSE, ...) {
       # TODO at the moment, clustered tracks are saved in one dataset within the set itself
       if (popType == "clust") {
         resetUIDs <- FALSE
@@ -354,11 +355,24 @@ CciaImageSet <- R6::R6Class(
       if (removeNULL == TRUE) {
         popDTs <- popDTs[lengths(popDTs) != 0]
       }
-      
+
+      # convert to physical
+      # TODO should that occur with the above?
+      if (convertToPhysical == TRUE) {
+        if (private$isReactive() == TRUE) {
+          for (x in self$cciaObjects(uIDs = uIDs)) {
+            convertPixelToPhysical(popDTs[[x()$getUID()]], x()$omeXMLPixelRes())
+          }
+        } else {
+          for (x in self$cciaObjects(uIDs = uIDs)) {
+            convertPixelToPhysical(popDTs[[x$getUID()]], x$omeXMLPixelRes())
+          }
+        }
+      }
+            
       # bind together
       if (asDT == TRUE && length(popDTs) > 0) {
         idcol <- if ("uID" %in% colnames(popDTs[[1]])) NULL else "uID"
-        
         popDTs <- data.table::rbindlist(popDTs, fill = TRUE, idcol = idcol)
         
         # normalise columns per batch group?

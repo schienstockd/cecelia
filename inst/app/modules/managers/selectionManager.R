@@ -35,9 +35,7 @@ createSelectionManager <- function(
   observeEvent(selectedUIDs(), {
     # tick buttons
     for (i in selectedUIDs()) {
-      addClass(
-        paste0("selectRow_", i), btnCLASS_SELECTED
-      )
+      addClass(paste0("selectRow_", i), btnCLASS_SELECTED)
     }
     
     # get on selected rows
@@ -47,9 +45,7 @@ createSelectionManager <- function(
       
       # untick buttons
       for (i in nonSelectedUIDs) {
-        removeClass(
-          paste0("selectRow_", i), btnCLASS_SELECTED
-          )
+        removeClass(paste0("selectRow_", i), btnCLASS_SELECTED)
       }
     }
   })

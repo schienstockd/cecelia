@@ -675,7 +675,7 @@ class NapariUtils:
             #   percentile = 100
             # else:
             #   percentile = 99.5
-              
+            
             percentile = 100
             
             chnl_scale = 255
@@ -708,8 +708,8 @@ class NapariUtils:
             layer_chnl_colours.insert(0, 0)
             
             # convert to dict
-            labels_layer.color = {x: labels_cm[layer_chnl_colours[i]] for i, x in enumerate(label_ids)}
-            
+            labels_layer.colormap = napari.utils.DirectLabelColormap(
+              color_dict = {x: labels_cm[layer_chnl_colours[i]] for i, x in enumerate(label_ids)})
             
     # show points
     if show_points is True:
@@ -851,8 +851,6 @@ class NapariUtils:
       # remove layer if shown
       tracks_layer = 'Tracks' if pop_name is None else f'({pop_name}) Tracks'
       self.remove_layer_by_name(tracks_layer)
-      
-      print(prop_df)
       
       # add to napari
       self.viewer.add_tracks(
