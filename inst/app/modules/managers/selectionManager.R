@@ -5,6 +5,7 @@ createSelectionManager <- function(
   selectedUIDs <- reactiveVal()
   selectedUIDRange <- reactiveVal()
   hotkeyPressed <- reactiveVal(FALSE)
+  id <- if ("selectionID" %in% names(managerConf)) managerConf$selectionID else "image"
   
   ### Reactive-like values
   
@@ -12,13 +13,13 @@ createSelectionManager <- function(
   ## Event specific
   
   # listen to row toggle
-  toggleRows <- eventReactive(input$toggleRows, {
-    input$toggleRows
+  toggleRows <- eventReactive(input[[paste0(id, "ToggleRows")]], {
+    input[[paste0(id, "ToggleRows")]]
   })
   
   # listen to item selection
-  selectedUID <- eventReactive(input$selectRow, {
-    input$selectRow
+  selectedUID <- eventReactive(input[[paste0(id, "SelectRow")]], {
+    input[[paste0(id, "SelectRow")]]
   })
   
   # number of selected IDs
@@ -35,47 +36,48 @@ createSelectionManager <- function(
   observeEvent(selectedUIDs(), {
     # tick buttons
     for (i in selectedUIDs()) {
-      addClass(paste0("selectRow_", i), btnCLASS_SELECTED)
+      addClass(paste0(id, "SelectRow_", i), btnCLASS_SELECTED)
     }
     
     # get on selected rows
-    if (any(!(managerConf$imageData()$uID %in% selectedUIDs()))) {
-      nonSelectedUIDs <- managerConf$imageData()[
-        !(managerConf$imageData()$uID %in% selectedUIDs()), c("uID")]
+    if (any(!(managerConf$selectionData()$uID %in% selectedUIDs()))) {
+      nonSelectedUIDs <- managerConf$selectionData()[
+        !(managerConf$selectionData()$uID %in% selectedUIDs()), c("uID")]
       
       # untick buttons
       for (i in nonSelectedUIDs) {
-        removeClass(paste0("selectRow_", i), btnCLASS_SELECTED)
+        removeClass(paste0(id, "SelectRow_", i), btnCLASS_SELECTED)
       }
     }
   })
   
-  # set shift key
-  observeEvent(input$selectionHotkeys, {
-    req(input$selectionHotkeys)
-    
-    hotkeyPressed(TRUE)
-  })
+  # # set shift key
+  # observeEvent(input$selectionHotkeys, {
+  #   req(input$selectionHotkeys)
+  #   
+  #   hotkeyPressed(TRUE)
+  # })
   
   # observe range selection with hotkeys
-  observeEvent(input$selectRow, {
+  observeEvent(input[[paste0(id, "SelectRow")]], {
     req(selectedUID())
     idRange <- NULL
+    inputRow <- input[[paste0(id, "SelectRow")]]
     
     # was hotkey pressed?
     if (hotkeyPressed() == TRUE) {
       # first row selected?
       if (is.null(selectedUIDRange())) {
-        idRange <- c(input$selectRow)
+        idRange <- c(inputRow)
       } else {
         # get range
         rowA <- which(
-          managerConf$imageData()$uID == selectedUIDRange()[[1]])
+          managerConf$selectionData()$uID == selectedUIDRange()[[1]])
         rowB <- which(
-          managerConf$imageData()$uID == input$selectRow)
+          managerConf$selectionData()$uID == inputRow)
         
         # return selected uIDs
-        idRange <- managerConf$imageData()[seq(rowA, rowB),]$uID
+        idRange <- managerConf$selectionData()[seq(rowA, rowB),]$uID
       }
       
       hotkeyPressed(FALSE)
@@ -109,7 +111,7 @@ createSelectionManager <- function(
     if (length(selectedUIDs()) > 0) {
       selectedUIDs(list())
     } else {
-      selectedUIDs(managerConf$imageData()$uID)
+      selectedUIDs(managerConf$selectionData()$uID)
     }
   })
   
@@ -119,57 +121,57 @@ createSelectionManager <- function(
   createSelectionColumn <- function() {
     # which rows are selected?
     isolate({
-      selectRowClasses <- rep(NULL, nrow(managerConf$imageData()))
-      selectDownClasses <- rep(NULL, nrow(managerConf$imageData()))
-      selectUpClasses <- rep(NULL, nrow(managerConf$imageData()))
+      selectRowClasses <- rep(NULL, nrow(managerConf$selectionData()))
+      # selectDownClasses <- rep(NULL, nrow(managerConf$selectionData()))
+      # selectUpClasses <- rep(NULL, nrow(managerConf$selectionData()))
       
-      selectRowClasses[which(managerConf$imageData()$uID %in% selectedUIDs())] <- btnCLASS_SELECTED
+      selectRowClasses[which(managerConf$selectionData()$uID %in% selectedUIDs())] <- btnCLASS_SELECTED
       
-      if (!is.null(input$selectDown)) {
-        rowNum <- which(managerConf$imageData()$uID == input$selectDown)
-        selectDownClasses[rowNum] <- btnCLASS_SELECTED
-      }
-      
-      if (!is.null(input$selectUp)) {
-        rowNum <- which(managerConf$imageData()$uID == input$selectUp)
-        selectUpClasses[rowNum] <- btnCLASS_SELECTED
-      }
+      # if (!is.null(input$selectDown)) {
+      #   rowNum <- which(managerConf$selectionData()$uID == input$selectDown)
+      #   selectDownClasses[rowNum] <- btnCLASS_SELECTED
+      # }
+      # 
+      # if (!is.null(input$selectUp)) {
+      #   rowNum <- which(managerConf$selectionData()$uID == input$selectUp)
+      #   selectUpClasses[rowNum] <- btnCLASS_SELECTED
+      # }
     })
     
     tableCols <- list(
       # " " = shinyInput(
-      #   actionButton, session$ns("selectDown_"), managerConf$imageData()$uID,
-      #   initLabels = rep(btnLABEL_DOWN, nrow(managerConf$imageData())),
+      #   actionButton, session$ns("selectDown_"), managerConf$selectionData()$uID,
+      #   initLabels = rep(btnLABEL_DOWN, nrow(managerConf$selectionData())),
       #   initClasses = selectDownClasses,
       #   initOnclick = paste(
       #     sprintf(
       #       'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
       #       session$ns("selectDown"),
-      #       managerConf$imageData()$uID
+      #       managerConf$selectionData()$uID
       #     )
       #   )
       # ),
       # " " = shinyInput(
-      #   actionButton, session$ns("selectUp_"), managerConf$imageData()$uID,
-      #   initLabels = rep(btnLABEL_UP, nrow(managerConf$imageData())),
+      #   actionButton, session$ns("selectUp_"), managerConf$selectionData()$uID,
+      #   initLabels = rep(btnLABEL_UP, nrow(managerConf$selectionData())),
       #   initClasses = selectUpClasses,
       #   initOnclick = paste(
       #     sprintf(
       #       'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
       #       session$ns("selectUp"),
-      #       managerConf$imageData()$uID
+      #       managerConf$selectionData()$uID
       #     )
       #   )
       # ),
       " " = shinyInput(
-        "actionButton", session$ns("selectRow_"), managerConf$imageData()$uID,
-        initIcons = rep(btnICON_SELECTED, nrow(managerConf$imageData())),
+        "actionButton", session$ns(paste0(id, "SelectRow_")), managerConf$selectionData()$uID,
+        initIcons = rep(btnICON_SELECTED, nrow(managerConf$selectionData())),
         initClasses = selectRowClasses,
         initOnclick = paste(
           sprintf(
             'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
-            session$ns("selectRow"),
-            managerConf$imageData()$uID
+            session$ns(paste0(id, "SelectRow")),
+            managerConf$selectionData()$uID
           )
         )
       )
@@ -178,12 +180,12 @@ createSelectionManager <- function(
     # set names for cols
     names(tableCols) <- c(
       as.character(actionLink(
-        session$ns("toggleRows"), NULL, icon = icon("toggle-on"),
+        session$ns(paste0(id, "ToggleRows")), NULL, icon = icon("toggle-on"),
         style = "color:white;font-size:1.5em",
         onclick = paste(
           sprintf(
             'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
-            session$ns("toggleRows"),
+            session$ns(paste0(id, "ToggleRows")),
             runif(1)
             )
           )

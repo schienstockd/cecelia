@@ -150,7 +150,7 @@
         "ui", "input", "selection", "task", "imageSet")
       managerConf = list(
         moduleName = id,
-        imageData = imageData,
+        selectionData = imageData,
         imageSet = list(
           enableAddition = TRUE,
           enableDeletion = TRUE

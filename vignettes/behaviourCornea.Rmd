@@ -131,12 +131,13 @@ show.tracks <- function(popDT) {
     geom_path()
 }
 
-# join points
-tracks.points.add <- function(popDT, labelIDs) {
+# add points to track
+tracks.points.add <- function(popDT, labelIDs, trackID = NULL) {
   # get highest track number
-  trackID.hi <- max(popDT$track_id, na.rm = TRUE) + 1
+  if (is.null(trackID))
+    trackID <- max(popDT$track_id, na.rm = TRUE) + 1
   
-  popDT[label %in% labelIDs, track_id := trackID.hi]
+  popDT[label %in% labelIDs, track_id := trackID]
 }
 
 # remove points

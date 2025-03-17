@@ -1069,7 +1069,7 @@ createTaskManager <- function(
   # stop all processes
   observeEvent(input$taskCancelAll, {
     # get row numbers
-    # uIDs <- managerConf$imageData()$uID
+    # uIDs <- managerConf$selectionData()$uID
     
     # get only busy tasks
     taskIDs <- c(
@@ -1315,7 +1315,7 @@ createTaskManager <- function(
   # is the environment toggled?
   observeEvent(taskEnvironment(), {
     # # cancel all jobs
-    # uIDs <- managerConf$imageData()$uID
+    # uIDs <- managerConf$selectionData()$uID
     # 
     # # stop tasks
     # stopTasks(uIDs)
@@ -1478,7 +1478,7 @@ createTaskManager <- function(
     })
 
     if (is.null(taskIDs)) {
-      taskIDs <- managerConf$imageData()$taskID
+      taskIDs <- managerConf$selectionData()$taskID
     }
 
     # columns

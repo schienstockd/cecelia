@@ -172,7 +172,7 @@
         "ui", "input", "selection", "task", "imageSet", "imageViewer")
       managerConf = list(
         moduleName = id,
-        imageData = imageData,
+        selectionData = imageData,
         input = list(
           sourceDirectory = file.path(cciaConf()$tasks$inputDefinitions, id)
         ),

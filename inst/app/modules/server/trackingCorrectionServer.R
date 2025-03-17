@@ -23,12 +23,20 @@
       ### Reactive values
       # population DT
       rootDT <- reactiveVal()
+      resultFlushCache <- reactiveVal()
+      
+      # reactives for storing point/track information
+      # this information will come from napari or other
+      storeLabels <- reactiveVal()
+      storePointsDT <- reactiveVal()
+      storePoints <- reactiveVal()
+      storeTracks <- reactiveVal()
+      tracksModifies <- reactiveVal()
+      
+      # helpers for modification
       updatePopDT <- reactiveVal(1)
       tracksEditHistory <- reactiveVal()
       tracksCurrentIDs <- reactiveVal()
-      
-      # flush cache?
-      resultFlushCache <- reactiveVal()
       
       ### Reactive-like values
       ## dependent on rootDT
@@ -41,48 +49,10 @@
         rootDT()[track_id > 0]
       })
       
-      # get popDT for selected track traces
-      selectedTracksDT <- eventReactive(c(
-        rootDT(),
-        updatePopDT(),
-        selectedTrackTraces()
-      ), {
-        rootDT()[track_id %in% selectedTrackTraces()]
-      })
-      
       # get value name
       valueName <- reactive({
         # TODO this is a bit cheating
         .flowPopParent(resultParamsPops(), getRoot = FALSE)
-      })
-      
-      # return tracking history as DF
-      tracksEditHistoryDF <- reactive({
-        # get data
-        DT <- as.data.table(list(Function = sapply(tracksEditHistory(), function(x) x$short)))
-        nEdits <- nrow(DT)
-        modCols <- list()
-        
-        # prepare modifier columns
-        if (nEdits > 0) {
-          editIDs <- seq(nEdits)
-          modCols <- list(
-            "Rollback" = shinyInput(
-              "actionLink", session$ns("trackEditRollback_"), editIDs,
-              initIcons = rep(btnICON_POINT_LEFT, nEdits),
-              initOnclick = paste(
-                sprintf(
-                  'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
-                  session$ns("trackEditRollback"),
-                  seq(editIDs)
-                )
-              )
-            )
-          )
-        }
-        
-        # bind
-        cbind(DT, do.call(cbind, modCols))
       })
       
       ### Reactives - RxCalc
@@ -135,56 +105,6 @@
         moduleManagers()$populationManager$createPopData()
       })
       
-      # check tracks from selection
-      selectedTrackTraces <- eventReactive(c(
-        event_data("plotly_click", "trackTraces"),
-        event_data("plotly_selected", "trackTraces")
-      ), {
-        req(popTracksFiltered())
-        trackSelection <- c(
-          event_data("plotly_click", "trackTraces"),
-          event_data("plotly_selected", "trackTraces")
-        )
-        req(trackSelection)
-        
-        # TODO should this be a reactive?
-        curveIDs <- unique(trackSelection$curveNumber)
-        trackIDs <- unique(popTracksFiltered()$track_id)
-        
-        # return track IDs
-        trackIDs[curveIDs + 1]
-      })
-      
-      # get selected tracks from table
-      selectedTrackIDs <- reactive({
-        req(selectedTrackTraces())
-        
-        selectedTrackTraces()[input$qcTracksSelectionDT_rows_selected]
-      })
-      
-      # observe changes to thresholds
-      tracksSelection <- eventReactive(c(
-        input$qcTracksInfoSpeedThresh,
-        input$qcTracksInfoAngleThresh
-      ), {
-        req(popTracksInfo())
-        
-        popTracksInfo()[
-          live.cell.speed.sd >= input$qcTracksInfoSpeedThresh |
-            live.cell.angle.sd >= input$qcTracksInfoAngleThresh, track_id]
-      })
-      
-      tracksPairsSelection <- eventReactive(c(
-        input$qcTrackPairsAngleThresh,
-        input$qcTrackPairsDistThresh
-      ), {
-        req(popTracksPairs())
-        
-        popTracksPairs()[
-          angle < input$qcTrackPairsAngleThresh &
-            dist < input$qcTrackPairsDistThresh, interaction(cell1, cell2)]
-      })
-      
       # populations
       popsTracked <- reactive({
         popsList <- cciaObj()$popPaths(popType = popType(), includeFiltered = TRUE)
@@ -192,89 +112,15 @@
         popsList[!is.na(stringr::str_match(popsList, "/tracked$"))]
       })
       
-      # graph
-      popGraph <- eventReactive(popDT(), {
-        req(popDT())
-        
-        cciaObj()$tracksGraph(
-          resultParamsPops(),
-          completeDT = TRUE,
-          replaceNA = TRUE,
-          extraAttr = c("label"),
-          popDT = popDT()
-        )
-      })
-      
-      # tracks
-      popTracks <- eventReactive(popDT(), {
-        req(popDT())
-        req(resultParamsPops())
-        
-        cciaObj()$tracks(resultParamsPops(), popDT = popDT(), convertToPhysical = FALSE)
-      })
-      
-      # track pairs
-      popTracksPairs <- reactive({
-        req(popTracks())
-        
-        as.data.table(celltrackR::analyzeCellPairs(popTracks()))
-      })
-      
-      # tracks info
-      popTracksInfo <- eventReactive(popDT(), {
-        req(popDT())
-        
-        cciaObj()$tracksInfo(
-          c("live.cell.speed", "live.cell.angle"),
-          parentPop = resultParamsPops(),
-          popDT = popDT()
-        )
-      })
-      
-      # track pairs selection
-      popTracksPairsSelection <- reactive({
-        req(popTracksPairs())
-        req(tracksPairsSelection())
-        
-        popTracksPairs()[interaction(cell1, cell2) %in% tracksPairsSelection()]
-      })
-      
-      # tracks info selection
-      popTracksInfoSelection <- reactive({
-        req(popTracksInfo())
-        req(tracksSelection())
-        
-        popTracksInfo()[track_id %in% tracksSelection()]
-      })
-      
-      # get population IDs from filtered tracks
-      popTracksFiltered <- reactive({
-        req(popDT())
-        
-        popDT()[track_id %in% c(
-          popTracksInfoSelection()$track_id,
-          unique(popTracksPairsSelection()$cell1),
-          unique(popTracksPairsSelection()$cell2)
-        )]
-      })
-      
-      # get population IDs from selected tracks
-      popTracksSelection <- reactive({
-        req(popDT())
-        req(selectedTrackTraces())
-        
-        popDT()[track_id %in% selectedTrackTraces()]
+      # selected ccia object
+      cciaObj <- reactive({
+        moduleManagers()$imageViewerManager$shownImage()
       })
       
       pixelRes <- reactive({
         req(cciaObj())
         
         cciaObj()$omeXMLPixelRes(invalidate = FALSE)
-      })
-      
-      # selected ccia object
-      cciaObj <- reactive({
-        moduleManagers()$imageViewerManager$shownImage()
       })
       
       # generate dataframe from selected image list
@@ -285,6 +131,35 @@
         moduleManagers()$imageSetManager$selectedSet()$summary(
           c("Attr"), withSelf = FALSE,
           uIDs = moduleManagers()$imageSetManager$filteredUIDs())
+      })
+      
+      # return tracking history as DF
+      tracksEditHistoryDF <- reactive({
+        # get data
+        DT <- as.data.table(list(Function = sapply(tracksEditHistory(), function(x) x$short)))
+        nEdits <- nrow(DT)
+        modCols <- list()
+        
+        # prepare modifier columns
+        if (nEdits > 0) {
+          editIDs <- seq(nEdits)
+          modCols <- list(
+            "Rollback" = shinyInput(
+              "actionLink", session$ns("trackEditRollback_"), editIDs,
+              initIcons = rep(btnICON_POINT_LEFT, nEdits),
+              initOnclick = paste(
+                sprintf(
+                  'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
+                  session$ns("trackEditRollback"),
+                  seq(editIDs)
+                )
+              )
+            )
+          )
+        }
+        
+        # bind
+        cbind(DT, do.call(cbind, modCols))
       })
       
       ### Observers - RxAction
@@ -330,13 +205,20 @@
         DT <- cciaObj()$popDT(
           popType = popType(),
           includeFiltered = TRUE,
-          completeDT = TRUE,
-          replaceNA = TRUE,
+          # completeDT = TRUE,
+          # replaceNA = TRUE,
           # pops = popsTracked()
           # pops = resultParamsPops()
           # TODO this will get the whole DT for track editing
           pops = c(.flowPopParent(resultParamsPops()), resultParamsPops())
         )
+        
+        # make sure that the DT order matches the labels order
+        # this can happen when you manually add segmentation?
+        labels <- cciaObj()$labelProps(valueName = valueName())
+        DT[, label := factor(label, levels = labels$values_obs()$label)]
+        setorder(DT, label)
+        labels$close()
         
         # record track ids
         # copy here otherwise the sequence gets changed whenever DT changes
@@ -366,79 +248,149 @@
           popType(), includeFiltered = TRUE, purge = TRUE)
       })
       
+      # listen to viewer output
+      observeEvent(globalManagers$viewerManager()$viewerOutput(), {
+        req(moduleManagers()$imageViewerManager$shownImage())
+        
+        viewerOutput <- globalManagers$viewerManager()$viewerOutput()
+        outputProcessed <- FALSE
+        
+        # check whether there is something to do
+        if ("trackingCorrectionSelectPoints" %in% names(viewerOutput)) {
+          if (length(viewerOutput$trackingCorrectionSelectPoints)) {
+            # set selected labels
+            req(length(viewerOutput$trackingCorrectionSelectPoints) > 0)
+            
+            # save points
+            storeLabels(viewerOutput$trackingCorrectionSelectPoints)
+            
+            outputProcessed <- TRUE
+          }
+        }
+        
+        # tell the viewer that the command was processed
+        if (outputProcessed == TRUE){
+          globalManagers$viewerManager()$clearViewerOutput()
+        }
+      })
+      
+      # dependent on rootDT
+      tracksDT <- eventReactive(rootDT(), {
+        req(rootDT())
+        
+        rootDT()[track_id > 0]
+      })
+      
+      # points depends on selected labels
+      observeEvent(c(storeLabels(), rootDT(), updatePopDT()), {
+        req(length(storeLabels()) > 0)
+        
+        # get points DT
+        # DT <- copy(rootDT()[label %in% storeLabels()])
+        track.ids <- rootDT()[label %in% storeLabels()]$track_id
+        DT <- copy(rootDT()[track_id %in% track.ids])
+        
+        storePointsDT(DT)
+        
+        # storeTracks(DT)
+        # as.data.frame otherwise DT will be unhappy
+        storePoints(as.data.frame(DT[
+          label %in% storeLabels(), c("track_id", "label", "centroid_t")] %>% rename(uID = label)))
+      })
+      
+      # tracks depends on selected points
+      observeEvent(storePoints(), {
+        req(nrow(storePoints()) > 0)
+        
+        storeTracks(unique(storePoints()[, c("track_id"), drop = FALSE]) %>% rename(uID = track_id))
+      })
+      
       # listen to track modification
       observeEvent(c(
-        popTracksFiltered()
+        updatePopDT()
       ), {
-        req(cciaObj())
-        req(popTracksFiltered())
         req(updatePopDT())
+        req(rootDT())
+        req(tracksDT())
         
         # save tracks
-        # tracks.save.mod.tracks(cciaObj(), popTracksFiltered()$track_id, valueName = valueName())
         tracks.save.mod(cciaObj(), rootDT(), valueName = valueName())
         
         # call napari
-        # TODO this is different
         globalManagers$viewerManager()$viewer()$highlightTracks(
-          paste0(valueName(), "-mod"), popTracksFiltered()$track_id, "filtered")
+          paste0(valueName(), "-mod"), tracksDT()$track_id, "selected")
         globalManagers$viewerManager()$viewer()$showLabelsAll(
           list(paste0(valueName(), "-mod")), showTracks = TRUE)
       })
       
-      # listen to track selection
-      observeEvent(c(
-        selectedTracksDT()
-      ), {
-        req(cciaObj())
-        req(selectedTracksDT())
+      # Listen to points/tracks OPs
+      observeEvent(input$pointsOpRm, {
+        req(length(pointsSelection$selectedUIDs()) > 0)
         
-        # call napari and centre
-        # get centre position from tracks
-        globalManagers$viewerManager()$viewer()$centre(
-          list(
-            # TODO this should bias less towards longer tracks
-            # selectedTracksDT()[, median(centroid_y), by = track_id][, median(V1)],
-            # selectedTracksDT()[, median(centroid_x), by = track_id][, median(V1)]
-            selectedTracksDT()[, median(centroid_y)],
-            selectedTracksDT()[, median(centroid_x)]
-          ),
-          # selectedTracksDT()[, median(centroid_t), by = track_id][, median(V1)],
-          selectedTracksDT()[, max(centroid_t)],
-          # TODO I don't have a good calculation for that
-          10
-        )
-        
-        # globalManagers$viewerManager()$viewer()$highlightTracks(
-        #   paste0(valueName(), "-mod"), popTracksFiltered()$track_id, "filtered")
-      })
-      
-      # track edit operations
-      observeEvent(input$edtTracksJoin, {
-        # two tracks are required for join
-        req(length(selectedTrackIDs()) == 2)
-        
-        tracks.join(rootDT(), selectedTrackIDs()[[1]], selectedTrackIDs()[[2]])
+        # get points for operation
+        tracks.points.rm(rootDT(), pointsSelection$selectedUIDs())
         
         # record
         recordTrackEdits(
           rootDT()$track_id,
-          short = paste("JOIN", paste(selectedTrackIDs(), collapse = ",")))
+          short = paste("PT.rm", paste(pointsSelection$selectedUIDs(), collapse = ",")))
         
         # update pop DT
         updatePopDT(runif(1))
       })
       
-      observeEvent(input$edtTracksDel, {
-        # two tracks are required for join
-        req(length(selectedTrackIDs()) > 0)
+      observeEvent(input$pointsOpAdd, {
+        req(length(pointsSelection$selectedUIDs()) > 0)
         
-        tracks.rm(rootDT(), selectedTrackIDs())
+        # get points for operation
+        tracks.points.add(rootDT(), pointsSelection$selectedUIDs(),
+                          trackID = tracksSelection$selectedUIDs())
         
         # record
         recordTrackEdits(
           rootDT()$track_id,
-          paste("DEL", paste(selectedTrackIDs(), collapse = ",")))
+          short = paste("PT.add", paste(pointsSelection$selectedUIDs(), collapse = ","),
+                        "to", paste(tracksSelection$selectedUIDs(), collapse = ",")))
+        
+        # update pop DT
+        updatePopDT(runif(1))
+      })
+      
+      observeEvent(input$pointsOpSave, {
+        # save tracking correction
+        # copy modified version over to original tracking
+        labelsPath <- cciaObj()$imLabelPropsFilepath(valueName())
+        modPath <- paste0(
+          tools::file_path_sans_ext(labelsPath), "-mod.", tools::file_ext(labelsPath))
+        
+        file.copy(modPath, labelsPath, overwrite = TRUE)
+      })
+      
+      observeEvent(input$tracksOpRm, {
+        req(length(tracksSelection$selectedUIDs()) > 0)
+        
+        # get points for operation
+        tracks.rm(rootDT(), tracksSelection$selectedUIDs())
+        
+        # record
+        recordTrackEdits(
+          rootDT()$track_id,
+          short = paste("TK.rm", paste(tracksSelection$selectedUIDs(), collapse = ",")))
+        
+        # update pop DT
+        updatePopDT(runif(1))
+      })
+      
+      observeEvent(input$tracksOpJoin, {
+        req(length(tracksSelection$selectedUIDs()) > 0)
+        
+        # get points for operation
+        tracks.join(rootDT(), tracksSelection$selectedUIDs()[[1]], tracksSelection$selectedUIDs()[[2]])
+        
+        # record
+        recordTrackEdits(
+          rootDT()$track_id,
+          short = paste("TK.join", paste(tracksSelection$selectedUIDs(), collapse = ",")))
         
         # update pop DT
         updatePopDT(runif(1))
@@ -476,28 +428,6 @@
       
       ### UI Outputs
       ## Tables
-      output$qcTracksSelectionDT <- DT::renderDataTable({
-        req(popTracksInfo())
-        req(selectedTrackTraces())
-        
-        # get table
-        options = list(
-          fixedColumns = list(leftColumns = 1),
-          fixedHeader = TRUE)
-        
-        tableOpts <- list(
-          ordering = FALSE,
-          dom = "tip"
-          # pageLength = 10
-        )
-        
-        moduleManagers()$uiManager$dataTable(
-          # popTracksSelection(), options = options, rownames = TRUE, editable = TRUE,
-          popTracksInfo()[track_id %in% selectedTrackTraces()], options = options, rownames = TRUE, editable = FALSE,
-          # ordering = tableOpts$ordering, pageLength = tableOpts$pageLength, dom = tableOpts$dom)
-          ordering = tableOpts$ordering, dom = tableOpts$dom, selection = "multiple")
-      }, server = TRUE)
-      
       # images
       output$imageTable <- DT::renderDataTable({
         req(imageData())
@@ -513,111 +443,49 @@
         ))
       })
       
-      ## Plots
-      
-      output$qcTracksInfo <- renderPlot({
-        req(popTracksInfo())
+      # points data
+      output$pointsTable <- DT::renderDataTable({
+        req(storePoints())
+        req(nrow(storePoints()) > 0)
         
-        ggplot(popTracksInfo(), aes(live.cell.speed.sd, live.cell.angle.sd)) +
-          theme_classic() +
-          geom_point() +
-          geom_text(data = popTracksInfoSelection(),
-                    aes(label = track_id), color = "red", hjust = -0.1) +
-          geom_vline(xintercept = input$qcTracksInfoSpeedThresh, col = "blue", lty = 2) +
-          geom_hline(yintercept = input$qcTracksInfoAngleThresh, col = "blue", lty = 2)
+        # add scollbars to table
+        # https://stackoverflow.com/a/73221455
+        
+        # get table
+        moduleManagers()$uiManager$dataTable(list(
+          pointsSelection$createSelectionColumn(),
+          storePoints()
+          # moduleManagers()$taskManager$createTaskDataTableColumns()
+        ), pageLength = 6, dom = "tip")
       })
       
-      output$qcTrackPairs <- renderPlot({
-        req(popTracksPairs())
+      # tracks data
+      output$tracksTable <- DT::renderDataTable({
+        req(storeTracks())
+        req(nrow(storeTracks()) > 0)
         
-        # Plot; zoom in on the region with small angles and distances
-        ggplot(popTracksPairs(), aes(x = dist, y = angle)) +
-          geom_point(color = "gray40") +
-          geom_text(data = popTracksPairsSelection(),
-                    aes(label = interaction(cell1, cell2)), color = "red", hjust = -0.1) +
-          labs(
-            x = "distance between cell pairs",
-            y = "angle between cell pairs") +
-          # coord_cartesian(xlim = c(0,400), ylim = c(0,180)) +
-          geom_hline(yintercept = input$qcTrackPairsAngleThresh, col = "blue", lty=2) +
-          geom_vline(xintercept = input$qcTrackPairsDistThresh, col = "blue", lty=2) +
-          theme_classic()
-      })
-      
-      output$qcTracksPlot <- renderPlotly({
-        req(popTracks())
-        req(popTracksFiltered())
-        
-        plot_ly(source = "trackTraces") %>%
-          add_trace(
-            data = popTracksFiltered(),
-            # data = popDT(),
-            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
-            type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
-          layout(
-            xaxis = list(scaleanchor = "y", scaleratio = 1),
-            yaxis = list(autorange = "reversed"),
-            xlim = c(0, max(popDT()$centroid_x)),
-            ylim = c(0, max(popDT()$centroid_y))
-          ) %>%
-          toWebGL()
-      })
-      
-      output$qcTracksSelectedPlot <- renderPlotly({
-        req(popTracks())
-        req(popTracksSelection())
-        
-        plot_ly(source = "selectedTrackTraces") %>%
-          add_trace(
-            data = popTracksSelection(),
-            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
-            type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
-          layout(
-            xaxis = list(scaleanchor = "y", scaleratio = 1),
-            yaxis = list(autorange = "reversed"),
-            xlim = c(0, max(popDT()$centroid_x)),
-            ylim = c(0, max(popDT()$centroid_y))
-          ) %>%
-          toWebGL()
-      })
-      
-      # QC plots to select thresholds
-      output$qcPlots <- renderUI({
-        tagList(
-          fluidRow(
-            column(
-              5,
-              fluidRow(plotOutput(session$ns("qcTrackPairs"), height = "300px", width = "300px")),
-              fluidRow(
-                column(6, sliderInput(session$ns("qcTrackPairsAngleThresh"), "Angle", 0, 180, 180)),
-                column(6, sliderInput(session$ns("qcTrackPairsDistThresh"), "Distance", 0, 100, 10))
-              )
-            ),
-            column(
-              5,
-              fluidRow(plotOutput(session$ns("qcTracksInfo"), height = "300px", width = "300px")),
-              fluidRow(
-                column(6, sliderInput(session$ns("qcTracksInfoSpeedThresh"), "Speed", 0, 20, 9, step = 0.5)),
-                column(6, sliderInput(session$ns("qcTracksInfoAngleThresh"), "Angle", 0, 2, 1, step = 0.1)),
-              )
-            )
-          )
-        )
+        # get table
+        moduleManagers()$uiManager$dataTable(list(
+          tracksSelection$createSelectionColumn(),
+          storeTracks()
+          # moduleManagers()$taskManager$createTaskDataTableColumns()
+        ), pageLength = 6, dom = "tip")
       })
       
       # Edit history
       output$editHistory <- DT::renderDataTable({
         req(tracksEditHistoryDF())
-
+        
         # get table
         options = list(
           fixedColumns = list(leftColumns = 1),
-          fixedHeader = TRUE)
-
+          fixedHeader = TRUE
+        )
+        
         tableOpts <- list(
           ordering = TRUE,
           dom = "tip",
-          pageLength = 10
+          pageLength = 8
         )
         
         moduleManagers()$uiManager$dataTable(
@@ -631,35 +499,78 @@
         # updatePopTable()
       ), {
         req(tracksEditHistoryDF())
-
+        
         # https://stackoverflow.com/a/56879871/13766165
         replaceData(dataTableProxy("editHistory"),
                     tracksEditHistoryDF(),
                     resetPaging = FALSE, rownames = FALSE)
       })
       
-      # QC resulting tracks as an overview
-      output$qcTracksOverview <- renderUI({
-        plotlyOutput(session$ns("qcTracksPlot"), height = "400px", width = "400px")
+      ## Plots
+      output$trackTraces <- renderPlotly({
+        req(storePointsDT())
+        
+        plot_ly(source = "trackTraces") %>%
+          add_trace(
+            data = storePointsDT()[track_id > 0],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
+          layout(
+            xaxis = list(scaleanchor = "y", scaleratio = 1, range = c(0, max(rootDT()$centroid_x))),
+            yaxis = list(autorange = "reversed", range = c(0, max(rootDT()$centroid_y)))
+          ) %>%
+          toWebGL()
       })
       
-      # track selection for correction
-      output$qcTracksSelection <- renderUI({
-        tagList(
-          fluidRow(
-            plotlyOutput(session$ns("qcTracksSelectedPlot"), height = "400px", width = "400px")
-          ),
-          fluidRow(
-            column(2, actionButton(session$ns("edtTracksJoin"), "join")),
-            column(2, actionButton(session$ns("edtTracksDel"), "delete")),
-            column(2, actionButton(session$ns("edtTracksSave"), "save"))
-          )
-        )
+      output$pointsPreview <- renderPlotly({
+        # req(pointsSelection$selectedUIDs())
+        
+        plot_ly(source = "pointsPreview") %>%
+          add_trace(
+            data = storePointsDT()[track_id > 0 & track_id],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE,
+            marker = list(color = "lightgrey"), line = list(color = "lightgrey")) %>%
+          add_trace(
+            data = storePointsDT()[track_id > 0 & label %in% pointsSelection$selectedUIDs()],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "markers", showlegend = FALSE) %>%
+          add_trace(
+            data = storePointsDT()[is.na(track_id) & label %in% pointsSelection$selectedUIDs()],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "markers", showlegend = FALSE,
+            marker = list(color = "#ff1493")) %>%
+          layout(
+            xaxis = list(scaleanchor = "y", scaleratio = 1, range = c(0, max(rootDT()$centroid_x))),
+            yaxis = list(autorange = "reversed", range = c(0, max(rootDT()$centroid_y)))
+          ) %>%
+          toWebGL()
       })
       
-      # track table from selection
-      output$qcTracksSelectionTable <- renderUI({
-        DT::dataTableOutput(session$ns("qcTracksSelectionDT"))
+      output$tracksPreview <- renderPlotly({
+        # req(tracksSelection$selectedUIDs())
+        
+        plot_ly(source = "tracksPreview") %>%
+          add_trace(
+            data = storePointsDT()[track_id > 0 & track_id],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE,
+            marker = list(color = "lightgrey"), line = list(color = "lightgrey")) %>%
+          add_trace(
+            data = storePointsDT()[track_id %in% tracksSelection$selectedUIDs()],
+            # data = rootDT(),
+            x = ~centroid_x, y = ~centroid_y, split = ~track_id,
+            type = "scatter", mode = "lines+markers", showlegend = FALSE) %>%
+          layout(
+            xaxis = list(scaleanchor = "y", scaleratio = 1, range = c(0, max(rootDT()$centroid_x))),
+            yaxis = list(autorange = "reversed", range = c(0, max(rootDT()$centroid_y)))
+          ) %>%
+          toWebGL()
       })
       
       ## Buttons
@@ -688,6 +599,21 @@
         ))
       })
       
+      output$pointsOps <- renderUI({
+        fluidRow(
+          actionButton(session$ns("pointsOpRm"), "Remove"),
+          actionButton(session$ns("pointsOpAdd"), "Add"),
+          actionButton(session$ns("pointsOpSave"), "save")
+        )
+      })
+      
+      output$tracksOps <- renderUI({
+        fluidRow(
+          actionButton(session$ns("tracksOpRm"), "Remove"),
+          actionButton(session$ns("tracksOpJoin"), "Join")
+        )
+      })
+      
       ### Managers
       # init managers
       managerNames = c(
@@ -695,7 +621,7 @@
         "imageViewer", "population")
       managerConf = list(
         moduleName = id,
-        imageData = imageData,
+        selectionData = imageData,
         cciaObj = cciaObj,
         input = list(
           sourceDirectory = file.path(cciaConf()$tasks$inputDefinitions, id)
@@ -718,6 +644,17 @@
       
       moduleManagers <- createModuleManager(
         input, output, session, globalManagers, id, managerNames, managerConf)
+      
+      # selection managers
+      pointsSelection <- createSelectionManager(
+        input, output, session, globalManagers, moduleManagers,
+        list(selectionData = storePoints, selectionID = "points")
+      )
+      
+      tracksSelection <- createSelectionManager(
+        input, output, session, globalManagers, moduleManagers,
+        list(selectionData = storeTracks, selectionID = "tracks")
+      )
     }
   )
 }

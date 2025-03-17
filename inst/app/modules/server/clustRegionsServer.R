@@ -733,7 +733,7 @@
         "imageViewer", "population", "shapes")
       managerConf = list(
         moduleName = id,
-        imageData = imageData,
+        selectionData = imageData,
         cciaObj = cciaObj,
         input = list(
           sourceDirectory = file.path(cciaConf()$tasks$inputDefinitions, id)

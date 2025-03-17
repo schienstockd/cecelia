@@ -1,7 +1,7 @@
 {
   "fun": {
     "trainN2V": {
-      "category": "Module functionss",
+      "category": "Module functions",
       "label": "Train Noise2Void",
       "env": ["local", "hpc"]
     }

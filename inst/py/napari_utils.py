@@ -1630,14 +1630,6 @@ class NapariUtils:
   """
   Create bindings for cell mapping
   """
-  def create_tracking_images_module(self):
-    @self.viewer.bind_key('k', overwrite = True)
-    def save_selected_points(event = None):
-      self.selected_points_to_output('trackingImagesSelectPoints')
-      
-  """
-  Create bindings for cell mapping
-  """
   def create_tracking_correction_module(self):
     @self.viewer.bind_key('k', overwrite = True)
     def save_selected_points(event = None):

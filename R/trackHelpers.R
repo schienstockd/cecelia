@@ -281,6 +281,21 @@ tracks.coords <- function(track) {
 } 
 
 ## Functions to modify tracks
+# delete points
+tracks.points.rm <- function(popDT, labelIDs) {
+  # should work in place
+  popDT[label %in% labelIDs, track_id := NA]
+}
+
+# add points to track
+tracks.points.add <- function(popDT, labelIDs, trackID = NULL) {
+  # get highest track number
+  if (length(trackID) <= 0)
+    trackID <- max(popDT$track_id, na.rm = TRUE) + 1
+  
+  popDT[label %in% labelIDs, track_id := trackID]
+}
+
 # delete track
 tracks.rm <- function(popDT, trackIDs) {
   # should work in place
@@ -324,31 +339,31 @@ tracks.save.mod <- function(cciaObj, popDT, valueName, ext.mod = "-mod") {
   }
 }
 
-# save modified tracks file
-# TODO this is really only for viewing in napari
-tracks.save.mod.tracks <- function(cciaObj, trackIDs, valueName, ext.mod = "-mod") {
-  # get labels
-  labels <- cciaObj$labelProps(valueName = valueName)
-  
-  if (length(labels) > 0) {
-    labels.path <- labels$adata_filepath()
-    
-    labels.new.base <- stringr::str_replace(basename(labels.path), ".h5ad", paste0(ext.mod, ".h5ad"))
-    labels.new.path <- file.path(dirname(labels.path), labels.new.base)
-    
-    # add to labels
-    # labels$add_obs(as.list(popDT[, .(track_id)]))
-    # the other values will be removed upon save
-    # labels$view_cols(list("track_id"))
-    trackDT <- as.data.table(labels$values_obs())
-    trackDT[!track_id %in% trackIDs, track_id := NaN]
-    labels$add_obs(as.list(trackDT[, .(track_id)]))
-    
-    # save
-    labels$save(filename = labels.new.path)
-    labels$close()
-  }
-}
+# # save modified tracks file
+# # TODO this is really only for viewing in napari
+# tracks.save.mod.tracks <- function(cciaObj, trackIDs, valueName, ext.mod = "-mod") {
+#   # get labels
+#   labels <- cciaObj$labelProps(valueName = valueName)
+#   
+#   if (length(labels) > 0) {
+#     labels.path <- labels$adata_filepath()
+#     
+#     labels.new.base <- stringr::str_replace(basename(labels.path), ".h5ad", paste0(ext.mod, ".h5ad"))
+#     labels.new.path <- file.path(dirname(labels.path), labels.new.base)
+#     
+#     # add to labels
+#     # labels$add_obs(as.list(popDT[, .(track_id)]))
+#     # the other values will be removed upon save
+#     # labels$view_cols(list("track_id"))
+#     trackDT <- as.data.table(labels$values_obs())
+#     trackDT[!track_id %in% trackIDs, track_id := NaN]
+#     labels$add_obs(as.list(trackDT[, .(track_id)]))
+#     
+#     # save
+#     labels$save(filename = labels.new.path)
+#     labels$close()
+#   }
+# }
 
 # get track position
 tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {

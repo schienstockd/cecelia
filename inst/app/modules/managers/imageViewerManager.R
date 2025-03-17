@@ -103,7 +103,7 @@ createImageViewerManager <- function(
     req(globalManagers$viewerManager()$viewer())
     
     # remove highlights
-    for (x in managerConf$imageData()$uID) {
+    for (x in managerConf$selectionData()$uID) {
       removeClass(
         sprintf("showImage_%s", x),
         btnCLASS_WARNING)
@@ -161,11 +161,11 @@ createImageViewerManager <- function(
     # do not update if the object is changed
     isolate({
       # prepare image classes
-      imageClasses <- rep("", nrow(managerConf$imageData()))
+      imageClasses <- rep("", nrow(managerConf$selectionData()))
       
       if (!is.null(shownImage())) {
         imageClasses[
-          shownImage()$getUID() == managerConf$imageData()$uID
+          shownImage()$getUID() == managerConf$selectionData()$uID
         ] <- btnCLASS_WARNING
       }
       
@@ -197,14 +197,14 @@ createImageViewerManager <- function(
     columnList <- append(
       columnList,
       list(" " = shinyInput(
-        "actionButton", session$ns("showImage_"), managerConf$imageData()$uID,
-        initIcons = rep(btnICON_SHOW_IMAGE, nrow(managerConf$imageData())),
+        "actionButton", session$ns("showImage_"), managerConf$selectionData()$uID,
+        initIcons = rep(btnICON_SHOW_IMAGE, nrow(managerConf$selectionData())),
         initClasses = imageClasses,
         initOnclick = paste(
           sprintf(
             'Shiny.setInputValue(\"%s\", "%s", {priority: "event"})',
             session$ns("showImage"),
-            managerConf$imageData()$uID
+            managerConf$selectionData()$uID
           )
         )
       )),

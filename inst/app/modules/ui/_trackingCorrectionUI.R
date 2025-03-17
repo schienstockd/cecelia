@@ -43,36 +43,37 @@
           )
         ),
         fluidRow(
-          shinydashboard::box(
-            id = ns("plots"),
+          box(
+            id = ns("qcPlots"),
             solidHeader = TRUE,
-            collapsible = TRUE, 
-            title = "Plot output",
+            collapsible = FALSE, 
+            title = "Quality control plots",
+            status = "primary",
+            width = 8,
+            uiOutput(ns("qcPlots"))
+          ),
+          box(
+            id = ns("editHistory"),
+            solidHeader = TRUE,
+            collapsible = FALSE, 
+            title = "Edit history",
+            status = "primary",
+            width = 4,
+            # uiOutput(ns("editHistory"))
+            DT::dataTableOutput(ns("editHistory"))
+          )
+        ),
+        fluidRow(
+          box(
+            id = ns("trackMod"),
+            solidHeader = TRUE,
+            collapsible = FALSE, 
+            title = "Track modification",
             status = "primary",
             width = 12,
-            column(
-              12,
-              fluidRow(
-                column(4, DT::dataTableOutput(ns("pointsTable"))),
-                column(3, DT::dataTableOutput(ns("tracksTable"))),
-                column(2,
-                       tags$h5("Points operations"),
-                       fluidRow(uiOutput(ns("pointsOps"))),
-                       tags$br(),
-                       tags$h5("Tracks operations"),
-                       fluidRow(uiOutput(ns("tracksOps")))
-                ),
-                column(3, DT::dataTableOutput(ns("editHistory")))
-              ),
-            ),
-            column(
-              12,
-              fluidRow(
-                column(4, plotlyOutput(ns("pointsPreview"), height = "400px", width = "100%")),
-                column(4, plotlyOutput(ns("tracksPreview"), height = "400px", width = "100%")),
-                column(4, plotlyOutput(ns("trackTraces"), height = "400px", width = "100%"))
-              )
-            )
+            column(4, uiOutput(ns("qcTracksOverview"))),
+            column(4, uiOutput(ns("qcTracksSelection"))),
+            column(4, uiOutput(ns("qcTracksSelectionTable")))
           )
         )
       ),
@@ -88,7 +89,7 @@
           box(
             solidHeader = TRUE,
             collapsible = TRUE, 
-            title = "Tracking correction parameters",
+            title = "Tracking parameters",
             status = "primary",
             width = 12,
             fluidRow(
