@@ -16,6 +16,7 @@ TODO
 \item \href{#method-TaskCore-runTasks}{\code{TaskCore$runTasks()}}
 \item \href{#method-TaskCore-setFunParams}{\code{TaskCore$setFunParams()}}
 \item \href{#method-TaskCore-funParams}{\code{TaskCore$funParams()}}
+\item \href{#method-TaskCore-funParamVisibilities}{\code{TaskCore$funParamVisibilities()}}
 \item \href{#method-TaskCore-taskEnv}{\code{TaskCore$taskEnv()}}
 \item \href{#method-TaskCore-callingEnv}{\code{TaskCore$callingEnv()}}
 \item \href{#method-TaskCore-envParams}{\code{TaskCore$envParams()}}
@@ -49,13 +50,7 @@ Init
 \subsection{Method \code{runTasks()}}{
 Call other task processes
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{TaskCore$runTasks(
-  tasks,
-  taskConf = NULL,
-  funParams = list(),
-  runLocal = FALSE,
-  callingEnv = NULL
-)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{TaskCore$runTasks(tasks, taskConf = NULL, funParams = list(), runLocal = FALSE)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -68,8 +63,6 @@ Call other task processes
 \item{\code{funParams}}{list of generic for task parameters}
 
 \item{\code{runLocal}}{boolean to run task local}
-
-\item{\code{callingEnv}}{character for calling environment}
 }
 \if{html}{\out{</div>}}
 }
@@ -89,6 +82,15 @@ Call other task processes
 \subsection{Method \code{funParams()}}{
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{TaskCore$funParams()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-TaskCore-funParamVisibilities"></a>}}
+\if{latex}{\out{\hypertarget{method-TaskCore-funParamVisibilities}{}}}
+\subsection{Method \code{funParamVisibilities()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{TaskCore$funParamVisibilities(funParam, onlyVisible = FALSE)}\if{html}{\out{</div>}}
 }
 
 }

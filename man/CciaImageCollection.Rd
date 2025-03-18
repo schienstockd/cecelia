@@ -17,7 +17,9 @@ TODO
 \itemize{
 \item \href{#method-CciaImageCollection-new}{\code{CciaImageCollection$new()}}
 \item \href{#method-CciaImageCollection-clFiles}{\code{CciaImageCollection$clFiles()}}
+\item \href{#method-CciaImageCollection-modelFiles}{\code{CciaImageCollection$modelFiles()}}
 \item \href{#method-CciaImageCollection-pixclFiles}{\code{CciaImageCollection$pixclFiles()}}
+\item \href{#method-CciaImageCollection-n2vFiles}{\code{CciaImageCollection$n2vFiles()}}
 \item \href{#method-CciaImageCollection-clone}{\code{CciaImageCollection$clone()}}
 }
 }
@@ -30,7 +32,7 @@ TODO
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="delCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-delCciaAttr'><code>cecelia::ReactivePersistentObject$delCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="deleteObjectDirectory"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-deleteObjectDirectory'><code>cecelia::ReactivePersistentObject$deleteObjectDirectory()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="editCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-editCciaAttr'><code>cecelia::ReactivePersistentObject$editCciaAttr()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalize"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalize'><code>cecelia::ReactivePersistentObject$finalize()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalise"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalise'><code>cecelia::ReactivePersistentObject$finalise()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaAttr'><code>cecelia::ReactivePersistentObject$getCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaClass"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaClass'><code>cecelia::ReactivePersistentObject$getCciaClass()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaLogfile"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaLogfile'><code>cecelia::ReactivePersistentObject$getCciaLogfile()</code></a></span></li>
@@ -123,6 +125,25 @@ Classifier files
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageCollection-modelFiles"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageCollection-modelFiles}{}}}
+\subsection{Method \code{modelFiles()}}{
+Model files
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageCollection$modelFiles(modelType, fullPath = FALSE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{modelType}}{character of model type}
+
+\item{\code{fullPath}}{boolean to return full path}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImageCollection-pixclFiles"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImageCollection-pixclFiles}{}}}
 \subsection{Method \code{pixclFiles()}}{
@@ -135,6 +156,23 @@ Pixel classifier files
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{...}}{passed to self$clFiles}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageCollection-n2vFiles"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageCollection-n2vFiles}{}}}
+\subsection{Method \code{n2vFiles()}}{
+Noise2Void model files
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageCollection$n2vFiles(...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{...}}{passed to self$modelFiles}
 }
 \if{html}{\out{</div>}}
 }

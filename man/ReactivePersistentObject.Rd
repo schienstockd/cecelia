@@ -16,7 +16,7 @@ TODO
 \subsection{Public methods}{
 \itemize{
 \item \href{#method-ReactivePersistentObject-new}{\code{ReactivePersistentObject$new()}}
-\item \href{#method-ReactivePersistentObject-finalize}{\code{ReactivePersistentObject$finalize()}}
+\item \href{#method-ReactivePersistentObject-finalise}{\code{ReactivePersistentObject$finalise()}}
 \item \href{#method-ReactivePersistentObject-saveState}{\code{ReactivePersistentObject$saveState()}}
 \item \href{#method-ReactivePersistentObject-retrieveState}{\code{ReactivePersistentObject$retrieveState()}}
 \item \href{#method-ReactivePersistentObject-runTask}{\code{ReactivePersistentObject$runTask()}}
@@ -139,12 +139,12 @@ Init object
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-ReactivePersistentObject-finalize"></a>}}
-\if{latex}{\out{\hypertarget{method-ReactivePersistentObject-finalize}{}}}
-\subsection{Method \code{finalize()}}{
+\if{html}{\out{<a id="method-ReactivePersistentObject-finalise"></a>}}
+\if{latex}{\out{\hypertarget{method-ReactivePersistentObject-finalise}{}}}
+\subsection{Method \code{finalise()}}{
 on finalise
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{ReactivePersistentObject$finalize()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{ReactivePersistentObject$finalise()}\if{html}{\out{</div>}}
 }
 
 }
@@ -242,7 +242,8 @@ Task variables for object
   hpcDir = NULL,
   pID = "000000",
   pName = "NONE",
-  env = "local"
+  env = "local",
+  envConf = list()
 )}\if{html}{\out{</div>}}
 }
 
@@ -259,7 +260,9 @@ Task variables for object
 
 \item{\code{pName}}{character for project name}
 
-\item{\code{env}}{character for environment name. One of c("local", "hpc").}
+\item{\code{env}}{character for environment name; One of c("local", "hpc")}
+
+\item{\code{envConf}}{list of configuration parameters}
 }
 \if{html}{\out{</div>}}
 }

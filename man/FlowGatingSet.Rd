@@ -417,12 +417,14 @@ Does the population exists in leaves?
 \subsection{Method \code{popLeaves()}}{
 Leaves of population
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popLeaves(...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{FlowGatingSet$popLeaves(directLeaves = FALSE, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
+\item{\code{directLeaves}}{boolean for dorect leaves}
+
 \item{\code{...}}{passed to .flowLeavesForPop}
 }
 \if{html}{\out{</div>}}

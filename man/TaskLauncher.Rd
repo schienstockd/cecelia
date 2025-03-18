@@ -41,6 +41,7 @@ TODO
 <ul>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="callingEnv"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-callingEnv'><code>cecelia::TaskCore$callingEnv()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="envParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-envParams'><code>cecelia::TaskCore$envParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="funParamVisibilities"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-funParamVisibilities'><code>cecelia::TaskCore$funParamVisibilities()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="funParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-funParams'><code>cecelia::TaskCore$funParams()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="globalParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-globalParams'><code>cecelia::TaskCore$globalParams()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="runTasks"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-runTasks'><code>cecelia::TaskCore$runTasks()</code></a></span></li>

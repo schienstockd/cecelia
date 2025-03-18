@@ -20,6 +20,7 @@ TODO
 \item \href{#method-CciaImage-editChannelName}{\code{CciaImage$editChannelName()}}
 \item \href{#method-CciaImage-omeXML}{\code{CciaImage$omeXML()}}
 \item \href{#method-CciaImage-omeXMLPath}{\code{CciaImage$omeXMLPath()}}
+\item \href{#method-CciaImage-omeXMLChannels}{\code{CciaImage$omeXMLChannels()}}
 \item \href{#method-CciaImage-omeXMLPixels}{\code{CciaImage$omeXMLPixels()}}
 \item \href{#method-CciaImage-omeXMLTimelapseInfo}{\code{CciaImage$omeXMLTimelapseInfo()}}
 \item \href{#method-CciaImage-omeXMLPixelRes}{\code{CciaImage$omeXMLPixelRes()}}
@@ -40,11 +41,15 @@ TODO
 \item \href{#method-CciaImage-savePops}{\code{CciaImage$savePops()}}
 \item \href{#method-CciaImage-pp3}{\code{CciaImage$pp3()}}
 \item \href{#method-CciaImage-ppp}{\code{CciaImage$ppp()}}
+\item \href{#method-CciaImage-spe}{\code{CciaImage$spe()}}
 \item \href{#method-CciaImage-spatialDT}{\code{CciaImage$spatialDT()}}
 \item \href{#method-CciaImage-spatialGraph}{\code{CciaImage$spatialGraph()}}
+\item \href{#method-CciaImage-tracksGraph}{\code{CciaImage$tracksGraph()}}
 \item \href{#method-CciaImage-flowFrame}{\code{CciaImage$flowFrame()}}
 \item \href{#method-CciaImage-flowGatingSet}{\code{CciaImage$flowGatingSet()}}
 \item \href{#method-CciaImage-clsfPopUtils}{\code{CciaImage$clsfPopUtils()}}
+\item \href{#method-CciaImage-labelsPopUtils}{\code{CciaImage$labelsPopUtils()}}
+\item \href{#method-CciaImage-branchPopUtils}{\code{CciaImage$branchPopUtils()}}
 \item \href{#method-CciaImage-livePopUtils}{\code{CciaImage$livePopUtils()}}
 \item \href{#method-CciaImage-adataUtils}{\code{CciaImage$adataUtils()}}
 \item \href{#method-CciaImage-savePopMap}{\code{CciaImage$savePopMap()}}
@@ -75,10 +80,12 @@ TODO
 \item \href{#method-CciaImage-valueSuffixes}{\code{CciaImage$valueSuffixes()}}
 \item \href{#method-CciaImage-valueLocUID}{\code{CciaImage$valueLocUID()}}
 \item \href{#method-CciaImage-valueAttr}{\code{CciaImage$valueAttr()}}
+\item \href{#method-CciaImage-setValueNameDefault}{\code{CciaImage$setValueNameDefault()}}
 \item \href{#method-CciaImage-setOriFilepath}{\code{CciaImage$setOriFilepath()}}
 \item \href{#method-CciaImage-setImFilepath}{\code{CciaImage$setImFilepath()}}
 \item \href{#method-CciaImage-setImMeta}{\code{CciaImage$setImMeta()}}
 \item \href{#method-CciaImage-setImChannelNames}{\code{CciaImage$setImChannelNames()}}
+\item \href{#method-CciaImage-setImTimeIntervals}{\code{CciaImage$setImTimeIntervals()}}
 \item \href{#method-CciaImage-setImLabelsFilepath}{\code{CciaImage$setImLabelsFilepath()}}
 \item \href{#method-CciaImage-setImLabelPropsFilepath}{\code{CciaImage$setImLabelPropsFilepath()}}
 \item \href{#method-CciaImage-setImRegionsFilepath}{\code{CciaImage$setImRegionsFilepath()}}
@@ -90,6 +97,8 @@ TODO
 \item \href{#method-CciaImage-imMeta}{\code{CciaImage$imMeta()}}
 \item \href{#method-CciaImage-imChannelNames}{\code{CciaImage$imChannelNames()}}
 \item \href{#method-CciaImage-oriFilepath}{\code{CciaImage$oriFilepath()}}
+\item \href{#method-CciaImage-imSeries}{\code{CciaImage$imSeries()}}
+\item \href{#method-CciaImage-imTimeIntervals}{\code{CciaImage$imTimeIntervals()}}
 \item \href{#method-CciaImage-imFilepath}{\code{CciaImage$imFilepath()}}
 \item \href{#method-CciaImage-imLabelsFilepath}{\code{CciaImage$imLabelsFilepath()}}
 \item \href{#method-CciaImage-imRegionsFilepath}{\code{CciaImage$imRegionsFilepath()}}
@@ -112,7 +121,7 @@ TODO
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="delCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-delCciaAttr'><code>cecelia::ReactivePersistentObject$delCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="deleteObjectDirectory"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-deleteObjectDirectory'><code>cecelia::ReactivePersistentObject$deleteObjectDirectory()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="editCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-editCciaAttr'><code>cecelia::ReactivePersistentObject$editCciaAttr()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalize"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalize'><code>cecelia::ReactivePersistentObject$finalize()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalise"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalise'><code>cecelia::ReactivePersistentObject$finalise()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaAttr'><code>cecelia::ReactivePersistentObject$getCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaClass"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaClass'><code>cecelia::ReactivePersistentObject$getCciaClass()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaLogfile"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaLogfile'><code>cecelia::ReactivePersistentObject$getCciaLogfile()</code></a></span></li>
@@ -174,6 +183,8 @@ init
 \item{\code{replaceX}}{boolean to replace 'X' with 'X' from adata}
 
 \item{\code{includeObs}}{boolean to include 'obs' from adata}
+
+\item{\code{valueNames}}{character to load label props}
 }
 \if{html}{\out{</div>}}
 }
@@ -227,13 +238,15 @@ Edit channel names
 \subsection{Method \code{omeXML()}}{
 OME xml
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXML(reset = FALSE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXML(reset = FALSE, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{reset}}{boolean to reset values}
+
+\item{\code{...}}{passed to setOmeXML}
 }
 \if{html}{\out{</div>}}
 }
@@ -256,12 +269,12 @@ Modify xml path if needed for OME
 }
 }
 \if{html}{\out{<hr>}}
-\if{html}{\out{<a id="method-CciaImage-omeXMLPixels"></a>}}
-\if{latex}{\out{\hypertarget{method-CciaImage-omeXMLPixels}{}}}
-\subsection{Method \code{omeXMLPixels()}}{
-pixel information
+\if{html}{\out{<a id="method-CciaImage-omeXMLChannels"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-omeXMLChannels}{}}}
+\subsection{Method \code{omeXMLChannels()}}{
+channels information
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLPixels(reset = FALSE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLChannels(...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -273,12 +286,31 @@ pixel information
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-omeXMLPixels"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-omeXMLPixels}{}}}
+\subsection{Method \code{omeXMLPixels()}}{
+pixel information
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLPixels(reset = FALSE, omeXML = NULL, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{reset}}{boolean to reset value}
+
+\item{\code{...}}{passed to omeXML and setOmeXMLPixels}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImage-omeXMLTimelapseInfo"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImage-omeXMLTimelapseInfo}{}}}
 \subsection{Method \code{omeXMLTimelapseInfo()}}{
 Timelapse information
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLTimelapseInfo()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLTimelapseInfo(rawIntervals = FALSE, integrateIntervals = FALSE)}\if{html}{\out{</div>}}
 }
 
 }
@@ -288,9 +320,16 @@ Timelapse information
 \subsection{Method \code{omeXMLPixelRes()}}{
 Pixel resolution
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLPixelRes()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$omeXMLPixelRes(...)}\if{html}{\out{</div>}}
 }
 
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{...}}{passed to omeXMLPixels}
+}
+\if{html}{\out{</div>}}
+}
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImage-resetMetaFromFile"></a>}}
@@ -298,7 +337,7 @@ Pixel resolution
 \subsection{Method \code{resetMetaFromFile()}}{
 Reset meta information from file
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$resetMetaFromFile()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$resetMetaFromFile(...)}\if{html}{\out{</div>}}
 }
 
 }
@@ -318,7 +357,10 @@ Tracks info
   replaceNA = TRUE,
   quantiles = c(0.95, 0.05),
   colsToNormalise = c(),
-  normPercentile = 0.998
+  normPercentile = 0.998,
+  addPop = FALSE,
+  popDT = NULL,
+  diffMax = NA
 )}\if{html}{\out{</div>}}
 }
 
@@ -344,6 +386,12 @@ Tracks info
 \item{\code{colsToNormalise}}{list of character to define columns to normalise}
 
 \item{\code{normPercentile}}{numeric to define normalisation percentile 0-1}
+
+\item{\code{addPop}}{boolean to add population to DT}
+
+\item{\code{popDT}}{data.table of populations, this is really to correct tracks}
+
+\item{\code{diffMax}}{numeric to define max value for diff of categorical}
 }
 \if{html}{\out{</div>}}
 }
@@ -354,17 +402,27 @@ Tracks info
 \subsection{Method \code{tracksMeasures()}}{
 Tracks measures
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$tracksMeasures(measures, pops, forceReload = FALSE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$tracksMeasures(
+  pops,
+  measures = NULL,
+  extraMeasures = NULL,
+  forceReload = FALSE,
+  ...
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{measures}}{list of character to define measures}
-
 \item{\code{pops}}{list of character to define populations}
 
+\item{\code{measures}}{list of character to define measures}
+
+\item{\code{extraMeasures}}{list of character to define extra measures (not in celltrackR)}
+
 \item{\code{forceReload}}{boolean to force reload of values}
+
+\item{\code{...}}{passed to tracks}
 }
 \if{html}{\out{</div>}}
 }
@@ -375,7 +433,15 @@ Tracks measures
 \subsection{Method \code{tracks()}}{
 Tracks
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$tracks(pop, forceReload = FALSE, minTracklength = 0)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$tracks(
+  pop,
+  forceReload = FALSE,
+  minTracklength = 0,
+  steps.subtracks = NULL,
+  steps.overlap = steps.subtracks - 1,
+  popDT = NULL,
+  convertToPhysical = TRUE
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -386,6 +452,14 @@ Tracks
 \item{\code{forceReload}}{boolean to force reload of tracks}
 
 \item{\code{minTracklength}}{integer for minimum track length}
+
+\item{\code{steps.subtracks}}{integer for subtracks}
+
+\item{\code{steps.overlap}}{integer for subtracks overlap}
+
+\item{\code{popDT}}{data.table of populations, this is really to correct tracks}
+
+\item{\code{convertToPhysical}}{boolean to convert to physical distance values}
 }
 \if{html}{\out{</div>}}
 }
@@ -416,7 +490,9 @@ property columns from labels
 \if{html}{\out{<div class="r">}}\preformatted{CciaImage$labelPropsCols(
   valueNames = NULL,
   dataTypes = c("vars", "obs"),
-  popType = NULL
+  popType = NULL,
+  colsStartsWith = NULL,
+  trimCols = NULL
 )}\if{html}{\out{</div>}}
 }
 
@@ -428,6 +504,10 @@ property columns from labels
 \item{\code{dataTypes}}{list of character to define data types from adata}
 
 \item{\code{popType}}{character for population type}
+
+\item{\code{colsStartsWith}}{character to filter for values starting with}
+
+\item{\code{trimCols}}{character vector to trim values}
 }
 \if{html}{\out{</div>}}
 }
@@ -505,13 +585,15 @@ Neighbour props
 \subsection{Method \code{popUtils()}}{
 Population object
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$popUtils(popType, ...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$popUtils(popType, valueName = NULL, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{popType}}{character for population type}
+
+\item{\code{valueName}}{character for value name}
 
 \item{\code{...}}{passed to population utils object}
 }
@@ -524,12 +606,16 @@ Population object
 \subsection{Method \code{popPathsAll()}}{
 All population paths as list
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$popPathsAll(...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$popPathsAll(flattenPops = FALSE, useNames = FALSE, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
+\item{\code{flattenPops}}{boolean to flatten pops}
+
+\item{\code{useNames}}{boolean to use names instead of uIDs}
+
 \item{\code{...}}{passed to self$popPaths}
 }
 \if{html}{\out{</div>}}
@@ -549,8 +635,9 @@ if there were filtered
   filteredOnly = FALSE,
   includeRoot = FALSE,
   tracksOnly = FALSE,
-  cellsOnly = TRUE,
+  cellsOnly = FALSE,
   parentPops = NULL,
+  filterMeasures = NULL,
   ...
 )}\if{html}{\out{</div>}}
 }
@@ -571,6 +658,8 @@ if there were filtered
 \item{\code{cellsOnly}}{boolean to return cells only}
 
 \item{\code{parentPops}}{list of character of parent populations}
+
+\item{\code{filterMeasures}}{list of character to filter on filtering measures}
 
 \item{\code{...}}{passed to self$popUtils}
 }
@@ -619,6 +708,9 @@ TODO this got a bit complicated - can you clean this up?
   includeX = FALSE,
   replaceX = FALSE,
   includeObs = TRUE,
+  completeValueNames = c(),
+  completePops = TRUE,
+  tracksOnly = FALSE,
   ...
 )}\if{html}{\out{</div>}}
 }
@@ -654,9 +746,15 @@ TODO this got a bit complicated - can you clean this up?
 
 \item{\code{replaceX}}{boolean to replace 'X' with 'X' from adata}
 
-\item{\code{...}}{passed to self$popUtils}
+\item{\code{includeObs}}{boolean to include 'obs' from adata}
 
-\item{\code{variable}}{boolean to include 'obs' from adata}
+\item{\code{completeValueNames}}{character for value names to complete DT}
+
+\item{\code{completePops}}{boolean to complete pops}
+
+\item{\code{tracksOnly}}{boolean to get tracks only}
+
+\item{\code{...}}{passed to self$popUtils}
 }
 \if{html}{\out{</div>}}
 }
@@ -676,6 +774,7 @@ aware of the populations themselves
   includeFiltered = FALSE,
   flushCache = TRUE,
   completeDT = TRUE,
+  tracksOnly = FALSE,
   ...
 )}\if{html}{\out{</div>}}
 }
@@ -693,6 +792,8 @@ aware of the populations themselves
 
 \item{\code{completeDT}}{boolean to complete data.table with label props}
 
+\item{\code{tracksOnly}}{boolean to save tracks only}
+
 \item{\code{...}}{passed to self$popUtils(popType = popType)$savePops}
 }
 \if{html}{\out{</div>}}
@@ -704,7 +805,13 @@ aware of the populations themselves
 \subsection{Method \code{pp3()}}{
 pp3 object
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$pp3(windowPops = NULL, pops = NULL, usePops = NULL, ...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$pp3(
+  windowPops = NULL,
+  pops = NULL,
+  usePops = NULL,
+  usePhysicalScale = TRUE,
+  ...
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -715,6 +822,8 @@ pp3 object
 \item{\code{pops}}{list of character to define populations}
 
 \item{\code{usePops}}{list of character to filter population data.frame}
+
+\item{\code{usePhysicalScale}}{boolean to convert to physical scale}
 
 \item{\code{...}}{passed to self$popDT}
 }
@@ -728,7 +837,17 @@ pp3 object
 ppp
 https://stackoverflow.com/a/39956181
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$ppp(windowPops = NULL, pops = NULL, usePops = NULL, ...)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$ppp(
+  windowPops = NULL,
+  pops = NULL,
+  usePops = NULL,
+  usePhysicalScale = TRUE,
+  hullType = "convex",
+  concavity = 2,
+  splitWindowBy = NULL,
+  popWindow = NULL,
+  ...
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -739,6 +858,36 @@ https://stackoverflow.com/a/39956181
 \item{\code{pops}}{list of character to define populations}
 
 \item{\code{usePops}}{list of character to filter population data.frame}
+
+\item{\code{usePhysicalScale}}{boolean to convert to physical scale}
+
+\item{\code{hullType}}{character to define type of hull}
+
+\item{\code{concavity}}{numeric to define concavity for concave hull}
+
+\item{\code{splitWindowBy}}{character to split windowDT}
+
+\item{\code{popWindow}}{data.frame to define window for population}
+
+\item{\code{...}}{passed to self$popDT}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-spe"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-spe}{}}}
+\subsection{Method \code{spe()}}{
+Generate spatialExperiment to play around with SPIAT
+https://trigosteam.github.io/SPIAT/articles/data_reading-formatting.html
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$spe(valueName = "default", ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{valueName}}{character for value name}
 
 \item{\code{...}}{passed to self$popDT}
 }
@@ -786,6 +935,29 @@ Spatial igraph
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-tracksGraph"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-tracksGraph}{}}}
+\subsection{Method \code{tracksGraph()}}{
+Tracks graph
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$tracksGraph(pop, extraAttr = c(), popDT = NULL, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{pop}}{character for value population}
+
+\item{\code{extraAttr}}{character vector to add vertex attributes}
+
+\item{\code{popDT}}{data.table with populations}
+
+\item{\code{...}}{passed to self$popDT}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImage-flowFrame"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImage-flowFrame}{}}}
 \subsection{Method \code{flowFrame()}}{
@@ -794,9 +966,9 @@ FlowFrame
 \if{html}{\out{<div class="r">}}\preformatted{CciaImage$flowFrame(
   valueName,
   compensateZ = FALSE,
-  polyDegree = 4,
   applyReversedLog = FALSE,
-  reversedLogBase = 0
+  reversedLogBase = 0,
+  ...
 )}\if{html}{\out{</div>}}
 }
 
@@ -807,11 +979,11 @@ FlowFrame
 
 \item{\code{compensateZ}}{boolean to compensate depth}
 
-\item{\code{polyDegree}}{integer for plynomial compensation}
-
 \item{\code{applyReversedLog}}{boolean to apply reverse log}
 
 \item{\code{reversedLogBase}}{integer for base of reverse log}
+
+\item{\code{...}}{passed to .flowCompensatePoly}
 }
 \if{html}{\out{</div>}}
 }
@@ -855,6 +1027,44 @@ Classification utils
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-labelsPopUtils"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-labelsPopUtils}{}}}
+\subsection{Method \code{labelsPopUtils()}}{
+Labels utils
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$labelsPopUtils(forceReload = FALSE, init = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{forceReload}}{boolean to force reload data}
+
+\item{\code{init}}{boolean to init data}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-branchPopUtils"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-branchPopUtils}{}}}
+\subsection{Method \code{branchPopUtils()}}{
+Branching utils
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$branchPopUtils(forceReload = FALSE, init = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{forceReload}}{boolean to force reload data}
+
+\item{\code{init}}{boolean to init data}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImage-livePopUtils"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImage-livePopUtils}{}}}
 \subsection{Method \code{livePopUtils()}}{
@@ -879,15 +1089,24 @@ Live population utils
 \subsection{Method \code{adataUtils()}}{
 Adata
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImage$adataUtils(forceReload = FALSE, init = TRUE)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$adataUtils(
+  popType,
+  forceReload = FALSE,
+  init = TRUE,
+  adataPath = NULL
+)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
+\item{\code{popType}}{character for population type}
+
 \item{\code{forceReload}}{boolean to force reload data}
 
 \item{\code{init}}{boolean to init data}
+
+\item{\code{adataPath}}{character for filepath}
 }
 \if{html}{\out{</div>}}
 }
@@ -1020,7 +1239,8 @@ Pop attribute
   popAttr,
   popIDs = NULL,
   popPath = NULL,
-  includeFiltered = FALSE
+  includeFiltered = FALSE,
+  selectedOnly = FALSE
 )}\if{html}{\out{</div>}}
 }
 
@@ -1036,6 +1256,8 @@ Pop attribute
 \item{\code{popPath}}{character for population path}
 
 \item{\code{includeFiltered}}{boolean to include filtered populations}
+
+\item{\code{selectedOnly}}{boolean to purge if none matched}
 }
 \if{html}{\out{</div>}}
 }
@@ -1536,6 +1758,27 @@ Value attr for versioned variable
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-setValueNameDefault"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-setValueNameDefault}{}}}
+\subsection{Method \code{setValueNameDefault()}}{
+Set default for value names
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$setValueNameDefault(x, valueNameDefault, invalidate = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{x}}{character for variable to get from self$getCciaMeta()}
+
+\item{\code{invalidate}}{boolean to invalidate object}
+
+\item{\code{valueName}}{character to set as default}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImage-setOriFilepath"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImage-setOriFilepath}{}}}
 \subsection{Method \code{setOriFilepath()}}{
@@ -1583,6 +1826,15 @@ Value attr for versioned variable
   checkLength = TRUE,
   updateFlowGatingSet = FALSE
 )}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-setImTimeIntervals"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-setImTimeIntervals}{}}}
+\subsection{Method \code{setImTimeIntervals()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$setImTimeIntervals(x, invalidate = TRUE)}\if{html}{\out{</div>}}
 }
 
 }
@@ -1718,7 +1970,8 @@ Value attr for versioned variable
   useNames = TRUE,
   correctChannelNames = FALSE,
   includeTypes = FALSE,
-  rmAttr = FALSE
+  rmAttr = FALSE,
+  includeMeasure = TRUE
 )}\if{html}{\out{</div>}}
 }
 
@@ -1729,6 +1982,24 @@ Value attr for versioned variable
 \subsection{Method \code{oriFilepath()}}{
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CciaImage$oriFilepath(modified = FALSE, revertToOri = FALSE)}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-imSeries"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-imSeries}{}}}
+\subsection{Method \code{imSeries()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$imSeries()}\if{html}{\out{</div>}}
+}
+
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImage-imTimeIntervals"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImage-imTimeIntervals}{}}}
+\subsection{Method \code{imTimeIntervals()}}{
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImage$imTimeIntervals()}\if{html}{\out{</div>}}
 }
 
 }

@@ -214,7 +214,7 @@ for clusters, pull information from the main DT
 \if{latex}{\out{\hypertarget{method-PopulationUtils-getPopObj}{}}}
 \subsection{Method \code{getPopObj()}}{
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{PopulationUtils$getPopObj()}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{PopulationUtils$getPopObj(x = NULL)}\if{html}{\out{</div>}}
 }
 
 }

@@ -24,11 +24,16 @@ TODO
 \item \href{#method-NapariUtils-clearViewerOutput}{\code{NapariUtils$clearViewerOutput()}}
 \item \href{#method-NapariUtils-clearViewerInput}{\code{NapariUtils$clearViewerInput()}}
 \item \href{#method-NapariUtils-openImage}{\code{NapariUtils$openImage()}}
+\item \href{#method-NapariUtils-saveLayerProps}{\code{NapariUtils$saveLayerProps()}}
+\item \href{#method-NapariUtils-loadLayerProps}{\code{NapariUtils$loadLayerProps()}}
 \item \href{#method-NapariUtils-resetLabelsScale}{\code{NapariUtils$resetLabelsScale()}}
 \item \href{#method-NapariUtils-saveLabels}{\code{NapariUtils$saveLabels()}}
 \item \href{#method-NapariUtils-showLabelsAll}{\code{NapariUtils$showLabelsAll()}}
 \item \href{#method-NapariUtils-showLabels}{\code{NapariUtils$showLabels()}}
 \item \href{#method-NapariUtils-highlightTracks}{\code{NapariUtils$highlightTracks()}}
+\item \href{#method-NapariUtils-centre}{\code{NapariUtils$centre()}}
+\item \href{#method-NapariUtils-saveScreenshot}{\code{NapariUtils$saveScreenshot()}}
+\item \href{#method-NapariUtils-saveTimeAnimation}{\code{NapariUtils$saveTimeAnimation()}}
 \item \href{#method-NapariUtils-highlightLabels}{\code{NapariUtils$highlightLabels()}}
 \item \href{#method-NapariUtils-showChannelIntensity}{\code{NapariUtils$showChannelIntensity()}}
 \item \href{#method-NapariUtils-showLayer}{\code{NapariUtils$showLayer()}}
@@ -204,10 +209,15 @@ Open image
   channelColormaps = NULL,
   napariModule = NULL,
   asDask = TRUE,
+  downsampleZ = FALSE,
   show3D = FALSE,
   multiscales = NULL,
   execInteractive = TRUE,
-  layersVisible = TRUE
+  layersVisible = TRUE,
+  squeeze = FALSE,
+  showTimestamp = FALSE,
+  timeInterval = 1,
+  resetViewer = TRUE
 )}\if{html}{\out{</div>}}
 }
 
@@ -226,6 +236,8 @@ Open image
 
 \item{\code{asDask}}{boolean to load image as dask}
 
+\item{\code{downsampleZ}}{boolean to downsample image}
+
 \item{\code{show3D}}{boolean to show image in 3D}
 
 \item{\code{multiscales}}{integer for multiscales}
@@ -233,6 +245,52 @@ Open image
 \item{\code{execInteractive}}{boolean to execute interactive}
 
 \item{\code{layersVisible}}{boolean to make layers visible}
+
+\item{\code{squeeze}}{boolean to load image as squeezed numpy array}
+
+\item{\code{showTimestamp}}{boolean to show time interval}
+
+\item{\code{timeInterval}}{numeric for timelapse interval}
+
+\item{\code{resetViewer}}{reset viewer before opening image}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-NapariUtils-saveLayerProps"></a>}}
+\if{latex}{\out{\hypertarget{method-NapariUtils-saveLayerProps}{}}}
+\subsection{Method \code{saveLayerProps()}}{
+Save layer properties
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{NapariUtils$saveLayerProps(layerFile, execInteractive = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{layerFile}}{character for filepath to save props}
+
+\item{\code{execInteractive}}{boolean to execute interactive}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-NapariUtils-loadLayerProps"></a>}}
+\if{latex}{\out{\hypertarget{method-NapariUtils-loadLayerProps}{}}}
+\subsection{Method \code{loadLayerProps()}}{
+Load layer properties
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{NapariUtils$loadLayerProps(layerFile, execInteractive = TRUE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{layerFile}}{character for filepath to load props}
+
+\item{\code{execInteractive}}{boolean to execute interactive}
 }
 \if{html}{\out{</div>}}
 }
@@ -295,14 +353,19 @@ Show labels all
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{NapariUtils$showLabelsAll(
   valueNames,
-  showLabels = TRUE,
-  showPoints = TRUE,
-  showTracks = TRUE,
-  showPops = TRUE,
-  showNeighbours = TRUE,
+  showLabels = FALSE,
+  showPoints = FALSE,
+  showLabelIds = FALSE,
+  showTracks = FALSE,
+  showPops = FALSE,
+  showNeighbours = FALSE,
+  showBranching = FALSE,
+  branchingProperty = "type",
   asNpArray = FALSE,
   execInteractive = TRUE,
-  labelSuffixes = list()
+  labelSuffixes = list(),
+  splitTracks = NULL,
+  tracksBlending = "additive"
 )}\if{html}{\out{</div>}}
 }
 
@@ -315,15 +378,25 @@ Show labels all
 
 \item{\code{showPoints}}{boolean to show points}
 
+\item{\code{showLabelIds}}{boolean to show label ids}
+
 \item{\code{showTracks}}{boolean to show tracks}
 
 \item{\code{showPops}}{boolean to show populations}
 
 \item{\code{showNeighbours}}{boolean to show neighbours}
 
+\item{\code{showBranching}}{boolean to show branching}
+
+\item{\code{branchingProperty}}{character of branching property to show}
+
 \item{\code{asNpArray}}{boolean to load labels as numpy array for editing}
 
 \item{\code{execInteractive}}{boolean to execute interactive}
+
+\item{\code{splitTracks}}{list to split tracks by properties}
+
+\item{\code{tracksBlending}}{character to set blending for tracks}
 }
 \if{html}{\out{</div>}}
 }
@@ -337,6 +410,7 @@ Show labels
 \if{html}{\out{<div class="r">}}\preformatted{NapariUtils$showLabels(
   showLabels = TRUE,
   showPoints = TRUE,
+  showLabelIds = FALSE,
   showTracks = TRUE,
   asNpArray = FALSE,
   valueName = NULL,
@@ -352,6 +426,8 @@ Show labels
 
 \item{\code{showPoints}}{boolean to show points}
 
+\item{\code{showLabelIds}}{boolean to show label ids}
+
 \item{\code{showTracks}}{boolean to show tracks}
 
 \item{\code{asNpArray}}{boolean to load labels as numpy array for editing}
@@ -361,6 +437,8 @@ Show labels
 \item{\code{labelSuffixes}}{character for label suffixes}
 
 \item{\code{execInteractive}}{boolean to execute interactive}
+
+\item{\code{showBranching}}{boolean to show branching}
 }
 \if{html}{\out{</div>}}
 }
@@ -389,6 +467,94 @@ Highlight tracks
 \item{\code{name}}{character for layer name}
 
 \item{\code{execInteractive}}{boolean to execute interactive}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-NapariUtils-centre"></a>}}
+\if{latex}{\out{\hypertarget{method-NapariUtils-centre}{}}}
+\subsection{Method \code{centre()}}{
+Centre camera
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{NapariUtils$centre(pos, tp = NULL, zoom = NULL, execInteractive = FALSE)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{pos}}{numeric list of XY position}
+
+\item{\code{tp}}{numeric for timepoint}
+
+\item{\code{zoom}}{numeric for zoom}
+
+\item{\code{execInteractive}}{boolean to execute interactive}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-NapariUtils-saveScreenshot"></a>}}
+\if{latex}{\out{\hypertarget{method-NapariUtils-saveScreenshot}{}}}
+\subsection{Method \code{saveScreenshot()}}{
+Save screenshot
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{NapariUtils$saveScreenshot(
+  filePath,
+  size = NULL,
+  scale = NULL,
+  canvasOnly = TRUE,
+  execInteractive = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{filePath}}{character to save screenshot}
+
+\item{\code{size}}{list for resolution}
+
+\item{\code{scale}}{numeric to scale image resolution}
+
+\item{\code{canvasOnly}}{boolean to save only canvas}
+
+\item{\code{execInteractive}}{boolean to execute interactive}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-NapariUtils-saveTimeAnimation"></a>}}
+\if{latex}{\out{\hypertarget{method-NapariUtils-saveTimeAnimation}{}}}
+\subsection{Method \code{saveTimeAnimation()}}{
+Save animation
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{NapariUtils$saveTimeAnimation(
+  moviePath,
+  fps = 10,
+  windowSizeX = 1200,
+  windowSizeY = 1000,
+  canvasOnly = TRUE,
+  execInteractive = TRUE
+)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{moviePath}}{character to save animation}
+
+\item{\code{fps}}{integer frames per second}
+
+\item{\code{windowSizeX}}{integer to set napari window size}
+
+\item{\code{canvasOnly}}{boolean to save only canvas}
+
+\item{\code{execInteractive}}{boolean to execute interactive}
+
+\item{\code{windowSizeXY}}{integer to set napari window size}
 }
 \if{html}{\out{</div>}}
 }
@@ -503,8 +669,9 @@ Show population mapping
   valueName = NULL,
   removePrevious = TRUE,
   filteredFromValueName = FALSE,
-  pointsSize = 6,
-  execInteractive = FALSE
+  pointsSize = 8,
+  pops = list(),
+  execInteractive = TRUE
 )}\if{html}{\out{</div>}}
 }
 

@@ -21,7 +21,9 @@ TODO
 \item \href{#method-CciaImageSet-cciaObjectsChannelNames}{\code{CciaImageSet$cciaObjectsChannelNames()}}
 \item \href{#method-CciaImageSet-editChannelNamesForCciaObjects}{\code{CciaImageSet$editChannelNamesForCciaObjects()}}
 \item \href{#method-CciaImageSet-ppp}{\code{CciaImageSet$ppp()}}
+\item \href{#method-CciaImageSet-spe}{\code{CciaImageSet$spe()}}
 \item \href{#method-CciaImageSet-spatialDT}{\code{CciaImageSet$spatialDT()}}
+\item \href{#method-CciaImageSet-popPaths}{\code{CciaImageSet$popPaths()}}
 \item \href{#method-CciaImageSet-popDT}{\code{CciaImageSet$popDT()}}
 \item \href{#method-CciaImageSet-tracks}{\code{CciaImageSet$tracks()}}
 \item \href{#method-CciaImageSet-tracksMeasures}{\code{CciaImageSet$tracksMeasures()}}
@@ -45,7 +47,7 @@ TODO
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="delCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-delCciaAttr'><code>cecelia::ReactivePersistentObject$delCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="deleteObjectDirectory"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-deleteObjectDirectory'><code>cecelia::ReactivePersistentObject$deleteObjectDirectory()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="editCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-editCciaAttr'><code>cecelia::ReactivePersistentObject$editCciaAttr()</code></a></span></li>
-<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalize"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalize'><code>cecelia::ReactivePersistentObject$finalize()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="finalise"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-finalise'><code>cecelia::ReactivePersistentObject$finalise()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaAttr"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaAttr'><code>cecelia::ReactivePersistentObject$getCciaAttr()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaClass"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaClass'><code>cecelia::ReactivePersistentObject$getCciaClass()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="ReactivePersistentObject" data-id="getCciaLogfile"><a href='../../cecelia/html/ReactivePersistentObject.html#method-ReactivePersistentObject-getCciaLogfile'><code>cecelia::ReactivePersistentObject$getCciaLogfile()</code></a></span></li>
@@ -155,6 +157,7 @@ Propagate flow gating to others
   toUIDs = NULL,
   invalidate = FALSE,
   saveState = FALSE,
+  saveData = FALSE,
   ...
 )}\if{html}{\out{</div>}}
 }
@@ -169,6 +172,8 @@ Propagate flow gating to others
 \item{\code{invalidate}}{boolean to invalidate object}
 
 \item{\code{saveState}}{boolean to save state}
+
+\item{\code{saveData}}{boolean to save data}
 
 \item{\code{...}}{passed to FlowGatingSet$copyGatesFrom}
 }
@@ -240,6 +245,27 @@ ppps for images
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-spe"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-spe}{}}}
+\subsection{Method \code{spe()}}{
+spe for images
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$spe(removeNULL = TRUE, uIDs = NULL, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{removeNULL}}{boolean to remove NULL}
+
+\item{\code{uIDs}}{list of character for unique IDs}
+
+\item{\code{...}}{passed to CciaImage$spe}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImageSet-spatialDT"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImageSet-spatialDT}{}}}
 \subsection{Method \code{spatialDT()}}{
@@ -263,18 +289,42 @@ Spatial DTs for images
 }
 }
 \if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-CciaImageSet-popPaths"></a>}}
+\if{latex}{\out{\hypertarget{method-CciaImageSet-popPaths}{}}}
+\subsection{Method \code{popPaths()}}{
+pop paths for images
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$popPaths(uIDs = NULL, combinePaths = TRUE, ...)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{uIDs}}{list of character for unique IDs}
+
+\item{\code{combinePaths}}{boolean to compile paths into one list}
+
+\item{\code{...}}{passed to CciaImage$popPaths}
+}
+\if{html}{\out{</div>}}
+}
+}
+\if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-CciaImageSet-popDT"></a>}}
 \if{latex}{\out{\hypertarget{method-CciaImageSet-popDT}{}}}
 \subsection{Method \code{popDT()}}{
 popDTs for images
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$popDT(
+  popType,
   asDT = TRUE,
   removeNULL = TRUE,
   uIDs = NULL,
   colsToNormalise = c(),
   batchGroup = "uID",
   normPercentile = 0.998,
+  mc.cores = 4,
+  convertToPhysical = FALSE,
   ...
 )}\if{html}{\out{</div>}}
 }
@@ -282,6 +332,8 @@ popDTs for images
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
+\item{\code{popType}}{character to specify populatio type}
+
 \item{\code{asDT}}{boolean to convert to data.table}
 
 \item{\code{removeNULL}}{boolean to remove NULL}
@@ -293,6 +345,10 @@ popDTs for images
 \item{\code{batchGroup}}{character to identify batch groups}
 
 \item{\code{normPercentile}}{numeric for percentile to normalise}
+
+\item{\code{mc.cores}}{numeric for workers}
+
+\item{\code{convertToPhysical}}{boolean to convert pixels to physical scale}
 
 \item{\code{...}}{passed to CciaImage$popDT}
 }
@@ -328,20 +384,12 @@ Tracks for images
 \subsection{Method \code{tracksMeasures()}}{
 Tracks measurements for images
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$tracksMeasures(
-  measures,
-  asDT = TRUE,
-  removeNULL = TRUE,
-  uIDs = NULL,
-  ...
-)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{CciaImageSet$tracksMeasures(asDT = TRUE, removeNULL = TRUE, uIDs = NULL, ...)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{measures}}{list of character for track measurements}
-
 \item{\code{removeNULL}}{boolean to remove NULL}
 
 \item{\code{uIDs}}{list of character for unique IDs}

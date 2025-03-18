@@ -47,6 +47,7 @@ TODO
 <ul>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="callingEnv"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-callingEnv'><code>cecelia::TaskCore$callingEnv()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="envParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-envParams'><code>cecelia::TaskCore$envParams()</code></a></span></li>
+<li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="funParamVisibilities"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-funParamVisibilities'><code>cecelia::TaskCore$funParamVisibilities()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="funParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-funParams'><code>cecelia::TaskCore$funParams()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="globalParams"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-globalParams'><code>cecelia::TaskCore$globalParams()</code></a></span></li>
 <li><span class="pkg-link" data-pkg="cecelia" data-topic="TaskCore" data-id="runTasks"><a href='../../cecelia/html/TaskCore.html#method-TaskCore-runTasks'><code>cecelia::TaskCore$runTasks()</code></a></span></li>
@@ -246,13 +247,15 @@ Check that the function parameter is not null
 \subsection{Method \code{funParam()}}{
 Get parameter
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$funParam(param)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{TaskProcess$funParam(param, defaultValue = NULL)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{param}}{character for parameter}
+
+\item{\code{param}}{value for default}
 }
 \if{html}{\out{</div>}}
 }

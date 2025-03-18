@@ -48,7 +48,7 @@ TODO
 \subsection{Method \code{new()}}{
 init
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{AnndataUtils$new(objFilepath, imChannels)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{AnndataUtils$new(objFilepath, imChannels, intensityMeasure = "mean")}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
@@ -57,6 +57,8 @@ init
 \item{\code{objFilepath}}{character of object file path}
 
 \item{\code{imChannels}}{list of character for channel names}
+
+\item{\code{intensityMeasure}}{character of channel measure}
 }
 \if{html}{\out{</div>}}
 }
