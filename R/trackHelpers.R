@@ -281,13 +281,24 @@ tracks.coords <- function(track) {
 } 
 
 ## Functions to modify tracks
-# delete points
+#' @description delete points
+#' @param data.table populations
+#' @param integer vector of label IDs
+#' @examples
+#' TODO
+#' @export
 tracks.points.rm <- function(popDT, labelIDs) {
   # should work in place
   popDT[label %in% labelIDs, track_id := NA]
 }
 
-# add points to track
+#' @description add points to track
+#' @param data.table populations
+#' @param integer vector of label IDs
+#' @param integer for track ID
+#' @examples
+#' TODO
+#' @export
 tracks.points.add <- function(popDT, labelIDs, trackID = NULL) {
   # get highest track number
   if (length(trackID) <= 0)
@@ -296,14 +307,25 @@ tracks.points.add <- function(popDT, labelIDs, trackID = NULL) {
   popDT[label %in% labelIDs, track_id := trackID]
 }
 
-# delete track
+#' @description delete track
+#' @param data.table populations
+#' @param integer vector of label IDs
+#' @examples
+#' TODO
+#' @export
 tracks.rm <- function(popDT, trackIDs) {
   # should work in place
   # popDT[track_id == trackID, track_id := NA]
   popDT[track_id %in% trackIDs, track_id := NA]
 }
 
-# join tracks
+#' @description join tracks
+#' @param data.table populations
+#' @param integer track A
+#' @param integer track B
+#' @examples
+#' TODO
+#' @export
 tracks.join <- function(popDT, trackID.A, trackID.B) {
   # get last point of first track
   t.a <- popDT[track_id == trackID.A]$centroid_t
@@ -318,8 +340,15 @@ tracks.join <- function(popDT, trackID.A, trackID.B) {
   popDT[track_id == trackID.B & centroid_t %in% t.b.unique, track_id := trackID.A]
 }
 
-# save modified tracks file
-# TODO this is really only for viewing in napari
+#' @description save modified tracks file
+#' TODO this is really only for viewing in napari
+#' @param cciaObject
+#' @param data.table populations
+#' @param character for value name
+#' @param character extension name
+#' @examples
+#' TODO
+#' @export
 tracks.save.mod <- function(cciaObj, popDT, valueName, ext.mod = "-mod") {
   # get labels
   labels <- cciaObj$labelProps(valueName = valueName)
@@ -365,7 +394,14 @@ tracks.save.mod <- function(cciaObj, popDT, valueName, ext.mod = "-mod") {
 #   }
 # }
 
-# get track position
+#' @description get track position
+#' @param cciaObject
+#' @param data.table populations
+#' @param character vector for track IDs
+#' @param numeric for pixel resolution
+#' @examples
+#' TODO
+#' @export
 tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {
   # get coordinates for tracks to centre camera
   centroid.cols <- c("centroid_t", "centroid_y", "centroid_x")
@@ -383,7 +419,12 @@ tracks.pos <- function(popDT, tracksIDs, pixRes = 1) {
   tracks.centroids
 }
 
-# get difference between track IDs for history
+#' @description get difference between track IDs for history
+#' @param character vector for track IDs A
+#' @param character vector for track IDs B
+#' @examples
+#' TODO
+#' @export
 track.diffs <- function(a, b, short = "") {
   # get differences between lists
   # TODO doesn't work for NA; probably would need to time which solution is better
@@ -400,7 +441,13 @@ track.diffs <- function(a, b, short = "") {
   list(a = a[list.diff], b = b[list.diff], i = which(list.diff), short = short)
 }
 
-# roll back changes
+#' @description roll back changes
+#' @param character vector for track IDs
+#' @param list of track changes
+#' @param integer for position in edit history
+#' @examples
+#' TODO
+#' @export
 track.edits.rollback <- function(x, edit.history, i) {
   # get changes in reverse order
   track.changes <- edit.history[length(edit.history):i]
