@@ -160,7 +160,8 @@ def run(params):
             
             # check whether there is a time centroid
             if is_timecourse is True:
-              reload_b = ~('centroid_t' in pop_df_b.columns)
+              # reload_b = ~('centroid_t' in pop_df_b.columns)
+              reload_b = 'centroid_t' in pop_df_b.columns
             
             if len(meshes_b) > 0:
               # add pop B to collision manager

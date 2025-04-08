@@ -1340,9 +1340,10 @@ class NapariUtils:
               # prep colour
               tracks_cmap = cmap_utils.cmap_single(['#000000'] + [pop_colour])
               
-              self.show_tracks(
-                tracks, prop_df, pop_name = pop_layer_name,
-                tracks_cmap = tracks_cmap)
+              if len(prop_df) > 0:
+                self.show_tracks(
+                  tracks, prop_df, pop_name = pop_layer_name,
+                  tracks_cmap = tracks_cmap)
             else:
               # add points for cell selection
               centroid_cols = labels_view.centroid_columns(self.dim_utils.im_dim_order)

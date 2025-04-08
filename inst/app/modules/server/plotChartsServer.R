@@ -1167,7 +1167,7 @@
               selected = isolate(resultSummaryAreaUnits())
             )
           )
-        ))
+        ), downloadButton(session$ns("downloadPopsSetCSV"), "Download csv-file"))
       })
       
       # plot params
@@ -1219,6 +1219,17 @@
       })
       
       ## Buttons
+      
+      # CSV download
+      output$downloadPopsSetCSV <- downloadHandler(
+        filename <- function() {
+          paste("cciaPlot", Sys.time(), ".csv", sep = "")
+        },
+        content <- function(file) {
+          data.table::fwrite(popDT(), file)
+        },
+        contentType = "text/csv" # MIME type of the file
+      )
       
       ## Other
       

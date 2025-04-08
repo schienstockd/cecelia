@@ -53,6 +53,11 @@ def get_labels_from_slice(cur_slices, labels, im_dat, dim_utils,
   # add channel to slices for data
   dat_slices = list(cur_slices)
   dat_slices.insert(dim_utils.dim_idx('C'), slice(None))
+  
+  # add time
+  if integrate_time is True:
+    dat_slices.insert(dim_utils.dim_idx('T'), slice(None))
+  
   dat_slices = tuple(dat_slices)
   
   # swap channel axis to last position

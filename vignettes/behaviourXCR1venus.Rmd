@@ -111,10 +111,10 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "lMxxOE", versionID = versionID, initReactivity = FALSE # XCR1-venus
+  pID = pID, uID = "CDL3KW", versionID = versionID, initReactivity = FALSE # XCR1-venus
 )
 
-omexml <- cciaObj$omeXML()
+cciaObj$omeXMLTimelapseInfo()
 ```
 
 ```{r}
@@ -376,8 +376,30 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
 )
 
+# cciaObj$imAnndataFilepath("clust")
+clustPath <- "tracks.clusters.tcells.hmm_transitions.sc.h5ad"
+attr(clustPath, "savedIn") <- cciaObj$getUID()
+        
+for (x in cciaObj$cciaObjects()) {
+  x$setImAnndataFilepath(
+    clustPath, valueName = "tracks.clusters.tcells.hmm_transitions")
+  
+  x$saveState()
+}
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE # XCR1-venus
+)
+
 # GCAMP
-uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- names(cciaObj$cciaObjects())
+uIDs <- names(cciaObj$cciaObjects())[1]
 
 # get experimental info
 exp.info <- cciaObj$summary(
@@ -577,17 +599,17 @@ ggplot(
     axis.line = element_blank(),
     axis.title.x = element_blank(),
     axis.title.y = element_blank()
-    ) 
-  # geom_label(
-  #   data = meanClusterPos,
-  #   # aes(label = clusters),
-  #   aes(label = clusters.name),
-  #   label.size = 0.25,
-  #   color = "black"
-  #   )
+    ) +
+  geom_label(
+    data = meanClusterPos,
+    # aes(label = clusters),
+    aes(label = clusters.name),
+    label.size = 0.25,
+    color = "black"
+    )
 
-# ggsave(file.path(anaDir, "umap.tiff"), width = 2, height = 2)
-ggsave(file.path(anaDir, "umap_wo_labels.png"), width = 2, height = 2)
+ggsave(file.path(anaDir, "umap.png"), width = 4, height = 4)
+# ggsave(file.path(anaDir, "umap_wo_labels.png"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_shape_wo_labels.tiff"), width = 2, height = 2)
@@ -676,7 +698,8 @@ plot.p1(datToPlot, list(
   list(data = datToPlot %>% dplyr::filter(pop == "tcells.gDT/tracked"),
     colramp = "#4682b4")
 ))
-ggsave(file.path(anaDir, paste0("umap_HSV.png")), width = 2, height = 2)
+# ggsave(file.path(anaDir, paste0("umap_HSV.png")), width = 2, height = 2)
+ggsave(file.path(anaDir, paste0("umap_HSV_big.png")), width = 4, height = 4)
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
