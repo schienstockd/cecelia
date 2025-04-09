@@ -61,7 +61,8 @@ BayesianTracking <- R6::R6Class(
       )
 
       # call python
-      self$pyScript("bayesian_tracking", params)
+      if (self$funParams()$calcTrackingStatsOnly == FALSE)
+        self$pyScript("bayesian_tracking", params)
       
       if (self$funParams()$calcTrackingStats == TRUE) {
         self$writeLog("Calculate tracking stats")

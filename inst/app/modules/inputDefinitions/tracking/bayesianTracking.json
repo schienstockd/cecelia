@@ -92,6 +92,11 @@
 					"default": true
 				}
 			},
+			"calcTrackingStatsOnly": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"distThresh": {
 				"type:double": {
 					"min": 1,
@@ -275,71 +280,77 @@
 				"widget:checkbox": {
 				}
 			},
-			"distThresh": {
+			"calcTrackingStatsOnly": {
 				"index": 13,
+				"label": "Tracking stats only",
+				"widget:checkbox": {
+				}
+			},
+			"distThresh": {
+				"index": 14,
 				"label": "Distance Threshold",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"timeThresh": {
-				"index": 14,
+				"index": 15,
 				"label": "Time threshold",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"segmentationMissRate": {
-				"index": 15,
+				"index": 16,
 				"label": "Segmentation miss rate",
 				"widget:slider": {
 					"step": 0.001
 				}
 			},
 			"lambdaLink": {
-				"index": 16,
+				"index": 17,
 				"label": "Lambda link",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaBranch": {
-				"index": 17,
+				"index": 18,
 				"label": "Lambda branch",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaTime": {
-				"index": 18,
+				"index": 19,
 				"label": "Lambda time",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaDist": {
-				"index": 19,
+				"index": 20,
 				"label": "Lambda dist",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"thetaTime": {
-				"index": 20,
+				"index": 21,
 				"label": "Theta time",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"thetaDist": {
-				"index": 21,
+				"index": 22,
 				"label": "Theta dist",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"filters": {
-				"index": 22,
+				"index": 23,
 				"label": "Filters",
 				"widget:group": {
 				  "visible": false,
