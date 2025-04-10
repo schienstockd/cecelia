@@ -630,15 +630,15 @@ convertPixelToPhysical <- function(DT, pixelRes) {
     x * pixelRes$x
   }), .SDcols = xyCols]
   
-  # squared
-  xyCols <- c("area", "bbox_area", "convex_area")
-  DT[, (xyCols) := lapply(.SD, function(x) {
-    x * (pixelRes$x**2)
-  }), .SDcols = xyCols]
-  
   if (!is.na(pixelRes$z) && "centroid_z" %in% names(DT)) {
     DT[, centroid_z := .(centroid_z * pixelRes$z)]
   }
+  
+  # squared
+  sqCols <- c("area", "bbox_area", "convex_area")
+  DT[, (sqCols) := lapply(.SD, function(x) {
+    x * (pixelRes$x**2)
+  }), .SDcols = sqCols]
   
   DT
 }

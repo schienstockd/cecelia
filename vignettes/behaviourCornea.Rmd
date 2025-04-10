@@ -118,7 +118,13 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "C3G5a7", versionID = versionID, initReactivity = FALSE
 )
 
+res <- cciaObj$omeXMLPixelRes()
+res$x <- 0.99
+
 a <- cciaObj$popDT("live")
+a$area
+convertPixelToPhysical(a, res)
+a$area
 ```
 
 ```{r}
