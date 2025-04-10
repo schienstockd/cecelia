@@ -173,6 +173,7 @@ tracks.calc.fun <- function(tracks, call.FUN, idcol = "uID") {
 #' @param steps.overlap integer to subtrack overlap
 #' @param idcol character for ID column via data.table::rbindlist
 #' @param as.degrees boolean to convert angle to degrees
+#' @param increment.cell.id boolean to increment cell ID for speed, angle
 #' @param ... passed to sapply
 #' @examples
 #' TODO

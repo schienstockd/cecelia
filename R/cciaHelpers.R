@@ -622,9 +622,18 @@ readLogFile <- function(logFile, previousContent = NULL, mergeContent = TRUE) {
 #' @export
 convertPixelToPhysical <- function(DT, pixelRes) {
   # convert xy and then z
-  xyCols <- c("centroid_x", "centroid_y")
+  # convert all 2D parameters
+  # 3D are scaled by trimesh
+  xyCols <- c("centroid_x", "centroid_y",
+              "perimeter", "major_axis_length", "minor_axis_length")
   DT[, (xyCols) := lapply(.SD, function(x) {
     x * pixelRes$x
+  }), .SDcols = xyCols]
+  
+  # squared
+  xyCols <- c("area", "bbox_area", "convex_area")
+  DT[, (xyCols) := lapply(.SD, function(x) {
+    x * (pixelRes$x**2)
   }), .SDcols = xyCols]
   
   if (!is.na(pixelRes$z) && "centroid_z" %in% names(DT)) {

@@ -235,8 +235,7 @@ sumLength <- 8
 popDT[
   tracks.measure.fun(
     tracks, celltrackR::overallAngle, "live.cell.sumChange",
-    steps.subtracks = sumLength, idcol = "value_name",
-    increment.cell.id = TRUE),
+    steps.subtracks = sumLength, idcol = "value_name")
   on = .(value_name, track_id, cell_id),
   live.cell.sumChange := .(live.cell.sumChange)
 ]

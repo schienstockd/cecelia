@@ -66,6 +66,65 @@ task <- cciaObj$runTask(
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
+# upload local files
+funParams <- list(
+   valueName = "default",
+   maxSearchRadius = 20,
+   maxLost = 1,
+   accuracy = 0.8,
+   probToAssign = 0.8,
+   noiseInital = 300,
+   noiseProcessing = 100,
+   noiseMeasurements = 100,
+   distThresh = 10,
+   timeThresh = 5,
+   segmentationMissRate = 0.1,
+   lambdaLink = 5,
+   lambdaTime = 5,
+   lambdaDist = 5,
+   lambdaBranch = 50,
+   thetaTime = 5,
+   thetaDist = 5,
+   minTimepoints = 0,
+   minDisplacement = 0,
+   maxMeanTurningAngle = 0,
+   filters = list(),
+   calcTrackingStats = TRUE,
+   calcTrackingStatsOnly = TRUE,
+   trackBranching = FALSE
+)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "C3G5a7", versionID = versionID, initReactivity = FALSE # SHG 3P
+)
+
+cciaObj$runTask(
+  funName = "tracking.bayesianTracking",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "C3G5a7", versionID = versionID, initReactivity = FALSE
+)
+
+a <- cciaObj$popDT("live")
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
 # init ccia object
 cciaObj <- initCciaObject(
   pID = pID, uID = "MZen4N", versionID = versionID, initReactivity = FALSE

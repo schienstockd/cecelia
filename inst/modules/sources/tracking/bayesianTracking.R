@@ -106,15 +106,17 @@ BayesianTracking <- R6::R6Class(
         }
         
         # create data.table with properties
-        tracks.DT <- tracks.measure.fun(tracks, celltrackR::speed,
-                                        "live.cell.speed", steps.subtracks = 1,
-                                        idcol = "cell_type")
+        tracks.DT <- tracks.measure.fun(
+          tracks, celltrackR::speed,
+          "live.cell.speed", steps.subtracks = 1,
+          idcol = "cell_type", increment.cell.id = TRUE)
         
         # add further measurements
         tracks.DT[
           tracks.measure.fun(
             tracks, celltrackR::overallAngle, "live.cell.angle",
-            steps.subtracks = 2, idcol = "cell_type"),
+            steps.subtracks = 2, idcol = "cell_type",
+            increment.cell.id = TRUE),
           on = .(cell_type, track_id, cell_id),
           live.cell.angle := .(live.cell.angle)]
         
@@ -122,6 +124,15 @@ BayesianTracking <- R6::R6Class(
         labels <- cciaObj$labelProps(valueName = self$funParams()$valueName)
         
         self$writeLog(self$funParams()$valueName)
+        
+        # get label obs
+        label.obs <- as.data.table(
+          labels$view_cols(list("label", "track_id", "cell_id"))$as_df(close = FALSE, include_x = FALSE))
+        
+        # check that there are no Nan cell id
+        # these can occure when tracks were edited
+        # if (any(is.na(label.obs$cell_id))) {
+        label.obs[, cell_id := order(centroid_t), by = track_id]
         
         # get cell state information
         mergedDT <- tracks.DT[, c(
@@ -132,7 +143,8 @@ BayesianTracking <- R6::R6Class(
           # as.data.table(labels$values_obs())[, .SD, .SDcols = !c(
           #   "live.cell.speed", "live.cell.angle"
           # )], on = .(track_id, cell_id)
-          as.data.table(labels$values_obs()), on = .(track_id, cell_id)
+          # as.data.table(labels$values_obs()), on = .(track_id, cell_id)
+          label.obs, on = .(track_id, cell_id)
           ]
         
         # set track id to nan where filtered
@@ -140,7 +152,7 @@ BayesianTracking <- R6::R6Class(
         
         # add to labels
         labels$add_obs(
-          as.list(mergedDT[, .(track_id, live.cell.speed, live.cell.angle)])
+          as.list(mergedDT[, .(track_id, cell_id, live.cell.speed, live.cell.angle)])
         )
         
         # save

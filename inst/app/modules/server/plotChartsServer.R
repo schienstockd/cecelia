@@ -834,7 +834,8 @@
           includeFiltered = TRUE,
           completeDT = TRUE,
           replaceNA = TRUE,
-          pops = resultParamsPops()
+          pops = resultParamsPops(),
+          convertToPhysical = TRUE
         )
         
         # create population interactions
