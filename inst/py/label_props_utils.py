@@ -22,7 +22,7 @@ class LabelPropsUtils(LabelPropsView):
     if split_columns is True:
       # get spatial and temporal columns from props
       centroid_spatial = [x for x in label_props_df.columns if x in [f'centroid_{i}' for i in ['x', 'y', 'z']]]
-      centroid_temporal = [x for x in label_props.columns if x == 'centroid_t']
+      centroid_temporal = [x for x in label_props_df.columns if x == 'centroid_t']
       
       # split spatial and temporal information into obsm
       # this will then allow processing with squidpy
@@ -33,6 +33,9 @@ class LabelPropsUtils(LabelPropsView):
       if len(centroid_temporal) > 0:
         uns['temporal_cols'] = centroid_temporal
         obsm['temporal'] = label_props_df[centroid_temporal].to_numpy()
+        
+      # remove columns for rest
+      label_props_df.drop(centroid_spatial + centroid_temporal, axis = 1, inplace = True)
             
     # get positive and negative location positions
     obs_loc = [x in obs_cols for x in label_props_df.columns]

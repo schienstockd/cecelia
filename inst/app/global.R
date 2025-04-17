@@ -72,6 +72,7 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "importImages-resetMetadata",
   "global-setupLabServerTest", "global-udateHPCUserLibs",
   "metadata-createAttribute", "metadata-showImage", "metadata-reloadSet",
+  "metadata-assignTimeIntervals",
   "segment-showImage", "segment-segmentVp", "segment-reloadSet",
   "clustPopulations-createPop", "clustPopulations-reloadSet",
   # exclude log fields

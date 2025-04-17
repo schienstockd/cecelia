@@ -294,85 +294,91 @@ cciaObj$tracks("cells")
 ```
 
 ```{r}
-# show numbers of cells per area
+# import tracks from CSV
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "HDgOHL", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "wpAEUV", versionID = versionID, initReactivity = FALSE
 )
-
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
-
-# get branching
-labels <- lapply(cciaObj$cciaObjects(), function(x) {
-  y <- x$labelProps(valueName = "fibres.branch")
-  uns <- y$values_uns()
-  y$close()
-  
-  uns
-})
-
-# merge summary
-exp.info <- exp.info[rbindlist(lapply(labels, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
 
 # load tracks
 tracks.table <- as.data.table(read.csv(
-  # "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20231107/Nerve anisotropy and cell track/Cell tracking.csv"))
   "/Volumes/USER_data/Dominik/Experiments/Mengliang/DATA/20240307/MW_videos/Cell_track.csv"))
 
-# get branching
-# branchDT <- cciaObj$popDT(popType = "branch")
+valueName <- "cells"
 
-# clean up Region
-# tracks.table[Region != "whorl", Region := "inf"]
-
-# match uIDs
-tracks.table[exp.info, on = c("ID" = "Patient", "Region"), uID := uID]
-
-# copy group to exp info
-# exp.info[unique(tracks.table[, c("uID", "Group")]), on = c("uID"), Group := Group]
-
-# add cell_ids
-tracks.table <- as.data.table(tracks.table %>%
-  group_by(across(all_of(c("uID", "Track")))) %>%
-  dplyr::mutate(cell_id = 1:n()))
-setnames(tracks.table, "Track", "track_id")
+# go through images and match
+for (x in cciaObj$cciaObjects()) {
+  # build label properties
+  # TODO.. There must be some wort of intensity readout from the image?
+  
+  # match by filename
+  y <- copy(tracks.table[File_name == tools::file_path_sans_ext(basename(x$oriFilepath()))])
+  z <- cbind(seq(nrow(y)), y[, c("Track", "Slice", "Y", "X", "TI")])
+  colnames(z) <- c("label", "track_id", "centroid_t", "centroid_y", "centroid_x", "mean_intensity_0")
+  
+  # adjust slice, tracks count from 0
+  z[, "centroid_t"] <- z[, "centroid_t"] - 1
+  
+  labelProps.name <- taskDirFiles("labelProps", valueName)
+  labels.name <- taskDirFiles("labels", valueName)
+  
+  # save props
+  labelsView <- cciaEnv()$LabelPropsUtils(
+    x$persistentObjectDirectory(), labelProps.name)$label_props(
+      z, save = TRUE, split_columns = TRUE, obs_cols = c("label", "track_id"))
+  
+  # set label path
+  x$setImLabelPropsFilepath(basename(labelProps.name), valueName)
+  x$setImLabelsFilepath(basename(labels.name), valueName)
+  
+  ## THIS WILL BE DONE BY THE TRACKING BASE CLASS
+  # add population to popMap
+  popType <- "live"
+  parentPops <- c(valueName)
+  pops <- list(
+    "tracked" = list(
+      filterMeasure = "track_id",
+      filterValues = 0,
+      filterFun = "gt"
+      # TODO add colour choice
+      # For now, this is random
+    )
+  )
+  
+  # remove populations
+  x$delPopsByPath(
+    popType,
+    pops = levels(interaction(parentPops, names(pops), sep = "/")),
+    includeFiltered = TRUE
+  )
+  
+  # add populations
+  x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+  
+  # save to disk
+  x$savePops(popType, purge = TRUE, includeFiltered = TRUE)
+  
+  # save
+  x$saveState()
+}
 ```
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "6wGwPb", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
-valueName <- "IJ.manual"
-
-# how can you import tracks from ImageJ .. ?
-# build label properties from individual tracks
-for (x in cciaObj$cciaObjects()) {
-  y <- tracks.table[uID == x$getUID()]
-  # z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "pixel.value.fiji.")])
-  z <- cbind(seq(nrow(y)), y[, c("track_id", "Slice", "Y", "X", "TI")])
-  colnames(z) <- c("label", "track_id", "centroid_t", "centroid_y", "centroid_x", "mean_intensity_0")
-  
-  # save props
-  labelsView <- cciaEnv()$LabelPropsUtils(
-    x$persistentObjectDirectory(),
-    taskDirFiles("labelProps", valueName))$label_props(
-      z, save = TRUE, obs_cols = c("label", "track_id"))
-  
-  # add to labels
-  x$setImLabelPropsFilepath(paste0(valueName, ".h5ad"), valueName)
-  x$saveState()
-}
+cciaObj$labelProps(valueName = valueName)
 ```
+
 
 ```{r}
 # # get HMM transitions

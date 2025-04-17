@@ -123,8 +123,6 @@ BayesianTracking <- R6::R6Class(
         # push back to labels
         labels <- cciaObj$labelProps(valueName = self$funParams()$valueName)
         
-        self$writeLog(self$funParams()$valueName)
-        
         # get label obs
         label.obs <- as.data.table(
           labels$view_cols(list("label", "track_id", "cell_id"))$as_df(close = FALSE, include_x = FALSE))

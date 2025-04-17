@@ -626,6 +626,12 @@ convertPixelToPhysical <- function(DT, pixelRes) {
   # 3D are scaled by trimesh
   xyCols <- c("centroid_x", "centroid_y",
               "perimeter", "major_axis_length", "minor_axis_length")
+  sqCols <- c("area", "bbox_area", "convex_area")
+  
+  # make sure columns exist
+  xyCols <- xyCols[xyCols %in% colnames(DT)]
+  sqCols <- sqCols[sqCols %in% colnames(DT)]
+  
   DT[, (xyCols) := lapply(.SD, function(x) {
     x * pixelRes$x
   }), .SDcols = xyCols]
@@ -635,7 +641,6 @@ convertPixelToPhysical <- function(DT, pixelRes) {
   }
   
   # squared
-  sqCols <- c("area", "bbox_area", "convex_area")
   DT[, (sqCols) := lapply(.SD, function(x) {
     x * (pixelRes$x**2)
   }), .SDcols = sqCols]

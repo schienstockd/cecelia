@@ -990,7 +990,9 @@ createFlowPlotManager <- function(
           boxIDs$axisX, input, cciaObj()$imChannelNames()[[1]],
           ignoreInput = initGatingBoxPlots())
         y <- shinyInputValue(
-          boxIDs$axisY, input, cciaObj()$imChannelNames()[[2]],
+          # TODO this should be different
+          # boxIDs$axisY, input, cciaObj()$imChannelNames()[[2]],
+          boxIDs$axisY, input, cciaObj()$imChannelNames()[[1]],
           ignoreInput = initGatingBoxPlots())
         xScale <- shinyInputValue(
           boxIDs$axisXScale, input, "linear",

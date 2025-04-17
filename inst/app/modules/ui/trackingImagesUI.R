@@ -107,7 +107,17 @@
                 uiOutput(ns("taskFunction"))
               )
             ),
-            uiOutput(ns("funParams"))
+            uiOutput(ns("funParams")),
+            tags$br(),
+            fluidRow(
+              column(
+                12,
+                fileInput(
+                  ns("importTracks"), "Import tracks",
+                  buttonLabel = "Select",
+                  accept = c(".csv", ".tsv"))
+              )
+            )
           )
         )
       )
