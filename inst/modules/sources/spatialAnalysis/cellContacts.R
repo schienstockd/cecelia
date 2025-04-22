@@ -56,17 +56,20 @@ CellContacts <- R6::R6Class(
           yType <- y[[1]]
           yPop <- y[[2]]
           
-          yPopCol <- stringr::str_replace(yPop, "/", "__")
+          yPopCol <- stringr::str_replace_all(yPop, "/", "__")
           
           # set column for analysis
           minDistCol <- paste(
             xType, "cell", paste0("min_distance#", yType), yPopCol, sep = ".")
           hasContactCol <- paste(
             xType, "cell", paste0("contact#", yType), yPopCol, sep = ".")
+          contactIdCol <- paste(
+            xType, "cell", paste0("contact_id#", yType), yPopCol, sep = ".")
           
           # init analysis column with NA
           rootDT[, c(minDistCol) := as.numeric(NA)]
           rootDT[, c(hasContactCol) := FALSE]
+          rootDT[, c(contactIdCol) := as.numeric(NA)]
           
           # get DT
           popDTB <- cciaObj$popDT(yType, pops = yPop, includeFiltered = TRUE)
@@ -85,22 +88,24 @@ CellContacts <- R6::R6Class(
           mergeCols <- mergeCols[mergeCols %in% names(popDTA)]
           
           # check contact
+          popDTA[, c(contactIdCol) := nnRes$id]
           popDTA[, c(minDistCol) := nnRes$dist]
           popDTA[, c(hasContactCol) := nnRes$dist < self$funParams()$maxContactDist]
           
           popUpdate <- popDTA[, c(
-            mergeCols, minDistCol, hasContactCol), with = FALSE]
+            mergeCols, minDistCol, hasContactCol, contactIdCol), with = FALSE]
           
           # join to root
           # https://stackoverflow.com/a/34600831/13766165
           rootDT[popUpdate,
                  on = mergeCols,
-                 c(minDistCol, hasContactCol) := list(
+                 c(minDistCol, hasContactCol, contactIdCol) := list(
                    get(paste("i", minDistCol, sep = ".")),
-                   get(paste("i", hasContactCol, sep = "."))
+                   get(paste("i", hasContactCol, sep = ".")),
+                   get(paste("i", contactIdCol, sep = "."))
                  )]
           
-          obsCols <- c(obsCols, minDistCol, hasContactCol)
+          obsCols <- c(obsCols, minDistCol, hasContactCol, contactIdCol)
         }
         
         valueNames <- unique(rootDT$value_name)

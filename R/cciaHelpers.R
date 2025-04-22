@@ -1142,8 +1142,12 @@ prepFilelistToSync <- function(oldFilename, newFilename, isSequence = FALSE,
   DF[[nameCol]] <- defaultName
   
   # go through
-  for (i in names(clusterMapping))
-    DF[DF[[clustCol]] %in% clusterMapping[[i]], ][[nameCol]] <- i
+  for (i in names(clusterMapping)) {
+    idx <- DF[[clustCol]] %in% clusterMapping[[i]]
+    
+    if (any(idx))
+      DF[idx, ][[nameCol]] <- i
+  }
   
   # remove None
   clustLevels <- names(clusterMapping)

@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ## Show transition states of live cell imaging
 
 ```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -613,6 +614,126 @@ popDTs <- cciaObj$popDT(
 ```
 
 ```{r}
+clusterMapping <- list(
+  Directed = c(0),
+  Meandering = c(1,5),
+  Scanning = c(2,4),
+  Aggregating = c(3,6),
+  NONE = c(7)
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# can you show the speed of gDT close and far away from gBT clusters
+popDT.gDT <- copy(popDTs[pop == "tcells.gDT/tracked"])
+tcells.sc.gDT <- copy(tcells.sc[pop == "tcells.gDT/tracked"])
+
+# get own behaviour
+popDT.gDT <- .mapClustNames(
+  popDT.gDT, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement",
+  nameCol = "self.clusters.name", idCol = "self.contact.clusters.id")
+```
+
+```{r fig_gDT_behaviour, fig.height=3, fig.width=12}
+# now plot out median distance of behaviour to aggregating cells
+datToPlot <- popDT.gDT %>%
+  group_by(uID, self.clusters.name, track_id) %>%
+  summarise(
+    median.dist = median(`live.cell.min_distance#live.tcells.gBT__tracked__clustered`, na.rm = TRUE),
+    mean.dist = mean(`live.cell.min_distance#live.tcells.gBT__tracked__clustered`, na.rm = TRUE),
+    mean.speed = mean(live.cell.speed, na.rm = TRUE)
+    ) %>%
+  mutate(niche.contact = median.dist < 20) %>%
+  left_join(exp.info) %>%
+  drop_na(niche.contact)
+
+ggplot(datToPlot, 
+       # aes(as.factor(self.clusters.name), median.dist, color = interaction(Treatment, DTx))) +
+       aes(interaction(Treatment, DTx), median.dist, color = as.factor(self.clusters.name))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") 
+
+ggsave(file.path(anaDir, "gDT_behaviour_distance_gBT_cluster.png"), height = 2, width = 8)
+
+ggplot(datToPlot, 
+       aes(interaction(Treatment, DTx), mean.speed, color = as.factor(niche.contact))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") 
+
+ggsave(file.path(anaDir, "gDT_speed_niche_gBT_cluster.png"), height = 2, width = 8)
+
+datToPlot <- datToPlot %>%
+  group_by(uID, niche.contact, self.clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  left_join(exp.info) %>%
+  drop_na(niche.contact)
+
+ggplot(datToPlot,
+       aes(niche.contact, freq, color = as.factor(self.clusters.name))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+
+ggsave(file.path(anaDir, "gDT_behaviour_niche_gBT_cluster.png"), height = 2, width = 8)
+```
+
+```{r fig_gDT_behaviour, fig.height=3, fig.width=12}
+datToPlot <- popDT.gDT %>%
+  mutate(niche.contact = `live.cell.min_distance#live.tcells.gBT__tracked__clustered` < 20) %>%
+  left_join(exp.info)
+
+# can you plot speed for close and away cells? ie/ not tracks but individual cells
+ggplot(datToPlot, 
+       # aes(as.factor(self.clusters.name), median.dist, color = interaction(Treatment, DTx))) +
+       aes(interaction(Treatment, DTx), `live.cell.min_distance#live.tcells.gBT__tracked__clustered`,
+           color = as.factor(live.cell.hmm.state.movement))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") 
+
+ggsave(file.path(anaDir, "gDT_HMM_behaviour_distance_gBT_cluster.png"), height = 2, width = 8)
+
+ggplot(datToPlot, 
+       aes(interaction(Treatment, DTx), live.cell.speed, color = as.factor(niche.contact))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") 
+
+ggsave(file.path(anaDir, "gDT_HMM_speed_niche_gBT_cluster.png"), height = 2, width = 8)
+
+datToPlot <- datToPlot %>%
+  group_by(uID, niche.contact, live.cell.hmm.state.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  left_join(exp.info) %>%
+  drop_na(niche.contact)
+
+ggplot(datToPlot,
+       aes(niche.contact, freq, color = as.factor(live.cell.hmm.state.movement))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+
+ggsave(file.path(anaDir, "gDT_HMM_behaviour_niche_gBT_cluster.png"), height = 2, width = 8)
+```
+
+
+
+```{r}
 # how many movies and mice per treatment?
 exp.info %>% group_by(Treatment, DTx, Date) %>%
 # exp.info %>% group_by(Treatment, DTx) %>%
@@ -731,17 +852,6 @@ ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(
 
 ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
 ```
-
-```{r}
-clusterMapping <- list(
-  Directed = c(0),
-  Meandering = c(1,5),
-  Scanning = c(2,4),
-  Aggregating = c(3,6),
-  NONE = c(7)
-)
-```
-
 
 ```{r fig_umap, fig.height=8, fig.width=8}
 dfToPlot <- copy(tcells.sc) %>% drop_na(clusters) %>% left_join(exp.info)

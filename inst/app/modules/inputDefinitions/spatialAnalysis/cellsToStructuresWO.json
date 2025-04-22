@@ -1,0 +1,97 @@
+{
+  "fun": {
+    "cellsToStructuresWO": {
+      "category": "Workflow outputs",
+      "label": "Cells to Structures",
+      "env": ["local"]
+    }
+  },
+  "spec": {
+    "inputs": {
+			"structValueName": {
+				"type:character": {
+				}
+			},
+      "popsToAnalyse": {
+        "type:list": {}
+      },
+			"aRad": {
+				"type:integer": {
+					"min": 1,
+					"max": 100,
+					"default": 25
+				}
+			},
+			"bootIterations": {
+				"type:integer": {
+					"min": 0,
+					"max": 10000,
+					"default": 100
+				}
+			},
+			"sigValue": {
+				"type:double": {
+					"min": 0.01,
+					"max": 0.10,
+					"default": 0.05
+				}
+			},
+			"poolValue": {
+				"type:character": {}
+			}
+    },
+    "outputs": {}
+  },
+  "ui": {
+    "inputs": {
+			"structValueName": {
+				"index": 0,
+				"label": "Structures",
+				"widget:valueNameSelection": {
+					"size": 1,
+					"multiple": false,
+					"field": "imLabelsFilepath",
+					"valueType": "branch"
+				}
+			},
+      "popsToAnalyse": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": true
+        }
+      },
+      "aRad": {
+        "index": 2,
+        "label": "Analysis radius",
+        "widget:slider": {
+          "step": 1
+        }
+      },
+      "bootIterations": {
+        "index": 3,
+        "label": "Bootstrap iterations",
+        "widget:slider": {
+          "step": 50
+        }
+      },
+      "sigValue": {
+        "index": 4,
+        "label": "Significance value",
+        "widget:slider": {
+          "step": 0.01
+        }
+      },
+      "poolValue": {
+        "index": 5,
+        "label": "Significance value",
+        "widget:expInfoColSelection": {
+          "size": 1,
+          "multiple": false
+        }
+      }
+    },
+    "outputs": {}
+  }
+}

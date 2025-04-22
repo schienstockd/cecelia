@@ -24,6 +24,7 @@ default:
       shapes: "shapes"
       classifications: "cl"
       models: "models"
+      out: "out"
     models:
       n2v: "n2v"
     classifications:

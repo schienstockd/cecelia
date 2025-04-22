@@ -394,6 +394,9 @@ InputManager <- R6::R6Class(
         } else if (names(uiType) == "imageSetSelection") {
           uiElement <- self$createUIImageSetSelection(
             elmntName, uiType, specType)
+        } else if (names(uiType) == "expInfoColSelection") {
+          uiElement <- self$createUIexpInfoColSelection(
+            elmntName, uiType, specType)
         } else if (names(uiType) == "imageSelection") {
           uiElement <- self$createUIImageSelection(
             elmntName, uiType, specType)
@@ -598,6 +601,26 @@ InputManager <- R6::R6Class(
         ui = createSelectInput(
           elmntName,
           choices = setChoices,
+          multiple = uiContent$multiple,
+          size = uiContent$size, selectize = FALSE,
+          selected = self$funParam(elmntName)
+        ),
+        names = elmntName
+      )
+    },
+    
+    # image set experimental info column selection
+    createUIexpInfoColSelection = function(elmntName, uiType, specType) {
+      uiContent <- uiType[[1]]
+      specContent <- specType[[1]]
+      
+      # build choices for experimental info
+      exp.info <- as.data.table(self$cciaObjectSet()$summary(withSelf = FALSE, fields = c("Attr")))
+
+      list(
+        ui = createSelectInput(
+          elmntName,
+          choices = colnames(exp.info),
           multiple = uiContent$multiple,
           size = uiContent$size, selectize = FALSE,
           selected = self$funParam(elmntName)

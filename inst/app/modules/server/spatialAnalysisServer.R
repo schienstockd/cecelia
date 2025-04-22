@@ -220,7 +220,8 @@
         ),
         task = list(
           funLabel = "Spatial analysis method",
-          taskVarsToAdd = taskVarsToAdd
+          taskVarsToAdd = taskVarsToAdd,
+          runTaskCombinedSelect = TRUE
         ),
         population = list(
           popData = popData,

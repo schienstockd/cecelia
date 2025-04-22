@@ -436,6 +436,13 @@ popDTs <- cciaObj$popDT(
 ```
 
 ```{r}
+x <- cciaObj$cciaObjects()[[1]]
+
+convertPixelToPhysical(popDTs, x$omeXMLPixelRes())
+```
+
+
+```{r}
 paramsToGet <- c(
   "solidity", "live.cell.speed", "volume")
 

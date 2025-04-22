@@ -108,15 +108,16 @@
               )
             ),
             uiOutput(ns("funParams")),
-            tags$br(),
+            tags$hr(),
             fluidRow(
               column(
-                12,
+                8,
                 fileInput(
                   ns("importTracks"), "Import tracks",
                   buttonLabel = "Select",
                   accept = c(".csv", ".tsv"))
-              )
+              ),
+              column(4, textInput(ns("importValueName"), "Name"))
             )
           )
         )

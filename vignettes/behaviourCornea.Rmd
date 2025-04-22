@@ -452,15 +452,43 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
+  pID = pID, uID = "wpAEUV", versionID = versionID, initReactivity = FALSE
+)
+
+# run task
+funParams <- list(
+  structValueName = "nerves.branch",
+  popsToAnalyse = c("cells"),
+  aRad = 25,
+  bootIterations = 10,
+  sigValue = 0.05,
+  poolValue = "Region"
+)
+
+task <- cciaObj$runTask(
+  funName = "spatialAnalysis.cellsToStructuresWO",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
   # pID = pID, uID = "ZVUrjF", versionID = versionID, initReactivity = FALSE # SHG 3P
-  pID = pID, uID = "WzCWD0", versionID = versionID, initReactivity = FALSE # SHG 3P
+  pID = pID, uID = "wpAEUV", versionID = versionID, initReactivity = FALSE # SHG 3P
 )
 
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 # get vector information to plot anisotropy
 # unsLabels <- c("fibres", "IJ.manual.tracks")
-unsLabels <- c("fibres")
+unsLabels <- c("nerves")
 uns <- list()
 
 for (i in unsLabels) {
@@ -477,13 +505,13 @@ for (i in unsLabels) {
 }
 
 # merge summary
-exp.info <- exp.info[rbindlist(lapply(uns$fibres, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
+exp.info <- exp.info[rbindlist(lapply(uns$nerves, function(x) x$ilee_summary), idcol = "uID"), on = c("uID")]
 
 # get branching
 branchDT <- cciaObj$popDT(popType = "branch")
 
 pops <- list(
-  `IJ.manual` = "IJ.manual"
+  `cells` = "cells"
 )
 
 # get tracks to align with SHG
@@ -494,32 +522,32 @@ tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = unique(popDT$uID))
 
 # check where the centre of each track is
 tracksInfo[
-  popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], mean), by = c("uID", "track_id")],
+  popDT[, lapply(.SD[, c("centroid_x", "centroid_y")], median), by = c("uID", "track_id")],
   on = c("uID", "track_id"),
   `:=` (centroid_x = centroid_x, centroid_y = centroid_y)]
 ```
 
 ```{r}
-tracks <- cciaObj$tracks("IJ.manual", uIDs = unique(popDT$uID))
-
-# create data.table with properties
-tracks.DT <- tracks.measure.fun(tracks, celltrackR::speed,
-                                "live.cell.speed", steps.subtracks = 1,
-                                idcol = "uID")
-
-# add further measurements
-tracks.DT[
-  tracks.measure.fun(
-    tracks, celltrackR::overallAngle, "live.cell.angle",
-    steps.subtracks = 2, idcol = "uID"),
-  on = .(uID, track_id, cell_id),
-  live.cell.angle := .(live.cell.angle)]
-
-# convert angle to degrees
-tracks.DT[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
-
-# add global angle to each track
-tracks.DT[, live.cell.angle_deg.csum := cumsum(tidyr::replace_na(live.cell.angle_deg, 0)), by = c("uID", "track_id")]
+# tracks <- cciaObj$tracks("IJ.manual", uIDs = unique(popDT$uID))
+# 
+# # create data.table with properties
+# tracks.DT <- tracks.measure.fun(tracks, celltrackR::speed,
+#                                 "live.cell.speed", steps.subtracks = 1,
+#                                 idcol = "uID")
+# 
+# # add further measurements
+# tracks.DT[
+#   tracks.measure.fun(
+#     tracks, celltrackR::overallAngle, "live.cell.angle",
+#     steps.subtracks = 2, idcol = "uID"),
+#   on = .(uID, track_id, cell_id),
+#   live.cell.angle := .(live.cell.angle)]
+# 
+# # convert angle to degrees
+# tracks.DT[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+# 
+# # add global angle to each track
+# tracks.DT[, live.cell.angle_deg.csum := cumsum(tidyr::replace_na(live.cell.angle_deg, 0)), by = c("uID", "track_id")]
 ```
 
 ```{r}
@@ -539,21 +567,9 @@ coords <- lapply(uns, function(x) {
 ```
 
 ```{r}
-# can you calculate the anisotropy of local track/fibre?
-boxAnisotropy <- abs(uns$fibres$kwLJ2A$ilee_eigval[1,,,1] - uns$fibres$kwLJ2A$ilee_eigval[1,,,2])
-totalLength <- sum(uns$fibres$kwLJ2A$ilee_box_total_length)
-anisotropy <- sum(boxAnisotropy) / totalLength
-```
-
-```{r}
-dim(boxAnisotropy)
-dim(localLength)
-```
-
-
-```{r}
 # round datapoints
 aRad <- 25
+structuresPop <- "nerves"
 tracksInfo[, centroid_y_tile := round(centroid_y/aRad) * aRad]
 tracksInfo[, centroid_x_tile := round(centroid_x/aRad) * aRad]
            
@@ -562,12 +578,12 @@ coordMappingsList <- list()
 
 for (x in unique(tracksInfo$uID)) {
   # can you calculate the anisotropy of local track/fibre?
-  boxAnisotropy <- abs(uns$fibres[[x]]$ilee_eigval[1,,,1] - uns$fibres[[x]]$ilee_eigval[1,,,2])
-  localLength <- uns$fibres[[x]]$ilee_box_total_length
+  boxAnisotropy <- abs(uns[[structuresPop]][[x]]$ilee_eigval[1,,,1] - uns[[structuresPop]][[x]]$ilee_eigval[1,,,2])
+  localLength <- uns[[structuresPop]][[x]]$ilee_box_total_length
   localAnisotropy <- boxAnisotropy / localLength[1,,]
   
   coordMapping <- (tracksInfo[uID == x] %>%
-    left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+    left_join(coords[[structuresPop]][[x]]$coords %>% tibble::rownames_to_column(),
               by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
     left_join(
       popDT[uID == x] %>%
@@ -579,8 +595,8 @@ for (x in unique(tracksInfo$uID)) {
   matLocalAniso <- as.vector(localAnisotropy)[as.integer(coordMapping$rowname)]
   
   matA <- matrix(c(
-    coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
-    coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
+    coords[[structuresPop]][[x]]$u[as.integer(coordMapping$rowname)],
+    coords[[structuresPop]][[x]]$v[as.integer(coordMapping$rowname)]
   ), ncol = 2)
   
   matB <- matrix(c(
@@ -618,8 +634,8 @@ runSim <- function(y) {
   mappingsList <- list()
   
   # can you calculate the anisotropy of local track/fibre?
-  boxAnisotropy <- abs(uns$fibres[[x]]$ilee_eigval[1,,,1] - uns$fibres[[x]]$ilee_eigval[1,,,2])
-  localLength <- uns$fibres[[x]]$ilee_box_total_length
+  boxAnisotropy <- abs(uns[[structuresPop]][[x]]$ilee_eigval[1,,,1] - uns[[structuresPop]][[x]]$ilee_eigval[1,,,2])
+  localLength <- uns[[structuresPop]][[x]]$ilee_box_total_length
   localAnisotropy <- boxAnisotropy / localLength[1,,]
   
   for (bootID in seq(bootIterations)) {
@@ -646,7 +662,7 @@ runSim <- function(y) {
     curPops <- rbindlist(curPopsList)
     
     coordMapping_rot <- (tracksInfo[uID == x] %>%
-      left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+      left_join(coords[[structuresPop]][[x]]$coords %>% tibble::rownames_to_column(),
                 by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x"))) %>%
       left_join(
         # popDT[uID == x] %>%
@@ -669,19 +685,19 @@ runSim <- function(y) {
     }
     
     coordMapping <- (bootTracksInfo[uID == x] %>%
-      left_join(coords$fibres[[x]]$coords %>% tibble::rownames_to_column(),
+      left_join(coords[[structuresPop]][[x]]$coords %>% tibble::rownames_to_column(),
                 by = c("centroid_y_tile" = "y", "centroid_x_tile" = "x")))
   
     matLocalAniso <- as.vector(localAnisotropy)[as.integer(coordMapping$rowname)]
     
     matA <- matrix(c(
-      coords$fibres[[x]]$u[as.integer(coordMapping$rowname)],
-      coords$fibres[[x]]$v[as.integer(coordMapping$rowname)]
+      coords[[structuresPop]][[x]]$u[as.integer(coordMapping$rowname)],
+      coords[[structuresPop]][[x]]$v[as.integer(coordMapping$rowname)]
     ), ncol = 2)
     
     matA_rot <- matrix(c(
-      coords$fibres[[x]]$u[as.integer(coordMapping_rot$rowname)],
-      coords$fibres[[x]]$v[as.integer(coordMapping_rot$rowname)]
+      coords[[structuresPop]][[x]]$u[as.integer(coordMapping_rot$rowname)],
+      coords[[structuresPop]][[x]]$v[as.integer(coordMapping_rot$rowname)]
     ), ncol = 2)
     
     # varied angles
@@ -716,7 +732,8 @@ runSim <- function(y) {
 
 # now .. can you also shuffle points and angles?
 coordMappingsList <- list()
-bootIterations <- 1000
+# bootIterations <- 1000
+bootIterations <- 10
 bootTracksInfo <- copy(tracksInfo)
 uIDs <- unique(bootTracksInfo$uID)
 
@@ -776,8 +793,6 @@ pValues
 sigValue <- 0.05
 pValues <- list()
 
-colnames(coordMappingsTotal)
-
 # now .. can you test for significance for each simulation?
 # for(xID in unique(coordMappingsTotal$uID)) {
 for(xRegion in unique(coordMappingsTotal$Region)) {
@@ -809,6 +824,7 @@ pValues
 #   summarise(mean = mean(angle, na.rm = TRUE)) %>%
 #   left_join(exp.info)
 
+png(file.path(anaDir, "track_alignment_boot.png"), 600, 400, type = "cairo")
 # ggplot(datToPlot, aes(Region, mean, color = type)) +
 # ggplot(coordMappings %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(Region, angle)) +
 ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), aes(type, angle)) +
@@ -821,12 +837,13 @@ ggplot(coordMappingsTotal %>% left_join(exp.info) %>% dplyr::filter(aniso > 0), 
   stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
   # ylim(0, 100) +
   facet_grid(.~Region)
+dev.off()
 
 # ggsave(file.path(anaDir, "track_alignment.png"), height = 3, width = 3)
-ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
+# ggsave(file.path(anaDir, "track_alignment_boot.png"), height = 3, width = 4)
 
 # save as CSV
-data.table::fwrite(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
+# data.table::fwrite(coordMappings %>% left_join(exp.info), file.path(anaDir, "track_alignment.csv"))
 ```
 
 ```{r fig_angles, fig.height=8, fig.width=8}
@@ -915,7 +932,8 @@ ggplot(datToPlot, aes(Region, value)) +
   # geom_jitter(position = position_jitterdodge(jitter.width = 0.10)) +
   facet_wrap(.~measure, scales = "free", nrow = 2) +
   theme(legend.position = "bottom") +
-  scale_color_brewer(palette = "Set1")
+  scale_color_brewer(palette = "Set1") +
+  expand_limits(y = 0)
   # scale_color_manual(values = c("#327EBA", "#AA1F5E"))
 
 ggsave(file.path(anaDir, "fibres.pdf"), height = 4, width = 12)
@@ -942,10 +960,13 @@ for (x in cciaObj$cciaObjects()) {
     ) 
   
   xCoords <- coords$IJ.manual.tracks[[x$getUID()]]
-  yCoords <- coords$fibres[[x$getUID()]]
+  yCoords <- coords[[structuresPop]][[x$getUID()]]
   
   # if (all(c(!is.null(xCoords), !is.null(yCoords))))
-  if (all(c(!is.null(yCoords))))
+  if (all(c(!is.null(yCoords)))) {
+    quiver.data <- cbind(yCoords$coords, yCoords$u, yCoords$v)
+    colnames(quiver.data) <- c("x", "y", "u", "v")
+    
     p1 <- p1 + 
       # geom_path(aes(centroid_x, centroid_y, group = track_id, colour = as.factor(track_id)),
       geom_path(aes(centroid_x, centroid_y, group = track_id),
@@ -953,19 +974,30 @@ for (x in cciaObj$cciaObjects()) {
         color = "white", linewidth = 1, alpha = 1) +
         # linewidth = 2, alpha = 1) +
       geom_segment(
-        data = branchDT[uID == x$getUID() & pop == "fibres.branch"],
+        data = branchDT[uID == x$getUID() & pop == "nerves.branch"],
         aes(x = `coord-src-1`, y = `coord-src-0`,
             xend = `coord-dst-1`, yend = `coord-dst-0`),
         # color = "#ebd441", linewidth = 1, alpha = 1) +
         color = "#AA1F5E", linewidth = 1, alpha = 1) +
-      ggquiver::geom_quiver(
-        data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u, v = yCoords$v), color = "#4682b4") 
+      # ggquiver::geom_quiver(
+      #   data = yCoords$coords, aes(x = x, y = y, u = -yCoords$u), v = yCoords$v), color = "#4682b4") +
+      # https://jtr13.github.io/cc22tt/tutorial-for-vector-fields-in-r.html
+      geom_segment(data = quiver.data, aes(
+        y = x, x = y,
+        yend = x - (v * 0.1), 
+        xend = y + (u * 0.1)), 
+        arrow = arrow(length = unit(0.2, "cm")),
+        size = 0.5, color = "#4682b4") +
+      coord_fixed()
       # ggquiver::geom_quiver(
       #   data = xCoords$coords, aes(x = x, y = y, u = -xCoords$u, v = xCoords$v), color = "white")
+  }
   
   y <- exp.info[uID == x$getUID()]
   
-  ggsave(file.path(anaDir, "flows", paste0(y$Patient, "-", y$Region, "-", x$getUID(), ".pdf")), plot = p1, height = 8, width = 8)
+  # Cairo::Cairo(800, 800, file = file.path(anaDir, paste0("flows-", y$Region, "-", x$getUID(), ".png")), dpi = 160)
+  print(p1)
+  # dev.off()
 }
 
 # ggsave(file.path(anaDir, "flows", paste0("flow-tracks-", cciaObj$getUID(), ".pdf")), height = 8, width = 8)
@@ -998,12 +1030,12 @@ for (i in names(coords)[names(coords) != tracks.i]) {
 structNames <- names(coords)[names(coords) != tracks.i]
 
 # go through images
-for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs$fibres))) {
+for (x in cciaObj$cciaObjects(uIDs = names(vecDiffs[[structuresPop]]))) {
   i <- x$getUID()
   
-  diffsDT <- as.data.table(cbind(coords$fibres[[i]]$coords, vecDiffs$fibres[[i]]))
+  diffsDT <- as.data.table(cbind(coords[[structuresPop]][[i]]$coords, vecDiffs[[structuresPop]][[i]]))
   diffsDT[is.na(diffsDT), ] <- 0 
-  setnames(diffsDT, "vecDiffs$fibres[[i]]", "fibres")
+  setnames(diffsDT, "vecDiffs[[structuresPop]][[i]]", "fibres")
   diffsDT[, max := colnames(.SD)[max.col(.SD, ties.method = "first")], .SDcols = structNames]
   diffsDT[fibres == 0, max := NA]
   

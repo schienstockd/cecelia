@@ -383,6 +383,92 @@
         updateImage(runif(1))
       })
       
+      # import tracks
+      observeEvent(input$importTracks, {
+        # https://mastering-shiny.org/action-transfer.html
+        req(input$importTracks)
+        req(input$importValueName)
+        
+        # get value name
+        valueName <- input$importValueName
+        
+        # get extension
+        ext <- tools::file_ext(input$importTracks$name)
+        
+        # read data
+        tracksDT <- switch(ext,
+                           csv = vroom::vroom(input$importTracks$datapath, delim = ","),
+                           tsv = vroom::vroom(input$importTracks$datapath, delim = "\t"),
+                           validate("Invalid file; Please upload a .csv or .tsv file")
+        )
+        data.table::setDT(tracksDT)
+        
+        # get selected objects
+        uIDs <- moduleManagers()$selectionManager$selectedUIDs()
+        
+        progress <- Progress$new()
+        progress$set(message = "Import tracks ... ", value = 0)
+        
+        # set basic pop params
+        popType <- "live"
+        pops <- list(
+          "tracked" = list(
+            filterMeasure = "track_id",
+            filterValues = 0,
+            filterFun = "gt"
+            # TODO add colour choice
+            # For now, this is random
+          )
+        )
+        
+        # now save in object
+        for (x in moduleManagers()$imageSetManager$selectedSet()$cciaObjects(uIDs = uIDs)) {
+          # build label properties
+          # TODO.. There must be some wort of intensity readout from the image?
+          
+          # match by filename
+          y <- copy(tracksDT[File_name == tools::file_path_sans_ext(basename(x()$oriFilepath()))])
+          z <- cbind(seq(nrow(y)), y[, c("Track", "Slice", "Y", "X", "TI")])
+          colnames(z) <- c("label", "track_id", "centroid_t", "centroid_y", "centroid_x", "mean_intensity_0")
+          
+          # adjust slice, tracks count from 0
+          z[, "centroid_t"] <- z[, "centroid_t"] - 1
+          
+          labelProps.name <- taskDirFiles("labelProps", valueName)
+          labels.name <- taskDirFiles("labels", valueName)
+          
+          # save props
+          labelsView <- cciaEnv()$LabelPropsUtils(
+            x()$persistentObjectDirectory(), labelProps.name)$label_props(
+              z, save = TRUE, split_columns = TRUE, obs_cols = c("label", "track_id"))
+          
+          # set label path
+          x()$setImLabelPropsFilepath(basename(labelProps.name), valueName)
+          x()$setImLabelsFilepath(basename(labels.name), valueName)
+          
+          # add population to popMap
+          parentPops <- c(valueName)
+          
+          # remove populations
+          x()$delPopsByPath(
+            popType,
+            pops = levels(interaction(parentPops, names(pops), sep = "/")),
+            includeFiltered = TRUE
+          )
+          
+          # add populations
+          x()$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+          
+          # save to disk
+          x()$savePops(popType, purge = TRUE, includeFiltered = TRUE)
+          
+          # save
+          x()$saveState()
+        }
+        
+        progress$close()
+      })
+      
       ## Generic
       
       ### UI Outputs

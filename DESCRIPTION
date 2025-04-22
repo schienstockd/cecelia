@@ -79,7 +79,9 @@ Imports:
     geometry,
     lubridate,
     ggquiver,
-    concaveman
+    concaveman,
+    matlib,
+    rearrr
 LinkingTo: Rcpp
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
