@@ -285,8 +285,7 @@ CellsToStructuresWO <- R6::R6Class(
         tracksInfo, uns, coords, popDT, structuresPop)
       
       self$writeLog("Bootstrap cells to structures")
-      # bootIterations <- self$funParams()$bootIterations
-      bootIterations <- 10
+      bootIterations <- self$funParams()$bootIterations
       
       coordMappingsBoot <- self$bootsrapCellsToStructures(
         tracksInfo, uns, coords, popDT, structuresPop, bootIterations, aRad)
