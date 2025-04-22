@@ -85,7 +85,7 @@
       },
       "poolValue": {
         "index": 5,
-        "label": "Significance value",
+        "label": "Pool value",
         "widget:expInfoColSelection": {
           "size": 1,
           "multiple": false
