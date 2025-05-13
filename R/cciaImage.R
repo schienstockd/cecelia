@@ -438,7 +438,7 @@ CciaImage <- R6::R6Class(
             
             # check whether this worked
             # TODO is there an ante check before doing all of this?
-            if (timeValue == 0) {
+            if (timeValue == 0 && !isTRUE(self$getCciaAttr("TimelapseInterval") != "")) {
               # get time delta
               valueChildren <- xml2::xml_children(xml2::xml_find_all(
                 self$omeXML(), self$omeXMLPath("//Image//Pixels")))
@@ -488,7 +488,8 @@ CciaImage <- R6::R6Class(
       
       # if the interval is '0', take the information
       # from the metadata or from what the user has given
-      if (length(self$getCciaAttr("TimelapseInterval")) > 0) {
+      # if (length(self$getCciaAttr("TimelapseInterval")) > 0 && self$getCciaAttr("TimelapseInterval") != "") {
+      if (isTRUE(self$getCciaAttr("TimelapseInterval") != "")) {
         tInfo$interval <- as.double(self$getCciaAttr("TimelapseInterval")) / 60
       } else if (is.na(tInfo$interval) || length(tInfo$interval) == 0 || tInfo$interval == 0) {
         # are any time intervals set?

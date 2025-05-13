@@ -5,6 +5,7 @@ inst/app/COMMUNAL
 inst/app/viewer/connectionFile.debug.json
 inst/app/viewer/connectionFile.json
 inst/models/*
+renv/*
 .Rhistory
 .RData
 .RdataTmp

@@ -671,7 +671,9 @@ createPPP <- function(pointsDF, windowDF, marks, hullType = "convex", concavity 
     W <- spatstat.geom::owin(poly = list(x = polyCoords$x, y = polyCoords$y))
   }
   
+  # formal argument "marks" matched by multiple actual arguments
   spatstat.geom::as.ppp(pointsDF, marks = marks, W = W)
+  # spatstat.geom::as.ppp(pointsDF, W = W)
 }
 
 #' @description Get first selected image from set

@@ -1,0 +1,71 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "8BR53W"
+versionID <- 1
+projectsDir <- "/Volumes/Analysis_SSD/Dominik/cecelia/projects/"
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+# rename
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+sIDs <- c("BeddcR", "ZXcUMO", "0Oenks", "YJRfCW")
+
+backupDir <- "/Volumes/QUACK2/DOHERTY/CECELIA/projects/8BR53W/ANALYSIS"
+
+for (i in sIDs) {
+# init ccia object
+  cciaObj <- initCciaObject(
+    pID = pID, uID = i, versionID = versionID, initReactivity = FALSE
+  )
+  
+  print(paste(">>", cciaObj$getUID()))
+  
+  # analysis
+  file.copy(
+    cciaObj$persistentObjectDirectory(zero = FALSE),
+    file.path(backupDir, "1"),
+    recursive = TRUE, overwrite = TRUE
+  )
+  
+  # go through images and copy 
+  for (x in cciaObj$cciaObjects()) {
+    # image
+    file.copy(
+      x$persistentObjectDirectory(zero = TRUE, uID = x$getUID()),
+      file.path(backupDir, "0"),
+      recursive = TRUE, overwrite = TRUE
+    )
+    
+    # analysis
+    file.copy(
+      x$persistentObjectDirectory(zero = FALSE, uID = x$getUID()),
+      file.path(backupDir, "1"),
+      recursive = TRUE, overwrite = TRUE
+    )
+  }
+}
+```

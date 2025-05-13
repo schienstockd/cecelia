@@ -74,19 +74,6 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
-)
-
-paste(names(cciaObj$cciaObjects()), collapse = "','")
-```
-
-```{r}
-# rename
-devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE)
-
-# init ccia object
-cciaObj <- initCciaObject(
   # pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE # DTx
   pID = pID, uID = "wGqPEx", versionID = versionID, initReactivity = FALSE # DTx
 )
@@ -611,6 +598,12 @@ popDTs <- cciaObj$popDT(
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
+
+# get neighbour information
+spatialDT <- cciaObj$spatialDT(valueName = "tcells.gBT", uIDs = uIDs)
+
+# get track info
+tracksMeasures <- cciaObj$tracksMeasures(pops = c("tcells.gBT/tracked"), uIDs = uIDs)
 ```
 
 ```{r}
@@ -621,6 +614,539 @@ clusterMapping <- list(
   Aggregating = c(3,6),
   NONE = c(7)
 )
+
+# map clusters
+tcells.sc <- .mapClustNames(tcells.sc, clusterMapping)
+```
+
+
+```{r}
+# join pops
+spatialDT.sc <- copy(spatialDT[dist <= 30])
+# spatialDT.sc <- copy(spatialDT)
+spatialDT.sc[
+  popDTs[, c("uID", "label", "track_id")],
+  on = c("uID", "to" = "label"),
+  track_id.to := track_id]
+spatialDT.sc[
+  tcells.sc[, c("uID", "track_id", "clusters")],
+  on = c("uID", "track_id.to" = "track_id"),
+  clusters.to := clusters]
+
+# map clusters
+spatialDT.sc <- .mapClustNames(spatialDT.sc, clusterMapping, clustCol = "clusters.to")
+```
+
+```{r}
+# get behaviour frequencies and then get kmeans
+spatialDT.summary <- spatialDT.sc %>%
+  group_by(uID, from, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n))
+```
+
+```{r fig_kmeans_clusters, fig.height=1.5, fig.width=2.5}
+# use K-Means to get clusters of regions
+normalit <- function(m) (m - min(m))/(max(m)-min(m))
+
+spatialDT.summary.wider <- as.data.table(spatialDT.summary %>%
+  # ungroup() %>%
+  # mutate(norm = normalit(freq)) %>%
+  pivot_wider(
+    id_cols = c(uID, from),
+    names_from = clusters.name,
+    # names_from = clusters.from,
+    # values_from = norm,
+    values_from = freq,
+    values_fill = 0
+  ))
+
+spatialDT.summary.mat <- as.matrix(spatialDT.summary.wider %>%
+  ungroup() %>% 
+  select(-c(uID, from)))
+rownames(spatialDT.summary.mat) <- paste(spatialDT.summary.wider$uID, spatialDT.summary.wider$from)
+```
+
+```{r fig_kmeans_clusters, fig.height=2, fig.width=4}
+clustToFind <- 4
+
+set.seed(145)
+
+clusters <- kmeans(
+  spatialDT.summary.wider %>%
+    ungroup() %>%
+    select(-c(uID, from)),
+  clustToFind)
+# mcl.model <- mclust::Mclust(freqRegionsMat)
+# mcl.model <- mclust::Mclust(freqRegionsMat, clustToFind)
+
+# Plot our results.
+# plot(mcl.model, what = "classification", main = "Mclust Classification")
+
+# push back clusters
+spatialDT.summary.wider[, cluster := clusters$cluster]
+# freqRegionsWider$cluster <- mcl.model$classification
+
+popCols <- colnames(spatialDT.summary.wider)[!colnames(spatialDT.summary.wider) %in% c(
+  "uID", "from", "to", "n", "cluster", "clusters.from", "clusters.to")]
+
+spatialDT.summary.across <- spatialDT.summary.wider %>%
+  group_by(cluster) %>%
+  summarise(across(all_of(popCols), mean)) %>%
+  pivot_longer(
+    cols = popCols,
+    names_to = "pop",
+    values_to = "value"
+    ) %>%
+  mutate(norm = normalit(value))
+
+ggplot(
+  spatialDT.summary.across, aes(as.factor(cluster), pop)) +
+  geom_tile(aes(fill = norm)) +
+  viridis::scale_fill_viridis(discrete = FALSE, limits = c(0, 1)) +
+  theme_classic() +
+  theme(legend.title = element_blank()) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "heat_niches.png"), height = 2, width = 4)
+```
+
+```{r fig_region_freq, fig.height=3, fig.width=6}
+# show frequency of populations for treatments
+spatialDT.summary.exp <- copy(spatialDT.summary.wider) %>%
+  group_by(uID, cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# plot
+ggplot(spatialDT.summary.exp,
+       aes(as.factor(cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Population (%)") + xlab("") +
+  # ylim(0, 1) +
+  scale_color_brewer(name = NULL, palette = "Set1")
+
+ggsave(file.path(anaDir, "freq_niches.png"), height = 2, width = 6)
+
+# summaryDF$Treatment <- 0
+# summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
+
+# save as csv for plotting in Prism
+# data.table::fwrite(summaryDF, file.path(anaDir, "cluster_regions.csv"))
+```
+
+```{r}
+popDTs.niches.gDT <- copy(popDTs[value_name == "tcells.gDT"])
+popDTs.niches.gBT <- copy(popDTs[value_name == "tcells.gBT"])
+
+popDTs.niches.gDT[
+  spatialDT.summary.wider[, c("uID", "from", "cluster")],
+  on = c("uID", "live.cell.contact_id#live.tcells.gBT__tracked" = "from"),
+  niche.cluster := cluster]
+
+popDTs.niches.gDT <- .mapClustNames(
+  popDTs.niches.gDT, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement",
+  nameCol = "self.clusters.name", idCol = "self.contact.clusters.id")
+
+popDTs.niches.gBT[
+  spatialDT.summary.wider[, c("uID", "from", "cluster")],
+  on = c("uID", "label" = "from"),
+  niche.cluster := cluster]
+
+popDTs.niches.gBT[
+  spatialDT.summary.wider[, c("uID", "from", "cluster")],
+  on = c("uID", "label" = "from"),
+  niche.cluster := cluster]
+
+popDTs.niches.gBT <- .mapClustNames(
+  popDTs.niches.gBT, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement",
+  nameCol = "clusters.name")
+```
+
+```{r fig_region_freq, fig.height=3, fig.width=8}
+# can you just plot out the behaviour of cells in and outside of a niche
+popDTs.niches.gBT[, in.niche.cluster := niche.cluster == niche.aggregating]
+
+summaryToPlot <- popDTs.niches.gBT[live.cell.hmm.state.movement != 4,] %>%
+# summaryToPlot <- popDTs.niches.gBT %>%
+  drop_na(in.niche.cluster, live.cell.hmm.state.movement) %>%
+  group_by(uID, in.niche.cluster, live.cell.hmm.state.movement) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, in.niche.cluster, live.cell.hmm.state.movement, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+ggplot(summaryToPlot, 
+       aes(as.factor(live.cell.hmm.state.movement), freq, color = in.niche.cluster)) +
+       # aes(as.factor(niche.cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+
+# ggsave(file.path(anaDir, "behaviour_in_niche.png"), height = 2, width = 8)
+ggsave(file.path(anaDir, "behaviour_in_niche_wo.png"), height = 2, width = 8)
+```
+
+```{r}
+# filter on aggregating niches
+niche.aggregating <- 1
+spatialDT.niche <- copy(spatialDT.summary.wider[
+  cluster == niche.aggregating, c("uID", "from")])
+
+spatialDT.niche.dist <- spatialDT[
+  spatialDT.niche, on = c("uID", "to" = "from"), nomatch = NULL]
+
+# then add behaviour cluster
+spatialDT.niche.dist[
+  popDTs.niches.gBT, on = c("uID", "from" = "label"),
+  `:=` (from.track_id = track_id, from.niche.cluster = niche.cluster)]
+
+# drop na, spatial is on complete segmentation
+# spatialDT.niche.dist <- spatialDT.niche.dist[!is.na(spatialDT.niche.dist$from.track_id),]
+
+# then plot out
+
+# summarise per track
+spatialDT.niche.dist.summary <- spatialDT.niche.dist %>%
+  group_by(uID, from.track_id) %>%
+  summarise(median.dist = median(dist, na.rm = TRUE)) %>%
+  rename(track_id = from.track_id) %>%
+  left_join(
+    (spatialDT.niche.dist %>%
+      drop_na(from.niche.cluster) %>%
+      group_by(uID, from.track_id, from.niche.cluster) %>%
+      summarise(n = n()) %>%
+      mutate(freq = n/sum(n)) %>%
+      pivot_wider(names_from = from.niche.cluster, values_from = freq, values_fill = 0, id_cols = c("uID", "from.track_id")) %>%
+      rename(track_id = from.track_id)), by = c("uID", "track_id")
+  )
+
+rm(spatialDT.niche)
+rm(spatialDT.niche.dist)
+```
+
+```{r fig_speed_to_niche, fig.height=10, fig.width=20}
+# can you show the speed of gBT in relation to aggregating gBT?
+# and/or show behaviour in relation to aggregates
+p1 <- ggplot(spatialDT.niche.dist.summary %>%
+         left_join(tracksMeasures) %>%
+         left_join(exp.info), aes(median.dist, speed)) +
+  theme_classic() +
+  geom_smooth() +
+  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
+
+ggsave(file.path(anaDir, "niches_dist_speed_indv.png"), height = 10, width = 20, plot = p1)
+```
+
+```{r fig_speed_to_niche, fig.height=4, fig.width=10}
+# can you show the speed of gBT in relation to aggregating gBT?
+# and/or show behaviour in relation to aggregates
+p1 <- ggplot(spatialDT.niche.dist.summary %>%
+         left_join(tracksMeasures) %>%
+         left_join(exp.info), aes(median.dist, speed)) +
+  theme_classic() +
+  geom_smooth() +
+  facet_grid(.~interaction(Treatment, DTx))
+
+ggsave(file.path(anaDir, "niches_dist_speed.png"), height = 3, width = 8, plot = p1)
+```
+
+```{r fig_time_in_niche, fig.height=2, fig.width=14}
+# can you show the time spent of every behaviour in each cluster
+summaryToPlot <- popDTs.niches.gBT %>%
+  drop_na(clusters.name, niche.cluster) %>%
+  group_by(uID, clusters.name, niche.cluster) %>%
+  summarise(n = n()) %>%
+  # mutate(freq = n/sum(n)) %>%
+  left_join(spatialDT.summary.exp %>% group_by(uID, cluster) %>% summarise(m = sum(n)) %>% rename(niche.cluster = cluster)) %>%
+  mutate(freq = n / m) %>%
+  ungroup() %>%
+  complete(uID, clusters.name, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(summaryToPlot, aes(clusters.name, freq, color = as.factor(niche.cluster))) +
+ggplot(summaryToPlot, aes(clusters.name, freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  # ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # facet_wrap(.~interaction(Treatment, DTx), ncol = 10)
+  facet_wrap(.~niche.cluster, ncol = 10)
+
+# ggsave(file.path(anaDir, "behaviour_time_spent_niches.png"), height = 2, width = 12)
+# ggsave(file.path(anaDir, "behaviour_time_spent_niches_alt.png"), height = 2, width = 14)
+ggsave(file.path(anaDir, "behaviour_time_spent_niches_alt2.png"), height = 2, width = 14)
+```
+
+```{r fig_time_in_niche, fig.height=2, fig.width=14}
+# niche size
+summaryToPlot <- popDTs.niches.gBT %>%
+  drop_na(clusters.name, niche.cluster) %>%
+  group_by(uID, clusters.name, niche.cluster) %>%
+  summarise(n = n()) %>%
+  group_by(uID, niche.cluster) %>%
+  summarise(m = n()) %>%
+  mutate(freq = n/m) %>%
+  ungroup() %>%
+  complete(uID, clusters.name, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(summaryToPlot, aes(clusters.name, freq, color = as.factor(niche.cluster))) +
+ggplot(summaryToPlot, aes(clusters.name, freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  # ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # facet_wrap(.~interaction(Treatment, DTx), ncol = 10)
+  facet_wrap(.~niche.cluster, ncol = 10)
+
+# ggsave(file.path(anaDir, "behaviour_time_spent_niches.png"), height = 2, width = 12)
+ggsave(file.path(anaDir, "behaviour_time_spent_niches_alt.png"), height = 2, width = 14)
+```
+
+
+```{r fig_speed_to_niche, fig.height=4, fig.width=10}
+# can you show the speed of gBT in relation to aggregating gBT?
+# and/or show behaviour in relation to aggregates
+summaryToPlot <- spatialDT.niche.dist.summary %>%
+  left_join(tcells.sc) %>%
+  mutate(
+    dist.bin = cut(median.dist, breaks = seq(0, 100, 10), labels = seq(0, 90, 10)),
+    dist.bin = as.numeric(as.character(dist.bin))
+    ) %>%
+  drop_na(clusters.name) %>%
+  group_by(uID, dist.bin, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  left_join(exp.info)
+
+p1 <- ggplot(summaryToPlot, aes(dist.bin, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  geom_line(size = 1.5) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
+
+ggsave(file.path(anaDir, "niches_dist_behaviour_indv.png"), height = 10, width = 20, plot = p1)
+```
+
+```{r fig_speed_to_niche, fig.height=4, fig.width=10}
+# can you show the speed of gBT in relation to aggregating gBT?
+# and/or show behaviour in relation to aggregates
+summaryToPlot <- spatialDT.niche.dist.summary %>%
+  left_join(tcells.sc) %>%
+  mutate(
+    dist.bin = cut(median.dist, breaks = seq(0, 100, 10), labels = seq(0, 90, 10)),
+    dist.bin = as.numeric(as.character(dist.bin))
+    ) %>%
+  drop_na(clusters.name) %>%
+  group_by(uID, dist.bin, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  left_join(exp.info)
+
+p1 <- ggplot(summaryToPlot, aes(dist.bin, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  # geom_line(size = 1.5) +
+  geom_smooth() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+
+ggsave(file.path(anaDir, "niches_dist_behaviour.png"), height = 3, width = 8, plot = p1)
+```
+
+```{r fig_region_freq, fig.height=5, fig.width=5}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# get you get individual niches/clusters and then take the distances
+# of the cells to the border of those niches
+i <- "4ZrNE2"
+
+xdata <- popDTs.niches.gBT[uID == i & niche.cluster == niche.aggregating]
+xpoints <- xdata[, c("centroid_x", "centroid_y")]
+
+# get individual niches
+clusters <- dbscan::dbscan(xpoints, eps = 20, minPts = 10, borderPoints = TRUE)
+xdata[, dbscan := clusters$cluster]
+
+xchull <- chull(as.matrix(xpoints))
+
+# polyCoords <- xpoints[chull(as.matrix(xpoints)),] %>%
+#   arrange(desc(row_number()))
+# W <- spatstat.geom::owin(poly = list(x = polyCoords$centroid_x, y = polyCoords$centroid_y))
+
+ggplot(xdata[xchull,], aes(centroid_x, centroid_y, color = as.factor(dbscan))) +
+  geom_point(size = 0.5) +
+  theme_classic() +
+  coord_fixed() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # plotThemeDark() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  )
+```
+
+
+```{r fig_region_freq, fig.height=5, fig.width=5}
+# show regions
+p1 <- ggplot(popDTs.niches.gBT %>% left_join(exp.info), aes(centroid_x, centroid_y, color = as.factor(niche.cluster))) +
+  geom_point(size = 0.5) +
+  theme_classic() +
+  coord_fixed() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # plotThemeDark() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  ) +
+  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
+
+ggsave(file.path(anaDir, "niches.png"), height = 10, width = 20, plot = p1)
+```
+
+```{r fig_niches_gDT_HMM, fig.height=3, fig.width=14}
+niches.summary <- popDTs.niches.gDT %>%
+  drop_na(live.cell.hmm.state.movement, niche.cluster) %>%
+  group_by(uID, niche.cluster, live.cell.hmm.state.movement) %>%
+  # group_by(uID, self.clusters.name, niche.cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, niche.cluster, live.cell.hmm.state.movement, fill = list(freq = 0)) %>%
+  # complete(uID, self.clusters.name, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# can you now map the gDT HMM behaviour to these regions?
+ggplot(niches.summary, 
+       aes(as.factor(live.cell.hmm.state.movement), freq, color = interaction(Treatment, DTx))) +
+       # aes(as.factor(niche.cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~niche.cluster)
+  # facet_grid(.~self.clusters.name)
+```
+
+```{r fig_niches_gDT_behaviour, fig.height=3, fig.width=14}
+niches.summary <- popDTs.niches %>%
+  drop_na(self.clusters.name, niche.cluster) %>%
+  group_by(uID, niche.cluster, self.clusters.name) %>%
+  # group_by(uID, self.clusters.name, niche.cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, niche.cluster, self.clusters.name, fill = list(freq = 0)) %>%
+  # complete(uID, self.clusters.name, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# can you now map the gDT HMM behaviour to these regions?
+ggplot(niches.summary, 
+       aes(as.factor(self.clusters.name), freq, color = interaction(Treatment, DTx))) +
+       # aes(as.factor(niche.cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  ylab("Behaviour (%)") + xlab("") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~niche.cluster)
+  # facet_grid(.~self.clusters.name)
+```
+
+```{r fig_region_freq, fig.height=3, fig.width=14}
+niches.summary <- popDTs.niches %>%
+  drop_na(self.clusters.name, niche.cluster) %>%
+  # group_by(uID, niche.cluster, self.clusters.name) %>%
+  group_by(uID, self.clusters.name, niche.cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  # complete(uID, niche.cluster, self.clusters.name, fill = list(freq = 0)) %>%
+  complete(uID, self.clusters.name, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# can you now map the gDT HMM behaviour to these regions?
+ggplot(niches.summary, 
+       # aes(as.factor(self.clusters.name), freq, color = interaction(Treatment, DTx))) +
+       aes(as.factor(interaction(Treatment, DTx)), freq, color = as.factor(niche.cluster))) +
+       # aes(as.factor(niche.cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  ylab("Behaviour (%)") + xlab("") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # facet_grid(.~niche.cluster)
+  facet_grid(.~self.clusters.name)
+  # facet_grid(.~self.clusters.name)
+
+ggsave(file.path(anaDir, "freq_clusters_niches.png"), height = 2, width = 14)
+```
+
+```{r fig_region_freq, fig.height=3, fig.width=5}
+niches.summary <- popDTs.niches[self.clusters.name == "Scanning"] %>%
+  drop_na(self.clusters.name, niche.cluster) %>%
+  # group_by(uID, niche.cluster, self.clusters.name) %>%
+  group_by(uID, niche.cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  # complete(uID, niche.cluster, self.clusters.name, fill = list(freq = 0)) %>%
+  complete(uID, niche.cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# can you now map the gDT HMM behaviour to these regions?
+ggplot(niches.summary, 
+       # aes(as.factor(self.clusters.name), freq, color = interaction(Treatment, DTx))) +
+       aes(niche.cluster, freq, group = uID)) +
+       # aes(as.factor(niche.cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_point() +
+  ylab("Behaviour (%)") + xlab("") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx)) +
+  geom_line(alpha = 0.4)
+
+# ggsave(file.path(anaDir, "freq_clusters_niches.png"), height = 2, width = 14)
 ```
 
 ```{r}

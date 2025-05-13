@@ -88,8 +88,8 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
       popsAdded <- list()
   
       # add populations to popMap
-      for (valueName in popsToShow) {
-        pop <- paste0(valueName, "/tracked")
+      for (k in popsToShow) {
+        pop <- paste0(k, "/tracked")
         popType <- "live"
         parentPops <- c(pop)
         pops <- list()
@@ -130,13 +130,13 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
   
         # add pops
         popsToAdd <- levels(interaction(parentPops, names(pops), sep = "/"))
-        popsAdded[[valueName]] <- popsToAdd
+        popsAdded[[k]] <- popsToAdd
         
         # remove populations
         x$delPopsByPath(popType, pops = popsToAdd, includeFiltered = TRUE)
   
         # add populations
-        x$addFilteredPops(popType, parentPops, pops, valueName = valueName)
+        x$addFilteredPops(popType, parentPops, pops, valueName = k)
       }
   
       # save to disk
@@ -158,7 +158,7 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
       viewer$saveTimeAnimation(
         file.path(anaDir, "movies", paste0(
           paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
-        windowSizeX = 1200, windowSizeY = 1000, fps = fps)
+        windowSizeX = 1600, windowSizeY = 1200, fps = fps)
     } else {
       browser()
     }
@@ -321,9 +321,9 @@ cciaObj <- initCciaObject(
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
-# uIDs <- exp.info[Include == "Y"]$uID
+uIDs <- exp.info[Include == "Y"]$uID
 
-uIDs <- c("iTfSUG") # PBS
+# uIDs <- c("iTfSUG") # PBS
 # uIDs <- c("m87rLx") # DTx
 
 splitTracks <- list(
@@ -345,7 +345,7 @@ channelsToShow <- list(
 popsToShow <- c("tcells.gBT", "tcells.gDT")
 fileAttrs <- c("Treatment", "DTx")
 
-generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = FALSE)
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = TRUE)
 ```
 
 ```{r}
