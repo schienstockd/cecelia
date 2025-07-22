@@ -240,7 +240,8 @@ Create multiscale slices
 """
 def create_slices_multiscales(im_dim, dim_utils = None,
                               x_idx = None, y_idx = None,
-                              nscales = 1, ignore_channel = False, squeeze = False):
+                              nscales = 1, ignore_channel = False,
+                              squeeze = False, idx_adjust = 0):
   # TODO this will only create multiscales for X and Y
   # Would you want to have scaling in Z?
   
@@ -250,8 +251,8 @@ def create_slices_multiscales(im_dim, dim_utils = None,
   # X and Y have to be defined if no DimUtils given
   if dim_utils is not None:
     # get idx
-    y_idx = dim_utils.dim_idx('Y', ignore_channel = ignore_channel, squeeze = squeeze)
-    x_idx = dim_utils.dim_idx('X', ignore_channel = ignore_channel, squeeze = squeeze)
+    y_idx = dim_utils.dim_idx('Y', ignore_channel = ignore_channel, squeeze = squeeze) + idx_adjust
+    x_idx = dim_utils.dim_idx('X', ignore_channel = ignore_channel, squeeze = squeeze) + idx_adjust
   
   # get max
   y_max = im_dim[y_idx]

@@ -120,7 +120,7 @@ class TrackingUtils:
     labels_ids = self.label_props_utils.label_props_view()\
       .view_label_col()\
       .values_obs()
-      
+    
     # merge track ids to labels
     merged_track_ids = labels_ids.join(track_df.set_index('label_id'), on = 'label')
     
@@ -142,7 +142,7 @@ class TrackingUtils:
     self.label_props_utils.label_props_view()\
         .add_obs(track_dict)\
         .save()
-
+        
   """
   Track objects from centroids
   """

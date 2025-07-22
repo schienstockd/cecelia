@@ -1,0 +1,504 @@
+---
+title: "Behaviour GCAMP"
+output: html_document
+date: '2022-08-15'
+---
+
+```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Show transition states of live cell imaging
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+# set test variables
+pID <- "ScCqhf"
+versionID <- 1
+hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
+```
+
+```{r}
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/MARIJA_CAR_T/ANALYSIS"
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# upload local files
+funParams <- list(
+   valueName = "tcells",
+   maxSearchRadius = 12,
+   maxLost = 1,
+   accuracy = 0.8,
+   probToAssign = 0.8,
+   noiseInital = 300,
+   noiseProcessing = 100,
+   noiseMeasurements = 100,
+   distThresh = 10,
+   timeThresh = 5,
+   segmentationMissRate = 0.1,
+   lambdaLink = 5,
+   lambdaTime = 5,
+   lambdaDist = 5,
+   lambdaBranch = 50,
+   thetaTime = 5,
+   thetaDist = 5,
+   minTimepoints = 5,
+   minDisplacement = 0,
+   maxMeanTurningAngle = 0,
+   filters = list(
+     a = list(
+       measure = c("surface_to_volume"),
+       values = c("0.8"),
+       fun = c("lte")
+     ),
+     b = list(
+       measure = c("Tcells"),
+       values = c("12"),
+       fun = c("gt")
+     )
+   ),
+   calcTrackingStats = TRUE,
+   calcTrackingStatsOnly = FALSE,
+   trackBranching = FALSE
+)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "PABXLt", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$runTasks(
+  funName = "tracking.bayesianTracking",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1,
+  uIDs = names(cciaObj$cciaObjects())
+)
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "PABXLt", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells/tracked"),
+  # scaleMeasurements = c("live.cell.speed", "live.cell.angle"),
+  modelMeasurements = c("live.cell.speed", "live.cell.angle"),
+  # modelMeasurements = c(
+  #   "live.cell.speed", "live.cell.angle"
+  #   "surface_area", "volume", "extent", "solidity",
+  #   "ellipticity_interm_oblate", "ellipticity_interm_prolate",
+  #   "compactness", "sphericity"
+  # ),
+  scaleMeasurements = c(),
+  colName = "movement",
+  appendStates = list(),
+  skipTimesteps = 0,
+  subtrackOverlap = TRUE,
+  noiseFilterMeasurements = 5,
+  # postFiltering = 2,
+  # postIterations = 2,
+  postFiltering = 0,
+  postIterations = 0,
+  numStates = 2,
+  # numStates = 3, 
+  # numStates = 4, 
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmStates",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# get HMM transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "PABXLt", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  pops = c("tcells/tracked"),
+  colName = "movement",
+  hmmStates = c("movement"),
+  includeStart = FALSE,
+  includeSelfTransitions = TRUE,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.hmmTransitions",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# cluster tracks based on transitions
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "PABXLt", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# run task
+funParams <- list(
+  popType = "live",
+  popsToCluster = c("tcells/tracked"),
+  # valueName = "tracks.clusters.tcells.movement",
+  valueName = "tracks.clusters.tcells.subMovement",
+  # can you do sub-clustering
+  rootValueName = "tracks.clusters.tcells.movement",
+  rootPops = c(""),
+  clusterColName = "movement",
+  resolution = 0.25, 
+  percentile = 99.8,
+  trackMeasures = c(
+    "speed",
+    "duration",
+    "trackLength",
+    "meanTurningAngle",
+    "displacement",
+    "straightness",
+    "displacementRatio",
+    "outreachRatio",
+    "asphericity",
+    "overallAngle"
+  ),
+  objectMeasures = c(
+    "live.cell.hmm.state.movement",
+    "live.cell.hmm.transitions.movement"
+    ),
+  nMeasures = c(
+    ),
+  sumMeasures = c(
+    ),
+  calcMeasures = list(
+  ),
+  addPops = c(
+    ),
+  calcLabelProps = TRUE,
+  # usePaga = FALSE,
+  usePaga = TRUE,
+  pagaThreshold = 0.04,
+  minTracklength = 6,
+  uIDs = uIDs
+)
+
+# run task
+task <- cciaObj$runTask(
+  funName = "behaviourAnalysis.clusterTracks",
+  funParams = funParams,
+  env = "local",
+  runInplace = TRUE,
+  taskID = 1
+)
+```
+
+```{r}
+# HMM
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "h3nkQ3", versionID = versionID, initReactivity = FALSE
+)
+
+popDT.clust <- cciaObj$popDT(
+  "clust", pops = c("Immotile", "Directed"), includeFiltered = TRUE,
+  valueName = "tracks.clusters.tcells.movement")
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "PABXLt", versionID = versionID, initReactivity = FALSE # DTx
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   value_name = "tracks.clusters.tcells.movement.sc")$label_props_view()$as_df())
+tcells.sc <- cciaObj$popDT(
+  popType = "clust", pops = c(
+    # "Immotile", "Directed", "Meandering", "Imm.Meander", "Undefined"
+    "Immotile", "Directed", "Meandering", "Imm.Meander", "Dir.Meander"
+  ), includeFiltered = TRUE, flushCache = TRUE, uIDs = uIDs)
+
+# get popDTs for set
+popDTs <- cciaObj$popDT(
+  popType = "live", pops = c("tcells/tracked"),
+  includeFiltered = TRUE, flushCache = TRUE, uIDs = uIDs)
+
+# get track info
+# tracksMeasures <- cciaObj$tracksMeasures(pops = c("tcells/tracked"), uIDs = uIDs)
+```
+
+```{r fig_hmm_props, fig.height=3, fig.width=3}
+# show measurements of clusters to compare
+colsToPlot <- rev(c(
+  "angle",
+  "speed",
+  "compactness",
+  "extent",
+  "oblate",
+  "prolate",
+  "solidity",
+  "sphericity",
+  "surface_area",
+  "volume"
+))
+
+# convert angle to degrees
+popDTs[, live.cell.angle_deg := pracma::rad2deg(live.cell.angle)]
+
+propsToPlot <- popDTs[exp.info, on = "uID"] %>%
+  dplyr::rename(
+    "speed" = "live.cell.speed",
+    "angle" = "live.cell.angle_deg",
+    "oblate" = "ellipticity_interm_oblate",
+    "prolate" = "ellipticity_interm_prolate"
+  ) %>%
+  # drop_na(live.cell.hmm.state.hybrid_pop) %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    ) %>%
+  pivot_longer(
+    cols = c(
+      "live.cell.hmm.state.movement"
+      # "live.cell.hmm.state.shape"
+    ), names_to = "hmm_type", values_to = "hmm_value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = colsToPlot)
+
+# show heatmap for HMM
+propsSummary <- propsToPlot %>%
+  dplyr::filter(!is.na(hmm_value)) %>%
+  group_by(hmm_type, hmm_value, prop) %>%
+  replace_na(list(value = 0)) %>%
+  summarise(mean = mean(value)) %>%
+  group_by(hmm_type, prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+
+ggplot(propsSummary, aes(as.factor(hmm_value), prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_text(size = 12),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+    # axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1)
+    ) +
+  xlab("") + ylab("") +
+  facet_grid(.~hmm_type)
+
+ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 2.3, height = 3)
+```
+
+```{r fig_clusters_heat, fig.height=8, fig.width=6}
+# show measurements of clusters to compare
+propsToPlot <- copy(tcells.sc)
+
+colsToPlot <- colnames(propsToPlot)[!colnames(propsToPlot) %in% c(
+  "pop", "uID", "track_id", "clusters", "clusters.id", "clusters.name", "UMAP_1", "UMAP_2", "value_name"
+  )]
+
+propsToPlot <- propsToPlot %>%
+  pivot_longer(
+    cols = colsToPlot, names_to = "prop", values_to = "value"
+    )
+
+propsToPlot$prop <- factor(propsToPlot$prop, levels = sort(colsToPlot, decreasing = TRUE))
+
+# show heatmap for clusters
+propsSummary <- propsToPlot %>%
+  # group_by(clusters, prop) %>%
+  group_by(pop, prop) %>%
+  # group_by(clusters.name, prop) %>%
+  summarise(mean = mean(value, rm.na = TRUE)) %>%
+  group_by(prop) %>%
+  mutate(freq = (mean - min(mean)) / (max(mean) - min(mean))) %>%
+  arrange(-prop)
+  # mutate(pop = factor(pop, levels = c(
+  #   "Directed", "Meandering", "Imm.Meander", "Immotile"
+  # )))
+
+ggplot(propsSummary %>%
+         # drop_na(clusters), aes(clusters, prop)) +
+         drop_na(pop), aes(pop, prop)) +
+         # drop_na(clusters.name), aes(clusters.name, prop)) +
+  theme_classic() +
+  geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
+  viridis::scale_fill_viridis(
+    breaks = c(0, 1),
+    labels = c(0, 1)
+  ) +
+  theme(
+    legend.position = "none",
+    legend.key.size = unit(8, "mm"),
+    legend.title = element_blank(),
+    legend.text = element_text(size = 12),
+    axis.text.y = element_text(size = 12),
+    # axis.text.x = element_text(size = 12),
+    axis.text.x = element_text(size = 12, angle = 45, hjust = 1, vjust = 1),
+    strip.background = element_blank(),
+    strip.text.x = element_blank()
+    ) +
+  xlab("") + ylab("")
+
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 4.5, height = 4)
+ggsave(file.path(anaDir, "clusters_heat_pop.pdf"), width = 4.5, height = 5)
+```
+
+```{r fig_umap, fig.height=8, fig.width=8}
+dfToPlot <- copy(tcells.sc) %>% drop_na(pop) %>% left_join(exp.info) %>%
+  mutate(
+    Day = factor(Day, levels = c("4", "14")),
+    Treatment = factor(Treatment, levels = c("vehicle", "carbo"))
+    )
+
+# get mean positions of clusters
+meanClusterPos <- dfToPlot %>%
+  # group_by(clusters) %>%
+  group_by(pop) %>%
+  summarise(
+    UMAP_1 = mean(UMAP_1),
+    UMAP_2 = mean(UMAP_2)
+  )
+dfToPlot$clusters <- factor(dfToPlot$clusters)
+
+colPal <- list(
+  Directed = "#ff1493",
+  Meandering = "#ffd700",
+  Imm.Meander = "#00fa9a",
+  Dir.Meander = "#00fa9a",
+  Immotile = "#00bfff"
+)
+
+# plot UMAP
+ggplot(dfToPlot, aes(UMAP_1, UMAP_2)) +
+  geom_point(data = dfToPlot %>% select(-c(Day, Treatment)), color = "grey90") +
+  # geom_point(aes(color = clusters)) +
+  geom_point(aes(color = pop)) +
+  # geom_point(aes(color = clusters.name)) +
+  theme_classic() +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_color_manual(values = colPal) +
+  theme(
+    axis.text = element_text(size = 15),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    legend.justification = "right",
+    # legend.position = "bottom"
+    legend.position = "none",
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+    ) +
+  # geom_label(
+  #   data = meanClusterPos,
+  #   # aes(label = clusters),
+  #   aes(label = pop),
+  #   # aes(label = clusters.name),
+  #   label.size = 0.1,
+  #   color = "black"
+  # ) +
+  facet_grid(Day~Treatment)
+
+# ggsave(file.path(anaDir, "umap.png"), width = 2.5, height = 2.5)
+# ggsave(file.path(anaDir, "umap_wo.png"), width = 2.5, height = 2.5)
+# ggsave(file.path(anaDir, "umap_split.png"), width = 5, height = 5)
+ggsave(file.path(anaDir, "umap_split_wo.png"), width = 5, height = 5)
+```
+
+```{r fig_clust_freq, fig.height=4, fig.width=4}
+datToPlot <- tcells.sc %>% drop_na(pop) %>%
+# tcells.sc %>% drop_na(pop) %>%
+  group_by(uID, pop) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  left_join(exp.info) %>%
+  mutate(
+    Treatment = factor(Treatment, levels = c("vehicle", "carbo")),
+    Day = factor(Day, levels = c("4", "14")),
+    pop = factor(pop, levels = c(
+      "Directed", "Dir.Meander", "Meandering", "Imm.Meander", "Immotile"))
+    )
+
+ggplot(datToPlot, aes(Day, freq, fill = pop)) +
+  theme_classic() +
+  geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
+  # scale_fill_brewer(name = NULL, palette = "Set3") +
+  scale_fill_manual(name = NULL, values = colPal) +
+  xlab("Day") + ylab("Behaviour (%)") +
+  facet_grid(.~Treatment) 
+
+ggsave(file.path(anaDir, "behaviour.png"), height = 2, width = 3.5)
+write.csv(datToPlot, file.path(anaDir, "behaviour.csv"))
+```

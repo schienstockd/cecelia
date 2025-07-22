@@ -5,6 +5,7 @@ date: '2022-08-18'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -155,6 +156,8 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
 
     # save animation
     if (generateMovie == TRUE) {
+      browser()
+      
       viewer$saveTimeAnimation(
         file.path(anaDir, "movies", paste0(
           paste(sapply(fileAttrs, function(i) x$getCciaAttr(i)), collapse = "_"), "_", i, ".mp4")),
@@ -164,6 +167,73 @@ generateMovies <- function(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fi
     }
   }
 }
+```
+
+```{r}
+anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/3P_TESTS/Spleen/ANALYSIS"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "QZwVFQ", uID = "efgRsn", versionID = "1", initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+# only include OK movies
+# uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- exp.info[Notes == "OK" & Type == "Live"]$uID
+# uIDs <- exp.info[Notes != "OK" & Type == "Live"]$uID
+# uIDs <- exp.info[Type == "Live"]$uID
+uIDs <- c("nQLvxD")
+
+channelsToShow <- list(
+  "one" = "red",
+  "two" = "green",
+  "three" = "gray",
+  "four" = "bop purple"
+  )
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, NULL, NULL,
+               # splitTracks = splitTracks, fps = 10, valueName = "default")
+               splitTracks = splitTracks, fps = 10, valueName = "corrected")
+```
+
+```{r}
+anaDir <- "/Volumes/MDHS-Research/5300/5260/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/MARIJA_CAR_T/ANALYSIS"
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = "ScCqhf", uID = "PABXLt", versionID = "1", initReactivity = FALSE 
+)
+
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(
+  withSelf = FALSE, fields = c("Attr")
+))
+
+uIDs <- names(cciaObj$cciaObjects())
+
+splitTracks <- list(
+  live.cell.track.clusters.movement = list(
+    Directed = list(values = list(3,4), colour = "#ff1493"),
+    Meandering = list(values = list(2), colour = "#ffd700"),
+    Immotile = list(values = list(1), colour = "#00bfff"),
+    Imm.Meander = list(values = list(0), colour = "#00fa9a")
+    )
+  )
+
+channelsToShow <- list(
+  "Tcells" = "gray",
+  "SHG" = "bop purple"
+  )
+popsToShow <- list("tcells")
+fileAttrs <- c("Day", "Treatment")
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs,
+               splitTracks = splitTracks, fps = 20)
 ```
 
 ```{r}
@@ -325,6 +395,13 @@ uIDs <- exp.info[Include == "Y"]$uID
 
 # uIDs <- c("iTfSUG") # PBS
 # uIDs <- c("m87rLx") # DTx
+# uIDs <- c("Yw6sqF") # Uninf
+
+uIDs <- c(
+  # "iTfSUG", # PBS
+  # "m87rLx", # DTx
+  "Yw6sqF" # Uninf
+)
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(
@@ -342,8 +419,9 @@ channelsToShow <- list(
   "gDT" = "cyan",
   "TRITC" = "red"
   )
-popsToShow <- c("tcells.gBT", "tcells.gDT")
-fileAttrs <- c("Treatment", "DTx")
+# popsToShow <- list("tcells.gBT", "tcells.gDT")
+popsToShow <- list("tcells.gBT")
+fileAttrs <- list("Treatment", "DTx")
 
 generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, fileAttrs, splitTracks = splitTracks, generateMovie = TRUE)
 ```
@@ -583,7 +661,13 @@ exp.info <- as.data.table(cciaObj$summary(
 ))
 
 # GCAMP
-uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
+# uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
+
+uIDs <- c(
+  "INw0Gd", # HSV PBS
+  "n8W6bT", # HSV DTx
+  # "SJfJL0" # Uninf
+)
 
 splitTracks <- list(
   live.cell.track.clusters.hmm_transitions_movement = list(

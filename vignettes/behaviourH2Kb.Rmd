@@ -5,6 +5,7 @@ date: '2022-08-15'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -228,8 +229,10 @@ uIDs <- uIDs[!uIDs %in% "1wZMND"]
 
 # get experimental info
 exp.info <- cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr")
+  withSelf = FALSE, fields = c("Attr", "oriFilepath")
 )
+
+data.table::fwrite(exp.info, file.path(anaDir, "exp_info.csv"))
 
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(

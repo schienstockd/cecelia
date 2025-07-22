@@ -176,6 +176,16 @@ ClusterTracks <- R6::R6Class(
         nonZeroCols <- tracks.DT[, colSums(tracks.DT != 0, na.rm = TRUE) > 0]
         nonZeroCols <- nonZeroCols[nonZeroCols == TRUE]
 
+        # filter on root population from previous clustering
+        # TODO not sure how to do this earlier in the process
+        # at this stage all the parameters have been calculated
+        # also for the ones that will eventually not be used
+        if (length(self$funParams()$rootValueName) > 0 && length(self$funParams()$rootPops) > 0) {
+          # get clust DT
+          
+          # then filter on value name and track ID for each uID
+        }
+        
         # save as anndata
         cciaEnv()$LabelPropsUtils(
           self$envParams()$dirs$task,

@@ -728,7 +728,28 @@ def measure_from_zarr(labels, im_dat, dim_utils, logfile_utils, task_dir, value_
   # remove duplicates
   props_df.drop_duplicates('label', inplace = True)
   
-  return props_df
+  # get spatial and temporal columns from props
+  centroid_spatial = [x for x in props_df.columns if x in [f'centroid_{i}' for i in ['x', 'y', 'z']]]
+  centroid_temporal = [x for x in props_df.columns if x == 'centroid_t']
+  
+  uns = dict()
+  obsm = dict()
+  
+  # split spatial and temporal information into obsm
+  # this will then allow processing with squidpy
+  if len(centroid_spatial) > 0:
+    uns['spatial_cols'] = centroid_spatial
+    obsm['spatial'] = props_df[centroid_spatial].to_numpy()
+    
+  if len(centroid_temporal) > 0:
+    uns['temporal_cols'] = centroid_temporal
+    obsm['temporal'] = props_df[centroid_temporal].to_numpy()
+    
+  # add information for channel intensity measure
+  uns['intensity_measure'] = 'mean' if calc_median_intensities is False else 'median'
+  
+  # return props_df, uns, obsm
+  return props_df[[x for x in props_df.columns if x not in centroid_spatial + centroid_temporal]], uns, obsm
 
 """
 Find shapes from labels

@@ -5,6 +5,7 @@ date: '2022-08-15'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -32,9 +33,10 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
-sIDs <- c("BeddcR", "ZXcUMO", "0Oenks", "YJRfCW")
+# sIDs <- c("BeddcR", "ZXcUMO", "0Oenks", "YJRfCW")
+sIDs <- c("0Oenks", "YJRfCW")
 
-backupDir <- "/Volumes/QUACK2/DOHERTY/CECELIA/projects/8BR53W/ANALYSIS"
+backupDir <- "/Volumes/QUACK1/DOHERTY/CECELIA/projects/8BR53W/ANALYSIS"
 
 for (i in sIDs) {
 # init ccia object

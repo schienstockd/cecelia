@@ -5,6 +5,7 @@ date: '2022-08-16'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -165,24 +166,93 @@ uIDs <- names(cciaObj$cciaObjects())
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr"), uIDs = uIDs
+  withSelf = FALSE, fields = c("Attr", "oriFilepath"), uIDs = uIDs
 ))
 
 # get pops
 popDT <- cciaObj$popDT(
   popType = "flow", includeFiltered = TRUE,
-  pops = c("/gBT+", "/gBT+/clustered")
+  pops = c("/gBT+/non.clustered", "/gBT+/clustered")
 )
+```
+
+```{r fig_clusters, fig.height=3.5, fig.width=5}
+popDT[, pop.parent := NA]
+popDT[, pop.parent := stringr::str_extract(pop, ".+(?=\\/)")]
+
+# can you plot the frequency of clustered cells, the number of clusters
+# and the size of individual clusters?
+summaryDF <- as.data.table(
+  popDT %>%
+    group_by(uID, pop.parent, pop) %>%
+    summarise(n = n()) %>%
+    mutate(freq = (1 - n/sum(n)) * 100) %>% # reverse freq
+    dplyr::filter(endsWith(pop, "/non.clustered")) %>%
+    mutate(pop = stringr::str_replace(pop, "non.", "")) %>% # reverse naming again
+    ungroup() %>%
+    left_join(
+      popDT %>%
+        group_by(uID, pop.parent, pop) %>%
+        summarise(
+          n.clusters = dplyr::n_distinct(flow.cell.clust.id)
+          ) %>%
+        dplyr::filter(endsWith(pop, "/clustered")),
+      by = c("uID", "pop.parent", "pop")
+    ) %>%
+    left_join(
+      popDT %>%
+        dplyr::filter(endsWith(pop, "/clustered")) %>%
+        group_by(uID, pop, flow.cell.clust.id) %>%
+        summarise(n = n()) %>%
+        group_by(uID, pop) %>%
+        summarise(avg = mean(n)),
+      by = c("uID", "pop")
+    ) %>%
+    replace_na(list(n.clusters = 0)) %>%
+    left_join(exp.info)
+  )
+
+ggplot(summaryDF, aes(pop.parent, freq, color = Genotype)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.20), alpha = 1.0) +
+    # width = 0.3, alpha = 1.0) +
+  expand_limits(y = 0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  ggpubr::stat_compare_means(method = "t.test")
+
+ggplot(summaryDF, aes(pop.parent, n.clusters, color = Genotype)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.20), alpha = 1.0) +
+    # width = 0.3, alpha = 1.0) +
+  expand_limits(y = 0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  ggpubr::stat_compare_means(method = "t.test")
+
+ggplot(summaryDF, aes(pop.parent, avg, color = Genotype)) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.20), alpha = 1.0) +
+    # width = 0.3, alpha = 1.0) +
+  expand_limits(y = 0) +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  ggpubr::stat_compare_means(method = "t.test")
+
+data.table::fwrite(summaryDF, file.path(anaDir, "IAE_clusters.csv"))
 ```
 
 ```{r fig_clusters, fig.height=2, fig.width=1.5}
 summaryDF <- popDT %>%
+  dplyr::filter(startsWith(pop, "gBT+")) %>%
+  # dplyr::filter(startsWith(pop, "gDT+")) %>%
   group_by(uID, pop) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n) * 100) %>%
-  dplyr::filter(
-    pop == "/gBT+/clustered"
-  ) %>%
+  dplyr::filter(endsWith(pop, "/clustered")) %>%
   left_join(exp.info)
 
 ggplot(summaryDF, aes(Genotype, freq)) +

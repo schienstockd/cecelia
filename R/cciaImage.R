@@ -220,9 +220,12 @@ CciaImage <- R6::R6Class(
       
       # append channel names
       if ("ChannelNames" %in% fields) {
-        objSummary <- append(
-          objSummary,
-          self$imChannelNames())
+        objSummary <- append(objSummary, self$imChannelNames())
+      }
+      
+      # append original filepath
+      if ("oriFilepath" %in% fields) {
+        objSummary <- append(objSummary, list(oriFilepath = self$oriFilepath()))
       }
       
       # append time
@@ -1294,7 +1297,9 @@ CciaImage <- R6::R6Class(
       if (popType == "flow") {
         retVal <- self$flowGatingSet(...)
       } else if (popType == "clust") {
-        retVal <- self$adataUtils(popType = popType, ...)
+        retVal <- self$adataUtils(
+          popType = popType,
+          adataPath = self$imAnndataFilepath(valueName = valueName), ...)
       } else if (popType == "region") {
         retVal <- self$adataUtils(
           popType = popType,

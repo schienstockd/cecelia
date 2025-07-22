@@ -53,6 +53,11 @@
 					"default": 50
 				}
 			},
+			"saveProps": {
+				"type:boolean": {
+					"default": false
+				}
+			},
 			"saveMeshes": {
 				"type:boolean": {
 					"default": false
@@ -117,8 +122,14 @@
 					"step": 1
 				}
 			},
-			"saveMeshes": {
+			"saveProps": {
 				"index": 8,
+				"label": "Save Properties",
+				"widget:checkbox": {
+				}
+			},
+			"saveMeshes": {
+				"index": 9,
 				"label": "Save Meshes",
 				"widget:checkbox": {
 				}

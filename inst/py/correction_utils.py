@@ -577,7 +577,10 @@ def af_correct_channel(
     
     # normalise and rescale
     if np.issubdtype(cleaned_image, np.integer):
-      corr_rescale_factor = np.iinfo(cleaned_image.dtype).max
+      # corr_rescale_factor = np.iinfo(cleaned_image.dtype).max
+      corr_rescale_factor = np.iinfo(data.dtype).max
+      # corr_rescale_factor = 2**16-1
+      # corr_rescale_factor = 255
     else:
       # TODO this should actually not be float
       # corr_rescale_factor = np.finfo(cleaned_image.dtype).max

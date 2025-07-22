@@ -5,6 +5,7 @@ date: '2022-08-17'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -26,7 +27,7 @@ cciaUse("~/cecelia/dev", initJupyter = TRUE)
 # cciaUse("~/cecelia/dev", initJupyter = FALSE)
 # cciaUse("~/cecelia/dev", initConda = FALSE)
 
-cciaRunApp(port = 6853, localPath = FALSE)
+cciaRunApp(port = 6859, localPath = FALSE)
 
 # cciaRunApp(port = 6866)
 ```

@@ -46,7 +46,8 @@ CreateBranching <- R6::R6Class(
         anisoRadius = self$funParams()$anisoRadius,
         preDilationSize = self$funParams()$preDilationSize,
         postDilationSize = self$funParams()$postDilationSize,
-        saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else FALSE
+        saveMeshes = if ("saveMeshes" %in% names(self$funParams())) self$funParams()$saveMeshes else FALSE,
+        saveProps = if ("saveProps" %in% names(self$funParams())) self$funParams()$saveProps else FALSE
       )
       
       # call python

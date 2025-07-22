@@ -72,7 +72,8 @@ def run(params):
   
   if create_new_channels is False:
     for i in im_channels:
-      channels_to_add.pop(i)
+      # channels_to_add.pop(i)
+      channels_to_add.remove(i)
       
   logfile_utils.log(f'> add channels {channels_to_add}')
   

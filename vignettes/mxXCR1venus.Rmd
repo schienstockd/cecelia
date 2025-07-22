@@ -5,6 +5,7 @@ date: '2022-08-16'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -13,9 +14,9 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
-pID <- "Bi2995"
+# pID <- "Bi2995"
 # pID <- "rMeKCv"
-# pID <- "Kr5So2"
+pID <- "Kr5So2"
 versionID <- 1
 # projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
 projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
@@ -35,6 +36,35 @@ cciaUse("~/cecelia/dev")
 library(ggplot2)
 library(tidyverse)
 ```
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fJOCk6", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$runTask(
+  funName = "gatePopulations.createGatingSet",
+  funParams = list(
+    compensateZ = FALSE,
+    applyReversedLog = FALSE,
+    transformation = "biexponential",
+    valueName = "XCR1"
+  ),
+  runInplace = TRUE
+)
+```
+
+
+```{r}
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fJOCk6", versionID = versionID, initReactivity = FALSE
+)
+
+a <- cciaObj$popDT("labels", pops = "XCR1.branch")
+```
+
 
 ```{r}
 # Load cluster data

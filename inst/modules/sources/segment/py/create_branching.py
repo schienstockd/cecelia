@@ -40,6 +40,7 @@ def run(params):
   calc_flattened = script_utils.get_param(params, 'calcFlattened', default = False)
   aniso_radius = script_utils.get_param(params, 'anisoRadius', default = 50)
   save_meshes = script_utils.get_param(params, 'saveMeshes', default = False)
+  save_props = script_utils.get_param(params, 'saveProps', default = False)
   
   # logging
   logfile_utils = script_utils.get_logfile_utils(params)
@@ -182,20 +183,37 @@ def run(params):
       # paths_tables[i]['centroid_t'] = i
       paths_tables[i]['centroid_t'] = cur_labels_slices[dim_utils.dim_idx('T', ignore_channel = True)].start
     
-    # save meshes
-    if save_meshes is True:
-      logfile_utils.log(f'> save meshes')
+    # calc measure props
+    if save_props is True or save_meshes is True:
+      logfile_utils.log(f'> save props {save_props} v save meshes {save_meshes}')
       
-      # TODO is that too much overhead to save meshes?
-      props_tables.append(measure_utils.measure_from_zarr(
-        {'base': skeleton_store}, None, dim_utils, logfile_utils,
+      props, _, _ = measure_utils.measure_from_zarr(
+        {'base': skeleton_store}, im_data, dim_utils, logfile_utils,
         task_dir = task_dir, slices = [cur_labels_slices],
         value_name = f'{value_name}.branch',
         save_meshes = save_meshes,
-        extended_measures = True,
-        calc_intensities = False,
+        extended_measures = True if dim_utils.is_3D() is True else False,
+        calc_intensities = save_props,
         integrate_time = integrate_time
-      ))
+        )
+        
+      # append table information
+      props_tables.append(props)
+    
+    # save meshes
+    # if save_meshes is True:
+    #   logfile_utils.log(f'> save meshes')
+    #   
+    #   # TODO is that too much overhead to save meshes?
+    #   props_tables.append(measure_utils.measure_from_zarr(
+    #     {'base': skeleton_store}, None, dim_utils, logfile_utils,
+    #     task_dir = task_dir, slices = [cur_labels_slices],
+    #     value_name = f'{value_name}.branch',
+    #     save_meshes = save_meshes,
+    #     extended_measures = True,
+    #     calc_intensities = False,
+    #     integrate_time = integrate_time
+    #   ))
       
     # calculate extended measurements
     if calc_extended is True:
@@ -272,7 +290,8 @@ def run(params):
       keyword = 'labels',
       ignore_channel = True,
       # squeeze = True # TODO not sure if needed
-      squeeze = False
+      squeeze = False,
+      idx_adjust = -1 if integrate_time is True else 0 
     )
 
     # remove previous labels and rename multiscales
@@ -290,16 +309,18 @@ def run(params):
     
     # add bbox for meshes
     paths_table = paths_table.merge(
-      props_table.loc[:, props_table.columns.str.startswith(('label', 'bbox'))],
+      # props_table.loc[:, props_table.columns.str.startswith(('label', 'bbox'))],
+      props_table.loc[:, ~props_table.columns.str.startswith('centroid')],
       how = 'left', on = 'label')
-      
+  
   # create props
   label_view = LabelPropsUtils(task_dir, cfg.value_dir(branching_name, 'labelProps'))\
     .label_props(
       # TODO this will always drop time
       paths_table.drop('centroid_t', axis = 1) if 'centroid_t' in paths_table.columns else paths_table,
       # save = True,
-      obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type'],
+      obs_cols = ['label', 'path-id', 'skeleton-id', 'node-id-src', 'node-id-dst', 'branch-type']
+      # uns = uns, obsm = obsm
       # uns = {'extended': ext_props_table} if ext_props_table is not None else dict()
       )
       
@@ -310,7 +331,8 @@ def run(params):
   max_pos_idx = [label_view.adata.var_names.get_loc(i)
     for i in label_view.adata.var_names if i.startswith('image-coord-dst-')]
   
-  spatial_coords = np.mean(
+  # spatial_coords = np.mean(
+  spatial_coords = np.median(
     np.array([
       # adjust for image scale
       # label_view.adata.X[:, min_pos_idx] * dim_utils.im_scale(['z', 'x', 'y']),

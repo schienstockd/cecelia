@@ -4,8 +4,8 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = "/Users/schiend/Desktop/DOHERTY/R-workspace/cecelia-dev/")
 ```
 
 ```{r}
@@ -53,6 +53,9 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
+library(flowCore)
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -67,7 +70,7 @@ anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N041/RESULTS/OUT/spatial/"
 ```{r fig_gating, fig.height=6, fig.width=6}
 # Load cluster data
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
@@ -86,14 +89,18 @@ p1s <- .flowPlotGatedRaster(
   cciaObj, popPath = "/gBT", labelSize = 4, labelBorder = 1.1,
   xTitleSize = 12, yTitleSize = 12,
   xAxisSize = 0, yAxisSize = 0,
-  asContours = FALSE, plotTitleSize = 0, plot_width = 92, plot_height = 92,
+  xRange = c(0, 2.5), yRange = c(0, 2.5), 
+  asContours = TRUE, plotTitleSize = 0,
+  # plot_width = 92, plot_height = 92,
   showPopName = FALSE, showGatePopColours = FALSE, showAnnotation = FALSE)
   # cciaObj, popPaths = "/nonDebris", labelSize = 3, asContours = TRUE, directLeaves = FALSE)
 
 ggpubr::ggarrange(plotlist = p1s, nrow = 1, ncol = 1)
 
 # ggsave(file.path(anaDir, "15SFzg_gating.png"), width = 2, height = 2)
-ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "15SFzg_gating.pdf"), width = 2, height = 2)
+# ggsave(file.path(anaDir, "QS9obm_gating.png"), width = 2, height = 2)
+ggsave(file.path(anaDir, "QS9obm_gating.pdf"), width = 2, height = 2)
 ```
 
 ```{r}
@@ -134,17 +141,24 @@ popsPP2 <- c(
 
 ```{r}
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "8UdLBC", versionID = versionID, initReactivity = FALSE
 )
 
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr")
+  withSelf = FALSE, fields = c("Attr", "oriFilepath")
 ))
 
+# data.table::fwrite(exp.info, file.path(anaDir, "exp_info.csv"))
+data.table::fwrite(exp.info, file.path(anaDir, "exp_info_JL.csv"))
+```
+
+
+```{r}
 uIDs <- names(cciaObj$cciaObjects)
 
 # get ppp

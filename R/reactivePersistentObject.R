@@ -342,8 +342,7 @@ ReactivePersistentObject <- R6::R6Class(
         # add uID
         fields <- c("uID", fields)
         
-        summaryList <- summaryList[
-          names(summaryList) %in% fields]
+        summaryList <- summaryList[names(summaryList) %in% fields]
       }
       
       summaryList

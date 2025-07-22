@@ -59,6 +59,7 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "global-runMfluxTask",
     # exclude buttons
   "loadProject", "saveProject",
+  "exportProject", "importProject",
   "loadVersion", "createVersion",
   "deleteSelectedProjectConfirmed",
   "shutdown", "restart", "closeViewer", "viewerAddAnimationPane",

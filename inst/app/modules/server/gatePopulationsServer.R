@@ -276,7 +276,12 @@
       
       # population management
       popType <- reactive("flow")
-      popValueName <- reactive("default")
+      # popValueName <- reactive("default")
+      popValueName <- reactive({
+        req(cciaObj())
+        
+        attr(cciaObj()$valueNames("imGatingSetFilepath"), "default")
+      })
       
       ### Reactive-like values
       

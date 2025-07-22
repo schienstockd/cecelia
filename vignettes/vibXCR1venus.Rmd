@@ -63,7 +63,7 @@ uIDs <- names(cciaObj$cciaObjects())
 
 # get experimental info
 exp.info <- cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr"), uIDs = uIDs
+  withSelf = FALSE, fields = c("Attr", "oriFilepath"), uIDs = uIDs
 )
 
 # get pops
@@ -182,7 +182,8 @@ summaryDF <- popDT %>%
   mutate(freq = n/sum(n) * 100) %>%
   dplyr::filter(
     `clust.cell.contact#clust.XCR1+` == TRUE
-  )
+  ) %>%
+  left_join(exp.info)
 
 summaryDF$pop.id <- 1
 summaryDF[summaryDF$pop == "gBT+/clustered", ]$pop.id <- 2

@@ -957,6 +957,8 @@
 #' @param showPopName boolean to show pop name in gate
 #' @param showGatePopColours boolean to use population colours for gate
 #' @param plotTitleSize numeric for title size
+#' @param xRange numeric vector range for x axis
+#' @param yRange numeric vector range for y axis
 #' @param ... passed to .flowRasterBuild
 #' @examples
 #' TODO
@@ -968,7 +970,8 @@
                                  labelPos = list(), asContours = FALSE,
                                  showPopColours = FALSE, showGatePopColours = TRUE,
                                  directLeaves = FALSE, showPopName = TRUE,
-                                 showAnnotation = TRUE, plotTitleSize = 14, ...) {
+                                 showAnnotation = TRUE, plotTitleSize = 14,
+                                 xRange = NULL, yRange = NULL, ...) {
   # go through pops and build gating scheme
   fgs <- cciaObj$flowGatingSet()
   
@@ -1023,8 +1026,10 @@
           yLabel <- gateChannels[[2]]
           
           # get range
-          xRange <- range(popDT[, ..xLabel])
-          yRange <- range(popDT[, ..yLabel])
+          if (is.null(xRange))
+            xRange <- range(popDT[, ..xLabel])
+          if (is.null(yRange))
+            yRange <- range(popDT[, ..yLabel])
           
           # get boundaries
           gateDTs <- list()

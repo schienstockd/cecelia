@@ -146,7 +146,8 @@ class SegmentationUtils:
               dim_utils = self.dim_utils,
               nscales = nscales,
               keyword = 'labels',
-              ignore_channel = True
+              ignore_channel = True,
+              idx_adjust = -1 if self.integrate_time is True else 0
             )
   
             # remove previous labels and rename multiscales
@@ -171,7 +172,7 @@ class SegmentationUtils:
       if self.measure is True:
         self.logfile_utils.log('Measure labels')
         
-        props = measure_utils.measure_from_zarr(
+        props, uns, obsm = measure_utils.measure_from_zarr(
           labels, im_dat[0], self.dim_utils, self.logfile_utils,
           block_size = self.block_size, overlap = self.overlap,
           context = self.context,
@@ -187,31 +188,11 @@ class SegmentationUtils:
           top_hat = self.top_hat
         )
         
-        # get spatial and temporal columns from props
-        centroid_spatial = [x for x in props.columns if x in [f'centroid_{i}' for i in ['x', 'y', 'z']]]
-        centroid_temporal = [x for x in props.columns if x == 'centroid_t']
-        
-        obsm = dict()
-        uns = dict()
-        
-        # split spatial and temporal information into obsm
-        # this will then allow processing with squidpy
-        if len(centroid_spatial) > 0:
-          uns['spatial_cols'] = centroid_spatial
-          obsm['spatial'] = props[centroid_spatial].to_numpy()
-          
-        if len(centroid_temporal) > 0:
-          uns['temporal_cols'] = centroid_temporal
-          obsm['temporal'] = props[centroid_temporal].to_numpy()
-          
-        # add information for channel intensity measure
-        uns['intensity_measure'] = 'mean' if self.calc_median_intensities is False else 'median'
-        
         # save props
         if self.save_measures is True:
           LabelPropsUtils(self.task_dir, self.labels_props_filename)\
             .label_props(
-              props[[x for x in props.columns if x not in centroid_spatial + centroid_temporal]],
+              props,
               save = True,
               update_existing = self.update_measures,
               obsm = obsm, uns = uns

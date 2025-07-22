@@ -5,6 +5,7 @@ date: '2022-08-15'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -28,7 +29,9 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/all_types_re"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/densities"
+anaDir <- "/Volumes/USER_data/Dominik/Experiments/JL-ANALYSIS/RESULTS/XCR1-Venus/tracks"
 ```
 
 ```{r}
@@ -197,24 +200,30 @@ uIDs <- names(cciaObj$cciaObjects())
 # run task
 funParams <- list(
   popType = "live",
-  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  # pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
+  # scaleMeasurements = c("live.cell.speed", "live.cell.angle"),
   modelMeasurements = c("live.cell.speed", "live.cell.angle"),
-  scaleMeasurements = c("live.cell.speed", "live.cell.angle"),
+  scaleMeasurements = c(),
   # modelMeasurements = c(
   #   "surface_area", "volume", "extent", "solidity",
   #   "ellipticity_interm_oblate", "ellipticity_interm_prolate",
   #   "compactness", "sphericity"
   # ),
-  colName = "movement",
+  # colName = "movement",
   # colName = "shape",
+  colName = "tonly_movement",
   appendStates = list(live.cell.is.clust = TRUE),
   # appendStates = list(),
   # appendStates = list(),
   skipTimesteps = 0,
   subtrackOverlap = TRUE,
+  # noiseFilterMeasurements = 5,
+  # postFiltering = 2,
+  # postIterations = 2,
   noiseFilterMeasurements = 5,
-  postFiltering = 2,
-  postIterations = 2,
+  postFiltering = 0,
+  postIterations = 0,
   numStates = 3, # movement with injection
   # numStates = 4, # movement
   # numStates = 4, # shape
@@ -247,9 +256,14 @@ uIDs <- names(cciaObj$cciaObjects())
 # run task
 funParams <- list(
   popType = "live",
-  pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
-  colName = "movement",
-  hmmStates = c("movement"),
+  # pops = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  # pops = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
+  pops = c("tcells.gBT/tracked"),
+  # pops = c("tcells.gDT/tracked"),
+  # colName = "movement",
+  # hmmStates = c("movement"),
+  colName = "tonly_movement",
+  hmmStates = c("tonly_movement"),
   # colName = "shape",
   # hmmStates = c("shape"),
   includeStart = FALSE,
@@ -283,15 +297,18 @@ uIDs <- names(cciaObj$cciaObjects())
 # run task
 funParams <- list(
   popType = "live",
-  popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
-  valueName = "tracks.clusters.tcells.hmm_transitions",
-  clusterColName = "hmm_transitions",
+  # popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked", "dcs.all/tracked"),
+  popsToCluster = c("tcells.gBT/tracked", "tcells.gDT/tracked"),
+  # valueName = "tracks.clusters.tcells.hmm_transitions",
+  # clusterColName = "hmm_transitions",
+  valueName = "tracks.clusters.tonly.hmm_transitions",
+  clusterColName = "tonly_hmm_transitions",
   # valueName = "tracks.clusters.tcells.hmm_transitions_alt",
   # clusterColName = "hmm_transitions_alt",
   # valueName = "tracks.clusters.tcells.hmm_transitions_hi",
   # clusterColName = "hmm_transitions_hi",
-  resolution = 0.30,
-  # resolution = 0.25,
+  # resolution = 0.30, # all types
+  resolution = 0.25, # T only
   percentile = 99.8,
   trackMeasures = c(
     "speed",
@@ -315,9 +332,11 @@ funParams <- list(
     # "compactness",
     # "sphericity",
     # HMM states
-    "live.cell.hmm.state.movement",
-    "live.cell.hmm.state.shape",
-    "live.cell.hmm.transitions.movement"
+    # "live.cell.hmm.state.movement",
+    # "live.cell.hmm.transitions.movement"
+    "live.cell.hmm.state.tonly_movement",
+    "live.cell.hmm.transitions.tonly_movement"
+    # "live.cell.hmm.state.shape"
     # "live.cell.hmm.transitions.shape"
     ),
   nMeasures = c(
@@ -357,13 +376,10 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "0Oenks", versionID = versionID, initReactivity = FALSE
 )
 
-exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr", "oriFilepath")))
 uIDs <- exp.info$uID
 
-# show experiments with folder info
-for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
-  print(paste(x$getUID(), x$oriFilepath()))
-}
+data.table::fwrite(exp.info, file.path(anaDir, "exp_info.csv"))
 ```
 
 
@@ -398,20 +414,26 @@ cciaObj <- initCciaObject(
 )
 
 # GCAMP
-# uIDs <- names(cciaObj$cciaObjects())
-uIDs <- names(cciaObj$cciaObjects())[1]
+uIDs <- names(cciaObj$cciaObjects())
+# uIDs <- names(cciaObj$cciaObjects())[1]
 
 # get experimental info
 exp.info <- cciaObj$summary(
   withSelf = FALSE, fields = c("Attr")
 )
 
+# get filepaths
+for (x in cciaObj$cciaObjects(uIDs = uIDs)) {
+  print(x$oriFilepath())
+}
+
 # get clustering
 types.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
   # cciaObj$persistentObjectDirectory(),
   # value_name = "tracks.clusters.types.all.sc")$label_props_view()$as_df())
   cciaObj$persistentObjectDirectory(),
-  value_name = "tracks.clusters.tcells.hmm_transitions.sc")$label_props_view()$as_df())
+  # value_name = "tracks.clusters.tcells.hmm_transitions.sc")$label_props_view()$as_df())
+  value_name = "tracks.clusters.tonly.hmm_transitions.sc")$label_props_view()$as_df())
   # value_name = "tracks.clusters.tcells.hmm_transitions_alt.sc")$label_props_view()$as_df())
 
 # # get clustering
@@ -436,13 +458,6 @@ popDTs <- cciaObj$popDT(
 ```
 
 ```{r}
-x <- cciaObj$cciaObjects()[[1]]
-
-convertPixelToPhysical(popDTs, x$omeXMLPixelRes())
-```
-
-
-```{r}
 paramsToGet <- c(
   "solidity", "live.cell.speed", "volume")
 
@@ -451,6 +466,49 @@ tracksInfo <- rbindlist(list(
   gDT = cciaObj$tracksInfo(paramsToGet, parentPop = "tcells.gDT/tracked", uIDs = uIDs),
   DCs = cciaObj$tracksInfo(paramsToGet, parentPop = "dcs.all/tracked", uIDs = uIDs)
 ), idcol = "pop")
+```
+
+```{r}
+# classify CD8+ tracks and show track measures
+paramsToGet <- c("live.cell.is.clust", "live.cell.speed")
+
+tracksInfo <- rbindlist(list(
+  gBT = cciaObj$tracksInfo(paramsToGet, parentPop = "tcells.gBT/tracked", uIDs = uIDs)
+), idcol = "pop") %>% left_join(
+  cciaObj$tracksMeasures(pops = c("tcells.gBT/tracked"), uIDs = uIDs)
+)
+```
+
+```{r fig_track_measures, fig.height=4, fig.width=12}
+# set whether track is clustering
+tracksInfo[, track.is.clust := FALSE]
+tracksInfo[live.cell.is.clust.TRUE >= 0.6, track.is.clust := TRUE]
+
+colsToPlot <- c(
+  "speed", "duration", "trackLength", "meanTurningAngle", "displacement", 
+  "straightness", "displacementRatio", "outreachRatio", "asphericity", "overallAngle"
+)
+
+datToPlot <- tracksInfo %>%
+  pivot_longer(cols = colsToPlot, names_to = "measure", values_to = "value")
+
+# now plot out common measures
+ggplot(datToPlot, aes(track.is.clust, value)) +
+  facet_wrap(.~measure, ncol = 6, scales = "free") +
+  theme_classic() +
+  geom_violin(scale = "width") +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(
+  #   # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  #   width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Measure") + xlab("") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  stat_summary(fun=mean, geom="point", size=8, shape=18, color="red") +
+  expand_limits(y = 0)
+
+ggsave(file.path(anaDir, "track_measures.png"), height = 4, width = 12)
+write.csv(datToPlot, file.path(anaDir, "track_measures.csv"))
 ```
 
 
@@ -473,6 +531,298 @@ summaryDF[summaryDF$pop == "DCs",]$cell_ID <- 2
 data.table::fwrite(summaryDF, file = file.path(anaDir, "mean_speed.csv"))
 ```
 
+```{r}
+# all types
+# clusterMapping <- list(
+#   Aggregating = c(5),
+#   Directed = c(2,7),
+#   `Meandering oblate` = c(1,6),
+#   `Meandering prolate` = c(4),
+#   Scanning = c(0,3)
+# )
+
+# T only
+clusterMapping <- list(
+  Aggregating = c(5,6),
+  Directed = c(4),
+  Meandering = c(2,1),
+  Scanning = c(0,3)
+)
+
+# map clusters
+types.sc <- .mapClustNames(types.sc, clusterMapping)
+# popDTs <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.hmm_transitions")
+popDTs <- .mapClustNames(popDTs, clusterMapping, "live.cell.track.clusters.tonly_hmm_transitions", removeNone = FALSE)
+```
+
+
+## Density measurements
+
+```{r fig_niches, fig.height=8, fig.width=8}
+# show regions
+p1s <- list()
+
+colPal <- list(
+  Aggregating = "#ebd441",
+  Directed = "#AA1F5E",
+  `Meandering oblate` = "#B3BCC2",
+  `Meandering prolate` = "#B3BCC2",
+  Meandering = "#B3BCC2",
+  Scanning = "#4682b4"
+)
+
+for (i in uIDs) {
+  for (j in c("tcells.gBT/tracked", "tcells.gDT/tracked")) {
+    for (k in c("tcells.gBT/tracked", "dcs.all/tracked")) {
+      p1 <- ggplot(popDTs[uID == i & pop == j] %>% drop_na(clusters.name),
+                   aes(centroid_x, -centroid_y, color = as.factor(clusters.name))) +
+        geom_density2d(data = popDTs[uID == i & pop == k], size = 0.4, color = "dimgray") +
+        geom_point(size = 0.4) +
+        theme_classic() +
+        coord_fixed() +
+        # scale_color_brewer(name = NULL, palette = "Set1") +
+        scale_color_manual(values = colPal) +
+        plotThemeDark() +
+        theme(
+          axis.text.x = element_blank(),
+          axis.ticks.x = element_blank(),
+          axis.text.y = element_blank(),
+          axis.ticks.y = element_blank(),
+          axis.line = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          legend.title = element_blank()
+          # legend.position = "none"
+        ) +
+        # facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10) +
+        guides(colour = guide_legend(override.aes = list(size = 3)))
+      
+      # ggsave(file.path(anaDir, "niches.png"), height = 10, width = 20, plot = p1)
+      ggsave(file.path(anaDir, "niches", paste0(
+        "niches_", i, "_", .flowPopParent(j), "_to_", .flowPopParent(k), ".png")),
+        height = 5, width = 8, plot = p1)
+    }
+  }
+}
+```
+
+```{r fig_dens_behaviour, fig.height=6, fig.width=6}
+# popDTs[, in_contour := 0]
+# popDTs[, in_contour_gBT := 0]
+
+# set params
+n = 25
+contourLevels = seq(1, 0, -0.1)
+extendLimits = 0.5
+
+# get location of behaviour classes according to TRITC density
+for (i in uIDs) {
+# for (i in c("9sKC8P")) {
+  local_i <- local(i)
+  
+  print(paste(">>", local_i))
+  
+  x.gBT <- popDTs[uID == local_i & pop == "tcells.gBT/tracked"]
+  x.gDT <- popDTs[uID == local_i & pop == "tcells.gDT/tracked"]
+  x.DCs <- popDTs[uID == local_i & pop == "dcs.all/tracked"]
+  
+  dens <- MASS::kde2d(
+    x.DCs$centroid_x, x.DCs$centroid_y, n = n,
+    lims = c(
+      range(x.DCs$centroid_x) * c(1 - extendLimits, 1 + extendLimits),
+      range(x.DCs$centroid_y) * c(1 - extendLimits, 1 + extendLimits)
+      ))
+  # dens <- MASS::kde2d(
+  #   x.gBT$centroid_x, x.gBT$centroid_y, n = n,
+  #   lims = c(
+  #     range(x.gBT$centroid_x) * c(1 - extendLimits, 1 + extendLimits),
+  #     range(x.gBT$centroid_y) * c(1 - extendLimits, 1 + extendLimits)
+  #     ))
+  
+  # get z range and normalise
+  zRange <- range(dens$z)
+  dens$z <- (dens$z - zRange[[1]]) / (zRange[[2]] - zRange[[1]])
+  
+  # create contour levels
+  confidenceLines <- contourLines(dens, levels = contourLevels)
+  
+  # create dataframe for lines
+  confidenceDT <- data.table::rbindlist(
+    mapply(function(x, i) {
+      as.data.table(
+        list(
+          level = x$level,
+          seq = i,
+          x = x$x,
+          y = x$y
+        ))
+    }, confidenceLines, seq(length(confidenceLines)),
+    SIMPLIFY = FALSE)
+  )
+  
+  # determine points in contour
+  # get larges contour
+  x.gBT[, in_contour := 0]
+  x.gDT[, in_contour := 0]
+  
+  # go through contours
+  for (i in seq(length(confidenceLines))) {
+    x <- confidenceDT[seq == i,]
+    y <- as.numeric(x$level[[1]])
+    
+    x.gBT[
+      in_contour == 0,
+      in_contour := as.numeric(sp::point.in.polygon(
+        x.gBT[in_contour == 0, centroid_x],
+        x.gBT[in_contour == 0, centroid_y],
+        x$x, x$y
+       )) * y]
+    
+    x.gDT[
+      in_contour == 0,
+      in_contour := as.numeric(sp::point.in.polygon(
+        x.gDT[in_contour == 0, centroid_x],
+        x.gDT[in_contour == 0, centroid_y],
+        x$x, x$y
+       )) * y]
+  }
+  
+  # push back
+  popDTs[uID == local_i & pop == "tcells.gBT/tracked", in_contour := x.gBT$in_contour]
+  popDTs[uID == local_i & pop == "tcells.gDT/tracked", in_contour := x.gDT$in_contour]
+  # popDTs[uID == local_i & pop == "tcells.gDT/tracked", in_contour_gBT := x.gDT$in_contour]
+}
+```
+
+```{r fig_dens_behaviour, fig.height=6, fig.width=6}
+# ggplot(x.gBT, aes(centroid_x, -centroid_y, color = in_contour)) +
+# ggplot(x.gDT, aes(centroid_x, -centroid_y, color = in_contour)) +
+# ggplot(x.gBT, aes(centroid_x, -centroid_y, color = as.factor(live.cell.hmm.state.tonly_movement))) +
+ggplot(x.gDT, aes(centroid_x, -centroid_y, color = as.factor(live.cell.hmm.state.tonly_movement))) +
+  geom_polygon(
+    data = confidenceDT,
+    aes(x = x, y = -y, group = as.factor(-seq)),
+    size = 0.2, color = "black", fill = "white") +
+  geom_path(aes(group = track_id)) +
+  geom_point(size = 0.5) +
+  theme_classic() +
+  coord_fixed() +
+  # viridis::scale_color_viridis() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # plotThemeDark() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  )
+```
+
+```{r fig_dens_behaviour, fig.height=5, fig.width=11}
+# can you show the transitions based on distance to XCR1
+# basically show the frequency of transitions based on distance
+# this would be on gDT to XCR1 distance
+
+# can you plot out the behaviour sections according to DC density?
+datToPlot <- as.data.table(popDTs[pop %in% c("tcells.gBT/tracked", "tcells.gDT/tracked")] %>%
+  drop_na(live.cell.hmm.transitions.tonly_movement) %>%
+  mutate(
+    group = stringr::str_extract(live.cell.hmm.transitions.tonly_movement, "[0-9]+(?=_)"),
+    transition = stringr::str_extract(live.cell.hmm.transitions.tonly_movement, "(?<=_)[0-9]+"),
+    split = in_contour > 0.5
+  ) %>%
+  dplyr::filter(
+    live.cell.hmm.transitions.tonly_movement != "NA",
+    # exclude self
+    # group != transition
+    ) %>%
+  group_by(uID, pop, group, transition, in_contour) %>%
+  # group_by(uID, pop, split, group, transition) %>%
+  # group_by(uID, pop, split, group, transition) %>%
+  # group_by(uID, pop, in_contour, live.cell.hmm.transitions.tonly_movement) %>%
+  # drop_na(live.cell.hmm.state.tonly_movement) %>%
+  # group_by(uID, pop, live.cell.hmm.state.tonly_movement, in_contour) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, pop, group, transition, in_contour, fill = list(freq = 0)) %>%
+  # complete(uID, pop, split, group, transition, fill = list(freq = 0)) %>%
+  # complete(uID, pop, in_contour, live.cell.hmm.transitions.tonly_movement, fill = list(freq = 0)) %>%
+  # complete(uID, pop, live.cell.hmm.state.tonly_movement, in_contour, fill = list(freq = 0)) %>%
+  left_join(exp.info))
+
+# colPal <- randomcoloR::distinctColorPalette(length(unique(datToPlot$live.cell.hmm.transitions.tonly_movement)))
+# colPal <- randomcoloR::distinctColorPalette(length(unique(datToPlot$live.cell.hmm.state.tonly_movement)))
+
+# ggplot(datToPlot, aes(in_contour, freq, color = clusters.name, fill = clusters.name)) +
+# ggplot(datToPlot[datToPlot$uID == "ZmxDIj",] %>% dplyr::filter(live.cell.hmm.transitions.tonly_movement != "NA"), aes(
+# ggplot(datToPlot %>% dplyr::filter(live.cell.hmm.transitions.tonly_movement != "NA"), aes(
+ggplot(datToPlot[pop == "tcells.gBT/tracked"], aes(
+  # in_contour, freq, color = as.factor(live.cell.hmm.transitions.tonly_movement),
+  # fill = as.factor(live.cell.hmm.transitions.tonly_movement))) +
+  in_contour, freq, color = as.factor(transition), fill = as.factor(transition))) +
+  # split, freq, color = as.factor(transition))) +
+  # in_contour, freq, color = as.factor(live.cell.hmm.state.tonly_movement),
+  # fill = as.factor(live.cell.hmm.state.tonly_movement))) +
+  theme_classic() +
+  geom_smooth(span = 0.4, alpha = 0.2) +
+  # geom_path(size = 1.6) +
+  # geom_bar(stat = "identity", width = 1, color = "black", size = 0.4) +
+  scale_color_brewer(name = NULL, palette = "Dark2") +
+  scale_fill_brewer(name = NULL, palette = "Dark2") +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(
+  #   position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  facet_grid(transition~group)
+  # facet_grid(.~group)
+  # facet_grid(.~pop)
+  # facet_grid(pop~as.factor(live.cell.hmm.transitions.tonly_movement))
+
+ggsave(file.path(anaDir, "transitions_to_DC_dens.png"), height = 4, width = 8)
+```
+
+```{r fig_dens_behaviour, fig.height=4, fig.width=12}
+# can you plot out the behaviour sections according to DC density?
+datToPlot <- popDTs[pop %in% c("tcells.gBT/tracked", "tcells.gDT/tracked")] %>%
+# datToPlot <- popDTs[pop %in% c("tcells.gDT/tracked")] %>%
+  # drop_na(clusters.name) %>%
+  drop_na(live.cell.hmm.state.tonly_movement) %>%
+  # group_by(uID, pop, in_contour, clusters.name) %>%
+  group_by(uID, pop, in_contour, live.cell.hmm.state.tonly_movement) %>%
+  # group_by(uID, pop, in_contour_gBT, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  # complete(uID, pop, in_contour, clusters.name, fill = list(freq = 0)) %>%
+  complete(uID, pop, in_contour, live.cell.hmm.state.tonly_movement, fill = list(freq = 0)) %>%
+  # complete(uID, pop, in_contour_gBT, clusters.name, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(in_contour, freq, color = clusters.name, fill = clusters.name)) +
+ggplot(datToPlot, aes(in_contour, freq,
+                      color = as.factor(live.cell.hmm.state.tonly_movement),
+                      fill = as.factor(live.cell.hmm.state.tonly_movement))) +
+# ggplot(datToPlot, aes(in_contour_gBT, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  geom_smooth() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") + 
+  # facet_grid(.~pop)
+  facet_wrap(.~pop+uID, ncol = 8)
+
+# ggsave(file.path(anaDir, "behaviour_to_DC_dens.png"), height = 2, width = 6)
+# ggsave(file.path(anaDir, "behaviour_to_DC_dens_indv.png"), height = 8, width = 16)
+# ggsave(file.path(anaDir, "behaviour_to_DC_dens_HMM.png"), height = 2, width = 6)
+ggsave(file.path(anaDir, "behaviour_to_DC_dens_indv_HMM.png"), height = 8, width = 16)
+```
+
+
+
+## Behaviour analysis
 
 ```{r fig_hmm_props, fig.height=3, fig.width=3}
 # show measurements of clusters to compare
@@ -505,8 +855,9 @@ propsToPlot <- popDTs[exp.info, on = "uID"] %>%
     ) %>%
   pivot_longer(
     cols = c(
-      "live.cell.hmm.state.movement",
-      "live.cell.hmm.state.shape"
+      "live.cell.hmm.state.tonly_movement",
+      # "live.cell.hmm.state.movement",
+      # "live.cell.hmm.state.shape"
     ), names_to = "hmm_type", values_to = "hmm_value"
     )
 
@@ -542,19 +893,12 @@ ggplot(propsSummary %>% dplyr::filter(hmm_value != "Clustering"), aes(as.factor(
   xlab("") + ylab("") +
   facet_grid(.~hmm_type)
 
-ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3.5, height = 3)
+# ggsave(file.path(anaDir, "HMM_heat.pdf"), width = 3.5, height = 3)
+ggsave(file.path(anaDir, "HMM_heat_tonly.pdf"), width = 2.5, height = 3)
 ```
 
 ```{r fig_umap, fig.height=4, fig.width=4}
 dfToPlot <- copy(types.sc) %>% drop_na(clusters) %>% left_join(exp.info)
-
-clusterMapping <- list(
-  Aggregating = c(5),
-  Directed = c(2,7),
-  `Meandering oblate` = c(1,6),
-  `Meandering prolate` = c(4),
-  Scanning = c(0,3)
-)
 
 dfToPlot <- .mapClustNames(dfToPlot, clusterMapping, "clusters")
 
@@ -579,6 +923,7 @@ colPal <- c(
   Scanning = "#327EBA",
   `Meandering prolate` = "#1B9E77",
   `Meandering oblate` = "#B3BCC2",
+  Meandering = "#B3BCC2",
   Directed = "#AA1F5E",
   Aggregating = "#FFFF00"
 )
@@ -615,7 +960,8 @@ ggplot(
     color = "black"
     )
 
-ggsave(file.path(anaDir, "umap.png"), width = 4, height = 4)
+# ggsave(file.path(anaDir, "umap.png"), width = 4, height = 4)
+ggsave(file.path(anaDir, "umap_tonly.png"), width = 4, height = 4)
 # ggsave(file.path(anaDir, "umap_wo_labels.png"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_movement_wo_labels.tiff"), width = 2, height = 2)
 # ggsave(file.path(anaDir, "umap_hmm_movement_wo_labels.tiff"), width = 2, height = 2)
@@ -750,12 +1096,13 @@ ggplot(
     legend.title = element_blank(),
     axis.line = element_blank(),
     strip.background = element_blank(),
-    strip.text.x = element_blank()
+    # strip.text.x = element_blank()
   ) + coord_flip() + facet_grid(.~pop) +
   scale_y_continuous(breaks = c(0, 0.5, 1)) +
   guides(fill = guide_legend(nrow = 1))
 
-ggsave(file.path(anaDir, "pop_clusters_freq.tiff"), width = 5, height = 1.2)
+# ggsave(file.path(anaDir, "pop_clusters_freq.tiff"), width = 5, height = 1.2)
+ggsave(file.path(anaDir, "pop_clusters_freq_tonly.png"), width = 5, height = 1.2)
 ```
 
 ```{r fig_psuedotime, fig.height=3, fig.width=5}
@@ -865,8 +1212,8 @@ propsSummary <- propsToPlot %>%
     # clusters.name != "NONE",
     # prop %in% propsList
     ) %>%
-  # group_by(clusters, prop) %>%
-  group_by(clusters.name, prop) %>%
+  group_by(clusters, prop) %>%
+  # group_by(clusters.name, prop) %>%
   summarise(mean = mean(value, rm.na = TRUE)) %>%
   group_by(prop) %>%
   # group_by(clusters) %>%
@@ -900,10 +1247,10 @@ propsSummary <- propsToPlot %>%
 # ggplot(propsSummary, aes(as.factor(clusters.name), prop)) +
 # ggplot(propsSummary, aes(as.factor(clusters), prop)) +
 ggplot(propsSummary %>%
-         dplyr::filter(!str_detect(prop, "live.cell")) %>%
+         # dplyr::filter(!str_detect(prop, "live.cell")) %>%
          # dplyr::filter(!str_detect(prop, "\\.")) %>%
-         # drop_na(clusters), aes(clusters, prop)) +
-         drop_na(clusters.name), aes(clusters.name, prop)) +
+         drop_na(clusters), aes(clusters, prop)) +
+         # drop_na(clusters.name), aes(clusters.name, prop)) +
   theme_classic() +
   geom_tile(aes(fill = freq), colour = "white", size = 0.5) +
   # geom_tile(aes(fill = mean), colour = "white", size = 0.5) +
@@ -924,7 +1271,8 @@ ggplot(propsSummary %>%
     ) +
   xlab("") + ylab("")
 
-ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 3.5)
+# ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 3, height = 3.5)
+ggsave(file.path(anaDir, "clusters_heat_tonly.pdf"), width = 5.5, height = 6)
 # ggsave(file.path(anaDir, "clusters_heat.pdf"), width = 5, height = 6)
 ```
 

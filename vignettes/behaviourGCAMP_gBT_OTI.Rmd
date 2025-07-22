@@ -5,6 +5,7 @@ date: '2022-08-15'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -413,13 +414,16 @@ cciaObj <- initCciaObject(
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr")
+  withSelf = FALSE, fields = c("Attr", "oriFilepath")
 ))
 
 # GCAMP
 # uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_TRITC"]$uID
 uIDs <- exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"]$uID
 # uIDs <- exp.info[Focus == "non-clustering"]$uID
+
+data.table::fwrite(exp.info[Focus == "non-clustering" & Cells == "gBT_OTI" & Include == "Y"],
+                   file.path(anaDir, "exp_info.csv"))
 
 # get clustering
 tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(

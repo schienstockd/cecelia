@@ -5,6 +5,7 @@ date: '2022-08-15'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -575,8 +576,10 @@ cciaObj <- initCciaObject(
 
 # get experimental info
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr")
+  withSelf = FALSE, fields = c("Attr", "oriFilepath")
 ))
+
+data.table::fwrite(exp.info[Include == "Y"], file.path(anaDir, "exp_info.csv"))
 
 uIDs <- exp.info[Include == "Y"]$uID
 
@@ -593,14 +596,16 @@ tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
 popDTs <- cciaObj$popDT(
   popType = "live", pops = c(
     "tcells.gBT/tracked",
-    "tcells.gDT/tracked"
+    "tcells.gDT/tracked",
+    "dcs.TRITC/tracked"
     ),
   includeFiltered = TRUE,
   flushCache = TRUE,
   uIDs = uIDs)
 
 # get neighbour information
-spatialDT <- cciaObj$spatialDT(valueName = "tcells.gBT", uIDs = uIDs)
+# spatialDT <- cciaObj$spatialDT(valueName = "tcells.gBT", uIDs = uIDs)
+# spatialDT.gDT <- cciaObj$spatialDT(valueName = "tcells.gDT", uIDs = uIDs)
 
 # get track info
 tracksMeasures <- cciaObj$tracksMeasures(pops = c("tcells.gBT/tracked"), uIDs = uIDs)
@@ -623,23 +628,39 @@ tcells.sc <- .mapClustNames(tcells.sc, clusterMapping)
 ```{r}
 # join pops
 spatialDT.sc <- copy(spatialDT[dist <= 30])
-# spatialDT.sc <- copy(spatialDT)
+spatialDT.gDT.sc <- copy(spatialDT.gDT[dist <= 30])
+
 spatialDT.sc[
-  popDTs[, c("uID", "label", "track_id")],
+  popDTs[pop == "tcells.gBT/tracked", c("uID", "label", "track_id")],
   on = c("uID", "to" = "label"),
   track_id.to := track_id]
 spatialDT.sc[
-  tcells.sc[, c("uID", "track_id", "clusters")],
+  tcells.sc[pop == "tcells.gBT/tracked", c("uID", "track_id", "clusters")],
+  on = c("uID", "track_id.to" = "track_id"),
+  clusters.to := clusters]
+
+spatialDT.gDT.sc[
+  popDTs[pop == "tcells.gDT/tracked", c("uID", "label", "track_id")],
+  on = c("uID", "to" = "label"),
+  track_id.to := track_id]
+spatialDT.gDT.sc[
+  tcells.sc[pop == "tcells.gDT/tracked", c("uID", "track_id", "clusters")],
   on = c("uID", "track_id.to" = "track_id"),
   clusters.to := clusters]
 
 # map clusters
 spatialDT.sc <- .mapClustNames(spatialDT.sc, clusterMapping, clustCol = "clusters.to")
+spatialDT.gDT.sc <- .mapClustNames(spatialDT.gDT.sc, clusterMapping, clustCol = "clusters.to")
 ```
 
 ```{r}
 # get behaviour frequencies and then get kmeans
 spatialDT.summary <- spatialDT.sc %>%
+  group_by(uID, from, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n))
+
+spatialDT.gDT.summary <- spatialDT.gDT.sc %>%
   group_by(uID, from, clusters.name) %>%
   summarise(n = n()) %>%
   mutate(freq = n/sum(n))
@@ -667,10 +688,32 @@ spatialDT.summary.mat <- as.matrix(spatialDT.summary.wider %>%
 rownames(spatialDT.summary.mat) <- paste(spatialDT.summary.wider$uID, spatialDT.summary.wider$from)
 ```
 
+```{r fig_kmeans_clusters, fig.height=1.5, fig.width=2.5}
+# use K-Means to get clusters of regions
+normalit <- function(m) (m - min(m))/(max(m)-min(m))
+
+spatialDT.gDT.summary.wider <- as.data.table(spatialDT.gDT.summary %>%
+  # ungroup() %>%
+  # mutate(norm = normalit(freq)) %>%
+  pivot_wider(
+    id_cols = c(uID, from),
+    names_from = clusters.name,
+    # names_from = clusters.from,
+    # values_from = norm,
+    values_from = freq,
+    values_fill = 0
+  ))
+
+spatialDT.gDT.summary.mat <- as.matrix(spatialDT.gDT.summary.wider %>%
+  ungroup() %>% 
+  select(-c(uID, from)))
+rownames(spatialDT.gDT.summary.mat) <- paste(spatialDT.gDT.summary.wider$uID, spatialDT.gDT.summary.wider$from)
+```
+
 ```{r fig_kmeans_clusters, fig.height=2, fig.width=4}
 clustToFind <- 4
 
-set.seed(145)
+set.seed(55)
 
 clusters <- kmeans(
   spatialDT.summary.wider %>%
@@ -711,6 +754,49 @@ ggplot(
 ggsave(file.path(anaDir, "heat_niches.png"), height = 2, width = 4)
 ```
 
+```{r fig_kmeans_clusters, fig.height=2, fig.width=4}
+clustToFind <- 2
+
+set.seed(12)
+
+clusters <- kmeans(
+  spatialDT.gDT.summary.wider %>%
+    ungroup() %>%
+    select(-c(uID, from)),
+  clustToFind)
+# mcl.model <- mclust::Mclust(freqRegionsMat)
+# mcl.model <- mclust::Mclust(freqRegionsMat, clustToFind)
+
+# Plot our results.
+# plot(mcl.model, what = "classification", main = "Mclust Classification")
+
+# push back clusters
+spatialDT.gDT.summary.wider[, cluster := clusters$cluster]
+
+popCols <- colnames(spatialDT.gDT.summary.wider)[!colnames(spatialDT.gDT.summary.wider) %in% c(
+  "uID", "from", "to", "n", "cluster", "clusters.from", "clusters.to")]
+
+spatialDT.gDT.summary.across <- spatialDT.gDT.summary.wider %>%
+  group_by(cluster) %>%
+  summarise(across(all_of(popCols), mean)) %>%
+  pivot_longer(
+    cols = popCols,
+    names_to = "pop",
+    values_to = "value"
+    ) %>%
+  mutate(norm = normalit(value))
+
+ggplot(
+  spatialDT.gDT.summary.across, aes(as.factor(cluster), pop)) +
+  geom_tile(aes(fill = norm)) +
+  viridis::scale_fill_viridis(discrete = FALSE, limits = c(0, 1)) +
+  theme_classic() +
+  theme(legend.title = element_blank()) +
+  xlab("") + ylab("")
+
+ggsave(file.path(anaDir, "heat_niches_gDT.png"), height = 2, width = 4)
+```
+
 ```{r fig_region_freq, fig.height=3, fig.width=6}
 # show frequency of populations for treatments
 spatialDT.summary.exp <- copy(spatialDT.summary.wider) %>%
@@ -743,23 +829,59 @@ ggsave(file.path(anaDir, "freq_niches.png"), height = 2, width = 6)
 # data.table::fwrite(summaryDF, file.path(anaDir, "cluster_regions.csv"))
 ```
 
+```{r fig_region_freq, fig.height=3, fig.width=6}
+# show frequency of populations for treatments
+spatialDT.gDT.summary.exp <- copy(spatialDT.gDT.summary.wider) %>%
+  group_by(uID, cluster) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n) * 100) %>%
+  ungroup() %>%
+  complete(uID, cluster, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# plot
+ggplot(spatialDT.gDT.summary.exp,
+       aes(as.factor(cluster), freq, color = interaction(Treatment, DTx))) +
+  theme_classic() +
+  geom_boxplot(outlier.alpha = 0) +
+  geom_jitter(
+    position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+    # width = 0.3, alpha = 0.6) +
+  # stat_summary(fun=mean, geom="point", size=3, shape=18, color="Magenta") +
+  ylab("Population (%)") + xlab("") +
+  # ylim(0, 1) +
+  scale_color_brewer(name = NULL, palette = "Set1")
+
+ggsave(file.path(anaDir, "freq_niches_gDT.png"), height = 2, width = 6)
+
+# summaryDF$Treatment <- 0
+# summaryDF[summaryDF$Cohort == "ICI" & summaryDF$Response == "Yes",]$Treatment <- 1
+
+# save as csv for plotting in Prism
+# data.table::fwrite(summaryDF, file.path(anaDir, "cluster_regions.csv"))
+```
+
 ```{r}
 popDTs.niches.gDT <- copy(popDTs[value_name == "tcells.gDT"])
 popDTs.niches.gBT <- copy(popDTs[value_name == "tcells.gBT"])
 
+# popDTs.niches.gDT[
+#   spatialDT.summary.wider[, c("uID", "from", "cluster")],
+#   on = c("uID", "live.cell.contact_id#live.tcells.gBT__tracked" = "from"),
+#   niche.cluster := cluster]
+# 
+# popDTs.niches.gDT <- .mapClustNames(
+#   popDTs.niches.gDT, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement",
+#   nameCol = "self.clusters.name", idCol = "self.contact.clusters.id")
+
 popDTs.niches.gDT[
-  spatialDT.summary.wider[, c("uID", "from", "cluster")],
-  on = c("uID", "live.cell.contact_id#live.tcells.gBT__tracked" = "from"),
+  spatialDT.gDT.summary.wider[, c("uID", "from", "cluster")],
+  on = c("uID", "label" = "from"),
   niche.cluster := cluster]
 
 popDTs.niches.gDT <- .mapClustNames(
   popDTs.niches.gDT, clusterMapping, "live.cell.track.clusters.hmm_transitions_movement",
-  nameCol = "self.clusters.name", idCol = "self.contact.clusters.id")
-
-popDTs.niches.gBT[
-  spatialDT.summary.wider[, c("uID", "from", "cluster")],
-  on = c("uID", "label" = "from"),
-  niche.cluster := cluster]
+  nameCol = "clusters.name")
 
 popDTs.niches.gBT[
   spatialDT.summary.wider[, c("uID", "from", "cluster")],
@@ -771,12 +893,275 @@ popDTs.niches.gBT <- .mapClustNames(
   nameCol = "clusters.name")
 ```
 
+```{r fig_region_freq, fig.height=20, fig.width=40}
+# show regions
+p1s <- list()
+
+colPal <- list(
+  "1" = "#ebd441",
+  "2" = "#4682b4",
+  "3" = "#AA1F5E",
+  "4" = "#B3BCC2"
+)
+
+for (i in uIDs) {
+  local_i <- local(i)
+  
+  x <- exp.info[uID == i]
+  
+  p1 <- ggplot(popDTs.niches.gBT[uID == i] %>% drop_na(niche.cluster) %>% left_join(exp.info),
+               aes(centroid_x, -centroid_y, color = as.factor(niche.cluster))) +
+    # geom_point(data = popDTs.niches.gDT[niche.cluster != 1] %>% left_join(exp.info), size = 0.8, color = "black", fill = "darkgrey", shape = 21) +
+    # geom_point(data = popDTs[pop == "dcs.TRITC/tracked"] %>% left_join(exp.info), size = 0.8, color = "black", fill = "yellow", shape = 21) +
+    # geom_point(size = 0.8) +
+    # geom_point(data = popDTs.niches.gDT[niche.cluster == 1] %>% left_join(exp.info), size = 0.8, color = "black", fill = "white", shape = 21) +
+    geom_density2d(data = popDTs[uID == i & pop == "dcs.TRITC/tracked"], size = 0.4, color = "dimgray") +
+    geom_point(data = popDTs.niches.gDT[uID == i & niche.cluster != 1], size = 0.4, color = "darkslategray") +
+    geom_point(size = 0.4) +
+    geom_point(data = popDTs.niches.gDT[uID == i & niche.cluster == 1], size = 0.4, color = "white") +
+    theme_classic() +
+    coord_fixed() +
+    # scale_color_brewer(name = NULL, palette = "Set1") +
+    scale_color_manual(values = colPal) +
+    plotThemeDark() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      # legend.position = "none"
+    ) +
+    # facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10) +
+    guides(colour = guide_legend(override.aes = list(size = 3)))
+  
+  # ggsave(file.path(anaDir, "niches.png"), height = 10, width = 20, plot = p1)
+  ggsave(file.path(anaDir, "niches", paste0("niches_", x$Treatment, "_", x$DTx, "_", i, ".png")), height = 5, width = 5, plot = p1)
+}
+```
+
+```{r fig_dens_behaviour, fig.height=6, fig.width=6}
+popDTs.niches.gBT[, in_contour := 0]
+popDTs.niches.gDT[, in_contour := 0]
+
+# set params
+n = 25
+contourLevels = seq(1, 0, -0.1)
+extendLimits = 0.5
+
+# get location of behaviour classes according to TRITC density
+for (i in uIDs) {
+  local_i <- local(i)
+  
+  print(paste(">>", local_i))
+  
+  x.gBT <- popDTs.niches.gBT[uID == local_i]
+  x.gDT <- popDTs.niches.gDT[uID == local_i]
+  x.TRITC <- popDTs[uID == local_i & pop == "dcs.TRITC/tracked"]
+  
+  dens <- MASS::kde2d(
+    # x.TRITC$centroid_x, x.TRITC$centroid_y, n = n,
+    # lims = c(
+    #   range(x.TRITC$centroid_x) * c(1 - extendLimits, 1 + extendLimits),
+    #   range(x.TRITC$centroid_y) * c(1 - extendLimits, 1 + extendLimits)
+    #   ))
+    x.gBT$centroid_x, x.gBT$centroid_y, n = n,
+    lims = c(
+      range(x.gBT$centroid_x) * c(1 - extendLimits, 1 + extendLimits),
+      range(x.gBT$centroid_y) * c(1 - extendLimits, 1 + extendLimits)
+      ))
+  
+  # get z range
+  zRange <- range(dens$z)
+    
+  # normalise z
+  dens$z <- (dens$z - zRange[[1]]) / (zRange[[2]] - zRange[[1]])
+  
+  # create contour levels
+  confidenceLines <- contourLines(dens, levels = contourLevels)
+  
+  # create dataframe for lines
+  confidenceDT <- data.table::rbindlist(
+    mapply(function(x, i) {
+      as.data.table(
+        list(
+          level = x$level,
+          seq = i,
+          x = x$x,
+          y = x$y
+        ))
+    }, confidenceLines, seq(length(confidenceLines)),
+    SIMPLIFY = FALSE)
+  )
+  
+  # determine points in contour
+  # get larges contour
+  # x.gBT[, in_contour := 0]
+  x.gDT[, in_contour := 0]
+  
+  # go through contours
+  for (i in seq(length(confidenceLines))) {
+    x <- confidenceDT[seq == i,]
+    y <- as.numeric(x$level[[1]])
+    
+    # x.gBT[
+    x.gDT[
+      in_contour == 0,
+      in_contour := as.numeric(sp::point.in.polygon(
+        # x.gBT[in_contour == 0, centroid_x],
+        # x.gBT[in_contour == 0, centroid_y],
+        x.gDT[in_contour == 0, centroid_x],
+        x.gDT[in_contour == 0, centroid_y],
+        x$x, x$y
+       )) * y]
+  }
+  
+  # push back
+  # popDTs.niches.gBT[uID == local_i, in_contour := x.gBT$in_contour]
+  popDTs.niches.gDT[uID == local_i, in_contour := x.gDT$in_contour]
+}
+```
+
+```{r fig_dens_behaviour, fig.height=6, fig.width=6}
+# ggplot(x.gBT, aes(centroid_x, -centroid_y, color = in_contour)) +
+ggplot(x.gDT, aes(centroid_x, -centroid_y, color = in_contour)) +
+  geom_polygon(
+    data = confidenceDT,
+    aes(x = x, y = -y, group = as.factor(-seq)),
+    size = 0.2, color = "black", fill = "white") +
+  geom_point(size = 0.5) +
+  theme_classic() +
+  coord_fixed() +
+  viridis::scale_color_viridis() +
+  # scale_color_brewer(name = NULL, palette = "Set1") +
+  # plotThemeDark() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  )
+```
+
+
+```{r fig_dens_behaviour, fig.height=4, fig.width=12}
+# can you plot out the behaviour sections according to TRITC density?
+# datToPlot <- popDTs.niches.gBT %>%
+datToPlot <- popDTs.niches.gDT %>%
+  group_by(uID, in_contour, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, in_contour, clusters.name, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(as.factor(in_contour), freq, color = clusters.name)) +
+ggplot(datToPlot, aes(in_contour, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_smooth() +
+  # ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+
+# ggsave(file.path(anaDir, "behaviour_TRITC_dens.png"), height = 2, width = 8)
+# ggsave(file.path(anaDir, "behaviour_gBT_dens.png"), height = 2, width = 8)
+ggsave(file.path(anaDir, "behaviour_gDT_to_gBT_dens.png"), height = 2, width = 8)
+```
+```{r fig_dens_behaviour, fig.height=4, fig.width=12}
+# can you plot out the behaviour sections according to TRITC density?
+# datToPlot <- popDTs.niches.gBT %>%
+datToPlot <- popDTs.niches.gDT %>%
+  group_by(uID, in_contour, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, in_contour, clusters.name, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(as.factor(in_contour), freq, color = clusters.name)) +
+p1 <- ggplot(datToPlot, aes(in_contour, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_smooth() +
+  # ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
+
+# ggsave(file.path(anaDir, "behaviour_TRITC_dens_indv.png"), height = 8, width = 20, plot = p1)
+# ggsave(file.path(anaDir, "behaviour_gBT_dens_indv.png"), height = 8, width = 20, plot = p1)
+ggsave(file.path(anaDir, "behaviour_gDT_to_gBT_dens_indv.png"), height = 8, width = 20, plot = p1)
+```
+
+```{r fig_dens_behaviour, fig.height=4, fig.width=12}
+# can you plot out the behaviour sections according to TRITC density?
+datToPlot <- popDTs.niches.gBT %>%
+  group_by(uID, in_contour, clusters.name) %>%
+  summarise(n = n()) %>%
+  mutate(freq = n/sum(n)) %>%
+  ungroup() %>%
+  complete(uID, in_contour, clusters.name, fill = list(freq = 0)) %>%
+  left_join(exp.info)
+
+# ggplot(datToPlot, aes(as.factor(in_contour), freq, color = clusters.name)) +
+ggplot(datToPlot, aes(in_contour, freq, color = clusters.name, fill = clusters.name)) +
+  theme_classic() +
+  # geom_violin(scale = "width") +
+  # geom_boxplot(outlier.alpha = 0) +
+  # geom_jitter(position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0) +
+  geom_smooth() +
+  # ylab("Behaviour (%)") + xlab("HMM") +
+  # ylab("Behaviour (%)") + xlab("Niche") +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  scale_fill_brewer(name = NULL, palette = "Set1") +
+  facet_grid(.~interaction(Treatment, DTx))
+```
+
+```{r fig_region_freq, fig.height=5, fig.width=5}
+# show regions
+p1 <- ggplot(popDTs.niches.gDT %>% left_join(exp.info), aes(centroid_x, centroid_y, color = as.factor(niche.cluster))) +
+  geom_point(size = 0.5) +
+  theme_classic() +
+  coord_fixed() +
+  scale_color_brewer(name = NULL, palette = "Set1") +
+  # plotThemeDark() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line = element_blank(),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    # legend.position = "none"
+  ) +
+  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
+
+ggsave(file.path(anaDir, "niches_gDT.png"), height = 10, width = 20, plot = p1)
+```
+
 ```{r fig_region_freq, fig.height=3, fig.width=8}
+niche.aggregating <- 2
+
 # can you just plot out the behaviour of cells in and outside of a niche
 popDTs.niches.gBT[, in.niche.cluster := niche.cluster == niche.aggregating]
 
-summaryToPlot <- popDTs.niches.gBT[live.cell.hmm.state.movement != 4,] %>%
-# summaryToPlot <- popDTs.niches.gBT %>%
+# summaryToPlot <- popDTs.niches.gBT[live.cell.hmm.state.movement != 4,] %>%
+summaryToPlot <- popDTs.niches.gBT %>%
   drop_na(in.niche.cluster, live.cell.hmm.state.movement) %>%
   group_by(uID, in.niche.cluster, live.cell.hmm.state.movement) %>%
   summarise(n = n()) %>%
@@ -796,13 +1181,12 @@ ggplot(summaryToPlot,
   scale_color_brewer(name = NULL, palette = "Set1") +
   facet_grid(.~interaction(Treatment, DTx))
 
-# ggsave(file.path(anaDir, "behaviour_in_niche.png"), height = 2, width = 8)
-ggsave(file.path(anaDir, "behaviour_in_niche_wo.png"), height = 2, width = 8)
+ggsave(file.path(anaDir, "behaviour_in_niche.png"), height = 2, width = 8)
+# ggsave(file.path(anaDir, "behaviour_in_niche_wo.png"), height = 2, width = 8)
 ```
 
 ```{r}
 # filter on aggregating niches
-niche.aggregating <- 1
 spatialDT.niche <- copy(spatialDT.summary.wider[
   cluster == niche.aggregating, c("uID", "from")])
 
@@ -1011,30 +1395,6 @@ ggplot(xdata[xchull,], aes(centroid_x, centroid_y, color = as.factor(dbscan))) +
     axis.title.y = element_blank(),
     # legend.position = "none"
   )
-```
-
-
-```{r fig_region_freq, fig.height=5, fig.width=5}
-# show regions
-p1 <- ggplot(popDTs.niches.gBT %>% left_join(exp.info), aes(centroid_x, centroid_y, color = as.factor(niche.cluster))) +
-  geom_point(size = 0.5) +
-  theme_classic() +
-  coord_fixed() +
-  scale_color_brewer(name = NULL, palette = "Set1") +
-  # plotThemeDark() +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.line = element_blank(),
-    axis.title.x = element_blank(),
-    axis.title.y = element_blank(),
-    # legend.position = "none"
-  ) +
-  facet_wrap(.~interaction(Treatment, DTx)+uID, ncol = 10)
-
-ggsave(file.path(anaDir, "niches.png"), height = 10, width = 20, plot = p1)
 ```
 
 ```{r fig_niches_gDT_HMM, fig.height=3, fig.width=14}

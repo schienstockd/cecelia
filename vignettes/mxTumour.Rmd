@@ -5,6 +5,7 @@ date: '2022-08-16'
 ---
 
 ```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -16,8 +17,8 @@ Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 pID <- "az8y8l" # ZOE
 # pID <- "Wq59Z0" # JY
 versionID <- 1
-projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
-# projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
+# projectsDir <- "/Volumes/Analysis_SSD/Communal/cecelia/projects/"
+projectsDir <- "/Volumes/USER_data/Dominik/CECELIA_BACKUP/"
 ```
 
 ```{r}
@@ -241,6 +242,20 @@ cciaObj <- initCciaObject(
 
 cciaObj$labelPropsCols()
 ```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "f6YZeo", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "EgflKz", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj
+```
+
 
 
 ```{r}
