@@ -565,7 +565,10 @@ InputManager <- R6::R6Class(
           uiContent$field, valueType = uiContent$valueType)
       else
         valueNames <- self$cciaObject()$valueNames(uiContent$field)
-
+      
+      # add zero choice
+      valueNames <- self$addZeroChoiceToList(valueNames, uiContent)
+      
       list(
         ui = createSelectInput(
           elmntName,
@@ -640,9 +643,7 @@ InputManager <- R6::R6Class(
       imageChoices <- names(self$cciaObjectSet()$cciaObjects())
       
       # add zero choice
-      imageChoices <- self$addZeroChoiceToList(
-        imageChoices, uiContent
-      )
+      imageChoices <- self$addZeroChoiceToList(imageChoices, uiContent)
       
       names(imageChoices) <- imageChoices
       
@@ -1224,9 +1225,7 @@ InputManager <- R6::R6Class(
         }
         
         # add zero choice
-        popChoices <- self$addZeroChoiceToList(
-          popChoices, uiContent
-        )
+        popChoices <- self$addZeroChoiceToList(popChoices, uiContent)
         
         popChoices <- .reverseNamedList(popChoices)
       }

@@ -182,8 +182,16 @@ ClusterTracks <- R6::R6Class(
         # also for the ones that will eventually not be used
         if (length(self$funParams()$rootValueName) > 0 && length(self$funParams()$rootPops) > 0) {
           # get clust DT
+          popDT.clust <- cciaObj$popDT(
+            "clust", pops = self$funParams()$rootPops, includeFiltered = TRUE,
+            uIDs = uIDs, valueName = self$funParams()$rootValueName)
+          
+          # add value name to tracks
+          tracks.DT[, value_name := stringr::str_extract(pop, ".+(?=/)")]
           
           # then filter on value name and track ID for each uID
+          join.cols <- c("uID", "track_id", "value_name")
+          tracks.DT <- tracks.DT[popDT.clust[, ..join.cols], on = join.cols]
         }
         
         # save as anndata

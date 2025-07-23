@@ -192,7 +192,7 @@ funParams <- list(
   valueName = "tracks.clusters.tcells.subMovement",
   # can you do sub-clustering
   rootValueName = "tracks.clusters.tcells.movement",
-  rootPops = c(""),
+  rootPops = c("Immotile", "Directed"),
   clusterColName = "movement",
   resolution = 0.25, 
   percentile = 99.8,
@@ -248,9 +248,13 @@ cciaObj <- initCciaObject(
   pID = pID, uID = "h3nkQ3", versionID = versionID, initReactivity = FALSE
 )
 
-popDT.clust <- cciaObj$popDT(
-  "clust", pops = c("Immotile", "Directed"), includeFiltered = TRUE,
-  valueName = "tracks.clusters.tcells.movement")
+cciaObj$valueNames("imAnndataFilepath")
+
+# cciaObj$popPaths(popType = "clust", includeFiltered = TRUE)
+
+# popDT.clust <- cciaObj$popDT(
+#   "clust", pops = c("Immotile", "Directed"), includeFiltered = TRUE,
+#   valueName = "tracks.clusters.tcells.movement")
 ```
 
 ```{r}
