@@ -83,8 +83,6 @@
       
       # get adata DT
       getAdataDT <- function(flushCache = FALSE) {
-        browser()
-        
         if (!is.null(clusteringPartOf())) {
           # get objects from selected set
           moduleManagers()$imageSetManager$selectedSet()$popDT(
