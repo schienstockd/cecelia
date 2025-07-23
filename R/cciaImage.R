@@ -149,7 +149,7 @@ CciaImage <- R6::R6Class(
         # and let the population utils do that
         
         # define sort columns
-        sortCols <- c("pop", "label", "track_id")
+        sortCols <- c("uID", "pop", "label", "track_id")
         sortCols <- sortCols[sortCols %in% colnames(popDT)]
         sortOrder = c(-1, rep(1, length(sortCols) - 1))
         
@@ -1585,7 +1585,7 @@ CciaImage <- R6::R6Class(
         if (length(nonFilteredPops) > 0) {
           popDT <- popUtils$popDT(
             pops = nonFilteredPops, popCols = popCols,
-            dropNA = dropNA, dropPop = dropPop)
+            dropNA = dropNA, dropPop = dropPop, ...)
           
           # complete DT
           if (completeDT == TRUE)
@@ -1665,10 +1665,10 @@ CciaImage <- R6::R6Class(
                 popType, x$parent, popCols = popCols,
                 dropNA = dropNA, dropPop = dropPop,
                 completeDT = completeDT, replaceNA = replaceNA,
-                includeFiltered = TRUE)
+                includeFiltered = TRUE, ...)
             } else {
               # get pop utils for filtered
-              filteredPopUtils <- self$popUtils(popType)
+              filteredPopUtils <- self$popUtils(popType, ...)
               
               filteredPopDT <- filteredPopUtils$popDT(
                 x$parent, popCols = popCols, dropNA = dropNA, dropPop = dropPop)

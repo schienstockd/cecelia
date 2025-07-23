@@ -83,6 +83,8 @@
       
       # get adata DT
       getAdataDT <- function(flushCache = FALSE) {
+        browser()
+        
         if (!is.null(clusteringPartOf())) {
           # get objects from selected set
           moduleManagers()$imageSetManager$selectedSet()$popDT(
@@ -93,7 +95,8 @@
             flushCache = flushCache,
             # only focus on clustered values
             filterMeasures = c(clusterColName()),
-            tracksOnly = isTrack()
+            tracksOnly = isTrack(),
+            valueName = valueName()
           )
         } else {
           # anndata
@@ -102,7 +105,8 @@
                           flushCache = flushCache,
                           # only focus on clustered values
                           filterMeasures = c(clusterColName()),
-                          tracksOnly = isTrack())
+                          tracksOnly = isTrack(),
+                          valueName = valueName())
         }
       }
       
