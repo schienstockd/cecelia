@@ -357,6 +357,9 @@
       })
       
       observeEvent(input$pointsOpSave, {
+        req(cciaObj())
+        req(valueName())
+        
         # save tracking correction
         # copy modified version over to original tracking
         labelsPath <- cciaObj()$imLabelPropsFilepath(valueName())

@@ -76,6 +76,13 @@ SHINY_BOOKMARK_EXCLUDE <- c(
   "metadata-assignTimeIntervals",
   "segment-showImage", "segment-segmentVp", "segment-reloadSet",
   "clustPopulations-createPop", "clustPopulations-reloadSet",
+  # tracking
+  "trackingCorrection-pointsOpAdd",
+  "trackingCorrection-pointsOpRm",
+  "trackingCorrection-pointsOpSave",
+  "trackingCorrection-tracksOpJoin",
+  "trackingCorrection-edtTracksSave",
+  "trackingCorrection-trackEditRollback",
   # exclude log fields
   "segment-closeLog",
   # exclude fields from flow
