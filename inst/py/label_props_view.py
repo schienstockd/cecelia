@@ -559,6 +559,9 @@ class LabelPropsView:
   View columns
   """
   def view_cols(self, cols):
+    # make sure that columns are unique
+    cols = list(set(cols))
+      
     # get col types
     vars_cols = [x for x in cols if x in self.col_names('vars')]
     obs_cols = [x for x in cols if x in self.col_names('obs')]
