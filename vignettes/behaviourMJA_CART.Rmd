@@ -239,6 +239,26 @@ task <- cciaObj$runTask(
 ```
 
 ```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "fHKCPK", versionID = versionID, initReactivity = FALSE
+)
+
+cciaObj$popDT(
+  "clust", includeFiltered = TRUE,
+  completeDT = FALSE, replaceNA = TRUE,
+  flushCache = FALSE,
+  # only focus on clustered values
+  filterMeasures = c("clusters"),
+  tracksOnly = FALSE,
+  valueName = "tracks.clusters.tcells.movement"
+  )
+```
+
+```{r}
 # HMM
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)

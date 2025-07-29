@@ -27,7 +27,7 @@ cciaUse("~/cecelia/dev", initJupyter = TRUE)
 # cciaUse("~/cecelia/dev", initJupyter = FALSE)
 # cciaUse("~/cecelia/dev", initConda = FALSE)
 
-cciaRunApp(port = 6859, localPath = FALSE)
+cciaRunApp(port = 6857, localPath = FALSE)
 
 # cciaRunApp(port = 6866)
 ```

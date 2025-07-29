@@ -126,7 +126,7 @@
       popType <- reactive("clust")
       popTypeProcessing <- reactive(input$popType)
       # TODO cannot get my head around this
-      # valueName <- reactive(input$valueName)
+      valueName <- reactive(input$valueName)
       # valueName <- reactive("default")
       clusterColName <- reactive(input$clusterColName)
 
@@ -186,15 +186,15 @@
         cciaObj()$imPopMap(popType(), includeFiltered = TRUE, filterMeasures = c(clusterColName()))
       })
       
-      # get value names 
-      valueName <- reactive({
-        req(adataDT())
-        
-        if ("value_name" %in% colnames(adataDT()))
-          unique(adataDT()$value_name)
-        else
-          c("default")
-      })
+      # get value names
+      # valueName <- reactive({
+      #   req(adataDT())
+      #   
+      #   if ("value_name" %in% colnames(adataDT()))
+      #     unique(adataDT()$value_name)
+      #   else
+      #     c("default")
+      # })
       
       # is tracking data?
       isTrack <- reactive({

@@ -906,12 +906,12 @@ CciaImage <- R6::R6Class(
             ), dropNA = FALSE, includeFiltered = TRUE)
         }
         
-        # remove non-tracks
-        popDT <- na.omit(popDT, cols = c("track_id"))
-        # https://stackoverflow.com/a/29928592
-        # popDT[, track_id := !rowSums(.SD == 0)][(track_id)]
-        
-        if (!is.null(popDT) && "track_id" %in% colnames(popDT)){
+        if (!is.null(popDT) && "track_id" %in% colnames(popDT)) {
+          # remove non-tracks
+          popDT <- na.omit(popDT, cols = c("track_id"))
+          # https://stackoverflow.com/a/29928592
+          # popDT[, track_id := !rowSums(.SD == 0)][(track_id)]
+          
           # get column definitions
           # celltrackR will do this:
           # colnames(r) <- c("id","t",c("x","y","z")[seq_along(pos.columns)])
@@ -1585,7 +1585,7 @@ CciaImage <- R6::R6Class(
         if (length(nonFilteredPops) > 0) {
           popDT <- popUtils$popDT(
             pops = nonFilteredPops, popCols = popCols,
-            dropNA = dropNA, dropPop = dropPop, ...)
+            dropNA = dropNA, dropPop = dropPop)
           
           # complete DT
           if (completeDT == TRUE)
