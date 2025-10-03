@@ -313,13 +313,14 @@ createFlowPlotManager <- function(
     if (!is.null(cciaObj()$popUtils(popType()))) {
       # get only filtered pops
       if (filteredOnly == TRUE) {
-        pops <- cciaObj()$popPaths(popType(), filteredOnly = TRUE)
+        pops <- cciaObj()$popPaths(popType(), filteredOnly = TRUE, valueName = popValueName())
       }
 
       # save
       cciaObj()$savePops(popType(), pops = pops,
                          includeFiltered = includeFiltered,
-                         purge = purge, completeDT = completeDT)
+                         purge = purge, completeDT = completeDT,
+                         valueName = popValueName())
     }
   }
 
@@ -618,6 +619,14 @@ createFlowPlotManager <- function(
     managerConf$flowPlot$popType()
   })
 
+  # population type that is used in for the plot
+  popValueName <- reactive({
+    if ("popValueName" %in% names(managerConf$flowPlot))
+      managerConf$flowPlot$popValueName()
+    else
+      NULL
+  })
+
   # number of shown plots
   numFlowPlots <- reactive({
     managerConf$flowPlot$numFlowPlots()
@@ -854,7 +863,7 @@ createFlowPlotManager <- function(
 
           popPaths <- .reverseNamedList(cciaObj()$popPaths(
               popType(), includeFiltered = managerConf$flowPlot$showFilters,
-              includeRoot = TRUE
+              includeRoot = TRUE, valueName = popValueName()
           ))
 
           createGatingBoxPopSelect(

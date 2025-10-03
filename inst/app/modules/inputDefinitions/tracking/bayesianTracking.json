@@ -12,6 +12,11 @@
 				"type:list": {
 				}
 			},
+		  "popsToTrack": {
+				"type:character": {
+					"default": ""
+				}
+			},
 			"maxSearchRadius": {
 				"type:integer": {
 					"min": 1,
@@ -198,159 +203,169 @@
 					"field": "imLabelsFilepath"
 				}
 			},
+      "popsToTrack": {
+        "index": 1,
+        "label": "Populations",
+        "widget:popSelection": {
+          "size": 1,
+          "multiple": false,
+					"addZeroChoice": true,
+					"popType": "flow"
+        }
+      },
 			"maxSearchRadius": {
-				"index": 1,
+				"index": 2,
 				"label": "Max Search Radius",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"maxLost": {
-				"index": 2,
+				"index": 3,
 				"label": "Allowed gaps",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"trackBranching": {
-				"index": 3,
+				"index": 4,
 				"label": "Track branching",
 				"widget:checkbox": {
 				}
 			},
 			"minTimepoints": {
-				"index": 4,
+				"index": 5,
 				"label": "Minimum timepoints",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"minDisplacement": {
-				"index": 5,
+				"index": 6,
 				"label": "Minimum displacement",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"maxMeanTurningAngle": {
-				"index": 6,
+				"index": 7,
 				"label": "Maximum mean turning angle",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"accuracy": {
-				"index": 7,
+				"index": 8,
 				"label": "Accuracy",
 				"widget:slider": {
 					"step": 0.01
 				}
 			},
 			"probToAssign": {
-				"index": 8,
+				"index": 9,
 				"label": "Prob. to assign track",
 				"widget:slider": {
 					"step": 0.01
 				}
 			},
 			"noiseInital": {
-				"index": 9,
+				"index": 10,
 				"label": "Initial noise",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"noiseProcessing": {
-				"index": 10,
+				"index": 11,
 				"label": "Processing noise",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"noiseMeasurements": {
-				"index": 11,
+				"index": 12,
 				"label": "Measurement noise",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"calcTrackingStats": {
-				"index": 12,
+				"index": 13,
 				"label": "Tracking stats",
 				"widget:checkbox": {
 				}
 			},
 			"calcTrackingStatsOnly": {
-				"index": 13,
+				"index": 14,
 				"label": "Tracking stats only",
 				"widget:checkbox": {
 				}
 			},
 			"distThresh": {
-				"index": 14,
+				"index": 15,
 				"label": "Distance Threshold",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"timeThresh": {
-				"index": 15,
+				"index": 16,
 				"label": "Time threshold",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"segmentationMissRate": {
-				"index": 16,
+				"index": 17,
 				"label": "Segmentation miss rate",
 				"widget:slider": {
 					"step": 0.001
 				}
 			},
 			"lambdaLink": {
-				"index": 17,
+				"index": 18,
 				"label": "Lambda link",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaBranch": {
-				"index": 18,
+				"index": 19,
 				"label": "Lambda branch",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaTime": {
-				"index": 19,
+				"index": 20,
 				"label": "Lambda time",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"lambdaDist": {
-				"index": 20,
+				"index": 21,
 				"label": "Lambda dist",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"thetaTime": {
-				"index": 21,
+				"index": 22,
 				"label": "Theta time",
 				"widget:slider": {
 					"step": 1
 				}
 			},
 			"thetaDist": {
-				"index": 22,
+				"index": 23,
 				"label": "Theta dist",
 				"widget:slider": {
 					"step": 0.2
 				}
 			},
 			"filters": {
-				"index": 23,
+				"index": 24,
 				"label": "Filters",
 				"widget:group": {
 				  "visible": false,

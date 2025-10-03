@@ -4067,29 +4067,6 @@
       ],
       "Hash": "0e2829df8cb74a98179c886b023ffea8"
     },
-    "rasterly": {
-      "Package": "rasterly",
-      "Version": "0.2.0",
-      "Source": "GitHub",
-      "RemoteType": "github",
-      "RemoteHost": "api.github.com",
-      "RemoteRepo": "rasterly",
-      "RemoteUsername": "plotly",
-      "RemoteSha": "897c7771cee76705d958da40e503c0be251da2e1",
-      "Requirements": [
-        "R",
-        "Rcpp",
-        "data.table",
-        "ggplot2",
-        "grid",
-        "magrittr",
-        "methods",
-        "plotly",
-        "rlang",
-        "stats"
-      ],
-      "Hash": "da282ab53f3512e2eb48dadf36728576"
-    },
     "rcmdcheck": {
       "Package": "rcmdcheck",
       "Version": "1.4.0",

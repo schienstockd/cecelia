@@ -56,6 +56,12 @@ AfDriftCorrect <- R6::R6Class(
       )
       channelsToAdd <- channelsToAdd[!is.na(channelsToAdd)]
       
+      # use Dask
+      useDask <- FALSE
+      
+      if ("useDask" %in% names(self$envParams()$conf))
+        useDask <- self$envParams()$conf$useDask
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
@@ -73,7 +79,8 @@ AfDriftCorrect <- R6::R6Class(
           self$envParams()$dirs$zero,
           "ccidCorrected.zarr"
         ),
-        driftNormalisation = self$funParams()$driftNormalisation
+        driftNormalisation = self$funParams()$driftNormalisation,
+        useDask = useDask
       )
       
       # call python

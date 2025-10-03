@@ -259,6 +259,10 @@ class PopUtils:
           label_view = label_props_utils.label_props_view(value_name = j)
           
           if len(cols) > 0:
+            if "centroids" in cols:
+              label_view.view_centroid_cols()
+              cols = [x for x in cols if x != "centroids"]
+            
             label_view.view_cols(cols = cols)
             
           # create population df

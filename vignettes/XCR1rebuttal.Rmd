@@ -1,0 +1,140 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# set test variables
+pID <- "Lq0joh" # CD69 vib
+versionID <- 1
+projectsDir <- "~/cecelia/projects"
+```
+
+```{r}
+anaDir <- "~/GDrive/Notebook/ANALYSIS/XCR1-paper/OUT"
+```
+
+```{r}
+library(flowWorkspace)
+
+# Load cluster data
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+
+```{r fig_gating, fig.height=3, fig.width=5}
+# get populations and show maps
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "mDNMiG", versionID = versionID, initReactivity = FALSE
+)
+
+# Try SPIAT options
+pops <- c("/cells/A", "/cells/B", "/cells/C", "/cells/D", "/E", "/F")
+
+# get SPIAT object
+spe <- cciaObj$spe(popType = "flow", pops = pops, completeDT = FALSE)
+```
+
+```{r fig_SPIAT_plot, fig.height = 4, fig.width = 5}
+my_colors <- randomcoloR::distinctColorPalette(length(pops))
+  
+SPIAT::plot_cell_categories(
+  spe_object = spe, 
+  categories_of_interest = pops, 
+  colour_vector = my_colors, 
+  feature_colname = "Phenotype")
+```
+
+```{r fig_SPIAT_dist, fig.height = 5, fig.width = 5}
+for (i in pops) {
+  for (j in pops[pops != i]) {
+    plot(SPIAT::plot_cell_categories(
+      spe_object = spe, 
+      categories_of_interest = c(i, j), 
+      colour_vector = c("purple", "darkcyan"), 
+      feature_colname = "Phenotype"))
+    
+    SPIAT::calculate_cross_functions(
+      spe, method = "Kcross.inhom", 
+      cell_types_of_interest = c(i, j), 
+      feature_colname = "Phenotype",
+      dist = 100)
+  }
+}
+```
+
+
+```{r}
+# check number of clusters for HMM
+# I'm not sure how to apply this to depmixS4::fit
+# you must create a helper function that takes the dataframe and number of clusters
+# then returns the clustering result.. ?
+# a partitioning function which accepts as first argument a (data) matrix like x, second argument, say k, k >= 2, the number of clusters desired, and returns a list with a component named cluster which contains the grouping of observations.
+
+# get populations and show maps
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "2yQFlk", versionID = versionID, initReactivity = FALSE
+)
+
+uIDs <- c("mDNMiG")
+
+modelMeasurements <- c("live.cell.speed", "live.cell.angle")
+set.seed(28)
+
+# get DT for HMM fit
+tracks.DT <- tracks.build.hmm.dt(
+  cciaObj, uIDs, "live", c("default/tracked"),
+  modelMeasurements, noiseFilterMeasurements = 5
+)
+```
+
+
+```{r fig_HMM_nbclust, fig.height = 5, fig.width = 7}
+get.hmm <- function(DT, k = 1) {
+  hmm_model <- depmixS4::depmix(
+    lapply(
+      modelMeasurements,
+      function(x) eval(parse(text = sprintf("`%s`~1", x)))
+      ),
+    data = tracks.DT[, ..modelMeasurements],
+    nstates = k,
+    ntimes = tracks.DT[, .(num.cells = .N),
+                       by = .(value_name, uID, track_id)]$num.cells,
+    # gaussian by default
+    family = rep(list(gaussian()), length(modelMeasurements))
+  )
+  
+  # fit
+  hmm_fit <- depmixS4::fit(hmm_model)
+  
+  # predict
+  hmm_predict <- depmixS4::posterior(hmm_fit)
+  
+  # add to tracks
+  list(cluster = hmm_predict$state)
+}
+
+factoextra::fviz_nbclust(tracks.DT, get.hmm, method = "silhouette")
+```
+

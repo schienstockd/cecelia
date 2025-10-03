@@ -64,7 +64,8 @@ library(tidyverse)
 ```
 
 ```{r}
-anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N041/RESULTS/OUT/spatial/"
+# anaDir <- "/Volumes/USER_data/Dominik/Experiments/DS_N041/RESULTS/OUT/spatial/"
+anaDir <- "/Volumes/Lab-Mueller/Dominik Schienstock/Notebook/Experiments/DS_N041/RESULTS/OUT/spatial/"
 ```
 
 ```{r fig_gating, fig.height=6, fig.width=6}
@@ -123,9 +124,9 @@ cciaObj$popPaths(popType = "flow", includeRoot = TRUE, includeFiltered = TRUE)
 pops <- c(
   "/gBT",
   # "/gDT",
-  "/gBT/CD69+"
+  "/gBT/CD69+",
   # "/gBT/clustered"
-  # "/O/TRITC"
+  "/O/TRITC"
 )
 popsWindow <- c(
   "/gBT", "/gDT", "/O/TRITC"
@@ -145,36 +146,55 @@ cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  # pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
-  pID = pID, uID = "8UdLBC", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
+  # pID = pID, uID = "8UdLBC", versionID = versionID, initReactivity = FALSE
 )
 
 exp.info <- as.data.table(cciaObj$summary(
-  withSelf = FALSE, fields = c("Attr", "oriFilepath")
-))
+  withSelf = FALSE, fields = c("Attr", "oriFilepath")))
 
 # data.table::fwrite(exp.info, file.path(anaDir, "exp_info.csv"))
-data.table::fwrite(exp.info, file.path(anaDir, "exp_info_JL.csv"))
+# data.table::fwrite(exp.info, file.path(anaDir, "exp_info_JL.csv"))
 ```
 
 
 ```{r}
-uIDs <- names(cciaObj$cciaObjects)
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
+popDTs <- list()
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "8UdLBC", versionID = versionID, initReactivity = FALSE
+)
+
+popDTs["8UdLBC"] <- list(
+  cciaObj$popDT(popType = "flow", includeFiltered = TRUE, pops = pops))
+
+cciaObj <- initCciaObject(
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
+)
+
+popDTs["tYKNoG"] <- list(
+  cciaObj$popDT(popType = "flow", includeFiltered = TRUE, pops = pops))
+
+popDT <- data.table::rbindlist(popDTs, idcol = "setID")
+```
+
+
+```{r}
 # get ppp
-popDT <- cciaObj$popDT(
-    popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    pops = pops)
-pp1 <- cciaObj$ppp(
-    windowPops = popsWindow,
-    popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    # pops = pops, usePops = popsPP1)
-    pops = popsPP1, usePops = popsPP1)
-pp2 <- cciaObj$ppp(
-    windowPops = popsWindow,
-    popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
-    # pops = pops, usePops = popsPP2)
-    pops = popsPP2, usePops = popsPP2)
+# pp1 <- cciaObj$ppp(
+#     windowPops = popsWindow,
+#     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
+#     # pops = pops, usePops = popsPP1)
+#     pops = popsPP1, usePops = popsPP1)
+# pp2 <- cciaObj$ppp(
+#     windowPops = popsWindow,
+#     popType = "flow", uIDs = uIDs, includeFiltered = TRUE,
+#     # pops = pops, usePops = popsPP2)
+#     pops = popsPP2, usePops = popsPP2)
 ```
 
 ```{r}
@@ -258,52 +278,57 @@ for (i in names(pp2)) {
 ```
 
 ```{r fig_CD69_region, fig.height = 4, fig.width = 12}
-dataToPlot <- popDT %>% left_join(exp.info) %>%
-  dplyr::filter(
-    uID == "15SFzg"
-    # uID == "QS9obm"
-  )
-
-# plot
-ggplot(dataToPlot,
-       aes(centroid_x, -centroid_y)) +
-  theme_classic() +
-  plotThemeDark(
-    fontSize = 8,
-    legend.justification = "centre"
-    ) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 2) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 2) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 2) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 0) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 0) +
-  geom_point(data = dataToPlot %>% dplyr::filter(pop == "/O/TRITC"), fill = "red", shape = 21, size = 2) +
-  # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 0) +
-  geom_density_2d(
-    data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
-    contour_var = "ndensity", bins = 6,
-    colour = "white") + 
-    # aes(fill = ..level..), geom = "polygon", colour = "white") +
-  coord_fixed() +
-  theme(
-    legend.title = element_blank(),
-    legend.position = 'bottom',
-    axis.title.x = element_blank(),
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.title.y = element_blank(),
-    axis.text.y = element_blank(),
-    axis.ticks.y = element_blank(),
-    axis.line = element_blank()
-    ) +
-  scale_color_brewer(palette = "Set1")
-
-# ggsave(file.path(anaDir, "clusters_15SFzg.tiff"), height = 3, width = 4)
-ggsave(file.path(anaDir, "clusters_15SFzg_TRITC.tiff"), height = 3, width = 4)
-# ggsave(file.path(anaDir, "clusters_QS9obm.tiff"), height = 3, width = 4)
-# ggsave(file.path(anaDir, "clusters_QS9obm_TRITC.tiff"), height = 3, width = 4)
-# ggsave(file.path(anaDir, "clusters_15SFzg_density.svg"), height = 3, width = 4)
-# ggsave(file.path(anaDir, "clusters_QS9obm_density.svg"), height = 3, width = 4)
+for (i in unique(popDT$uID)) {
+  dataToPlot <- popDT[uID == i]
+  y <- exp.info[uID == i]
+  
+  # plot
+  ggplot(dataToPlot,
+         aes(centroid_x, -centroid_y)) +
+    theme_classic() +
+    plotThemeDark(
+      fontSize = 8,
+      legend.justification = "centre"
+      ) +
+    # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 2) +
+    # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 2) +
+    # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 2) +
+    geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT"), fill = "#4069E1", shape = 21, size = 0) +
+    geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"), fill = "#01FF01", shape = 21, size = 0) +
+    # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/O/TRITC"), fill = "red", shape = 21, size = 2) +
+    # geom_point(data = dataToPlot %>% dplyr::filter(pop == "/gBT/clustered"), fill = "yellow", shape = 21, size = 0) +
+    geom_density_2d(
+      data = dataToPlot %>% dplyr::filter(pop == "/O/TRITC"),
+      contour_var = "ndensity", bins = 6,
+      colour = "red") + 
+    geom_density_2d(
+      data = dataToPlot %>% dplyr::filter(pop == "/gBT/CD69+"),
+      contour_var = "ndensity", bins = 6,
+      colour = "white") + 
+      # aes(fill = ..level..), geom = "polygon", colour = "white") +
+    coord_fixed() +
+    theme(
+      legend.title = element_blank(),
+      legend.position = 'bottom',
+      axis.title.x = element_blank(),
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.title.y = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank()
+      ) +
+    scale_color_brewer(palette = "Set1")
+  
+  # ggsave(file.path(anaDir, "clusters_15SFzg.tiff"), height = 3, width = 4)
+  # ggsave(file.path(anaDir, paste0("clusters_", y$Treatment, "-", i, "_TRITC.tiff")), height = 3, width = 4)
+  ggsave(file.path(anaDir, paste0("clusters_", y$Treatment, "-", i, "_TRITC_contour.tiff")), height = 3, width = 4)
+  # ggsave(file.path(anaDir, "clusters_15SFzg_TRITC.tiff"), height = 3, width = 4)
+  # ggsave(file.path(anaDir, "clusters_QS9obm.tiff"), height = 3, width = 4)
+  # ggsave(file.path(anaDir, "clusters_QS9obm_TRITC.tiff"), height = 3, width = 4)
+  # ggsave(file.path(anaDir, "clusters_15SFzg_density.svg"), height = 3, width = 4)
+  # ggsave(file.path(anaDir, "clusters_QS9obm_density.svg"), height = 3, width = 4)
+}
 ```
 
 

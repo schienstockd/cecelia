@@ -178,7 +178,7 @@ def intersection_over_union(x, y, dtype = np.uint16):
   # iou[np.isnan(iou)] = 0.0
   
   # return iou
-  return preprocessing.normalize(overlap, norm='l1', axis=1).astype(np.float16)
+  return preprocessing.normalize(overlap, norm='l1', axis=1).astype(np.float32)
   
 """
 Adapted from cellpose.metrics to find overlap between masks
@@ -272,13 +272,15 @@ def match_masks(masks, stitch_threshold = 0.0, remove_unmatched = False,
     #   masks[i + 1] = istitch[masks[i + 1]]
     else:
       iou = iou > stitch_threshold
-      # x = np.array(iou.argmax(axis = 0))[0,:]
       x = np.array(iou.argmax(axis = 0))
       if len(x.shape) > 1:
         x = x[0,:]
       
       y = np.arange(0, x.size, 1, dtype = dtype)
-      z = iou.max(axis = 0).toarray()[0,:]
+      z = iou.max(axis = 0).toarray()
+      if len(z.shape) > 1:
+        z = z[0,:]
+
       iou = coo_array((z, (x, y)), shape = (len(x), len(y)))
       
       # iou = iou >= iou.max(axis = 0).toarray()

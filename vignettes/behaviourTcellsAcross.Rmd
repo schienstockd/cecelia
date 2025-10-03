@@ -68,14 +68,14 @@ HPC_CONF <-  list(
 ```
 
 ```{r}
-a <- readRDS("/Volumes/USER_data/Dominik/CECELIA_BACKUP/3gzzkZ/ANALYSIS/1/KnSDpd/ccid.rds")
-a$CciaObjectUIDs <- c(
-  a$CciaObjectUIDs, c("fizPPH", "5phIYn", "DpdalG", "Zvd2Z8", "4jX370", "N5bASi", "mpTdNG", "vIm42v")
-)
-
-names(a$CciaObjectUIDs) <- a$CciaObjectUIDs
-
-saveRDS(a, "/Volumes/USER_data/Dominik/CECELIA_BACKUP/3gzzkZ/ANALYSIS/1/KnSDpd/ccid.rds")
+# a <- readRDS("/Volumes/USER_data/Dominik/CECELIA_BACKUP/3gzzkZ/ANALYSIS/1/KnSDpd/ccid.rds")
+# a$CciaObjectUIDs <- c(
+#   a$CciaObjectUIDs, c("fizPPH", "5phIYn", "DpdalG", "Zvd2Z8", "4jX370", "N5bASi", "mpTdNG", "vIm42v")
+# )
+# 
+# names(a$CciaObjectUIDs) <- a$CciaObjectUIDs
+# 
+# saveRDS(a, "/Volumes/USER_data/Dominik/CECELIA_BACKUP/3gzzkZ/ANALYSIS/1/KnSDpd/ccid.rds")
 ```
 
 ```{r}
@@ -247,6 +247,7 @@ cciaObj <- initCciaObject(
 exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
 
 uIDs <- exp.info[Include == "Y"]$uID
+# uIDs <- exp.info[Include == "Y" & Source == "3P"]$uID
 # pops <- cciaObj$popPaths(popType = "live", combinePaths = FALSE, uIDs = uIDs)
 
 pops <- list(
@@ -265,10 +266,10 @@ popDT <- cciaObj$popDT(popType = "live", pops = pops, includeFiltered = TRUE, uI
 # tracksInfo <- cciaObj$tracksMeasures(pops = "P14-CTDR/tracked")
 tracksInfo <- cciaObj$tracksMeasures(pops = pops, uIDs = uIDs)
 
-# get clustering
-tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
-  cciaObj$persistentObjectDirectory(),
-  value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
+# # get clustering
+# tcells.sc <- as.data.table(cciaEnv()$LabelPropsUtils(
+#   cciaObj$persistentObjectDirectory(),
+#   value_name = "tracks.clusters.tcells.hmm_transitions_movement.sc")$label_props_view()$as_df())
 ```
 
 ```{r fig_basics, fig.height=5, fig.width=18}

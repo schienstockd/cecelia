@@ -4,6 +4,7 @@ import os
 
 # utils
 from py.label_props_utils import LabelPropsUtils
+from py.pop_utils import PopUtils
 
 import py.config_utils as cfg
 import py.script_utils as script_utils
@@ -30,6 +31,10 @@ class TrackingUtils:
     self.labels_props_filename = cfg.value_dir(self.value_name, 'labelProps')
     self.channel_names = script_utils.get_ccia_param(params, 'channel_names', default = None)
     
+    # set options for population extraction
+    self.pop_type = script_utils.get_param(params, 'pop_type', default = None)
+    self.pops_to_track = script_utils.get_param(params, 'pops_to_track', default = None)
+    
     self.logfile_utils.log(f'> Use {self.labels_props_filename}')
     
     # get label prop utils
@@ -40,14 +45,8 @@ class TrackingUtils:
   """
   def track_objects(self):
     # read centroids and labels
-    if self.filters is None:
-      centroid_df = self.label_props_utils.label_props_view(value_name = self.value_name)\
-        .view_centroid_cols()\
-        .view_label_col()\
-        .as_df()
-    else:
-      self.logfile_utils.log('>> Filter tracks by')
-      self.logfile_utils.log(f'{self.filters}')
+    if len(self.filters) > 0:
+      self.logfile_utils.log(f'>> Filter tracks by {self.filters}')
       
       # filter values
       label_view = self.label_props_utils.label_props_view(value_name = self.value_name)
@@ -73,6 +72,25 @@ class TrackingUtils:
               )
           
       centroid_df = label_view.view_centroid_cols()\
+        .view_label_col()\
+        .as_df()
+    elif self.pops_to_track != "NONE":
+      self.logfile_utils.log(f'>> Use pops {self.pops_to_track}')
+      
+      # init pop utils
+      pop_utils = PopUtils()
+    
+      # get population for bbox information
+      centroid_df = pop_utils.pop_df(
+          self.task_dir,
+          LabelPropsUtils(self.task_dir),
+          self.pop_type,
+          cols = ["centroids"],
+          pops = self.pops_to_track if isinstance(self.pops_to_track, list) else [self.pops_to_track]
+      )
+    else:
+      centroid_df = self.label_props_utils.label_props_view(value_name = self.value_name)\
+        .view_centroid_cols()\
         .view_label_col()\
         .as_df()
         

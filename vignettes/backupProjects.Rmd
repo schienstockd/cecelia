@@ -29,15 +29,47 @@ hpcDir <- "/data/scratch/projects/punim1124/cecelia/USERS/schienstockd/"
 ```
 
 ```{r}
+# # get info on training images
+# devtools::load_all("../")
+# cciaUse("~/cecelia/dev", initConda = FALSE)
+# 
+# # init ccia object
+# cciaObj <- initCciaObject(
+#   pID = pID, uID = "LT47lJ", versionID = versionID, initReactivity = FALSE # Training
+# )
+# 
+# # get experimental info
+# exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+# 
+# length(unique(exp.info$uID))
+# length(unique(exp.info$originUID))
+```
+
+```{r}
 # rename
 devtools::load_all("../")
 cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # sIDs <- c("BeddcR", "ZXcUMO", "0Oenks", "YJRfCW")
-sIDs <- c("0Oenks", "YJRfCW")
+# sIDs <- c("0Oenks", "YJRfCW")
+sIDs <- c("LT47lJ")
 
 backupDir <- "/Volumes/QUACK1/DOHERTY/CECELIA/projects/8BR53W/ANALYSIS"
+```
 
+```{r}
+# rename
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+pID <- "QZwVFQ"
+sIDs <- c("efgRsn")
+
+backupDir <- "/Volumes/QUACK1/DOHERTY/CECELIA/projects/QZwVFQ/ANALYSIS"
+```
+
+
+```{r}
 for (i in sIDs) {
 # init ccia object
   cciaObj <- initCciaObject(

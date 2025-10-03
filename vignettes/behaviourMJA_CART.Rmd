@@ -8,11 +8,12 @@ date: '2022-08-15'
 renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
-
 ## Show transition states of live cell imaging
 
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+library(flowWorkspace)
+
 devtools::load_all("../")
 cciaUse("~/cecelia/dev")
 
@@ -237,6 +238,25 @@ task <- cciaObj$runTask(
   taskID = 1
 )
 ```
+
+```{r}
+# now .. can you get the populations from multiple gating sets
+# just by requesting populations without knowing where they come from
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "M9ODWr", versionID = versionID, initReactivity = FALSE
+)
+
+tPops <- c("/Tg1")
+bPops <- c("/BC1", "/BC2")
+
+# get value name
+cciaObj$popPaths("flow")
+```
+
 
 ```{r}
 devtools::load_all("../")

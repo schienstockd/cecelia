@@ -18,6 +18,151 @@ tracks.combine.dt <- function(x, idcol = "cell_type") {
   data.table::rbindlist(x, idcol = idcol, fill = TRUE)
 }
 
+#' @description Build DT for HMM analsyis
+#' @param cciaObj image object
+#' @param uIDs character vector
+#' @param popType charater for population type
+#' @param modelMeasurements character vector for model measurements
+#' @param skipTimesteps integer to skip timesteps
+#' @param subtrackOverlap boolean tto use overlap for subtracks resulting from skipping timesteps
+#' @param noiseFilterMeasurements integer to filter noise
+#' @param normMeasurements character vector to normalise measurementes
+#' @param scaleMeasurements character vector to scale measurementes
+#' @examples
+#' TODO
+#' @export
+tracks.build.hmm.dt <- function(cciaObj, uIDs, popType, pops, modelMeasurements,
+                                skipTimesteps = 0, subtrackOverlap = TRUE,
+                                noiseFilterMeasurements = 0,
+                                normMeasurements = list(),
+                                scaleMeasurements = list()) {
+  # get labels for populations from images
+  tracks.DT <- cciaObj$popDT(
+    popType = popType,
+    pops = pops,
+    popCols = c("cell_id", modelMeasurements),
+    includeFiltered = TRUE,
+    colsToNormalise = cciaConf()$parameters$shapeDescriptors,
+    uIDs = uIDs
+  )
+  
+  # skip timesteps?
+  if (skipTimesteps > 0) {
+    # reset speed and angle
+    tracks.DT[, live.cell.speed := NA]
+    tracks.DT[, live.cell.angle := NA]
+    
+    # go through pops
+    for (y in pops) {
+      # get tracks
+      popTracks <- cciaObj$tracks(y, uIDs = uIDs)
+      
+      # adjust speed
+      if ("live.cell.speed" %in% modelMeasurements) {
+        # get new speed
+        tracks.DT[
+          tracks.measure.fun(
+            popTracks, celltrackR::speed, "live.cell.speed",
+            steps.subtracks = 1 + skipTimesteps,
+            steps.overlap = if (subtrackOverlap == TRUE)
+              skipTimesteps
+            else
+              0,
+            idcol = "uID"),
+          on = .(uID, track_id, cell_id),
+          live.cell.speed := .(i.live.cell.speed)]
+      }
+      
+      # adjust angle
+      if ("live.cell.angle" %in% modelMeasurements) {
+        # determine steps if overlap is false
+        subtrackSteps <- 2 + skipTimesteps
+        subtrackOverlap <- skipTimesteps + 1
+        
+        if (subtrackOverlap == FALSE) {
+          subtrackOverlap <- 0
+          
+          # align steps with speed
+          subtrackSteps <- 1 + skipTimesteps
+        }
+        
+        # go through pops
+        for (y in pops) {
+          # get new angle
+          tracks.DT[
+            tracks.measure.fun(
+              popTracks, celltrackR::overallAngle, "live.cell.angle",
+              steps.subtracks = subtrackSteps,
+              steps.overlap = subtrackOverlap,
+              idcol = "uID"),
+            on = .(uID, track_id, cell_id),
+            live.cell.angle := .(i.live.cell.angle)]
+        }
+      }
+    }
+  }
+  
+  # drop na from measurements
+  for (x in modelMeasurements) {
+    tracks.DT <- tracks.DT %>%
+      drop_na(all_of(x)) %>%
+      # drop inf
+      # https://stackoverflow.com/a/55198108/13766165
+      filter_all(all_vars(!is.infinite(.)))
+  }
+  
+  # filter noise for measurements
+  if (noiseFilterMeasurements > 0) {
+    tracks.DT[
+      , (modelMeasurements) := lapply(
+        modelMeasurements,
+        function(x) caTools::runmean(
+          # function(x) runmed(
+          .SD[[x]],
+          k = noiseFilterMeasurements)
+      ),
+      by = .(pop, uID, track_id)
+    ]
+  }
+  
+  # normalise measurements
+  if (length(normMeasurements) > 0) {
+    # get norm values
+    normVals <- mapply(
+      function(x, i) {
+        if (x == "min") min(tracks.DT[[i]], na.rm = TRUE)
+        else if (x == "max") max(tracks.DT[[i]], na.rm = TRUE)
+        else if (x == "median") median(tracks.DT[[i]], na.rm = TRUE)
+        else mean(tracks.DT[[i]], na.rm = TRUE)
+      },
+      normMeasurements,
+      names(normMeasurements),
+      SIMPLIFY = FALSE
+    )
+    
+    tracks.DT[
+      , (names(normMeasurements)) := mapply(
+        function(i, v) .SD[[i]]/v,
+        names(normMeasurements),
+        normVals,
+        SIMPLIFY = FALSE
+      )
+    ]
+  }
+  
+  # scale measurements
+  if (length(scaleMeasurements) > 0) {
+    tracks.DT[
+      , (scaleMeasurements) := lapply(
+        scaleMeasurements,
+        function(x) scale(.SD[[x]], center = FALSE)
+      )
+    ]
+  }
+  
+  tracks.DT
+}
+
 #' @description Apply function to tracks to change values
 #' @param tracks list of celltrackR::tracks
 #' @param call.FUN function to call for tracks
@@ -105,7 +250,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
     tracks <- lapply(
       tracks,
       function(x) celltrackR::subtracks(x, subtracks.i, subtracks.overlap)
-      )
+    )
   }
   
   # apply function
@@ -114,7 +259,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
     function(x) {
       if (length(x) > 0)
         aggregate(x, call.FUN, FUN = summary.FUN, ...)
-      }
+    }
   )
   
   # exclude NULL
@@ -141,7 +286,7 @@ tracks.aggregate.fun <- function(tracks, call.FUN, summary.FUN,
       tracks.fun.result,
       tracks,
       SIMPLIFY = FALSE
-      )
+    )
     
     # remove empty groups
     tracks.fun.DT <- tracks.fun.DT[lengths(tracks.fun.DT) > 0]

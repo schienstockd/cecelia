@@ -94,6 +94,10 @@
             column(
               6,
               checkboxInput(ns("taskLocalUseGPU"), "Use GPU", value = FALSE)
+            ),
+            column(
+              6,
+              checkboxInput(ns("taskLocalUseDask"), "Use Dask", value = FALSE)
             )
           )
         ),
@@ -104,6 +108,7 @@
             column(
               6,
               checkboxInput(ns("taskHPCuseGPU"), "Use GPU", value = FALSE),
+              checkboxInput(ns("taskHPCuseDask"), "Use Dask", value = FALSE),
               checkboxInput(ns("taskHPCuseMATLAB"), "Use MATLAB", value = FALSE),
               checkboxInput(ns("uploadCciaObj"), "Upload local object", value = TRUE)
             ),

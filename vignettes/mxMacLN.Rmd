@@ -1,0 +1,71 @@
+---
+title: "Run modules"
+output: html_document
+date: '2022-08-16'
+---
+
+```{r setup, include=FALSE}
+renv::load("~/R-workspace/cecelia/")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Examples to run functions and modules
+
+```{r}
+Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
+# set test variables
+pID <- "3znVim"
+versionID <- 1
+anaDir <- "~/GDrive/Notebook/ANALYSIS/HOLLY-LN/Cryo"
+```
+
+```{r}
+library(flowWorkspace)
+
+devtools::load_all("../")
+cciaUse("~/cecelia/dev")
+
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
+
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "4Kz1ET", versionID = versionID, initReactivity = FALSE # Set
+)
+
+uIDs <- names(cciaObj$cciaObjects())
+
+# get populations
+popDT <- cciaObj$popDT(
+  popType = "flow", pops = c("/cells/CD169"), uIDs = uIDs)
+
+# get convex hull and get distance of CD169 to window
+popPPP <- cciaObj$ppp(
+  popType = "flow", pops = c("/cells/CD169"), uIDs = uIDs,
+  hullType = "concave", concavity = 2)
+```
+
+```{r fig_window_dist, fig.height=5, fig.width=5}
+dt1 <- popDT[uID == "kQBPx5"]
+pp1 <- popPPP[["kQBPx5"]]
+
+pp1$markformat
+
+# get distance to window and push back to DT
+dt1[, bdist := 0]
+dt1[label %in% pp1$marks$m.label, bdist := spatstat.geom::bdist.points(pp1)]
+
+ggplot(dt1, aes(centroid_x, centroid_y, color = bdist)) +
+  theme_classic() +
+  plotThemeDark(fontSize = 8) +
+  viridis::scale_color_viridis() +
+  geom_point()
+
+ggsave(file.path(anaDir, "window_dist.png"), height = 4, width = 4)
+```
+

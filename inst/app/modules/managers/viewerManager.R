@@ -104,6 +104,8 @@ ViewerManager <- R6::R6Class(
     openImage = function(imObj, napariModule,
                          showLabelsAsNpArray = FALSE,
                          forceReloadData = FALSE) {
+      imReloaded <- FALSE
+      
       # if (!is.null(imObj()$imFilepath()) &&
       if (length(imObj()$imFilepath()) > 0 &&
         file.exists(imObj()$imFilepath())) {
@@ -142,6 +144,7 @@ ViewerManager <- R6::R6Class(
             timeInterval <- 1
           }
           
+          imReloaded <- TRUE
           self$viewer()$openImage(
             imFilepath,
             useChannelAxis = self$getUseChannelAxis(),
@@ -191,6 +194,8 @@ ViewerManager <- R6::R6Class(
         # set current image shown
         private$setImObj(imObj)
       }
+      
+      imReloaded
     },
     
     # save layer properties

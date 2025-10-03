@@ -1295,7 +1295,7 @@ CciaImage <- R6::R6Class(
       retVal <- NULL
       
       if (popType == "flow") {
-        retVal <- self$flowGatingSet(...)
+        retVal <- self$flowGatingSet(valueName = valueName, ...)
       } else if (popType == "clust") {
         retVal <- self$adataUtils(
           popType = popType,
@@ -1581,7 +1581,7 @@ CciaImage <- R6::R6Class(
         
         # get non-filtered populations
         popDT <- NULL
-        
+
         if (length(nonFilteredPops) > 0) {
           popDT <- popUtils$popDT(
             pops = nonFilteredPops, popCols = popCols,
@@ -1851,10 +1851,11 @@ CciaImage <- R6::R6Class(
     #' @param flushCache boolean to flush cache
     #' @param completeDT boolean to complete data.table with label props
     #' @param tracksOnly boolean to save tracks only
+    #' @param valueName character to set value name
     #' @param ... passed to self$popUtils(popType = popType)$savePops
     savePops = function(popType, pops = NULL, includeFiltered = FALSE,
                         flushCache = TRUE, completeDT = TRUE, tracksOnly = FALSE,
-                        ...) {
+                        valueName = NULL, ...) {
       # get pops
       if (is.null(pops) || .flowPopIsRoot(pops)) {
         # pops <- sapply(self$imPopMap(popType = popType,
@@ -1885,7 +1886,8 @@ CciaImage <- R6::R6Class(
                           includeFiltered = includeFiltered,
                           uniqueLabels = FALSE, flushCache = flushCache,
                           # completeDT = completeDT)
-                          completeDT = includeFiltered, tracksOnly = tracksOnly)
+                          completeDT = includeFiltered, tracksOnly = tracksOnly,
+                          valueName = valueName)
       
       # TODO make sure that only tracks from the current image are saved
       if (all(c("track_id", "uID") %in% colnames(popDT)))
@@ -1958,7 +1960,8 @@ CciaImage <- R6::R6Class(
           zrange = c(floor(windowDF$z), ceiling(windowDF$z))
         )
         
-        spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
+        # spatstat.geom::as.ppp(pointsDF, marks = factor(popDT$pop), W = W)
+        spatstat.geom::as.ppp(pointsDF, marks = popDT[, c("label", "pop")], W = W)
       } else {
         NULL
       }
@@ -2005,7 +2008,9 @@ CciaImage <- R6::R6Class(
       # create 2D spatial dataframe
       pointsDF <- data.frame(
         x = popDT$centroid_x,
-        y = popDT$centroid_y
+        y = popDT$centroid_y,
+        # m = factor(popDT$pop) 
+        m = popDT[, c("label", "pop")] 
       )
       
       if (nrow(pointsDF) > 0) {
@@ -2022,7 +2027,7 @@ CciaImage <- R6::R6Class(
             )
             
             createPPP(
-              pointsDF, windowDF, marks = factor(popDT$pop),
+              pointsDF, windowDF, 
               hullType = hullType, concavity = concavity)
           })
         } else {
@@ -2030,7 +2035,7 @@ CciaImage <- R6::R6Class(
             pointsDF, data.frame(
               x = popWindow$centroid_x,
               y = popWindow$centroid_y
-            ), marks = factor(popDT$pop),
+            ),
             hullType = hullType, concavity = concavity)
         }
       } else {
@@ -2271,30 +2276,40 @@ CciaImage <- R6::R6Class(
     #' @description Gating set
     #' @param forceReload boolean to force reload data
     #' @param init boolean to init data
-    flowGatingSet = function(forceReload = FALSE, init = TRUE) {
+    flowGatingSet = function(valueName = NULL, forceReload = FALSE, init = TRUE) {
+      # check whether utils is already set
+      gs <- .getVersionedVar(private$handleFlowGatingSet, valueName = valueName)
+      gsPath <- self$imGatingSetFilepath(valueName = valueName)
+      
       if (init == TRUE) {
-        if (!purrr::is_empty(self$imGatingSetFilepath())) {
-          if (is.null(private$handleFlowGatingSet) || forceReload == TRUE) {
-            if (file.exists(self$imGatingSetFilepath())) {
+        if (!purrr::is_empty(gsPath)) {
+          if (is.null(gs) || forceReload == TRUE) {
+            if (file.exists(gsPath)) {
               # init object
-              private$handleFlowGatingSet <- FlowGatingSet$new(
-                self$imGatingSetFilepath(), self$imChannelNames(includeTypes = TRUE),
+              gs <- FlowGatingSet$new(
+                gsPath, self$imChannelNames(includeTypes = TRUE),
                 # TODO if there are multiple gating set value names
                 # this would need to be passed in the function call
                 # and also here
-                attr(self$valueNames("imGatingSetFilepath"), "default")
-                )
+                # attr(self$valueNames("imGatingSetFilepath"), "default")
+                valueName
+              )
               
               # init reactivity
               if (private$isReactive()) {
-                private$handleFlowGatingSet$reactive()
+                gs$reactive()
               }
+              
+              # set version
+              private$handleFlowGatingSet <- .setVersionedVar(
+                private$handleFlowGatingSet, gs,
+                valueName = valueName)
             }
           }
         }
       }
       
-      private$handleFlowGatingSet
+      gs
     },
     
     #' @description Classification utils

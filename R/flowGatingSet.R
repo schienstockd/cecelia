@@ -398,7 +398,7 @@ FlowGatingSet <- R6::R6Class(
     #' @param dropNA boolean to drop NA
     #' @param dropPop boolean to drop population
     #' @param copyDT boolean to copy data.table
-    popDT = function(pops = "root", popCols = NULL, dropNA = FALSE, dropPop = FALSE) {
+    popDT = function(pops = c("root"), popCols = NULL, dropNA = FALSE, dropPop = FALSE) {
       popList <- list()
       
       # make sure that columns are flow names

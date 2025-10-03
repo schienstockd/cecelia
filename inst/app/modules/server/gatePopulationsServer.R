@@ -14,13 +14,13 @@
       resetObjInfoFromGatingSet <- function(
         popParent = "root", includeParent = FALSE, parentPath = NULL) {
         # get populations
-        pops <- cciaObj()$flowGatingSet()$popLeaves(popParent)
+        pops <- cciaObj()$flowGatingSet(popValueName())$popLeaves(popParent)
         
         # was the parent population renamed before?
         if (is.null(parentPath)) parentPath <- popParent
         
         # include parent
-        if (!cciaObj()$flowGatingSet()$popIsRoot(popParent)) {
+        if (!cciaObj()$flowGatingSet(popValueName())$popIsRoot(popParent)) {
           if (includeParent == TRUE) {
             pops <- c(pops, parentPath)
           }
@@ -31,9 +31,9 @@
           pathForID <- x
           
           # is x a leave of the renamed population?
-          if (!cciaObj()$flowGatingSet()$popIsRoot(popParent)) {
+          if (!cciaObj()$flowGatingSet(popValueName())$popIsRoot(popParent)) {
             if (!is.na(stringr::str_match(x, popParent)[[1]])) {
-              pathForID <- cciaObj()$flowGatingSet()$changeParentName(x, parentPath)
+              pathForID <- cciaObj()$flowGatingSet(popValueName())$changeParentName(x, parentPath)
             }
           }
           
@@ -47,15 +47,15 @@
           } 
           
           # get gate IDs
-          plotGateID <- cciaObj()$flowGatingSet()$popGateID(x)
+          plotGateID <- cciaObj()$flowGatingSet(popValueName())$popGateID(x)
           
           # get gating channels
-          gatingChannels <- cciaObj()$flowGatingSet()$popChannels(x)
+          gatingChannels <- cciaObj()$flowGatingSet(popValueName())$popChannels(x)
           
           cciaObj()$setPopAttr(
             popType(), popID, list(
               gateID = plotGateID,
-              parent = cciaObj()$flowGatingSet()$popParent(x, "root"),
+              parent = cciaObj()$flowGatingSet(popValueName())$popParent(x, "root"),
               valueName = popValueName(),
               path = x,
               xChannel = gatingChannels[[1]],
@@ -118,14 +118,14 @@
           popID <- cciaObj()$addPop(popType())
           
           # add to gating set
-          gateID <- cciaObj()$flowGatingSet()$addPop(
+          gateID <- cciaObj()$flowGatingSet(popValueName())$addPop(
             popID, gateCoords,
             flowPlot()$getPlotXchannel(flowName = TRUE),
             flowPlot()$getPlotYchannel(flowName = TRUE),
             parentPop = flowPlot()$getPlotPopPath())
           
           # compute
-          cciaObj()$flowGatingSet()$recompute()
+          cciaObj()$flowGatingSet(popValueName())$recompute()
           
           popPath <- .flowPopPath(popID, flowPlot()$getPlotPopPath())
           names(popPath) <- popID
@@ -159,7 +159,7 @@
               # get leaves
               updateSelectInput(
                 session, xIDs$popLeaves,
-                # choices = cciaObj()$flowGatingSet()$popLeaves(
+                # choices = cciaObj()$flowGatingSet(popValueName())$popLeaves(
                 #   flowPlot()$getPlotPopPath()),
                 choices = .reverseNamedList(
                   cciaObj()$popLeaves(popType(), x()$getPlotPopPath())),
@@ -204,14 +204,14 @@
             use.names = FALSE)
           
           # set gate
-          cciaObj()$flowGatingSet()$setPop(
+          cciaObj()$flowGatingSet(popValueName())$setPop(
             popPath, gateCoords,
             flowPlot()$getPlotXchannel(flowName = TRUE),
             flowPlot()$getPlotYchannel(flowName = TRUE)
           )
           
           # compute
-          cciaObj()$flowGatingSet()$recompute()
+          cciaObj()$flowGatingSet(popValueName())$recompute()
           
           if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
             # save population
@@ -245,7 +245,7 @@
             xIDs <- x()$getBoxIDs()
             
             popLeaves <- c(
-              popPath, cciaObj()$flowGatingSet()$popLeaves(popPath)
+              popPath, cciaObj()$flowGatingSet(popValueName())$popLeaves(popPath)
             )
             
             # match parameters
@@ -277,12 +277,13 @@
       # population management
       popType <- reactive("flow")
       # popValueName <- reactive("default")
-      popValueName <- reactive({
-        req(cciaObj())
+      # popValueName <- reactive({
+      #   req(cciaObj())
+      #   
+      #   attr(cciaObj()$valueNames("imGatingSetFilepath"), "default")
+      # })
+      popValueName <- reactive(input$popValueName)
         
-        attr(cciaObj()$valueNames("imGatingSetFilepath"), "default")
-      })
-      
       ### Reactive-like values
       
       ### Reactives - RxCalc
@@ -309,7 +310,7 @@
       
       # update image automatically when populations are gated
       updateImage <- eventReactive(c(
-        # cciaObj()$flowGatingSet(),
+        # cciaObj()$flowGatingSet(popValueName()),
         cciaObj(),
         flowGatingPlotsGatesMissing(),
         input$updateImage
@@ -431,10 +432,10 @@
         flowListenToGating(),
         moduleManagers()$flowPlotManager$flowGatingPlots(),
         moduleManagers()$flowPlotManager$flowPopLeavesUpdated(),
-        cciaObj()$flowGatingSet()
+        cciaObj()$flowGatingSet(popValueName())
       ), {
         req(moduleManagers()$flowPlotManager$flowGatingPlots())
-        req(cciaObj()$flowGatingSet())
+        req(cciaObj()$flowGatingSet(popValueName()))
         
         leaveGates <- list()
         
@@ -443,11 +444,11 @@
           boxIDs <- x()$getBoxIDs()
           
           # get populations shown in image
-          curLeaves <- cciaObj()$flowGatingSet()$popDirectLeaves(x()$getPlotPopPath())
+          curLeaves <- cciaObj()$flowGatingSet(popValueName())$popDirectLeaves(x()$getPlotPopPath())
           
           for (curLeaf in curLeaves) {
             # get gate for current image
-            matchAxis <- cciaObj()$flowGatingSet()$popGatedOnChannels(
+            matchAxis <- cciaObj()$flowGatingSet(popValueName())$popGatedOnChannels(
               curLeaf, x()$getPlotChannels(flowName = TRUE)
             )
             
@@ -458,7 +459,7 @@
               }
               
               # add gate
-              leaveGates[[boxIDs$plot]][[curLeaf]] <- cciaObj()$flowGatingSet()$popGate(curLeaf)
+              leaveGates[[boxIDs$plot]][[curLeaf]] <- cciaObj()$flowGatingSet(popValueName())$popGate(curLeaf)
             }
           }
         }
@@ -727,7 +728,7 @@
         req(cciaObj())
         
         # require gating set
-        req(cciaObj()$flowGatingSet())
+        req(cciaObj()$flowGatingSet(popValueName()))
         
         # collapse selection box
         js$collapseBox(session$ns("imageTableBox"))
@@ -859,7 +860,7 @@
           moduleManagers()$flowPlotManager$flowUnlinkPops(x$path, popInfo)
           
           # remove from gating set
-          cciaObj()$flowGatingSet()$delPop(x$path)
+          cciaObj()$flowGatingSet(popValueName())$delPop(x$path)
           
           # remove populations from image that had this population as parent
           popIDs <- cciaObj()$popIDsByAttr(
@@ -867,7 +868,7 @@
           for (y in popIDs) cciaObj()$delPop(popType(), y)
           
           # get parent population
-          parentPop <- cciaObj()$flowGatingSet()$popParent(x$path, normaliseRoot = TRUE)
+          parentPop <- cciaObj()$flowGatingSet(popValueName())$popParent(x$path, normaliseRoot = TRUE)
           
           # reset population information
           resetObjInfoFromGatingSet(parentPop)
@@ -910,7 +911,7 @@
             if (.flowPopIsParent(x$path, y()$getPlotPopPath())) { 
               updateSelectInput(
                 session, boxIDs$popLeaves,
-                # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),
+                # choices = cciaObj()$flowGatingSet(popValueName())$popLeaves(x$parent),
                 choices = .reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
                 selected = popLeaves
               )
@@ -929,7 +930,7 @@
         for (i in names(popInfo)) {
           x <- popInfo[[i]]
           
-          newPath <- cciaObj()$flowGatingSet()$renamePop(x$path, x$name)
+          newPath <- cciaObj()$flowGatingSet(popValueName())$renamePop(x$path, x$name)
           
           # revert if rename was not successful
           # ie/ there is already a population with that name
@@ -960,7 +961,7 @@
                 # rename populations
                 popLeaves[shownLeaves] <- unlist(lapply(
                   popLeaves[shownLeaves],
-                  function(y) cciaObj()$flowGatingSet()$changeParentName(y, newPath)
+                  function(y) cciaObj()$flowGatingSet(popValueName())$changeParentName(y, newPath)
                 ))
                 
                 # update leaves
@@ -1010,7 +1011,7 @@
               if (.flowPopIsParent(newPath, y()$getPlotPopPath(), checkEqual = TRUE)) { 
                 updateSelectInput(
                   session, boxIDs$popLeaves,
-                  # choices = cciaObj()$flowGatingSet()$popLeaves(x$parent),
+                  # choices = cciaObj()$flowGatingSet(popValueName())$popLeaves(x$parent),
                   choices = .reverseNamedList(cciaObj()$popLeaves(popType(), y()$getPlotPopPath())),
                   selected = selectedPopLeaves
                 )
@@ -1044,6 +1045,17 @@
       ## Buttons
       
       ## Other
+      output$popValueName <- renderUI({
+        req(cciaObj())
+        
+        createSelectInput(
+          session$ns("popValueName"),
+          label = "Segmentation for gating",
+          choices = cciaObj()$valueNames("imGatingSetFilepath"),
+          multiple = FALSE,
+          selected = isolate(popValueName())
+        )
+      })
       
       ### Managers
       # init managers
@@ -1069,12 +1081,14 @@
           popType = popType,
           updateImage = updateImage,
           enableEditPopName = TRUE,
-          enableFilterPopulation = TRUE
+          enableFilterPopulation = TRUE,
+          popValueName = popValueName
         ),
         shapes = list(
         ),
         flowPlot = list(
           popType = popType,
+          popValueName = popValueName,
           numFlowPlots = numFlowPlots,
           flowUseFlowColours = flowUseFlowColours,
           flowMarkerOpacity = flowMarkerOpacity

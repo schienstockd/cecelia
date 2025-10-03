@@ -21,9 +21,9 @@ library(tidyverse)
 
 ```{r}
 # set test variables
-# pID <- "CV5iNI"
+pID <- "CV5iNI"
 # pID <- "uh0h3c"
-pID <- "8BR53W"
+# pID <- "8BR53W"
 versionID <- 1
 projectsDir <- "/Volumes/USER/Dominik/cecelia/projects/"
 hpcDir <- "/data/scratch/projects/punim1124/cecelia/USER_data/schienstockd/"
@@ -447,7 +447,57 @@ max(popDT$centroid_y)
 max(popDT$centroid_z)
 ```
 
+```{r}
+devtools::load_all("../")
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
+# init ccia object
+cciaObj <- initCciaObject(
+  pID = pID, uID = "EYaott", versionID = versionID, initReactivity = FALSE
+)
+
+pops <- c("tcells/tracked")
+popDT <- cciaObj$popDT("live", pops = pops, includeFiltered = TRUE)
+
+# get tracks info and check parameters
+tracksInfo <- cciaObj$tracksMeasures(pops = pops)
+```
+
+```{r fig_umap, fig.height=3, fig.width=4}
+# plot speeds
+ggplot(tracksInfo, aes(as.factor(1), speed)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    width = 0.2, alpha = 0.4) +
+  geom_boxplot(outlier.alpha = 0.) +
+  xlab("") + ylab("Velocity (μm/min)") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+  ) +
+  expand_limits(y = 0)
+```
+
+```{r fig_umap, fig.height=3, fig.width=4}
+# plot speeds
+ggplot(tracksInfo, aes(as.factor(1), speed)) +
+  theme_classic() +
+  geom_jitter(
+    # position = position_jitterdodge(jitter.width = 0.10), alpha = 1.0)
+    width = 0.2, alpha = 0.4) +
+  geom_boxplot(outlier.alpha = 0.) +
+  xlab("") + ylab("Velocity (μm/min)") +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    strip.background = element_blank(),
+    strip.text.x = element_blank(),
+  ) +
+  expand_limits(y = 0)
+```
 
 ```{r}
 devtools::load_all("../")
@@ -465,7 +515,7 @@ cciaObj <- initCciaObject(
   # pID = pID, uID = "b9o98P", versionID = versionID, initReactivity = FALSE # vessels Cornea
   # pID = pID, uID = "INglID", versionID = versionID, initReactivity = FALSE # CD11c 2P
   # pID = pID, uID = "nu0Nmo", versionID = versionID, initReactivity = FALSE # T cell types
-  pID = pID, uID = "ecnsNw", versionID = versionID, initReactivity = FALSE # Tissues
+   # Tissues
 )
 
 # get vector information to plot anisotropy

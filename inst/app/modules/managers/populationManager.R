@@ -14,6 +14,9 @@ createPopulationManager <- function(
   if (!"popsFilteredFromValueName" %in% names(managerConf$population)) {
     managerConf$population$popsFilteredFromValueName <- FALSE
   }
+  if (!"popValueName" %in% names(managerConf$population)) {
+    managerConf$population$popValueName <- NULL
+  }
   
   colourChoice <- function(popID = NULL, failed = FALSE) {
     colourChoices <- cciaConf()$colours$predefined
@@ -302,7 +305,8 @@ createPopulationManager <- function(
     cciaObj()$savePops(
       modulePopType(),
       includeFiltered = managerConf$population$enableFilterPopulation,
-      flushCache = TRUE
+      flushCache = TRUE,
+      valueName = managerConf$population$popValueName
       )
   })
   

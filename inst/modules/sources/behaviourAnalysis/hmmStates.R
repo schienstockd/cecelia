@@ -37,141 +37,17 @@ HmmStates <- R6::R6Class(
       # names(valueNames) <- valueNames
       
       self$writeLog("Get population DTs")
-      
-      # get labels for populations from images
-      tracks.DT <- cciaObj$popDT(
-        popType = self$funParams()$popType,
-        pops = self$funParams()$pops,
-        popCols = c("cell_id", self$funParams()$modelMeasurements),
-        includeFiltered = TRUE,
-        colsToNormalise = cciaConf()$parameters$shapeDescriptors,
-        uIDs = uIDs
+      tracks.DT <- tracks.build.hmm.dt(
+        cciaObj, uIDs, popType, pops, self$funParams()$modelMeasurements,
+        skipTimesteps = self$funParams()$skipTimesteps,
+        subtrackOverlap = self$funParams()$subtrackOverlap,
+        noiseFilterMeasurements = self$funParams()$noiseFilterMeasurements,
+        normMeasurements = self$funParams()$normMeasurements,
+        scaleMeasurements = self$funParams()$scaleMeasurements
       )
       
-      self$writeLog("Filter Noise")
-      
-      # skip timesteps?
-      if ("skipTimesteps" %in% names(self$funParams()) &&
-          self$funParams()$skipTimesteps > 0) {
-        
-        # reset speed and angle
-        tracks.DT[, live.cell.speed := NA]
-        tracks.DT[, live.cell.angle := NA]
-        
-        # go through pops
-        for (y in self$funParams()$pops) {
-          # get tracks
-          popTracks <- cciaObj$tracks(y, uIDs = uIDs)
-          
-          # adjust speed
-          if ("live.cell.speed" %in% self$funParams()$modelMeasurements) {
-            # get new speed
-            tracks.DT[
-              tracks.measure.fun(
-                popTracks, celltrackR::speed, "live.cell.speed",
-                steps.subtracks = 1 + self$funParams()$skipTimesteps,
-                steps.overlap = if (self$funParams()$subtrackOverlap == TRUE)
-                  self$funParams()$skipTimesteps
-                else
-                  0,
-                idcol = "uID"),
-              on = .(uID, track_id, cell_id),
-              live.cell.speed := .(i.live.cell.speed)]
-          }
-          
-          # adjust angle
-          if ("live.cell.angle" %in% self$funParams()$modelMeasurements) {
-            # determine steps if overlap is false
-            subtrackSteps <- 2 + self$funParams()$skipTimesteps
-            subtrackOverlap <- self$funParams()$skipTimesteps + 1
-            
-            if (self$funParams()$subtrackOverlap == FALSE) {
-              subtrackOverlap <- 0
-              
-              # align steps with speed
-              subtrackSteps <- 1 + self$funParams()$skipTimesteps
-            }
-            
-            # go through pops
-            for (y in self$funParams()$pops) {
-              # get new angle
-              tracks.DT[
-                tracks.measure.fun(
-                  popTracks, celltrackR::overallAngle, "live.cell.angle",
-                  steps.subtracks = subtrackSteps,
-                  steps.overlap = subtrackOverlap,
-                  idcol = "uID"),
-                on = .(uID, track_id, cell_id),
-                live.cell.angle := .(i.live.cell.angle)]
-            }
-          }
-        }
-      }
-      
-      # drop cells at the beginning of the track
-      # TODO this will not work if people start to make their own measurements
-      # for (x in c("live.cell.speed", "live.cell.angle")) {
-      #   if (x %in% self$funParams()$modelMeasurements) {
-      
-      # drop na from measurements
-      for (x in self$funParams()$modelMeasurements) {
-        tracks.DT <- tracks.DT %>%
-          drop_na(all_of(x)) %>%
-          # drop inf
-          # https://stackoverflow.com/a/55198108/13766165
-          filter_all(all_vars(!is.infinite(.)))
-      }
-      
-      # filter noise for measurements
-      if (self$funParams()$noiseFilterMeasurements > 0) {
-        tracks.DT[
-          , (self$funParams()$modelMeasurements) := lapply(
-            self$funParams()$modelMeasurements,
-            function(x) caTools::runmean(
-            # function(x) runmed(
-              .SD[[x]],
-              k = self$funParams()$noiseFilterMeasurements)
-          ),
-          by = .(pop, uID, track_id)
-        ]
-      }
-      
-      # normalise measurements
-      if ("normMeasurements" %in% names(self$funParams()) && length(self$funParams()$normMeasurements) > 0) {
-        # get norm values
-        normVals <- mapply(
-          function(x, i) {
-            if (x == "min") min(tracks.DT[[i]], na.rm = TRUE)
-            else if (x == "max") max(tracks.DT[[i]], na.rm = TRUE)
-            else if (x == "median") median(tracks.DT[[i]], na.rm = TRUE)
-            else mean(tracks.DT[[i]], na.rm = TRUE)
-          },
-          self$funParams()$normMeasurements,
-          names(self$funParams()$normMeasurements),
-          SIMPLIFY = FALSE
-        )
-        
-        tracks.DT[
-          , (names(self$funParams()$normMeasurements)) := mapply(
-            function(i, v) .SD[[i]]/v,
-            names(self$funParams()$normMeasurements),
-            normVals,
-            SIMPLIFY = FALSE
-          )
-        ]
-      }
-      
-      # scale measurements
-      if ("scaleMeasurements" %in% names(self$funParams()) && length(self$funParams()$scaleMeasurements) > 0) {
-        tracks.DT[
-          , (self$funParams()$scaleMeasurements) := lapply(
-            self$funParams()$scaleMeasurements,
-            function(x) scale(.SD[[x]], center = FALSE)
-          )
-        ]
-      }
-      
       # build model
+      
       hmm_model <- depmixS4::depmix(
         lapply(
           self$funParams()$modelMeasurements,

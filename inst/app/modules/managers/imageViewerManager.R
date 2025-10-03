@@ -128,13 +128,14 @@ createImageViewerManager <- function(
     
     # open image
     if (DEBUG_SHOW_VIEWER == TRUE && globalManagers$projectManager()$getProjectType() != "flow") {
-      globalManagers$viewerManager()$openImage(
+      loadLayerProps <- globalManagers$viewerManager()$openImage(
         shownImage, managerConf$imageViewer$napariModule,
         showLabelsAsNpArray()
         )
       
       # reset layer properties
-      globalManagers$viewerManager()$loadLayerProps()
+      if (loadLayerProps == TRUE)
+        globalManagers$viewerManager()$loadLayerProps()
     }
     
     # set image shown

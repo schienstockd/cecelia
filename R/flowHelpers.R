@@ -1,3 +1,6 @@
+# rasterly is outdated on github
+devtools::load_all(system.file("lib/rasterly", package = "cecelia")) 
+
 #' @description Correct channel names
 #' @param channelNames list of character for channel names
 #' @examples
@@ -276,19 +279,22 @@
   tryCatch(
     expr = {
       # fortify gating set
-      attr(gs, "subset") <- subset
-      
-      if (!is.null(cols)) {
-        colsGs <- flowWorkspace::colnames(gs)
-        cols <- colsGs[colsGs %in% cols]
+      # make sure the population is in the gating set
+      if (subset %in% flowWorkspace::gs_get_pop_paths(gs)) {
+        attr(gs, "subset") <- subset
         
-        # make sure the columns are in the gatingset
-        if (length(cols) > 0)
-          attr(gs, "dims") <- data.table(name = cols)
+        if (!is.null(cols)) {
+          colsGs <- flowWorkspace::colnames(gs)
+          cols <- colsGs[colsGs %in% cols]
+          
+          # make sure the columns are in the gatingset
+          if (length(cols) > 0)
+            attr(gs, "dims") <- data.table(name = cols)
+        }
+        
+        # retVal <- fortify(gs)
+        retVal <- ggcyto:::fortify.GatingSet(gs)
       }
-      
-      # retVal <- fortify(gs)
-      retVal <- ggcyto:::fortify.GatingSet(gs)
     },
     error = function(e) {
       message(e)
@@ -817,9 +823,11 @@
   # xAdj <- diff(range(DT[[flowX]]))/diff(xRange)
   # yAdj <- diff(range(DT[[flowY]]))/diff(yRange)
   
-  r1 <- rasterly::rasterly(
+  # r1 <- rasterly::rasterly(
+  r1 <- rasterly(
     data = DT,
-    mapping = rasterly::aes(
+    # mapping = rasterly::aes(
+    mapping = aes(
       x = get(flowX),
       y = get(flowY),
       on = on,
@@ -829,7 +837,8 @@
   
   # check mode
   if (colorMode == "white") {
-    r1 <- r1 %>% rasterly::rasterly_points(
+    # r1 <- r1 %>% rasterly::rasterly_points(
+    r1 <- r1 %>% rasterly_points(
       # color = if (is.null(color)) rev(RColorBrewer::brewer.pal(11, "Spectral")) else color,
       color = if (is.null(color) && is.null(colorBy)) c(
         "black", rev(RColorBrewer::brewer.pal(maxColours, flowColour))
@@ -839,9 +848,11 @@
       xlim = xRange,
       ylim = yRange,
       reduction_func = reduction_func
-    ) %>% rasterly::rasterly_build()
+    # ) %>% rasterly::rasterly_build()
+    ) %>% rasterly_build()
   } else {
-    r1 <- r1 %>% rasterly::rasterly_points(
+    # r1 <- r1 %>% rasterly::rasterly_points(
+    r1 <- r1 %>% rasterly_points(
       color = if (is.null(color) && is.null(colorBy)) rev(
         RColorBrewer::brewer.pal(maxColours, flowColour)) else color,
       background = "#22222200",
@@ -849,7 +860,8 @@
       xlim = xRange,
       ylim = yRange,
       reduction_func = reduction_func
-    ) %>% rasterly::rasterly_build()
+    # ) %>% rasterly::rasterly_build()
+    ) %>% rasterly_build()
   }
   
   # add adjustment factors

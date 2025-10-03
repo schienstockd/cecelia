@@ -35,9 +35,20 @@ BayesianTracking <- R6::R6Class(
       if (!is.null(filterVisibilities))
         filters <- filters[names(filterVisibilities)]
       
+      # get population to track if coming from a gating strategy
+      if (self$funParams()$popsToTrack != "NONE") {
+        self$writeLog("Save flow pops")
+        self$writeLog(self$funParams()$popsToTrack)
+        cciaObj$savePopMap("flow", includeFiltered = TRUE)
+        cciaObj$savePops("flow", purge = TRUE, includeFiltered = TRUE,
+                         valueName = self$funParams()$valueName)
+      }
+      
       # prepare params
       params <- list(
         taskDir = self$envParams()$dirs$task,
+        popType = if (self$funParams()$popsToTrack != "NONE") "flow" else NULL,
+        popsToTrack = self$funParams()$popsToTrack,
         imRes = cciaObj$omeXMLPixelRes(),
         maxSearchRadius = self$funParams()$maxSearchRadius,
         maxLost = self$funParams()$maxLost,

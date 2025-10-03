@@ -952,6 +952,10 @@ server <- function(input, output, session) {
         icon = icon("splotch"),
         tabName = "segmentImages"),
       menuSubItem(
+        "Population Gating",
+        icon = icon("draw-polygon"),
+        tabName = "gatePopulations"),
+      menuSubItem(
         "Cell Tracking",
         icon = icon("hat-wizard"),
         tabName = "trackingImages"),

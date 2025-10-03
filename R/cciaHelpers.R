@@ -409,6 +409,7 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
 #' @param taskHPCmemory integer of HPC memory in 'GB'
 #' @param taskHPCwalltime character of walltime 'dd-hh:mm:ss'
 #' @param useGPU boolean to use GPUs
+#' @param useDask boolean to use Dask
 #' @param useMATLAB boolean to use MATLAB
 #' @examples
 #' TODO
@@ -417,7 +418,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
                            taskHPCnumNodes = 1, taskHPCnumTasks = 1,
                            taskHPCnumCPUperTask = 1, taskHPCnumGPUperTask = 1,
                            taskHPCmemory = 50, taskHPCwalltime = "00-01:00:00",
-                           useGPU = FALSE, useMATLAB = FALSE) {
+                           useGPU = FALSE, useDask = FALSE, useMATLAB = FALSE) {
   # set HPC settings
   if (useGPU == TRUE) {
     hpcProjectQos = projectManager$getProjectHPCqosGPU()
@@ -446,7 +447,8 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           zero = projectManager$persistentObjectDirectory(uID, version = 0)
         ),
         conf = list(
-          useGPU = useGPU
+          useGPU = useGPU,
+          useDask = useDask
         )
       ),
       hpc = list(
@@ -469,6 +471,7 @@ createTaskVars <- function(uID, projectManager, taskEnv,
           projectPartitions = hpcProjectPartitions,
           projectID = hpcProjectID,
           useGPU = useGPU,
+          useDask = useDask,
           useMATLAB = useMATLAB
         )
       ),
@@ -672,8 +675,7 @@ createPPP <- function(pointsDF, windowDF, marks, hullType = "convex", concavity 
   }
   
   # formal argument "marks" matched by multiple actual arguments
-  spatstat.geom::as.ppp(pointsDF, marks = marks, W = W)
-  # spatstat.geom::as.ppp(pointsDF, W = W)
+  spatstat.geom::as.ppp(pointsDF, W = W)
 }
 
 #' @description Get first selected image from set

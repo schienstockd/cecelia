@@ -33,7 +33,9 @@ def run(params):
     'dist_thresh': params['distThresh'],
     'time_thresh': params['timeThresh'],
     'segmentation_miss_rate': params['segmentationMissRate'],
-    'filters': params['filters']
+    'filters': params['filters'],
+    'pop_type': params['popType'],
+    'pops_to_track': params['popsToTrack']
   }
 
   # run tracking

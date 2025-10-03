@@ -249,9 +249,9 @@
                     names_to = "measure",
                     values_to = "value") %>%
                   drop_na(any_of(c("value", resultParamsColName()))) %>%
-                  dplyr::mutate(across(c(resultParamsColName()), factor))
-                , aes(x = get(resultParamsColName()), y = value,
-                      fill = get(resultParamsColName()))) +
+                  dplyr::mutate(across(c(resultParamsColName()), factor)),
+                aes(x = get(resultParamsColName()), y = value,
+                    fill = get(resultParamsColName()))) +
                 theme_classic() +
                 xlab("") +
                 ylab(local_x)

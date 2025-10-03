@@ -370,6 +370,13 @@ createTaskManager <- function(
       input$taskLocalUseGPU
   })
   
+  useDask <- reactive({
+    if (useHPC() == TRUE)
+      input$taskHPCuseDask
+    else
+      input$taskLocalUseDask
+  })
+  
   useMATLAB <- reactive({
     if (useHPC() == TRUE)
       input$taskHPCuseMATLAB
@@ -804,6 +811,7 @@ createTaskManager <- function(
       taskHPCmemory = taskHPCmemory(),
       taskHPCwalltime = taskHPCwalltime(),
       useGPU = useGPU(),
+      useDask = useDask(),
       useMATLAB = useMATLAB()
     )
   }
@@ -1834,6 +1842,7 @@ createTaskManager <- function(
     createTaskDataTableColumns = createTaskDataTableColumns,
     createTaskDataButtons = createTaskDataButtons,
     useGPU = useGPU,
+    useDask = useDask,
     useHPC = useHPC,
     taskHPCnumNodes = taskHPCnumNodes,
     taskHPCnumTasks = taskHPCnumTasks,

@@ -32,6 +32,12 @@ CellposeCorrect <- R6::R6Class(
       if ("useGPU" %in% names(self$envParams()$conf))
         useGPU <- self$envParams()$conf$useGPU
       
+      # use Dask
+      useDask <- FALSE
+      
+      if ("useDask" %in% names(self$envParams()$conf))
+        useDask <- self$envParams()$conf$useDask
+      
       # convert channels names to numbers
       models <- lapply(
         self$funParams()$models, function(x) {
@@ -58,6 +64,7 @@ CellposeCorrect <- R6::R6Class(
           basename(cciaObj$imFilepath(valueName = self$funParams()$valueName))
         ),
         useGPU = useGPU,
+        useDask = useDask,
         models = models,
         imCorrectionPath = file.path(
           self$envParams()$dirs$zero,

@@ -187,18 +187,30 @@ exp.info <- as.data.table(cciaObj$summary(
 # uIDs <- exp.info[Notes == "OK" & Type == "Live"]$uID
 # uIDs <- exp.info[Notes != "OK" & Type == "Live"]$uID
 # uIDs <- exp.info[Type == "Live"]$uID
-uIDs <- c("nQLvxD")
+# uIDs <- c("nQLvxD")
+# uIDs <- c("3fQb3n")
+uIDs <- c("Srak98")
 
 channelsToShow <- list(
-  "one" = "red",
+  # "one" = "red",
   "two" = "green",
   "three" = "gray",
-  "four" = "bop purple"
+  "four" = "magenta"
   )
 
-generateMovies(anaDir, cciaObj, uIDs, channelsToShow, NULL, NULL,
+splitTracks <- list(
+  live.cell.track.clusters.wp_movement = list(
+    Directed = list(values = list(2), colour = "#ff1493"),
+    Crawling = list(values = list(0,3,4), colour = "#ffd700"),
+    Sessile = list(values = list(1), colour = "#00bfff")
+    )
+  )
+
+popsToShow <- list("Tom")
+
+generateMovies(anaDir, cciaObj, uIDs, channelsToShow, popsToShow, NULL,
                # splitTracks = splitTracks, fps = 10, valueName = "default")
-               splitTracks = splitTracks, fps = 10, valueName = "corrected")
+               splitTracks = splitTracks, fps = 10, generateMovie = TRUE, valueName = "corrected")
 ```
 
 ```{r}

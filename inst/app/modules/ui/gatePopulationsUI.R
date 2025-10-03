@@ -51,6 +51,7 @@
                 fluidRow(
                   column(
                     6,
+                    uiOutput(ns("popValueName")),
                     sliderInput(ns("numFlowPlots"), "Plots", 2, 10, 
                                 cciaConf()$fcs$gating$plots$num),
                     checkboxInput(ns("useFlowColours"), "Density plot", TRUE),

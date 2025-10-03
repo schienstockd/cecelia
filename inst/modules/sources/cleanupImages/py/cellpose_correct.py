@@ -22,12 +22,13 @@ def run(params):
   im_path = script_utils.get_param(params, 'imPath', default = None)
   models = script_utils.get_param(params, 'models', default = dict())
   use_gpu = script_utils.get_param(params, 'useGPU', default = False)
+  use_dask = script_utils.get_param(params, 'useDask', default = False)
   im_correction_path = script_utils.get_param(params, 'imCorrectionPath', default = None)
 
   # load image
   im_dat, zarr_group_info = zarr_utils.open_as_zarr(
-    # im_path, as_dask = True)
-    im_path, as_dask = False)
+    im_path, as_dask = use_dask)
+    # im_path, as_dask = False)
 
   # get OME-XML
   omexml = ome_xml_utils.parse_meta(im_path)
@@ -53,10 +54,12 @@ def run(params):
   # slices = dim_utils.create_channel_slices()
   
   # go through slices and copy into array
-  # output_image = zarr_utils.copy(im_dat[0])
   # TODO somehow when processing as dask this will overload the system
   # and the process gets killed for larger images
-  output_image = zarr_utils.fortify(im_dat[0])
+  if use_dask is True:
+    output_image = zarr_utils.copy(im_dat[0])
+  else:
+    output_image = zarr_utils.fortify(im_dat[0])
   
   # adjust diameter for image resolution
   # cell_diameter /= self.dim_utils.omexml.images[0].pixels.physical_size_x
