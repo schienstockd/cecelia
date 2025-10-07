@@ -1,5 +1,5 @@
 ## THIS IS A COPY
-rasterly is not maintained anymore. This is a module that updated some functions to keept it running for Cecelia.
+rasterly is not maintained anymore. This is a module that updated some functions to keep it running for Cecelia.
 
 # rasterly <img src="https://user-images.githubusercontent.com/9809798/67056539-75d75200-f11a-11e9-9b62-2b62a349a45b.jpg" align="right" height="144" width="124.8">
 
