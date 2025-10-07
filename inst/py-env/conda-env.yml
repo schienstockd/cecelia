@@ -3,8 +3,5 @@ channels:
   - conda-forge
 dependencies:
   - python=3.12
-  - numpy=1.22.3
-  - python-dateutil
-  - pytz
   - pip
   # - r=4.2
