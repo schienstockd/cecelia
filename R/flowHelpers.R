@@ -1,6 +1,3 @@
-# rasterly is outdated on github
-devtools::load_all(system.file("lib/rasterly", package = "cecelia")) 
-
 #' @description Correct channel names
 #' @param channelNames list of character for channel names
 #' @examples
@@ -823,11 +820,9 @@ devtools::load_all(system.file("lib/rasterly", package = "cecelia"))
   # xAdj <- diff(range(DT[[flowX]]))/diff(xRange)
   # yAdj <- diff(range(DT[[flowY]]))/diff(yRange)
   
-  # r1 <- rasterly::rasterly(
-  r1 <- rasterly(
+  r1 <- rasterly::rasterly(
     data = DT,
-    # mapping = rasterly::aes(
-    mapping = aes(
+    mapping = rasterly::aes(
       x = get(flowX),
       y = get(flowY),
       on = on,
@@ -837,8 +832,7 @@ devtools::load_all(system.file("lib/rasterly", package = "cecelia"))
   
   # check mode
   if (colorMode == "white") {
-    # r1 <- r1 %>% rasterly::rasterly_points(
-    r1 <- r1 %>% rasterly_points(
+    r1 <- r1 %>% rasterly::rasterly_points(
       # color = if (is.null(color)) rev(RColorBrewer::brewer.pal(11, "Spectral")) else color,
       color = if (is.null(color) && is.null(colorBy)) c(
         "black", rev(RColorBrewer::brewer.pal(maxColours, flowColour))
@@ -848,11 +842,9 @@ devtools::load_all(system.file("lib/rasterly", package = "cecelia"))
       xlim = xRange,
       ylim = yRange,
       reduction_func = reduction_func
-    # ) %>% rasterly::rasterly_build()
-    ) %>% rasterly_build()
+    ) %>% rasterly::rasterly_build()
   } else {
-    # r1 <- r1 %>% rasterly::rasterly_points(
-    r1 <- r1 %>% rasterly_points(
+    r1 <- r1 %>% rasterly::rasterly_points(
       color = if (is.null(color) && is.null(colorBy)) rev(
         RColorBrewer::brewer.pal(maxColours, flowColour)) else color,
       background = "#22222200",
@@ -860,8 +852,7 @@ devtools::load_all(system.file("lib/rasterly", package = "cecelia"))
       xlim = xRange,
       ylim = yRange,
       reduction_func = reduction_func
-    # ) %>% rasterly::rasterly_build()
-    ) %>% rasterly_build()
+    ) %>% rasterly::rasterly_build()
   }
   
   # add adjustment factors

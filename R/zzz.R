@@ -409,8 +409,8 @@ cciaAppRequirements <- function(ncpus = 4, ...) {
     dependencies = TRUE, Ncpus = ncpus, ...)
   
   # install rasterly
-  # TODO maintained alternative?
   # remotes::install_github("plotly/rasterly", ...)
+  remotes::install_github("schienstockd/rasterly", ...)
   
   # TODO there is a bug that is not resolved on CRAN
   # https://github.com/thomasp85/shinyFiles/issues/181
