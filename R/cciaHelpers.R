@@ -335,11 +335,14 @@ initCciaObject <- function(cciaObjDir = NULL, pID = NULL, uID = NULL,
     if (!is.null(valueList) && is.null(retVal)) {
       if (valueName %in% names(valueList)) {
         retVal <- valueList[[valueName]]
-        
-        # set name for value
-        if (!is.null(retVal))
-          attr(retVal, "valueName") <- valueName
+      } else if (!is.list(valueList)) {
+        # return list as default
+        retVal <- valueList
       }
+      
+      # set name for value
+      if (!is.null(retVal))
+        attr(retVal, "valueName") <- valueName
     }
   }
   

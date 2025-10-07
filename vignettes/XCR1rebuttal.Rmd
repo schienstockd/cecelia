@@ -14,8 +14,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 Sys.setenv(KMP_DUPLICATE_LIB_OK = "TRUE")
 # set test variables
-pID <- "Lq0joh" # CD69 vib
-versionID <- 1
 projectsDir <- "~/cecelia/projects"
 ```
 
@@ -34,52 +32,66 @@ library(ggplot2)
 library(tidyverse)
 ```
 
+```{r}
+pID <- "Lq0joh" # CD69 vib
+versionID <- 11
 
-```{r fig_gating, fig.height=3, fig.width=5}
-# get populations and show maps
+# check distribution of CD69+ and TRITC
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "mDNMiG", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "tYKNoG", versionID = versionID, initReactivity = FALSE
 )
 
+uIDs <- names(cciaObj$cciaObjects())
+
 # Try SPIAT options
-pops <- c("/cells/A", "/cells/B", "/cells/C", "/cells/D", "/E", "/F")
+pops <- c("/gBT", "/gBT/CD69+", "/O/TRITC")
 
 # get SPIAT object
-spe <- cciaObj$spe(popType = "flow", pops = pops, completeDT = FALSE)
-```
-
-```{r fig_SPIAT_plot, fig.height = 4, fig.width = 5}
-my_colors <- randomcoloR::distinctColorPalette(length(pops))
-  
-SPIAT::plot_cell_categories(
-  spe_object = spe, 
-  categories_of_interest = pops, 
-  colour_vector = my_colors, 
-  feature_colname = "Phenotype")
+pp1 <- cciaObj$ppp(
+  popType = "flow", pops = pops, completeDT = FALSE, uIDs = uIDs, marksAsPop = TRUE)
+popDT <- cciaObj$popDT(
+  popType = "flow", pops = pops, completeDT = FALSE, uIDs = uIDs)
 ```
 
 ```{r fig_SPIAT_dist, fig.height = 5, fig.width = 5}
-for (i in pops) {
-  for (j in pops[pops != i]) {
-    plot(SPIAT::plot_cell_categories(
-      spe_object = spe, 
-      categories_of_interest = c(i, j), 
-      colour_vector = c("purple", "darkcyan"), 
-      feature_colname = "Phenotype"))
-    
-    SPIAT::calculate_cross_functions(
-      spe, method = "Kcross.inhom", 
-      cell_types_of_interest = c(i, j), 
-      feature_colname = "Phenotype",
-      dist = 100)
-  }
-}
-```
+# compare to
+# https://trigosteam.github.io/SPIAT/articles/cell-colocalisation.html#cross-k-function
 
+y <- "/gBT/CD69+"
+x <- "/O/TRITC"
+
+pdf(file.path(anaDir, "Kcross.inhom.pdf"), height = 5, width = 5)
+for (i in uIDs) {
+  p1 <- ggplot(popDT[uID == i & pop %in% c(x, y)], aes(centroid_x, centroid_y, color = pop)) +
+    theme_classic() +
+    plotThemeDark() +
+    geom_point(alpha = 0.8) +
+    coord_fixed() +
+    theme(
+      axis.text.x = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.line = element_blank(),
+      axis.title.x = element_blank(),
+      axis.title.y = element_blank(),
+      legend.title = element_blank()
+    ) +
+    scale_colour_manual(values = list(
+      "/gBT/CD69+" = "#01FF01", "/O/TRITC" = "red"
+    ))
+  plot(p1)
+  
+  p1 <- spatstat.explore::Kcross.inhom(pp1[[i]], x, y, correction = "border")
+  
+  plot(p1, main = paste(x, "v", y, "-", i))
+}
+dev.off()
+```
 
 ```{r}
 # check number of clusters for HMM
@@ -88,29 +100,38 @@ for (i in pops) {
 # then returns the clustering result.. ?
 # a partitioning function which accepts as first argument a (data) matrix like x, second argument, say k, k >= 2, the number of clusters desired, and returns a list with a component named cluster which contains the grouping of observations.
 
+pID <- "8BR53W" # XCR1-DTx
+versionID <- 1
+
 # get populations and show maps
 devtools::load_all("../")
-cciaUse("~/cecelia/dev", initConda = FALSE, projectsDir = projectsDir)
+cciaUse("~/cecelia/dev", initConda = FALSE)
 
 # init ccia object
 cciaObj <- initCciaObject(
-  pID = pID, uID = "2yQFlk", versionID = versionID, initReactivity = FALSE
+  pID = pID, uID = "ZXcUMO", versionID = versionID, initReactivity = FALSE
 )
 
-uIDs <- c("mDNMiG")
+# get experimental info
+exp.info <- as.data.table(cciaObj$summary(withSelf = FALSE, fields = c("Attr")))
+uIDs <- exp.info[Include == "Y"]$uID
+
+# sample uIDs
+# Error: vector memory limit of 16.0 Gb reached, see mem.maxVSize()
+uIDs <- sample(uIDs, 6)
 
 modelMeasurements <- c("live.cell.speed", "live.cell.angle")
 set.seed(28)
 
 # get DT for HMM fit
 tracks.DT <- tracks.build.hmm.dt(
-  cciaObj, uIDs, "live", c("default/tracked"),
+  cciaObj, uIDs, "live", c("tcells.gBT/tracked", "tcells.gDT/tracked"),
   modelMeasurements, noiseFilterMeasurements = 5
 )
 ```
 
 
-```{r fig_HMM_nbclust, fig.height = 5, fig.width = 7}
+```{r}
 get.hmm <- function(DT, k = 1) {
   hmm_model <- depmixS4::depmix(
     lapply(
@@ -135,6 +156,12 @@ get.hmm <- function(DT, k = 1) {
   list(cluster = hmm_predict$state)
 }
 
-factoextra::fviz_nbclust(tracks.DT, get.hmm, method = "silhouette")
+hmm.elbow <- factoextra::fviz_nbclust(tracks.DT, get.hmm, method = "silhouette")
+```
+
+```{r fig_HMM_nbclust, fig.height = 5, fig.width = 7}
+pdf(file.path(anaDir, "hmm_elbow.pdf"), height = 3, width = 5)
+hmm.elbow
+dev.off()
 ```
 

@@ -1977,11 +1977,12 @@ CciaImage <- R6::R6Class(
     #' @param concavity numeric to define concavity for concave hull
     #' @param splitWindowBy character to split windowDT
     #' @param popWindow data.frame to define window for population
+    #' @param marksAsPop boolean to set marks as pop only
     #' @param ... passed to self$popDT
     ppp = function(windowPops = NULL, pops = NULL, usePops = NULL,
                    usePhysicalScale = TRUE, hullType = "convex",
                    concavity = 2, splitWindowBy = NULL,
-                   popWindow = NULL, ...) {
+                   popWindow = NULL, marksAsPop = FALSE, ...) {
       # get popDT
       popDT <- self$popDT(pops = pops, ...)
       
@@ -2009,8 +2010,7 @@ CciaImage <- R6::R6Class(
       pointsDF <- data.frame(
         x = popDT$centroid_x,
         y = popDT$centroid_y,
-        # m = factor(popDT$pop) 
-        m = popDT[, c("label", "pop")] 
+        m = if (!marksAsPop) popDT[, c("label", "pop")] else factor(popDT$pop)
       )
       
       if (nrow(pointsDF) > 0) {
@@ -2063,7 +2063,7 @@ CciaImage <- R6::R6Class(
         # define cell IDs as colnames
         colnames(intensity_matrix) <- popDT$label
         
-        # Construct a dummy metadata (phenotypes, x/y coordinates)
+        # construct a dummy metadata (phenotypes, x/y coordinates)
         # the order of the elements in these vectors correspond to the cell order 
         # in `intensity matrix`
         # TODO this is 2D for now

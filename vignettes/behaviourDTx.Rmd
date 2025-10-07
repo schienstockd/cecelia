@@ -9,6 +9,11 @@ renv::load("~/R-workspace/cecelia/")
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
+```{r}
+a <- readRDS("/Volumes/QUACK1/DOHERTY/CECELIA/projects/Lq0joh/ANALYSIS/11/IIIII0/ccid.rds")
+```
+
+
 ## Show transition states of live cell imaging
 
 ```{r}
