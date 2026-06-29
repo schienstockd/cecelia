@@ -1,4 +1,5 @@
 # *DO NOT USE*
+Still working on proper setup 
 
 # Cecelia Pineapple
 
