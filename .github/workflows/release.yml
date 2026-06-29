@@ -1,0 +1,79 @@
+name: Release
+
+# SKELETON — builds per-platform installers and attaches them to a GitHub Release on tag push.
+# The installer build itself is not implemented yet (see docs/SHIPPING.md → "Building installers"
+# and Phase 2). Right now this exercises the pipeline shape (checkout → env → frontend build →
+# installer step → upload) and produces a placeholder artifact. When the installer lands, replace
+# the "Build installer" step with the real command (pixi-pack the env + bundle Julia/app/dist +
+# menuinst desktop shortcut).
+#
+# Only Linux runs today; macOS and Windows are wired but commented — uncomment them once their
+# installer build is implemented and you can run it on those runners (no hardware needed; the
+# GitHub runner is the build machine).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # create the Release and upload assets
+
+jobs:
+  build:
+    name: Build installer (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          # - os: macos-latest      # TODO (Phase 2): enable when the macOS installer build exists
+          #   platform: macos
+          # - os: windows-latest    # TODO (Phase 2): enable when the Windows installer build exists
+          #   platform: windows
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      - name: Install Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build installer  # TODO (Phase 2) — replace with the real per-platform build
+        shell: bash
+        run: |
+          echo "TODO: build the ${{ matrix.platform }} installer."
+          echo "Plan (docs/SHIPPING.md → Building installers): pixi-pack the env + bundle"
+          echo "Julia + app source + frontend/dist + app.py, plus a menuinst desktop shortcut."
+          mkdir -p dist-installer
+          echo "Cecelia ${{ github.ref_name }} (${{ matrix.platform }}) — installer not built yet" \
+            > "dist-installer/PLACEHOLDER-${{ matrix.platform }}.txt"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cecelia-${{ matrix.platform }}-${{ github.ref_name }}
+          path: dist-installer/
+
+  # TODO (Phase 2): a `release` job that needs: [build], downloads all artifacts, and attaches
+  # them to a GitHub Release (e.g. softprops/action-gh-release) for the pushed tag.

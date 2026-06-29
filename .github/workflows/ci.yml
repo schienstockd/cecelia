@@ -1,0 +1,69 @@
+name: CI
+
+# Smoke test: prove a *fresh checkout* installs and runs end-to-end —
+# Pixi env → Julia deps → frontend build → server starts → /api/health responds
+# → the server serves the built frontend. This is the "does a clean clone work?" gate.
+#
+# It is deliberately heavy (it installs the real analysis env incl. torch cu124), so the Pixi
+# env is cached on pixi.lock. Runs on pushes/PRs to main and on demand.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    name: Fresh checkout → install → build → server health
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installs Pixi and materialises the default environment from pixi.lock (cached).
+      - name: Install Pixi + Python env
+        uses: prefix-dev/setup-pixi@v0
+        with:
+          pixi-version: v0.71.1
+          cache: true
+
+      # Julia stays on juliaup/this action in dev + CI (not in the Pixi env). pixi run inherits PATH.
+      - name: Install Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Instantiate the *server* project (api → pulls Cecelia from ../app). This precompiles
+      # everything the server loads (incl. PythonCall/CondaPkg on first use — see TODO #00056).
+      - name: Instantiate Julia (server env)
+        run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Start server and verify health + frontend serving
+        run: |
+          set -uo pipefail
+          pixi run prod > server.log 2>&1 &
+          # Wait up to ~4 min for the API (first request JIT-compiles the handler).
+          for i in $(seq 1 120); do
+            curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          echo "== /api/health =="
+          curl -fsS http://localhost:8080/api/health \
+            || { echo "server never became healthy"; cat server.log; exit 1; }
+          echo
+          echo "== / (server-served frontend) =="
+          curl -fsS -o /dev/null -w "%{http_code} %{content_type}\n" http://localhost:8080/
+          pixi run stop || true
