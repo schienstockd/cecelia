@@ -1,0 +1,9 @@
+{
+  "task": "bayesianTrackMeasures",
+  "fun_name": "tracking.bayesian_track_measures",
+  "label": "Bayesian Track + Measures",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "default",
+  "composite": ["tracking.bayesian_tracking", "tracking.track_measures"]
+}

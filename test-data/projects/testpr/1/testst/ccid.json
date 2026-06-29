@@ -1,0 +1,10 @@
+{
+    "class": "CciaSet",
+    "uid": "testst",
+    "name": "fixture set",
+    "kind": "static",
+    "image_uids": [
+        "KDIeEm"
+    ],
+    "meta": {}
+}

@@ -1,0 +1,10 @@
+{
+  "task": "afDriftCorrect",
+  "fun_name": "cleanupImages.afDriftCorrect",
+  "label": "AF + Drift Correction",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "default",
+  "composite": ["cleanupImages.afCorrect", "cleanupImages.driftCorrect"],
+  "outputValueName": "driftCorrected"
+}

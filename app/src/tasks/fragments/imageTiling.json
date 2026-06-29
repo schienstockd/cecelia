@@ -1,0 +1,42 @@
+[
+  {
+    "key": "blockSize",
+    "label": "Tile size (px)",
+    "type": "int",
+    "min": 64,
+    "max": 4096,
+    "step": 64,
+    "default": 512,
+    "tip": "XY tile size in pixels. Larger tiles use more RAM but reduce seam effects."
+  },
+  {
+    "key": "overlap",
+    "label": "Tile overlap (px)",
+    "type": "int",
+    "min": 0,
+    "max": 256,
+    "step": 8,
+    "default": 64,
+    "tip": "XY overlap between tiles."
+  },
+  {
+    "key": "blockSizeZ",
+    "label": "Z tile size (slices)",
+    "type": "int",
+    "min": 0,
+    "max": 500,
+    "step": 1,
+    "default": 0,
+    "tip": "Number of Z slices per tile (0 = whole stack)."
+  },
+  {
+    "key": "overlapZ",
+    "label": "Z tile overlap (slices)",
+    "type": "int",
+    "min": 0,
+    "max": 50,
+    "step": 1,
+    "default": 0,
+    "tip": "Z overlap between tiles (future use)."
+  }
+]

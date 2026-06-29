@@ -1,0 +1,103 @@
+{
+  "task": "bayesianTracking",
+  "fun_name": "tracking.bayesian_tracking",
+  "label": "Bayesian Tracking",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "field": "labels",
+      "default": "default",
+      "tip": "The segmentation (label set) whose cells to track."
+    },
+    {
+      "key": "popsToTrack",
+      "label": "Population",
+      "type": "popSelection",
+      "popType": "flow",
+      "default": "NONE",
+      "tip": "Track the whole segmentation (NONE) or only the cells of a gated flow population."
+    },
+    {
+      "key": "maxSearchRadius",
+      "label": "Max search radius",
+      "type": "int",
+      "min": 1,
+      "max": 200,
+      "step": 1,
+      "default": 20,
+      "tip": "Maximum distance (px) a cell may move between consecutive frames."
+    },
+    {
+      "key": "maxLost",
+      "label": "Allowed gaps",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 3,
+      "tip": "Maximum number of frames a track may be missing before it is ended."
+    },
+    {
+      "key": "trackBranching",
+      "label": "Track branching",
+      "type": "bool",
+      "default": false,
+      "tip": "Allow cell division / branching hypotheses."
+    },
+    {
+      "key": "minTimepoints",
+      "label": "Minimum timepoints",
+      "type": "int",
+      "min": 1,
+      "max": 20,
+      "step": 1,
+      "default": 5,
+      "tip": "Discard tracks shorter than this many timepoints."
+    },
+    {
+      "key": "accuracy",
+      "label": "Accuracy",
+      "type": "float",
+      "min": 0.01,
+      "max": 1,
+      "step": 0.01,
+      "default": 0.8,
+      "tip": "Motion-model accuracy (scaled internally)."
+    },
+    {
+      "key": "probToAssign",
+      "label": "Prob. to assign track",
+      "type": "float",
+      "min": 0.01,
+      "max": 1.0,
+      "step": 0.01,
+      "default": 0.8,
+      "tip": "Probability of assigning a detection to an existing track."
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "noiseInital",        "label": "Initial noise",        "type": "int",   "min": 1,     "max": 500, "step": 1,     "default": 300, "tip": "Multiplier for the motion model initial covariance (P)." },
+        { "key": "noiseProcessing",    "label": "Processing noise",     "type": "int",   "min": 1,     "max": 200, "step": 1,     "default": 100, "tip": "Multiplier for the motion model process noise (G)." },
+        { "key": "noiseMeasurements",  "label": "Measurement noise",    "type": "int",   "min": 1,     "max": 200, "step": 1,     "default": 100, "tip": "Multiplier for the motion model measurement noise (R)." },
+        { "key": "distThresh",         "label": "Distance threshold",   "type": "float", "min": 1,     "max": 50,  "step": 0.2,   "default": 10,  "tip": "Hypothesis-model distance threshold (physical units)." },
+        { "key": "timeThresh",         "label": "Time threshold",       "type": "int",   "min": 1,     "max": 20,  "step": 1,     "default": 5,   "tip": "Hypothesis-model time threshold (frames)." },
+        { "key": "segmentationMissRate","label": "Segmentation miss rate","type": "float","min": 0.001,"max": 0.2, "step": 0.001, "default": 0.1, "tip": "Prior probability that a cell is undetected in a frame." },
+        { "key": "lambdaLink",         "label": "Lambda link",          "type": "int",   "min": 1,     "max": 20,  "step": 1,     "default": 5,   "tip": "Hypothesis-model link-events rate." },
+        { "key": "lambdaBranch",       "label": "Lambda branch",        "type": "int",   "min": 1,     "max": 100, "step": 1,     "default": 50,  "tip": "Hypothesis-model branching-events rate." },
+        { "key": "lambdaTime",         "label": "Lambda time",          "type": "int",   "min": 1,     "max": 20,  "step": 1,     "default": 5,   "tip": "Hypothesis-model time factor." },
+        { "key": "lambdaDist",         "label": "Lambda dist",          "type": "float", "min": 1,     "max": 50,  "step": 0.2,   "default": 5,   "tip": "Hypothesis-model distance factor." },
+        { "key": "thetaTime",          "label": "Theta time",           "type": "int",   "min": 1,     "max": 20,  "step": 1,     "default": 5,   "tip": "Hypothesis-model time threshold." },
+        { "key": "thetaDist",          "label": "Theta dist",           "type": "float", "min": 1,     "max": 50,  "step": 0.2,   "default": 5,   "tip": "Hypothesis-model distance threshold." }
+      ]
+    }
+  ]
+}

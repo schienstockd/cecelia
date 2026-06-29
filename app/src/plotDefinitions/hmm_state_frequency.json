@@ -1,0 +1,22 @@
+{
+  "id": "hmm_state_frequency",
+  "label": "HMM state frequency",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["frequency", "stacked", "stacked100"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "live",
+    "granularity": "cell",
+    "measure": "live.cell.hmm.state.movement",
+    "measureOptions": [
+      "live.cell.hmm.state.movement",
+      "track_generation",
+      "track_state"
+    ]
+  },
+  "scopeModes": ["per_image", "summarised"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

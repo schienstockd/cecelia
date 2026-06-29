@@ -1,0 +1,238 @@
+{
+  "task": "afCorrect",
+  "fun_name": "cleanupImages.afCorrect",
+  "label": "AF Correction",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to correct",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "imFilepath",
+      "tip": "Select which image version to apply AF correction to."
+    },
+    {
+      "key": "afCombinations",
+      "label": "Channel combinations",
+      "type": "group",
+      "repeatable": true,
+      "labelKey": "quotientChannel",
+      "default": {},
+      "tip": "Add one entry per channel. Set the AF reference channels (Division channels) for each.",
+      "params": [
+        {
+          "key": "quotientChannel",
+          "label": "Channel to correct",
+          "type": "channelSelection",
+          "multiple": false,
+          "default": [],
+          "tip": "The channel whose autofluorescence will be corrected."
+        },
+        {
+          "key": "divisionChannels",
+          "label": "Division channels (AF reference)",
+          "type": "channelSelection",
+          "multiple": true,
+          "default": [],
+          "tip": "Channels whose signal is used as the autofluorescence reference for correction."
+        },
+        {
+          "key": "advanced",
+          "label": "Advanced",
+          "type": "section",
+          "collapsed": true,
+          "params": [
+            {
+              "key": "correctionMode",
+              "label": "Correction mode",
+              "type": "select",
+              "default": "divide",
+              "options": [
+                { "label": "Divide",  "value": "divide" },
+                { "label": "None",    "value": "none" }
+              ],
+              "tip": "How to apply the AF correction: divide the channel by the reference."
+            },
+            {
+              "key": "channelPercentile",
+              "label": "Channel percentile",
+              "type": "float",
+              "min": 0,
+              "max": 100,
+              "step": 0.5,
+              "default": 60,
+              "tip": "Percentile used to subtract background from the target channel before correction."
+            },
+            {
+              "key": "correctionPercentile",
+              "label": "Correction percentile",
+              "type": "float",
+              "min": 0,
+              "max": 100,
+              "step": 0.5,
+              "default": 95,
+              "tip": "Percentile used to subtract background from the reference (AF) channel."
+            },
+            {
+              "key": "summaryMode",
+              "label": "Summary mode",
+              "type": "select",
+              "default": "maximum",
+              "options": [
+                { "label": "Maximum",    "value": "maximum" },
+                { "label": "Percentile", "value": "percentile" }
+              ],
+              "tip": "How multiple reference channels are combined into a single AF image."
+            },
+            {
+              "key": "summaryPercentile",
+              "label": "Summary percentile",
+              "type": "float",
+              "min": 0,
+              "max": 100,
+              "step": 0.5,
+              "default": 75,
+              "tip": "Percentile used when Summary mode is Percentile."
+            },
+            {
+              "key": "correctionMin",
+              "label": "Correction min percentile",
+              "type": "float",
+              "min": 0,
+              "max": 50,
+              "step": 0.5,
+              "default": 0,
+              "tip": "Lower percentile for rescaling the corrected image."
+            },
+            {
+              "key": "correctionMax",
+              "label": "Correction max percentile",
+              "type": "float",
+              "min": 50,
+              "max": 100,
+              "step": 0.5,
+              "default": 100,
+              "tip": "Upper percentile for rescaling the corrected image."
+            },
+            {
+              "key": "generateInverse",
+              "label": "Generate inverse channel",
+              "type": "bool",
+              "default": false,
+              "tip": "Add an inverse-corrected channel to the output (reverses the AF ratio)."
+            }
+          ]
+        },
+        {
+          "key": "filters",
+          "label": "Filters",
+          "type": "section",
+          "collapsed": true,
+          "params": [
+            {
+              "key": "medianFilter",
+              "label": "Median filter radius",
+              "type": "int",
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 0,
+              "tip": "Apply a median filter of this half-width after correction (0 = off)."
+            },
+            {
+              "key": "topHatRadius",
+              "label": "Top-hat radius",
+              "type": "int",
+              "min": 0,
+              "max": 40,
+              "step": 1,
+              "default": 0,
+              "tip": "Apply white top-hat background subtraction of this radius (0 = off)."
+            },
+            {
+              "key": "rollingBallRadius",
+              "label": "Rolling ball radius",
+              "type": "int",
+              "min": 0,
+              "max": 40,
+              "step": 1,
+              "default": 0,
+              "tip": "Apply rolling ball background subtraction of this radius (0 = off)."
+            },
+            {
+              "key": "rollingBallPadding",
+              "label": "Rolling ball padding",
+              "type": "int",
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 4,
+              "tip": "Edge padding (pixels) used when cropping for rolling ball subtraction."
+            },
+            {
+              "key": "denoiseFun",
+              "label": "Denoise method",
+              "type": "select",
+              "default": "NONE",
+              "options": [
+                { "label": "None",    "value": "NONE" },
+                { "label": "Wavelet", "value": "wavelet" },
+                { "label": "TV",      "value": "tv" }
+              ],
+              "tip": "Apply a denoising filter to this channel before AF correction."
+            },
+            {
+              "key": "waveletMethod",
+              "label": "Wavelet method",
+              "type": "select",
+              "default": "BayesShrink",
+              "options": [
+                { "label": "BayesShrink", "value": "BayesShrink" },
+                { "label": "VisuShrink",  "value": "VisuShrink" }
+              ],
+              "tip": "Wavelet thresholding method (used when Denoise method = Wavelet)."
+            },
+            {
+              "key": "waveletMode",
+              "label": "Wavelet mode",
+              "type": "select",
+              "default": "soft",
+              "options": [
+                { "label": "Soft", "value": "soft" },
+                { "label": "Hard", "value": "hard" }
+              ],
+              "tip": "Wavelet thresholding mode (used when Denoise method = Wavelet)."
+            },
+            {
+              "key": "tvWeight",
+              "label": "TV weight",
+              "type": "int",
+              "min": 0,
+              "max": 20,
+              "step": 1,
+              "default": 10,
+              "tip": "Total-variation denoising weight (used when Denoise method = TV)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "applyGaussian",
+      "label": "Apply Gaussian to corrected channels",
+      "type": "bool",
+      "default": true,
+      "tip": "Apply a Gaussian smoothing filter after AF correction."
+    },
+    {
+      "key": "applyGaussianToOthers",
+      "label": "Apply Gaussian to uncorrected channels",
+      "type": "bool",
+      "default": true,
+      "tip": "Apply Gaussian smoothing to channels that have no AF combination defined."
+    }
+  ]
+}

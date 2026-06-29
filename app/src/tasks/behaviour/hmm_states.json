@@ -1,0 +1,76 @@
+{
+  "task": "hmmStates",
+  "fun_name": "behaviour.hmm_states",
+  "label": "HMM States",
+  "category": "Behaviour",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "set",
+  "params": [
+    {
+      "key": "pops",
+      "label": "Populations",
+      "type": "popSelection",
+      "popType": "live",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Populations to model, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked). One HMM is fitted jointly over all selected populations and all selected images. Pick a segmentation's tracked cells (/_tracked) or a gated population within it."
+    },
+    {
+      "key": "colName",
+      "label": "Name",
+      "type": "text",
+      "default": "default",
+      "tip": "Suffix for the output column: live.cell.hmm.state.<name>."
+    },
+    {
+      "key": "modelMeasurements",
+      "label": "Properties",
+      "type": "labelPropsColsSelection",
+      "multiple": true,
+      "default": ["live.cell.speed", "live.cell.angle"],
+      "tip": "Per-cell measures to model (Gaussian emissions, one per measurement). Tracking measures (live.cell.*) and object measures (intensities by channel, shape) are listed separately."
+    },
+    {
+      "key": "numStates",
+      "label": "Number of states",
+      "type": "int",
+      "min": 2,
+      "max": 10,
+      "step": 1,
+      "default": 2,
+      "tip": "Number of discrete behavioural (hidden) states to fit."
+    },
+    {
+      "key": "filtering",
+      "label": "Filtering",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "noiseFilterMeasurements", "label": "Noise filter window", "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Per-track running-mean window applied to measurements before fitting (0 = off)." },
+        { "key": "postFiltering",           "label": "Post-filter window",  "type": "int", "min": 0, "max": 20, "step": 1, "default": 0, "tip": "Smooth decoded states with a per-track windowed mode (0 = off)." },
+        { "key": "postIterations",          "label": "Post-filter passes",  "type": "int", "min": 1, "max": 5,  "step": 1, "default": 1, "tip": "Number of smoothing passes." }
+      ]
+    },
+    {
+      "key": "normalisation",
+      "label": "Normalisation",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "normaliseMeasurements", "label": "Normalise", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Measurements to divide by a global summary statistic." },
+        { "key": "normaliseTo", "label": "Normalise to", "type": "select", "default": "none",
+          "options": [
+            { "value": "none",   "label": "none" },
+            { "value": "min",    "label": "min" },
+            { "value": "max",    "label": "max" },
+            { "value": "median", "label": "median" },
+            { "value": "mean",   "label": "mean" }
+          ],
+          "tip": "Statistic the normalised measurements are divided by." },
+        { "key": "scaleMeasurements", "label": "Scale (÷ sd)", "type": "labelPropsColsSelection", "multiple": true, "default": [], "tip": "Measurements to divide by their standard deviation (no centring), as in R scale(center=FALSE)." }
+      ]
+    }
+  ]
+}

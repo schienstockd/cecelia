@@ -1,0 +1,275 @@
+{
+  "task": "cellposeSegment",
+  "fun_name": "segment.cellpose",
+  "label": "Cellpose Segmentation",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "gpu-light",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to segment",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Select which image version to segment."
+    },
+    {
+      "key": "outputValueName",
+      "label": "Output label name",
+      "type": "text",
+      "default": "default",
+      "tip": "Name for the output label set. Labels are written to {task_dir}/labels/{name}.zarr."
+    },
+    {
+      "key": "models",
+      "label": "Segmentation models",
+      "type": "group",
+      "repeatable": true,
+      "default": {
+        "0": {
+          "model": "cyto3",
+          "matchAs": "base",
+          "cellChannels": [],
+          "nucChannels": [],
+          "cellDiameter": 10,
+          "normalise": 99.9,
+          "stitchThreshold": 0.0,
+          "threshold": 0,
+          "medianFilter": 0,
+          "gaussianFilter": 0.0
+        }
+      },
+      "tip": "Add one entry per model. Use 'base' + 'nuc' pair for nucleus-anchored segmentation.",
+      "params": [
+        {
+          "key": "model",
+          "label": "Model",
+          "type": "select",
+          "default": "cyto3",
+          "tip": "Cellpose model to use.",
+          "options": [
+            { "label": "Cyto3",   "value": "cyto3" },
+            { "label": "Cyto2",   "value": "cyto2" },
+            { "label": "Cyto",    "value": "cyto" },
+            { "label": "Nuclei",  "value": "nuclei" }
+          ]
+        },
+        {
+          "key": "matchAs",
+          "label": "Match as",
+          "type": "select",
+          "default": "base",
+          "tip": "Role of this model's output. Use one 'base' and one 'nuc' for paired segmentation.",
+          "options": [
+            { "label": "Base (primary)", "value": "base" },
+            { "label": "Nucleus",        "value": "nuc"  }
+          ]
+        },
+        {
+          "key": "cellChannels",
+          "label": "Cell channels",
+          "type": "channelSelection",
+          "multiple": true,
+          "default": [],
+          "tip": "Channels carrying the cell signal (e.g. membrane or cytoplasm marker). Multiple channels are merged via maximum before prediction."
+        },
+        {
+          "key": "nucChannels",
+          "label": "Nucleus channels",
+          "type": "channelSelection",
+          "multiple": true,
+          "default": [],
+          "tip": "Channels carrying the nucleus signal (e.g. DAPI). Leave empty for cytoplasm-only segmentation."
+        },
+        {
+          "key": "cellDiameter",
+          "label": "Cell diameter (µm)",
+          "type": "int",
+          "min": 1,
+          "max": 500,
+          "step": 1,
+          "default": 10,
+          "tip": "Expected cell diameter in µm. Converted to pixels using the physical pixel size from OME metadata."
+        },
+        {
+          "key": "normalise",
+          "label": "Normalise percentile",
+          "type": "float",
+          "min": 50.0,
+          "max": 100.0,
+          "step": 0.1,
+          "default": 99.9,
+          "tip": "Upper percentile for intensity normalisation. Lower values increase sensitivity but may saturate bright objects."
+        },
+        {
+          "key": "advanced",
+          "label": "Advanced",
+          "type": "section",
+          "collapsed": true,
+          "params": [
+            {
+              "key": "stitchThreshold",
+              "label": "Z-stitch threshold",
+              "type": "float",
+              "min": 0.0,
+              "max": 1.0,
+              "step": 0.05,
+              "default": 0.2,
+              "tip": "Cellpose z-stitch threshold. Non-zero enables 2D-per-slice segmentation with inter-slice stitching. 0 = run 2D on each slice independently."
+            },
+            {
+              "key": "threshold",
+              "label": "Intensity threshold",
+              "type": "int",
+              "min": 0,
+              "max": 65535,
+              "step": 1,
+              "default": 0,
+              "tip": "Absolute intensity threshold; pixels below this value are set to 0 before normalisation (0 = off)."
+            },
+            {
+              "key": "medianFilter",
+              "label": "Median filter",
+              "type": "int",
+              "min": 0,
+              "max": 15,
+              "step": 1,
+              "default": 0,
+              "tip": "Median filter kernel size applied before normalisation (0 = off)."
+            },
+            {
+              "key": "gaussianFilter",
+              "label": "Gaussian filter (σ)",
+              "type": "float",
+              "min": 0.0,
+              "max": 10.0,
+              "step": 0.5,
+              "default": 0.0,
+              "tip": "Gaussian blur sigma applied before normalisation (0 = off)."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "labelModifications",
+      "label": "Label modifications",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "matchThreshold",
+          "label": "Nuc-base match threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "default": 0.3,
+          "tip": "IoU threshold for matching nucleus labels to base labels. Only used when both a 'base' and 'nuc' model are present."
+        },
+        {
+          "key": "removeUnmatched",
+          "label": "Remove unmatched cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove base cells that have no matching nucleus (only with nuc+base pair)."
+        },
+        {
+          "key": "minCellSize",
+          "label": "Min cell size (px)",
+          "type": "int",
+          "min": 0,
+          "max": 100000,
+          "step": 10,
+          "default": 0,
+          "tip": "Remove objects smaller than this many pixels (0 = off)."
+        },
+        {
+          "key": "cellSizeMax",
+          "label": "Max cell size (px)",
+          "type": "int",
+          "min": 0,
+          "max": 10000000,
+          "step": 100,
+          "default": 0,
+          "tip": "Remove objects larger than this many pixels (0 = off). Useful for rejecting debris or merged clusters."
+        },
+        {
+          "key": "labelExpansion",
+          "label": "Label expansion (px)",
+          "type": "int",
+          "min": 0,
+          "max": 50,
+          "step": 1,
+          "default": 0,
+          "tip": "Expand label boundaries outward by N pixels (0 = off)."
+        },
+        {
+          "key": "labelErosion",
+          "label": "Label erosion (px)",
+          "type": "int",
+          "min": 0,
+          "max": 50,
+          "step": 1,
+          "default": 0,
+          "tip": "Erode label boundaries inward by N pixels (0 = off)."
+        },
+        {
+          "key": "clearTouchingBorder",
+          "label": "Clear border cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove cells that touch the XY image border."
+        },
+        {
+          "key": "clearDepth",
+          "label": "Clear Z-depth cells",
+          "type": "bool",
+          "default": false,
+          "tip": "Remove cells that touch the first or last Z slice (3D images only). Equivalent to clearTouchingBorder but along the Z axis."
+        }
+      ]
+    },
+    {
+      "key": "imageTiling",
+      "label": "Image tiling",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {"$include": "imageTiling"},
+        {
+          "key": "labelOverlap",
+          "label": "Seam stitch threshold",
+          "type": "float",
+          "min": 0.0,
+          "max": 1.0,
+          "step": 0.05,
+          "default": 0.0,
+          "tip": "IoU threshold for stitching cells split at tile boundaries. Labels on opposite sides of a seam with IoU >= this value are merged into one. 0 = simple max merge (no stitching)."
+        }
+      ]
+    },
+    {
+      "key": "segmentationOptions",
+      "label": "Segmentation options",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "normaliseToWhole",
+          "label": "Global normalisation",
+          "type": "bool",
+          "default": true,
+          "tip": "Use the lowest-resolution level to compute global intensity percentiles. Ensures consistent normalisation across tiles and timepoints."
+        },
+        {
+          "key": "useDask",
+          "label": "Use Dask",
+          "type": "bool",
+          "default": false,
+          "tip": "Load image as a Dask array. Reduces peak RAM on very large images."
+        }
+      ]
+    }
+  ]
+}

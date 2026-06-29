@@ -1,0 +1,145 @@
+/* ── Cecelia design tokens ──────────────────────────────────────────────────── */
+/* Dark-first. The .cc-dark class is always applied at shell level.             */
+
+.cc-dark {
+  /* backgrounds */
+  --cc-bg:         #0f1117;
+  --cc-surface-1:  #161b22;
+  --cc-surface-2:  #21262d;
+  --cc-console-bg: #0d1117;
+
+  /* text */
+  --cc-text:       #e6edf3;
+  --cc-text-dim:   #7d8590;
+
+  /* borders / accents */
+  --cc-border:     #30363d;
+  --cc-accent:     #a78bfa;
+
+  /* monospace */
+  --cc-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
+
+  /* layout sizing */
+  --cc-header-h:       40px;
+  --cc-sidebar-w:      190px;
+  --cc-runner-w:       280px;
+  --cc-console-bar-h:  30px;
+  --cc-console-open-h: 210px;
+}
+
+/* ── Reset / base ──────────────────────────────────────────────────────────── */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  background: #0f1117;
+  color: #e6edf3;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #30363d; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #484f58; }
+
+/* ── PrimeVue tooltip overrides ────────────────────────────────────────────── */
+
+.p-tooltip .p-tooltip-text {
+  font-size: 0.72rem;
+  padding: 0.3rem 0.6rem;
+  background: #21262d;
+  border: 1px solid #30363d;
+  color: #e6edf3;
+  border-radius: 0.3rem;
+  max-width: 280px;
+  line-height: 1.45;
+}
+.p-tooltip-arrow { display: none; }
+
+/* ── Button utilities ──────────────────────────────────────────────────────── */
+/* Use these across all module pages and layout components.                    */
+
+.cc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.28rem 0.65rem;
+  border-radius: 0.35rem;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: filter 0.1s, background 0.1s, color 0.1s;
+  white-space: nowrap;
+  user-select: none;
+}
+.cc-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.cc-btn-primary {
+  background: var(--cc-accent);
+  color: #fff;
+  border-color: var(--cc-accent);
+}
+.cc-btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+
+.cc-btn-ghost {
+  background: var(--cc-surface-2);
+  border-color: var(--cc-border);
+  color: var(--cc-text-dim);
+}
+.cc-btn-ghost:hover:not(:disabled) { color: var(--cc-text); }
+
+/* ── Form controls — modern, consistent base for ALL native inputs ─────────── */
+/* Applies app-wide so bare <select>/<input> look the same everywhere. Components  */
+/* may refine spacing, but should not reintroduce old-school borders/backgrounds.  */
+
+select,
+input[type="text"], input[type="number"], input[type="search"],
+input[type="password"], input[type="email"], textarea {
+  font: inherit;
+  font-size: 0.8rem;
+  color: var(--cc-text);
+  background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border);
+  border-radius: 0.4rem;
+  padding: 0.32rem 0.6rem;
+  transition: border-color 0.12s, box-shadow 0.12s;
+  outline: none;
+}
+select:hover,
+input[type="text"]:hover, input[type="number"]:hover, input[type="search"]:hover,
+input[type="password"]:hover, input[type="email"]:hover, textarea:hover { border-color: #484f58; }
+select:focus,
+input[type="text"]:focus, input[type="number"]:focus, input[type="search"]:focus,
+input[type="password"]:focus, input[type="email"]:focus, textarea:focus {
+  border-color: var(--cc-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-accent) 22%, transparent);
+}
+
+/* native select chevron → custom caret so dropdowns match across browsers */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 1.6rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%237d8590' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.55rem center;
+  background-size: 0.62rem;
+}
+select option { background: var(--cc-surface-1); color: var(--cc-text); }
+
+/* tinted native widgets to the accent */
+input[type="range"] { accent-color: var(--cc-accent); cursor: pointer; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cursor: pointer; }

@@ -1,0 +1,11 @@
+{
+    "class": "CciaProject",
+    "uid": "testpr",
+    "name": "Cecelia test fixtures",
+    "type": "static",
+    "set_uids": [
+        "testst"
+    ],
+    "createdAt": "2026-06-24T00:00:00",
+    "lastOpenedAt": null
+}

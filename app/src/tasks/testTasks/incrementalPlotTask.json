@@ -1,0 +1,8 @@
+{
+  "fun_name": "testTasks.incrementalPlotTask",
+  "resource_pool": "default",
+  "params": {
+    "label": { "type": "text", "default": "incremental plot" },
+    "debounce_ms": { "type": "int", "default": 500, "min": 0, "max": 10000 }
+  }
+}

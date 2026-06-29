@@ -1,0 +1,24 @@
+# Machine-specific local config
+.env
+
+# Pixi-managed Python env (multi-GB; reproduced from pixi.toml + pixi.lock)
+.pixi/
+
+# CondaPkg.jl local conda envs (PythonCall) — regenerated on demand
+**/.CondaPkg/
+
+# Node / frontend
+frontend/node_modules/
+# frontend/dist is a build artifact (produced by `pixi run build` / CI)
+frontend/dist/
+
+# Python caches
+**/__pycache__/
+*.py[cod]
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+
+# Manifest.toml is intentionally committed — this is an application, so deps are pinned.

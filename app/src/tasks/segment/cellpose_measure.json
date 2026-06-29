@@ -1,0 +1,9 @@
+{
+  "task": "cellposeMeasure",
+  "fun_name": "segment.cellposeMeasure",
+  "label": "Cellpose Segment + Measure",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "gpu-light",
+  "composite": ["segment.cellpose", "segment.measureLabels"]
+}

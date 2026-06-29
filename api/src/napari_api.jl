@@ -1,0 +1,569 @@
+# ── Napari bridge (API layer) ──────────────────────────────────────────────────
+# One global NapariViewer per server process. Lifecycle: lazy-create on first
+# open request. The package's launch!() handles the bridge process internally.
+
+const _viewer_ref      = Ref{Union{NapariViewer,Nothing}}(nothing)
+const _viewer_lock     = ReentrantLock()
+const _pending_open    = Ref{Any}(nothing)
+const _viewer_starting = Ref(false)
+
+# Track what's currently open so we can auto-save before switching images
+const _current_zarr_path = Ref{Union{String,Nothing}}(nothing)
+const _current_task_dir  = Ref{Union{String,Nothing}}(nothing)
+
+# coerce a JSON value (Int/Float/String/null) to a non-negative Int; blank/garbage → 0.
+# Used for the z-window dial, which can arrive as null (empty input) or a float.
+function _to_int(x)::Int
+    x === nothing && return 0
+    x isa Integer && return max(0, Int(x))
+    x isa Real    && return max(0, round(Int, x))
+    x isa AbstractString && return (n = tryparse(Int, x); n === nothing ? 0 : max(0, n))
+    0
+end
+
+function _props_path(task_dir::String, zarr_path::String)::String
+    joinpath(task_dir, "data", basename(zarr_path) * ".pkl")
+end
+
+function _try_save_layer_props!(v::NapariViewer, task_dir::String, zarr_path::String)
+    try
+        props_file = _props_path(task_dir, zarr_path)
+        mkpath(dirname(props_file))
+        send(v, Dict{String,Any}("type" => "save_layer_props", "path" => props_file))
+        @info "Auto-saved layer props" props_file
+    catch e
+        @warn "Auto-save layer props failed" exception = e
+    end
+end
+
+function _try_load_layer_props!(v::NapariViewer, task_dir::String, zarr_path::String)
+    try
+        props_file = _props_path(task_dir, zarr_path)
+        isfile(props_file) || return
+        send(v, Dict{String,Any}("type" => "load_layer_props", "path" => props_file))
+        @info "Auto-loaded layer props" props_file
+    catch e
+        @warn "Auto-load layer props failed" exception = e
+    end
+end
+
+function _viewer()::Union{NapariViewer,Nothing}
+    _viewer_ref[]
+end
+
+function _viewer_alive()::Bool
+    v = _viewer_ref[]
+    isnothing(v) && return false
+    try; send(v, Dict("type" => "ping")); true; catch; false; end
+end
+
+function _ensure_viewer!()::Bool
+    lock(_viewer_lock) do
+        _viewer_alive() && return true
+        _viewer_starting[] && return false
+        # Adopt a bridge already listening on the port (e.g. one that survived a server
+        # restart) instead of spawning a duplicate — two bridges would fight over port 7655,
+        # sending commands to one window while the user looks at the other.
+        if _viewer_ref[] === nothing
+            probe = NapariViewer()
+            try
+                send(probe, Dict("type" => "ping"))
+                _viewer_ref[] = probe
+                @info "Adopted existing Napari bridge on port $(probe.port)"
+                return true
+            catch
+                # none running — fall through to launch a fresh one
+            end
+        end
+        @info "Launching Napari bridge..."
+        v = NapariViewer()
+        _viewer_ref[] = v
+        _viewer_starting[] = true
+        @async begin
+            try
+                launch!(v)   # blocks until bridge is up
+                _execute_pending_open()
+            catch e
+                @warn "Napari launch failed" exception = e
+            finally
+                lock(_viewer_lock) do; _viewer_starting[] = false; end
+            end
+        end
+        false
+    end
+end
+
+function _execute_pending_open()
+    pending = lock(_viewer_lock) do
+        p = _pending_open[]
+        _pending_open[] = nothing
+        p
+    end
+    isnothing(pending) && return
+    v = _viewer()
+    isnothing(v) && return
+    try
+        # Re-resolve _active at fire time — a task may have completed between the
+        # eye-button click and Napari becoming ready.
+        meta_file = joinpath(pending.proj_dir, "1", pending.image_uid, "ccid.json")
+        raw       = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+        filename  = versioned_get_field(raw, "filepath", nothing)   # nothing → _active
+        zarr_path = joinpath(pending.proj_dir, "0", pending.image_uid, string(something(filename, "")))
+        ch_raw    = versioned_get_field(raw, "imChannelNames", nothing)
+        ch_names  = (ch_raw isa AbstractVector) ? collect(String, ch_raw) : nothing
+        task_dir  = joinpath(pending.proj_dir, "1", pending.image_uid)
+
+        p_show_3d       = hasproperty(pending, :show_3d)          ? pending.show_3d          : false
+        p_as_dask       = hasproperty(pending, :as_dask)          ? pending.as_dask          : true
+        p_show_labels = hasproperty(pending, :show_labels) ? pending.show_labels : false
+        p_all_labels  = hasproperty(pending, :all_labels)  ? pending.all_labels  : Dict{String,Vector{String}}()
+        _do_open!(v, zarr_path, task_dir, ch_names; show_3d = p_show_3d, as_dask = p_as_dask)
+        _current_zarr_path[] = zarr_path
+        _current_task_dir[]  = task_dir
+
+        if p_show_labels && !isempty(p_all_labels)
+            _show_all_labels!(v, p_all_labels, true)
+        end
+
+        if hasproperty(pending, :auto_load_props) && pending.auto_load_props
+            _try_load_layer_props!(v, task_dir, zarr_path)
+        end
+
+        @info "Napari opened image" image_uid=pending.image_uid zarr_path
+        broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => pending.image_uid))
+    catch e
+        @warn "Failed to open pending image in Napari" exception = e
+    end
+end
+
+function _do_open!(v::NapariViewer, zarr_path::String, task_dir::String,
+                   ch_names::Union{Vector{String},Nothing};
+                   show_3d::Bool = false, as_dask::Bool = true)
+    send(v, Dict{String,Any}("type" => "set_task_dir", "path" => task_dir))
+    cmd = Dict{String,Any}("type"=>"open_image", "path"=>zarr_path,
+                           "show_3d"=>show_3d, "as_dask"=>as_dask, "visible"=>true)
+    isnothing(ch_names) || (cmd["channel_names"] = ch_names)
+    send(v, cmd)
+end
+
+# ── Label helpers ────────────────────────────────────────────────────────────
+
+# Parse allLabels dict from a request body: {valueName → [file, ...]}
+function _parse_all_labels(data)::Dict{String,Vector{String}}
+    raw = get(data, :allLabels, nothing)
+    raw isa AbstractDict || return Dict{String,Vector{String}}()
+    Dict{String,Vector{String}}(
+        String(k) => (v isa AbstractVector ? collect(String, v) : String[string(v)])
+        for (k, v) in raw
+    )
+end
+
+# Show or hide all label sets in napari. A failure on one set is logged and collected so it
+# doesn't prevent the others from loading, but errors are NOT swallowed: any failures are
+# re-raised as an aggregate so the caller surfaces them (→ 500 + server log) instead of the
+# toggle silently doing nothing. (A genuinely missing zarr is skipped bridge-side without
+# raising — see napari_bridge.show_labels — so this only fires on real load errors.)
+function _show_all_labels!(v::NapariViewer, all_labels::Dict{String,Vector{String}}, show::Bool)
+    errs = String[]
+    for (vn, files) in all_labels
+        try
+            show_labels!(v; value_name = vn, label_files = files, show_labels = show)
+        catch e
+            @warn "show_labels failed" value_name=vn files=files exception=(e, catch_backtrace())
+            push!(errs, "$vn: $(sprint(showerror, e))")
+        end
+    end
+    isempty(errs) || error("show_labels failed for: " * join(errs, "; "))
+end
+
+# ── REST: POST /api/napari/open ───────────────────────────────────────────────
+
+function api_napari_open(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid,   ""))
+    value_name_raw = get(data, :valueName, nothing)
+    value_name     = isnothing(value_name_raw) ? nothing : String(value_name_raw)
+    auto_save       = Bool(get(data, :autoSaveProps,   false))
+    auto_load       = Bool(get(data, :autoLoadProps,   false))
+    show_3d         = Bool(get(data, :show3D,          false))
+    as_dask         = Bool(get(data, :asDask,          true))
+    show_labels_req = Bool(get(data, :showLabels, false))
+    all_labels      = _parse_all_labels(data)
+
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isempty(image_uid)   && return 400, JSON3.write((; error = "imageUid required"))
+
+    proj_dir  = joinpath(projects_dir(), project_uid)
+    meta_file = joinpath(proj_dir, "1", image_uid, "ccid.json")
+    isdir(proj_dir)   || return 404, JSON3.write((; error = "Project not found: $project_uid"))
+    isfile(meta_file) || return 404, JSON3.write((; error = "Image metadata not found: $image_uid"))
+
+    raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+
+    filename = versioned_get_field(raw, "filepath", value_name)
+    if isnothing(filename)
+        vn_label = isnothing(value_name) ? "active" : value_name
+        return 404, JSON3.write((; error = "No filepath registered (valueName=$vn_label). Run a conversion task first."))
+    end
+
+    zarr_path = joinpath(proj_dir, "0", image_uid, string(filename))
+    isdir(zarr_path) || return 404, JSON3.write((; error = "Zarr not found on disk: $zarr_path"))
+
+    ch_raw = versioned_get_field(raw, "imChannelNames", value_name)
+    # Fall back to default channel names when the correction has no dedicated entry
+    if isnothing(ch_raw) && !isnothing(value_name)
+        ch_raw = versioned_get_field(raw, "imChannelNames", nothing)
+    end
+    ch_names = (ch_raw isa AbstractVector) ? collect(String, ch_raw) : nothing
+    task_dir = joinpath(proj_dir, "1", image_uid)
+
+    alive = _ensure_viewer!()
+    if !alive
+        lock(_viewer_lock) do
+            _pending_open[] = (; proj_dir, image_uid,
+                                 auto_load_props = auto_load,
+                                 show_3d, as_dask,
+                                 show_labels     = show_labels_req,
+                                 all_labels)
+        end
+        return 202, JSON3.write((; starting = true,
+            message = "Napari is starting — the image will open automatically."))
+    end
+
+    v = _viewer()
+    isnothing(v) && return 500, JSON3.write((; error = "Viewer not initialised"))
+    try
+        # Auto-save layer props for the currently open image before switching
+        if auto_save && !isnothing(_current_zarr_path[]) && !isnothing(_current_task_dir[])
+            _try_save_layer_props!(v, _current_task_dir[], _current_zarr_path[])
+        end
+
+        _do_open!(v, zarr_path, task_dir, ch_names; show_3d, as_dask)
+        _current_zarr_path[] = zarr_path
+        _current_task_dir[]  = task_dir
+
+        if show_labels_req && !isempty(all_labels)
+            _show_all_labels!(v, all_labels, true)
+        end
+
+        # Auto-load layer props for the newly opened image
+        if auto_load
+            _try_load_layer_props!(v, task_dir, zarr_path)
+        end
+
+        @info "Opened image in Napari" image_uid zarr_path
+        broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => image_uid))
+        200, JSON3.write((; ok = true, imageUid = image_uid))
+    catch e
+        @warn "Failed to open image in Napari" image_uid exception = e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/close ──────────────────────────────────────────────
+
+function api_napari_close(body_bytes::Vector{UInt8})
+    v = _viewer()
+    isnothing(v) && return 200, JSON3.write((; ok = true, message = "Napari was not running"))
+    try
+        close!(v)
+        200, JSON3.write((; ok = true))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/restart ────────────────────────────────────────────
+
+function api_napari_restart(body_bytes::Vector{UInt8})
+    v = _viewer()
+    isnothing(v) && return api_napari_open(body_bytes)
+    try
+        restart!(v)
+        200, JSON3.write((; ok = true))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/show-labels ───────────────────────────────────────
+
+function api_napari_show_labels(body_bytes::Vector{UInt8})
+    data       = JSON3.read(String(body_bytes))
+    show       = Bool(get(data, :showLabels, true))
+    all_labels = _parse_all_labels(data)
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+
+    try
+        _show_all_labels!(v, all_labels, show)
+        200, JSON3.write((; ok = true))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/show-populations ───────────────────────────────────
+# Consumer direction: colour each population's cells as a points layer in napari (ports the
+# old napari_utils.show_pop_mapping). Julia owns membership; the bridge reads centroids from
+# the H5AD locally and only receives label IDs + display attrs. The transient napari-selection
+# pop is deliberately EXCLUDED: it is the *source* of a selection, and re-rendering it as a
+# points layer (on every popmap broadcast) added a new layer that stole napari's active layer,
+# so the user couldn't keep editing the selection shape. It still shows on the flow plots.
+function api_napari_show_populations(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    pop_type    = String(get(data, :popType, "flow"))
+    points_size = get(data, :pointsSize, 6)
+    show        = Bool(get(data, :show, true))     # false → clear all pop layers in napari
+
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+
+    pops = Vector{Dict{String,Any}}()
+    if show
+        m = _live_map(img, vn, pop_type)
+        # include the root (whole segmentation) so all cells are visible/selectable in napari
+        root_labs = Int.(cells_in_pop(m, "root"))
+        isempty(root_labs) || push!(pops, Dict{String,Any}(
+            "path" => "root", "name" => "root", "colour" => "#9ca3af",
+            "show" => true, "is_track" => false, "label_ids" => root_labs))
+        for path in pop_paths(m)
+            p = pop_at(m, path)
+            p.transient && continue           # never render the napari selection back into napari
+            labs = Int.(cells_in_pop(m, path))
+            isempty(labs) && continue
+            push!(pops, Dict{String,Any}(
+                "path" => p.path, "name" => p.name, "colour" => p.colour,
+                "show" => p.show, "is_track" => p.is_track, "label_ids" => labs))
+        end
+    end   # show=false → empty pops → bridge removes the existing pop layers
+    try
+        send(v, Dict{String,Any}("type" => "show_populations", "pop_type" => pop_type,
+            "value_name" => vn, "points_size" => points_size, "pops" => pops))
+        200, JSON3.write((; ok = true, n = length(pops)))
+    catch e
+        @warn "show_populations failed" exception = e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/show-tracks ────────────────────────────────────────
+# Consumer direction: show each track population as a napari Tracks layer (ports the old
+# napari_utils.show_tracks). Julia owns membership — for a `track` map `cells_in_pop` returns the
+# pop's `track_id`s — and the bridge reads the per-cell centroids + t + track_id locally, bin-masks
+# to those track_ids, and calls viewer.add_tracks. Mirrors show-populations (per-pop layers).
+# Show the TRACKS of one or more SEGMENTATIONS (value names), each as its own napari Tracks layer
+# named by its value_name. A segmentation's tracks = its `_tracked` cells (track_id > 0), read
+# directly from the cell h5ad — no gating map needed. `valueNames` lists which segmentations to show
+# (the per-segmentation "directions" toggles in the ViewerPanel); empty → clear all track layers.
+# `colorBy` shades vertices by an obs column (per-segmentation, applied in the bridge).
+function api_napari_show_tracks(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    tail_width  = get(data, :tailWidth, 4)
+    color_by    = String(get(data, :colorBy, ""))  # obs column to shade vertices by ("" → track_id)
+
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+
+    # which segmentations' whole-track overlay (_tracked) to show — the per-segmentation "directions"
+    # toggles. Resolve each against the image's keys.
+    want_raw = get(data, :valueNames, nothing)
+    want = want_raw === nothing ? String[] :
+           String[v for v in String.(want_raw) if haskey(img.label_props, v)]
+    # global toggle (like Show populations): overlay the gated TRACK pops across all segmentations.
+    show_gated = Bool(get(data, :showGatedTracks, false))
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+
+    pops = Vector{Dict{String,Any}}()
+    # 1. whole-segmentation tracks (_tracked = all track_id>0), per per-segmentation toggle. Read
+    #    directly from the cell table — no gating map needed.
+    for vn in want
+        is_reserved_value_name(vn) && continue          # skip __tracks companion tables
+        tdf = try
+            _fetch(img, vn)(["track_id"])
+        catch
+            continue                                     # no track_id column → not tracked
+        end
+        ("track_id" in names(tdf)) || continue
+        tids = unique(Int[Int(t) for t in tdf.track_id if t isa Real && isfinite(t) && t > 0])
+        isempty(tids) && continue
+        push!(pops, Dict{String,Any}(
+            "value_name" => vn, "path" => "/_tracked", "name" => "_tracked",
+            "colour" => "#9ca3af", "show" => true, "track_ids" => tids))
+    end
+    # 2. gated TRACK populations (track-measure gates in `{vn}__tracks.json`, e.g. TEST/SDGF) under
+    #    the global toggle — across ALL segmentations. `cells_in_pop` on a track map → the pop's
+    #    `track_id`s. Shown alongside the per-segmentation `_tracked` layers.
+    if show_gated
+        for vn in versioned_keys(img.label_props)
+            is_reserved_value_name(vn) && continue
+            try
+                tm = _live_map(img, vn, "track")
+                for path in pop_paths(tm)
+                    p = pop_at(tm, path)
+                    p.transient && continue
+                    gtids = unique(Int[Int(t) for t in cells_in_pop(tm, path)])
+                    isempty(gtids) && continue
+                    push!(pops, Dict{String,Any}(
+                        "value_name" => vn, "path" => p.path, "name" => p.name,
+                        "colour" => p.colour, "show" => p.show, "track_ids" => gtids))
+                end
+            catch e
+                @warn "track gates unavailable" value_name = vn exception = e
+            end
+        end
+    end   # empty want + no gated → empty pops → bridge removes the existing track layers
+    try
+        send(v, Dict{String,Any}("type" => "show_tracks",
+            "tail_width" => tail_width, "color_by" => color_by, "pops" => pops))
+        200, JSON3.write((; ok = true, n = length(pops)))
+    catch e
+        @warn "show_tracks failed" exception = e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/colour-labels ──────────────────────────────────────
+# Recolour the open image's Labels layer by an obs column (continuous → viridis, categorical →
+# palette per level), via a DirectLabelColormap in the bridge. `column=""` resets to the default
+# colormap. Ports the old `napari_utils.show_channel_intensity`. Bridge reads the column locally.
+function api_napari_colour_labels(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    column      = String(get(data, :column, ""))   # "" → reset to default labels colormap
+
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    try
+        send(v, Dict{String,Any}("type" => "colour_labels", "value_name" => vn, "column" => column))
+        200, JSON3.write((; ok = true))
+    catch e
+        @warn "colour_labels failed" exception = e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/start-selection ────────────────────────────────────
+# Producer direction: tell the bridge to add a "Cell selection" Shapes layer. When the user
+# draws on it, the bridge resolves which cell centroids fall inside and POSTs them back to
+# /api/napari/event. `apiUrl` is where the bridge reaches this server (default localhost:8080).
+function api_napari_start_selection(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    api_url = String(get(data, :apiUrl, "http://localhost:8080"))
+    # z scope: "slice" restricts the selection to ±zWindow slices around the live z; "stack"
+    # (default) ignores z and selects across the whole stack (docs/NAPARI.md).
+    z_mode   = String(get(data, :zMode, "stack"))
+    z_window = _to_int(get(data, :zWindow, 0))
+    try
+        send(v, Dict{String,Any}("type" => "start_cell_selection",
+            "project_uid" => project_uid, "image_uid" => image_uid,
+            "value_name" => vn, "api_url" => api_url,
+            "z_mode" => z_mode, "z_window" => z_window))
+        200, JSON3.write((; ok = true))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/selection-scope ────────────────────────────────────
+# Change the z scope of the ACTIVE cell selection and re-evaluate the drawn polygon immediately
+# (the bridge re-runs point-in-polygon + z filter and POSTs the new label set back). Lets the
+# gating-bar Z toggle / ± window update the highlighted cells live, without redrawing. No-op in
+# the bridge when no selection is active.
+function api_napari_selection_scope(body_bytes::Vector{UInt8})
+    data     = JSON3.read(String(body_bytes))
+    v = _viewer()
+    isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    z_mode   = String(get(data, :zMode, "stack"))
+    z_window = _to_int(get(data, :zWindow, 0))
+    try
+        send(v, Dict{String,Any}("type" => "update_selection_scope",
+            "z_mode" => z_mode, "z_window" => z_window))
+        200, JSON3.write((; ok = true))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# ── REST: POST /api/napari/stop-selection ─────────────────────────────────────
+# Clear the cell-selection entirely: drop the transient "Napari selection" pop (empty registry +
+# re-broadcast so it leaves the manager/plots) AND remove the "Cell selection" Shapes layer from
+# napari. Used by the manager's trash button — deleting the selection should also take its draw
+# layer with it. Works whether or not napari is alive (layer removal is best-effort).
+function api_napari_stop_selection(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    pop_type    = String(get(data, :popType, "flow"))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+
+    _set_napari_selection!(img._dir, vn, Int[])               # clear the registry
+    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
+    _inject_napari_pop!(m, img)                               # no-op now (selection gone)
+    _broadcast_popmap(project_uid, image_uid, vn, pop_type, m)
+
+    v = _viewer()
+    if v !== nothing
+        # "Cell selection" mirrors SELECTION_LAYER in napari_bridge.py
+        try; send(v, Dict{String,Any}("type" => "remove_layer", "name" => "Cell selection")); catch; end
+    end
+    200, JSON3.write((; ok = true))
+end
+
+# ── REST: POST /api/napari/event ──────────────────────────────────────────────
+# Ingest a napari interaction. Currently `cellSelection`: store the label IDs as the transient
+# selection (keyed by task_dir+value_name) and broadcast the updated tree so the flow plots
+# light up those cells (linked brushing — docs/POPULATION.md). An empty list clears it.
+function api_napari_event(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    evt         = String(get(data, :type, "cellSelection"))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    pop_type    = String(get(data, :popType, "flow"))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+
+    if evt == "cellSelection"
+        raw    = get(data, :labels, Int[])
+        labels = raw isa AbstractVector ? Int[Int(x) for x in raw] : Int[]
+        _set_napari_selection!(img._dir, vn, labels)
+        m = load_pop_map(img; value_name = vn, pop_type = pop_type)
+        _inject_napari_pop!(m, img)
+        _broadcast_popmap(project_uid, image_uid, vn, pop_type, m)
+        return 200, JSON3.write((; ok = true, n = length(labels)))
+    end
+    400, JSON3.write((; error = "Unknown napari event: $evt"))
+end
+
+# ── REST: GET /api/napari/status ──────────────────────────────────────────────
+
+function api_napari_status(req::HTTP.Request)
+    200, JSON3.write((; alive = _viewer_alive(), starting = _viewer_starting[]))
+end

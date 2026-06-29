@@ -1,0 +1,18 @@
+{
+  "id": "transition_matrix",
+  "label": "Transition matrix",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["heatmap"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "live",
+    "granularity": "cell",
+    "measure": "live.cell.hmm.transitions.movement",
+    "measureOptions": [
+      "live.cell.hmm.transitions.movement"
+    ],
+    "matrix": { "mode": "crosstab", "category": "live.cell.hmm.transitions.movement" }
+  },
+  "scopeModes": ["per_image", "summarised"]
+}

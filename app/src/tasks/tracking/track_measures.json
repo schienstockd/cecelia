@@ -1,0 +1,29 @@
+{
+  "task": "trackMeasures",
+  "fun_name": "tracking.track_measures",
+  "label": "Track Measures",
+  "category": "Tracking",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "field": "labels"
+    },
+    {
+      "key": "dims",
+      "label": "Motion dimensions",
+      "type": "motionDimsSelection",
+      "default": "auto",
+      "tip": "Whether speed, turning angle and all track measures are computed in-plane (2D) or in full 3D. 'auto' detects whether the z-axis carries real migration or only jitter and recommends 2D/3D — you can override."
+    },
+    {
+      "key": "forceRecompute",
+      "label": "Force recompute",
+      "type": "bool",
+      "default": false
+    }
+  ]
+}

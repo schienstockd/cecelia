@@ -1,0 +1,10 @@
+{
+  "task": "hmm",
+  "fun_name": "behaviour.hmm",
+  "label": "HMM (states + transitions)",
+  "category": "Behaviour",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "set",
+  "composite": ["behaviour.hmm_states", "behaviour.hmm_transitions"]
+}

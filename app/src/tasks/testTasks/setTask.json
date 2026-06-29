@@ -1,0 +1,22 @@
+{
+  "fun_name": "testTasks.setTask",
+  "task": "setTask",
+  "label": "Test Set Task",
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "waitMs",
+      "label": "Wait (ms)",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 5000
+    },
+    {
+      "key": "message",
+      "label": "Log message",
+      "type": "text",
+      "default": "setTask ran"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+{
+  "task": "cellposeCorrect",
+  "fun_name": "cleanupImages.cellposeCorrect",
+  "label": "Cellpose Correction",
+  "category": "Cleanup",
+  "env": ["local"],
+  "resource_pool": "gpu",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to correct",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Select which image version to correct."
+    },
+    {
+      "key": "models",
+      "label": "Denoise models",
+      "type": "group",
+      "repeatable": true,
+      "default": {
+        "0": {
+          "model": "denoise_cyto3",
+          "modelChannels": [],
+          "modelDiameter": 10
+        }
+      },
+      "tip": "Add one entry per set of channels to denoise. Different channels can use different models and diameters.",
+      "params": [
+        {
+          "key": "model",
+          "label": "Denoise model",
+          "type": "select",
+          "default": "denoise_cyto3",
+          "tip": "Cellpose DenoiseModel variant to apply.",
+          "options": [
+            { "label": "Denoise cyto3",   "value": "denoise_cyto3" },
+            { "label": "Deblur cyto3",    "value": "deblur_cyto3" },
+            { "label": "Upsample cyto3",  "value": "upsample_cyto3" },
+            { "label": "Denoise nuclei",  "value": "denoise_nuclei" },
+            { "label": "Deblur nuclei",   "value": "deblur_nuclei" },
+            { "label": "Upsample nuclei", "value": "upsample_nuclei" },
+            { "label": "None",            "value": "NONE" }
+          ]
+        },
+        {
+          "key": "modelChannels",
+          "label": "Channels",
+          "type": "channelSelection",
+          "multiple": true,
+          "default": [],
+          "tip": "Channels to apply this model to. Each selected channel is processed independently."
+        },
+        {
+          "key": "modelDiameter",
+          "label": "Cell diameter (µm)",
+          "type": "int",
+          "min": 1,
+          "max": 100,
+          "step": 1,
+          "default": 10,
+          "tip": "Expected cell diameter in µm. Converted to pixels using the physical pixel size from OME metadata before passing to Cellpose."
+        }
+      ]
+    }
+  ]
+}

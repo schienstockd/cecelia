@@ -1,0 +1,48 @@
+{
+  "task": "omezarr",
+  "fun_name": "importImages.omezarr",
+  "label": "Convert to OME-ZARR",
+  "category": "import",
+  "env": ["local"],
+  "resource_pool": "io",
+  "params": [
+    {
+      "key": "pyramidScale",
+      "label": "Pyramid scale",
+      "type": "int",
+      "min": 1,
+      "max": 10,
+      "default": 2,
+      "step": 1,
+      "tip": "Number of resolution levels in the image pyramid. Higher values allow smoother zooming for very large images. 2 is suitable for most images."
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "chunkSizeX",
+          "label": "Chunk size X",
+          "type": "int",
+          "min": 64,
+          "max": 2048,
+          "default": 1024,
+          "step": 64,
+          "tip": "Zarr chunk size in the X dimension. Larger chunks improve sequential read performance; smaller chunks improve random access."
+        },
+        {
+          "key": "chunkSizeY",
+          "label": "Chunk size Y",
+          "type": "int",
+          "min": 64,
+          "max": 2048,
+          "default": 1024,
+          "step": 64,
+          "tip": "Zarr chunk size in the Y dimension."
+        }
+      ]
+    }
+  ]
+}

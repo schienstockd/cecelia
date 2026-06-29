@@ -1,0 +1,75 @@
+{
+  "task": "measureLabels",
+  "fun_name": "segment.measureLabels",
+  "label": "Measure Labels",
+  "category": "Segment",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "outputValueName",
+      "label": "Label set to measure",
+      "type": "valueNameSelection",
+      "field": "labels",
+      "default": "default",
+      "tip": "Select which label set to measure. Reads {task_dir}/labels/{name}.zarr and writes {task_dir}/labelProps/{name}.h5ad."
+    },
+    {
+      "key": "intensityValueName",
+      "label": "Image for intensities",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which image version to measure channel intensities from. Can differ from the image used for segmentation."
+    },
+    {
+      "key": "measureOptions",
+      "label": "Measurement options",
+      "type": "section",
+      "collapsed": false,
+      "params": [
+        {
+          "key": "intensityMeasure",
+          "label": "Intensity measure",
+          "type": "select",
+          "default": "mean",
+          "tip": "Statistic to use for per-channel intensity measurement.",
+          "options": [
+            { "label": "Mean",   "value": "mean"   },
+            { "label": "Median", "value": "median" }
+          ]
+        },
+        {
+          "key": "gaussianFilter",
+          "label": "Gaussian pre-smooth (σ)",
+          "type": "float",
+          "min": 0.0,
+          "max": 10.0,
+          "step": 0.5,
+          "default": 0.0,
+          "tip": "Gaussian blur sigma applied to the image before intensity measurement (0 = off)."
+        },
+        {
+          "key": "extendedMeasures",
+          "label": "Extended 3D measures",
+          "type": "bool",
+          "default": false,
+          "tip": "Compute trimesh-based 3D shape descriptors (surface area, sphericity, compactness, ellipsoid axes). Slow but comprehensive for 3D images."
+        },
+        {
+          "key": "saveMeshes",
+          "label": "Save cell meshes",
+          "type": "bool",
+          "default": false,
+          "tip": "Save per-cell triangular meshes to {task_dir}/meshes/{valueName}/. Required for downstream spatial contact analysis."
+        }
+      ]
+    },
+    {
+      "key": "imageTiling",
+      "label": "Image tiling",
+      "type": "section",
+      "collapsed": true,
+      "params": [{"$include": "imageTiling"}]
+    }
+  ]
+}

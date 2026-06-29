@@ -1,0 +1,29 @@
+{
+  "id": "track_measures",
+  "label": "Track measures",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["histogram", "boxplot", "violin", "bar", "strip"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "live",
+    "granularity": "track",
+    "measure": "live.track.speed",
+    "measureOptions": [
+      "live.track.speed",
+      "live.track.displacement",
+      "live.track.trackLength",
+      "live.track.duration",
+      "live.track.straightness",
+      "live.track.displacementRatio",
+      "live.track.outreachRatio",
+      "live.track.meanTurningAngle",
+      "live.track.overallAngle",
+      "live.track.asphericity"
+    ]
+  },
+  "scopeModes": ["per_image", "summarised"],
+  "params": [
+    { "key": "bins", "label": "Bins", "type": "int", "min": 10, "max": 100, "step": 5, "default": 30 }
+  ]
+}

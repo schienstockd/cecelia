@@ -1,0 +1,24 @@
+{
+  "task": "remove",
+  "fun_name": "importImages.remove",
+  "label": "Remove image data",
+  "category": "Manage images",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Image to remove",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which image version to delete from disk."
+    },
+    {
+      "key": "newDefault",
+      "label": "New default",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which version becomes the active image after removal."
+    }
+  ]
+}

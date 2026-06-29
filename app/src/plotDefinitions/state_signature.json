@@ -1,0 +1,19 @@
+{
+  "id": "state_signature",
+  "label": "State signature",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["heatmap"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "live",
+    "granularity": "cell",
+    "measure": "live.cell.speed",
+    "measureOptions": [
+      "live.cell.speed",
+      "live.cell.angle"
+    ],
+    "matrix": { "mode": "profile", "category": "live.cell.hmm.state.movement" }
+  },
+  "scopeModes": ["per_image", "summarised"]
+}

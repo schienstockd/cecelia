@@ -1,0 +1,22 @@
+{
+  "fun_name": "testTasks.imageTask",
+  "task": "imageTask",
+  "label": "Test Image Task",
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "waitMs",
+      "label": "Wait (ms)",
+      "type": "int",
+      "default": 0,
+      "min": 0,
+      "max": 5000
+    },
+    {
+      "key": "message",
+      "label": "Log message",
+      "type": "text",
+      "default": "imageTask ran"
+    }
+  ]
+}

@@ -1,0 +1,409 @@
+<!--
+  One summary plot, rendered with Vega-Lite (theme_classic look). Wraps the shared CanvasPanel chrome
+  (drag/resize/arrange/remove). Generic across modules — no module-specific logic.
+
+  SERIES are the host's selected (segmentation, pop) targets; in CROSS-IMAGE mode (`setUid`) the data
+  is pooled across the selected images (`scope` per_image = one series per image, summarised = pooled).
+  The MEASURE TYPE (numeric/categorical), returned by /api/plot_data, decides which chart types the
+  panel offers; the Vega spec itself is built by plots/vega.ts (one builder per chart type). Data is
+  server-aggregated (binning/counts/stats/downsampled raw points) — docs/API.md, docs/PLOTS.md.
+  Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
+-->
+<script setup lang="ts">
+import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import CanvasPanel from './CanvasPanel.vue'
+import PlotChart from '../plots/PlotChart.vue'
+import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
+import type { ArrangeCmd } from '../../composables/useFloatingPanel'
+import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
+
+const props = defineProps<{
+  index: number; active: boolean; arrange?: ArrangeCmd | null
+  spec: PlotSpec
+  projectUid: string; imageUid: string | null
+  setUid?: string | null               // cross-image: pool across this set's images
+  imageUids?: string[]                 // cross-image: optional image subset (default = whole set)
+  scope?: 'per_image' | 'summarised'   // cross-image scope (default per_image)
+  groupAttr?: string[]                 // group cross-image series by these image attributes (combined; else per-image)
+  series: SeriesTarget[]               // selected (segmentation, pop) targets — each one a series
+  seriesColor: (s: PlotSeries) => string
+  vis?: VisProps                       // visual properties (log scale, legend, point size/opacity)
+  // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
+  // navigation). Seeded lazily from the spec's defaults; written back on user change.
+  ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
+        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total' }
+  collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
+  reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
+  persistKey?: string                  // CanvasPanel geometry persistence key
+}>()
+const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
+const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg'): Promise<string | null> }>('plotRef')
+
+const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
+const measureOpts = computed(() => props.spec.dataSource.measureOptions ?? [props.spec.dataSource.measure])
+// each option reads the persisted panel state, falling back to the spec default; writing persists it.
+const measure = computed<string>({ get: () => props.ui.measure ?? props.spec.dataSource.measure, set: v => (props.ui.measure = v) })
+const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.spec.chartTypes[0], set: v => (props.ui.chartType = v) })
+const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
+const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
+const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorMetric ?? 'ci95', set: v => (props.ui.errorMetric = v) })
+// groupBy: split the measure by a categorical column (generic sub-axis, e.g. HMM state). '' = none.
+// Options are DISCOVERED from the actual obs columns of the selected image+segmentation (so we never
+// offer a column that doesn't exist — that produced an "ignoring unknown columns" warning and an
+// empty split), filtered to categorical-looking names; a spec may add explicit hints that exist.
+const CATEGORICAL_OBS = /(\.hmm\.state\.|\.hmm\.transitions\.|\.clusters?\.|track_generation|track_state)/
+const obsCols = ref<string[]>([])
+async function loadObsCols() {
+  const vn = props.series[0]?.valueName
+  if (!props.imageUid || !vn) { obsCols.value = []; return }
+  try {
+    const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
+    const res = await fetch(`/api/gating/channels?${q}`)
+    obsCols.value = res.ok ? ((await res.json() as { obsColumns?: string[] }).obsColumns ?? []) : []
+  } catch { obsCols.value = [] }
+}
+watch([() => props.imageUid, () => props.series.map(t => t.valueName).join(',')], loadObsCols, { immediate: true })
+const groupByOpts = computed<string[]>(() => {
+  const present = new Set(obsCols.value)
+  const hints = (props.spec.dataSource.groupByOptions ?? []).filter(c => present.has(c))
+  const discovered = obsCols.value.filter(c => CATEGORICAL_OBS.test(c))
+  return [...new Set([...hints, ...discovered])]
+})
+const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => (props.ui.groupBy = v) })
+// drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col)
+watch(groupByOpts, opts => { if (groupBy.value && !opts.includes(groupBy.value)) groupBy.value = '' })
+
+// ── heatmap (matrix) options — generic profile / crosstab grid (docs/PLOTS.md §9) ──
+// profile = measures × category (the discovered categorical column) → "signature" (z-scorable);
+// crosstab = a "from_to" categorical (e.g. HMM transitions) → transition matrix. The category reuses
+// the discovered groupBy options; measures (profile rows) are the spec's measureOptions.
+// a preset that pins its mode (state signature / transition matrix) hides the Mode toggle, so the two
+// plot types keep distinct purposes; a generic heatmap (no pinned mode) shows the toggle.
+const specPinnedMode = computed(() => !!props.spec.dataSource.matrix?.mode)
+const matrixMode = computed<'profile' | 'crosstab'>({
+  get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
+  set: v => (props.ui.matrixMode = v) })
+const zscore = computed<boolean>({ get: () => props.ui.zscore ?? true, set: v => (props.ui.zscore = v) })
+const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
+  get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
+// effective category: the user's chosen column, else the spec's pinned hint (if available), else a
+// sensible default for the mode. Crosstab needs a "from_to" transitions column; profile needs a real
+// multi-level state column — NB `track_state` also contains "state" but is usually constant, so match
+// `.hmm.state.` specifically and never fall back to a bare /state/ (that picked the constant
+// `track_state` → a single "5" column). Transitions are pair-encoded, so they're excluded from the
+// profile fallback.
+const matrixCategory = computed<string>(() => {
+  if (groupBy.value) return groupBy.value
+  const opts = groupByOpts.value
+  if (!opts.length) return ''
+  // the pinned hint only applies in the spec's intended mode (a state column makes no sense for
+  // crosstab; a transitions column makes no sense for profile) — otherwise fall through to the pick.
+  const hint = props.spec.dataSource.matrix?.category
+  const specMode = props.spec.dataSource.matrix?.mode ?? 'profile'
+  if (hint && opts.includes(hint) && matrixMode.value === specMode) return hint
+  const pick = (re: RegExp) => opts.find(o => re.test(o))
+  return matrixMode.value === 'crosstab'
+    ? (pick(/\.hmm\.transitions\.|transition/i) ?? opts[0])
+    : (pick(/\.hmm\.state\./i) ?? opts.find(o => !/transition/i.test(o)) ?? opts[0])
+})
+// the Category dropdown shows the effective default until the user picks one (then it persists).
+const categorySel = computed<string>({ get: () => matrixCategory.value, set: v => (groupBy.value = v) })
+
+// secondary-options popover (Split by + chart-specific control) — keeps the header bar uncluttered
+const optsOpen = ref(false)
+const optsRef = useTemplateRef<HTMLElement>('optsRef')
+const hasOpts = computed(() => groupByOpts.value.length > 0
+  || chartType.value === 'heatmap'
+  || (['histogram', 'bar', 'frequency'] as ChartType[]).includes(chartType.value))
+function onDocClick(e: MouseEvent) {
+  if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false
+}
+onMounted(() => document.addEventListener('mousedown', onDocClick))
+onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+// friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
+const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked' }
+const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
+
+const crossImage = computed(() => !!props.setUid)
+const result = ref<PlotDataResponse | null>(null)
+const loading = ref(false)
+const error = ref('')
+
+// applicable chart types = the spec's allowed set ∩ the charts valid for the detected measure type
+// (docs/PLOTS.md §2). Before the first response (no measureType) just show the spec's set.
+const validCharts = computed<ChartType[]>(() => {
+  const mt = result.value?.measureType
+  if (!mt) return props.spec.chartTypes
+  const ok = new Set(chartsForMeasure(mt))
+  // heatmap is a pooled grid, independent of the measure's numeric/categorical type — always keep it.
+  const v = props.spec.chartTypes.filter(c => ok.has(c) || c === 'heatmap')
+  return v.length ? v : props.spec.chartTypes
+})
+watch(validCharts, v => { if (!v.includes(chartType.value)) chartType.value = v[0] })
+
+// image/set selector shared by every request body (single image vs cross-image set + scope)
+function applyImageSelector(body: Record<string, unknown>) {
+  if (crossImage.value) {
+    body.setUid = props.setUid
+    if (props.imageUids?.length) body.imageUids = props.imageUids
+    body.scope = props.scope ?? 'per_image'
+  } else {
+    body.imageUid = props.imageUid
+  }
+}
+
+async function fetchData() {
+  if (!props.series.length) { result.value = null; return }
+  if (!crossImage.value && !props.imageUid) { result.value = null; return }
+  loading.value = true; error.value = ''
+
+  // matrix/heatmap pools the whole frame into ONE grid, so it's a single request (not the per-popType
+  // series merge below). All targets go under the first target's popType — behaviour heatmaps are
+  // live-only; a target whose pop only exists under another popType would simply contribute no cells.
+  if (chartType.value === 'heatmap') {
+    try {
+      const cat = matrixCategory.value
+      if (!cat) { result.value = null; error.value = 'Pick a Category column (plot options) for the heatmap.'; return }
+      const body: Record<string, unknown> = {
+        projectUid: props.projectUid,
+        popType: props.series[0].popType, granularity: props.spec.dataSource.granularity,
+        chartType: 'matrix', matrixMode: matrixMode.value, category: cat, separator: '_',
+        series: props.series.map(t => ({ valueName: t.valueName, pop: t.pop })),
+        ...(matrixMode.value === 'profile'
+          ? { measures: measureOpts.value, zscore: zscore.value }
+          : { matrixNormalize: matrixNormalize.value }),
+      }
+      applyImageSelector(body)
+      const res = await fetch('/api/plot_data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+      result.value = await res.json() as PlotDataResponse
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e); result.value = null
+    } finally { loading.value = false }
+    return
+  }
+
+  const be = backendChart(chartType.value)         // several charts share one server aggregation
+  try {
+    // Group targets by pop_type — each /api/plot_data request resolves all its series under ONE
+    // pop_type, so a plot mixing `live` (/_tracked) with `track` gates needs one request per group.
+    // The series arrays are concatenated into a single response. (NB: for `histogram` the bin edges
+    // come from the first group; mixing pop_types on a histogram can misalign bars — box/violin/bar/
+    // beeswarm are per-series and unaffected. Tracked as a follow-up if it matters.)
+    const byType = new Map<string, SeriesTarget[]>()
+    for (const t of props.series) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
+
+    const requests = [...byType.entries()].map(async ([pt, targets]) => {
+      const body: Record<string, unknown> = {
+        projectUid: props.projectUid,
+        popType: pt, granularity: props.spec.dataSource.granularity,
+        chartType: be.chartType, measure: measure.value,
+        series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
+        bins: bins.value,
+        normalize: be.normalize ?? normalize.value,
+        rawPoints: be.rawPoints ?? false,
+        ...(groupBy.value ? { groupBy: groupBy.value } : {}),
+        ...(props.collapseSeries ? { collapseSeries: true } : {}),
+        ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+      }
+      applyImageSelector(body)
+      const res = await fetch('/api/plot_data', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+      return await res.json() as PlotDataResponse
+    })
+
+    const parts = await Promise.all(requests)
+    result.value = { ...parts[0], series: parts.flatMap(p => p.series) }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e); result.value = null
+  } finally { loading.value = false }
+}
+
+// errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger
+watch([() => props.series, measure, chartType, bins, normalize, groupBy, () => props.collapseSeries,
+       matrixMode, zscore, matrixNormalize,
+       () => props.imageUid, () => props.setUid, () => props.groupAttr,
+       () => props.imageUids, () => props.scope, () => props.reloadToken], fetchData, { deep: true })
+onMounted(fetchData)
+
+const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
+
+const vis = computed<VisProps>(() => props.vis ?? defaultVis())
+const hasData = computed(() => {
+  const r = result.value
+  if (!r) return false
+  return r.chartType === 'matrix' ? (r.cells?.length ?? 0) > 0 : r.series.length > 0
+})
+
+// the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
+// (chart type, error metric, vis props) recompute here without a refetch.
+const buildOpts = computed<BuildOpts>(() => ({
+  chartType: chartType.value, byImage: byImage.value, normalize: normalize.value,
+  errorMetric: errorMetric.value, colorOf: props.seriesColor,
+  nonNegative: true,               // the measures plotted here are non-negative
+  ...vis.value,                    // logScale, legend, pointSize, pointOpacity
+}))
+
+// ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
+function downloadBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a'); a.href = url; a.download = name; a.click()
+  URL.revokeObjectURL(url)
+}
+function exportAs(kind: string) {
+  const stem = `${props.spec.id}_${measure.value}`.replace(/[^\w.-]+/g, '_')
+  if (kind === 'csv') {
+    if (result.value) downloadBlob(`${stem}.csv`, new Blob([plotDataToCsv(result.value)], { type: 'text/csv' }))
+  } else if (kind === 'png' || kind === 'svg') {
+    plotRef.value?.toImageURL(kind).then(url => {
+      if (!url) return
+      const a = document.createElement('a'); a.href = url; a.download = `${stem}.${kind}`; a.click()
+    })
+  }
+}
+</script>
+
+<template>
+  <CanvasPanel :index="index" :active="active" :arrange="arrange" :title="spec.label"
+               :persist-key="persistKey"
+               @activate="emit('activate', $event)" @remove="emit('remove')">
+    <template #actions>
+      <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid) -->
+      <select v-if="chartType !== 'heatmap'" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
+        <option v-for="m in measureOpts" :key="m" :value="m">{{ m }}</option>
+      </select>
+      <select v-if="validCharts.length > 1" v-model="chartType" class="sp-chart"
+              v-tooltip.bottom="'Chart type'">
+        <option v-for="c in validCharts" :key="c" :value="c">{{ chartLabel(c) }}</option>
+      </select>
+
+      <!-- secondary options (split-by + chart-specific) tucked into a popover to keep the bar tidy -->
+      <div v-if="hasOpts" ref="optsRef" class="sp-pop-wrap">
+        <button class="sp-iconbtn" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
+                v-tooltip.bottom="'Plot options'">
+          <i class="pi pi-sliders-h" />
+        </button>
+        <div v-if="optsOpen" class="sp-pop" :class="{ 'sp-pop--left': chartType === 'heatmap' }" @click.stop>
+          <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
+          <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row"
+                 v-tooltip.left="'Split the measure by a categorical column (e.g. HMM state)'">
+            <span>Split by</span>
+            <select v-model="groupBy">
+              <option value="">none</option>
+              <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
+            </select>
+          </label>
+          <!-- heatmap (matrix) controls: mode · category · z-score (profile) / normalize (crosstab).
+               The Mode toggle is shown only for a GENERIC heatmap; the behaviour presets
+               (state signature = profile, transition matrix = crosstab) pin their mode, so the two
+               plots stay distinct rather than each being able to become the other. -->
+          <template v-if="chartType === 'heatmap'">
+            <label v-if="!specPinnedMode" class="sp-pop-row" v-tooltip.left="'profile = measures × category (signature); crosstab = a from_to column → transition matrix'">
+              <span>Mode</span>
+              <select v-model="matrixMode">
+                <option value="profile">profile</option>
+                <option value="crosstab">crosstab</option>
+              </select>
+            </label>
+            <label v-if="groupByOpts.length" class="sp-pop-row"
+                   v-tooltip.left="'Categorical column: profile columns / crosstab from_to pairs'">
+              <span>Category</span>
+              <select v-model="categorySel">
+                <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
+              </select>
+            </label>
+            <label v-if="matrixMode === 'profile'" class="sp-pop-row"
+                   v-tooltip.left="'Standardise each measure row across categories (comparable signature)'">
+              <span>Z-score rows</span>
+              <input type="checkbox" v-model="zscore" />
+            </label>
+            <label v-else class="sp-pop-row" v-tooltip.left="'Normalise the transition matrix'">
+              <span>Normalize</span>
+              <select v-model="matrixNormalize">
+                <option value="row">row · P(to|from)</option>
+                <option value="col">col · P(from|to)</option>
+                <option value="total">total</option>
+                <option value="none">counts</option>
+              </select>
+            </label>
+          </template>
+          <label v-if="chartType === 'histogram'" class="sp-pop-row">
+            <span>Bins</span>
+            <input type="number" min="5" max="100" step="5" v-model.number="bins" />
+          </label>
+          <label v-else-if="chartType === 'bar'" class="sp-pop-row">
+            <span>Error</span>
+            <select v-model="errorMetric">
+              <option value="ci95">95% CI</option>
+              <option value="sem">SEM</option>
+              <option value="sd">SD</option>
+            </select>
+          </label>
+          <label v-else-if="chartType === 'frequency'" class="sp-pop-row">
+            <span>Proportion</span>
+            <input type="checkbox" v-model="normalize" />
+          </label>
+        </div>
+      </div>
+
+    </template>
+
+    <!-- utility actions live in the footer so the header/controls never clip -->
+    <template #footer>
+      <button class="sp-iconbtn" type="button" @click="emit('duplicate')"
+              v-tooltip.top="'Duplicate this plot (same series + settings) to tweak one thing'">
+        <i class="pi pi-copy" />
+      </button>
+      <select class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result"
+              @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
+        <option value="">⤓ Export</option>
+        <option value="csv">Data (CSV)</option>
+        <option value="png">Image (PNG)</option>
+        <option value="svg">Image (SVG)</option>
+      </select>
+    </template>
+
+    <div class="sp-body">
+      <div v-if="!series.length" class="sp-msg">Select one or more populations (eye icon) to plot.</div>
+      <div v-else-if="error" class="sp-msg sp-err">{{ error }}</div>
+      <div v-else-if="!hasData && loading" class="sp-msg">…</div>
+      <div v-else-if="!hasData" class="sp-msg">No data for the selected populations.</div>
+      <PlotChart v-else ref="plotRef" :data="result" :opts="buildOpts" />
+      <div v-if="loading && hasData" class="sp-loading">…</div>
+    </div>
+  </CanvasPanel>
+</template>
+
+<style scoped>
+.sp-measure { font-size: 12px; max-width: 12rem; }
+.sp-chart { font-size: 12px; max-width: 8rem; }
+.sp-export { font-size: 12px; max-width: 7rem; }
+
+/* compact icon buttons (options / duplicate) */
+.sp-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
+  border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
+.sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
+.sp-iconbtn.on { color: var(--cc-text); border-color: var(--cc-accent); }
+
+/* options popover */
+.sp-pop-wrap { position: relative; display: inline-flex; }
+.sp-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; min-width: 11rem;
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--cc-border);
+  border-radius: 6px; background: var(--cc-surface-2); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+/* heatmap plots hide the measure/chart selects, so the options button is the leftmost control —
+   anchor the popover to the LEFT (open rightward into the panel) so it isn't clipped by the box edge */
+.sp-pop--left { right: auto; left: 0; }
+.sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 12px; color: var(--cc-text-dim); }
+.sp-pop-row select { font-size: 12px; max-width: 7rem; }
+.sp-pop-row input[type="number"] { width: 3.6rem; font-size: 12px; padding: 2px 4px; }
+.sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
+.sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: 12px; text-align: center; padding: 12px; }
+.sp-err { color: var(--cc-danger, #f87171); }
+.sp-loading { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--cc-text-dim); }
+</style>

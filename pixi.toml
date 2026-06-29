@@ -1,0 +1,116 @@
+# Cecelia Pineapple — engine environment (Julia API + Python analysis stack).
+#
+# Pixi manages the **Python analysis env** that the whole engine uses (it was formerly
+# `napari/.venv`, but it is NOT napari-specific — cellpose, measure, btrack, the label-props
+# writer and the napari bridge all share it). The env now lives at the repo-root `.pixi/`,
+# not under `napari/`.
+#
+# Julia stays on juliaup + Manifest; Node stays on fnm. The single rule that makes this work:
+# **run everything via `pixi run <task>`**. Pixi activates this env (prepends `.pixi/envs/.../bin`
+# to PATH), so the Julia server's Python subprocesses and the napari bridge pick up *this*
+# `python3`. That is why no hardcoded env path lives in the Julia code anymore — see
+# `python_bin_path()` (config default `"python3"`) and `app/src/napari.jl`.
+#
+# Full rationale + non-obvious notes: docs/SHIPPING.md.
+
+[workspace]
+name = "cecelia-pineapple"
+channels = ["conda-forge"]
+platforms = ["linux-64", "win-64", "osx-arm64"]
+
+[dependencies]
+python = "3.12.*"
+
+[pypi-dependencies]
+websockets   = ">=16.0"
+napari       = ">=0.7"
+pyqt5        = ">=5.15"
+# Cellpose is PINNED to v3 on purpose: v4 dropped denoise support, and denoising cannot be
+# excised from v3. Do NOT bump to 4.x — it breaks the denoise path. (INSTALL.md's old version
+# table said 4.2.1.1; that was wrong.) See docs/SHIPPING.md.
+cellpose     = "==3.1.1.2"
+zarr         = ">=3.0"
+dask         = ">=2025.0"
+anndata      = ">=0.12"
+scanpy       = ">=1.12"
+numpy        = ">=2.0"
+scipy        = ">=1.17"
+scikit-image = ">=0.24"
+pandas       = ">=2.3"
+trimesh      = ">=4.0"
+btrack       = ">=0.7"
+# Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
+# below and ~/cc-workspace/cecelia/CLUSTERING_PLAN.md.
+leidenalg    = ">=0.10"
+
+# --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
+# The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared
+# per-platform — a global cu124 index would make macOS unsolvable. Keep torch and torchvision
+# on the SAME index (they must match).
+[target.linux-64.pypi-dependencies]
+torch       = { version = ">=2.6", index = "https://download.pytorch.org/whl/cu124" }
+torchvision = { version = ">=0.21", index = "https://download.pytorch.org/whl/cu124" }
+
+[target.win-64.pypi-dependencies]
+torch       = { version = ">=2.6", index = "https://download.pytorch.org/whl/cu124" }
+torchvision = { version = ">=0.21", index = "https://download.pytorch.org/whl/cu124" }
+
+[target.osx-arm64.pypi-dependencies]
+torch       = ">=2.6"
+torchvision = ">=0.21"
+
+# --- Run templates (replace the old scripts/*.sh|.bat launchers) ------------------------------
+# Launch everything via `pixi run <task>` so the activated env's python3 is what the Julia server's
+# subprocesses and the napari bridge pick up. These are cross-platform — julia (juliaup), npm (fnm)
+# and python3 (this env) all resolve on PATH; only the `stop*` tasks are OS-specific (see the
+# [target.win-64.tasks] block below).
+[tasks]
+# Backend — Julia API server (port 8080). NB: api/src/*.jl are NOT Revise-tracked → restart for api edits.
+dev  = { cmd = "julia --project -e 'using Revise; includet(\"src/server.jl\")'", cwd = "api" }  # hot-reload (development)
+prod = { cmd = "julia --project src/server.jl", cwd = "api" }                                    # plain include (production)
+
+# Frontend — Vite (port 5173).
+frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload
+build    = { cmd = "npm run build", cwd = "frontend" }  # static production build
+
+# Napari bridge (port 7655) standalone — normally the backend launches it; run this to debug it alone.
+napari = { cmd = "python3 napari_bridge.py", cwd = "napari" }
+
+# One-click launch (the desktop-shortcut entrypoint): start the prod server, wait for /api/health,
+# open the default browser at :8080. The Julia server serves the built frontend, so run `build` first.
+app = "python app.py"
+
+# Update the env to the latest versions allowed by pixi.toml (console update path; the in-app
+# "Update" button hits /api/update, which runs the same). Refreshes pixi.lock.
+update = "pixi update"
+
+# Julia package deps.
+julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.instantiate()'"
+
+# Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
+# orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
+# after editing napari_bridge.py (the backend otherwise adopts the running bridge on restart).
+stop         = "kill $(lsof -ti tcp:8080) 2>/dev/null ; kill $(lsof -ti tcp:5173) 2>/dev/null ; kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)'"
+stop-backend = "kill $(lsof -ti tcp:8080) 2>/dev/null ; echo 'stopped backend(8080)'"
+stop-napari  = "kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
+
+# Windows: kill by listening port via PowerShell (lsof is unix-only). Untested on Windows hardware.
+[target.win-64.tasks]
+stop         = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-backend = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-napari  = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+
+# --- GPU acceleration (PARKED) ----------------------------------------------------------------
+# RAPIDS-based GPU clustering is CUDA-only (Linux/Windows + NVIDIA). When un-parked, add it as a
+# feature/environment so macOS/CPU simply never resolve it and fall back to leidenalg:
+#
+#   [feature.gpu.pypi-dependencies]
+#   rapids-singlecell = "*"      # + cuml-cu12 / cugraph-cu12 / cupy-cuda12x via the NVIDIA index
+#   [environments]
+#   gpu = ["gpu"]
+#
+# Left commented so the default solve stays clean. See CLUSTERING_PLAN.md.
+
+# coastal (live-cell seg/tracking) was an editable sibling-path install (~/cc-workspace/coastal,
+# not a git repo) — dropped for now to keep the lockfile reproducible. Re-add later as an
+# editable path-dep (dev) or a git/PyPI dep (shipping). See docs/SHIPPING.md.

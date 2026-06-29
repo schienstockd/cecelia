@@ -1,0 +1,658 @@
+# TODO
+
+IDs are permanent — never renumber. Add new items by incrementing the highest existing ID.
+When an item is fixed, move it to the Fixed section with a date; do not delete it.
+
+Items marked **🔹 needs-input** can't be finished without something only you (D) can provide — a
+test asset, a domain-specific expected value, or a decision an agent shouldn't make alone.
+Grep `needs-input` to list them.
+
+---
+
+## High priority
+
+**#00003** — **Per-image lockfiles wired into task commit sites**
+Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
+guard and is never called. The real (rare) collision risk is two tasks doing concurrent
+read-modify-write of the *same* image's `ccid.json` — e.g. a set-level operation fanning out
+over images that overlap. A project-wide lock is too coarse (it would serialise unrelated
+images); the original R design (`reactivePersistentObject.R`) locked per-object but held the
+lock for the entire load→compute→save span.
+
+Recommended approach (better than the original on two counts):
+- **Per-image lockfile, co-located with state:** `with_transaction(f, img::CciaImage)` locking
+  `joinpath(img._dir, "ccid.json") * ".lock"` (not the project). Different images never block
+  each other.
+- **Lock the commit, not the computation.** The original held the lock across the whole
+  transaction; instead acquire it *only* around the final read-modify-write of `ccid.json`
+  (reread → merge task result → write → release), leaving the long bf2raw/cellpose run
+  lock-free. This is the key improvement: minimal contention, no multi-minute stale-lock
+  window if a process dies mid-run.
+- **Wiring:** factor each task's metadata commit (the `versioned_set_field!` + write block in
+  `importImages/omezarr.jl`, `importImages/remove.jl`, `cleanupImages/cellpose_correct.jl`)
+  into a small `_commit_ccid!(img) do raw … end` helper that wraps the RMW in
+  `with_transaction(img)`. Tasks read/compute freely; only the commit is serialised.
+- Keep it naive (existence-based) as today; per-image scope already shrinks the stale-lock
+  blast radius to a single image.
+
+Deferred: with only per-image tasks today, this collision does not occur in practice — implement
+when a set-level mutating task lands.
+
+---
+
+## Medium priority
+
+**#00047** — **Temporal downsampling / overlapping tracklets for behaviour** (deferred)
+The old framework computed track measures on the fly, so HMM could push `skipTimesteps` /
+`subtrackOverlap` into celltrackR: a way to **downsample** tracks (e.g. treat 10s/frame data like
+30s/frame to compare across acquisition rates) and to generate **overlapping tracklets**. The new
+stack precomputes `live.cell.*` at native resolution (`track_measures.jl`), so these knobs were
+dropped from `behaviour.hmm_states` (they were no-ops). To restore the capability from a different
+angle, ideas to explore: (a) a track-measures variant that recomputes speed/angle over every k-th
+position (subtrack stride + overlap) and writes `live.cell.speed@kN` style columns the HMM can
+select; (b) a resampling step that emits overlapping sub-tracks as first-class rows; (c) a
+per-image frame-interval normalisation so cross-rate comparison needs no manual skip. Settle the
+storage/UX before building. Not urgent.
+
+**#00036** — **Universal "Analysis canvas" page** (deferred)
+A standalone canvas (sidebar entry already present at `/analysis`, disabled + "coming soon") that
+hosts the SAME plot canvas as the per-module pages but with the **module filter off** — every plot
+spec is offerable, so a user can combine plots across modules / images / segmentations on one board.
+Notes for when we build it:
+- It's `SummaryCanvas` with `module={null}` (already supported: `loadSpecs()` fetches all specs, the
+  panel-state/persistence keys use `summary:universal`). Add a route + a thin `AnalysisModule.vue`
+  page (image multi-select like behaviour). Drop the `disabled/soon` flags on the sidebar item.
+- Decide the page's image-source UX: it should let you pick images from the active set (and maybe
+  across sets later). The populations endpoint already unions across selected images/segmentations.
+- Likely shares the future interactive-panel family (gating scatter, cluster-heatmap) once those
+  land — this is where `PlotSpec.family` (`summary` vs `interactive`) finally gets consumed to route
+  a spec to the right panel component.
+
+**#00037** — **Whiteboard plot integration** (deferred)
+Plot nodes in the chain whiteboard (`ChainModule.vue`). A collapsible **"Plots"** box is already in
+the palette (under "Module functions") with a "coming soon" placeholder. Notes:
+- Plot specs that opt in (`whiteboardCompatible: true`, already on the spec JSONs) become draggable
+  palette nodes, like task nodes, that render a summary plot from upstream chain output.
+- Needs: a plot node type for vue-flow (mirror `ChainTaskNode`), a way to bind a node to a plot spec
+  + its data source (which upstream image/segmentation/pop feeds it), and persistence in the chain
+  template. Reuses the `SummaryPanel`/`PlotChart` rendering; the data still comes from `/api/plot_data`.
+- Cross-reference `docs/PLOTS.md` for the chart model and `family` routing.
+
+**#00038** — **Auto-facet summary plots by image** (deferred)
+Per `docs/PLOTS.md` decision C: when comparing several populations across several images (per_image
+with many groups), auto-facet into **per-image columns** above a threshold instead of crowding one
+x-axis. Now a straightforward follow-up — Observable Plot facets via `fx`/`fy` (the Vega
+`width:'container'`+facet incompatibility that blocked this is gone). Today every group is its own x
+position / overlay series (correct, just denser with many groups). Touch point:
+`frontend/src/plots/plot.ts`.
+
+**#00041** — **Tiled / spatial-map chart type** (deferred)
+The heatmap matrix chart type is **done** (see Fixed #00052). Still deferred: spatial tiled maps
+(binned centroid positions over the image field) → `Plot.raster` / `Plot.cell` over binned x/y. Work:
+add a `tilemap` `ChartType`, a backend grid aggregation in `plot_data.jl` that bins centroids, and a
+`case` builder in `plot.ts`. The engine already supports it — new chart type, not new infrastructure
+(`docs/PLOTS.md` §9).
+
+**#00042** — **Richer vis props from the old R version** (deferred)
+The old `plotHelpers.R::.formatSummaryPlotData` exposed knobs we don't yet: **y-range override**
+(`coord_cartesian(ylim)`), **rotate/flip axes** (`coord_flip`), **axis font size**, custom
+titles/axis labels, colour palettes. All cheap in Observable Plot (`plot.ts` `BuildOpts` + the
+`SeriesPicker` Options box). Add on request.
+
+**#00004** — **`popDT()` / `summary()` / `tracksMeasures()` read accessors**
+REPL-native read accessors for population data tables, experiment metadata, and track measures.
+Set-aware (single image or `uids=[...]` across a set). Deferred until analysis tasks are
+implemented and producing output. (Track measures now produce output — see #00029 for the
+track-specific accessors split out of this.)
+
+**#00029** — **`track_measures()` / `track_info()` REPL read accessors**
+The `tracking.track_measures` task now writes **per-cell** measures to the cell `obs` (`live.cell.*`)
+and **per-track** measures to a companion `{vn}__tracks.h5ad` (`X`/`var`, one row per track — see
+`docs/TRACKING.md`/`docs/DATAMODEL.md`). `pop_df(…; granularity=:track)` already returns the
+per-track table; what's missing is the thin REPL convenience layer mirroring R
+`cciaImage$trackMeasures()` / `$trackInfo()` (porting spec Step 5):
+- **`track_measures(img; value_name, measures=…)`** — read the per-cell measure columns back as a
+  `DataFrame` via the `LabelProps` chain, filtered to the requested measures; this is what the HMM
+  behaviour module reads as `modelMeasurements`. If absent, hint to run the task (don't recompute).
+- **`track_info(img; value_name, pops)`** ✅ **DONE** as **`track_props`** (`app/src/tracking/track_props.jl`):
+  per-track aggregate table (one row per `track_id`): `num_cells` + motility + per-measure stats
+  (`.mean`/`.median`/`.sd`/`.sum`/`.qUp`/`.qLow`; per-category frequency `{m}.{cat}` for categorical),
+  mirroring R `tracksInfo()`. Numeric/categorical auto-detected from column type (no `config.yml`
+  map). Compute-on-read on top of the cell table + `{vn}__tracks.h5ad`.
+Remaining for this item: only **`track_measures(img; …)`** (the per-cell read convenience layer).
+Both headless, no API/Vue. Set-aware like #00004. Pure reads over the chain — no new H5AD access
+patterns.
+
+**#00021** — **Filter/gate tracks on their measures + show tracks in napari**
+Track lineage (`tracking.bayesian_tracking`) and measures (`tracking.track_measures`) are done, and
+the **data layer for one-point-per-track gating is now built**: per-track measures live in
+`{vn}__tracks.h5ad` `X`/`var` (gateable), and `pop_df(…; granularity=:track)` returns one row per
+track with expand-to-cells via `:cell` (see `docs/TRACKING.md`). Settled here: one-point-per-track
+(read-time `granularity` flag), gateability (measures in `X`/`var`), storage (dedicated track h5ad).
+
+The **`track` pop_type** is now a first-class population type (plan Phase 3a/3b, **done**):
+`track_props` is the per-track data source, `pop_df(img, "track", pops; granularity=:track|:cell)`
+gates directly on track properties with expand-to-cells, and the track gate map persists to
+`gating/{vn}__tracks.json` (`save_pop_map!`/`load_pop_map` route by `pop_type`). Verified headless
+on KDIeEm B.
+
+**Remaining = napari + UI** (plotting-canvas-and-track-df, Phase 3d–3e):
+- **3c — gating API track-awareness** ✅ **DONE.** `gating_api.jl` branches the data source on
+  `popType="track"` → `track_props` (`_track_fetch`/`_plot_xy_raw`/`_live_map`); `/channels` returns
+  motility `columns` + `cellMeasures` + `trackAggregates`; the gate map routes to
+  `gating/{vn}__tracks.json` (CRUD persists there via `pop_type`); the cell-label napari selection
+  is not injected into track maps. `track_cell_measures` (package) inverts axis names →
+  base cell measures. Verified on KDIeEm B (62 tracks → gate on speed → 32 gated).
+- **3d — napari Tracks layer** ✅ **DONE** (backend; visual check pending a live timecourse).
+  `POST /api/napari/show-tracks` → `api_napari_show_tracks`; bridge `show_tracks`/`_tracks_matrix`
+  builds `[track_id, t, (z,) y, x]` from the H5AD (centroids + `t` + `track_id`, sorted by
+  `(track_id,t)`), bin-masks per gated pop, `viewer.add_tracks(color_by="track_id", turbo)`. Ports R
+  `show_tracks`; per-pop reconciliation like show-populations (`docs/NAPARI.md`). Assembly logic +
+  API load verified; needs a running napari + timecourse image to confirm rendering.
+- **3e — track-gating canvas** ✅ **DONE.** `GatingPlots` gained a `popType` prop (the ONE gating
+  canvas, reused — no clone); `TrackingModule` renders it `#below-table` with `pop-type="track"`
+  alongside the task runner. Store: `selectImage(…, pt)`, `cellMeasures`/`trackAggregates`,
+  `showTracks`/`refreshNapari` (routes per-pop re-push by popType). Panels default to a linear axis
+  transform for track; the manager hides its point-size option for track (`docs/UI.md`). Frontend
+  type-check + build green. **Live end-to-end test pending** (running backend + napari + timecourse).
+
+**#00013** 🔹 needs-input — **Golden-output canary per language boundary** (from `opus-verification-prompt.md` Step 5.5)
+> **Needs you:** a domain-confirmed expected output for the fixture (the "known-good" values an
+> agent can't authoritatively produce), plus the fixture itself (shared with #00014).
+
+A test that runs one Julia-native module and one Python-routed module against a small fixture image
+with known expected output (asserted within tolerance), to catch the Julia↔Python IPC seam breaking
+silently. Not writable yet: there is no Julia-native analysis module (e.g. gating), Python is
+subprocess-isolated (not PythonCall), and the existing seams (bf2raw import, cellpose) need heavy
+fixtures + binaries. Implement alongside the first analysis module (depends on #00004) using a tiny
+committed fixture image. The rest of Step 5 (boundary contract, per-module param validation,
+lockfile-on-exception, set expansion) is covered in `app/test/runtests.jl`.
+
+**#00014** 🔹 needs-input — **Small committed fixture images for real end-to-end task validation**
+> **Needs you:** 1–2 representative tiny microscopy images to commit (you wanted your own small
+> test images here). A synthetic OME-TIFF is a fallback, but real sample data is preferred.
+
+Current tests are headless and structural; the only task run end-to-end is `RemoveImage` (no binary).
+Import (bioformats2raw) and `cellposeCorrect` have never been validated against a real input because
+there is no committed fixture. Add 1–2 tiny images under `app/test/fixtures/` (e.g. a few-pixel,
+2–3 channel OME-TIFF, optionally with a small z/t) — KB-sized so they're cheap to commit and fast to run.
+Enables real assertions:
+- import → `SizeC/SizeT/SizeZ`, channel names, and the OME-ZARR actually written to `0/{uid}/`;
+- `cellposeCorrect` → corrected zarr produced + `cpCorrected` filepath version registered.
+Gate these behind a presence check for the external deps (`bioformats2raw_bin()`, `napari/.venv`) and
+**skip** when absent, so the core suite stays dependency-free and CI-portable. Shares fixtures with #00013.
+
+---
+
+**#00020** — **Set-scope / incremental node subprocesses not killed on chain cancel**
+The per-image cancel path (#00016) kills running subprocesses. Set-scope (`_run_set_scope_node!`)
+and incremental (`_run_incremental_node!`) runners call the multi-image `_run_task` directly with
+`on_process = _ -> nothing` and are **not** registered in `_TASKS`, so `cancel_chain_run!` can't
+reach their subprocesses mid-run (the between-node flag still stops not-yet-started ones). No real
+set-scope subprocess task exists yet (only mock/plot tasks), so impact is currently nil. When the
+first real set-scope subprocess task lands (e.g. HMM training), give the multi-image `_run_task`
+path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path. Low priority.
+
+---
+
+## Low priority
+
+**#00003** — **Re-enable interactive pan/zoom on gating plots**
+Gating plots currently lock the regl camera (`cameraIsFixed: true`, no x/y scales) so the WebGL
+points align exactly with the canvas2D overlays (contours, gates) — providing scales made regl
+re-fit/zoom and drift the dots off the gates. To restore pan/zoom with correct alignment, the
+overlays (`PlotLayers`, `GateOverlay`) must replicate regl's full screen transform
+(`projectionLocal · cameraView · model`, from the `view`-event camera matrix + `viewAspectRatio`)
+instead of the plain extents mapping, and invert it for gate hit-testing. See the alignment bullet
+in `docs/UI.md`.
+
+**#00002** — **Auto-follow in task manager**
+Selecting the newest running task in `TasksModule.vue` (`/tasks`) when a task starts does not
+work. Approaches tried: `watch`, `watchEffect`, `computed+watch`, WS event listener
+(`ws.on('task:status', ...)`). Likely a Pinia/Vue 3 deep reactivity edge case with array
+element property tracking.
+
+**#00027** — **`testTasks.*` task fun_names/files are still camelCase**
+The test tasks `testTasks.imageTask`/`testTasks.setTask`/`testTasks.incrementalPlotTask` (files
+`tasks/testTasks/{imageTask,setTask,incrementalPlotTask}.{jl,json}`, structs `TestImageTask`/
+`TestSetTask`/`IncrementalPlotTask`) predate the snake_case convention (see `#00026`,
+`feedback_julia_naming`). Rename to snake_case `fun_name`s + files (e.g. `testTasks.image_task`,
+`tasks/test_tasks/image_task.{jl,json}`) — structs stay PascalCase. Touches `_spec_path`/
+`_fun_name_map` in `task_registry.jl`, the `Cecelia.jl` includes, and any test references. Not
+important (test-only scaffolding, no user-facing impact) but should be fixed for consistency;
+batch it rather than churn standalone.
+
+---
+
+## Fixed
+
+**#00055** — **Napari tracks: per-segmentation overlay + timestamp + label naming** (2026-06-29)
+Reworked the napari track overlay for the behaviour phase: (1) shows **every** segmentation's tracks
+(A/B/C), not just the active one — `show-tracks` takes `valueNames` and renders one Tracks layer per
+segmentation, named `({value_name}) Tracks /_tracked`; (2) a segmentation's tracks = its `_tracked`
+cells (all `track_id>0`) read directly from the cell h5ad (no gating map / track-gate dependency —
+that's the deferred track-gating phase); (3) the master "Show tracks" toggle is replaced by a
+per-segmentation **`pi-directions`** toggle in the ViewerPanel labels list (row icons hover-reveal,
+active stays visible; per-image state in `settings.get/setTrackVisibility`). Also: (4) **timestamp**
+overlay restored for timecourse data (elapsed `H:MM:SS` from OME `time_increment`, follows the t
+slider — ports `add_timestamp`); (5) labels layer named `(C) Labels` not `(C.zarr) Labels`; (6) gated
+track pops (TEST/SDGF, `{vn}__tracks.json`) shown under a separate **global** `pi-directions` toggle
+(`settings.napariShowGatedTracks`, like Show populations, re-pushed on track-gate edits) — distinct
+from the per-segmentation `_tracked` directions toggles; (7) label **delete** is inline two-click
+confirm (trash → red `!`, second click within 3.5 s) instead of a browser popup. Bridge `show_tracks`
+rebuilt for per-pop `value_name` (matrix cached per vn). Docs: NAPARI.md.
+
+**#00054** — **Napari colour-by an obs column (tracks + labels)** (2026-06-29)
+The napari tracks AND labels layers can be shaded by any cell obs column (HMM state, a track
+measure, a cluster). Bridge: `show_tracks` gained `color_by` (per-**vertex** values mapped via
+`_tracks_matrix`'s new per-vertex labels + `_read_label_column`; turbo categorical / viridis
+continuous), and a new `colour_labels` command applies a `DirectLabelColormap`
+(`_labels_color_dict`: Okabe–Ito per level / viridis percentile; original cmap remembered for
+reset). Ports old `show_tracks(color_by=…)` + `show_channel_intensity`. API: `colorBy` on
+`POST /api/napari/show-tracks` + new `POST /api/napari/colour-labels`. UI: a "Colour by" dropdown
+in ViewerPanel (obs columns from `/api/gating/channels`), remembered (`settings.napariColourBy`),
+re-applied on open. Verified routes wired + napari 0.7.1 APIs present. **Note:** the old
+`split_tracks` (one layer per value) is deferred to the upcoming Leiden track-clustering phase — a
+code note in `show_tracks` marks where it goes.
+
+**#00053** — **Compare summary plots "by attribute"** (2026-06-29)
+The canvas "compare" control gained a fourth mode (alongside this image / per image / pooled): **by
+attribute**, grouping the selected images by one or more shared image attributes so images sharing the
+value pool into one series labelled by it. A primary + optional interaction attribute combine into one
+key (`Treatment` × `Mouse` → `alpha.1`), mirroring the old R `paste0(axisX, ".", interaction)`;
+`groupAttr` accepts a name or an array. Backend: `_series_groups(df;
+attr_map)` remaps each row's image key (uID → attribute value; images lacking the attribute fall back
+to their uID), threaded through `_summary_agg` + the cross-image `plot_summary_data` methods + a
+`groupAttr` field on `/api/plot_data`. New `GET /api/plots/attrs` lists a set's attribute names+values
+for the picker. Per-track aggregation is untouched (it happens in `pop_df` before series grouping).
+Works on every chart type. Verified on set jFWePN: group-by-`Mouse` (shared) pools 3 images into one
+series (n=1809); group-by-`Treatment` (distinct) keeps 3, relabelled A/B/C. Tests + docs (`PLOTS.md`
+§1/§3, `API.md`).
+
+**#00052** — **Heatmap (matrix) chart type — profile + crosstab** (2026-06-29)
+Generic `heatmap` `ChartType` backed by `chartType:"matrix"`. `_matrix_agg` in `plot_data.jl` pools
+the whole `pop_df` frame into one grid in two modes: **profile** (rows = `measures`, cols = a
+categorical `category` column, cell = mean, `zscore` standardises rows → diverging RdBu — the "state
+signature") and **crosstab** (a `"from<sep>to"` categorical → transition matrix, count or row/col/
+total-normalised; the hybrid joins states with `.` so the first `_` splits prev|cur). Threaded through
+all four `plot_summary_data` methods + `/api/plot_data` (`matrixMode`/`measures`/`category`/`separator`/
+`zscore`/`matrixNormalize`). Frontend `buildHeatmap` (`Plot.cell` + viridis/diverging + value text +
+continuous-legend overlay in `PlotChart`); the panel offers heatmap independent of measure type, with
+Mode / Category (discovered categorical obs cols; smart default per mode) / z-score / Normalize in the
+options popover. Plot defs `state_signature.json` (profile) + `transition_matrix.json` (crosstab).
+Tests: in-memory profile + crosstab + z-score + row-normalise + error cases (`runtests.jl`). Docs:
+`PLOTS.md` §9, `API.md`. Remaining heatmap follow-up (spatial tiled map) tracked in #00041.
+
+**#00051** — **HMM module: cross-segmentation pops + measure picker + composite state name** (2026-06-27)
+Review of the HMM module surfaced five issues, all fixed:
+1. **Cross-segmentation population selection** (the big one). Dropped the single `valueName` param
+   from `behaviour.hmm_states`/`hmm_transitions`. `pops` is now an across-segmentations multi-select
+   (`popType:"live"`) sourced from `/api/plots/populations` (includes the derived `/_tracked`),
+   value_name-prefixed (`A/_tracked`, `B/qc`, …). The handlers call `pop_df(imgs, uids, "live",
+   pops)` (no `value_name`) so one run fits tracked A, B, C from every image jointly — matching the R
+   `popDT`/popUtils semantics. Verified e2e on set jFWePN: 6216 cells pooled across A/B/C × 3 images.
+2. **Tracking vs object measures muddled / raw `mean_intensity_0`.** `labelPropsColsSelection` now
+   renders two groups — Tracking (obs `live.*`) and Object (var cols) — and maps intensity columns to
+   channel names (`mean_intensity_0` → `channelNames[0]`, mirroring Julia `_channel_label`); the
+   stored value stays the raw column.
+3. **Composite didn't pass the state name to transitions.** The set-scope `CompositeTask` now threads
+   `hmm_states`' `stateColumn` → the transitions step's `hmmStates`; the field is `hideInComposite`
+   (new flag, honoured by `api_task_definitions`) so the composite form doesn't show it.
+4. **Standalone transitions `hmmStates` field empty.** Root cause: the measure picker queried a
+   hardcoded `valueName="default"` (the tracked sets are A/B/C). It now derives the segmentation from
+   the selected pop's prefix, so the `live.cell.hmm.state.*` columns appear.
+5. Picker `valueName` resolution unified across `popSelection`/`labelPropsColsSelection`.
+
+**#00046** — **Canvas panel box now collapses fully** (2026-06-27)
+`CanvasPanel.vue` collapse only hid `.panel-body` via `v-show`, but the panel kept its
+fixed/resized `height` + `min-height: 320px`, leaving an empty box. Fixed: `.panel.collapsed`
+sets `height:auto !important; min-height:0; resize:none` (shrinks to header), and `persist()`
+skips while collapsed so the ResizeObserver doesn't save the collapsed height. Collapse state is
+local (not persisted) — matches PopulationManager/SeriesPicker; persist it later if desired.
+
+**#00045** — **Roadmap + milestones + AI disclaimer** (2026-06-27)
+`docs/ROADMAP.md` = temporary forward goals (behaviour/HMM → cell & track clustering → freeze v1.0
+→ packaging that bootstraps the Python env like old R cecelia → GitHub self-update + post-v1
+backlog). `docs/MILESTONES.md` = durable append-only ledger of what landed + how packaged (seeded
+M1 = analysis spine). `README.md` carries the AI-development disclaimer (Claude Code / Opus +
+Sonnet / Garvan enterprise license; roles, sources, approach). Note: track measures + per-track
+gating already exist (`tasks/tracking/track_measures.jl`, `{vn}__tracks.h5ad`).
+🔹 **needs-input (D)** (tracked in ROADMAP): package licence (Phase 3); GUI shell + first-class
+platforms + GPU matrix (Phase 4). Original-cecelia citation in README: Nat Commun 2025,
+doi:10.1038/s41467-025-57193-y.
+
+**#00044** — **Canvas panel/selection persistence + picker hierarchy** (2026-06-27)
+Three UI bugs. (1) **Plots duplicated on navigation** — `GatingPlots` `onMounted` ran `add(); add()`
+unconditionally, but panels persist per `gate:${popType}`, so Gate↔Tracking re-mounts stacked two
+more each round (2→4→6…). Now seeds defaults only when the canvas is empty. (2) **Selected pops not
+saved across navigation** (behaviour canvas) — panels persisted but the GLOBAL-scope selection / vis
+/ scope were component refs (`gSel`/`gVis`/`scope`), reset on remount → eye-selected pops vanished.
+Added a per-canvas `shared` blob to the `canvasPanels` store (exposed via `useCanvasPanels`);
+`SummaryCanvas` and `GatingPlots` back their global-scope state with it, so selections + options
+persist. (3) **No hierarchy in the summary picker** — `SeriesPicker` showed a flat list
+(`/qc/sub` as "qc/sub"); now indents by tree depth + shows the leaf name (mirrors the gating
+`PopulationManager`). (4) **Per-panel chart options not saved** (chart type reverted violin→histogram
+on nav) — `SummaryPanel`'s chartType/measure/bins/normalize/errorMetric were component refs; now in
+the persisted panel `state` (passed as the `ui` prop, computed get/set). (5) **General mechanism** so
+this stops recurring: `composables/useViewState.ts` (Shiny-`reactiveValues`-style) — seed a `defaults`
+literal into a store-backed bag, get `toRefs`; every option declared there persists automatically with
+no per-field wiring. `SummaryCanvas` + `GatingPlots` use it for canvas-level options (compareMode,
+scope, selection, vis, gating highlights/line-width/…). Documented in docs/UI.md ("Persisting view
+state — the three scopes"). (6) **Picker hierarchy was empty** because the derived `_tracked` pop was
+injected only at ROOT — tracking `qc` didn't produce a visible `/qc/_tracked`. `plot_population_groups`
+now injects each derived pop at root AND **as a child of every stored pop** (`/qc/_tracked` = qc's
+tracked subset), so the picker shows real nesting and the tracked subset of any pop is plottable
+(verified: `/qc/_tracked` track-speed → 37 tracks). The tracker itself was fine (C.h5ad had track_id +
+lineage, 521/752 cells tracked). (7) **Documented the persistence RULE** for future work — CLAUDE.md
++ MODULES.md ("RULE: persist every user-settable option"): new pages MUST use `useViewState`, never a
+bare `ref()`. 538 Julia tests pass; frontend builds green. *Redraw-on-gating:
+the mechanism looks correct (gate outlines reactive on `g.flat`; `popVersion` drives refetch) — the
+duplicate-panel bug was the likely cause; re-test on a clean canvas.*
+
+**#00043** — **Track pops in the plot picker + ported R plot adjustments** (2026-06-27)
+Two things. (1) **Track-gated pops now show in the summary picker.** A track-granularity plot's
+picker queried a single pop_type, so `track` gates (e.g. `TEST` in `{vn}__tracks.json`) were invisible
+(only `live` showed). Fix: `/api/plots/populations` takes `granularity`; `granularity="track"` unions
+`live` (cell gates + derived `/_tracked`) and `track` pops, tagging each with `popType`. The picker is
+granularity-aware (track if ANY module spec is track-granularity — `specs[0]` may be a cell plot, the
+original bug). `tkey`/`SeriesTarget` carry popType; `SummaryPanel` groups series by popType and issues
+one `/api/plot_data` per group, merging series — so `/_tracked` (live) and a track gate sit on one plot.
+The picker logic lives in the **package** (`plot_pop_types` / `plot_population_groups` /
+`flatten_pop_tree` in `population_manager.jl`) — Revise-tracked + headless-tested (`@testset "plot
+population picker"`, 536 pass); `api_plot_populations` is a thin wrapper that resolves images +
+shapes JSON (the union loop was briefly in the API — moved out to respect the layer boundary).
+*Decision: kept `track` as a pop_type (it's load-bearing for the track-gating workflow across ~12
+files); fixed the picker locally instead — see the pop_type pro/con discussion.* (2) **Ported the old
+R `plotChartsServer.R`/`plotHelpers.R` adjustments** into the `SeriesPicker` Options as collapsible
+sub-groups (Layout/Points/Colours/Labels), scope-governed (`VisProps`): legend, log scale, gridlines,
+rotate-X-labels, **facet** (small multiples per series, numeric charts), **dark theme** (builder ink is
+`currentColor` → one `style.color` flip), Y-range; jitter type (beeswarm/random/none), colour-data,
+point size/opacity; **palette** (Okabe-Ito, Tol bright/muted/light, user list); title, X/Y labels, font
+size. Flagged as not-cleanly-portable (docs/PLOTS.md §9): pixel W/H (panels drag-resize), separate
+axis-title-vs-label font sizes (Plot has one base size), facet for histogram/frequency, `coord_flip`,
+`showFacetTitles` toggle. *Backend restarted for the `/api/plots/populations` change.* Builds green.
+
+**#00040** — **Summary-plot engine → Observable Plot** (2026-06-27)
+Replaced Vega-Lite with **Observable Plot** (`@observablehq/plot`) for the summary canvas after three
+structural Vega walls hit at once: jitter (`xOffset` is for discrete grouping — points landed beside
+the box or vanished), resize (`width:'container'` signal didn't re-fire on flex resize), and the look
+(dashboard defaults vs. the old R `theme_classic`). New `frontend/src/plots/plot.ts`
+(`buildPlotOptions(Plot, r, o)` — one builder per chart type, takes the Plot module so it's a lazy
+dep) + `components/plots/PlotChart.vue` (lazy-imports Plot, injects width/height, re-renders on
+ResizeObserver, `toImageURL` for PNG/SVG). Distribution charts use a **manual linear x scale, one
+integer position per series** — box (`xlo/xhi` at index `i`) and **beeswarm** points (`xj` jittered
+around the same `i`) share one scale → points sit ON the box by construction (the Vega bug, gone).
+Violin = client-side Gaussian KDE (Silverman) → mirrored `areaX`. Horizontal axis labels (no diagonal
+text). Deleted `plots/vega.ts` + `VegaChart.vue`; rewired `SummaryPanel`/`SeriesPicker`/`SummaryCanvas`
+imports. Validated headless (linkedom) that every chart type's Plot options render without throwing;
+`npm run build` green. Checked the old R reference (`plotHelpers.R`: theme_classic, `geom_jitter`/
+`geom_quasirandom` beeswarm, `geom_tile`+viridis heatmaps) to match the look + scope follow-ups
+(#00041 heatmaps/tiled maps, #00042 richer vis props). Also this session: track_measures.json now
+lists all 10 celltrackR measures; CanvasPanel plots are **collapsible** (header chevron). *Frontend-
+only change — no backend restart needed.* (Speed showing 0–1 was a stale `__tracks.h5ad` written
+before physical sizes were in the metadata, not a plot bug — re-run Track Measures with Force
+Recompute.)
+
+**#00035** — **Behaviour summary canvas: multi-image + multi-segmentation comparison** (2026-06-26)
+The behaviour page was locked to one image and one segmentation, so populations from several images /
+segmentations couldn't be compared on one plot. Fixes: (1) **behaviour page is multi-select** (the
+single-select restriction is gating-only) — selecting >1 image enables the per-image / pooled
+"compare" control over the *selected* subset. (2) **`/api/plot_data` accepts `series:[{valueName,pop}]`
+targets** — overlaying populations from different segmentations on one plot; grouped by `value_name`,
+each read through `pop_df`, `vcat`-ed (the legacy `valueName+pops` form still works). (3) new
+**`GET /api/plots/populations`** returns the union of populations across the selected images, grouped
+by segmentation (the read-only `SeriesPicker`); derived pops surfaced generically via
+`derived_pop_paths(pop_type)` (no hardcoded `/_tracked`). (4) `SummaryCanvas` decoupled from the
+gating store (own populations fetch + selection); `SummaryPanel` sends `series`. (5) **Vega charts
+re-fit on panel resize** (`ResizeObserver` → `view.resize()`; `width/height:'container'` only
+recomputes on explicit resize). Tests: targets aggregation (single + cross-image × cross-segmentation,
+4 series) + `derived_pop_paths` (513 pass). *Note: `api/src/*` isn't Revise-tracked — restart the
+backend to pick up the new route + `plot_data` shape.* Follow-ups in the same change: (6) **live
+updates** — the canvas subscribes to `gating:popmap` and refreshes the population list + re-pulls
+panel data on any gate edit (a `live` pop's gates live in the `flow` map, so it refreshes regardless
+of the broadcast's popType). (7) **overlap fix** — series are keyed by every *varying* dimension
+(image · segmentation · pop), so populations sharing a path across segmentations (e.g. `/_tracked`
+from A/B/C) get separate boxes/bars instead of collapsing onto one x-position. (8) **panel
+persistence** — `useCanvasPanels` is backed by the `canvasPanels` store keyed per canvas
+(`summary:<module>`, `gate:<popType>`), so open plots survive navigating away and back (both the
+summary and gating canvases); cleared on project open/close. Exact drag positions aren't persisted
+(panels reappear staggered by index). (9) **panel geometry persistence** — `CanvasPanel` takes a
+`persistKey` (`${canvasKey}:${id}`) and stores drag position + size in the `canvasPanels` store, so
+the dragged/resized layout (not just panel existence) survives navigation; geometry is dropped on
+panel remove and project switch.
+
+**#00039** — **Summary chart types implemented** (`docs/PLOTS.md`) (2026-06-27)
+Built the agreed chart matrix. Backend (`plot_data.jl`): `measureType` (numeric/categorical, shared
+`_is_categorical_col`) in every response; `rawPoints` returns downsampled (cap 1500) raw values; a
+`points` chart type (for strip/violin); bar returns sd/sem/ci95 (ci95 ≈ 1.96·sem). Frontend
+(`plots/vega.ts`, the single Vega builder): **theme_classic** look (white ground, thin black axes, no
+grid) applied globally via `VegaChart`; group-on-X for box/bar/strip; **histogram, frequency,
+stacked, 100%-stacked, bar (mean ± selectable SD/SEM/CI), boxplot + jittered raw-point overlay,
+strip/jitter, violin** (client-side density). The panel offers only the charts valid for the measure
+type (`chartsForMeasure`). Spec JSONs widened to the applicable sets. **Per-plot export** (CSV via
+`plotDataToCsv`, PNG/SVG via `VegaChart.toImageURL`) and **visual properties** (`VisProps`: log
+scale, legend, point size/opacity) in the SeriesPicker Options box, governed by the **global/local
+scope** (shared vs per-plot, like the gating manager). Tests: measureType, points, rawPoints, bar
+error metrics (521 pass). **Deferred**: auto-facet (#00038), ECDF, richer vis props (titles/labels/
+palettes). *Restart the backend — `api/src/*` + the new route/response shape aren't Revise-tracked.*
+
+**Plot design (`docs/PLOTS.md`)** — chart types × data source × measure type spec; decisions settled.
+
+**#00031** — **`pop_df`: multi-segmentation pooling, derived `live`/tracked pops, cache auto-invalidation** (2026-06-26)
+Made `pop_df` handle the multi-segmentation workflow (gate each of A/B/C, track each) the way the
+R version did. (1) **Prefix vs leading-slash** value_name resolution confirmed + documented:
+`["A/qc","B/qc","C/qc"]` pools across segmentations (value_name from prefix), while `["/qc"]` with
+`value_name="A"` stays within `A` (a leading-slash path can't reach another value_name). (2)
+**`live`/tracked is a *derived* filtered population, not a stored gating file** — gates live in the
+`flow` map (`gating/{vn}.json`); a path whose leaf is a known filter (`"tracked"` → `track_id>0`,
+`_LIVE_DERIVED_FILTERS`) is injected as a transient filtered child of its gated parent at read time,
+and `recompute!` composes parent-gate ∩ filter. (3) **Cache auto-invalidation**: the request key now
+folds in the on-disk mtimes of each involved `gating/{vn}.json` + `{vn}.h5ad`, so a saved gate edit
+or a re-track invalidates the cache (pop_df already reloads from disk every call); `flush_cache`
+stays as a manual override. Verified end-to-end on KDIeEm (3 segmentations: flow `/qc` = 804/1053/588,
+pooled = 2445; live tracked = 2072, all `track_id>0`, each ⊆ its gate). This
+unblocks part of #00021 — the per-track gating phase can build on the derived `live` pops.
+**Generalised** the derived-pop mechanism (was `_LIVE_DERIVED_FILTERS`, live-only) into a
+`_DERIVED_POPS` registry + a **reserved `_`-prefix namespace** (`DERIVED_POP_PREFIX`,
+`is_reserved_pop_name`, both exported) so clustering can register the same way. Derived leaf
+names are now `_`-prefixed (`_tracked`); `add_pop!`/`rename_pop!` reject `_`-leaf gate names
+(→ 400), `from_tree` + the injection bypass via `reserved_ok=true`, and the frontend hints
+against `_` names while typing (`GatePlotPanel.vue` add, `PopulationManager.vue` rename;
+`isReservedPopName` in `stores/gating.ts`). Tests: `pop_df live _tracked (derived filter)`,
+`reserved pop names (_ prefix)`, `pop_df cache auto-invalidation` (424 pass, frontend `vue-tsc`
+clean). `docs/POPULATION.md` updated.
+
+**#00030** — **`pop_df` implemented its documented-but-missing params** (2026-06-26)
+`docs/POPULATION.md` documented `value_name=nothing`, `drop_na`, `flush_cache`/cache, and a
+`(uID, value_name, label, track_id)` dedup key, but the implementation had none of them
+(`value_name="default"`, no cache, dedup on `(value_name, label)` only). Implemented to match,
+using R `cciaImage.R > popDT` as the reference (not a hard port): `value_name=nothing` resolves to
+the active segmentation (parity with `label_props(img)`); `drop_na` drops cells NA/NaN in the
+requested `pop_cols`; results cache on the image (`img._pop_df_cache`, runtime-only, not serialised)
+keyed by request hash, cleared via `flush_cache=true` (no auto-invalidation, like R — flush after
+gate edits); the `unique_labels` collapse key is now the present-column subset of
+`(uID, value_name, label, track_id)` so set-level `uID` and `track_id` join it automatically. Tests:
+`pop_df drop_na`, `pop_df track_id dedup key`, plus `value_name=nothing`/cache assertions in the
+KDIeEm integration testset (409 pass). Also moved `FUTURE.md` into `docs/` and wired it into
+`CLAUDE.md`.
+
+**#00028** — **btrack rerun invalidates stale track-measure columns** (2026-06-25)
+`tracking.track_measures` caches by sentinel (`live.cell.speed` in obs) and skips recompute if
+present. Re-running `tracking.bayesian_tracking` (or the composite) produced *new* `track_id`s
+while the old `live.cell.*` / `live.track.*` obs columns lingered → the second run cache-skipped
+and returned measures computed against the *previous* tracking. Fixed by giving the LabelProps
+chain writer a `drop_obs` verb (Julia `drop_obs` + Python `LabelPropsView.drop_obs`, both flushed
+by `save!`/`save()` with crash-safe ordering: adds written → column-order rewritten → drops deleted
+last). `tracking_utils.py._write_back` now drops every `live.cell.*` / `live.track.*` obs column as
+it writes new lineage, so a re-track invalidates stale measures. Verified cross-language (Julia
+writes a stale measure → Python btrack-style drop+add → anndata reads clean). Tests in the
+`LabelProps writer` testset; `docs/DATAMODEL.md` documents `drop_obs`.
+
+**#00026** — **`tracking.bayesianTracking` renamed to snake_case** (2026-06-25)
+Renamed the task to `tracking.bayesian_tracking` (files `tasks/tracking/bayesian_tracking.{jl,json}`,
+`fun_name` `tracking.bayesian_tracking`, params temp-file prefix). Struct stays `BayesianTracking`
+(PascalCase). Updated `_spec_path`/`_fun_name_map` in `task_registry.jl`, the `Cecelia.jl` include,
+the `bayesian_track_measures.json` composite entry, and the dispatch test. No frontend or persisted
+dev-project records referenced the old `fun_name`. The legacy `"task"` label field stays camelCase
+to match the other 9 sibling JSONs (it's display-only, unused for routing). Other legacy camelCase
+task files (`measureLabels`, `cellposeCorrect`, …) are deliberately not renamed.
+
+**#00025** — **`pop_df` moved out of the gating engine; image-path accessor pulled back into the model** (2026-06-25)
+Drift fixes prompted by the `cciaImage.R` audit (the R image class owned a coherent accessor set;
+several drifted into subsystem files in the port). Changes:
+- **`pop_df`/`_pop_df`/`_group_pops_by_value_name`** moved from `gating/gating_engine.jl` to
+  `gating/population_manager.jl`, co-located with the `pop_map` accessors (`load_pop_map`/
+  `save_pop_map!`). `pop_df` is `pop_type`-agnostic (flow/live/clust/transient) — it belongs with
+  the generic, pop_type-neutral population infrastructure, not the gating engine (gating is only one
+  membership source). It still builds on `recompute!`/`cells_in_pop` (gating_engine, resolved at
+  call time). Considered a standalone `pop_df.jl` but rejected it — co-locating with `pop_map`
+  matches how the two were grouped and needs no new include.
+- **`img_label_props_path`/`img_label_props_dir`** added to `model/image.jl` (mirrors R
+  `imLabelPropsFilepath`), making the image the single owner of the labelProps path convention.
+  Replaced inline `joinpath(_dir, "labelProps", …)` in `label_props.jl`, `bayesian_tracking.jl`,
+  and `track_measures.jl`.
+- **`img_physical_sizes`** (done earlier) similarly lives in `model/image.jl` (mirrors
+  `omeXMLPixelRes`/`omeXMLTimelapseInfo`), not in the tracking task.
+Remaining R accessors with no Julia callers yet (`imRegionsFilepath`, `imNeighboursFilepath`,
+`spe`, `flowGatingSet`, …) were left unported — adding them now would be speculative.
+
+**#00024** — **Remember run-table image selection across navigation** (2026-06-25)
+Leaving a module page and returning lost the checkbox selection (it lived only in
+`ImageTable`/`ModuleLayout` component-local refs). Now persisted in the project store
+(`getImageSelection`/`setImageSelection`, keyed by `${module}|${setUid}`): `ImageTable` seeds from
+it on mount / set switch and commits on every toggle; `ModuleLayout` initialises `selectedUids`
+from it. Keyed by module so selections don't bleed across pages (gating single-select vs segment
+multi-select). In-memory, cleared on project load/close. Generic for all module pages via
+`ModuleLayout`.
+
+**#00023** — **z-scope for napari cell selection** (2026-06-25)
+A **Z toggle** + **±N stepper** in the gating bar (next to *draw region*) let the spatial cell
+selection either span the whole z-stack (default) or be restricted to cells within ±N slices of the
+currently displayed z in napari. The bridge (`_on_selection_changed`) reads the live z when the
+polygon closes (so scrolling before finishing selects on that slice) and filters by
+`|round(z_centroid) − z_now| ≤ z_window`; no-op without a z axis, `t` still ignored. Config flows
+`store.napariZMode/Window` → `/api/napari/start-selection` (`zMode`/`zWindow`) → `start_cell_selection`
+(`_sel_ctx`). Toggling the mode/window also **re-evaluates the already-drawn polygon live** via
+`/api/napari/selection-scope` → `update_selection_scope`. **Needs a napari restart**
+(`napari_bridge.py` changed).
+
+**#00022** — **Napari population-overlay UX polish** (2026-06-25)
+Fixes around showing/selecting populations in napari:
+1. *Remembered show-populations* — the ViewerPanel `pi-palette` master toggle persists its state
+   (`settings.napariShowPopulations`, default on) and auto-applies on image open, so populations
+   show by default instead of resetting to hidden every time.
+2. *Dropped the duplicate button* — removed the gating-bar `pi-palette` (`store.showInNapari`),
+   which duplicated the ViewerPanel toggle and confused users. The gating bar keeps only the
+   `pi-pencil` cell-selection brush.
+3. *Transient pop no longer pushed to napari* — `api_napari_show_populations` excludes the
+   transient "Napari selection" pop. Previously each popmap broadcast re-pushed it as a new Points
+   layer, which stole napari's active layer so the user couldn't keep editing the selection shape.
+4. *Clear button for the transient pop* — the manager row has a trash button
+   (`store.clearNapariSelection` → `/api/napari/event` with `labels: []`); the selection is never
+   persisted so there's no pop to delete and it otherwise lingered forever.
+5. *Plotdata hardened* — `_plot_xy` returns empty data for an unknown pop instead of throwing
+   (`pop_membership: not found: /Napari selection` 500 when a plot/highlight still pointed at a
+   since-cleared selection).
+6. *Plots refresh on resize* — `_node_dict` emits a `membership_sig` (hash of the label set) for
+   explicit-label pops. Resizing the napari selection changed the manager's cell count but not the
+   plots, because the client's `popVersion` only bumps on a gate/filter signature change and the
+   transient pop has neither; the signature now folds in `membership_sig`.
+7. *Clearing the selection cleans up fully* — new `POST /api/napari/stop-selection` (the trash
+   button) clears the registry, re-broadcasts, and sends the bridge a `remove_layer` for the
+   `Cell selection` Shapes layer (it used to linger in napari). The client also prunes the dead
+   path from plot highlights / displayed parents, so a plot with no remaining selection reverts
+   from the dimmed overlay backdrop to normal pseudocolour/contour instead of staying grey.
+
+**#00007** — **Napari ↔ gating linked brushing** (2026-06-25)
+Napari is wired both ways around the gating engine (Julia stays the sole evaluator).
+*Consumer*: `POST /api/napari/show-populations` → bridge `show_populations` colours per-pop
+centroid Points layers (centroids read locally from the H5AD via the new
+`app/py/utils/label_props_utils.py`). *Producer (linked brushing)*: `POST
+/api/napari/start-selection` adds a `Cell selection` Shapes layer; drawing on it point-in-polygons
+cell centroids and POSTs the inside label IDs to `/api/napari/event`, which mirrors them as a
+**transient** "Napari selection" population (explicit-label membership; `transient` pops broadcast
+but never persisted) so the flow plots highlight exactly those cells. Also added the Python
+membership client `app/py/cecelia_client.py` + reduced `app/py/utils/pop_utils.py` (`pop_df`
+resolves membership via the API, reads columns locally — no Python gate engine, no CSV).
+Engine: `Population.explicit_labels`/`transient` + `recompute!` branch + `to_tree(include_transient)`.
+Docs: `NAPARI.md`, `POPULATION.md`, `API.md`, `ARCHITECTURE.md`.
+
+**#00005** — **Per-task log files** (2026-06-23)
+`run_task` in `scheduler.jl` now wraps the caller's `on_log` with `_wrap_log_with_file`, which
+appends every log line (timestamped `[yyyy-mm-dd HH:MM:SS]`) to
+`{img._dir}/logs/{fun_name}.log` (e.g. `…/1/{uid}/logs/cleanupImages.cellposeCorrect.log`).
+The directory is created on first use. The wrapper is transparent — all existing callers (API,
+REPL, chain) keep their own `on_log` behaviour unchanged; the file write is additive and
+swallows I/O errors silently so a bad path never kills a task. `Dates` stdlib added to
+`Project.toml`.
+
+**#00001** — **Remaining cleanup result handlers** (2026-06-20)
+`avgCorrect`, `driftCorrect`, etc. — originally flagged as needing individual `ws_result` calls.
+Resolved: `sockets.jl` generic `_run_task(e)` now sends `ws_result` for any task returning a
+non-nothing value, so new tasks get this for free.
+
+**#00006** — **`sockets.jl` duplicate task dispatch table** (2026-06-20)
+Lines 95–105 had a hard-coded `if task_name == "omezarr" ... elseif ...` table duplicating
+`task_registry.jl`. Fixed: `handle_task_run` now extracts the `module` field from the WS
+payload and constructs the full `fun_name` as `module * "." * task`, then resolves via
+`_task_from_fun_name`. Adding a new task now requires only `task_registry.jl`.
+
+**#00007** — **Frontend task JSON files not deleted** (2026-06-20)
+`frontend/src/tasks/definitions/importImages.json` and `cleanupImages.json` were stale copies
+of the package-owned specs. Deleted; Vue now fetches from `GET /api/tasks/definitions?category=X`.
+
+**#00008** — **Validation not enforced at `run_task` base level** (2026-06-20)
+`validate_params` was only called inside each concrete task's `run_task` implementation —
+a new task could forget it. Fixed: concrete impls renamed to `_run_task`; public `run_task`
+always calls `validate_params` before delegating. REPL callers get enforcement unconditionally.
+
+**#00009** — **`task:result` handler for `cellposeCorrect`** (2026-06-19)
+`ws.ts` now updates `img.filepaths["cpCorrected"]` when `task:result` arrives with
+`valueName + filename`. Generic handler works for any cleanup task that sends these fields.
+
+**#00010** — **`proc.pid` FieldError in `kill_task`** (2026-06-18)
+`Base.Process` has no `.pid` field; fixed with `ccall(:uv_process_get_pid, ...)`.
+
+**#00011** — **Cancelled tasks showing green "done"** (2026-06-18)
+libuv sets `exitcode=0` for signal-killed processes; added `&& proc.termsignal == 0` check
+in `run_python_process` and `run_bf2raw_process`.
+
+**#00012** — **`POST /api/projects/rename` unknown endpoint** (2026-06-18)
+Revise didn't hot-reload `server.jl` and `projects.jl` together; backend restart required.
+Endpoint itself was correct.
+
+**#00019** — **`run.run_id` FieldError in chain cancel** (2026-06-22)
+`ChainRun` struct has field `.id`, not `.run_id`. The `_is_cancelled()` closure in `run_chain`
+referenced `run.run_id`, causing a `FieldError` on every chain run attempt. Fixed in `chain.jl`
+(`_is_cancelled() = on_cancel_check(run.id)`).
+
+**#00015** — **GPU chain tasks appeared to run concurrently / wrong elapsed time** (2026-06-22)
+Pools were already config-defined (`config.toml [pools]`: `gpu=1`, `io=8`, …) and the global
+worker pool *did* serialise GPU execution. The bug was **queue visibility**: `_execute_image_chain!`
+marked a node `:running` *before* `run_task` acquired a pool slot, so all three cellpose nodes
+showed `:running` with `startedAt≈t0` (elapsed 2/4/6 min) even though only one executed at a time.
+Fixed: node is marked `:queued` before `run_task`; flips to `:running` only when a pool worker
+picks it up (via `on_status_change`), so `startedAt`/elapsed is the real start. New
+`chain:node:queued` event + `:queued` live-node state. Also hardened `_pool` to `@warn` (once) on
+fallback to `default` instead of silently swallowing a missing pool. The dead per-run
+`ChainRun._pools` semaphore layer (never wired from the API) was removed — pools are config-only.
+
+**#00016** — **Chain cancel didn't kill running subprocesses** (2026-06-22)
+`cancel_chain_run!` only set a between-node flag, so a running cellpose process kept going and the
+node finished green. Fixed: `TaskRecord` gained a `chain_run_id` field; `run_task` threads
+`chain_run_id = run.id`; `cancel_chain_run!` now collects matching task IDs under `_TASKS_LOCK`
+and calls `cancel_task!` (SIGKILL via `_kill_tree`) on each. After the killed task returns,
+`_execute_image_chain!` re-checks `_is_cancelled()` and marks the node `:cancelled` (not `:failed`),
+and the frontend maps `status='cancelled'` to a cancelled entry. (Set-scope/incremental still
+pending — see #00020.)
+
+**#00017** — **SIGKILL timing race in cancel_task!** (2026-06-22)
+If cancel arrived after a worker set `:running` but before `on_process` recorded `rec.proc`, the
+kill was skipped. Fixed: `_execute_job!`'s `on_process` wrapper re-checks `is_cancelled(job.id)`
+right after storing `rec.proc` and kills immediately if already cancelled.
+
+**#00018** — **Chain node labels showed raw fn** (2026-06-22)
+Live-tab nodes showed `cleanupImages.cellposeCorrect` instead of a friendly label. Fixed on the
+frontend: `ws.ts` resolves the label via `useTaskDefsStore().labelFor(fn)` before
+`addFromChainEvent` (falls back to `fn.split('.').pop()` only until defs load), and `ChainLiveNode`
+renders `data.label`. No backend payload change needed.

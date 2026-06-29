@@ -1,0 +1,44 @@
+"""
+Bayesian (btrack) tracking task entry point.
+
+Called by the Julia `tracking.bayesian_tracking` handler as a subprocess. Reads centroids
+from the segmentation's label-props H5AD, runs btrack, and writes the lineage columns
+(track_id, track_parent, track_root, track_state, track_generation, cell_id) back into
+the same H5AD obs. See `py.utils.tracking_utils` for the convention.
+
+Parameter contract (JSON written by Julia):
+  taskDir              - metadata directory ({proj}/1/{uid}/)
+  valueName            - segmentation label set name (default 'default')
+  labelIds             - list of label IDs to track (gated population), or null (whole seg)
+  maxSearchRadius, maxLost, trackBranching, minTimepoints, accuracy, probToAssign,
+  noiseInital, noiseProcessing, noiseMeasurements, distThresh, timeThresh,
+  segmentationMissRate, lambdaLink, lambdaBranch, lambdaTime, lambdaDist, thetaTime,
+  thetaDist            - btrack model parameters
+"""
+
+import sys
+import os
+# Add app/ to sys.path so `import py.*` resolves correctly.
+# __file__ is at app/py/tasks/tracking/bayesian_tracking_run.py → 4 levels up to app/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))))
+
+import py.utils.script_utils as script_utils
+from py.utils.tracking_utils import BayesianTrackingUtils
+
+
+def run(params: dict):
+    log = script_utils.get_logfile_utils(params)
+    BayesianTrackingUtils(params, log).track_objects()
+
+
+def main():
+    params = script_utils.script_params()
+    if params is None:
+        print('[ERROR] No params file provided (--params missing or not found)', flush=True)
+        raise SystemExit(1)
+    run(params)
+
+
+if __name__ == '__main__':
+    main()
