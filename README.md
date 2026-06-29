@@ -1,3 +1,5 @@
+## DO NOT USE##
+
 # Cecelia Pineapple
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
