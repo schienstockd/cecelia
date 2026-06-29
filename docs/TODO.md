@@ -11,6 +11,17 @@ Grep `needs-input` to list them.
 
 ## High priority
 
+**#00056** — **Unify PythonCall on the Pixi env (drop the separate CondaPkg conda env)**
+`PythonCall`/`CondaPkg.jl` provisions its *own* conda env at `api/.CondaPkg` and `app/.CondaPkg`
+(~202 MB each) — a second Python environment separate from the Pixi-managed `.pixi/` env that all
+task subprocesses and the napari bridge use. This is a real drift risk, not just waste: an
+in-process `PythonCall` call could resolve a *different* package version than an out-of-process task
+subprocess, producing bugs that reproduce on only one path. Point PythonCall at the Pixi env's
+interpreter — set `JULIA_CONDAPKG_BACKEND=Null` and `JULIA_PYTHONCALL_EXE` to the Pixi env's `python`
+(or the equivalent CondaPkg/PythonCall preferences in `app/`), then delete the `.CondaPkg` dirs
+(already gitignored). Verify any in-process `PythonCall` usage still resolves its imports. (Surfaced
+while connecting the repo — the `.CondaPkg` dirs were the two fattest things after `.pixi/`.)
+
 **#00003** — **Per-image lockfiles wired into task commit sites**
 Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
 guard and is never called. The real (rare) collision risk is two tasks doing concurrent
@@ -41,6 +52,13 @@ when a set-level mutating task lands.
 ---
 
 ## Medium priority
+
+**#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
+Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
+launcher (done), and the update path (`pixi run update` done; in-app button pending) — rewrite
+`README.md` for the end-user install → run → update story (it currently predates Pixi). Tie in with
+the move from commit-as-we-go to **versioned GitHub Releases** (SHIPPING.md Phase 3): once releases
+exist, the README's install section should point at the release installers, not a source checkout.
 
 **#00047** — **Temporal downsampling / overlapping tracklets for behaviour** (deferred)
 The old framework computed track measures on the fly, so HMM could push `skipTimesteps` /
