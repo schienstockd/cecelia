@@ -27,28 +27,32 @@ to achieve it — without adding a heavy GUI runtime (no Electron, no Tauri/Rust
 ## Stack
 
 ```
-Desktop shortcut  (created by the installer via menuinst)
-  └── app.py launcher  (Python, runs in the env)
-        ├── starts → Julia API server (Cecelia.jl + HTTP/WebSocket) on :8080
-        │               └── serves the built Vue frontend AND the /api + /ws endpoints (same origin)
-        │               └── spawns Python analysis subprocesses (Cellpose, btrack, napari…) from this env
-        └── opens → the user's default browser at http://localhost:8080
+install.sh / install.ps1  (bootstrap installer — one command)
+  ├── installs Pixi + Juliaup if missing
+  ├── downloads the release bundle (app + prebuilt frontend) → ~/.local/share/cecelia
+  ├── pixi install  +  julia --project=api instantiate   (provision the env on this machine)
+  └── creates a desktop launcher → runs `pixi run app`
 
-Pixi / conda  (install-time dependency manager)
-  └── one env: Julia runtime + Cecelia.jl + the full Python analysis stack + the built frontend
-
-constructor  (build-time: turns the conda env into a native graphical installer + desktop shortcut)
+Desktop launcher → app.py  (Python, in the env)
+  ├── starts → Julia API server (Cecelia.jl + HTTP/WebSocket) on :8080
+  │               └── serves the built Vue frontend AND /api + /ws (same origin)
+  │               └── spawns Python analysis subprocesses (Cellpose, btrack, napari…) from the env
+  └── opens → the user's default browser at http://localhost:8080
 ```
 
-The window is just the **user's default browser** pointed at `localhost:8080`. There is no bundled
-WebView and no second language: the only "shell" is `app.py`, a small Python launcher that lives in
-the same env as everything else. The native **installer + desktop icon** come from conda
-`constructor` (the tool behind the Anaconda/Miniforge installers) with `menuinst` shortcuts.
+The window is just the **user's default browser** pointed at `localhost:8080` — no bundled WebView,
+no second language. The "installer" is a small **bootstrap script** (`install.sh` / `install.ps1`)
+that provisions the env with Pixi + Juliaup; the "shell" is `app.py`, a tiny Python launcher in that
+same env.
 
-**Why this shape.** The genuinely hard part of distribution is provisioning the multi-GB
-Julia + Python(+CUDA) environment on the user's machine; Pixi/conda solves that reproducibly. The
-window is cheap, so we don't pay for a bundled browser or a Rust/JS shell to get one — we reuse the
-system browser and serve the frontend from the server we already run.
+**Why this shape.** The hard part of distribution is provisioning the multi-GB Julia + Python(+CUDA)
+environment on the user's machine; Pixi (env) + Juliaup (Julia) solve that reproducibly, and `app.py`
++ the server serving its own frontend gives the window for free. We don't compile native per-OS
+installers: the release **bundle is OS-independent** (the prebuilt frontend is static; Julia/Python
+are provisioned per-OS at install), so only the install *script* differs per OS. A fully-graphical
+double-click installer (e.g. conda `constructor`) is a possible later polish — its cost is per-OS
+conda packaging work; the bootstrap script is the v1. The one tradeoff vs a graphical installer: a
+single terminal command at install time (like Miniforge/conda itself).
 
 ---
 
@@ -56,7 +60,7 @@ system browser and serve the frontend from the server we already run.
 
 ```
 User clicks the desktop icon
-  → menuinst shortcut runs `app.py` (in the env)
+  → the desktop launcher runs `app.py` (in the env)
   → app.py spawns the Julia server (`julia --project src/server.jl`, production mode)
   → Julia loads Cecelia.jl, starts HTTP + WebSocket on :8080, serves frontend/dist + /api + /ws
   → app.py polls http://localhost:8080/api/health until {ok:true}
@@ -89,30 +93,29 @@ env. ~70 lines, no logic beyond launch/health/open/teardown.
 `pixi run build` first. In dev you still use the Vite server; if `dist/` is absent the static
 handler no-ops and requests fall through to the API router.
 
-### constructor installer + menuinst shortcut  *(to build)*
-`constructor` builds a per-platform graphical installer (`.pkg` / `.exe` / `.sh`) from conda
-packages, with a progress UI and a `menuinst` desktop/Start-Menu shortcut that runs `app.py`. See
-**Building installers**.
+### Installer scripts + release bundle
+`install.sh` (Linux/macOS) and `install.ps1` (Windows) **are** the installer: they bootstrap Pixi +
+Juliaup, download the release bundle, provision the env, and create the desktop launcher. The bundle
+(`cecelia.tar.gz`) and the scripts are published as **GitHub Release assets** by
+`.github/workflows/release.yml` on each `v*` tag. See **Building & releasing** below.
 
 ---
 
-## Building installers  *(per-platform, not yet built)*
+## Building & releasing
 
-`constructor` consumes a `construct.yaml` and must run **on each target OS** to produce that OS's
-installer (so this belongs in a CI matrix, like any installer). Key considerations:
+`.github/workflows/release.yml` runs on a `v*` tag — one `ubuntu-latest` job, because the bundle is
+OS-independent:
+1. `npm ci && npm run build` → prebuilt `frontend/dist`.
+2. `tar` a portable bundle `cecelia.tar.gz` (api, app, app.py, pixi.toml, pixi.lock,
+   napari/napari_bridge.py, frontend/dist, install scripts, README, docs). It excludes
+   `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
+3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
 
-- **conda vs PyPI.** `constructor` builds from conda channels, but our stack is mostly PyPI (torch
-  cu124, napari, cellpose, btrack, scanpy via pip). Options: (a) move those to conda-forge in the
-  installer build, or (b) use **`pixi-pack`** (pack the resolved pixi env — conda + PyPI — into a
-  portable bundle) and wrap it with a thin installer + menuinst shortcut. `pixi-pack` is the
-  pixi-native path and avoids re-expressing the env in pure conda; evaluate it before committing to
-  raw `constructor`.
-- **What ships:** the resolved env, the Cecelia Julia source + an instantiated/precompiled depot,
-  the built `frontend/dist`, and `app.py`. The shortcut command is `app.py` (via the env's python).
-- **GPU variant** chosen at install (CUDA on Linux/Win, MPS/CPU on macOS), mirroring `pixi.toml`'s
-  platform-gated torch.
-- **First-run size:** the env is multi-GB; the installer's progress UI makes the download/expand
-  feel normal.
+`install.sh`/`install.ps1` then download `…/releases/latest/download/cecelia.tar.gz`, install
+Pixi + Juliaup if missing, run `pixi install` (which resolves the GPU variant per-OS from
+`pixi.toml`'s platform-gated torch) + `julia --project=api instantiate`, and create the launcher.
+**First-run size:** the env is multi-GB and downloads at install time. `install.ps1` is authored but
+**not yet verified on Windows hardware** — the first real test is a Windows machine / runner.
 
 ---
 
@@ -202,14 +205,15 @@ task param (`CLAUDE.md`). See `~/cc-workspace/cecelia/CLUSTERING_PLAN.md`.
 to build + import); `pixi run` tasks replace the old shell scripts; the Julia server serves the built
 frontend at same-origin `:8080` (verified); the `app.py` launcher + `pixi run app` exist.
 
-**Phase 2 — installer.** `construct.yaml` (or `pixi-pack` wrapper) producing per-platform graphical
-installers + a menuinst desktop shortcut that runs `app.py`. Built in a CI matrix. GPU variant chosen
-at install. *(Note: building installers requires running on each target OS with the system toolchain;
-it cannot be done from a single dev box.)*
+**Phase 2 — installer + releases — done.** `install.sh` / `install.ps1` (bootstrap Pixi + Juliaup,
+download the bundle, provision, add a desktop launcher) and `release.yml` (build bundle → GitHub
+Release on `v*` tag). Linux verified; macOS/Windows scripts authored, to be confirmed on those OSes.
 
-**Phase 3 — in-app update + release stream.** Repo migration (`schienstockd/cecelia` ←
-new package, `…/cecelia-legacy` ← old R version); versioned GitHub Releases; wire the Vue "Update"
-control + `/api/update` to check releases, update, and prompt restart.
+**Phase 3 — in-app update + release polish.** Repo migration (`schienstockd/cecelia` ← new package,
+`…/cecelia-legacy` ← old R version); wire a Vue "Update" control + `/api/update` to check GitHub
+Releases, update, and prompt restart (console `pixi run update` already exists). Optional: a
+fully-graphical double-click installer (conda `constructor` / `pixi-pack`) if the one-time terminal
+command proves a barrier for users.
 
 **Possible future — Julia package registry.** Registering Cecelia.jl in the General Registry would
 allow `] add Cecelia` for REPL-only users. Not a priority. See `FUTURE.md`.

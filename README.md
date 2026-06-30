@@ -13,6 +13,30 @@ Julia + Python + Vue stack.
 
 ---
 
+## Quickstart
+
+One command installs [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
+downloads the latest release, provisions the environment (a few GB on first run), and adds a
+**Cecelia** launcher to your applications menu.
+
+**Linux / macOS**
+```sh
+curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
+```
+
+**Windows** (PowerShell)
+```powershell
+irm https://github.com/schienstockd/cecelia/releases/latest/download/install.ps1 | iex
+```
+
+Then click the **Cecelia** launcher (or run `pixi run app` from the install directory) — it starts
+the server and opens Cecelia in your browser at <http://localhost:8080>. **To update:** re-run the
+install command, or `pixi run update` from the install directory.
+
+Running from source for development (hot-reload) is covered in [`docs/INSTALL.md`](docs/INSTALL.md).
+
+---
+
 ## ⚠️ How this software was built — disclaimer
 
 **This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
@@ -99,7 +123,7 @@ Dominik is the **author and scientific owner** of this software and of the origi
 | Frontend | Vue 3 + Pinia + PrimeVue, Observable Plot, regl-scatterplot | UI only — no analysis logic |
 | API | Julia (HTTP + WebSocket server) | Thin transport over the package |
 | Package | **Cecelia.jl** | Data model, tasks, gating, statistics — headless-runnable |
-| Compute | Python venv (napari, Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
+| Compute | Pixi-managed env (napari, Cellpose, btrack, scanpy, PyTorch) | Image I/O and ML |
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layer boundaries and the REPL-runnable
 contract.
