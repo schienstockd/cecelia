@@ -289,33 +289,12 @@ function _write_track_props(track_path::String, track_ids::Vector{Int},
                             measure_names::Vector{String}, X::Vector{Vector{Any}},
                             lineage::Dict{String,Vector{Any}};
                             on_log::Function, on_process::Function)::Bool
-    params_dir = dirname(track_path)
-    mkpath(params_dir)
-    task_id     = string(rand(UInt32), base = 16)
-    params_file = joinpath(params_dir, "track_props.$task_id.params.json")
-    open(params_file, "w") do io
-        JSON3.write(io, (; outPath = track_path, trackIds = track_ids,
-                          measureNames = measure_names, X = X, lineage = lineage))
-    end
-
-    # app/src/tasks/tracking/ → three dirname levels reach app/
-    py_script = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                         "tracking", "track_props_run.py")
-    isfile(py_script) || begin
-        on_log("[ERROR] Python script not found: $py_script")
-        return false
-    end
-
-    out_pipe = Pipe()
-    proc = run(pipeline(`$(python_bin_path()) $py_script --params $params_file`;
-                        stdout = out_pipe, stderr = out_pipe); wait = false)
-    close(out_pipe.in)
-    on_process(proc)
-    for line in eachline(out_pipe)
-        on_log(line)
-    end
-    wait(proc)
-    proc.exitcode == 0 && proc.termsignal == 0
+    # track_path = {img._dir}/labelProps/{vn}__tracks.h5ad → up two dirs reaches img._dir
+    run_py("tasks/tracking/track_props_run.py",
+        (; outPath = track_path, trackIds = track_ids,
+           measureNames = measure_names, X = X, lineage = lineage),
+        task_run_dir(dirname(dirname(track_path)));
+        on_log = on_log, on_process = on_process)
 end
 
 # ── Motion dimensionality detection (in-plane 2D vs full 3D) ────────────────────────

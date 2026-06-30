@@ -510,30 +510,9 @@ function write_categorical_obs(props_path::AbstractString, columns::AbstractVect
                values = Any[v === missing ? nothing : (v isa AbstractString ? String(v) : v)
                             for v in c.values])
             for c in columns]
-    task_id     = string(rand(UInt32); base=16)
-    params_file = joinpath(dirname(props_path), "write_cat_obs.$task_id.params.json")
-    open(params_file, "w") do io
-        JSON3.write(io, (; filepath = String(props_path), columns = cols,
-                          drop = String.(collect(drop))))
-    end
-    # @__DIR__ = app/src → one dirname level reaches app/
-    py_script = joinpath(dirname(@__DIR__), "py", "writers",
-                         "write_categorical_obs_run.py")
-    isfile(py_script) || begin
-        on_log("[ERROR] Python script not found: $py_script")
-        rm(params_file; force=true)
-        return false
-    end
-    out_pipe = Pipe()
-    proc = run(pipeline(`$(python_bin_path()) $py_script --params $params_file`;
-                        stdout=out_pipe, stderr=out_pipe); wait=false)
-    close(out_pipe.in)
-    on_process(proc)
-    for line in eachline(out_pipe)
-        on_log(line)
-    end
-    wait(proc)
-    ok = proc.exitcode == 0 && proc.termsignal == 0
-    rm(params_file; force=true)
-    ok
+    # props_path = {img._dir}/labelProps/{vn}.h5ad → up two dirs reaches img._dir
+    run_py("writers/write_categorical_obs_run.py",
+        (; filepath = String(props_path), columns = cols, drop = String.(collect(drop))),
+        task_run_dir(dirname(dirname(props_path)));
+        on_log = on_log, on_process = on_process)
 end

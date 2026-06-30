@@ -30,10 +30,7 @@ Parameter contract (JSON written by Julia):
   applyGaussianToOthers - bool, apply Gaussian to uncorrected channels
 """
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-
+# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import py.utils.zarr_utils as zarr_utils
 import py.utils.ome_xml_utils as ome_xml_utils
 from py.utils.dim_utils import DimUtils

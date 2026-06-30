@@ -44,68 +44,32 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
         on_log("[INFO] Tracking whole segmentation '$value_name'")
     end
 
-    # Write the params file the Python script reads.
-    task_dirs   = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
-    task_subdir = string(get(task_dirs, "tasks", "tasks"))
-    params_dir  = joinpath(task_dir, task_subdir)
-    mkpath(params_dir)
-
-    task_id     = get(params, "_task_id", string(rand(UInt32), base = 16))
-    params_file = joinpath(params_dir, "bayesian_tracking.$task_id.params.json")
-    open(params_file, "w") do io
-        JSON3.write(io, (;
-            taskDir              = task_dir,
-            valueName            = value_name,
-            labelIds             = label_ids,                          # null = whole segmentation
-            maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
-            maxLost              = Int(get(params, "maxLost", 3)),
-            trackBranching       = Bool(get(params, "trackBranching", false)),
-            minTimepoints        = Int(get(params, "minTimepoints", 5)),
-            accuracy             = Float64(get(params, "accuracy", 0.8)),
-            probToAssign         = Float64(get(params, "probToAssign", 0.8)),
-            noiseInital          = Int(get(params, "noiseInital", 300)),
-            noiseProcessing      = Int(get(params, "noiseProcessing", 100)),
-            noiseMeasurements    = Int(get(params, "noiseMeasurements", 100)),
-            distThresh           = Float64(get(params, "distThresh", 10.0)),
-            timeThresh           = Int(get(params, "timeThresh", 5)),
-            segmentationMissRate = Float64(get(params, "segmentationMissRate", 0.1)),
-            lambdaLink           = Int(get(params, "lambdaLink", 5)),
-            lambdaBranch         = Int(get(params, "lambdaBranch", 50)),
-            lambdaTime           = Int(get(params, "lambdaTime", 5)),
-            lambdaDist           = Float64(get(params, "lambdaDist", 5.0)),
-            thetaTime            = Int(get(params, "thetaTime", 5)),
-            thetaDist            = Float64(get(params, "thetaDist", 5.0)),
-        ))
-    end
-
-    # @__DIR__ = app/src/tasks/tracking/ → three dirname levels reach app/
-    py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                          "tracking", "bayesian_tracking_run.py")
-    python_bin = python_bin_path()
-
-    if !isfile(py_script)
-        on_log("[ERROR] Python script not found: $py_script")
-        return nothing
-    end
-
     on_log("[INFO] Tracking labelProps: $props_path")
 
-    out_pipe = Pipe()
-    proc = run(pipeline(`$python_bin $py_script --params $params_file`;
-                        stdout = out_pipe, stderr = out_pipe); wait = false)
-    close(out_pipe.in)
-    on_process(proc)
-
-    for line in eachline(out_pipe)
-        m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", line)
-        if !isnothing(m)
-            on_progress(parse(Int, m[1]), parse(Int, m[2]))
-        else
-            on_log(line)
-        end
-    end
-    wait(proc)
-    ok = proc.exitcode == 0 && proc.termsignal == 0
+    ok = run_py("tasks/tracking/bayesian_tracking_run.py",
+        (; taskDir              = task_dir,
+           valueName            = value_name,
+           labelIds             = label_ids,                          # null = whole segmentation
+           maxSearchRadius      = Int(get(params, "maxSearchRadius", 20)),
+           maxLost              = Int(get(params, "maxLost", 3)),
+           trackBranching       = Bool(get(params, "trackBranching", false)),
+           minTimepoints        = Int(get(params, "minTimepoints", 5)),
+           accuracy             = Float64(get(params, "accuracy", 0.8)),
+           probToAssign         = Float64(get(params, "probToAssign", 0.8)),
+           noiseInital          = Int(get(params, "noiseInital", 300)),
+           noiseProcessing      = Int(get(params, "noiseProcessing", 100)),
+           noiseMeasurements    = Int(get(params, "noiseMeasurements", 100)),
+           distThresh           = Float64(get(params, "distThresh", 10.0)),
+           timeThresh           = Int(get(params, "timeThresh", 5)),
+           segmentationMissRate = Float64(get(params, "segmentationMissRate", 0.1)),
+           lambdaLink           = Int(get(params, "lambdaLink", 5)),
+           lambdaBranch         = Int(get(params, "lambdaBranch", 50)),
+           lambdaTime           = Int(get(params, "lambdaTime", 5)),
+           lambdaDist           = Float64(get(params, "lambdaDist", 5.0)),
+           thetaTime            = Int(get(params, "thetaTime", 5)),
+           thetaDist            = Float64(get(params, "thetaDist", 5.0))),
+        task_run_dir(task_dir);
+        on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
     on_log("[INFO] Tracking complete.")

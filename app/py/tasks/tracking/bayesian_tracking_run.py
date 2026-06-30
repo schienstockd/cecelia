@@ -18,11 +18,7 @@ Parameter contract (JSON written by Julia):
 
 import sys
 import os
-# Add app/ to sys.path so `import py.*` resolves correctly.
-# __file__ is at app/py/tasks/tracking/bayesian_tracking_run.py → 4 levels up to app/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__))))))
-
+# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import py.utils.script_utils as script_utils
 from py.utils.tracking_utils import BayesianTrackingUtils
 
