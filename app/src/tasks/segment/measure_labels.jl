@@ -63,7 +63,7 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     end
 
     py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                          "segment", "measure_run.py")
+                          "segment", "measure_labels_run.py")
     python_bin = python_bin_path()
 
     if !isfile(py_script)

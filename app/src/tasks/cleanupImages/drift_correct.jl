@@ -58,7 +58,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     end
 
     py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                          "cleanupImages", "drift_correct.py")
+                          "cleanupImages", "drift_correct_run.py")
     python_bin = python_bin_path()
 
     if !isfile(py_script)
