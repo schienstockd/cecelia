@@ -12,6 +12,7 @@ analysis stack the server spawns all resolve to that env. See docs/SHIPPING.md.
 Close this window (or Ctrl-C) to stop the server.
 """
 import os
+import shutil
 import sys
 import time
 import subprocess
@@ -19,6 +20,16 @@ import urllib.request
 import webbrowser
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def _find_julia() -> str:
+    """Resolve the Julia binary. A GUI-launched desktop shortcut may not have juliaup on PATH,
+    so fall back to its default install location."""
+    found = shutil.which("julia")
+    if found:
+        return found
+    candidate = os.path.expanduser("~/.juliaup/bin/julia")
+    return candidate if os.path.exists(candidate) else "julia"
 PORT = os.environ.get("CECELIA_PORT", "8080")
 URL = f"http://localhost:{PORT}"
 HEALTH = f"{URL}/api/health"
@@ -40,7 +51,7 @@ def main() -> int:
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
     # server's Python subprocesses use the same env.
     proc = subprocess.Popen(
-        ["julia", "--project", "src/server.jl"],
+        [_find_julia(), "--project", "src/server.jl"],
         cwd=os.path.join(ROOT, "api"),
     )
     try:
