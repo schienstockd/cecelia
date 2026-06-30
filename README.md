@@ -6,7 +6,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 [cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue stack.
 
 > ⚠️ **This software was written almost entirely by an AI** ([Claude Code](https://claude.com/claude-code)),
-> under Dominik Schienstock's direction. All scientific validation was done by the human author, and
+> under Dom's direction. All scientific validation was done by the human author, and
 > it has **not yet been independently tested** by other users — treat early releases accordingly.
 > Full methodology and sources are at the [end of this README](#how-this-software-was-built).
 
@@ -127,10 +127,10 @@ terminal, it:
 
 - **ported** the original R/Shiny `cecelia` into this Julia/Python/Vue stack. The architecture and
   data model are largely *carried over* from the original — the object model, the population table,
-  the gating and population model are Dominik's existing design, not new inventions. The work was
+  the gating and population model are Dom's existing design, not new inventions. The work was
   translating them faithfully into Julia idioms (see [`docs/`](docs/) for the per-subsystem design
   notes);
-- worked out the new-stack-specific structure under Dominik's direction (the package / API / GUI
+- worked out the new-stack-specific structure under Dom's direction (the package / API / GUI
   layer split, the task/scheduler system, the Vue frontend, the Python/napari bridge) and
   implemented all of it;
 - wrote the automated test suite and the documentation in [`docs/`](docs/).
@@ -144,11 +144,11 @@ Concretely, what Claude **could not** do is the part that matters most for trust
 to microscopy data during development beyond the small fixture files in the test suite. It could not
 observe live-cell tracking, validate segmentation quality on real images, or confirm that a
 population gate was biologically meaningful. All scientific validation — that the software produces
-correct results on real data — was performed by Dominik.
+correct results on real data — was performed by Dom.
 
 ### The human role
 
-Dominik is the **author and scientific owner** of this software and of the original `cecelia`. He:
+Dom is the **author and scientific owner** of this software and of the original `cecelia`. He:
 
 - set every goal and constraint, and made all architecture and design decisions (the language
   boundary, the package / API / GUI separation, the gating and population model, what to port,
@@ -161,7 +161,7 @@ Dominik is the **author and scientific owner** of this software and of the origi
 
 ### Sources
 
-- The original **`cecelia`** R/Shiny package by Dominik Schienstock and colleagues — the
+- The original **`cecelia`** R/Shiny package by Dom and colleagues — the
   behavioural specification this project ports. Published in *Nature Communications* (2025),
   [doi:10.1038/s41467-025-57193-y](https://doi.org/10.1038/s41467-025-57193-y); source (R version):
   [github.com/schienstockd/cecelia-legacy](https://github.com/schienstockd/cecelia-legacy).
