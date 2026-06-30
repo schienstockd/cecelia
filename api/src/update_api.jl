@@ -42,7 +42,7 @@ function api_update_check(::HTTP.Request)
     releases = try
         resp = HTTP.get("https://api.github.com/repos/$_UPDATE_REPO/releases?per_page=20";
                         headers = ["Accept" => "application/vnd.github+json", "User-Agent" => "cecelia"],
-                        readtimeout = 15, retry = false)
+                        read_idle_timeout = 15, retry = false)
         JSON3.read(resp.body)
     catch e
         return 200, JSON3.write((; current, latest = nothing, updateAvailable = false,
