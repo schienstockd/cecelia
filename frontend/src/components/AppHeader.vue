@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { useWsStore } from '../stores/ws'
-import UpdateButton from './UpdateButton.vue'
 
 const ws = useWsStore()
 
@@ -23,8 +22,6 @@ const statusTip: Record<string, string> = {
     <span class="logo">🍍 Cecelia</span>
 
     <span class="spacer" />
-
-    <UpdateButton />
 
     <span
       class="ws-badge"

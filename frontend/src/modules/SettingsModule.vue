@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 
@@ -28,6 +28,54 @@ function copyUid() {
   if (projectMeta.current?.uid)
     navigator.clipboard.writeText(projectMeta.current.uid)
 }
+
+// ── Software updates ───────────────────────────────────────────────────────
+const verCurrent = ref('')
+const verLatest = ref<string | null>(null)
+const updateAvailable = ref(false)
+const checking = ref(false)
+const updateBusy = ref(false)
+const updateMsg = ref('')
+
+async function checkUpdates() {
+  checking.value = true
+  updateMsg.value = ''
+  try {
+    const d = await (await fetch('/api/update/check')).json()
+    verCurrent.value = d.current ?? ''
+    verLatest.value = d.latest ?? null
+    updateAvailable.value = !!d.updateAvailable
+    if (d.error) updateMsg.value = d.error
+  } catch {
+    updateMsg.value = 'Could not reach the update server.'
+  } finally {
+    checking.value = false
+  }
+}
+
+async function applyUpdate() {
+  if (!verLatest.value || updateBusy.value) return
+  updateBusy.value = true
+  updateMsg.value = ''
+  try {
+    const res = await fetch('/api/update/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ version: verLatest.value }),
+    })
+    const d = await res.json()
+    updateMsg.value = res.ok
+      ? (d.message ?? `Update ${verLatest.value} staged — restart Cecelia to finish.`)
+      : (d.error ?? 'Update failed.')
+    if (res.ok) updateAvailable.value = false
+  } catch {
+    updateMsg.value = 'Update failed (could not reach the server).'
+  } finally {
+    updateBusy.value = false
+  }
+}
+
+onMounted(checkUpdates)
 </script>
 
 <template>
@@ -85,6 +133,44 @@ function copyUid() {
           <span class="toggle-label">Auto-follow running tasks in task manager</span>
         </label>
       </div>
+    </section>
+
+    <!-- ── Software updates ────────────────────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Software updates</h2>
+
+      <div class="field">
+        <label class="field-label">Version</label>
+        <div class="field-row">
+          <input class="field-input mono" :value="verCurrent || '—'" readonly />
+          <button
+            class="save-btn"
+            :disabled="checking"
+            @click="checkUpdates"
+            v-tooltip.right="'Check GitHub for a newer release'"
+          >
+            <i :class="['pi', checking ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            {{ checking ? 'Checking…' : 'Check' }}
+          </button>
+        </div>
+        <span v-if="!updateAvailable && verCurrent && !updateMsg" class="field-hint">
+          You're on the latest version.
+        </span>
+      </div>
+
+      <div v-if="updateAvailable" class="field">
+        <button
+          class="save-btn"
+          :disabled="updateBusy"
+          @click="applyUpdate"
+          v-tooltip.right="`Download ${verLatest} and stage it; restart Cecelia to finish.`"
+        >
+          <i :class="['pi', updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
+          {{ updateBusy ? 'Updating…' : `Update to ${verLatest}` }}
+        </button>
+      </div>
+
+      <span v-if="updateMsg" class="field-hint">{{ updateMsg }}</span>
     </section>
   </div>
 </template>
