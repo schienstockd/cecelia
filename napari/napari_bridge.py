@@ -146,6 +146,19 @@ class NapariState:
             self._viewer.dims.ndisplay = 3
             self._viewer.reset_view()
 
+    def _time_axis_len(self):
+        """Length of the image's `t` axis, or None if there is no `t` axis / no data loaded.
+        Reads from the full (channel-inclusive) data shape, since `self._axes` includes `c`."""
+        if not self._axes or not self._im_data:
+            return None
+        low = [a.lower() for a in self._axes]
+        if "t" not in low:
+            return None
+        try:
+            return int(self._im_data[0].shape[low.index("t")])
+        except Exception:
+            return None
+
     def _setup_timestamp(self, path: str):
         """For timecourse data (a `t` axis), show an elapsed-time text overlay (top-left) that updates
         as the t slider moves — `t_index × frame_interval`, formatted H:MM:SS. The frame interval is
@@ -162,6 +175,13 @@ class NapariState:
                 pass
             self._ts_handler = None
         if "t" not in axes:
+            ov.visible = False
+            return
+        # bioformats2raw writes a full TCZYX series, so a single-timepoint image still carries a
+        # singleton `t` axis. Without this guard that showed a misleading "t = 0" overlay on images
+        # that have no real timecourse — treat a length-1 time axis as "no timecourse".
+        t_len = self._time_axis_len()
+        if t_len is not None and t_len <= 1:
             ov.visible = False
             return
         t_idx = axes.index("t")
