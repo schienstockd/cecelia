@@ -130,6 +130,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_plotdata(req)
         elseif path == "/api/gating/density"
             api_gating_density(req)
+        elseif path == "/api/plots/umap"
+            api_plots_umap(req)
         elseif path == "/api/plots/definitions"
             api_plot_definitions(req)
         elseif path == "/api/plots/populations"

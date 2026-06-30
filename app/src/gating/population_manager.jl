@@ -235,13 +235,20 @@ function from_tree(tree::AbstractDict)::PopulationMap
 end
 
 # ── Persistence: {task_dir}/gating/{value_name}[__tracks].json ───────────────────
-# `track` gates (gates on per-track measures, evaluated against {vn}__tracks.h5ad) live in a
-# separate sidecar `gating/{vn}__tracks.json`, mirroring the per-track h5ad naming. `flow` gates
-# stay in `gating/{vn}.json`. The `track` map's data source is the track table, but the tree
-# format + engine are identical (track-gating = flow-gating with the data source swapped).
+# Each pop_type with its OWN stored map gets a distinct sidecar suffix, mirroring the data source
+# it gates over: `flow` → `gating/{vn}.json` (cell gates); `track` → `gating/{vn}__tracks.json`
+# (per-track gates); `clust`/`trackclust` → `gating/{vn}__clust.json` / `__trackclust.json`
+# (cluster-membership pops — a filter on the `clusters.{suffix}` column written by clustPops/
+# clustTracks). The tree format + engine are identical across types (only the data source +
+# membership rule differ). `live` is NOT here: it is derived off the `flow` map (no own file).
+const POP_MAP_SUFFIX = Dict{String,String}(
+    "track"      => TRACK_PROPS_SUFFIX,   # "__tracks"
+    "clust"      => "__clust",
+    "trackclust" => "__trackclust",
+)
 gating_dir(task_dir::AbstractString) = joinpath(task_dir, "gating")
 gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::AbstractString="flow") =
-    joinpath(gating_dir(task_dir), value_name * (pop_type == "track" ? TRACK_PROPS_SUFFIX : "") * ".json")
+    joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, pop_type, "") * ".json")
 
 """Write the map to `{task_dir}/gating/{value_name}[__tracks].json` (by `m.pop_type`)."""
 function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
@@ -443,15 +450,18 @@ end
 # generic `_pop_df` core (membership is by `label`, which here IS the track_id). `granularity=:track`
 # returns the gated track rows; `granularity=:cell` expands them to member cells.
 function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
+                              pop_type::AbstractString="track",
                               cell_measures=String[], categorical=String[], pop_cols=nothing,
                               unique_labels::Bool=true, drop_na::Bool=false,
                               granularity::Symbol=:track)::DataFrame
-    # one track_props table per value_name (label == track_id); cache within this call
+    # one track_props table per value_name (label == track_id); cache within this call. The
+    # cluster column (`clusters.{suffix}`, written by clustTracks into the track table obs) comes
+    # free via track_props' motility leftjoin, so `trackclust` membership needs no cell_measures.
     tp_cache = Dict{String,DataFrame}()
     get_tp(vn) = get!(tp_cache, vn) do
         track_props(img; value_name=vn, cell_measures=cell_measures, categorical=categorical)
     end
-    load_map = vn -> load_pop_map(img; value_name=vn, pop_type="track")
+    load_map = vn -> load_pop_map(img; value_name=vn, pop_type=pop_type)
     fetch = function (vn, cols)
         tp = get_tp(vn)
         isempty(tp) && return DataFrame(label=Int[])
@@ -460,7 +470,7 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
         select(tp, keep)
     end
 
-    trackdf = _pop_df(load_map, fetch, "track", pops; default_vn=default_vn,
+    trackdf = _pop_df(load_map, fetch, pop_type, pops; default_vn=default_vn,
                       pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na)
     granularity === :track ? trackdf : _expand_tracks_to_cells(img, trackdf)
 end
@@ -709,12 +719,15 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     flush_cache && delete!(img._pop_df_cache, ckey)
     haskey(img._pop_df_cache, ckey) && return copy(img._pop_df_cache[ckey]::DataFrame)
 
-    # `track` pop_type: gates are defined directly on per-track properties (one point per track),
-    # stored in `gating/{vn}__tracks.json`, evaluated over the `track_props` table. `granularity`
-    # selects the return shape (:track rows, or :cell-expanded member cells). Distinct from the
-    # `live`+:track path below, which gates CELL properties and then aggregates to tracks.
-    if String(pop_type) == "track"
-        df = _pop_df_track_gating(img, pops, resolved_vn; cell_measures=cell_measures,
+    # `track` / `trackclust` pop_types: membership is defined directly on per-track properties
+    # (one point per track), evaluated over the `track_props` table — `track` via hand-drawn gates
+    # in `gating/{vn}__tracks.json`, `trackclust` via a `clusters.{suffix}` filter in
+    # `gating/{vn}__trackclust.json`. `granularity` selects the return shape (:track rows, or
+    # :cell-expanded member cells). Distinct from the `live`+:track path below, which gates CELL
+    # properties and then aggregates to tracks.
+    if String(pop_type) in ("track", "trackclust")
+        df = _pop_df_track_gating(img, pops, resolved_vn; pop_type=String(pop_type),
+                                  cell_measures=cell_measures,
                                   categorical=categorical, pop_cols=pop_cols,
                                   unique_labels=unique_labels, drop_na=drop_na,
                                   granularity=granularity)

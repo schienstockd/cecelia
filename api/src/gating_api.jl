@@ -90,11 +90,23 @@ _fetch(img, vn) = cols -> (label_props(img; value_name = vn) |> lp -> select_col
 _track_motility_cols(img, vn) = (p = img_track_props_path(img, vn);
     isfile(p) ? col_names(label_props(p); data_type = :vars) : String[])
 
+# every column the per-track table provides DIRECTLY (no cell→track aggregation): motility (vars)
+# + track-table obs (lineage, and `clusters.{suffix}` written by clustTracks). Passed to
+# `track_cell_measures` as the free set so a `trackclust` filter on `clusters.{suffix}` isn't
+# mistaken for a cell measure to aggregate.
+_track_free_cols(img, vn) = (p = img_track_props_path(img, vn);
+    isfile(p) ? vcat(col_names(label_props(p); data_type = :vars),
+                     col_names(label_props(p); data_type = :obs)) : String[])
+
+# pop_types whose membership is evaluated over the per-track table (one point per track):
+# `track` (hand-drawn per-track gates) and `trackclust` (a `clusters.{suffix}` filter).
+_track_grained(pop_type) = String(pop_type) in ("track", "trackclust")
+
 # track data source: ONE row per track (`track_props`, label == track_id). The requested columns
-# (gate channels / plot axes) drive which cell measures get aggregated (`track_cell_measures`);
-# motility comes free. This is the `pop_type="track"` analogue of `_fetch` (docs/POPULATION.md).
+# (gate channels / plot axes / filter measure) drive which cell measures get aggregated
+# (`track_cell_measures`); motility + track-table obs come free. The track analogue of `_fetch`.
 _track_fetch(img, vn) = cols -> track_props(img; value_name = vn,
-    cell_measures = track_cell_measures(cols, _track_motility_cols(img, vn)))
+    cell_measures = track_cell_measures(cols, _track_free_cols(img, vn)))
 
 # load + recompute a map (membership ready). For `flow`/`live` the data source is the cell table
 # and the transient napari-selection pop is injected so it is queryable like any population; for
@@ -102,7 +114,7 @@ _track_fetch(img, vn) = cols -> track_props(img; value_name = vn,
 # does not apply, so it is not injected.
 function _live_map(img, vn, pop_type)
     m = load_pop_map(img; value_name = vn, pop_type = pop_type)
-    is_track = pop_type == "track"
+    is_track = _track_grained(pop_type)
     is_track || _inject_napari_pop!(m, img)
     recompute!(m, is_track ? _track_fetch(img, vn) : _fetch(img, vn))
     m
@@ -137,10 +149,10 @@ end
 # read the raw x/y vectors for the scatter (one row per cell, or per track for pop_type="track"),
 # optionally subset to a population, before transform.
 function _plot_xy_raw(img, vn, pop_type, x, y, pop)
-    if pop_type == "track"
+    if _track_grained(pop_type)
         # per-track scatter: one point per track from `track_props` (label == track_id)
         tp = track_props(img; value_name = vn,
-                         cell_measures = track_cell_measures([x, y], _track_motility_cols(img, vn)))
+                         cell_measures = track_cell_measures([x, y], _track_free_cols(img, vn)))
         (x in names(tp) && y in names(tp)) || return (Float64[], Float64[])
         if !is_root(pop)
             m = _live_map(img, vn, pop_type)
@@ -339,6 +351,48 @@ function api_gating_plotdata(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
+# ── GET /api/plots/umap → binary Float32 [x,y,clusterCode, …] per point ───────
+# The UMAP scatter for a clustering pop_type: the `obsm['X_umap.{suffix}']` embedding + the
+# `clusters.{suffix}` code per point (frontend colours by code). `clust` reads the cell table;
+# `trackclust` reads the per-track table (one point per track). Optionally subset to a population's
+# membership (`pop`). Cluster codes are small ints → exact in Float32; an unclustered row → -1.
+function api_plots_umap(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
+    err === nothing || return err
+    vn       = _resolve_vn(img, get(q, "valueName", ""))
+    pop_type = get(q, "popType", "clust")
+    suffix   = get(q, "suffix", "default")
+    pop      = get(q, "pop", ROOT)
+    umap_key = "X_umap.$suffix"; clust_col = "clusters.$suffix"
+
+    # data table: trackclust → per-track table; clust → cell table
+    path = _track_grained(pop_type) ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
+    isfile(path) || return _gerr(404, "No labelProps/track table for value_name=$vn")
+    xy = obsm(label_props(path), umap_key)              # (n_obs, 2), obs order
+    size(xy, 1) == 0 && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
+    # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
+    cdf = label_props(path) |> select_cols([clust_col]) |> as_df
+    codes = clust_col in names(cdf) ? cdf[!, clust_col] : fill(missing, nrow(cdf))
+
+    keep = trues(size(xy, 1))
+    if !is_root(pop)
+        m = _live_map(img, vn, pop_type)
+        has_pop(m, pop) || return _gerr(404, "Population not found: $pop")
+        sel  = Set(cells_in_pop(m, pop))
+        keep = BitVector(l in sel for l in cdf.label)
+    end
+
+    idx = findall(keep)
+    buf = Vector{Float32}(undef, 3 * length(idx))
+    @inbounds for (j, i) in enumerate(idx)
+        buf[3j-2] = Float32(xy[i, 1]); buf[3j-1] = Float32(xy[i, 2])
+        c = codes[i]
+        buf[3j]   = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+    end
+    200, collect(reinterpret(UInt8, buf))
+end
+
 # ── GET /api/gating/density → binary Float32 grid (bins×bins, row-major) ──────
 function api_gating_density(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -421,6 +475,16 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
     p = pop_at(m, String(body["path"]))
     haskey(body, "colour") && (p.colour = String(body["colour"]))
     haskey(body, "show")   && (p.show = Bool(body["show"]))
+    # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
+    # `clust`/`trackclust` pop by rewriting its filter (typically filter_values). Mutates only the
+    # keys present in the `filter` dict, so a `{values:[…]}` tick leaves measure/fun untouched.
+    flt = get(body, "filter", nothing)
+    if flt !== nothing
+        haskey(flt, "measure")     && (p.filter_measure = get(flt, "measure", nothing))
+        haskey(flt, "fun")         && (p.filter_fun = get(flt, "fun", nothing))
+        haskey(flt, "values")      && (p.filter_values = get(flt, "values", nothing))
+        haskey(flt, "default_all") && (p.filter_default_all = Bool(get(flt, "default_all", false)))
+    end
     200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
 end
 
