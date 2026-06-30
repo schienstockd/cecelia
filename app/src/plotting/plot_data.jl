@@ -426,7 +426,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                            matrix_normalize::Symbol=:none)::Dict{String,Any}
     pops = String.(collect(pops))
     df = pop_df(img, pop_type, pops; value_name=value_name, granularity=granularity,
-                pop_cols=_cols_for(chart_type, measure, group_by, measures, category))
+                pop_cols=_cols_for(chart_type, measure, group_by, measures, category),
+                raw_channel_names=(chart_type == "matrix"))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
@@ -450,7 +451,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
     pops = String.(collect(pops))
     df = pop_df(imgs, uids, pop_type, pops; value_name=value_name, granularity=granularity,
-                pop_cols=_cols_for(chart_type, measure, group_by, measures, category))
+                pop_cols=_cols_for(chart_type, measure, group_by, measures, category),
+                raw_channel_names=(chart_type == "matrix"))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, collapse_series=collapse_series,
@@ -500,7 +502,8 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                            matrix_normalize::Symbol=:none)::Dict{String,Any}
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     df = _targets_frame(targets, (vn, pops) ->
-        pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols))
+        pop_df(img, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
+               raw_channel_names=(chart_type == "matrix")))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
@@ -525,7 +528,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
     pcols = _cols_for(chart_type, measure, group_by, measures, category)
     df = _targets_frame(targets, (vn, pops) ->
-        pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols))
+        pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity, pop_cols=pcols,
+               raw_channel_names=(chart_type == "matrix")))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, collapse_series=collapse_series,

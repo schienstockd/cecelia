@@ -41,7 +41,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/gate',    label: 'Gate',    icon: 'pi-chart-scatter',tip: 'FlowJo-style manual gating on segmented populations.', requiresProject: true },
       { to: '/track',   label: 'Track',   icon: 'pi-share-alt',   tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
       { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar', tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
-      { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-chart-bubble', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
+      { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
       { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap',      tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
       { to: '/spatial', label: 'Spatial', icon: 'pi-map',          tip: 'Spatial neighbourhood and proximity analysis.', disabled: true, soon: true },
       { to: '/analysis', label: 'Analysis canvas', icon: 'pi-clone', tip: 'Free-form canvas combining plots across modules, images and segmentations.', disabled: true, soon: true },

@@ -12,7 +12,7 @@
 import ModuleLayout from '../components/ModuleLayout.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
-import ClusterUmapPanel from '../components/cluster/ClusterUmapPanel.vue'
+import ClusterPlots from './cluster/ClusterPlots.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
@@ -30,8 +30,8 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
       />
     </template>
     <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="UMAP" :max-height="'none'">
-        <ClusterUmapPanel :image-uids="selectedUids" pop-type="trackclust" />
+      <CollapsibleSection label="Clusters" :max-height="'none'">
+        <ClusterPlots :image-uids="selectedUids" pop-type="trackclust" />
       </CollapsibleSection>
     </template>
   </ModuleLayout>
