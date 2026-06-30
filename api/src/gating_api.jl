@@ -67,6 +67,12 @@ function _resolve_vn(img::CciaImage, requested::AbstractString)::String
     (!isempty(requested) && haskey(img.label_props, requested)) ? String(requested) : _active_vn(img)
 end
 
+# true when the image actually has a labelProps table (i.e. it has been segmented/measured). An
+# image that hasn't been segmented yet has none — `versioned_keys` is empty — so gating/membership
+# endpoints that read the cell table must degrade gracefully rather than let `label_props` throw a
+# 500. (Once segmented — static images included — labelProps exist and the normal path applies.)
+_has_label_props(img::CciaImage)::Bool = !isempty(versioned_keys(img.label_props))
+
 # pick the channel-name version whose length matches the intensity-column count
 # (handles AF-corrected images with extra channels); fall back to the active version.
 function _matching_channel_version(versions::AbstractDict, n_channels::Int)::String
@@ -188,6 +194,16 @@ function api_gating_channels(req::HTTP.Request)
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
     vn = _resolve_vn(img, get(q, "valueName", ""))
+    # image not segmented yet: no labelProps → nothing is gateable. Return empty rather than 500ing
+    # when the gating UI probes channels for it (label_props would throw "No labelProps …"). After
+    # segmentation the image has labelProps and the normal path below runs.
+    if !_has_label_props(img)
+        return 200, JSON3.write((;
+            columns = String[], channels = String[], channelNames = String[],
+            channelNameVersions = Dict{String,Any}(), obsColumns = String[],
+            cellMeasures = String[], trackAggregates = String[],
+            valueNames = String[], valueName = vn, popType = get(q, "popType", "flow")))
+    end
     # track gating: the gateable axes are the per-track properties — motility (the track table's
     # var columns, directly gateable) plus on-read aggregates of any cell measure. We return the
     # motility columns + the aggregatable cell measures + the aggregate suffixes so the client can

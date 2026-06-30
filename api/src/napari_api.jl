@@ -328,7 +328,11 @@ function api_napari_show_populations(body_bytes::Vector{UInt8})
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
     pops = Vector{Dict{String,Any}}()
-    if show
+    # an image not segmented yet has no labelProps → no populations to show; fall through with
+    # empty `pops` (the bridge then just clears any existing pop layers) rather than 500ing in
+    # `_live_map` → `label_props` ("No labelProps for value_name=… on image …"). After segmentation
+    # the image has labelProps and populations resolve normally.
+    if show && _has_label_props(img)
         m = _live_map(img, vn, pop_type)
         # include the root (whole segmentation) so all cells are visible/selectable in napari
         root_labs = Int.(cells_in_pop(m, "root"))
