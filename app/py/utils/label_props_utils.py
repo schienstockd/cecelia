@@ -32,6 +32,7 @@ class LabelPropsView:
         self._label_ids = None       # None = all cells
         self._pending_obs = None     # staged obs columns to write; flushed by save()
         self._pending_drop = None    # staged obs column names to delete; flushed by save()
+        self._pending_obsm = None    # staged obsm matrices to write; flushed by save()
 
     # ── metadata ────────────────────────────────────────────────────────────────
     def labels(self) -> np.ndarray:
@@ -46,6 +47,14 @@ class LabelPropsView:
 
     def var_names(self) -> list:
         return list(self.adata.var_names)
+
+    def obsm_keys(self) -> list:
+        return list(self.adata.obsm.keys())
+
+    def obsm(self, key: str):
+        """The full (n_obs, k) obsm matrix for `key` (e.g. an embedding 'X_umap'), in obs order,
+        or None if absent. Pair with `labels()` for label alignment. Mirrors the Julia `obsm`."""
+        return np.asarray(self.adata.obsm[key]) if key in self.adata.obsm else None
 
     # ── view builders ─────────────────────────────────────────────────────────────
     def view_cols(self, cols):
@@ -144,20 +153,43 @@ class LabelPropsView:
                 self._pending_drop.append(nm)
         return self
 
+    def add_obsm(self, key, labels, values):
+        """Stage a 2-D obsm matrix to write — e.g. a UMAP embedding ``add_obsm('X_umap', labels,
+        xy)``. Aligned to the file's obs index **by label** (mirror of `add_obs`): ``values`` is
+        ``(m, k)`` for the ``m`` ``labels``; obs rows whose label is absent get NaN. Repeated calls
+        accumulate (later key wins). Terminal verb is ``save()``."""
+        if self._pending_obsm is None:
+            self._pending_obsm = {}
+        vals = np.asarray(values, dtype=float)
+        if vals.ndim == 1:
+            vals = vals.reshape(-1, 1)
+        self._pending_obsm[key] = (np.asarray(labels).astype(np.int64), vals)
+        return self
+
     def save(self):
-        """Terminal write: flush staged obs adds/drops into the .h5ad via anndata. No-op if
-        nothing is staged. Drops are applied before adds (so a column can be dropped and
+        """Terminal write: flush staged obs adds/drops + obsm matrices into the .h5ad via anndata.
+        No-op if nothing is staged. Drops are applied before adds (so a column can be dropped and
         re-added in one chain)."""
-        if not self._pending_obs and not self._pending_drop:
+        if not self._pending_obs and not self._pending_drop and not self._pending_obsm:
             return self
+        labels = self.adata.obs.index.astype(np.int64).to_numpy()
         for c in (self._pending_drop or []):
             if c in self.adata.obs.columns:
                 del self.adata.obs[c]
         for k, v in (self._pending_obs or {}).items():
             self.adata.obs[k] = v
+        for key, (lab, vals) in (self._pending_obsm or {}).items():
+            rowof = {int(l): i for i, l in enumerate(labels)}
+            full = np.full((len(labels), vals.shape[1]), np.nan)
+            for l, row in zip(lab, vals):
+                r = rowof.get(int(l))
+                if r is not None:
+                    full[r] = row
+            self.adata.obsm[key] = full
         self.adata.write_h5ad(self.filepath)
         self._pending_obs = None
         self._pending_drop = None
+        self._pending_obsm = None
         return self
 
     def close(self):

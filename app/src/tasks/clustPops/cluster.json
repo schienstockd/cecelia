@@ -1,0 +1,114 @@
+{
+  "task": "clusterCells",
+  "fun_name": "clust.cluster_cells",
+  "label": "Cluster cells",
+  "category": "Clustering",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "set",
+  "params": [
+    {
+      "key": "valueNameSuffix",
+      "label": "Suffix",
+      "type": "text",
+      "default": "default",
+      "tip": "Output column suffix → clusters.<suffix> and obsm['X_umap.<suffix>']. Keeps multiple resolutions / re-clusterings side by side."
+    },
+    {
+      "key": "popsToCluster",
+      "label": "Populations",
+      "type": "popSelection",
+      "popType": "flow",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "Populations to cluster, across any segmentation (e.g. A/root, B/root, C/root, or gated subsets). All selected cells from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+    },
+    {
+      "key": "clusterMeasures",
+      "label": "Cluster on",
+      "type": "labelPropsColsSelection",
+      "multiple": true,
+      "includeChannels": true,
+      "default": [],
+      "tip": "Feature columns to cluster on — channel intensities (mean_intensity_N) and/or object/morphology measures (area, sphericity, …)."
+    },
+    {
+      "key": "refChannel",
+      "label": "Reference channel",
+      "type": "labelPropsColsSelection",
+      "multiple": false,
+      "includeChannels": true,
+      "default": "",
+      "tip": "Optional: divide each intensity feature by this channel before normalisation (ratiometric). Leave empty for none."
+    },
+    {
+      "key": "resolution",
+      "label": "Resolution",
+      "type": "float",
+      "min": 0,
+      "max": 5,
+      "step": 0.05,
+      "default": 1,
+      "tip": "Leiden resolution — higher gives more, smaller clusters."
+    },
+    {
+      "key": "mergeUmap",
+      "label": "Calculate UMAP",
+      "type": "bool",
+      "default": true,
+      "tip": "Also compute a UMAP embedding (obsm['X_umap.<suffix>']) for plotting."
+    },
+    {
+      "key": "normalisation",
+      "label": "Normalisation",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "normaliseAxis", "label": "Axis", "type": "select", "default": "channels",
+          "options": [
+            { "value": "channels", "label": "Per channel (percentile)" },
+            { "value": "cells",    "label": "Per cell (total)" },
+            { "value": "NONE",     "label": "No normalisation" }
+          ],
+          "tip": "Per-channel percentile rescale to [0,1], per-cell total normalisation, or none." },
+        { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each channel by its median before the percentile rescale." },
+        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Per-cell normalisation: exclude channels exceeding this fraction of a cell's total (0 = off)." },
+        { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-channel normalisation." },
+        { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-channel normalisation." }
+      ]
+    },
+    {
+      "key": "transformation",
+      "label": "Transformation",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "transformation", "label": "Transform", "type": "select", "default": "NONE",
+          "options": [
+            { "value": "NONE",        "label": "None" },
+            { "value": "log",         "label": "Log" },
+            { "value": "reversedLog", "label": "Reversed log" }
+          ],
+          "tip": "Optional transform applied before normalisation." },
+        { "key": "logBase", "label": "Log base", "type": "select", "default": 0,
+          "options": [
+            { "value": 0,  "label": "Ln" },
+            { "value": 2,  "label": "Log2" },
+            { "value": 10, "label": "Log10" }
+          ],
+          "tip": "Base for the log transform (Ln when 0)." }
+      ]
+    },
+    {
+      "key": "advanced",
+      "label": "Advanced",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        { "key": "usePaga", "label": "Use PAGA", "type": "bool", "default": false, "tip": "Initialise the UMAP from a PAGA graph (preserves global cluster topology)." },
+        { "key": "pagaThreshold", "label": "PAGA threshold", "type": "float", "min": 0, "max": 0.5, "step": 0.02, "default": 0.1, "tip": "Edge-weight threshold for the PAGA graph." }
+      ]
+    }
+  ]
+}
