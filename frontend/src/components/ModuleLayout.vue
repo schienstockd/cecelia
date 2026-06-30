@@ -31,6 +31,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
+import { useSettingsStore } from '../stores/settings'
 import SetBar from './SetBar.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -57,6 +58,7 @@ const emit = defineEmits<{
 }>()
 
 const project    = useProjectStore()
+const settings   = useSettingsStore()
 const activeSet  = computed(() => project.activeSet())
 // namespace remembered selections per module so they don't bleed across pages (docs/UI.md)
 const selScope   = computed(() => props.module ?? 'default')
@@ -255,13 +257,23 @@ function onSelectionChange(uids: string[]) {
         </div>
       </div>
 
-      <!-- ── Right: module-specific panel ─────────────────────────── -->
-      <slot
-        name="right"
-        :set-uid="activeSet?.uid"
-        :selected-uids="selectedUids"
-        :selected-names="selectedNames"
-      />
+      <!-- ── Right: module-specific panel (collapsible to free up space) ── -->
+      <div v-if="$slots.right" class="right-panel" :class="{ collapsed: settings.rightPanelCollapsed }">
+        <button class="right-handle"
+          @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
+          v-tooltip.left="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'"
+          :aria-label="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'">
+          <i :class="['pi', settings.rightPanelCollapsed ? 'pi-angle-double-left' : 'pi-angle-double-right']" />
+        </button>
+        <div v-show="!settings.rightPanelCollapsed" class="right-slot">
+          <slot
+            name="right"
+            :set-uid="activeSet?.uid"
+            :selected-uids="selectedUids"
+            :selected-names="selectedNames"
+          />
+        </div>
+      </div>
 
     </div>
   </div>
@@ -290,6 +302,31 @@ function onSelectionChange(uids: string[]) {
   overflow: hidden;
   min-width: 0;
 }
+
+/* ── Right panel (collapsible) ──────────────────────────────────────────────
+   A thin always-visible handle on the left edge toggles the slot; when collapsed
+   only the handle remains, so the function/tasks panel folds away to the right. */
+.right-panel {
+  display: flex;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.right-handle {
+  flex-shrink: 0;
+  width: 1.1rem;
+  border: none;
+  border-left: 1px solid var(--cc-border);
+  background: var(--cc-surface-1);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, color 0.12s;
+}
+.right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+.right-handle .pi { font-size: 0.7rem; }
+.right-slot { display: flex; min-height: 0; overflow: hidden; }
 
 .action-bar {
   display: flex;

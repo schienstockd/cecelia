@@ -46,6 +46,11 @@ export const useSettingsStore = defineStore('settings', () => {
   // populations but for the Tracks overlay. Default off (heavier). Mirrors napariShowPopulations.
   const napariShowGatedTracks = ref(localStorage.getItem('cc.napariShowGatedTracks') === 'true')
 
+  // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
+  // to free up working space. Both default expanded, both persist across sessions.
+  const sidebarCollapsed = ref(localStorage.getItem('cc.sidebarCollapsed') === 'true')
+  const rightPanelCollapsed = ref(localStorage.getItem('cc.rightPanelCollapsed') === 'true')
+
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
   // unknown labels default to true; persisted across sessions
   const _labelVisStore = ref<Record<string, Record<string, boolean>>>(
@@ -88,6 +93,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariShowTracks,         v => localStorage.setItem('cc.napariShowTracks',         String(v)))
   watch(napariColourBy,           v => localStorage.setItem('cc.napariColourBy',           String(v)))
   watch(napariShowGatedTracks,    v => localStorage.setItem('cc.napariShowGatedTracks',    String(v)))
+  watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
+  watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
 
-  return { taskListAutoFollow, napariUpdateImage, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
+  return { taskListAutoFollow, napariUpdateImage, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
 })

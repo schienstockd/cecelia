@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { useWsStore } from '../stores/ws'
+import { useSettingsStore } from '../stores/settings'
 
 const ws = useWsStore()
+const settings = useSettingsStore()
 
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
@@ -19,6 +21,11 @@ const statusTip: Record<string, string> = {
 
 <template>
   <header class="app-header">
+    <button class="nav-toggle" @click="settings.sidebarCollapsed = !settings.sidebarCollapsed"
+      v-tooltip.bottom="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'"
+      :aria-label="settings.sidebarCollapsed ? 'Show menu' : 'Hide menu'">
+      <i class="pi pi-bars" />
+    </button>
     <span class="logo">🍍 Cecelia</span>
 
     <span class="spacer" />
@@ -46,6 +53,21 @@ const statusTip: Record<string, string> = {
   flex-shrink: 0;
   z-index: 100;
 }
+
+.nav-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--cc-text-dim);
+  padding: 0.25rem 0.4rem;
+  border-radius: 0.3rem;
+  font-size: 0.9rem;
+  margin-left: -0.3rem;
+}
+.nav-toggle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
 .logo {
   font-weight: 700;

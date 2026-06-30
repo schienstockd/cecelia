@@ -202,6 +202,12 @@ Owns the full two-column layout, SetBar, image selection state, attr filtering, 
 
 The attr filter panel renders automatically when `show-filter="true"` and the active set has images with `attr` values. It disappears when there are no attr keys, so it is safe to leave enabled even for modules that may or may not have attrs.
 
+**Collapsible chrome (free up working space).** Two persisted toggles, both in the `settings` store (`localStorage`):
+- **Left nav** — the `pi-bars` button in `AppHeader` toggles `settings.sidebarCollapsed`; `AppSidebar` `v-show`s its `<nav>` off, so the main canvas reclaims the full width. (The `v-show` lives on the `<nav>`, not on the `<AppSidebar>` element — the component has two root nodes, so a component-level `v-show` has no single root to bind and silently no-ops.)
+- **Right panel** — `ModuleLayout` wraps the `#right` slot (TaskRunner / MetadataPanel / custom) with a thin always-visible left-edge handle (`pi-angle-double-*`) that toggles `settings.rightPanelCollapsed`. Collapsed → only the handle remains; the function/tasks panel folds away to the right. Every module page gets this for free.
+
+Both default expanded and persist across sessions/navigation.
+
 ---
 
 ## ImageTable component
