@@ -41,6 +41,64 @@ Running from source for development (hot-reload) is covered in [`docs/INSTALL.md
 
 ---
 
+## Set your projects folder (first-time setup)
+
+Out of the box Cecelia doesn't know where to keep your work. You tell it once by creating a small
+text file named **`custom.toml`**. After saving it, **restart Cecelia** (close its window and open it
+again) — the launcher window will then show `projects_dir = …your folder…` instead of the
+placeholder.
+
+The file always contains the same two lines:
+
+```toml
+[dirs]
+projects = "~/cecelia-projects"
+```
+
+`~` means your home folder on every system, so you can leave that exactly as-is (or change
+`~/cecelia-projects` to any folder you prefer). Only **where the file goes** and **the command to
+create it** differ per system — find yours below.
+
+### Linux
+File location: `~/cecelia/custom.toml`. In a terminal:
+```sh
+mkdir -p ~/cecelia ~/cecelia-projects
+cat > ~/cecelia/custom.toml <<'EOF'
+[dirs]
+projects = "~/cecelia-projects"
+EOF
+```
+Then restart Cecelia.
+
+### macOS
+Identical to Linux. File location: `~/cecelia/custom.toml`. In Terminal:
+```sh
+mkdir -p ~/cecelia ~/cecelia-projects
+cat > ~/cecelia/custom.toml <<'EOF'
+[dirs]
+projects = "~/cecelia-projects"
+EOF
+```
+Then restart Cecelia.
+
+### Windows
+File location: `C:\Users\<you>\cecelia\custom.toml`. In **PowerShell**:
+```powershell
+New-Item -ItemType Directory -Force "$HOME\cecelia","$HOME\cecelia-projects" | Out-Null
+Set-Content "$HOME\cecelia\custom.toml" "[dirs]`nprojects = `"~/cecelia-projects`""
+```
+Then restart Cecelia.
+
+*Don't want to use PowerShell?* Open Notepad, paste the two lines shown above, and save as
+`C:\Users\<you>\cecelia\custom.toml` — in the Save dialog set **"Save as type" → "All Files"** so it
+isn't silently saved as `custom.toml.txt`. Inside the file use forward slashes (`/`), never backslashes.
+
+> **Advanced:** the file lives in Cecelia's config folder (`~/cecelia`). Point somewhere else with the
+> `CECELIA_DEV_DIR` environment variable. Every overridable setting — e.g. `bioformats2raw` for
+> OME-TIFF import — is listed in the bundled `app/config.toml`.
+
+---
+
 ## How this software was built
 
 **This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
