@@ -43,6 +43,10 @@ btrack       = ">=0.7"
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and ~/cc-workspace/cecelia/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
+# OME-XML metadata reader (physical pixel sizes, units, time_increment). Imported at module load
+# by app/py/utils/ome_xml_utils.py → pulled in by cleanup/segment/measure tasks and the napari
+# bridge. Was lost in the requirements.txt→pixi switch; missing it breaks those tasks at import.
+ome-types    = ">=0.5"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared
