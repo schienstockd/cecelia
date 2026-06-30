@@ -2,8 +2,8 @@
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
 tracking, gating, behavioural analysis, and clustering of multiplexed and live-cell microscopy
-data. It is a ground-up reimplementation of the original R/Shiny [cecelia](#sources) in a
-Julia + Python + Vue stack.
+data. It is a ground-up reimplementation of the original R/Shiny
+[cecelia](https://github.com/schienstockd/cecelia-legacy) in a Julia + Python + Vue stack.
 
 > ⚠️ **This software was written almost entirely by an AI** ([Claude Code](https://claude.com/claude-code)),
 > under Dominik Schienstock's direction. All scientific validation was done by the human author, and
