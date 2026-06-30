@@ -27,15 +27,18 @@ function _str_list(params, key)::Vector{String}
     filter(x -> !isempty(x) && x != "NONE", xs)
 end
 
-# Persist the feature list a clustering run used, so the cluster pages' heatmap can offer EXACTLY
-# those columns (not every measurement). Stored as a `{props}.clustfeatures.json` sidecar next to the
-# labelProps (cell table for clust, `__tracks` table for trackclust), keyed by suffix; merged so
-# multiple runs/suffixes coexist. Shared by clustPops + clustTracks (read by api_gating_channels).
-function _write_clust_features!(props_path::AbstractString, suffix::AbstractString, features::Vector{String})
+# Persist a clustering run's per-suffix manifest, so the cluster pages can offer EXACTLY the columns
+# the run used (heatmap) and know WHICH images were clustered together (the `partOf` set — mirrors the
+# old R `attr(clustPath, "partOf") <- uIDs` + `valuePartOf`). Stored as a `{props}.clustfeatures.json`
+# sidecar next to the labelProps (cell table for clust, `__tracks` table for trackclust), keyed by
+# suffix as `{features, partOf}`; merged so multiple runs/suffixes coexist. Shared by clustPops +
+# clustTracks (read by api_gating_channels). Cluster pops can only be defined for images in `partOf`.
+function _write_clust_features!(props_path::AbstractString, suffix::AbstractString,
+                                features::Vector{String}, part_of::Vector{String})
     sidecar = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
     existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) : Dict{String,Any}()
     merged = Dict{String,Any}(String(k) => v for (k, v) in existing)
-    merged[suffix] = features
+    merged[suffix] = Dict{String,Any}("features" => features, "partOf" => part_of)
     open(sidecar, "w") do f; JSON3.pretty(f, merged); end
 end
 
@@ -100,9 +103,9 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     ok = run_py("tasks/clustPops/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
                 on_log = on_log, on_process = on_process)
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
-    # record the feature list so the heatmap offers exactly these columns (per segment's sidecar)
+    # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments
-        _write_clust_features!(seg["propsPath"], suffix, feature_cols)
+        _write_clust_features!(seg["propsPath"], suffix, feature_cols, uids)
     end
     on_progress(4, 4)
 

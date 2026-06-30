@@ -632,8 +632,23 @@ toggleable cluster-number labels at each cluster centroid), summary → **`Clust
   endpoint's `clusterFeatures`. Channel rows aggregate by RAW name (the matrix passes
   `raw_channel_names`) and are relabelled to display names via the channels `nameMap`.
 - Set-scope ⇒ panels pool across the selected images (shared UMAP space + cluster numbering; heatmap
-  pools via `setUid`). The cluster population-manager (tick cluster IDs → a `clust`/`trackclust` pop
-  via `pop/update` filter) lands in this canvas next.
+  pools via `setUid`).
+- **Cluster population-manager** — the shared floating `PopulationManager` (pop_type-agnostic) mounted
+  in this canvas, driven by the gating store with `popType` `clust`/`trackclust`. A cluster pop has no
+  gate: it's a filter on `clusters.{suffix}`, so the manager (in cluster mode, via its `clusterIds` +
+  `suffix` props) shows an **"Add population"** button and, per pop, a row of **cluster-ID toggle
+  chips**. Ticking a chip assigns that cluster to the pop and **removes it from any other** (a cluster
+  lives in at most one pop — mirrors old R `setClusterForPop`); persisted via `pop/update`'s filter
+  patch (`{values}`).
+  - **Set-wide writes**: cluster pops apply to every selected image *in the run*. The store's
+    `mirrorUids` replays each pop mutation across them (the filter is image-independent), so no manual
+    "populate to set" step (we dropped the old `propagatePopMap` crutch). The primary image drives the
+    displayed tree/stats.
+  - **Run membership (`partOf`)**: a cluster pop only makes sense for images that were clustered
+    together. clustPops/clustTracks record the run's uIDs in the `clustfeatures` sidecar (`{suffix →
+    {features, partOf}}`), surfaced as `clusterMembers`. `ClusterPlots` writes only to the selected
+    images in `partOf` and shows a banner naming any selected images that aren't in the run (and any
+    run images not selected) so the user can fix the selection.
 
 **Shared canvas shell (reused by the gating, track-gating, summary and universal canvases).** The
 floating-panel mechanics are factored out of the gating page so other module canvases reuse them

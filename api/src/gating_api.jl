@@ -204,11 +204,33 @@ end
 # clustPops/clustTracks) → drives the cluster pages' page-level suffix dropdown.
 _cluster_suffixes(obscols) = String[c[ncodeunits("clusters.")+1:end] for c in obscols if startswith(c, "clusters.")]
 
-# feature list per suffix a clustering run used ({props}.clustfeatures.json sidecar; clustPops/
-# clustTracks write it) → the cluster heatmap offers exactly those columns, not every measurement.
-function _clust_features(props_path::AbstractString)
+# per-suffix clustering manifest ({props}.clustfeatures.json; clustPops/clustTracks write it),
+# keyed by suffix as {features, partOf}. `features` → the heatmap offers exactly those columns;
+# `partOf` → the uIDs clustered together (mirrors old R `valuePartOf`), so cluster pops are only
+# defined for images in the run. Back-compat: pre-partOf runs stored {suffix => [features]} (a bare
+# array, no membership) — surface those as features with an empty member list.
+function _clust_manifest(props_path::AbstractString)
     s = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
     isfile(s) ? JSON3.read(read(s, String), Dict{String,Any}) : Dict{String,Any}()
+end
+_clust_features(props_path::AbstractString) = Dict{String,Any}(
+    String(k) => (v isa AbstractVector ? v : get(v, "features", String[]))
+    for (k, v) in _clust_manifest(props_path))
+_clust_members(props_path::AbstractString) = Dict{String,Any}(
+    String(k) => (v isa AbstractVector ? String[] : get(v, "partOf", String[]))
+    for (k, v) in _clust_manifest(props_path))
+
+# distinct cluster IDs per suffix — the universe the pop-manager offers as tickable clusters. Reads
+# the `clusters.{suffix}` obs column (integer codes) and drops unclustered (<0). One column read per
+# suffix; suffixes are few per table (usually 1), so the cost is a single-column scan on image-select.
+function _cluster_ids(path::AbstractString, suffixes::Vector{String})
+    out = Dict{String,Any}()
+    for s in suffixes
+        col = "clusters.$s"
+        df = label_props(path) |> select_cols([col]) |> as_df
+        out[s] = sort!(collect(Set(Int(round(x)) for x in df[!, col] if isfinite(x) && x >= 0)))
+    end
+    out
 end
 
 # ── GET /api/gating/channels — gateable columns + channel display names ───────
@@ -225,14 +247,14 @@ function api_gating_channels(req::HTTP.Request)
             columns = String[], channels = String[], channelNames = String[],
             channelNameVersions = Dict{String,Any}(), obsColumns = String[],
             cellMeasures = String[], trackAggregates = String[], clusterSuffixes = String[],
-            clusterFeatures = Dict{String,Any}(),
+            clusterFeatures = Dict{String,Any}(), clusterMembers = Dict{String,Any}(),
             valueNames = String[], valueName = vn, popType = get(q, "popType", "flow")))
     end
     # track gating: the gateable axes are the per-track properties — motility (the track table's
     # var columns, directly gateable) plus on-read aggregates of any cell measure. We return the
     # motility columns + the aggregatable cell measures + the aggregate suffixes so the client can
     # offer e.g. "mean CD4 per track" → axis `mean_intensity_0.mean` (track_cell_measures inverts it).
-    if get(q, "popType", "flow") == "track"
+    if get(q, "popType", "flow") in ("track", "trackclust")
         motility = _track_motility_cols(img, vn)
         cellmeas = col_names(label_props(img; value_name = vn); data_type = :vars)
         tpath = img_track_props_path(img, vn)
@@ -243,9 +265,11 @@ function api_gating_channels(req::HTTP.Request)
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
             clusterSuffixes = _cluster_suffixes(tobs),           # trackclust runs in the track table
             clusterFeatures = _clust_features(tpath),
+            clusterMembers  = _clust_members(tpath),             # uIDs clustered together (partOf)
+            clusterIds      = isfile(tpath) ? _cluster_ids(tpath, _cluster_suffixes(tobs)) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
             valueName = vn,
-            popType = "track",
+            popType = get(q, "popType", "track"),
         ))
     end
     lp = label_props(img; value_name = vn)
@@ -265,6 +289,8 @@ function api_gating_channels(req::HTTP.Request)
         obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
         clusterFeatures = _clust_features(img_label_props_path(img, vn)),
+        clusterMembers  = _clust_members(img_label_props_path(img, vn)),        # uIDs clustered together (partOf)
+        clusterIds      = _cluster_ids(img_label_props_path(img, vn), _cluster_suffixes(col_names(lp; data_type = :obs))),
         valueNames = versioned_keys(img.label_props),
         valueName = vn,                 # the server-resolved value_name these columns belong to
     ))

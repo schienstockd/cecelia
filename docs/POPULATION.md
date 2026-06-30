@@ -81,6 +81,14 @@ cluster column), never written into the H5AD; only the *definition* (which IDs) 
 evaluates over the cell table (`:cell`), `trackclust` over `track_props` (`:track`, with
 expand-to-cells for `:cell`) — exactly mirroring `flow` and `track` respectively.
 
+Clustering is **set-scope**, so a cluster pop is written **set-wide**: the same filter pop lands in
+every clustered image's sidecar (the filter is image-independent and cluster IDs are comparable
+across the run). Membership of a run is recorded as `partOf` (the clustered uIDs) in the
+`{props}.clustfeatures.json` manifest — a cluster pop is only meaningful for images in that set, so
+the UI restricts writes to the selected `partOf` images. The frontend applies this by replaying the
+per-image `pop/add`/`pop/update`/… calls across those images (the gating store's `mirrorUids`); the
+old R `propagatePopMap` "populate to set" crutch is gone.
+
 ## `pop_df` — unified accessor
 
 > **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the `pop_map`
