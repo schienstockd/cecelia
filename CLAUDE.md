@@ -41,7 +41,17 @@ See also:
 | Packaging, distribution, env rationale (Pixi/constructor, why) | `docs/SHIPPING.md` |
 | Branching, commits, PRs, release tagging (dev workflow) | `docs/DEV.md` |
 
-> **Fatigue warning:** Agentic programming is cognitively demanding — directing architecture decisions without a flow state is draining in a way that's easy to underestimate. If we've gone two or more rounds on the same question without clear progress, or if an important aspect of the implementation keeps being deferred or glossed over, stop and say so explicitly. Either surface the blocker clearly for the user to decide, or add it to `docs/TODO.md` and move on. Don't push through circular discussions — flag them.
+> **Watch for divergent re-implementation — flag it, don't add another variant.** The most
+> expensive mistakes here are doing the same *cross-cutting* thing more than one way — e.g. touching
+> `.h5ad` outside the label view, or spawning Python without `run_py`. The moment you notice you're
+> hand-rolling something that already has (or obviously should have) a single canonical helper,
+> **stop and say so** — propose centralising it (one helper, used everywhere) instead of writing a
+> second variant. "I'll just inline it here" is how the duplication starts. One way to do each
+> thing; the second way is the bug.
+>
+> Same reflex for going in circles or losing the thread: if two+ rounds pass on one question without
+> clear progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for
+> the user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
 
 ## Previous prompts
 
@@ -110,6 +120,32 @@ labeled DataFrame — one idiom, no guessing.
   is the producing task's job and uses `anndata` directly — the view wraps an *existing* file
   (read + obs-append), it does not create one. Structural changes to `X`/`var` likewise go through
   the producing Python task, not the view.
+
+---
+
+## Spawning Python — always go through `run_py`
+
+**Never spawn a Python subprocess by hand. There is one launcher — `run_py` in `app/src/py_runner.jl`
+— use it for every Python task runner and data-layer writer.** It writes the params JSON to the
+run's task dir (`task_run_dir(<obj>._dir)`, never a temp dir), sets `PYTHONPATH=app/` (so the script
+does `import py.*` with **no `sys.path` bootstrapping**), streams `[PROGRESS] n/total` → `on_progress`
+and the rest → `on_log`, registers the process for cancellation, and returns clean-exit (checks
+`exitcode` AND `termsignal`). It's the analogue of the old R `self$pyScript`.
+
+```julia
+ok = run_py("tasks/<category>/<name>_run.py", (; …params…), task_run_dir(img._dir);
+            on_log = on_log, on_progress = on_progress, on_process = on_process)
+ok || return nothing
+```
+
+- **Do not** write `run(pipeline(\`$python …\`))`, build a params file, or parse `[PROGRESS]`
+  inline in a task — that boilerplate (and the bugs that come with hand-rolling exit/signal checks
+  and param-file locations) is exactly what `run_py` exists to delete.
+- **Python runners therefore carry NO `sys.path` manipulation** — `import py.*` resolves via the
+  PYTHONPATH `run_py` sets. A new `sys.path.insert(... __file__ ...)` in a runner is a red flag.
+- This is the same principle as the H5AD rule above: a cross-cutting operation gets **one**
+  canonical helper, and reimplementing it inline is the bug. (See `docs/MODULES.md` → *Running a
+  Python subprocess*.)
 
 ---
 
