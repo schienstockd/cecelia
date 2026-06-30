@@ -115,9 +115,9 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     ok = run_py("tasks/clustTracks/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
                 on_log = on_log, on_process = on_process)
     ok || (on_log("[ERROR] clustTracks: Python runner failed"); return nothing)
-    # record the feature list so the heatmap offers exactly these columns (per segment's sidecar)
+    # record the feature list + the clustered-together uIDs (partOf) per segment's sidecar
     for seg in segments
-        _write_clust_features!(seg["propsPath"], suffix, present_cols)
+        _write_clust_features!(seg["propsPath"], suffix, present_cols, uids)
     end
     on_progress(4, 4)
 

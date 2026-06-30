@@ -14,7 +14,7 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
-import { ref, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, onMounted, useTemplateRef } from 'vue'
 import { useGatingStore, isReservedPopName, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useSettingsStore } from '../../stores/settings'
@@ -27,8 +27,10 @@ const props = withDefaults(defineProps<{
   lineWidth: number                // gate stroke width
   gateLabels: boolean              // show population names on gates
   axisFromZero: boolean            // axis origin at 0 vs autoscale
-  popType?: string                 // 'flow' (default) | 'track' — toggles viewer-option group
-}>(), { popType: 'flow' })
+  popType?: string                 // 'flow' (default) | 'track' | 'clust' | 'trackclust'
+  clusterIds?: number[]            // cluster mode: the tickable cluster IDs for the active suffix
+  suffix?: string                  // cluster mode: which clusters.{suffix} new pops filter on
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default' })
 const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
@@ -77,6 +79,37 @@ async function toggleNapari(p: FlatPop) {
   await g.updatePop(p.path, { show: !p.show })
   g.refreshNapari()
 }
+
+// ── Cluster mode (clust / trackclust): a population IS a set of cluster IDs (a filter on
+// clusters.{suffix}). Instead of drawing gates, the user ticks cluster IDs into a pop here. A
+// cluster belongs to AT MOST ONE pop (ticking it into B moves it off A) — mirrors old R
+// setClusterForPop. Writes go set-wide via the store's mirrorUids. ────────────────────────────
+const clusterMode = computed(() => props.popType === 'clust' || props.popType === 'trackclust')
+const POP_PALETTE = [
+  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
+  '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
+]
+const popClusterIds = (p: FlatPop): number[] => {
+  const v = p.filter?.values
+  return Array.isArray(v) ? (v as unknown[]).map(Number) : []
+}
+const clusterOwner = (id: number): FlatPop | undefined => g.flat.find(p => popClusterIds(p).includes(id))
+
+async function toggleCluster(p: FlatPop, id: number) {
+  const owner = clusterOwner(id)
+  if (owner?.path === p.path) {                       // already in this pop → remove
+    await g.updatePop(p.path, { filter: { values: popClusterIds(p).filter(x => x !== id) } })
+    return
+  }
+  // move it off whatever pop currently owns it, then add to this one (mutually exclusive)
+  if (owner) await g.updatePop(owner.path, { filter: { values: popClusterIds(owner).filter(x => x !== id) } })
+  await g.updatePop(p.path, { filter: { values: [...popClusterIds(p), id].sort((a, b) => a - b) } })
+}
+
+async function addClusterPopulation() {
+  const n = g.flat.length
+  await g.addClusterPop(`Population ${n + 1}`, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
+}
 </script>
 
 <template>
@@ -92,58 +125,83 @@ async function toggleNapari(p: FlatPop) {
     </div>
 
     <div v-show="!collapsed" class="pm-body">
-      <div v-if="!g.flat.length" class="pm-empty">No populations yet — draw a gate.</div>
-
-      <div v-for="p in g.flat" :key="p.path"
-           class="pm-row" :class="{ active: p.path === props.selected, transient: p.transient }"
-           :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
-           @click="pick(p)">
-        <i v-if="p.transient" class="pi pi-map-marker pm-napari"
-           v-tooltip.left="'Cells selected in napari (temporary)'" :style="{ color: p.colour }" />
-        <input v-else type="color" class="pm-swatch" :value="p.colour"
-               v-tooltip.left="'Colour'"
-               @click.stop @change="g.updatePop(p.path, { colour: ($event.target as HTMLInputElement).value })" />
-
-        <span v-if="editing !== p.path" class="pm-name"
-              @dblclick.stop="p.transient || beginRename(p)">{{ p.name }}</span>
-        <input v-else class="pm-rename" v-model="editName" autofocus
-               @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
-
-        <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
-          {{ g.stats[p.path]?.count ?? '–' }}
-          <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
-        </span>
-
-        <button class="pm-icon" :class="{ lit: isLit(p) }"
-                v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
-                @click.stop="emit('toggleHighlight', p.path)">
-          <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
-        </button>
-        <button v-if="!p.transient" class="pm-icon" :class="{ lit: p.show }"
-                v-tooltip.left="p.show ? 'Visible in napari (click to hide)' : 'Hidden in napari (click to show)'"
-                @click.stop="toggleNapari(p)">
-          <i class="pi pi-images" />
-        </button>
-        <button v-if="!p.transient" class="pm-icon danger" v-tooltip.left="'Delete population'"
-                @click.stop="g.deletePop(p.path)">
-          <i class="pi pi-trash" />
-        </button>
-        <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
-             linger forever; there's no persisted pop to delete. -->
-        <button v-else class="pm-icon danger" v-tooltip.left="'Clear napari selection'"
-                @click.stop="g.clearNapariSelection()">
-          <i class="pi pi-trash" />
+      <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
+      <div v-if="clusterMode" class="pm-add">
+        <button class="pm-add-btn" @click="addClusterPopulation"
+                v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
+          <i class="pi pi-plus" /> Add population
         </button>
       </div>
+
+      <div v-if="!g.flat.length" class="pm-empty">
+        {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
+      </div>
+
+      <template v-for="p in g.flat" :key="p.path">
+        <div class="pm-row" :class="{ active: p.path === props.selected, transient: p.transient }"
+             :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
+             @click="pick(p)">
+          <i v-if="p.transient" class="pi pi-map-marker pm-napari"
+             v-tooltip.left="'Cells selected in napari (temporary)'" :style="{ color: p.colour }" />
+          <input v-else type="color" class="pm-swatch" :value="p.colour"
+                 v-tooltip.left="'Colour'"
+                 @click.stop @change="g.updatePop(p.path, { colour: ($event.target as HTMLInputElement).value })" />
+
+          <span v-if="editing !== p.path" class="pm-name"
+                @dblclick.stop="p.transient || beginRename(p)">{{ p.name }}</span>
+          <input v-else class="pm-rename" v-model="editName" autofocus
+                 @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
+
+          <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
+            {{ g.stats[p.path]?.count ?? '–' }}
+            <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
+          </span>
+
+          <button class="pm-icon" :class="{ lit: isLit(p) }"
+                  v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
+                  @click.stop="emit('toggleHighlight', p.path)">
+            <i :class="isLit(p) ? 'pi pi-eye' : 'pi pi-eye-slash'" />
+          </button>
+          <button v-if="!p.transient" class="pm-icon" :class="{ lit: p.show }"
+                  v-tooltip.left="p.show ? 'Visible in napari (click to hide)' : 'Hidden in napari (click to show)'"
+                  @click.stop="toggleNapari(p)">
+            <i class="pi pi-images" />
+          </button>
+          <button v-if="!p.transient" class="pm-icon danger" v-tooltip.left="'Delete population'"
+                  @click.stop="g.deletePop(p.path)">
+            <i class="pi pi-trash" />
+          </button>
+          <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
+               linger forever; there's no persisted pop to delete. -->
+          <button v-else class="pm-icon danger" v-tooltip.left="'Clear napari selection'"
+                  @click.stop="g.clearNapariSelection()">
+            <i class="pi pi-trash" />
+          </button>
+        </div>
+
+        <!-- cluster-ID toggles: tick a cluster into this pop (filled = assigned; a cluster lives in
+             at most one pop). Tooltip names the owner if it's assigned elsewhere. -->
+        <div v-if="clusterMode && p.filter" class="pm-clusters"
+             :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
+          <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
+                  :class="{ on: popClusterIds(p).includes(id) }"
+                  :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
+                  v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
+                  @click.stop="toggleCluster(p, id)">{{ id }}</button>
+          <span v-if="!props.clusterIds.length" class="pm-chip-empty">no clusters at this suffix</span>
+        </div>
+      </template>
     </div>
 
-    <!-- options (collapsible), grouped by where they apply: plot vs viewer -->
-    <div v-show="!collapsed" class="pm-opts">
+    <!-- options (collapsible), grouped by where they apply: plot vs viewer. In cluster mode there
+         are no gates (the plot group) — trackclust has no viewer control either, so it's hidden. -->
+    <div v-show="!collapsed" v-if="props.popType !== 'trackclust'" class="pm-opts">
       <button class="pm-opts-toggle" @click="optionsOpen = !optionsOpen">
         <i :class="optionsOpen ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
         <span>Options</span>
       </button>
       <div v-show="optionsOpen" class="pm-opts-body">
+        <template v-if="!clusterMode">
         <div class="pm-opt-head"><span>plot</span></div>
         <div class="pm-opt-row">
           <span class="pm-opt-label">Gate labels</span>
@@ -169,11 +227,12 @@ async function toggleNapari(p: FlatPop) {
                     @click="emit('update:axisFromZero', false)"><i class="pi pi-arrow-down-left" /></button>
           </div>
         </div>
+        </template>
 
-        <!-- viewer-option group is popType-specific: flow/live populations render as napari Points
-             (size slider); track pops render as Tracks ribbons (no point size — tail width is a
-             plot-panel concern), so the group is hidden for track rather than showing an inert control. -->
-        <template v-if="props.popType !== 'track'">
+        <!-- viewer-option group is popType-specific: flow/live/clust populations render as napari
+             Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
+             width is a plot-panel concern), so the group is hidden for those. -->
+        <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
           <div class="pm-opt-head"><span>viewer</span></div>
           <!-- napari point size (re-renders the napari overlay on release) -->
           <div class="pm-opt-row">
@@ -232,6 +291,20 @@ async function toggleNapari(p: FlatPop) {
 .pm-icon:hover { color: var(--cc-text); }
 .pm-icon.lit { color: var(--cc-accent); }
 .pm-icon.danger:hover { color: #f87171; }
+
+/* ── cluster mode: add-pop bar + per-pop cluster-ID toggle chips ── */
+.pm-add { padding: 6px 8px; border-bottom: 1px solid var(--cc-border); }
+.pm-add-btn { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 4px 9px;
+  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2);
+  color: var(--cc-text); cursor: pointer; }
+.pm-add-btn:hover { border-color: #7c3aed; color: #c4b5fd; }
+.pm-clusters { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
+.pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: 11px; line-height: 1;
+  border: 1px solid var(--cc-border); border-radius: 3px; background: var(--cc-surface-1);
+  color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }
+.pm-chip:hover { border-color: #7c3aed; color: var(--cc-text); }
+.pm-chip.on { font-weight: 700; }
+.pm-chip-empty { font-size: 10px; color: var(--cc-text-dim); font-style: italic; }
 
 /* ── footer scope toggle (icons only, bottom-right) ── */
 .pm-footer { display: flex; align-items: center; padding: 6px 8px; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }

@@ -38,6 +38,7 @@ export interface PopTree { value_name: string; pop_type: string; populations: Po
 export interface FlatPop {
   path: string; name: string; parent: string; colour: string; show: boolean
   depth: number; gate?: GateSpec; transient?: boolean
+  filter?: { measure: string; fun: string; values: unknown; default_all: boolean }  // cluster pops
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -46,7 +47,7 @@ function flatten(tree: PopTree): FlatPop[] {
     for (const n of nodes) {
       const path = parent === 'root' ? `/${n.name}` : `${parent}/${n.name}`
       out.push({ path, name: n.name, parent, colour: n.colour, show: n.show, depth,
-                 gate: n.gate, transient: n.transient })
+                 gate: n.gate, transient: n.transient, filter: n.filter })
       walk(n.children ?? [], path, depth + 1)
     }
   }
@@ -79,6 +80,12 @@ export const useGatingStore = defineStore('gating', () => {
   const imageUid  = ref<string | null>(null)
   const valueName = ref<string>('default')
   const popType   = ref<string>('flow')
+
+  // Set-wide cluster pops: `imageUid` is the primary image (drives the displayed tree/stats), and
+  // `mirrorUids` are the OTHER clustered images the same pop mutation is replayed to, so a cluster
+  // pop (a filter on `clusters.{suffix}`, which is image-independent) lands identically on every
+  // image in the run. Empty for ordinary single-image gating. Set by the cluster page.
+  const mirrorUids = ref<string[]>([])
 
   // napari cell-selection z scope: 'stack' = select across the whole z-stack (ignore z),
   // 'slice' = only cells within ±napariZWindow slices of the currently displayed z in napari.
@@ -147,6 +154,15 @@ export const useGatingStore = defineStore('gating', () => {
       const data = await res.json().catch(() => ({})) as { tree?: PopTree; error?: string }
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
       if (data.tree) setTree(data.tree)
+      // set-wide: replay the SAME mutation to the other clustered images (cluster pops only). The
+      // body is image-independent (filter on clusters.{suffix}), so paths stay in sync; we don't
+      // touch the tree from these (the primary already updated it). Fire-and-forget per image.
+      if (mirrorUids.value.length) await Promise.all(mirrorUids.value.map(uid =>
+        fetch(path, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectUid: projectUid(), imageUid: uid,
+                                 valueName: valueName.value, popType: popType.value, ...body }),
+        }).catch(() => undefined)))
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
@@ -157,7 +173,8 @@ export const useGatingStore = defineStore('gating', () => {
   async function selectImage(uid: string, vn?: string, pt?: string) {
     imageUid.value = uid
     if (vn) valueName.value = vn
-    if (pt) popType.value = pt           // 'flow' (gate page) | 'track' (tracking page)
+    if (pt) popType.value = pt           // 'flow' | 'track' | 'clust' | 'trackclust'
+    mirrorUids.value = []                // single-image by default; the cluster page re-sets it after
     await fetchChannels()
     await fetchPopmap()
   }
@@ -216,10 +233,16 @@ export const useGatingStore = defineStore('gating', () => {
 
   const addPop = (name: string, gate: GateSpec, parent: string, colour: string) =>
     _post('/api/gating/pop/add', { name, gate, parent, colour })
+  // cluster pop: a filter on the run's `clusters.{suffix}` column (fun "in", values = cluster IDs).
+  // Starts empty; the manager ticks IDs in via updatePop's filter patch. Set-wide via mirrorUids.
+  const addClusterPop = (name: string, suffix: string, colour: string) =>
+    _post('/api/gating/pop/add', { name, colour,
+      filter: { measure: `clusters.${suffix}`, fun: 'in', values: [], default_all: false } })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
   const deletePop  = (path: string)                  => _post('/api/gating/pop/delete', { path })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
-  const updatePop  = (path: string, patch: { colour?: string; show?: boolean }) =>
+  const updatePop  = (path: string,
+                      patch: { colour?: string; show?: boolean; filter?: Record<string, unknown> }) =>
     _post('/api/gating/pop/update', { path, ...patch })
 
   // WS push: server broadcasts gating:popmap after any mutation (incl. from other clients / napari)
@@ -277,11 +300,11 @@ export const useGatingStore = defineStore('gating', () => {
   const clearNapariSelection = () => _napari('/api/napari/stop-selection', true)
 
   return {
-    imageUid, valueName, popType, tree, columns, channels, channelNames, valueNames,
+    imageUid, valueName, popType, mirrorUids, tree, columns, channels, channelNames, valueNames,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
-    addPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
+    addPop, addClusterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
     refreshNapariPops, showTracks, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
 })

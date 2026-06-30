@@ -16,12 +16,14 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
+import { useGatingStore } from '../../stores/gating'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
 import { useLogStore } from '../../stores/log'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView } from '../../components/canvas/interactiveViews'
 import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
+import PopulationManager from '../../components/canvas/PopulationManager.vue'
 
 // index signature so a panel's state is assignable to the generic InteractivePanel's
 // `Record<string, unknown>` state (views read their own keys: umap→labels, heatmap→features)
@@ -30,6 +32,7 @@ interface ClusterPanelState { [key: string]: unknown; kind: string; features?: s
 const props = defineProps<{ imageUids: string[]; popType: 'clust' | 'trackclust' }>()
 const meta = useProjectMetaStore()
 const project = useProjectStore()
+const g = useGatingStore()
 const log = useLogStore()
 const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
@@ -63,16 +66,22 @@ const clusterFeatures = ref<Record<string, string[]>>({})
 const featureFallback = ref<string[]>([])
 const nameMap = ref<Record<string, string>>({})   // raw channel column → display name
 const featureOptions = computed<string[]>(() => clusterFeatures.value[suffix.value] ?? featureFallback.value)
+// per-suffix: the tickable cluster IDs (universe) and the uIDs the run clustered together (partOf)
+const clusterIds = ref<Record<string, number[]>>({})
+const clusterMembers = ref<Record<string, string[]>>({})
+const resolvedVn = ref('default')                  // segmentation value_name the channels resolved to
 
 async function loadFeatures() {
   if (!projectUid.value || !props.imageUids[0]) { clusterFeatures.value = {}; featureFallback.value = []; return }
-  const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: props.imageUids[0] })
-  if (props.popType === 'trackclust') q.set('popType', 'track')
+  const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: props.imageUids[0], popType: props.popType })
   try {
     const r = await fetch(`/api/gating/channels?${q}`)
     if (!r.ok) { clusterFeatures.value = {}; featureFallback.value = []; return }
     const d = await r.json()
     clusterFeatures.value = d.clusterFeatures ?? {}
+    clusterIds.value = d.clusterIds ?? {}
+    clusterMembers.value = d.clusterMembers ?? {}
+    resolvedVn.value = d.valueName ?? 'default'
     featureFallback.value = props.popType === 'trackclust' ? (d.columns ?? []) : (d.channels ?? [])
     // raw channel column → display name (matrix aggregates by raw; heatmap relabels for display)
     const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
@@ -86,6 +95,28 @@ async function loadFeatures() {
   }
 }
 
+// Cluster pops can only be defined for images IN THE RUN (those carrying clusters.{suffix} — the
+// recorded `partOf`). Restrict writes to that subset; surface the mismatch so the user can fix the
+// selection. If a run predates partOf recording (empty members), don't block — treat all selected.
+const runMembers = computed<string[]>(() => clusterMembers.value[suffix.value] ?? [])
+const validUids = computed<string[]>(() =>
+  runMembers.value.length ? props.imageUids.filter(u => runMembers.value.includes(u)) : props.imageUids)
+const strayUids = computed<string[]>(() =>
+  runMembers.value.length ? props.imageUids.filter(u => !runMembers.value.includes(u)) : [])
+const missingUids = computed<string[]>(() =>
+  runMembers.value.filter(u => !props.imageUids.includes(u)))
+const nameOf = (uid: string) =>
+  project.activeSet()?.images.find(i => i.uid === uid)?.name ?? uid
+
+// drive the (shared, pop_type-agnostic) gating store for the pop tree: primary = first valid image,
+// the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
+watch([validUids, suffix, () => props.popType, projectUid], () => {
+  if (!projectUid.value || !validUids.value.length) return
+  g.selectImage(validUids.value[0], resolvedVn.value, props.popType).then(() => {
+    g.mirrorUids = validUids.value.slice(1)
+  })
+}, { immediate: true })
+
 // default a heatmap panel's features to the run's full feature set once known (don't clobber a pick)
 watch([featureOptions, () => panels.value.length], () => {
   if (!featureOptions.value.length) return
@@ -98,6 +129,10 @@ const viewContext = computed(() => ({
   projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value,
   popType: props.popType, suffix: suffix.value,
 }))
+
+// the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
+// so this is just for the highlight affordance — kept local and unused by the cluster plots for now.
+const selectedPop = ref('')
 
 onMounted(() => {
   loadFeatures()
@@ -129,7 +164,28 @@ onMounted(() => {
         </div>
         <span class="cp-hint">drag plots by their title · resize from the corner</span>
       </div>
+
+      <!-- membership: cluster pops only apply to images that were in the run (carry clusters.{suffix}).
+           Tell the user when their selection doesn't match, so they can fix it. -->
+      <div v-if="strayUids.length || missingUids.length" class="cp-members">
+        <i class="pi pi-info-circle" />
+        <span>
+          Clustering run “{{ suffix }}” covers {{ runMembers.length }} image{{ runMembers.length === 1 ? '' : 's' }}.
+          <template v-if="strayUids.length">
+            {{ strayUids.length }} selected ({{ strayUids.map(nameOf).join(', ') }})
+            {{ strayUids.length === 1 ? 'is' : 'are' }} not in it — pops won’t be written there.
+          </template>
+          <template v-if="missingUids.length">
+            Also in the run but not selected: {{ missingUids.map(nameOf).join(', ') }}.
+          </template>
+        </span>
+      </div>
+
       <div ref="canvasRef" class="cp-canvas">
+        <PopulationManager v-if="validUids.length" :selected="selectedPop" :highlighted="[]" scope="global"
+                           :line-width="1" :gate-labels="false" :axis-from-zero="false"
+                           :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
+                           @update:selected="selectedPop = $event" />
         <template v-for="(p, i) in panels" :key="p.id">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -157,6 +213,9 @@ onMounted(() => {
 .cp-bar label { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .cp-bar select { min-width: 7rem; }
 .cp-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.7; }
+.cp-members { display: flex; align-items: flex-start; gap: 6px; margin: 0 4px 6px; padding: 6px 9px;
+  font-size: 11px; color: #fcd34d; background: #78350f22; border: 1px solid #b4530933; border-radius: 5px; }
+.cp-members .pi { margin-top: 1px; }
 .cp-add { font-size: 12px; padding: 4px 8px; }
 .seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
