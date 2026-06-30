@@ -52,3 +52,6 @@ jobs:
             install.ps1
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # Tags with a pre-release suffix (e.g. v0.1.0-rc1) publish as a GitHub prerelease;
+          # clean vX.Y.Z tags publish as a full release (and become the `latest` the one-liner uses).
+          prerelease: ${{ contains(github.ref_name, '-') }}

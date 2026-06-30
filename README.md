@@ -1,6 +1,3 @@
-# *DO NOT USE*
-Still working on proper setup 
-
 # Cecelia Pineapple
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
@@ -8,8 +5,12 @@ tracking, gating, behavioural analysis, and clustering of multiplexed and live-c
 data. It is a ground-up reimplementation of the original R/Shiny [cecelia](#sources) in a
 Julia + Python + Vue stack.
 
-- **Install:** [`docs/INSTALL.md`](docs/INSTALL.md)
-- **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+> ⚠️ **This software was written almost entirely by an AI** ([Claude Code](https://claude.com/claude-code)),
+> under Dominik Schienstock's direction. All scientific validation was done by the human author, and
+> it has **not yet been independently tested** by other users — treat early releases accordingly.
+> Full methodology and sources are at the [end of this README](#how-this-software-was-built).
+
+- **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
 
 ---
 
@@ -29,15 +30,18 @@ curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/inst
 irm https://github.com/schienstockd/cecelia/releases/latest/download/install.ps1 | iex
 ```
 
-Then click the **Cecelia** launcher (or run `pixi run app` from the install directory) — it starts
-the server and opens Cecelia in your browser at <http://localhost:8080>. **To update:** re-run the
-install command, or `pixi run update` from the install directory.
+**Run.** Click the **Cecelia** launcher (or run `pixi run app` from the install directory) — it
+starts the server and opens Cecelia in your browser at <http://localhost:8080>. From there: create a
+project, import images, then run tasks (segment → track → gate → cluster / behaviour) and inspect
+the results in the linked plots and the napari viewer.
+
+**Update.** Re-run the install command above, or run `pixi run update` from the install directory.
 
 Running from source for development (hot-reload) is covered in [`docs/INSTALL.md`](docs/INSTALL.md).
 
 ---
 
-## ⚠️ How this software was built — disclaimer
+## How this software was built
 
 **This software was developed almost entirely with [Claude Code](https://claude.com/claude-code)
 (Anthropic), using the Claude Opus and Claude Sonnet models, under the Garvan Institute of Medical
