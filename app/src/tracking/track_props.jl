@@ -29,7 +29,11 @@ const _MAX_CATEGORICAL_LEVELS = 20
 # numeric, but a small-range integer COUNT could be misread — pass it in `numeric` to force it (or
 # `categorical` to force the other way). The first rule is exact, so the cleanest path for a true
 # categorical is to have the producing task write it as an anndata `categorical`.
-function _is_categorical_col(col)::Bool
+function _is_categorical_col(col, name::AbstractString="")::Bool
+    # name-rule: cluster assignments are always a categorical code set, however many clusters —
+    # a high-resolution run can exceed the integer-level cap below, but the codes are never a count.
+    # `clusters` (exact) or `clusters.{suffix}` (clustPops/clustTracks output).
+    (name == "clusters" || startswith(name, "clusters.")) && return true
     nonmissingtype(eltype(col)) <: Real || return true            # String / categorical-encoded
     vals = _finite_vals(col)
     isempty(vals) && return false
@@ -86,7 +90,7 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
         # auto-detect type from the decoded column; `categorical`/`numeric` kwargs force the call
         is_cat = m in categorical ? true :
                  m in numeric     ? false :
-                 _is_categorical_col(cell[!, m])
+                 _is_categorical_col(cell[!, m], m)
         if is_cat
             cats = sort(unique(_catkey(v) for v in cell[!, m]
                                if !(v isa Missing) && !(v isa Real && !isfinite(v))))

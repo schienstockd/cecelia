@@ -148,6 +148,18 @@ end
             ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    # ── Dispatch + param validation — ClustTracks (clustTracks.cluster, set-scope) ───
+    @testset "Param validation — ClustTracks" begin
+        @test _task_from_fun_name("clustTracks.cluster") isa ClustTracks
+        @test task_scope(ClustTracks()) == "set"
+        # resolution is float min=0/max=5 — out of range must be rejected
+        @test_throws ParamValidationError validate_params(
+            ClustTracks(), Dict{String,Any}("resolution" => 99))
+        # wrong type where float expected
+        @test_throws ParamValidationError validate_params(
+            ClustTracks(), Dict{String,Any}("resolution" => "not-a-number"))
+    end
+
     # ── Image round-trip (status + attr) ────────────────────────────────────────
     # Regression guard: save!(img) must persist status and attr, not silently drop them.
     @testset "Image status/attr round-trip" begin
@@ -2309,6 +2321,10 @@ end
             @test Cecelia._is_categorical_col([1, 2, missing])                 # integer codes (Missing-union) too
             @test !Cecelia._is_categorical_col([10.12, 11.3, 9.8])             # continuous floats → numeric (speed)
             @test !Cecelia._is_categorical_col(Float64.(1:100))               # wide-spread integers → numeric (counts/area)
+            # name-rule: cluster code columns are categorical regardless of level count (>cap clusters)
+            @test Cecelia._is_categorical_col(Float64.(1:100), "clusters")          # exact name
+            @test Cecelia._is_categorical_col(Float64.(1:100), "clusters.default")  # clusters.{suffix}
+            @test !Cecelia._is_categorical_col(Float64.(1:100), "area")             # other names keep the heuristic
             # `st` is an integer code (1/2) → auto-detected categorical with NO override → freq cols
             auto = track_props(img; value_name="B", cell_measures=["st"])
             @test "st.1" in names(auto) && "st.2" in names(auto) && !("st.mean" in names(auto))

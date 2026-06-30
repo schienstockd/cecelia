@@ -63,7 +63,7 @@ export CellposeCorrect
 export CellposeSegment
 export MeasureLabels
 export BayesianTracking, TrackMeasures
-export ClustPops
+export ClustPops, ClustTracks
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
 
@@ -124,6 +124,7 @@ include("tasks/tracking/track_measures.jl")
 include("tasks/behaviour/hmm_states.jl")
 include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/clustPops/cluster.jl")
+include("tasks/clustTracks/cluster.jl")
 include("tasks/task_registry.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")
