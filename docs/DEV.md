@@ -67,6 +67,11 @@ Open a PR against `main` for review; **Dom reviews and merges** (PR #1 merged th
 - The `gh` CLI is **not installed in the agent environment**. An agent therefore **pushes the
   branch and relays the PR-creation URL** (the `https://github.com/schienstockd/cecelia/pull/new/<branch>`
   link printed by `git push`) for Dom to open — it does not attempt `gh pr create`.
+- **Always relay a complete, paste-ready PR body** — for *every* branch, not just large ones.
+  Because `gh` is absent, GitHub receives **no** description automatically; the body is text Dom
+  pastes into the PR form. The commit message and the PR body serve different readers (reviewers
+  skim the PR on GitHub), so a body is always worth giving — short for small branches, but never
+  omitted. (Don't leave it to a per-branch judgement call; that produced inconsistent PRs.)
 - End PR bodies (when an agent drafts one) with:
 
   ```
