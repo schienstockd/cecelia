@@ -87,7 +87,8 @@ onMounted(load)
           <p v-if="!featureOptions.length" class="feat-empty">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
-      <button class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
+      <button class="cc-btn cc-btn-ghost" @click="load"
+              v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
     </template>
     <div class="hm-body">
       <PlotChart v-if="heatmap" :data="heatmap" :opts="opts" />

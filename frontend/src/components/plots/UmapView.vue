@@ -107,6 +107,8 @@ onMounted(load)
     <div class="uv-ctrl">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
+      <button class="cc-btn cc-btn-ghost" @click="load"
+              v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
