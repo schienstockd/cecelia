@@ -12,8 +12,11 @@ Repository: `git@github.com:schienstockd/cecelia.git` (default branch **`main`**
 docs and one-line fixes. Never `git commit`/`git push` directly onto `main`. Releases are tagged
 off `main` *after* the PR has merged (see below).
 
-Agents (Claude Code): **commit or push only when the user explicitly asks.** If the current
-branch is `main`, branch first.
+Agents (Claude Code): **ask before every commit and before opening/pushing a PR — explicitly,
+each time.** Do not commit or push proactively, even mid-task or after a general "go ahead" to do
+the work: approval to *make a change* is not approval to *commit* it. First show the file list and
+the proposed commit message(s) (and the branch), then wait for confirmation. If the current branch
+is `main`, branch first.
 
 ## Branches
 
@@ -58,7 +61,8 @@ relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current*
 
 ## Pull requests
 
-Open a PR against `main` for review; **Dom reviews and merges** (PR #1 merged this way).
+Open a PR against `main` for review; **Dom reviews and merges** (PR #1 merged this way). An agent
+**asks first** (see the golden rule) before pushing the branch or opening the PR.
 
 - The `gh` CLI is **not installed in the agent environment**. An agent therefore **pushes the
   branch and relays the PR-creation URL** (the `https://github.com/schienstockd/cecelia/pull/new/<branch>`
