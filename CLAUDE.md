@@ -20,6 +20,7 @@ See also:
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — temporary forward goals: phases (behaviour/HMM → clustering → freeze v1.0 → packaging/distribution → self-update) + post-v1 backlog. Consult before starting a new phase.
 - [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
 - [`docs/SHIPPING.md`](docs/SHIPPING.md) — distribution architecture & rationale: Pixi/constructor + browser stack (Julia serves the built frontend; no Tauri/Electron), packaging/update model, and non-obvious env decisions (cellpose-v3 pin, dropped coastal, GPU/RAPIDS parked, run-via-`pixi run`). The *why*, paired with INSTALL.md's *how*.
+- [`docs/DEV.md`](docs/DEV.md) — development workflow: branch + PR conventions (never commit/push to `main`), commit style, how PRs are opened/merged (gh not in the agent env → relay the PR URL), and how releases are tagged off `main`.
 
 **Keep the docs current — update the relevant file in the same change, not after.**
 
@@ -38,6 +39,7 @@ See also:
 | HTTP/WS routes, request/response shapes, binary responses | `docs/API.md` |
 | Deferring a known-better approach (ecosystem/scale not ready) | `docs/FUTURE.md` |
 | Packaging, distribution, env rationale (Pixi/constructor, why) | `docs/SHIPPING.md` |
+| Branching, commits, PRs, release tagging (dev workflow) | `docs/DEV.md` |
 
 > **Fatigue warning:** Agentic programming is cognitively demanding — directing architecture decisions without a flow state is draining in a way that's easy to underestimate. If we've gone two or more rounds on the same question without clear progress, or if an important aspect of the implementation keeps being deferred or glossed over, stop and say so explicitly. Either surface the blocker clearly for the user to decide, or add it to `docs/TODO.md` and move on. Don't push through circular discussions — flag them.
 
@@ -247,6 +249,10 @@ When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
 ---
 
 ## Development
+
+**Git workflow:** branch + PR for everything; **never commit or push to `main`** (releases are
+tagged off `main` after merge). Full conventions — branch naming, commit style, how PRs are
+opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). Agents commit/push only when asked.
 
 **Dev dir config — single source of truth:** `cecelia-pineapple/.env`
 ```
