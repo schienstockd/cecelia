@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useSettingsStore } from '../stores/settings'
 import ProjectPanel from './ProjectPanel.vue'
 import ViewerPanel from './ViewerPanel.vue'
 
 const projectMeta = useProjectMetaStore()
+const settings = useSettingsStore()
 const showPanel = ref(false)
 
 // Track which groups are collapsed (all open by default, except Dev)
@@ -75,7 +77,7 @@ function isNavDisabled(item: NavItem): boolean {
 </script>
 
 <template>
-  <nav class="sidebar">
+  <nav class="sidebar" v-show="!settings.sidebarCollapsed">
 
     <!-- ── Project block ───────────────────────────────────────────────── -->
     <div class="project-block">
