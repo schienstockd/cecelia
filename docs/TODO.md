@@ -11,17 +11,6 @@ Grep `needs-input` to list them.
 
 ## High priority
 
-**#00056** — **Unify PythonCall on the Pixi env (drop the separate CondaPkg conda env)**
-`PythonCall`/`CondaPkg.jl` provisions its *own* conda env at `api/.CondaPkg` and `app/.CondaPkg`
-(~202 MB each) — a second Python environment separate from the Pixi-managed `.pixi/` env that all
-task subprocesses and the napari bridge use. This is a real drift risk, not just waste: an
-in-process `PythonCall` call could resolve a *different* package version than an out-of-process task
-subprocess, producing bugs that reproduce on only one path. Point PythonCall at the Pixi env's
-interpreter — set `JULIA_CONDAPKG_BACKEND=Null` and `JULIA_PYTHONCALL_EXE` to the Pixi env's `python`
-(or the equivalent CondaPkg/PythonCall preferences in `app/`), then delete the `.CondaPkg` dirs
-(already gitignored). Verify any in-process `PythonCall` usage still resolves its imports. (Surfaced
-while connecting the repo — the `.CondaPkg` dirs were the two fattest things after `.pixi/`.)
-
 **#00003** — **Per-image lockfiles wired into task commit sites**
 Today's `with_transaction` (in `model/project.jl`) is a deliberately naive *project-scoped*
 guard and is never called. The real (rare) collision risk is two tasks doing concurrent
@@ -243,6 +232,17 @@ batch it rather than churn standalone.
 ---
 
 ## Fixed
+
+**#00056** — **Removed PythonCall (dropped the separate CondaPkg conda env)** (2026-06-30)
+PythonCall was a declared-but-**unused** dependency in `app/Project.toml` — never imported or called
+anywhere (reads use `HDF5.jl`; H5AD writes and all tasks use Python *subprocesses* via
+`python_bin_path()`). Its only effect was pulling in `CondaPkg`, which built `app/.CondaPkg` (202 MB)
++ `api/.CondaPkg` (88 MB) conda envs on precompile — a whole second Python environment backing
+nothing. Removed it (`Pkg.rm`), re-resolved both Manifests (CondaPkg/MicroMamba/pixi_jll gone), and
+deleted the `.CondaPkg` dirs. No drift risk, ~290 MB saved, faster `instantiate`. Cleaner than the
+original plan (reconfigure PythonCall onto the Pixi env), since the dep was dead. Also corrected stale
+docs (ARCHITECTURE/DATAMODEL/POPULATION + the `label_props.jl` header) that wrongly said H5AD writes
+go through PythonCall — they go through a subprocess.
 
 **#00055** — **Napari tracks: per-segmentation overlay + timestamp + label naming** (2026-06-29)
 Reworked the napari track overlay for the behaviour phase: (1) shows **every** segmentation's tracks

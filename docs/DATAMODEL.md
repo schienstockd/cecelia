@@ -128,7 +128,8 @@ HDF5 access or read the whole table and filter afterwards.** Keeping one idiom m
 pattern is consistent across the app and the read/transform logic can change in one place.
 
 H5AD reads go through the **Julia-native** `LabelProps` reader (`app/src/label_props.jl`), which
-reads HDF5 directly via `HDF5.jl` — no PythonCall on the read path (`ARCHITECTURE.md:214`). It is
+reads HDF5 directly via `HDF5.jl` — pure Julia, no Python on the read path (writes go through a Python
+subprocess; see `ARCHITECTURE.md`). It is
 **lazy**: column selection, row filter, and sort are recorded as pending state; HDF5 I/O happens
 only inside the terminal `as_df` (opened in a `do` block — no leaked handles), and only the
 requested columns are read from `/X`.
