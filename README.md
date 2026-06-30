@@ -95,8 +95,8 @@ Dominik is the **author and scientific owner** of this software and of the origi
 
 - The original **`cecelia`** R/Shiny package by Dominik Schienstock and colleagues — the
   behavioural specification this project ports. Published in *Nature Communications* (2025),
-  [doi:10.1038/s41467-025-57193-y](https://doi.org/10.1038/s41467-025-57193-y); source:
-  [github.com/schienstockd/cecelia](https://github.com/schienstockd/cecelia).
+  [doi:10.1038/s41467-025-57193-y](https://doi.org/10.1038/s41467-025-57193-y); source (R version):
+  [github.com/schienstockd/cecelia-legacy](https://github.com/schienstockd/cecelia-legacy).
 - The scientific tools this pipeline orchestrates, each retaining its own license and citation:
   **Cellpose** (segmentation), **btrack** (Bayesian cell tracking), **napari** (image viewing),
   **scanpy** / **anndata** (single-cell data + clustering), **scikit-image**, **PyTorch**.
