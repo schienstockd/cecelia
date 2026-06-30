@@ -4,9 +4,6 @@
 # Pixi-managed Python env (multi-GB; reproduced from pixi.toml + pixi.lock)
 .pixi/
 
-# CondaPkg.jl local conda envs (PythonCall) — regenerated on demand
-**/.CondaPkg/
-
 # Node / frontend
 frontend/node_modules/
 # frontend/dist is a build artifact (produced by `pixi run build` / CI)

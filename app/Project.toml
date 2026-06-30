@@ -1,5 +1,6 @@
 name = "Cecelia"
 uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+license = "GPL-3.0-or-later"
 
 [deps]
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
