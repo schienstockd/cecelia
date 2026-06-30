@@ -41,51 +41,17 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
         end
     end
 
-    task_dirs   = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
-    task_subdir = string(get(task_dirs, "tasks", "tasks"))
-    params_dir  = joinpath(img._dir, task_subdir)
-    mkpath(params_dir)
-
-    task_id     = get(params, "_task_id", string(rand(UInt32), base=16))
-    params_file = joinpath(params_dir, "driftCorrect.$task_id.params.json")
-    open(params_file, "w") do io
-        JSON3.write(io, (;
-            imPath             = im_path,
-            imCorrectionPath   = im_correction_path,
-            driftChannel       = drift_channel_idx,
-            driftNormalisation = string(get(params, "driftNormalisation", "none")),
-        ))
-    end
-
-    py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                          "cleanupImages", "drift_correct_run.py")
-    python_bin = python_bin_path()
-
-    if !isfile(py_script)
-        on_log("[ERROR] Python script not found: $py_script")
-        return nothing
-    end
-
     on_log("[INFO] Input:       $im_path")
     on_log("[INFO] Output:      $im_correction_path")
     on_log("[INFO] Drift ch:    $drift_channel_idx")
 
-    out_pipe = Pipe()
-    proc = run(pipeline(`$python_bin $py_script --params $params_file`;
-                        stdout = out_pipe, stderr = out_pipe); wait = false)
-    close(out_pipe.in)
-    on_process(proc)
-
-    for line in eachline(out_pipe)
-        m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", line)
-        if !isnothing(m)
-            on_progress(parse(Int, m[1]), parse(Int, m[2]))
-        else
-            on_log(line)
-        end
-    end
-    wait(proc)
-    ok = proc.exitcode == 0 && proc.termsignal == 0
+    ok = run_py("tasks/cleanupImages/drift_correct_run.py",
+        (; imPath             = im_path,
+           imCorrectionPath   = im_correction_path,
+           driftChannel       = drift_channel_idx,
+           driftNormalisation = string(get(params, "driftNormalisation", "none"))),
+        task_run_dir(img._dir);
+        on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
 
     on_log("[INFO] Drift correction complete.")
