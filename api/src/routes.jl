@@ -220,7 +220,7 @@ function api_projects_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    name = strip(String(get(body, :name, "")))
+    name = String(strip(String(get(body, :name, ""))))
     type = String(get(body, :type, "static"))
     isempty(name) && return 400, JSON3.write((; error="Project name is required"))
     type ∉ ("static", "live", "flow") && return 400, JSON3.write((; error="Invalid project type: $type"))
@@ -295,7 +295,7 @@ function api_projects_rename(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
     uid  = String(get(body, :uid,  ""))
-    name = strip(String(get(body, :name, "")))
+    name = String(strip(String(get(body, :name, ""))))
     isempty(uid)  && return 400, JSON3.write((; error="uid required"))
     isempty(name) && return 400, JSON3.write((; error="name required"))
     proj_dir = joinpath(projects_dir(), uid)
