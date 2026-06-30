@@ -1,0 +1,158 @@
+<!--
+  UMAP interactive view (one entry in the interactive-view registry; see components/canvas/
+  interactiveViews.ts). Self-contained: fetches the joint embedding + cluster codes for the selected
+  image(s) (GET /api/plots/umap → binary Float32 [x,y,code,…]), renders a colour-by-cluster WebGL
+  scatter (ScatterGL `category` mode) with a legend, and owns its own controls (cluster-number label
+  toggle). Clustering is set-scope, so all selected images share one UMAP space + cluster numbering —
+  we fetch per image and concatenate.
+
+  This is an INTERACTIVE plot (client/WebGL point cloud), distinct from SUMMARY plots (server-
+  aggregated, drawn by PlotChart). It is hosted by the generic InteractivePanel, which gives it the
+  CanvasPanel chrome — this component knows nothing about panels/canvas, only how to draw a UMAP.
+
+  Props are the generic plot `context` (projectUid/imageUids/setUid/popType/suffix) plus `state` —
+  the panel's persisted per-panel options bag (here just `labels`).
+-->
+<script setup lang="ts">
+import { ref, computed, watch, onMounted } from 'vue'
+import { useLogStore } from '../../stores/log'
+import ScatterGL from './ScatterGL.vue'
+
+const props = defineProps<{
+  projectUid: string; imageUids: string[]; setUid: string | null
+  popType: 'clust' | 'trackclust'; suffix: string
+  state: { labels?: boolean }
+}>()
+const log = useLogStore()
+const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
+const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
+
+const PALETTE = [
+  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
+  '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
+  '#fb7185', '#2dd4bf', '#fbbf24', '#60a5fa',
+]
+const UNCLUSTERED = '#555a6e'
+const points = ref<Float32Array | null>(null)
+const categories = ref<Float32Array | null>(null)
+const palette = ref<string[]>([])
+const legend = ref<{ code: number; colour: string; n: number }[]>([])
+const centroids = ref<{ code: number; x: number; y: number }[]>([])
+const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
+const loading = ref(false)
+const err = ref('')
+const total = computed(() => (points.value ? points.value.length / 2 : 0))
+const lx = (x: number) => `${((x - extents.value.xMin) / Math.max(1e-9, extents.value.xMax - extents.value.xMin)) * 100}%`
+const ly = (y: number) => `${(1 - (y - extents.value.yMin) / Math.max(1e-9, extents.value.yMax - extents.value.yMin)) * 100}%`
+
+async function load() {
+  err.value = ''
+  if (!props.projectUid || !props.imageUids.length) { points.value = null; legend.value = []; centroids.value = []; return }
+  loading.value = true
+  try {
+    const triples: number[] = []
+    for (const uid of props.imageUids) {
+      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: props.popType, suffix: props.suffix })
+      const res = await fetch(`/api/plots/umap?${q}`)
+      if (!res.ok) continue
+      const f = new Float32Array(await res.arrayBuffer())
+      for (let i = 0; i < f.length; i++) triples.push(f[i])
+    }
+    const n = Math.floor(triples.length / 3)
+    if (n === 0) {
+      points.value = null; categories.value = null; legend.value = []; centroids.value = []
+      err.value = `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
+      return
+    }
+    const pts = new Float32Array(n * 2), codes = new Float32Array(n)
+    let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
+    for (let i = 0; i < n; i++) {
+      const x = triples[3 * i], y = triples[3 * i + 1]
+      pts[2 * i] = x; pts[2 * i + 1] = y; codes[i] = triples[3 * i + 2]
+      if (x < xMin) xMin = x; if (x > xMax) xMax = x
+      if (y < yMin) yMin = y; if (y > yMax) yMax = y
+    }
+    const px = (xMax - xMin || 1) * 0.04, py = (yMax - yMin || 1) * 0.04
+    extents.value = { xMin: xMin - px, xMax: xMax + px, yMin: yMin - py, yMax: yMax + py }
+    const counts = new Map<number, number>()
+    for (let i = 0; i < n; i++) counts.set(codes[i], (counts.get(codes[i]) ?? 0) + 1)
+    const distinct = [...counts.keys()].sort((a, b) => a - b)
+    const colourFor = new Map<number, string>(), idxOf = new Map<number, number>()
+    let pi = 0
+    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : PALETTE[pi++ % PALETTE.length]) })
+    const cats = new Float32Array(n)
+    for (let i = 0; i < n; i++) cats[i] = idxOf.get(codes[i])!
+    palette.value = distinct.map(c => colourFor.get(c)!)
+    categories.value = cats
+    points.value = pts
+    legend.value = distinct.map(c => ({ code: c, colour: colourFor.get(c)!, n: counts.get(c)! }))
+    const sx = new Map<number, number>(), sy = new Map<number, number>()
+    for (let i = 0; i < n; i++) {
+      const c = codes[i]; if (c < 0) continue
+      sx.set(c, (sx.get(c) ?? 0) + pts[2 * i]); sy.set(c, (sy.get(c) ?? 0) + pts[2 * i + 1])
+    }
+    centroids.value = distinct.filter(c => c >= 0).map(c => ({ code: c, x: sx.get(c)! / counts.get(c)!, y: sy.get(c)! / counts.get(c)! }))
+  } catch (e) {
+    err.value = e instanceof Error ? e.message : String(e)
+    log.error(`UMAP: ${err.value}`, { source: 'cluster' })
+  } finally { loading.value = false }
+}
+
+watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix], load)
+onMounted(load)
+</script>
+
+<template>
+  <div class="uv">
+    <div class="uv-ctrl">
+      <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
+              v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
+      <button class="cc-btn cc-btn-ghost" @click="load"
+              v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
+      <span class="uv-spacer" />
+      <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
+    </div>
+    <div class="uv-body">
+      <div class="uv-plot">
+        <template v-if="points && points.length">
+          <ScatterGL :points="points" :extents="extents" color-mode="category"
+                     :categories="categories" :palette="palette" :point-size="4" :opacity="0.9" />
+          <span v-for="c in centroids" v-show="labels" :key="c.code" class="uv-label"
+                :style="{ left: lx(c.x), top: ly(c.y) }">{{ c.code }}</span>
+        </template>
+        <div v-else class="uv-empty">
+          <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
+          <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
+        </div>
+      </div>
+      <div v-if="legend.length" class="uv-legend">
+        <div v-for="l in legend" :key="l.code" class="leg-row">
+          <span class="leg-dot" :style="{ background: l.colour }" />
+          <span class="leg-lbl">{{ l.code < 0 ? 'unclustered' : `cluster ${l.code}` }}</span>
+          <span class="leg-n">{{ l.n.toLocaleString() }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.uv { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12px; color: var(--cc-text-dim); }
+/* active (ticked) label toggle: filled accent so it's clearly on/off */
+.uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
+.uv-spacer { flex: 1; }
+.uv-count { font-variant-numeric: tabular-nums; }
+.uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
+.uv-plot { position: relative; flex: 1; min-height: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
+.uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-size: 11px; font-weight: 700;
+  color: #111; background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.35); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
+.uv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }
+.uv-empty .pi { font-size: 1.4rem; opacity: 0.6; }
+.uv-empty p { margin: 0; font-size: 0.8rem; max-width: 22rem; }
+.uv-legend { width: 9.5rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; padding: 5px; }
+.leg-row { display: flex; align-items: center; gap: 5px; padding: 1px 2px; font-size: 11px; }
+.leg-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex-shrink: 0; }
+.leg-lbl { flex: 1; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leg-n { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+</style>

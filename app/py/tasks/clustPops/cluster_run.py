@@ -12,8 +12,6 @@ Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
   suffix                output column suffix → clusters.{suffix} / X_umap.{suffix}
   segments              [{uID, valueName, propsPath, labels|null}] — one per (image, segmentation)
   featureCols           var columns to cluster on (channels + object measures), same names across segments
-  channelCols           the intensity subset of featureCols (ref-channel divide applies to these)
-  refChannelCol         intensity column to divide channels by, or null
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
@@ -32,8 +30,6 @@ def run(params):
     suffix       = script_utils.get_param(params, "suffix", default="default")
     segments     = script_utils.get_param(params, "segments", default=[])
     feature_cols = script_utils.get_param(params, "featureCols", default=[])
-    channel_cols = script_utils.get_param(params, "channelCols", default=[])
-    ref_col      = script_utils.get_param(params, "refChannelCol", default=None)
 
     if len(segments) == 0 or len(feature_cols) == 0:
         log.log("[ERROR] cluster_cells: no segments or no feature columns")
@@ -80,16 +76,6 @@ def run(params):
     adata.obs["uID"]       = pooled["uID"].to_numpy()
     adata.obs["valueName"] = pooled["valueName"].to_numpy()
     adata.obs["label"]     = pooled["label"].to_numpy()
-
-    # ref-channel normalisation: divide the intensity channels by a reference channel (old refChannel)
-    if ref_col is not None and ref_col in feature_cols:
-        chans = [c for c in channel_cols if c in feature_cols]
-        if chans:
-            ref_idx = feature_cols.index(ref_col)
-            ref = adata.X[:, ref_idx].copy()
-            ref[ref == 0] = 1.0
-            for c in chans:
-                adata.X[:, feature_cols.index(c)] = adata.X[:, feature_cols.index(c)] / ref
 
     # ── cluster the whole set at once ──
     clustering_utils.find_populations(

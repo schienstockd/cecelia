@@ -34,15 +34,6 @@
       "tip": "Feature columns to cluster on — channel intensities (mean_intensity_N) and/or object/morphology measures (area, sphericity, …)."
     },
     {
-      "key": "refChannel",
-      "label": "Reference channel",
-      "type": "labelPropsColsSelection",
-      "multiple": false,
-      "includeChannels": true,
-      "default": "",
-      "tip": "Optional: divide each intensity feature by this channel before normalisation (ratiometric). Leave empty for none."
-    },
-    {
       "key": "resolution",
       "label": "Resolution",
       "type": "float",

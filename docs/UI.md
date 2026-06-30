@@ -589,6 +589,46 @@ track (tracks are ribbons, not points — `popType` prop). The store gained `cel
 `showTracks` / `refreshNapari` (the latter routes the per-pop visibility re-push to Tracks vs Points
 by `popType`).
 
+## Interactive vs summary plots
+
+Two plot families share the canvas shell; the distinction matters for where a new plot type plugs in:
+
+- **Summary** — server-aggregated (`POST /api/plot_data`), drawn by the ONE generic `PlotChart`
+  (Observable Plot). Histogram, bar, boxplot, **heatmap/matrix**, frequency. Add one = drop a
+  plot-def JSON (`app/src/plotDefinitions/`); no UI code. Hosted by `SummaryPanel`.
+- **Interactive** — client/WebGL point clouds with per-point interaction (regl `ScatterGL`), each with
+  its own data endpoint + rendering. Gating scatter, **UMAP**. These can't be a single generic
+  renderer, so they live in a **registry** of self-contained view components:
+  **`components/canvas/interactiveViews.ts`** → `INTERACTIVE_VIEWS = { umap: { label, component } }`.
+  A view (e.g. **`components/plots/UmapView.vue`**) fetches + renders + owns its controls; the generic
+  **`components/canvas/InteractivePanel.vue`** wraps any view in `CanvasPanel` and spreads the plot
+  `context` (project/images/popType/suffix) + the panel's persisted `state` onto it. **Adding an
+  interactive plot = one `XView.vue` + one registry line** — no panel/canvas changes. (Shared infra,
+  so the future universal canvas reuses it.)
+
+## Cluster pages (UMAP + heatmap on the shared canvas)
+
+`modules/ClusterCellsModule.vue` (route `/clust-cells`, popType `clust`) and
+`modules/ClusterTracksModule.vue` (`/clust-tracks`, popType `trackclust`) — one page per granularity,
+mirroring the gate/track split. Each is `ModuleLayout` (multi-select — clustering is set-scope) +
+`TaskRunner` (`clustPops` / `clustTracks`) + a below-table **`modules/cluster/ClusterPlots.vue`**
+canvas (the cluster analogue of `GatingPlots`: `useCanvasPanels` keyed `clust:${popType}` + a "+ Plot"
+picker + Tile/Cascade). The **"+ Plot"** picker lists every interactive view (`INTERACTIVE_VIEWS`) +
+the summary **Heatmap**; each panel is routed by family — interactive → `InteractivePanel` (e.g.
+**UMAP**: `obsm['X_umap.{suffix}']` coloured by cluster via `ScatterGL` `category` mode, legend +
+toggleable cluster-number labels at each cluster centroid), summary → **`ClusterHeatmapPanel`**
+(clusters × features via the matrix aggregation + `PlotChart`).
+- **suffix is PAGE-LEVEL** — a dropdown of the discovered `clusters.{suffix}` runs (one shown at a
+  time, like a segmentation), persisted in the canvas `shared` bag. Discovered from
+  `GET /api/gating/channels` → `clusterSuffixes`.
+- **Heatmap features = exactly what the run clustered on** — persisted per run as a
+  `{props}.clustfeatures.json` sidecar (clustPops/clustTracks write it), surfaced via the channels
+  endpoint's `clusterFeatures`. Channel rows aggregate by RAW name (the matrix passes
+  `raw_channel_names`) and are relabelled to display names via the channels `nameMap`.
+- Set-scope ⇒ panels pool across the selected images (shared UMAP space + cluster numbering; heatmap
+  pools via `setUid`). The cluster population-manager (tick cluster IDs → a `clust`/`trackclust` pop
+  via `pop/update` filter) lands in this canvas next.
+
 **Shared canvas shell (reused by the gating, track-gating, summary and universal canvases).** The
 floating-panel mechanics are factored out of the gating page so other module canvases reuse them
 unchanged:

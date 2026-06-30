@@ -27,6 +27,18 @@ function _str_list(params, key)::Vector{String}
     filter(x -> !isempty(x) && x != "NONE", xs)
 end
 
+# Persist the feature list a clustering run used, so the cluster pages' heatmap can offer EXACTLY
+# those columns (not every measurement). Stored as a `{props}.clustfeatures.json` sidecar next to the
+# labelProps (cell table for clust, `__tracks` table for trackclust), keyed by suffix; merged so
+# multiple runs/suffixes coexist. Shared by clustPops + clustTracks (read by api_gating_channels).
+function _write_clust_features!(props_path::AbstractString, suffix::AbstractString, features::Vector{String})
+    sidecar = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
+    existing = isfile(sidecar) ? JSON3.read(read(sidecar, String), Dict{String,Any}) : Dict{String,Any}()
+    merged = Dict{String,Any}(String(k) => v for (k, v) in existing)
+    merged[suffix] = features
+    open(sidecar, "w") do f; JSON3.pretty(f, merged); end
+end
+
 function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -38,7 +50,6 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     pop_type = string(get(params, "popType", "flow"))
     suffix   = string(get(params, "valueNameSuffix", "default"))
     feature_cols = _str_list(params, "clusterMeasures")   # var column names (intensities + morphology)
-    ref_channel  = string(get(params, "refChannel", ""))
     isempty(feature_cols) &&
         (on_log("[ERROR] clustPops: select feature columns (channels / object measures) to cluster on"); return nothing)
 
@@ -47,9 +58,6 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     on_progress(1, 4)
 
     uids = [img.uid for img in imgs]
-    # ref-channel divide applies to intensity columns within the selected features
-    channel_cols = filter(c -> occursin("intensity", c), feature_cols)
-    ref_col = isempty(ref_channel) ? nothing : ref_channel
 
     # ── pooled membership: one row per cell tagged with uID + value_name (the popsToCluster set) ──
     df = pop_df(imgs, uids, pop_type, pops; pop_cols = String[], granularity = :cell)
@@ -73,8 +81,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     # ── hand off to the Python engine runner ──
     task_params = Dict{String,Any}(
         "suffix" => suffix, "segments" => segments,
-        "featureCols" => feature_cols, "channelCols" => channel_cols,
-        "refChannelCol" => ref_col,
+        "featureCols" => feature_cols,
         "resolution" => get(params, "resolution", 1.0),
         "normaliseAxis" => string(get(params, "normaliseAxis", "channels")),
         "normaliseToMedian" => Bool(get(params, "normaliseToMedian", false)),
@@ -93,6 +100,10 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     ok = run_py("tasks/clustPops/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
                 on_log = on_log, on_process = on_process)
     ok || (on_log("[ERROR] clustPops: Python runner failed"); return nothing)
+    # record the feature list so the heatmap offers exactly these columns (per segment's sidecar)
+    for seg in segments
+        _write_clust_features!(seg["propsPath"], suffix, feature_cols)
+    end
     on_progress(4, 4)
 
     on_log("[INFO] clustPops done → clusters.$suffix")

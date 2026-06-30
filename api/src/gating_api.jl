@@ -200,6 +200,17 @@ function _persist_and_broadcast!(m::PopulationMap, img::CciaImage, body, vn, pop
     to_tree(m)
 end
 
+# cluster suffixes available in a table's obs (the `clusters.{suffix}` columns written by
+# clustPops/clustTracks) → drives the cluster pages' page-level suffix dropdown.
+_cluster_suffixes(obscols) = String[c[ncodeunits("clusters.")+1:end] for c in obscols if startswith(c, "clusters.")]
+
+# feature list per suffix a clustering run used ({props}.clustfeatures.json sidecar; clustPops/
+# clustTracks write it) → the cluster heatmap offers exactly those columns, not every measurement.
+function _clust_features(props_path::AbstractString)
+    s = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
+    isfile(s) ? JSON3.read(read(s, String), Dict{String,Any}) : Dict{String,Any}()
+end
+
 # ── GET /api/gating/channels — gateable columns + channel display names ───────
 function api_gating_channels(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
@@ -213,7 +224,8 @@ function api_gating_channels(req::HTTP.Request)
         return 200, JSON3.write((;
             columns = String[], channels = String[], channelNames = String[],
             channelNameVersions = Dict{String,Any}(), obsColumns = String[],
-            cellMeasures = String[], trackAggregates = String[],
+            cellMeasures = String[], trackAggregates = String[], clusterSuffixes = String[],
+            clusterFeatures = Dict{String,Any}(),
             valueNames = String[], valueName = vn, popType = get(q, "popType", "flow")))
     end
     # track gating: the gateable axes are the per-track properties — motility (the track table's
@@ -223,10 +235,14 @@ function api_gating_channels(req::HTTP.Request)
     if get(q, "popType", "flow") == "track"
         motility = _track_motility_cols(img, vn)
         cellmeas = col_names(label_props(img; value_name = vn); data_type = :vars)
+        tpath = img_track_props_path(img, vn)
+        tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
         return 200, JSON3.write((;
             columns = motility,                                  # directly gateable per-track axes
             cellMeasures = cellmeas,                             # aggregatable into track properties
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
+            clusterSuffixes = _cluster_suffixes(tobs),           # trackclust runs in the track table
+            clusterFeatures = _clust_features(tpath),
             valueNames = versioned_keys(img.label_props),
             valueName = vn,
             popType = "track",
@@ -247,6 +263,8 @@ function api_gating_channels(req::HTTP.Request)
         channelNames = display === nothing ? String[] : display,
         channelNameVersions = versions,
         obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
+        clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
+        clusterFeatures = _clust_features(img_label_props_path(img, vn)),
         valueNames = versioned_keys(img.label_props),
         valueName = vn,                 # the server-resolved value_name these columns belong to
     ))
@@ -381,6 +399,11 @@ function api_plots_umap(req::HTTP.Request)
         has_pop(m, pop) || return _gerr(404, "Population not found: $pop")
         sel  = Set(cells_in_pop(m, pop))
         keep = BitVector(l in sel for l in cdf.label)
+    end
+    # drop rows with no embedding — cells/tracks outside the clustered set have NaN UMAP coords
+    # (and NaN code); they'd otherwise render as a stray "NaN" cluster.
+    @inbounds for i in 1:size(xy, 1)
+        (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
     end
 
     idx = findall(keep)
