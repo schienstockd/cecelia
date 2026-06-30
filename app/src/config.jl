@@ -84,9 +84,21 @@ end
 
 projects_dir()::String = _cfg_dir("projects", "/path/to/projects")
 
-bioformats2raw_bin()::String = joinpath(
-    _cfg_dir("bioformats2raw", "/path/to/bioformats2raw"),
-    "bin", Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw")
+# Resolve the bioformats2raw launcher: explicit config override → bundled copy (vendored into
+# release bundles; Java comes from the Pixi env) → PATH → the (likely-missing) default. Run via
+# `pixi run` so the bundled `bioformats2raw` script finds `java`. See docs/SHIPPING.md.
+function bioformats2raw_bin()::String
+    exe = Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw"
+    d   = get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "bioformats2raw", "")
+    if !isempty(string(d)) && string(d) != "/path/to/bioformats2raw"
+        return joinpath(expanduser(string(d)), "bin", exe)
+    end
+    bundled = joinpath(@__DIR__, "..", "..", "bioformats2raw", "bin", exe)   # repo/install root
+    isfile(bundled) && return bundled
+    found = Sys.which(exe)
+    found === nothing || return string(found)
+    joinpath(_cfg_dir("bioformats2raw", "/path/to/bioformats2raw"), "bin", exe)
+end
 
 python_bin_path()::String = _cfg_dir("python", "python3")
 

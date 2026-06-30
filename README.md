@@ -1,4 +1,4 @@
-# Cecelia Pineapple
+# 🍍 Cecelia Pineapple
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
 tracking, gating, behavioural analysis, and clustering of multiplexed and live-cell microscopy
@@ -14,88 +14,98 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ---
 
-## Quickstart
+## Install & run
 
-One command installs [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
-downloads the latest release, provisions the environment (a few GB on first run), and adds a
-**Cecelia** launcher to your applications menu.
+Pick your operating system and follow it top to bottom: **install**, **point Cecelia at your projects
+folder**, then **run**. Image import works out of the box — **bioformats2raw and Java are bundled** in
+the release, so there is nothing extra to install for it.
 
-**Linux / macOS**
+The installer sets up [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
+downloads the latest release, and provisions the environment (a few GB on first run; later launches
+are fast).
+
+### Linux
+
+**1 · Install** — in a terminal:
 ```sh
 curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
 ```
 
-**Windows** (PowerShell)
+**2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
+```sh
+mkdir -p ~/cecelia ~/cecelia-projects
+cat > ~/cecelia/custom.toml <<'EOF'
+[dirs]
+projects = "~/cecelia-projects"
+EOF
+```
+(`~/cecelia-projects` can be any folder; `~` is your home folder.)
+
+**3 · Run** — launch **Cecelia** from your applications menu (or `cd ~/.local/share/cecelia && pixi run app`).
+It opens in your browser at <http://localhost:8080>. Image import is ready to use.
+
+### macOS
+
+**1 · Install** — in Terminal:
+```sh
+curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
+```
+
+**2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
+```sh
+mkdir -p ~/cecelia ~/cecelia-projects
+cat > ~/cecelia/custom.toml <<'EOF'
+[dirs]
+projects = "~/cecelia-projects"
+EOF
+```
+(`~/cecelia-projects` can be any folder; `~` is your home folder.)
+
+**3 · Run** — open **Cecelia** from `~/Applications` (or `cd ~/.local/share/cecelia && pixi run app`).
+It opens in your browser at <http://localhost:8080>. Image import is ready to use.
+
+### Windows
+
+**1 · Install** — in PowerShell (no admin rights needed; everything installs in your user account):
 ```powershell
 irm https://github.com/schienstockd/cecelia/releases/latest/download/install.ps1 | iex
 ```
 
-**Run.** Click the **Cecelia** launcher (or run `pixi run app` from the install directory) — it
-starts the server and opens Cecelia in your browser at <http://localhost:8080>. From there: create a
-project, import images, then run tasks (segment → track → gate → cluster / behaviour) and inspect
-the results in the linked plots and the napari viewer.
-
-**Update.** Re-run the install command above, or run `pixi run update` from the install directory.
-
-Running from source for development (hot-reload) is covered in [`docs/INSTALL.md`](docs/INSTALL.md).
-
----
-
-## Set your projects folder (first-time setup)
-
-Out of the box Cecelia doesn't know where to keep your work. You tell it once by creating a small
-text file named **`custom.toml`**. After saving it, **restart Cecelia** (close its window and open it
-again) — the launcher window will then show `projects_dir = …your folder…` instead of the
-placeholder.
-
-The file always contains the same two lines:
-
+**2 · Point at your projects folder** — create `C:\Users\<you>\cecelia\custom.toml`:
+```powershell
+New-Item -ItemType Directory -Force "$HOME\cecelia","$HOME\cecelia-projects" | Out-Null
+Set-Content "$HOME\cecelia\custom.toml" "[dirs]`nprojects = `"~/cecelia-projects`""
+```
+*(No PowerShell? In Notepad, save the two lines below as `C:\Users\<you>\cecelia\custom.toml` with
+**"Save as type" → "All Files"** so it isn't saved as `.txt`; use forward slashes inside.)*
 ```toml
 [dirs]
 projects = "~/cecelia-projects"
 ```
 
-`~` means your home folder on every system, so you can leave that exactly as-is (or change
-`~/cecelia-projects` to any folder you prefer). Only **where the file goes** and **the command to
-create it** differ per system — find yours below.
+**3 · Run** — launch **Cecelia** from the Start Menu. It opens in your browser at
+<http://localhost:8080>. Image import is ready to use.
 
-### Linux
-File location: `~/cecelia/custom.toml`. In a terminal:
-```sh
-mkdir -p ~/cecelia ~/cecelia-projects
-cat > ~/cecelia/custom.toml <<'EOF'
-[dirs]
-projects = "~/cecelia-projects"
-EOF
-```
-Then restart Cecelia.
+> **After editing `custom.toml`, restart Cecelia** (close its window and open it again). The launcher
+> window then shows `projects_dir = …your folder…` instead of the placeholder.
+>
+> **Advanced:** `custom.toml` lives in `~/cecelia`; point elsewhere with `CECELIA_DEV_DIR`. To use
+> your *own* bioformats2raw instead of the bundled one, add `bioformats2raw = "/path/to/bioformats2raw"`
+> under `[dirs]`. Every setting is listed in the bundled `app/config.toml`.
 
-### macOS
-Identical to Linux. File location: `~/cecelia/custom.toml`. In Terminal:
-```sh
-mkdir -p ~/cecelia ~/cecelia-projects
-cat > ~/cecelia/custom.toml <<'EOF'
-[dirs]
-projects = "~/cecelia-projects"
-EOF
-```
-Then restart Cecelia.
+---
 
-### Windows
-File location: `C:\Users\<you>\cecelia\custom.toml`. In **PowerShell**:
-```powershell
-New-Item -ItemType Directory -Force "$HOME\cecelia","$HOME\cecelia-projects" | Out-Null
-Set-Content "$HOME\cecelia\custom.toml" "[dirs]`nprojects = `"~/cecelia-projects`""
-```
-Then restart Cecelia.
+## Updating
 
-*Don't want to use PowerShell?* Open Notepad, paste the two lines shown above, and save as
-`C:\Users\<you>\cecelia\custom.toml` — in the Save dialog set **"Save as type" → "All Files"** so it
-isn't silently saved as `custom.toml.txt`. Inside the file use forward slashes (`/`), never backslashes.
+Re-run the install command for your OS, run `pixi run update` from the install directory, or use the
+in-app **Update** button when a new release is available.
 
-> **Advanced:** the file lives in Cecelia's config folder (`~/cecelia`). Point somewhere else with the
-> `CECELIA_DEV_DIR` environment variable. Every overridable setting — e.g. `bioformats2raw` for
-> OME-TIFF import — is listed in the bundled `app/config.toml`.
+---
+
+## Developing
+
+Running from source with hot-reload (`pixi run dev` + `pixi run frontend`) is covered in
+[`docs/INSTALL.md`](docs/INSTALL.md).
 
 ---
 
