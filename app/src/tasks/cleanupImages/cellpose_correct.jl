@@ -63,7 +63,7 @@ function _run_task(task::CellposeCorrect, img::CciaImage, params::Dict{String,An
 
     # @__DIR__ = app/src/tasks/cleanupImages → three dirname levels reach app/
     py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks",
-                          "cleanupImages", "cellpose_correct.py")
+                          "cleanupImages", "cellpose_correct_run.py")
     python_bin = python_bin_path()
 
     if !isfile(py_script)

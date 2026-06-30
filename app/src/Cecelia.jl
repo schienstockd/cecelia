@@ -63,6 +63,7 @@ export CellposeCorrect
 export CellposeSegment
 export MeasureLabels
 export BayesianTracking, TrackMeasures
+export ClustPops
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
 
@@ -92,6 +93,7 @@ export centre!, save_layer_props!, load_layer_props!, save_screenshot!
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")
 include("utils.jl")
+include("py_runner.jl")
 include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
@@ -121,6 +123,7 @@ include("tasks/tracking/bayesian_tracking.jl")
 include("tasks/tracking/track_measures.jl")
 include("tasks/behaviour/hmm_states.jl")
 include("tasks/behaviour/hmm_transitions.jl")
+include("tasks/clustPops/cluster.jl")
 include("tasks/task_registry.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")

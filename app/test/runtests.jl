@@ -136,6 +136,18 @@ end
         # so there is nothing for validate_params to reject — no test is meaningful there.
     end
 
+    # ── Dispatch + param validation — ClustPops (clustPops.cluster, set-scope) ───
+    @testset "Param validation — ClustPops" begin
+        @test _task_from_fun_name("clustPops.cluster") isa ClustPops
+        @test task_scope(ClustPops()) == "set"
+        # resolution is float min=0/max=5 — out of range must be rejected
+        @test_throws ParamValidationError validate_params(
+            ClustPops(), Dict{String,Any}("resolution" => 99))
+        # wrong type where float expected
+        @test_throws ParamValidationError validate_params(
+            ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
+    end
+
     # ── Image round-trip (status + attr) ────────────────────────────────────────
     # Regression guard: save!(img) must persist status and attr, not silently drop them.
     @testset "Image status/attr round-trip" begin

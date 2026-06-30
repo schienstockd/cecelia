@@ -324,6 +324,37 @@ _maybe_int(x::Real) = Int(round(x))
 """Read the full feature matrix as a DataFrame (convenience for analysis)."""
 as_matrix(lp::LabelProps) = as_df(lp; include_x=true, include_obs=false)
 
+"""
+    obsm_keys(lp) -> Vector{String}
+
+Names of the `obsm` matrices present in the file (e.g. `["spatial", "temporal", "X_umap"]`).
+"""
+function obsm_keys(lp::LabelProps)::Vector{String}
+    h5open(lp.path, "r") do fid
+        haskey(fid, "obsm") ? collect(String, keys(fid["obsm"])) : String[]
+    end
+end
+
+"""
+    obsm(lp, key) -> Matrix{Float64}   (n_obs × k, obs order)
+
+Read a full `obsm` matrix (e.g. an embedding `"X_umap"`) in obs order — pair with the `label`
+column from `as_df` for alignment. Returns a `0×0` matrix if the key is absent. The Python
+`LabelPropsView.obsm` is the mirror; both write via `add_obsm`. Orientation is auto-detected
+(AnnData writes `(n_obs, k)` C-order; HDF5.jl may report it transposed).
+"""
+function obsm(lp::LabelProps, key::AbstractString)::Matrix{Float64}
+    h5open(lp.path, "r") do fid
+        haskey(fid, "obsm/$key") || return Matrix{Float64}(undef, 0, 0)
+        n_obs = length(_as_strings(read(fid["obs/_index"])))
+        dset  = fid["obsm/$key"]
+        data  = read(dset)
+        m = Matrix{Float64}(data)
+        # orient to (n_obs × k): AnnData stores (n_obs, k); HDF5.jl may report (k, n_obs)
+        return size(m, 1) == n_obs ? m : permutedims(m)
+    end
+end
+
 # ── Write path: stage obs columns, flush with save! ──────────────────────────────
 #
 # The reader's mirror image: you read a label-keyed DataFrame (`as_df`), you write a
@@ -486,7 +517,7 @@ function write_categorical_obs(props_path::AbstractString, columns::AbstractVect
                           drop = String.(collect(drop))))
     end
     # @__DIR__ = app/src → one dirname level reaches app/
-    py_script = joinpath(dirname(@__DIR__), "py", "tasks", "labels",
+    py_script = joinpath(dirname(@__DIR__), "py", "writers",
                          "write_categorical_obs_run.py")
     isfile(py_script) || begin
         on_log("[ERROR] Python script not found: $py_script")

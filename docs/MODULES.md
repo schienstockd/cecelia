@@ -25,6 +25,15 @@ app/src/tasks/<category>/<name>.json   ← param spec (served to Vue via API)
 
 The filenames must match (`drift_correct.jl` ↔ `drift_correct.json`).
 
+**Naming convention (keep it consistent — no outliers without a reason):**
+- Category dirs are camelCase: `cleanupImages`, `clustPops`, `clustTracks`, `tracking`, …
+- `fun_name` is `<category>.<name>` — category camelCase, `<name>` snake_case
+  (`clustPops.cluster`, `tracking.bayesian_tracking`, `cleanupImages.afCorrect` (legacy)).
+- The Python **runner** is `app/py/tasks/<category>/<name>_run.py` — the `_run` suffix marks a
+  subprocess entry point; reusable logic lives in `app/py/utils/*.py`.
+- Python subprocess entry points that are **not** scheduler tasks (data-layer writers invoked by
+  the engine, e.g. the categorical-obs writer) live in `app/py/writers/`, **not** under `tasks/`.
+
 ### Struct
 
 ```julia
@@ -84,53 +93,44 @@ Return `nothing` on failure. The scheduler marks the task failed and the fronten
 
 ### Running a Python subprocess
 
-Write a params JSON file, launch Python, stream stdout. Parse `[PROGRESS] n/total` lines; forward everything else to `on_log`. Check both `exitcode` AND `termsignal` after `wait(proc)`:
+Spawn the task's Python runner through **`run_py`** (`app/src/py_runner.jl`) — the single place
+Cecelia launches Python (the Julia analogue of the old R `self$pyScript`). It writes the params
+JSON, sets `PYTHONPATH=app/` (so the script does `import py.*` with **no** `sys.path` bootstrap),
+streams stdout (`[PROGRESS] n/total` → `on_progress`, the rest → `on_log`), registers the process
+for cancellation, and returns clean-exit (checks both `exitcode` AND `termsignal` — libuv reports
+`exitcode==0` for killed procs):
 
 ```julia
-task_id    = get(params, "_task_id", string(rand(UInt32), base=16))
-params_dir = joinpath(img._dir, string(get(get(cecelia_conf(), "dirs", Dict()), "tasks", "tasks")))
-mkpath(params_dir)
-params_file = joinpath(params_dir, "myTask.$task_id.params.json")
-open(params_file, "w") do io
-    JSON3.write(io, (; imPath = im_path, imCorrectionPath = out_path, myParam = params["myParam"]))
-end
-
-# @__DIR__ = app/src/tasks/<category> — three dirname levels reach app/
-py_script  = joinpath(dirname(dirname(dirname(@__DIR__))), "py", "tasks", "<category>", "<name>.py")
-python_bin = python_bin_path()
-
-out_pipe = Pipe()
-proc = run(pipeline(`$python_bin $py_script --params $params_file`;
-                    stdout = out_pipe, stderr = out_pipe); wait = false)
-close(out_pipe.in)
-on_process(proc)          # ← REQUIRED: registers proc for cancellation
-
-for line in eachline(out_pipe)
-    m = match(r"^\[PROGRESS\] (\d+)/(\d+)$", line)
-    isnothing(m) ? on_log(line) : on_progress(parse(Int, m[1]), parse(Int, m[2]))
-end
-wait(proc)
-ok = proc.exitcode == 0 && proc.termsignal == 0   # libuv sets exitcode=0 for killed procs
+ok = run_py("tasks/<category>/<name>_run.py",
+    (; imPath = im_path, imCorrectionPath = out_path, myParam = params["myParam"]),
+    task_run_dir(img._dir);          # set-scope tasks pass the set/project `_dir` instead
+    on_log = on_log, on_progress = on_progress, on_process = on_process)
 ok || return nothing
 ```
 
-`on_process(proc)` must be called — it wires the process handle to the cancellation system. Skipping it means `task:cancel` from the UI can't kill the subprocess.
+The params file lands in `task_run_dir(<obj>._dir)` (the run's task dir — `<_dir>/tasks/`, **never**
+a temp dir; consistent across every task) and the Python script deletes it after reading. Pass the
+exact params your runner expects as the second arg (a `NamedTuple` or `Dict`).
+
+> **Migration note:** several existing tasks (cleanup/segment/tracking) still inline the spawn loop
+> and bootstrap `sys.path` in their runner — that older pattern works but is being migrated to
+> `run_py`. **New tasks must use `run_py`.** `clustPops.cluster` is the reference example.
 
 ---
 
 ## 2. Python script
 
-Location: `app/py/tasks/<category>/<name>.py`
+Location: `app/py/tasks/<category>/<name>_run.py`
 
 ### Boilerplate
+
+Launched via `run_py`, which sets `PYTHONPATH=app/`, so `import py.*` resolves directly — **no
+`sys.path` manipulation**:
 
 ```python
 """One-line description of what this script does."""
 
-import sys, os
-# __file__ is at app/py/tasks/<category>/<name>.py — go up 4 levels to reach app/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
-
+# `py.*` resolves via PYTHONPATH=app/ (set by the Julia launcher, app/src/py_runner.jl::run_py).
 import py.utils.zarr_utils    as zarr_utils
 import py.utils.ome_xml_utils as ome_xml_utils
 import py.utils.script_utils  as script_utils

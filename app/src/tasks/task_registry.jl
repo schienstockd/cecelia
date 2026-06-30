@@ -37,6 +37,10 @@ function _spec_path(::HmmTransitions)
     joinpath(@__DIR__, "behaviour", "hmm_transitions.json")
 end
 
+function _spec_path(::ClustPops)
+    joinpath(@__DIR__, "clustPops", "cluster.json")
+end
+
 function _spec_path(::AfCorrect)
     joinpath(@__DIR__, "cleanupImages", "af_correct.json")
 end
@@ -82,6 +86,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "behaviour.hmm_states"              => HmmStates(),
         "behaviour.hmm_transitions"         => HmmTransitions(),
         "behaviour.hmm"                     => CompositeTask("behaviour.hmm"),
+        "clustPops.cluster"                 => ClustPops(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
