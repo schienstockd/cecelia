@@ -31,6 +31,7 @@ export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categ
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns
+export obsm, obsm_keys
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────
 export AxisTransform, LinearTransform, LogTransform, AsinhTransform, LogicleTransform

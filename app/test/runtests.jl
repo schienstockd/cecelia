@@ -1613,6 +1613,37 @@ end
         @test isempty(pop_paths(m))
     end
 
+    # ── clust / trackclust pop types (cluster-membership populations) ─────────────
+    # A cluster pop is a filter on the `clusters.{suffix}` column (clustPops/clustTracks output):
+    # filter_fun="in", filter_values=[ticked cluster ids]. Stored in its own sidecar so it never
+    # collides with flow gates. Headless — membership via a recompute! closure (no fixture).
+    @testset "clust / trackclust pop types" begin
+        td = mktempdir()
+        # each clustering pop_type routes to its OWN gating sidecar (no collision with flow's {vn}.json)
+        @test endswith(gating_path(td, "B"; pop_type="flow"),       joinpath("gating", "B.json"))
+        @test endswith(gating_path(td, "B"; pop_type="clust"),      joinpath("gating", "B__clust.json"))
+        @test endswith(gating_path(td, "B"; pop_type="trackclust"), joinpath("gating", "B__trackclust.json"))
+        @test endswith(gating_path(td, "B"; pop_type="track"),      joinpath("gating", "B__tracks.json"))
+
+        # cluster pop membership = filter "in" over the cluster code column
+        m = PopulationMap(pop_type="clust", value_name="B")
+        add_pop!(m, "myeloid"; filter_measure="clusters.default", filter_fun="in",
+                 filter_values=[1, 3], colour="#10b981")
+        fetch = _ -> DataFrame("label" => [10, 11, 12, 13, 14],
+                               "clusters.default" => [0, 1, 2, 3, 1])
+        recompute!(m, fetch)
+        @test Set(cells_in_pop(m, "/myeloid")) == Set([11, 13, 14])   # codes ∈ {1,3}
+
+        # save/load round-trip → own file, filter fields preserved, flow file untouched
+        save_pop_map!(m, td)
+        @test isfile(gating_path(td, "B"; pop_type="clust"))
+        @test !isfile(gating_path(td, "B"; pop_type="flow"))
+        m2 = load_pop_map(td, "B"; pop_type="clust")
+        @test pop_at(m2, "/myeloid").filter_measure == "clusters.default"
+        @test pop_at(m2, "/myeloid").filter_fun == "in"
+        @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
+    end
+
     # ── Summary-canvas population picker (plot_pop_types / plot_population_groups) ──
     # The logic the /api/plots/populations route delegates to — pure, so tested here (the route is a
     # thin wrapper). Covers granularity→pop_type selection, cross-image + cross-pop_type union/dedup,

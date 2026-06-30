@@ -10,11 +10,13 @@ gating module. Gating is one way to *define* a population; the manager, the unif
 
 ## Population types
 
-| type | membership defined by | data source |
-|------|----------------------|-------------|
-| `flow` | gates (polygon, rectangle; later ellipse/quadrant/boolean) on cell measurements | gate strategy + H5AD |
-| `clust`| cluster assignment (Leiden/UMAP) | H5AD `.obs` column |
-| `live` | tracking (btrack links cells across time) + optional track-measure filters | H5AD `.obs` (`track_id`) |
+| type | membership defined by | data source | stored sidecar |
+|------|----------------------|-------------|----------------|
+| `flow` | gates (polygon, rectangle; later ellipse/quadrant/boolean) on cell measurements | gate strategy + H5AD | `gating/{vn}.json` |
+| `live` | tracking (btrack links cells across time) + optional track-measure filters | H5AD `.obs` (`track_id`) | none (derived off `flow`) |
+| `track` | gates on **per-track** properties (one point per track) | `track_props` (motility + on-read aggregates) | `gating/{vn}__tracks.json` |
+| `clust` | a filter on the **cell** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | cell H5AD `.obs` column (clustPops) | `gating/{vn}__clust.json` |
+| `trackclust` | a filter on the **track** cluster column (`filter_fun="in"` over `clusters.{suffix}`) | per-track table `.obs` column (clustTracks) | `gating/{vn}__trackclust.json` |
 
 All types share: a population tree (name, colour, path, parent, show), a `pop_df`
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
@@ -63,11 +65,21 @@ matching labels + labelProps — `ccid.json` stays lean:
 Plain JSON — readable by Julia and Python. (This supersedes the earlier
 `ARCHITECTURE.md:248` "gating in ccid.json" plan.)
 
-`clust`/`live` populations span multiple value_names (their path prefix names the
-segmentation). They are **derived populations** — membership from a column rule, not a stored
-gate — so they need **no** pop-map storage of their own: `pop_df` reads the `flow` gates and
-layers the derived filter on at read time (see "Reserved namespace" under `pop_df` below). The
-canonical case, a `live` **tracked** pop, is `flow gate ∩ track_id > 0`.
+`live` populations span multiple value_names (their path prefix names the segmentation). They are
+**derived populations** — membership from a column rule layered on the `flow` gates, not a stored
+gate — so they need **no** pop-map storage of their own: `pop_df` reads the `flow` gates and layers
+the derived filter on at read time (see "Reserved namespace" under `pop_df` below). The canonical
+case, a `live` **tracked** pop, is `flow gate ∩ track_id > 0`.
+
+**`clust`/`trackclust` populations are *stored* filter pops**, not derived/transient ones: the user
+names a population and ticks cluster IDs into it, so each is persisted in its own sidecar
+(`gating/{vn}__clust.json` / `__trackclust.json`) as a `Population` carrying
+`filter_measure="clusters.{suffix}"`, `filter_fun="in"`, `filter_values=[ids]` (no gate). Created via
+`pop/add` with a `filter` dict and retoggled via `pop/update`'s `filter` (Decision 10 — no dedicated
+endpoint). Membership is still **derived at read time** (`recompute!` applies the filter over the
+cluster column), never written into the H5AD; only the *definition* (which IDs) is stored. `clust`
+evaluates over the cell table (`:cell`), `trackclust` over `track_props` (`:track`, with
+expand-to-cells for `:cell`) — exactly mirroring `flow` and `track` respectively.
 
 ## `pop_df` — unified accessor
 

@@ -89,7 +89,7 @@ coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}`
 |---|---|
 | `/api/gating/pop/add` | `name`, `parent` (default `root`), `colour`, `show`, `gate` (gate spec) or `filter` `{measure,fun,values,default_all}`, `is_track` |
 | `/api/gating/pop/set-gate` | `path`, `gate` (gate spec) |
-| `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility) |
+| `/api/gating/pop/update` | `path`, `colour?`, `show?` (recolour / visibility), `filter? {measure?,fun?,values?,default_all?}` (only the keys present are mutated — the tick-cluster-into-pop UX rewrites `filter.values` to retoggle which cluster IDs belong to a `clust`/`trackclust` pop) |
 | `/api/gating/pop/delete` | `path` (cascades to descendants) |
 | `/api/gating/pop/rename` | `path`, `newName` (cascades child paths) → also returns `path` (new) |
 
@@ -127,6 +127,7 @@ cells. Thin wrappers over the package `plot_summary_data` (`docs/ARCHITECTURE.md
 
 | Method | Path | Params | Response |
 |---|---|---|---|
+| GET | `/api/plots/umap` | `…,popType=clust\|trackclust,suffix,pop?` | **binary** `Float32` interleaved `[x0,y0,code0,x1,y1,code1,…]` — the `obsm['X_umap.{suffix}']` embedding + `clusters.{suffix}` code per point (unclustered → `-1`). `clust` reads the cell table; `trackclust` the per-track table (one point per track). Optional `pop` subsets to a population's membership. The UMAP-scatter data source for the cluster module pages. |
 | GET | `/api/plots/definitions` | `module?` (filter) | flat array of plot-type specs (PACKAGE JSON under `app/src/plotDefinitions/`; each carries `module`, `chartTypes`, `dataSource`, `scopeModes`, `params`). The frontend groups by module (per-module canvas) or shows all (universal canvas). |
 | GET | `/api/plots/populations` | `{projectUid, popType?, granularity?,` **image selector:** `setUid [+imageUids subset]` **or** `imageUid}` | populations available across the selected images, **grouped by segmentation** (union; dedup by `(popType,path)` per segmentation, first image wins colour/name): `[{valueName, populations:[{path,name,colour,popType}]}]`. Derived pops (`derived_pop_paths`, e.g. `/_tracked` under `live`) are added since they're injected at query time, not stored. **`granularity="track"` unions `live` + `track` pops** (a track plot shows `live` `/_tracked` *and* track gates from `{vn}__tracks.json`); each population carries the `popType` it must be fetched under, so the panel groups series by popType and issues one `/api/plot_data` request per group. This is the read-only series picker for the summary canvas. (Route is a thin wrapper over the package `plot_population_groups` / `plot_pop_types` — logic + tests live in `app/src`.) |
 | GET | `/api/plots/attrs` | `{projectUid, setUid [+imageUids? subset]}` | image-attribute names + distinct values across the set's images: `{attrs:[{name, values:[…]}]}`. Powers the summary canvas "compare → by attribute" picker (group images by e.g. `Treatment`). Single image (no `setUid`) → `{attrs:[]}`. |
