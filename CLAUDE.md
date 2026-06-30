@@ -252,7 +252,9 @@ When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
 
 **Git workflow:** branch + PR for everything; **never commit or push to `main`** (releases are
 tagged off `main` after merge). Full conventions — branch naming, commit style, how PRs are
-opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). Agents commit/push only when asked.
+opened, release tagging — are in [`docs/DEV.md`](docs/DEV.md). **Agents: ask before every commit
+and before opening/pushing a PR — explicitly, each time; don't commit or push proactively** (a
+"go ahead" to do the work is not approval to commit it).
 
 **Dev dir config — single source of truth:** `cecelia-pineapple/.env`
 ```
