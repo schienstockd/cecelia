@@ -19,7 +19,10 @@ CUDA-only) is built but parked — see ~/cc-workspace/cecelia/CLUSTERING_PLAN.md
 import importlib.util
 
 import numpy as np
+import pandas as pd
 import scanpy as sc
+
+from py.utils.label_props_utils import LabelPropsView
 
 
 # ── backend detection (cached) ───────────────────────────────────────────────────
@@ -158,6 +161,56 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
             sc.tl.umap(adata, random_state=random_state)
 
     return adata.obs["clusters"], adata.obsm.get("X_umap")
+
+
+# ── shared write-back (cells + tracks) ─────────────────────────────────────────────
+def split_back_and_write(adata, segments, suffix: str, log=None):
+    """Split a pooled, clustered AnnData back per segment and write the cluster assignment
+    into each segment's labelProps via `LabelPropsView` (the sanctioned writer — CLAUDE.md).
+
+    Granularity-blind, like `find_populations`: the caller decides what a "segment" and a "label"
+    mean. For `clustPops` a segment is one (image, segmentation) and `label` is the CELL label;
+    for `clustTracks` a segment is one (image, segmentation) and `label` is the track_id (the
+    per-track table's obs index). Either way the mechanics are identical, so this lives here once
+    rather than being re-implemented per runner.
+
+    Requirements:
+      • `adata.obs` carries `uID`, `valueName`, `label` (label matching each target file's index).
+      • `adata.obs['clusters']` holds the scanpy categorical string codes ("0".."N").
+      • each `segments` entry is a dict with `uID`, `valueName`, `propsPath` (the h5ad to write).
+
+    Writes integer-code `clusters.{suffix}` obs (the new stack auto-detects integer obs as a
+    categorical code set; a `clusters.*` name-rule pins it categorical above the level cap — see
+    track_props.jl) and, when present, `obsm['X_umap.{suffix}']`. Returns the number of clusters."""
+    _log = log if callable(log) else (lambda _m: None)
+
+    cluster_col = f"clusters.{suffix}"
+    umap_key    = f"X_umap.{suffix}"
+
+    codes      = adata.obs["clusters"].astype(int).to_numpy()
+    n_clusters = len(np.unique(codes))
+    has_umap   = "X_umap" in adata.obsm
+    _log(f">> {n_clusters} clusters; writing {cluster_col}"
+         + (f" + obsm['{umap_key}']" if has_umap else " (no UMAP)"))
+
+    uid_arr   = adata.obs["uID"].to_numpy()
+    vn_arr    = adata.obs["valueName"].to_numpy()
+    label_arr = adata.obs["label"].to_numpy()
+
+    for seg in segments:
+        mask = (uid_arr == seg["uID"]) & (vn_arr == seg["valueName"])
+        if not mask.any():
+            continue
+        sub_labels = label_arr[mask]
+        view = LabelPropsView(seg["propsPath"]).add_obs(
+            pd.DataFrame({"label": sub_labels, cluster_col: codes[mask]}))
+        if has_umap:
+            view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
+        view.save()
+        view.close()
+        _log(f"> wrote {seg['uID']}/{seg['valueName']}: {int(mask.sum())} rows")
+
+    return n_clusters
 
 
 def _find_gpu(adata, resolution: float, create_umap: bool, random_state: int):

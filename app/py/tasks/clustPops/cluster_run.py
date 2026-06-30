@@ -39,9 +39,6 @@ def run(params):
         log.log("[ERROR] cluster_cells: no segments or no feature columns")
         return
 
-    cluster_col = f"clusters.{suffix}"
-    umap_key    = f"X_umap.{suffix}"
-
     # ── pool every segment's cells into one matrix (one row per cell, tagged by segment) ──
     log.log(f">> Pooling {len(segments)} segment(s) on {len(feature_cols)} feature(s)")
     frames = []
@@ -113,30 +110,10 @@ def run(params):
         log=log.log,
     )
 
-    # clusters are scanpy categorical strings ("0".."N") — store as INTEGER codes (not strings):
-    # the new stack auto-detects integer obs columns as categorical (track_props.jl), and consumers
-    # pass the column through the `categorical` override above the 20-level cap.
-    codes = adata.obs["clusters"].astype(int).to_numpy()
-    n_clusters = len(np.unique(codes))
-    has_umap = "X_umap" in adata.obsm
-    log.log(f">> {n_clusters} clusters; writing {cluster_col}"
-            + (f" + obsm['{umap_key}']" if has_umap else " (no UMAP)"))
-
-    # ── split back per segment and write into each labelProps ──
-    for seg in segments:
-        mask = (adata.obs["uID"].to_numpy() == seg["uID"]) & \
-               (adata.obs["valueName"].to_numpy() == seg["valueName"])
-        if not mask.any():
-            continue
-        sub_labels = adata.obs["label"].to_numpy()[mask]
-        sub_codes  = codes[mask]
-        view = LabelPropsView(seg["propsPath"]).add_obs(
-            pd.DataFrame({"label": sub_labels, cluster_col: sub_codes}))
-        if has_umap:
-            view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
-        view.save()
-        view.close()
-        log.log(f"> wrote {seg['uID']}/{seg['valueName']}: {mask.sum()} cells")
+    # ── split back per segment and write into each cell labelProps (shared write-back) ──
+    # clusters are scanpy categorical strings ("0".."N"); the helper stores INTEGER codes (a
+    # `clusters.*` name-rule pins them categorical above the level cap — see track_props.jl).
+    clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
 
     log.log(">> cluster_cells done")
 

@@ -43,6 +43,25 @@ Read it through the same `LabelProps` chain (the reader is grain-agnostic — `l
 here). The unified accessor surfaces it as `pop_df(img, "live", pops; granularity=:track)` — see
 `docs/POPULATION.md`.
 
+### Clustering output — `clusters.{suffix}` obs + `obsm['X_umap.{suffix}']`
+
+The Leiden clustering tasks write their result back through the `LabelProps` writer (no new files):
+
+| Producer | Writes into | `clusters.{suffix}` | `obsm['X_umap.{suffix}']` |
+|---|---|---|---|
+| `clustPops.cluster` | the per-**cell** `{value_name}.h5ad` | one code per cell | per-cell 2-D embedding |
+| `clustTracks.cluster` | the per-**track** `{value_name}__tracks.h5ad` | one code per track (`label`=`track_id`) | per-track 2-D embedding |
+
+- **`clusters.{suffix}`** holds **integer cluster codes** (not strings) — the stack auto-detects
+  integer obs as a categorical code set. A `clusters.*` **name-rule** in `_is_categorical_col`
+  (`track_props.jl`) pins it categorical even when a high-resolution run exceeds the integer-level
+  cap (codes are never a count). The `{suffix}` lets multiple resolutions / re-clusterings coexist.
+- Both run **set-scope** (clustered jointly across the selected images), so codes are comparable
+  across the set. They feed the `clust` / `trackclust` pop types (cluster membership = a `clusters.{suffix}`
+  filter) — see `docs/POPULATION.md`.
+- `obsm['X_umap.{suffix}']` is the plotting embedding (the UMAP chart reads it); written only when
+  *Calculate UMAP* is on.
+
 ### Feature names
 
 **Morphology (2D)**

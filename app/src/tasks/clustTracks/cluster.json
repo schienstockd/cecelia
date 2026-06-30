@@ -1,7 +1,7 @@
 {
-  "task": "clusterCells",
-  "fun_name": "clustPops.cluster",
-  "label": "Cluster cells",
+  "task": "clusterTracks",
+  "fun_name": "clustTracks.cluster",
+  "label": "Cluster tracks",
   "category": "Clustering",
   "env": ["local"],
   "resource_pool": "default",
@@ -12,35 +12,27 @@
       "label": "Suffix",
       "type": "text",
       "default": "default",
-      "tip": "Output column suffix → clusters.<suffix> and obsm['X_umap.<suffix>']. Keeps multiple resolutions / re-clusterings side by side."
+      "tip": "Output column suffix → clusters.<suffix> and obsm['X_umap.<suffix>'] on the per-track table. Keeps multiple resolutions / re-clusterings side by side."
     },
     {
       "key": "popsToCluster",
-      "label": "Populations",
+      "label": "Track populations",
       "type": "popSelection",
-      "popType": "flow",
+      "popType": "track",
       "multiple": true,
       "acrossSegmentations": true,
+      "includeRoot": true,
       "default": [],
-      "tip": "Populations to cluster, across any segmentation (e.g. A/root, B/root, C/root, or gated subsets). All selected cells from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+      "tip": "Track populations to cluster, across any segmentation (e.g. A/root, B/root, or gated track subsets). All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
     },
     {
       "key": "clusterMeasures",
       "label": "Cluster on",
       "type": "labelPropsColsSelection",
+      "popType": "track",
       "multiple": true,
-      "includeChannels": true,
       "default": [],
-      "tip": "Feature columns to cluster on — channel intensities (mean_intensity_N) and/or object/morphology measures (area, sphericity, …)."
-    },
-    {
-      "key": "refChannel",
-      "label": "Reference channel",
-      "type": "labelPropsColsSelection",
-      "multiple": false,
-      "includeChannels": true,
-      "default": "",
-      "tip": "Optional: divide each intensity feature by this channel before normalisation (ratiometric). Leave empty for none."
+      "tip": "Per-track feature columns — celltrackR motility (live.track.speed, …), HMM-state / transition frequencies, and per-track aggregates of cell measures (mean_intensity_N.mean, area.median, …)."
     },
     {
       "key": "resolution",
@@ -67,15 +59,15 @@
       "params": [
         { "key": "normaliseAxis", "label": "Axis", "type": "select", "default": "channels",
           "options": [
-            { "value": "channels", "label": "Per channel (percentile)" },
-            { "value": "cells",    "label": "Per cell (total)" },
+            { "value": "channels", "label": "Per feature (percentile)" },
+            { "value": "cells",    "label": "Per track (total)" },
             { "value": "NONE",     "label": "No normalisation" }
           ],
-          "tip": "Per-channel percentile rescale to [0,1], per-cell total normalisation, or none." },
-        { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each channel by its median before the percentile rescale." },
-        { "key": "maxFraction", "label": "Max fraction (per-cell)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Per-cell normalisation: exclude channels exceeding this fraction of a cell's total (0 = off)." },
-        { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-channel normalisation." },
-        { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-channel normalisation." }
+          "tip": "Per-feature percentile rescale to [0,1], per-track total normalisation, or none." },
+        { "key": "normaliseToMedian", "label": "Normalise to median", "type": "bool", "default": false, "tip": "Divide each feature by its median before the percentile rescale." },
+        { "key": "maxFraction", "label": "Max fraction (per-track)", "type": "float", "min": 0, "max": 1, "step": 0.01, "default": 0, "tip": "Per-track normalisation: exclude features exceeding this fraction of a track's total (0 = off)." },
+        { "key": "normalisePercentile", "label": "Top percentile", "type": "float", "min": 50, "max": 100, "step": 0.1, "default": 99.8, "tip": "Upper percentile mapped to 1.0 in per-feature normalisation." },
+        { "key": "normalisePercentileBottom", "label": "Bottom percentile", "type": "float", "min": 0, "max": 50, "step": 0.1, "default": 0, "tip": "Lower percentile mapped to 0.0 in per-feature normalisation." }
       ]
     },
     {

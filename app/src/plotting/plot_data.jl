@@ -159,7 +159,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # detected measure type (numeric vs categorical) so the panel can offer only the applicable
     # chart types (docs/PLOTS.md §2). Auto-detection is shared with track_props (`_is_categorical_col`).
     mtype = (measure !== nothing && String(measure) in names(df)) ?
-            (_is_categorical_col(df[!, String(measure)]) ? "categorical" : "numeric") : "numeric"
+            (_is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
     if chart_type == "points"
         # raw (downsampled) values per series — the data source for strip/jitter and (client-side
         # density) violin charts. No server aggregation beyond the per-group downsample.
