@@ -25,7 +25,7 @@ accessor returning a filtered `DataFrame` regardless of type, and membership tha
 - **Julia owns gating** — gate evaluation, logicle transform, tree recompute, `pop_df`.
   **No Rust / no fourth language** (`ARCHITECTURE.md:191`).
 - **Read = Julia** (`HDF5.jl`, native; the fluent reader is `app/src/label_props.jl`).
-  **Write = Python** (PythonCall → `anndata.write_h5ad`; never write H5AD from Julia).
+  **Write = Python** (a subprocess via `python_bin_path()` → `anndata.write_h5ad`; never write H5AD from Julia).
 - **Frontend = UI only**: it never transforms or evaluates gates (see Transforms).
 - **Python** is a *consumer* of membership, not an evaluator (see Membership access).
 

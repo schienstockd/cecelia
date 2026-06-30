@@ -5,7 +5,7 @@ using JSON3
 # ── LabelProps — Julia-native lazy reader for AnnData .h5ad ──────────────────────
 #
 # Mirrors the old Python `LabelPropsView` (inst/py/label_props_view.py) but reads
-# H5AD directly via HDF5.jl — no PythonCall on the read path (ARCHITECTURE.md:214).
+# H5AD directly via HDF5.jl — pure Julia, no Python on the read path (ARCHITECTURE.md).
 # Lazy: column selection / row filter / sort are recorded as pending state; HDF5 I/O
 # happens only inside `as_df` (opened in a `do` block, so no leaked handles).
 #

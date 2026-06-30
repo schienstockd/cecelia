@@ -230,9 +230,10 @@ See `docs/SHIPPING.md`.)
 | `/obsp` | Sparse: `spatial_connectivities`, `spatial_distances` |
 | `/uns` | Metadata: `intensity_measure`, `spatial_cols` |
 
-Julia reads via HDF5.jl. Writes go through PythonCall.jl calling `anndata.write_h5ad` — anndata's
-encoding spec (categoricals, sparse CSR, encoding attrs) is complex to reimplement and changes between
-versions, so we don't write H5AD from Julia directly.
+Julia reads via HDF5.jl. Writes go through a **Python subprocess** (`python_bin_path()` running an
+`anndata.write_h5ad` script) — anndata's encoding spec (categoricals, sparse CSR, encoding attrs) is
+complex to reimplement and changes between versions, so we don't write H5AD from Julia directly.
+(No in-process PythonCall — the package has no Python dependency; all Python is out-of-process.)
 
 ### LabelProps Julia reader (`app/src/label_props.jl`)
 
