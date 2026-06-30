@@ -1,5 +1,8 @@
 # 🍍 Cecelia Pineapple
 
+[![CI](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml)
+[![Release](https://github.com/schienstockd/cecelia/actions/workflows/release.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/release.yml)
+
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
 tracking, gating, behavioural analysis, and clustering of multiplexed and live-cell microscopy
 data. It is a ground-up reimplementation of the original R/Shiny
