@@ -42,6 +42,18 @@ when a set-level mutating task lands.
 
 ## Medium priority
 
+**#00060** — **Add LICENSE (GPL-3-or-later) + THIRD-PARTY acknowledgements** (cleanup/Phase-3)
+cecelia-pineapple has **no LICENSE file**. License is **not a free choice**: the parent
+`schienstockd/cecelia` R package this is a port of is `GPL (>= 3)` (its `LICENSE.md` is the GPLv3
+text), so the port inherits **GPL-3-or-later**. Action: (a) add `LICENSE` = GPLv3 text +
+`License = "GPL-3.0-or-later"` in `app/Project.toml` and the pixi metadata; (b) add a
+`THIRD_PARTY`/NOTICE (or README "Acknowledgements") listing bundled/derived deps + their licenses —
+**celltrackR (GPL-2)** needs explicit attribution because `tasks/tracking/track_measures.jl` is a
+cited reimplementation of its measures (attribution obligation; a from-scratch algorithm port isn't
+strictly a derivative work, but we carry the credit + license notice anyway), plus scanpy/anndata/
+leidenalg, btrack, cellpose, napari, zarr, HDF5, scikit-image, etc. AGPL not needed (local desktop
+tool, no SaaS loophole). Supersedes the vague Phase-3 "package licence" note below.
+
 **#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
 Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
 launcher (done), and the update path (`pixi run update` done; in-app button pending) — rewrite
