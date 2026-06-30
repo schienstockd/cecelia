@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/ci.yml)
 [![Release](https://github.com/schienstockd/cecelia/actions/workflows/release.yml/badge.svg)](https://github.com/schienstockd/cecelia/actions/workflows/release.yml)
+[![License: GPL v3+](https://img.shields.io/badge/License-GPLv3+-blue.svg)](LICENSE)
 
 A Julia package with a graphical interface for cellular image cytometry — import, segmentation,
 tracking, gating, behavioural analysis, and clustering of multiplexed and live-cell microscopy
@@ -202,3 +203,14 @@ Dominik is the **author and scientific owner** of this software and of the origi
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the layer boundaries and the REPL-runnable
 contract.
+
+---
+
+## License
+
+Cecelia Pineapple is licensed under **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). This is
+inherited from the original `cecelia` R package (`GPL (>= 3)`) that this project ports.
+
+Third-party software it derives from, bundles, or depends on — including **celltrackR** (GPL-2.0),
+whose track-measure algorithms are reimplemented in `app/src/tasks/tracking/track_measures.jl` — is
+acknowledged in [`THIRD_PARTY.md`](THIRD_PARTY.md).
