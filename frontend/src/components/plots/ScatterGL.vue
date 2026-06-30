@@ -22,11 +22,16 @@ type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
   points: Float32Array | null              // interleaved [x,y,...] in transformed coords
   extents: Ext                             // FIXED extents that map to the initial [-1,1] view
-  colorMode?: 'density' | 'flat'
+  colorMode?: 'density' | 'flat' | 'category'
   pointSize?: number
   opacity?: number
   flatColor?: string
-}>(), { colorMode: 'density', pointSize: 3, opacity: 1, flatColor: '#8b8b8b' })
+  // category mode (e.g. colour-by-cluster on a UMAP): one palette-index per point (parallel to
+  // `points`) + the colour palette. ScatterGL stays dumb — the caller maps codes→palette slots.
+  categories?: Float32Array | null
+  palette?: string[]
+}>(), { colorMode: 'density', pointSize: 3, opacity: 1, flatColor: '#8b8b8b',
+        categories: null, palette: () => [] })
 
 // FlowJo "pseudocolour" blue-heat ramp (R: .flowColorRampBlueHeat, flowHelpers.R:775),
 // low end lifted off pure black so sparse points stay visible on the dark background, and
@@ -162,7 +167,17 @@ async function render() {
   await ensure()
   if (!scatterplot) return
   const { x, y } = xy()
-  if (props.colorMode === 'density' && x.length) {
+  if (props.colorMode === 'category' && x.length && (props.palette?.length ?? 0) > 0) {
+    // colour-by-category (e.g. cluster on a UMAP): map each point's palette index → [0,1] so regl
+    // picks pointColor[index]. The caller supplies one palette slot per category (incl. unclustered).
+    const pal = props.palette!
+    const cats = props.categories ?? new Float32Array(x.length)
+    const denom = Math.max(1, pal.length - 1)
+    const v = new Float32Array(x.length)
+    for (let i = 0; i < x.length; i++) v[i] = (cats[i] ?? 0) / denom
+    scatterplot.set({ colorBy: 'valueA', pointColor: pal, opacity: props.opacity, pointSize: props.pointSize })
+    await scatterplot.draw({ x, y, valueA: v })
+  } else if (props.colorMode === 'density' && x.length) {
     scatterplot.set({ colorBy: 'valueA', pointColor: RAMP, opacity: props.opacity, pointSize: props.pointSize })
     await scatterplot.draw({ x, y, valueA: density() })
   } else {
@@ -181,6 +196,7 @@ watch(() => props.points, render)
 // new data → re-render (camera is fixed; extents drive the [-1,1] normalisation)
 watch(() => props.extents, render, { deep: true })
 watch([() => props.colorMode, () => props.opacity, () => props.pointSize, () => props.flatColor], render)
+watch([() => props.categories, () => props.palette], render)
 
 onMounted(() => {
   render()
