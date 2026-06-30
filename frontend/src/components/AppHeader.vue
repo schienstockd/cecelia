@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useWsStore } from '../stores/ws'
+import UpdateButton from './UpdateButton.vue'
 
 const ws = useWsStore()
 
@@ -12,7 +13,7 @@ const statusLabel: Record<string, string> = {
 const statusTip: Record<string, string> = {
   connected:    'Julia backend is running and reachable.',
   connecting:   'Attempting to connect to Julia backend on port 8080.',
-  disconnected: 'Not connected. Check that the Julia server is running (./start-backend.sh).',
+  disconnected: 'Not connected. Check that the Julia server is running (pixi run dev).',
   error:        'WebSocket error. See the console below for details.',
 }
 </script>
@@ -22,6 +23,8 @@ const statusTip: Record<string, string> = {
     <span class="logo">🍍 Cecelia</span>
 
     <span class="spacer" />
+
+    <UpdateButton />
 
     <span
       class="ws-badge"
@@ -38,6 +41,7 @@ const statusTip: Record<string, string> = {
 .app-header {
   display: flex;
   align-items: center;
+  gap: 0.75rem;
   height: var(--cc-header-h);
   padding: 0 1rem;
   background: var(--cc-surface-1);

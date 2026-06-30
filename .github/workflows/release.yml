@@ -37,8 +37,9 @@ jobs:
       - name: Package portable bundle
         run: |
           mkdir -p out
+          echo "${{ github.ref_name }}" > VERSION   # so the installed app knows its version
           tar -czf out/cecelia.tar.gz \
-            api app app.py pixi.toml pixi.lock \
+            api app app.py pixi.toml pixi.lock VERSION \
             napari/napari_bridge.py frontend/dist \
             install.sh install.ps1 README.md docs
           ls -lh out/

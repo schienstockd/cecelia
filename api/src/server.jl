@@ -14,6 +14,7 @@ include("napari_api.jl")
 include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
+include("update_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -95,6 +96,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     if method == "GET"
         status, body = if path == "/api/health"
             200, JSON3.write((; ok=true, version="CeceliaAPI"))
+        elseif path == "/api/version"
+            api_version(req)
+        elseif path == "/api/update/check"
+            api_update_check(req)
         elseif path == "/api/projects"
             api_projects_list(req)
         elseif path == "/api/fs/list"
@@ -207,6 +212,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_pop_rename(body_bytes)
         elseif path == "/api/plot_data"
             api_plot_data(body_bytes)
+        elseif path == "/api/update/apply"
+            api_update_apply(body_bytes)
         else
             404, JSON3.write((; error="Not found: $path"))
         end

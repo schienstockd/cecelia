@@ -47,7 +47,41 @@ def _server_ready(timeout: float = 180.0) -> bool:
     return False
 
 
+def _apply_pending_update() -> None:
+    """Apply an update staged by a previous run (the `.pending-update` marker + `.update-staging/
+    payload`), before the server starts — when nothing is using the files. Best-effort: logs and
+    continues with the current version on any error."""
+    pending = os.path.join(ROOT, ".pending-update")
+    if not os.path.exists(pending):
+        return
+    payload = os.path.join(ROOT, ".update-staging", "payload")
+    try:
+        tag = open(pending).read().strip()
+        if os.path.isdir(payload):
+            print(f"Applying staged update {tag}...")
+            for item in os.listdir(payload):
+                src, dst = os.path.join(payload, item), os.path.join(ROOT, item)
+                if os.path.isdir(dst) and not os.path.islink(dst):
+                    shutil.rmtree(dst, ignore_errors=True)
+                elif os.path.exists(dst) or os.path.islink(dst):
+                    os.remove(dst)
+                shutil.move(src, dst)
+        shutil.rmtree(os.path.join(ROOT, ".update-staging"), ignore_errors=True)
+        os.remove(pending)
+        # Deps may have changed (pixi.lock / Manifest) — re-provision before launch.
+        pixi = shutil.which("pixi") or os.path.expanduser("~/.pixi/bin/pixi")
+        print("Updating environment...")
+        subprocess.run([pixi, "install"], cwd=ROOT, check=False)
+        subprocess.run([_find_julia(), "--project=api", "-e", "using Pkg; Pkg.instantiate()"],
+                       cwd=ROOT, check=False)
+        print(f"Update {tag} applied.")
+    except Exception as e:  # noqa: BLE001 — never block launch on a failed update
+        print(f"Update could not be applied ({e}); continuing with the current version.",
+              file=sys.stderr)
+
+
 def main() -> int:
+    _apply_pending_update()
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
     # server's Python subprocesses use the same env.
     proc = subprocess.Popen(
