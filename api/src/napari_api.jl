@@ -334,11 +334,8 @@ function api_napari_show_populations(body_bytes::Vector{UInt8})
     # the image has labelProps and populations resolve normally.
     if show && _has_label_props(img)
         m = _live_map(img, vn, pop_type)
-        # include the root (whole segmentation) so all cells are visible/selectable in napari
-        root_labs = Int.(cells_in_pop(m, "root"))
-        isempty(root_labs) || push!(pops, Dict{String,Any}(
-            "path" => "root", "name" => "root", "colour" => "#9ca3af",
-            "show" => true, "is_track" => false, "label_ids" => root_labs))
+        # NB: the root (whole segmentation) is intentionally NOT rendered — a grey all-cells layer is
+        # noise and obscures the actual populations. Only the defined populations are shown.
         for path in pop_paths(m)
             p = pop_at(m, path)
             p.transient && continue           # never render the napari selection back into napari
@@ -384,8 +381,10 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
     want_raw = get(data, :valueNames, nothing)
     want = want_raw === nothing ? String[] :
            String[v for v in String.(want_raw) if haskey(img.label_props, v)]
-    # global toggle (like Show populations): overlay the gated TRACK pops across all segmentations.
-    show_gated = Bool(get(data, :showGatedTracks, false))
+    # global toggles: overlay the gated TRACK pops (track-measure gates) and/or the TRACKCLUST pops
+    # (cluster-membership pops on the per-track table) across all segmentations, each as ribbons.
+    show_gated      = Bool(get(data, :showGatedTracks, false))
+    show_trackclust = Bool(get(data, :showTrackclust, false))
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
@@ -404,7 +403,7 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
         tids = unique(Int[Int(t) for t in tdf.track_id if t isa Real && isfinite(t) && t > 0])
         isempty(tids) && continue
         push!(pops, Dict{String,Any}(
-            "value_name" => vn, "path" => "/_tracked", "name" => "_tracked",
+            "value_name" => vn, "path" => "/_tracked", "name" => "_tracked", "pop_type" => "track",
             "colour" => "#9ca3af", "show" => true, "track_ids" => tids))
     end
     # 2. gated TRACK populations (track-measure gates in `{vn}__tracks.json`, e.g. TEST/SDGF) under
@@ -421,14 +420,36 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
                     gtids = unique(Int[Int(t) for t in cells_in_pop(tm, path)])
                     isempty(gtids) && continue
                     push!(pops, Dict{String,Any}(
-                        "value_name" => vn, "path" => p.path, "name" => p.name,
+                        "value_name" => vn, "path" => p.path, "name" => p.name, "pop_type" => "track",
                         "colour" => p.colour, "show" => p.show, "track_ids" => gtids))
                 end
             catch e
                 @warn "track gates unavailable" value_name = vn exception = e
             end
         end
-    end   # empty want + no gated → empty pops → bridge removes the existing track layers
+    end
+    # 3. TRACKCLUST populations (cluster pops on the per-track table, `{vn}__trackclust.json`) under
+    #    their global toggle — one ribbon layer per pop, namespaced by pop_type so they coexist with
+    #    the gated `track` ribbons. `cells_in_pop` on a trackclust map → the pop's track_ids.
+    if show_trackclust
+        for vn in versioned_keys(img.label_props)
+            is_reserved_value_name(vn) && continue
+            try
+                cm = _live_map(img, vn, "trackclust")
+                for path in pop_paths(cm)
+                    p = pop_at(cm, path)
+                    p.transient && continue
+                    ctids = unique(Int[Int(t) for t in cells_in_pop(cm, path)])
+                    isempty(ctids) && continue
+                    push!(pops, Dict{String,Any}(
+                        "value_name" => vn, "path" => p.path, "name" => p.name, "pop_type" => "trackclust",
+                        "colour" => p.colour, "show" => p.show, "track_ids" => ctids))
+                end
+            catch e
+                @warn "trackclust pops unavailable" value_name = vn exception = e
+            end
+        end
+    end   # empty want + no gated + no trackclust → empty pops → bridge removes existing track layers
     try
         send(v, Dict{String,Any}("type" => "show_tracks",
             "tail_width" => tail_width, "color_by" => color_by, "pops" => pops))

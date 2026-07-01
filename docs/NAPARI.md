@@ -310,26 +310,36 @@ calls `viewer.add_tracks(..., color_by, colormap, tail_width, scale, units)`. De
 - The track-gating phase (`{vn}__tracks.json` gates) is deferred (`docs/TRACKING.md`); when it lands
   it can add gated track-pop layers alongside these whole-segmentation `_tracked` layers.
 
-**UI controls (ViewerPanel).** Two complementary controls, both POSTing `/api/napari/show-tracks`
-(with the full desired set each time; reconcile clears the rest):
+Each pop carries a **`pop_type`** (`track` for `_tracked`/gated-track pops, `trackclust` for
+track-cluster pops); the bridge names layers `({pop_type}) ({value_name}) Tracks {path}`, so track
+and trackclust ribbons (and every segmentation) coexist without colliding.
+
+**UI controls (ViewerPanel).** All POST `/api/napari/show-tracks` **with the full desired set each
+time** (`valueNames` + `showGatedTracks` + `showTrackclust`; reconcile clears the rest) — so the
+several toggles below share one `pushTracks()` call:
 - **Per-segmentation `pi-directions`** toggle in each labels-list row → that segmentation's `_tracked`
   whole-track overlay. Per-image state `settings.get/setTrackVisibility` (default off).
-- **Global `pi-directions`** toggle in the options row (next to *Show populations* `pi-palette`;
-  same icon as the per-row track toggle) → the gated track populations across all segmentations. `settings.napariShowGatedTracks` (default
-  off); re-pushed on `track` `gating:popmap` edits (gated tracks follow track-gate changes; the
-  per-segmentation `_tracked` overlay does not).
+- **Global `pi-directions`** toggle in the options row → the gated track (`track`, `{vn}__tracks.json`)
+  populations across all segmentations. `settings.napariShowGatedTracks` (default off); re-pushed on
+  `track` `gating:popmap` edits.
+- **Global `pi-sitemap`** toggle → the **trackclust** (`{vn}__trackclust.json`) cluster populations as
+  ribbons across all segmentations. `settings.popVisible('trackclust')` (default off); re-pushed on
+  open and on `trackclust` `gating:popmap` edits.
 
 Row action icons (eye / directions / trash) are hidden until row-hover to keep the narrow sidebar
 tidy — an *active* toggle (or an armed delete) stays visible. **Delete** uses inline two-click confirm
 (the trash flips to a red `pi-exclamation-triangle`; a second click within 3.5 s deletes) instead of a
 browser popup.
 
-**UI controls** (all POST to this route): the **ViewerPanel** has the single master *Show
-populations* toggle (`pi-palette`, far right) — `show:true` renders, `show:false` sends empty pops
-so the bridge clears the layers. The toggle's state is **remembered** (`settings.napariShowPopulations`,
-default on) and auto-applied when an image opens (`onNapariOpened`), so populations show on open
-without re-clicking. (The gating bar's old duplicate `pi-palette` button was removed — it confused
-users by duplicating this toggle.) The **population manager** has a per-pop visibility column
+**UI controls** (all POST to this route): the **ViewerPanel** has a *Populations* sub-menu with one
+toggle **per CELL-grained pop type** — `flow` (`pi-chart-scatter`) and `clust` (`pi-palette`), icons
+matching the sidebar module nav — each sending `popType` + `show` (`show:false` → empty pops → bridge
+clears that pop type's layers) and a **blank valueName so the server resolves the ACTIVE segmentation**
+(where gating/clustering live; `labelNames[0]` was wrong and left clust pops unresolved). The
+bridge namespaces point layers by `(popType)`, so flow and clust coexist. State is per-pop-type,
+**remembered** (`settings.popVisible`/`setPopVisible`), and auto-applied on open (`onNapariOpened`).
+`track`/`trackclust` are **not** here (track-grained → membership is track_ids, not cell labels);
+their viz is ribbons via `/api/napari/show-tracks`. The **population manager** has a per-pop visibility column
 (`pi-images`, flips the pop's persisted `show` flag via `/api/gating/pop/update` then re-pushes
 silently) and a **Napari dots** size slider in its Options box (drives `pointsSize`, re-pushes on
 release). The manager's `pi-eye` is unrelated — it highlights on the *flow plots*, not napari.

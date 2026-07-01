@@ -48,13 +48,17 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 
     uids = [img.uid for img in imgs]
 
-    # ── which base cell measures must be aggregated to produce the requested track-property cols ──
-    # motility columns (free from the track table) need no aggregation; everything else maps back to
-    # the base per-cell measure via `track_cell_measures`. Motility set is the same across the set
-    # (one acquisition / same track_measures run) — read it from the first image's track table.
+    min_tracklength = Int(get(params, "minTracklength", 1))
+
+    # The picker sends BARE base measures (like the old R): whole-track motility (used directly) and
+    # cell measures (vars / obs) that `track_props` aggregates to ALL per-track stats — numeric →
+    # `{base}.mean/.median/.sum/.qUp/.qLow/.sd`, categorical (HMM state / transitions) →
+    # `{base}.{category}` within-track frequencies. So the cell bases to aggregate = the non-motility
+    # selections; motility set (same across the set) is read from the first image's track table.
     mot_cols = (p = img_track_props_path(imgs[1], pops_value_name(pops, imgs[1]));
                 isfile(p) ? col_names(label_props(p); data_type = :vars) : String[])
-    cell_measures = track_cell_measures(feature_cols, mot_cols)
+    mot_set = Set(mot_cols)
+    cell_measures = String[f for f in feature_cols if !(f in mot_set)]
 
     # ── pooled per-track features: one row per track tagged with uID + value_name + track_id ──
     # pop_type="track" → `track_props` (motility ⊕ on-read aggregates), one point per track.
@@ -63,12 +67,26 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(pops)"); return nothing)
     on_progress(2, 4)
 
-    missing_cols = setdiff(feature_cols, names(df))
-    isempty(missing_cols) ||
-        on_log("[WARN] clustTracks: requested features not present, dropped: $(missing_cols)")
-    present_cols = intersect(feature_cols, names(df))
+    # min track length: drop short tracks (num_cells = per-track cell count from track_props)
+    if min_tracklength > 1 && "num_cells" in names(df)
+        df = df[df.num_cells .>= min_tracklength, :]
+        nrow(df) == 0 &&
+            (on_log("[ERROR] clustTracks: no tracks with ≥ $min_tracklength cells (minTracklength)"); return nothing)
+    end
+
+    # expand each selected feature to its produced matrix column(s): a motility measure is used
+    # directly; a cell base expands to all its `{base}.…` aggregate/frequency columns.
+    present_cols = String[]
+    for f in feature_cols
+        if f in mot_set
+            f in names(df) && push!(present_cols, f)
+        else
+            append!(present_cols, String[c for c in names(df) if startswith(c, f * ".")])
+        end
+    end
+    present_cols = unique(present_cols)
     isempty(present_cols) &&
-        (on_log("[ERROR] clustTracks: none of the requested feature columns exist in the track table"); return nothing)
+        (on_log("[ERROR] clustTracks: none of the requested features produced track columns (check the selection)"); return nothing)
 
     # ── build the inline feature matrix (rows tagged by segment + track_id; NaN → JSON null) ──
     # `label` is the track table's obs index (== track_id), so the write-back aligns by it.

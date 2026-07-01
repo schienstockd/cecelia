@@ -9,6 +9,7 @@ export interface ParamDef {
   tip?: string
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
+  includeRoot?: boolean          // popSelection (across): also offer each segmentation's whole population ("<seg> · all")
   // int / float
   min?: number
   max?: number

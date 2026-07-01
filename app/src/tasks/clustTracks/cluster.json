@@ -23,7 +23,7 @@
       "acrossSegmentations": true,
       "includeRoot": true,
       "default": [],
-      "tip": "Track populations to cluster, across any segmentation (e.g. A/root, B/root, or gated track subsets). All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+      "tip": "Track populations to cluster, across any segmentation — “<seg> · all” is every tracked object of that segmentation, plus any gated track sub-populations. All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
     },
     {
       "key": "clusterMeasures",
@@ -32,7 +32,17 @@
       "popType": "track",
       "multiple": true,
       "default": [],
-      "tip": "Per-track feature columns — celltrackR motility (live.track.speed, …), HMM-state / transition frequencies, and per-track aggregates of cell measures (mean_intensity_N.mean, area.median, …)."
+      "tip": "Base measures to cluster on. Whole-track motility (live.track.speed, …) is used directly; each cell measure (channels, morphology) and behaviour column (HMM state / transitions) is aggregated to ALL per-track stats automatically (mean/median/sum/quantiles/sd; categorical → within-track frequencies)."
+    },
+    {
+      "key": "minTracklength",
+      "label": "Minimum track length",
+      "type": "int",
+      "min": 1,
+      "max": 30,
+      "step": 1,
+      "default": 5,
+      "tip": "Exclude tracks shorter than this many timepoints (cells) before clustering."
     },
     {
       "key": "resolution",

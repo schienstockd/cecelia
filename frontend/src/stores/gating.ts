@@ -153,16 +153,17 @@ export const useGatingStore = defineStore('gating', () => {
       })
       const data = await res.json().catch(() => ({})) as { tree?: PopTree; error?: string }
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
-      if (data.tree) setTree(data.tree)
       // set-wide: replay the SAME mutation to the other clustered images (cluster pops only). The
-      // body is image-independent (filter on clusters.{suffix}), so paths stay in sync; we don't
-      // touch the tree from these (the primary already updated it). Fire-and-forget per image.
+      // body is image-independent (filter on clusters.{suffix}), so paths stay in sync. Await these
+      // BEFORE applying the tree, so anything that reloads off the tree (e.g. the set-pooled heatmap)
+      // sees every image's write already persisted, not a half-written set.
       if (mirrorUids.value.length) await Promise.all(mirrorUids.value.map(uid =>
         fetch(path, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ projectUid: projectUid(), imageUid: uid,
                                  valueName: valueName.value, popType: popType.value, ...body }),
         }).catch(() => undefined)))
+      if (data.tree) setTree(data.tree)
       return true
     } catch (e) {
       log.error(`Gating: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })

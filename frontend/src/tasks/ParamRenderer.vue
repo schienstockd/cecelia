@@ -130,6 +130,10 @@ async function loadPops() {
       const groups = await res.json() as PopGroup[]
       const opts: { label: string; value: string }[] = []
       for (const g of groups) {
+        // includeRoot: offer the WHOLE population of the segmentation (`A/` → is_root → all
+        // cells/tracks), so e.g. cluster tracks can select every tracked object per segmentation
+        // even with no gated sub-populations.
+        if (props.param.includeRoot) opts.push({ label: `${g.valueName} · all`, value: `${g.valueName}/` })
         for (const p of g.populations) {
           const value = `${g.valueName}${p.path}`   // "A" + "/_tracked" → "A/_tracked"
           opts.push({ label: value, value })
@@ -204,15 +208,20 @@ async function loadCols() {
   const img = props.context?.images?.[0]
   const projectUid = props.context?.projectUid
   const valueName = resolveColValueName()
+  // popType matters: 'track'/'trackclust' returns the PER-TRACK feature universe (whole-track
+  // motility + aggregatable cell measures), not the cell columns. Was hardcoded to flow, so the
+  // track-clustering picker never showed the whole-track measures.
+  const popType = props.param.popType ?? 'flow'
   colGroups.value = []
   if (!img || !projectUid) return
   try {
-    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}`
+    const q = `projectUid=${projectUid}&imageUid=${img.uid}&valueName=${encodeURIComponent(valueName)}&popType=${popType}`
     const res = await fetch(`/api/gating/channels?${q}`)
     if (!res.ok) return
-    const d = await res.json() as { columns?: string[]; obsColumns?: string[]; channelNames?: string[] }
-    const obs = (d.obsColumns ?? []).filter(c => !COL_DENYLIST.has(c))
+    const d = await res.json() as { columns?: string[]; obsColumns?: string[]; channelNames?: string[]
+      cellMeasures?: string[]; cellObsMeasures?: string[]; trackAggregates?: string[] }
     const vars = (d.columns ?? []).filter(c => !COL_DENYLIST.has(c))
+    const obs = (d.obsColumns ?? []).filter(c => !COL_DENYLIST.has(c))
     const chans = d.channelNames ?? []
     const trim = props.param.trimPrefix ?? ''
     if (trim) {
@@ -223,10 +232,30 @@ async function loadCols() {
       return
     }
     const groups: { title: string; opts: { label: string; value: string }[] }[] = []
-    const track = obs.filter(c => c.startsWith('live.')).map(c => ({ label: c, value: c }))
-    if (track.length) groups.push({ title: 'Tracking', opts: track })
+    if (popType === 'track' || popType === 'trackclust') {
+      // TRACK: pick BASE measures (like old R); the task aggregates each to ALL per-track stats
+      // (mean/median/…; categorical → frequencies) automatically — so we DON'T list *.mean/*.median.
+      //  • Track measures = whole-track motility (used directly)
+      //  • Object measures = cell vars (channels/morphology), aggregated per track
+      //  • Behaviour = cell obs (live.* incl. HMM state/transitions), aggregated per track
+      const motility = vars.map(c => ({ label: c, value: c }))
+      if (motility.length) groups.push({ title: 'Track measures', opts: motility })
+      const object = (d.cellMeasures ?? []).filter(c => !COL_DENYLIST.has(c))
+        .map(c => ({ label: channelLabel(c, chans), value: c }))
+      if (object.length) groups.push({ title: 'Object measures', opts: object })
+      const behaviour = (d.cellObsMeasures ?? []).filter(c => !COL_DENYLIST.has(c) && c.startsWith('live.'))
+        .map(c => ({ label: c, value: c }))
+      if (behaviour.length) groups.push({ title: 'Behaviour', opts: behaviour })
+      colGroups.value = groups
+      return
+    }
+    // FLOW/cell: object vars + behaviour obs (live.*). Group names + order match the track picker
+    // (Object measures, then Behaviour) so Cluster cells and Cluster tracks read consistently — the
+    // only difference is Cluster tracks additionally has a "Track measures" (whole-track) group.
     const object = vars.map(c => ({ label: channelLabel(c, chans), value: c }))
-    if (object.length) groups.push({ title: 'Object', opts: object })
+    if (object.length) groups.push({ title: 'Object measures', opts: object })
+    const behaviour = obs.filter(c => c.startsWith('live.')).map(c => ({ label: c, value: c }))
+    if (behaviour.length) groups.push({ title: 'Behaviour', opts: behaviour })
     colGroups.value = groups
   } catch { /* no columns available yet */ }
 }

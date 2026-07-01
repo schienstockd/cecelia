@@ -29,9 +29,9 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustPops')
         :selected-names="selectedNames"
       />
     </template>
-    <template #below-table="{ selectedUids }">
+    <template #below-table="{ selectedUids, selectUids }">
       <CollapsibleSection label="Clusters" :max-height="'none'">
-        <ClusterPlots :image-uids="selectedUids" pop-type="clust" />
+        <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="clust" />
       </CollapsibleSection>
     </template>
   </ModuleLayout>

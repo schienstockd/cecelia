@@ -146,6 +146,8 @@ function aspect(): number { const { w, h } = box(); return Math.max(1e-6, w / h)
 async function ensure() {
   if (scatterplot || !canvasEl.value) return
   const createScatterplot = await getCreate()
+  // NB: regl-scatterplot already creates its WebGL context with `preserveDrawingBuffer: true`, so the
+  // canvas is directly readable for image export (plotHostToImageURL) — no context pre-creation needed.
   const { w, h } = box()
   scatterplot = createScatterplot({
     canvas: canvasEl.value,

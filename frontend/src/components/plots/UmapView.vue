@@ -14,13 +14,17 @@
   the panel's persisted per-panel options bag (here just `labels`).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import ScatterGL from './ScatterGL.vue'
+import { plotHostToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   popType: 'clust' | 'trackclust'; suffix: string
+  // populations whose eye is on in the manager: colour their clusters in the pop colour, grey the
+  // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
+  shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   state: { labels?: boolean }
 }>()
 const log = useLogStore()
@@ -36,8 +40,8 @@ const UNCLUSTERED = '#555a6e'
 const points = ref<Float32Array | null>(null)
 const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
-const legend = ref<{ code: number; colour: string; n: number }[]>([])
-const centroids = ref<{ code: number; x: number; y: number }[]>([])
+const legend = ref<{ label: string; colour: string; n: number }[]>([])
+const centroids = ref<{ label: string; x: number; y: number }[]>([])
 const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
 const loading = ref(false)
 const err = ref('')
@@ -45,9 +49,54 @@ const total = computed(() => (points.value ? points.value.length / 2 : 0))
 const lx = (x: number) => `${((x - extents.value.xMin) / Math.max(1e-9, extents.value.xMax - extents.value.xMin)) * 100}%`
 const ly = (y: number) => `${(1 - (y - extents.value.yMin) / Math.max(1e-9, extents.value.yMax - extents.value.yMin)) * 100}%`
 
+// per-point cluster codes + their tallies, kept so highlighting recolours without refetching.
+const codesRef = ref<Float32Array | null>(null)
+let countsMap = new Map<number, number>()
+let distinctCodes: number[] = []
+let sumX = new Map<number, number>(), sumY = new Map<number, number>()   // per-cluster centroid sums
+
+// (re)compute the per-point colours + legend from the cached codes. When pops are shown, colour each
+// cluster by the population that owns it and grey the rest; otherwise plain colour-by-cluster.
+function recolour() {
+  const codes = codesRef.value
+  if (!codes) return
+  const counts = countsMap, distinct = distinctCodes
+  const colourFor = new Map<number, string>(), idxOf = new Map<number, number>()
+  const pops = props.shownPops ?? []
+  if (pops.length > 0) {
+    const clusterColour = new Map<number, string>()
+    for (const p of pops) for (const id of p.clusterIds) clusterColour.set(id, p.colour)
+    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, clusterColour.get(c) ?? UNCLUSTERED) })
+    const popN = pops.map(p => ({ label: p.name, colour: p.colour,
+      n: p.clusterIds.reduce((s, id) => s + (counts.get(id) ?? 0), 0) }))
+    const shownIds = new Set(pops.flatMap(p => p.clusterIds))
+    const otherN = distinct.filter(c => !shownIds.has(c)).reduce((s, c) => s + (counts.get(c) ?? 0), 0)
+    legend.value = otherN ? [...popN, { label: 'other', colour: UNCLUSTERED, n: otherN }] : popN
+  } else {
+    let pi = 0
+    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : PALETTE[pi++ % PALETTE.length]) })
+    legend.value = distinct.map(c => ({ label: c < 0 ? 'unclustered' : `cluster ${c}`, colour: colourFor.get(c)!, n: counts.get(c)! }))
+  }
+  const cats = new Float32Array(codes.length)
+  for (let i = 0; i < codes.length; i++) cats[i] = idxOf.get(codes[i])!
+  palette.value = distinct.map(c => colourFor.get(c)!)
+  categories.value = cats
+  // labels at centroids: pop NAMES (at each pop's centroid) when pops are shown, else cluster numbers
+  if (pops.length > 0) {
+    centroids.value = pops.map(p => {
+      let sx = 0, sy = 0, nn = 0
+      for (const id of p.clusterIds) { sx += sumX.get(id) ?? 0; sy += sumY.get(id) ?? 0; nn += counts.get(id) ?? 0 }
+      return nn > 0 ? { label: p.name, x: sx / nn, y: sy / nn } : null
+    }).filter((c): c is { label: string; x: number; y: number } => c !== null)
+  } else {
+    centroids.value = distinct.filter(c => c >= 0)
+      .map(c => ({ label: `${c}`, x: sumX.get(c)! / counts.get(c)!, y: sumY.get(c)! / counts.get(c)! }))
+  }
+}
+
 async function load() {
   err.value = ''
-  if (!props.projectUid || !props.imageUids.length) { points.value = null; legend.value = []; centroids.value = []; return }
+  if (!props.projectUid || !props.imageUids.length) { points.value = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
   loading.value = true
   try {
     const triples: number[] = []
@@ -74,24 +123,18 @@ async function load() {
     }
     const px = (xMax - xMin || 1) * 0.04, py = (yMax - yMin || 1) * 0.04
     extents.value = { xMin: xMin - px, xMax: xMax + px, yMin: yMin - py, yMax: yMax + py }
-    const counts = new Map<number, number>()
-    for (let i = 0; i < n; i++) counts.set(codes[i], (counts.get(codes[i]) ?? 0) + 1)
-    const distinct = [...counts.keys()].sort((a, b) => a - b)
-    const colourFor = new Map<number, string>(), idxOf = new Map<number, number>()
-    let pi = 0
-    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : PALETTE[pi++ % PALETTE.length]) })
-    const cats = new Float32Array(n)
-    for (let i = 0; i < n; i++) cats[i] = idxOf.get(codes[i])!
-    palette.value = distinct.map(c => colourFor.get(c)!)
-    categories.value = cats
     points.value = pts
-    legend.value = distinct.map(c => ({ code: c, colour: colourFor.get(c)!, n: counts.get(c)! }))
-    const sx = new Map<number, number>(), sy = new Map<number, number>()
+    codesRef.value = codes
+    countsMap = new Map<number, number>()
+    for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
+    distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
+    // per-cluster centroid sums (recolour turns these into cluster-number or pop-name labels)
+    sumX = new Map<number, number>(); sumY = new Map<number, number>()
     for (let i = 0; i < n; i++) {
       const c = codes[i]; if (c < 0) continue
-      sx.set(c, (sx.get(c) ?? 0) + pts[2 * i]); sy.set(c, (sy.get(c) ?? 0) + pts[2 * i + 1])
+      sumX.set(c, (sumX.get(c) ?? 0) + pts[2 * i]); sumY.set(c, (sumY.get(c) ?? 0) + pts[2 * i + 1])
     }
-    centroids.value = distinct.filter(c => c >= 0).map(c => ({ code: c, x: sx.get(c)! / counts.get(c)!, y: sy.get(c)! / counts.get(c)! }))
+    recolour()
   } catch (e) {
     err.value = e instanceof Error ? e.message : String(e)
     log.error(`UMAP: ${err.value}`, { source: 'cluster' })
@@ -99,7 +142,25 @@ async function load() {
 }
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix], load)
+// highlight a pop / tick clusters → recolour from cached codes (no refetch)
+watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
 onMounted(load)
+
+// ── export (surfaced by the host InteractivePanel via defineExpose) ──
+// PNG composites the WebGL scatter + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
+const plotEl = useTemplateRef<HTMLElement>('plotEl')
+function exportAs(kind: string) {
+  const stem = `umap_${props.suffix}`.replace(/[^\w.-]+/g, '_')
+  if (kind === 'png') plotHostToImageURL(plotEl.value, '#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  else if (kind === 'csv') {
+    const pts = points.value, codes = codesRef.value
+    if (!pts || !codes) return
+    const rows = Array.from({ length: codes.length }, (_, i) =>
+      ({ x: pts[2 * i], y: pts[2 * i + 1], cluster: codes[i] < 0 ? '' : codes[i] }))
+    downloadBlob(`${stem}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
+  }
+}
+defineExpose({ exportFormats: ['png', 'csv'], exportAs })
 </script>
 
 <template>
@@ -112,13 +173,13 @@ onMounted(load)
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
-    <div class="uv-body">
+    <div ref="plotEl" class="uv-body">
       <div class="uv-plot">
         <template v-if="points && points.length">
           <ScatterGL :points="points" :extents="extents" color-mode="category"
                      :categories="categories" :palette="palette" :point-size="4" :opacity="0.9" />
-          <span v-for="c in centroids" v-show="labels" :key="c.code" class="uv-label"
-                :style="{ left: lx(c.x), top: ly(c.y) }">{{ c.code }}</span>
+          <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
+                :style="{ left: lx(c.x), top: ly(c.y) }">{{ c.label }}</span>
         </template>
         <div v-else class="uv-empty">
           <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
@@ -126,9 +187,9 @@ onMounted(load)
         </div>
       </div>
       <div v-if="legend.length" class="uv-legend">
-        <div v-for="l in legend" :key="l.code" class="leg-row">
+        <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />
-          <span class="leg-lbl">{{ l.code < 0 ? 'unclustered' : `cluster ${l.code}` }}</span>
+          <span class="leg-lbl">{{ l.label }}</span>
           <span class="leg-n">{{ l.n.toLocaleString() }}</span>
         </div>
       </div>
