@@ -212,7 +212,7 @@ btrack's PyPI requirement so it is never built from source. This pulls the Suite
 Leiden clustering ships CPU-only via `leidenalg` (cross-platform). The GPU backend (RAPIDS) is
 CUDA-only and lives as a commented `[feature.gpu]` stub in `pixi.toml`; when un-parked it becomes a
 separate env so non-CUDA platforms fall back to `leidenalg`. GPU is auto-detected at runtime, never a
-task param (`CLAUDE.md`). See `~/cc-workspace/cecelia/CLUSTERING_PLAN.md`.
+task param (`CLAUDE.md`). See `docs/todo/CLUSTERING_PLAN.md`.
 
 ---
 

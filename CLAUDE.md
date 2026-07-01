@@ -63,6 +63,15 @@ Completed prompt files are kept in a `previous-prompts/` folder in the **workspa
 - When fixing something from the list, move it to the `## Fixed` section with a date — don't delete it.
 - Backfill any significant fixes made outside the TODO flow so the history stays complete.
 
+## Parked plans (`docs/todo/`)
+
+`docs/todo/*.md` holds **parked plans** — full, standalone design docs for a feature too big for a
+`docs/TODO.md` item. See [`docs/todo/README.md`](docs/todo/README.md) for the convention. In short:
+a TODO item is a paragraph; a parked plan is a `*_PLAN.md` with **locked decisions + a phased build
+sequence + cross-file architecture**, created when a feature needs real design before/while building,
+when a topic is paused but the thinking must be preserved, or when code needs a stable pointer
+(`see X_PLAN.md`). Promote the durable parts into a permanent `docs/<AREA>.md` once built.
+
 ## INSTALL.md
 
 `docs/INSTALL.md` installation instructions for Unix and Windows systems. Needs to be reviewed before production deployment.

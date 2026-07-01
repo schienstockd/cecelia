@@ -14,7 +14,7 @@ Leiden (Traag et al. 2019, Sci Rep, doi:10.1038/s41598-019-41695-z).
 
 Backend is AUTO-DETECTED, never a task param (CLAUDE.md hard rule — no `useGPU`). CPU path
 (scanpy + leidenalg) is the cross-platform default and ships now. GPU path (rapids_singlecell,
-CUDA-only) is built but parked — see ~/cc-workspace/cecelia/CLUSTERING_PLAN.md (Decision 5).
+CUDA-only) is built but parked — see docs/todo/CLUSTERING_PLAN.md (Decision 5).
 """
 import importlib.util
 
@@ -215,7 +215,7 @@ def split_back_and_write(adata, segments, suffix: str, log=None):
 
 def _find_gpu(adata, resolution: float, create_umap: bool, random_state: int):
     """GPU path (rapids_singlecell). Mirrors the CPU pipeline; PAGA init is CPU-only so a GPU run
-    always uses the plain UMAP. Parked until RAPIDS ships (CUDA-only) — see CLUSTERING_PLAN.md."""
+    always uses the plain UMAP. Parked until RAPIDS ships (CUDA-only) — see docs/todo/CLUSTERING_PLAN.md."""
     import rapids_singlecell as rsc
 
     rsc.get.anndata_to_GPU(adata)
