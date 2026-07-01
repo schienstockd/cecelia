@@ -21,6 +21,7 @@ import TrackingModule from './modules/TrackingModule.vue'
 import BehaviourModule from './modules/BehaviourModule.vue'
 import ClusterCellsModule  from './modules/ClusterCellsModule.vue'
 import ClusterTracksModule from './modules/ClusterTracksModule.vue'
+import AnalysisModule    from './modules/AnalysisModule.vue'
 
 const pinia = createPinia()
 
@@ -37,6 +38,7 @@ const router = createRouter({
     { path: '/behaviour', component: BehaviourModule, meta: { label: 'Behaviour' } },
     { path: '/clust-cells',  component: ClusterCellsModule,  meta: { label: 'Cluster cells' } },
     { path: '/clust-tracks', component: ClusterTracksModule, meta: { label: 'Cluster tracks' } },
+    { path: '/analysis',  component: AnalysisModule,   meta: { label: 'Analysis canvas' } },
     { path: '/tasks',     component: TasksModule,     meta: { label: 'Tasks' } },
     { path: '/chain',     component: ChainModule,     meta: { label: 'Whiteboard' } },
     { path: '/settings',  component: SettingsModule,  meta: { label: 'Settings' } },
