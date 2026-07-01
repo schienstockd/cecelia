@@ -233,6 +233,15 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00062** — **`pixi install` fails on macOS-arm64 building `cvxopt` from source** (2026-07-01)
+A tester on macOS-arm64 got past the installer download but `pixi install` failed: `Failed to build
+cvxopt==1.3.3 … fatal error: 'umfpack.h' file not found`. `cvxopt` is a transitive dep of `btrack`,
+and PyPI ships no macOS-arm64 wheel, so the solve fell back to the sdist and tried to compile the
+UMFPACK extension against SuiteSparse headers that aren't on a stock Mac. Fixed by declaring
+`cvxopt = ">=1.3.1"` in `[dependencies]` (conda-forge, prebuilt on every platform) — pixi maps the
+conda package onto btrack's PyPI requirement so it's never built from source. Lock regenerated
+(pulls the SuiteSparse stack in as conda pkgs). Needs a fresh RC to ship. See SHIPPING.md.
+
 **#00061** — **Canvas plot cleanup phase: export + gate-plot polish** (2026-07-01)
 Canvas-export/theme cleanup, done as one pass (incl. several follow-ups from testing):
 - **Gate plot x-axis label no longer clipped by the footer.** The gate panel's overhead (stacked

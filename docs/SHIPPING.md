@@ -199,6 +199,15 @@ default index (MPS/CPU). A single global cu124 index would make macOS unsolvable
 (`~/cc-workspace/coastal`), so a committed lockfile can't fetch it. Omitted to keep the env
 reproducible; re-add later as an editable path-dep (dev) or a git/PyPI dep (shipping).
 
+### cvxopt is pinned from conda-forge (not PyPI)
+`cvxopt` is a transitive dependency of `btrack`. PyPI ships **no macOS-arm64 wheel** for it, so a
+PyPI-only solve falls back to the sdist and tries to compile the UMFPACK extension — which needs
+SuiteSparse headers (`umfpack.h`) that aren't on a stock Mac, so `pixi install` fails during first
+run (reported by a tester on macOS-arm64). It is therefore declared in `[dependencies]`
+(`cvxopt = ">=1.3.1"`, conda-forge, prebuilt on every platform); pixi maps the conda package onto
+btrack's PyPI requirement so it is never built from source. This pulls the SuiteSparse stack
+(`libumfpack`, `suitesparse`, …) into the lock as conda packages.
+
 ### GPU / RAPIDS is parked (CUDA-only)
 Leiden clustering ships CPU-only via `leidenalg` (cross-platform). The GPU backend (RAPIDS) is
 CUDA-only and lives as a commented `[feature.gpu]` stub in `pixi.toml`; when un-parked it becomes a
