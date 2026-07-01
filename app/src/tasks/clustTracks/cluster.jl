@@ -22,7 +22,7 @@
 # Why on-read (not stored) aggregates: HMM (and transitions) is computed AFTER track_measures by a
 # separate task, so persisting it per-track would couple independent tasks and go stale when cell
 # measures change. Computing it on the fly is a columnar read + one groupby — negligible next to the
-# Leiden/UMAP that follow. See CLUSTERING_PLAN.md (Decision 9).
+# Leiden/UMAP that follow. See docs/todo/CLUSTERING_PLAN.md (Decision 9).
 
 using DataFrames: nrow, groupby, names
 

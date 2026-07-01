@@ -14,7 +14,7 @@
 # Features are picked as var COLUMN names (intensities `mean_intensity_N` + morphology), via
 # `labelPropsColsSelection` like behaviour.hmm — no channel-index/name resolution layer. Columns are
 # pooled by name (`mean_intensity_0` = same channel across the set); that holds for one acquisition.
-# See CLUSTERING_PLAN.md.
+# See docs/todo/CLUSTERING_PLAN.md.
 
 using DataFrames: nrow, groupby, DataFrame
 

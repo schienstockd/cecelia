@@ -47,7 +47,7 @@ pandas       = ">=2.3"
 trimesh      = ">=4.0"
 btrack       = ">=0.7"
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
-# below and ~/cc-workspace/cecelia/CLUSTERING_PLAN.md.
+# below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
 # OME-XML metadata reader (physical pixel sizes, units, time_increment). Imported at module load
 # by app/py/utils/ome_xml_utils.py → pulled in by cleanup/segment/measure tasks and the napari
@@ -120,7 +120,7 @@ stop-napari  = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort
 #   [environments]
 #   gpu = ["gpu"]
 #
-# Left commented so the default solve stays clean. See CLUSTERING_PLAN.md.
+# Left commented so the default solve stays clean. See docs/todo/CLUSTERING_PLAN.md.
 
 # coastal (live-cell seg/tracking) was an editable sibling-path install (~/cc-workspace/coastal,
 # not a git repo) — dropped for now to keep the lockfile reproducible. Re-add later as an
