@@ -15,9 +15,17 @@ export async function svgToImageURL(svg: SVGSVGElement | null, type: 'png' | 'sv
   return await rasterize(svgUrl, w, h)
 }
 
-// rasterise an SVG data URL onto a 2× canvas over a white ground → PNG data URL
+const DPR = (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
+// SVG plots (heatmap, HMM, summary charts) rasterise crisply at any factor since they're vector, so
+// DPR×2 (capped 4×) is plenty and keeps file sizes sane.
+const EXPORT_SCALE = Math.min(4, 2 * DPR)
+// Raster/WebGL composites (UMAP + gate scatter) have NO vector fallback — the point cloud is a
+// bitmap. ScatterGL.exportCanvas re-renders it at this scale, so push it higher for a crisp PNG.
+const RASTER_SCALE = Math.min(8, 4 * DPR)
+
+// rasterise an SVG data URL onto a hi-DPI canvas over a white ground → PNG data URL
 async function rasterize(svgUrl: string, w: number, h: number): Promise<string | null> {
-  const scale = 2
+  const scale = EXPORT_SCALE
   return await new Promise<string | null>(resolve => {
     const img = new Image()
     img.onload = () => {
@@ -60,7 +68,16 @@ export async function elementToImageURL(el: HTMLElement | null, type: 'png' | 's
   inlineComputedStyles(el, clone)
   const transparent = !bg || bg === 'transparent'
   if (transparent) clone.style.background = 'transparent'
-  if (opts.blankCanvases) for (const cv of Array.from(clone.querySelectorAll('canvas'))) (cv as HTMLElement).style.visibility = 'hidden'
+  if (opts.blankCanvases) for (const cv of Array.from(clone.querySelectorAll('canvas'))) {
+    (cv as HTMLElement).style.visibility = 'hidden'
+    // the canvas's ancestors' (opaque) backgrounds would paint OVER the separately-composited canvas
+    // pixels in plotHostToImageURL and hide them — clear them so pass-1 shows through. Non-ancestor
+    // siblings (legend, labels) keep their backgrounds.
+    for (let a = cv.parentElement; a && a !== clone; a = a.parentElement) {
+      (a as HTMLElement).style.background = 'transparent'; (a as HTMLElement).style.backgroundColor = 'transparent'
+    }
+    clone.style.background = 'transparent'; clone.style.backgroundColor = 'transparent'
+  }
   clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
   const xml = new XMLSerializer().serializeToString(clone)
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
@@ -76,16 +93,21 @@ function loadImg(url: string): Promise<HTMLImageElement | null> {
 
 // Capture a host that contains <canvas> layers (WebGL scatter + canvas2D overlays) PLUS HTML/SVG
 // overlays (legend, ticks, axis labels) — the interactive plots (UMAP, gate plot). Canvas pixels
-// can't be serialised via foreignObject, so we composite in two passes onto one 2× canvas:
-//   1. draw every <canvas> in the host at its offset (needs the WebGL context created with
-//      preserveDrawingBuffer — ScatterGL does this);
+// can't be serialised via foreignObject, so we composite in two passes onto one hi-DPI canvas:
+//   1. draw every <canvas> in the host at its offset (WebGL reads back via regl-scatterplot's
+//      preserveDrawingBuffer; opts.hiRes swaps in a higher-res re-render for crisp output);
 //   2. draw the HTML/SVG overlay layer on top (canvases blanked so they don't cover pass 1).
 // Returns a PNG data URL (raster; SVG makes no sense for a rasterised point cloud).
-export async function plotHostToImageURL(host: HTMLElement | null, bg: string): Promise<string | null> {
+// `opts.hiRes(cv, scale)` lets a caller supply a HIGHER-RESOLUTION replacement for a specific canvas
+// (ScatterGL.exportCanvas re-renders the WebGL point cloud at `scale`× — its on-screen backing store
+// is only CSS×DPR, so drawing the live canvas would upscale and pixelate). Resolver returns null →
+// composite the live canvas as-is (canvas2D overlays with no hi-res path).
+export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
+  opts: { hiRes?: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null> } = {}): Promise<string | null> {
   if (!host) return null
   const w = host.clientWidth || host.offsetWidth, h = host.clientHeight || host.offsetHeight
   if (!w || !h) return null
-  const scale = 2
+  const scale = RASTER_SCALE
   const c = document.createElement('canvas'); c.width = w * scale; c.height = h * scale
   const ctx = c.getContext('2d'); if (!ctx) return null
   ctx.scale(scale, scale)
@@ -93,7 +115,8 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string): 
   const hr = host.getBoundingClientRect()
   for (const cv of Array.from(host.querySelectorAll('canvas'))) {
     const r = cv.getBoundingClientRect()
-    try { ctx.drawImage(cv, r.left - hr.left, r.top - hr.top, r.width, r.height) } catch { /* tainted/empty */ }
+    const hi = opts.hiRes ? await opts.hiRes(cv, scale) : null
+    try { ctx.drawImage(hi ?? cv, r.left - hr.left, r.top - hr.top, r.width, r.height) } catch { /* tainted/empty */ }
   }
   const overlayUrl = await elementToImageURL(host, 'svg', 'transparent', { blankCanvases: true })
   if (overlayUrl) { const img = await loadImg(overlayUrl); if (img) ctx.drawImage(img, 0, 0, w, h) }

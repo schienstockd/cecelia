@@ -30,8 +30,9 @@ const props = withDefaults(defineProps<{
   // `points`) + the colour palette. ScatterGL stays dumb — the caller maps codes→palette slots.
   categories?: Float32Array | null
   palette?: string[]
+  backgroundColor?: string                 // scatter ground; caller themes it (UMAP dark/light)
 }>(), { colorMode: 'density', pointSize: 3, opacity: 1, flatColor: '#8b8b8b',
-        categories: null, palette: () => [] })
+        categories: null, palette: () => [], backgroundColor: '#0d0b1a' })
 
 // FlowJo "pseudocolour" blue-heat ramp (R: .flowColorRampBlueHeat, flowHelpers.R:775),
 // low end lifted off pure black so sparse points stay visible on the dark background, and
@@ -156,7 +157,7 @@ async function ensure() {
     aspectRatio: aspect(),         // fill the rectangle (no square letterboxing) → overlays align
     pointSize: props.pointSize,
     opacity: props.opacity,
-    backgroundColor: '#0d0b1a',
+    backgroundColor: props.backgroundColor,
     lassoInitiator: false,         // gating uses explicit gates, never lasso
     cameraIsFixed: true,           // lock the camera at identity → [-1,1] maps to canvas edges
   })
@@ -168,6 +169,11 @@ async function ensure() {
 async function render() {
   await ensure()
   if (!scatterplot) return
+  // sync the regl size to the current box on every draw: on first appearance the floating panel may
+  // not have laid out when the initial render fires, so the scatter would draw at a stale/zero size
+  // and stay blank until some later event (changing a dropdown) forced a redraw. Cheap no-op when
+  // the size is unchanged.
+  resize()
   const { x, y } = xy()
   if (props.colorMode === 'category' && x.length && (props.palette?.length ?? 0) > 0) {
     // colour-by-category (e.g. cluster on a UMAP): map each point's palette index → [0,1] so regl
@@ -194,14 +200,58 @@ function resize() {
   scatterplot.set({ width: w, height: h, aspectRatio: aspect() })
 }
 
+// hi-res export: regl-scatterplot re-renders the point cloud at `scale`× (its on-screen backing
+// store is only CSS×DPR, so compositing the live canvas upscales → pixelated). Returns an offscreen
+// canvas at the higher resolution for the export compositor to draw crisply. See plots/export.ts.
+// We render on a TRANSPARENT ground (not the opaque backgroundColor) so the export is points-only —
+// it composites over the host's ground fill without a second opaque layer hiding the cloud, and
+// works the same for the gate plot (navy fill) and UMAP (themed fill). Falls back to null (→ the
+// compositor draws the live canvas) if the re-render fails, so points always appear.
+async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
+  if (!scatterplot || !canvasEl.value) return null
+  // Snapshot the current on-screen frame FIRST. regl-scatterplot blits its WebGL output into this 2D
+  // user canvas, so it always holds exactly what's on screen (points + background). This is the
+  // guaranteed fallback: `export()` can throw or blank (observed on the gate scatter) and leave the
+  // live canvas mid-resize, so we must copy it BEFORE calling export.
+  const live = canvasEl.value
+  const snap = document.createElement('canvas'); snap.width = live.width; snap.height = live.height
+  snap.getContext('2d')?.drawImage(live, 0, 0)
+  try {
+    // hi-res re-render on a transparent ground (composites over the host fill without a second opaque
+    // layer). Use it only if it actually painted something; otherwise fall through to the snapshot.
+    scatterplot.set({ backgroundColor: [0, 0, 0, 0] })
+    const data = await scatterplot.export({ scale }) as ImageData
+    scatterplot.set({ backgroundColor: props.backgroundColor })
+    if (data && data.width) {
+      let painted = false
+      for (let i = 3; i < data.data.length; i += 4 * 97) { if (data.data[i] !== 0) { painted = true; break } }
+      if (painted) {
+        const c = document.createElement('canvas'); c.width = data.width; c.height = data.height
+        const cx = c.getContext('2d')
+        if (cx) { cx.putImageData(data, 0, 0); return c }
+      }
+    }
+  } catch {
+    // export() can leave the live canvas mid-resize — restore the on-screen render
+    scatterplot?.set({ backgroundColor: props.backgroundColor })
+    resize(); render()
+  }
+  return snap.width ? snap : null   // fallback: the pre-export on-screen frame (screen resolution)
+}
+defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
+
 watch(() => props.points, render)
 // new data → re-render (camera is fixed; extents drive the [-1,1] normalisation)
 watch(() => props.extents, render, { deep: true })
 watch([() => props.colorMode, () => props.opacity, () => props.pointSize, () => props.flatColor], render)
 watch([() => props.categories, () => props.palette], render)
+watch(() => props.backgroundColor, bg => { scatterplot?.set({ backgroundColor: bg }); render() })
 
 onMounted(() => {
-  render()
+  // defer the first render one frame: a freshly-opened floating panel hasn't laid out yet, so box()
+  // would measure 0×0 and regl would draw nothing until some later reflow (the "toggle a pop and it
+  // appears" symptom). rAF lets layout settle so the initial draw is at the real size.
+  requestAnimationFrame(() => render())
   // observe the PARENT (panel-plot) — the canvas itself is pinned by regl and won't fire resizes
   const target = canvasEl.value?.parentElement ?? canvasEl.value
   if (target) {

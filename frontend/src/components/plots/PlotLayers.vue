@@ -123,17 +123,11 @@ function drawDots(points: Float32Array, colour: string) {
   }
 }
 
-function draw() {
-  if (!ctx || !canvasEl.value) return
-  const dpr = window.devicePixelRatio || 1
-  const { w, h } = size()
-  canvasEl.value.width = Math.max(1, w * dpr); canvasEl.value.height = Math.max(1, h * dpr)
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, w, h)
-  ctx.lineJoin = 'round'
-
+// paint the layer content (contours + pop overlay) with the current `ctx`; toPx uses size() (CSS px)
+// so it's resolution-independent — the transform on the target ctx sets the actual pixel density.
+function paintContent() {
+  ctx!.lineJoin = 'round'
   if (props.renderMode === 'contour' && props.basePoints?.length) drawContours(props.basePoints, '#cbd5e1')
-
   if (props.showPops) {
     for (const pop of props.popLayers) {
       if (!pop.points?.length) continue
@@ -141,6 +135,34 @@ function draw() {
     }
   }
 }
+function draw() {
+  if (!ctx || !canvasEl.value) return
+  const dpr = window.devicePixelRatio || 1
+  const { w, h } = size()
+  canvasEl.value.width = Math.max(1, w * dpr); canvasEl.value.height = Math.max(1, h * dpr)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  ctx.clearRect(0, 0, w, h)
+  paintContent()
+}
+
+// hi-res export (see plots/export.ts): re-paint the same content onto a scale× offscreen canvas so
+// the contours/dots are crisp instead of the compositor upscaling the screen-DPR canvas. We swap the
+// module `ctx` to the offscreen context so the existing draw helpers target it, then restore.
+async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
+  if (!canvasEl.value) return null
+  const { w, h } = size(); if (!w || !h) return null
+  const off = document.createElement('canvas')
+  off.width = Math.max(1, Math.round(w * scale)); off.height = Math.max(1, Math.round(h * scale))
+  const octx = off.getContext('2d'); if (!octx) return null
+  const saved = ctx
+  ctx = octx
+  octx.setTransform(scale, 0, 0, scale, 0, 0)
+  octx.clearRect(0, 0, w, h)
+  paintContent()
+  ctx = saved                                  // the live canvas's context object was never touched
+  return off
+}
+defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
 
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick],
       draw, { deep: true })

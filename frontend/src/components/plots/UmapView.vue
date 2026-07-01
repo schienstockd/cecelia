@@ -18,6 +18,7 @@ import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import ScatterGL from './ScatterGL.vue'
 import { plotHostToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
+import type { VisProps } from '../../plots/plot'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -25,11 +26,25 @@ const props = defineProps<{
   // populations whose eye is on in the manager: colour their clusters in the pop colour, grey the
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
+  vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
   state: { labels?: boolean }
 }>()
 const log = useLogStore()
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
+
+// dark-theme knob (default dark, like the summary plots): drives the scatter ground + label chip.
+const dark = computed(() => props.vis?.darkTheme !== false)
+const ground = computed(() => (dark.value ? '#0d0b1a' : '#ffffff'))
+// label chip + legend ink follow the theme so they stay legible on the exported ground (a light
+// ground with the app's light legend ink was invisible — #00061 follow-up).
+const labelStyle = computed(() => dark.value
+  ? { color: '#111', background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.35)' }
+  : { color: '#f5f5f5', background: 'rgba(20,20,28,0.82)', borderColor: 'rgba(255,255,255,0.35)' })
+const legendInk = computed(() => (dark.value ? '#e6e6e6' : '#111'))
+// legend box background follows the theme too — in light mode the dark ink sat on the app's dark
+// panel surface (unreadable on the canvas); give it a light box so the pop names are legible.
+const legendBg = computed(() => (dark.value ? 'transparent' : '#ffffff'))
 
 const PALETTE = [
   '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
@@ -149,9 +164,13 @@ onMounted(load)
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
 // PNG composites the WebGL scatter + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
 const plotEl = useTemplateRef<HTMLElement>('plotEl')
+const scatterRef = useTemplateRef<{ exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }>('scatterRef')
+// re-render the scatter at export resolution so the point cloud is crisp (not a 2×-upscaled 1× canvas)
+const hiRes = async (cv: HTMLCanvasElement, scale: number) =>
+  cv === scatterRef.value?.getCanvas() ? (await scatterRef.value?.exportCanvas(scale) ?? null) : null
 function exportAs(kind: string) {
   const stem = `umap_${props.suffix}`.replace(/[^\w.-]+/g, '_')
-  if (kind === 'png') plotHostToImageURL(plotEl.value, '#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  if (kind === 'png') plotHostToImageURL(plotEl.value, ground.value, { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
   else if (kind === 'csv') {
     const pts = points.value, codes = codesRef.value
     if (!pts || !codes) return
@@ -174,19 +193,20 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs })
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
     <div ref="plotEl" class="uv-body">
-      <div class="uv-plot">
+      <div class="uv-plot" :style="{ background: ground }">
         <template v-if="points && points.length">
-          <ScatterGL :points="points" :extents="extents" color-mode="category"
-                     :categories="categories" :palette="palette" :point-size="4" :opacity="0.9" />
+          <ScatterGL ref="scatterRef" :points="points" :extents="extents" color-mode="category"
+                     :categories="categories" :palette="palette" :point-size="4" :opacity="0.9"
+                     :background-color="ground" />
           <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
-                :style="{ left: lx(c.x), top: ly(c.y) }">{{ c.label }}</span>
+                :style="{ left: lx(c.x), top: ly(c.y), ...labelStyle }">{{ c.label }}</span>
         </template>
         <div v-else class="uv-empty">
           <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
           <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
         </div>
       </div>
-      <div v-if="legend.length" class="uv-legend">
+      <div v-if="legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />
           <span class="leg-lbl">{{ l.label }}</span>
@@ -214,6 +234,8 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs })
 .uv-legend { width: 9.5rem; flex-shrink: 0; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; padding: 5px; }
 .leg-row { display: flex; align-items: center; gap: 5px; padding: 1px 2px; font-size: 11px; }
 .leg-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; flex-shrink: 0; }
-.leg-lbl { flex: 1; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.leg-n { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+/* legend ink is themed inline on .uv-legend (light on dark ground, dark on light) so it stays
+   legible in the exported PNG; children inherit it. */
+.leg-lbl { flex: 1; color: inherit; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.leg-n { color: inherit; opacity: 0.7; font-variant-numeric: tabular-nums; }
 </style>
