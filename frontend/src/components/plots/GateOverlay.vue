@@ -165,6 +165,15 @@ function drawHandles(g: GateSpec, colour: string) {
     g.vertices.forEach(v => { const [px, py] = dataToPx(v[0], v[1]); dot(px, py) })
   }
 }
+// the committed gate outlines + labels (substitute the draft for the one being edited). Split out so
+// the hi-res export can re-paint just these — handles / in-progress shapes are live-interaction only.
+function paintGates() {
+  for (const g of props.gates ?? []) {
+    const spec = g.path === editPath && draft.value ? draft.value : g.gate
+    strokeShape(spec, g.colour || '#fafafa')
+    if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa')
+  }
+}
 function draw() {
   if (!ctx || !canvasEl.value) return
   const dpr = window.devicePixelRatio || 1
@@ -173,12 +182,7 @@ function draw() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, w, h)
 
-  // existing gates (substitute the draft for the one being edited)
-  for (const g of props.gates ?? []) {
-    const spec = g.path === editPath && draft.value ? draft.value : g.gate
-    strokeShape(spec, g.colour || '#fafafa')
-    if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa')
-  }
+  paintGates()
   // handles on the hovered / edited gate
   const active = editPath ? gateOf(editPath) : hover.value ? gateOf(hover.value.path) : undefined
   if (active && props.mode === 'off') {
@@ -200,6 +204,25 @@ function draw() {
     for (const p of polyPts.value) { ctx.beginPath(); ctx.arc(p[0], p[1], 3, 0, 2 * Math.PI); ctx.fill() }
   }
 }
+
+// hi-res export (see plots/export.ts): re-paint the committed gates onto a scale× offscreen canvas
+// so gate outlines/labels are crisp instead of the compositor upscaling the screen-DPR canvas. Swap
+// the module `ctx` to the offscreen context (draw helpers target it via toPx/size), then restore.
+async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
+  if (!canvasEl.value) return null
+  const { w, h } = size(); if (!w || !h) return null
+  const off = document.createElement('canvas')
+  off.width = Math.max(1, Math.round(w * scale)); off.height = Math.max(1, Math.round(h * scale))
+  const octx = off.getContext('2d'); if (!octx) return null
+  const saved = ctx
+  ctx = octx
+  octx.setTransform(scale, 0, 0, scale, 0, 0)
+  octx.clearRect(0, 0, w, h)
+  paintGates()
+  ctx = saved                                  // the live canvas's context object was never touched
+  return off
+}
+defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
 
 // ── editing: apply a handle drag to the draft ──
 function applyEdit(p: [number, number]) {

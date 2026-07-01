@@ -517,7 +517,7 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   `buildPlotOptions(Plot, data, opts)` to get a `Plot.plot()` options object, injects the panel's
   width/height, and appends the node. Resize is trivial (no Vega signal graph): a `ResizeObserver` on
   the host just re-renders with the new size. Exposes `toImageURL('png'|'svg')` — SVG serialises the
-  node (native), PNG rasterises it 2×. The summaries equivalent of `ScatterGL` for the big point
+  node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
   clouds.
 These canvas components are **generic** (`components/canvas/`, NOT under a module) so every module
 page — and the universal canvas (Phase 4) — reuses them unchanged:
@@ -566,9 +566,20 @@ page — and the universal canvas (Phase 4) — reuses them unchanged:
   (plain `svgToImageURL` captures only the svg). `plotHostToImageURL(host, bg)` exports **WebGL /
   canvas2D** plots (UMAP scatter, gate plot): it composites every `<canvas>` in the host (pass 1) then
   the HTML/SVG overlay layer on top (pass 2), because canvas pixels can't be serialised via
-  `foreignObject`. This needs the WebGL context created with `preserveDrawingBuffer` — `ScatterGL`
-  pre-creates it (`getContext('webgl', { preserveDrawingBuffer: true })` before regl, which reuses the
-  canvas's existing context). Every cluster plot (UMAP, heatmap, HMM states/transitions) and the gate
+  `foreignObject`. This needs the WebGL context created with `preserveDrawingBuffer` — regl-scatterplot
+  already does this, so `ScatterGL` needs no context pre-creation. **Subtlety (#00061):** the pass-2
+  overlay clone hides the `<canvas>` (`blankCanvases`) but must also **clear the canvas's ancestor
+  backgrounds**, or an opaque plot-area background (e.g. UMAP's `#0d0b1a`) paints over the pass-1
+  scatter and the point cloud vanishes from the PNG. **Crispness:** two DPR-aware scales —
+  `EXPORT_SCALE = min(4, 2×DPR)` for the SVG rasterise path (vector, crisp at any factor) and a higher
+  `RASTER_SCALE = min(8, 4×DPR)` for `plotHostToImageURL`. A WebGL canvas can't be upscaled crisply
+  from its CSS×DPR backing store, so `plotHostToImageURL(host, bg, { hiRes })` takes a resolver and
+  **every stacked canvas re-renders itself at export scale**: `ScatterGL.exportCanvas` via
+  regl-scatterplot's `export({scale})` (on a transparent ground so the cloud composites cleanly), and
+  the gate plot's canvas2D layers (`PlotLayers`, `GateOverlay`) re-paint their content onto a scale×
+  offscreen canvas. The captured host must also include any axis-label
+  margins (the gate plot exports a `.plot-capture` wrapper, not the inner `.panel-plot`, so the axis
+  names aren't clipped). Every cluster plot (UMAP, heatmap, HMM states/transitions) and the gate
   plot carry a footer **duplicate** and/or **export** dropdown. A registered interactive view opts into
   export by exposing `exportFormats: string[]` + `exportAs(kind)` via `defineExpose`; `InteractivePanel`
   surfaces the dropdown generically (UMAP → PNG + CSV). `plots/plot.ts` also exports `paletteRange(vis, n)` (palette → colour list, or

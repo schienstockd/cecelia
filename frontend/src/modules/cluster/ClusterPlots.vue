@@ -202,6 +202,7 @@ watch([projectUid, () => props.imageUids.join(','), () => props.popType], loadFe
 const ctxFor = (s: ClusterPanelState) => ({
   projectUid: projectUid.value, imageUids: validUids.value, setUid: setUid.value,
   popType: props.popType, suffix: suffix.value, shownPops: shownPopsFor(panelHL(s)),
+  vis: panelVis(s),   // canvas styling (dark-theme etc.) — interactive views read it if they theme
 })
 
 // the population row the manager treats as selected (clicking a row); cluster ticking is per-row,
@@ -278,7 +279,8 @@ onMounted(() => {
           <ClusterHeatmapPanel v-else-if="p.state.kind === 'heatmap'" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :project-uid="projectUid" :set-uid="setUid"
                             :image-uids="validUids" :pop-type="popType" :suffix="suffix"
-                            :feature-options="featureOptions" :name-map="nameMap" :shown-pops="shownPopsFor(panelHL(p.state))" :state="p.state"
+                            :feature-options="featureOptions" :name-map="nameMap" :shown-pops="shownPopsFor(panelHL(p.state))"
+                            :vis="panelVis(p.state)" :state="p.state"
                             :persist-key="`clust:${popType}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
           <!-- HMM behaviour plots (track clustering) -->

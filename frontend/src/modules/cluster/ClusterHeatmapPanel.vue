@@ -14,7 +14,7 @@ import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import PlotChart from '../../components/plots/PlotChart.vue'
-import { defaultVis, plotDataToCsv, type BuildOpts } from '../../plots/plot'
+import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
 
@@ -27,6 +27,7 @@ const props = defineProps<{
   // profile) instead of the raw cluster IDs. Empty → per-cluster. `clusterIds` is carried only so
   // the reload watch fires when the cluster→pop assignment changes (membership changes, same path).
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
+  vis?: VisProps                 // canvas plot styling (dark-theme etc.) — see ClusterPlots panelVis
   state: { features?: string[] }
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
@@ -45,8 +46,10 @@ const features = computed(() => props.state.features ?? [])
 const heatmap = ref<PlotDataResponse | null>(null)
 const loading = ref(false)
 const err = ref('')
+// merge the canvas vis (dark-theme, font size, legend, …) over the defaults so the pop-manager
+// styling knobs drive the heatmap too; the matrix-specific fields below stay fixed regardless.
 const opts = computed<BuildOpts>(() => ({
-  ...defaultVis(), chartType: 'heatmap', byImage: false, normalize: false, errorMetric: 'sd', colorOf: () => '#8888aa',
+  ...defaultVis(), ...(props.vis ?? {}), chartType: 'heatmap', byImage: false, normalize: false, errorMetric: 'sd', colorOf: () => '#8888aa',
 }))
 const label = (raw: string) => props.nameMap[raw] ?? raw
 

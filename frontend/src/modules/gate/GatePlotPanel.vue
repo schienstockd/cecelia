@@ -12,7 +12,7 @@
   user selects in the manager.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, useTemplateRef } from 'vue'
 import { useGatingStore, isReservedPopName, type GateSpec, type TransformSpec } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
@@ -190,12 +190,26 @@ function fmtTick(label: string): string {
   return label
 }
 
-// export the plot area (WebGL scatter + contour/pop layers + gate overlay + axis ticks) as a PNG —
-// composited via plots/export.ts (canvas pixels + HTML/canvas2D overlays). The scatter ground is navy.
+// export the plot area (WebGL scatter + contour/pop layers + gate overlay + axis ticks + labels) as a
+// PNG — composited via plots/export.ts (canvas pixels + HTML/canvas2D overlays). The capture host is
+// `.plot-capture` (which INCLUDES the axis-label margins), not `.panel-plot`, so the x/y axis names
+// aren't clipped off the bottom/left edge. The scatter is re-rendered hi-res so points stay crisp.
 const plotEl = useTemplateRef<HTMLElement>('plotEl')
+type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }
+const scatterRef = useTemplateRef<LayerExport>('scatterRef')
+const layersRef = useTemplateRef<LayerExport>('layersRef')
+const overlayRef = useTemplateRef<LayerExport>('overlayRef')
+// each stacked canvas (WebGL scatter + canvas2D contours/gates) re-renders itself at export scale so
+// nothing is upscaled from the screen-DPR backing store; route each live canvas to its layer.
+const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
+  for (const r of [scatterRef, layersRef, overlayRef]) {
+    if (cv === r.value?.getCanvas()) return (await r.value?.exportCanvas(scale)) ?? null
+  }
+  return null
+}
 function exportPng() {
   const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
-  plotHostToImageURL(plotEl.value, '#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  plotHostToImageURL(plotEl.value, '#0d0b1a', { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
 }
 
 function ensureChannels() {
@@ -204,8 +218,12 @@ function ensureChannels() {
   if (!cols.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
   if (!cols.includes(yChan.value)) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
 }
-watch(() => g.columns, () => { ensureChannels(); fetchPlot() })
-watch([() => g.imageUid, () => g.valueName], () => { ensureChannels(); fetchPlot() })
+// store readiness (channels/image/segmentation): pick default axes then load. `immediate` so the
+// first appearance fetches whether the store became ready BEFORE this panel mounted (values already
+// set → fires now) or AFTER (fires again on change) — previously the plot stayed empty on first open
+// until the user nudged a dropdown.
+watch([() => g.columns, () => g.imageUid, () => g.valueName],
+      () => { ensureChannels(); fetchPlot() }, { immediate: true, flush: 'post' })
 watch([xChan, yChan, xt, yt, parent, () => props.axisFromZero], fetchPlot)
 watch(() => props.highlight, loadPopLayers, { deep: true })
 // another plot changed the gate of the population we display (or an ancestor) → refresh smoothly
@@ -214,7 +232,7 @@ watch(parentVersion, refreshMembership)
 // a highlighted pop's membership changed elsewhere → refresh just its colour layer
 const hlVersion = computed(() => (props.highlight ?? []).reduce((s, p) => s + (g.popVersion[p] ?? 0), 0))
 watch(hlVersion, loadPopLayers)
-onMounted(() => { ensureChannels(); fetchPlot() })
+// initial load is handled by the { immediate: true } store-readiness watch above.
 </script>
 
 <template>
@@ -254,12 +272,13 @@ onMounted(() => { ensureChannels(); fetchPlot() })
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
         <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select></label>
     </div>
-    <div ref="plotEl" class="panel-plot">
-      <ScatterGL :points="points" :extents="extents" :color-mode="baseColorMode"
+    <div ref="plotEl" class="plot-capture">
+     <div class="panel-plot">
+      <ScatterGL ref="scatterRef" :points="points" :extents="extents" :color-mode="baseColorMode"
                  :opacity="baseOpacity" :point-size="basePointSize" />
-      <PlotLayers :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
+      <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
-      <GateOverlay :extents="viewExtents" :mode="mode" :gates="currentGates" :view-tick="viewTick"
+      <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="currentGates" :view-tick="viewTick"
                    :line-width="gateLineWidth" :show-labels="gateLabels"
                    @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'" />
       <span class="axisline axisline-x" />
@@ -282,6 +301,7 @@ onMounted(() => { ensureChannels(); fetchPlot() })
         <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
         <span v-if="nameReserved" class="name-hint">names can't start with “_” (reserved for tracked / clustering)</span>
       </div>
+     </div>
     </div>
   </CanvasPanel>
 </template>
@@ -311,8 +331,16 @@ onMounted(() => { ensureChannels(); fetchPlot() })
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
 .cc-btn.on { border-color: var(--cc-accent); color: var(--cc-accent); }
-/* fills the resizable panel; generous margins so axes/labels have breathing room */
-.panel-plot { position: relative; flex: 1; min-height: 200px; margin: 18px 22px 50px 84px; }
+/* capture host for PNG export: the axis labels/ticks live in this padding (relative to .panel-plot,
+   at negative offsets), so exporting THIS element — not .panel-plot — includes the x/y axis names
+   instead of clipping them at the edge (#00061). The label-space that used to be .panel-plot's
+   margin is now this padding. min-height is modest so plot + padding + footer all fit inside the
+   default panel height without the panel's overflow:hidden clipping the bottom label. */
+.plot-capture { position: relative; flex: 1; min-height: 218px; min-width: 0; display: flex; box-sizing: border-box;
+  padding: 18px 22px 50px 84px; }
+/* min-width:0 so this flex-row item can shrink below the scatter canvas's intrinsic width — without
+   it the panel grows on resize-right but won't shrink back on resize-left. */
+.panel-plot { position: relative; flex: 1; min-height: 150px; min-width: 0; }
 .axisline { position: absolute; background: var(--cc-border); pointer-events: none; }
 .axisline-x { left: 0; right: 0; bottom: 0; height: 1px; }
 .axisline-y { left: 0; top: 0; bottom: 0; width: 1px; }
