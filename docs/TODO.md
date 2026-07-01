@@ -61,20 +61,6 @@ select; (b) a resampling step that emits overlapping sub-tracks as first-class r
 per-image frame-interval normalisation so cross-rate comparison needs no manual skip. Settle the
 storage/UX before building. Not urgent.
 
-**#00036** — **Universal "Analysis canvas" page** (deferred)
-A standalone canvas (sidebar entry already present at `/analysis`, disabled + "coming soon") that
-hosts the SAME plot canvas as the per-module pages but with the **module filter off** — every plot
-spec is offerable, so a user can combine plots across modules / images / segmentations on one board.
-Notes for when we build it:
-- It's `SummaryCanvas` with `module={null}` (already supported: `loadSpecs()` fetches all specs, the
-  panel-state/persistence keys use `summary:universal`). Add a route + a thin `AnalysisModule.vue`
-  page (image multi-select like behaviour). Drop the `disabled/soon` flags on the sidebar item.
-- Decide the page's image-source UX: it should let you pick images from the active set (and maybe
-  across sets later). The populations endpoint already unions across selected images/segmentations.
-- Likely shares the future interactive-panel family (gating scatter, cluster-heatmap) once those
-  land — this is where `PlotSpec.family` (`summary` vs `interactive`) finally gets consumed to route
-  a spec to the right panel component.
-
 **#00037** — **Whiteboard plot integration** (deferred)
 Plot nodes in the chain whiteboard (`ChainModule.vue`). A collapsible **"Plots"** box is already in
 the palette (under "Module functions") with a "coming soon" placeholder. Notes:
@@ -232,6 +218,18 @@ batch it rather than churn standalone.
 ---
 
 ## Fixed
+
+**#00036** — **Universal "Analysis canvas" page** (2026-07-01)
+A standalone canvas at `/analysis` that hosts the SAME plot canvas as the per-module pages but with
+the **module filter off** — every plot spec is offerable, so plots can be combined across modules /
+images / segmentations on one board. Thin as anticipated: `SummaryCanvas` already supported the
+universal mode (no `module` prop → `loadSpecs()` fetches all specs, persistence keys use
+`summary:universal`). Added `AnalysisModule.vue` (a `ModuleLayout` with image multi-select + a
+`#below-table` `SummaryCanvas`, no TaskRunner — visualise-only), registered the `/analysis` route,
+and dropped the `disabled/soon` flags on the existing sidebar entry (now `requiresProject`). Image
+selection namespaces under the `analysis` scope; the populations endpoint already unions across the
+selected images/segmentations. (Future interactive-panel routing via `PlotSpec.family` is still
+pending — see the interactive-panel family work.) See `docs/UI.md` → "Analysis-plot canvas".
 
 **#00062** — **`pixi install` fails on macOS-arm64 building `cvxopt` from source** (2026-07-01)
 A tester on macOS-arm64 got past the installer download but `pixi install` failed: `Failed to build

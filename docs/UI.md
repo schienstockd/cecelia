@@ -520,7 +520,8 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
   clouds.
 These canvas components are **generic** (`components/canvas/`, NOT under a module) so every module
-page — and the universal canvas (Phase 4) — reuses them unchanged:
+page — and the universal **Analysis canvas** (`/analysis`, `AnalysisModule.vue`: `SummaryCanvas` with
+no `module` prop → all specs) — reuses them unchanged:
 - **`components/canvas/SummaryPanel.vue`** — one summary plot, wrapping `CanvasPanel`. Layout: the
   **controls row** (`#actions`) holds a **measure dropdown** (from the spec's `measureOptions`) and a
   **chart-type dropdown** (from `chartTypes`, shown when >1); the secondary options — **Split by**
@@ -556,7 +557,7 @@ page — and the universal canvas (Phase 4) — reuses them unchanged:
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
   knobs live in ONE place. `PopulationManager` renders it only when the host passes a `vis` bag (the
   cluster canvas does; the gate canvas doesn't) — the "add plot styling to the pop manager" keyword.
-  The future universal analysis canvas gets the same controls for free.
+  The universal Analysis canvas (`/analysis`) gets the same controls for free.
 - **`plots/export.ts`** — the **shared** plot-export plumbing (`svgToImageURL` PNG/SVG rasterise,
   `svgOf`, `downloadDataUrl`/`downloadBlob`, `rowsToCsv`, and `elementToImageURL`). Used by
   `PlotChart.toImageURL` AND the bespoke cluster panels, so a plot that renders its own `<svg>` exports
