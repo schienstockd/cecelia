@@ -86,8 +86,13 @@ git push -u origin feat/<short-slug>
 ## CI
 
 Every push/PR runs `.github/workflows/ci.yml` (smoke: fresh checkout → `pixi install` →
-`julia … instantiate` → frontend build → server serves `/api/health` + the frontend). Keep it
-green before requesting a merge. See `docs/SHIPPING.md` for the release pipeline.
+`julia … instantiate` → frontend build → server serves `/api/health` + the frontend). It runs the
+**full chain as a matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
+platform-specific install/build/boot failure is caught in CI rather than by a tester — e.g. a PyPI
+dep with no macOS wheel falling back to a source build (TODO #00062). The repo is public, so
+GitHub-hosted runners are free on all OSes (no minute metering — the multipliers only bill private
+repos). All steps run under `bash` (Git Bash on the Windows runner). Keep it green before requesting
+a merge. See `docs/SHIPPING.md` for the release pipeline.
 
 ## Releases
 

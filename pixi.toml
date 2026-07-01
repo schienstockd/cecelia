@@ -22,6 +22,11 @@ platforms = ["linux-64", "win-64", "osx-arm64"]
 [dependencies]
 python = "3.12.*"
 openjdk = ">=17"
+# cvxopt is a btrack dependency. PyPI ships no macOS-arm64 wheel for it, so a PyPI-only solve falls
+# back to the sdist and tries to compile the UMFPACK extension — which needs SuiteSparse headers
+# (umfpack.h) that aren't present on a stock Mac, breaking `pixi install`. Pin it from conda-forge
+# (prebuilt on every platform) so it's never built from source; pixi maps it onto btrack's PyPI req.
+cvxopt = ">=1.3.1"
 
 [pypi-dependencies]
 websockets   = ">=16.0"

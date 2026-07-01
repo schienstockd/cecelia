@@ -1,11 +1,20 @@
 name: CI
 
-# Smoke test: prove a *fresh checkout* installs and runs end-to-end —
+# Smoke test: prove a *fresh checkout* installs and runs end-to-end on EVERY target OS —
 # Pixi env → Julia deps → frontend build → server starts → /api/health responds
 # → the server serves the built frontend. This is the "does a clean clone work?" gate.
 #
-# It is deliberately heavy (it installs the real analysis env incl. torch cu124), so the Pixi
-# env is cached on pixi.lock. Runs on pushes/PRs to main and on demand.
+# Runs the full chain on Linux, Windows and macOS-arm64 so platform-specific breakage is caught
+# before release, not by a tester: missing PyPI wheels forcing a source build (e.g. cvxopt on
+# macOS-arm64, TODO #00062), the platform-gated torch index, and the Windows path/process helpers
+# (and it proves the Julia server actually boots + serves on Win/Mac). The repo is public, so
+# GitHub-hosted runners are free on all OSes — no minute metering, hence the full matrix.
+#
+# All steps run under bash (Git Bash on the Windows runner) so ONE set of script steps works
+# everywhere; only pixi's own tasks branch per-OS (see the `stop` target override in pixi.toml).
+# Deliberately heavy (installs the real analysis env incl. torch cu124 on Linux/Windows), so the
+# Pixi env is cached on pixi.lock (per platform). fail-fast is off so one OS failing still reports
+# the others. Runs on pushes/PRs to main and on demand.
 
 on:
   push:
@@ -14,15 +23,24 @@ on:
     branches: [main]
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash   # Git Bash on the Windows runner → `&`, curl, seq, sleep work everywhere
+
 jobs:
   smoke:
-    name: Fresh checkout → install → build → server health
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
+    name: ${{ matrix.os }} — install → build → server health
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is arm64 (M-series) — the exact osx-arm64 target the workspace builds for.
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
-      # Installs Pixi and materialises the default environment from pixi.lock (cached).
+      # Installs Pixi and materialises the default environment from pixi.lock (cached per platform).
       - name: Install Pixi + Python env
         uses: prefix-dev/setup-pixi@v0
         with:
@@ -55,8 +73,9 @@ jobs:
         run: |
           set -uo pipefail
           pixi run prod > server.log 2>&1 &
-          # Wait up to ~4 min for the API (first request JIT-compiles the handler).
-          for i in $(seq 1 120); do
+          # Wait up to ~5 min for the API (first request JIT-compiles the handler; slower on
+          # Windows/macOS runners than the warm Linux one).
+          for i in $(seq 1 150); do
             curl -fsS http://localhost:8080/api/health >/dev/null 2>&1 && break
             sleep 2
           done
