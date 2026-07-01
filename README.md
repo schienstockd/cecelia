@@ -32,7 +32,7 @@ are fast).
 
 **1 · Install** — in a terminal:
 ```sh
-curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 ```
 
 **2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
@@ -52,7 +52,7 @@ It opens in your browser at <http://localhost:8080>. Image import is ready to us
 
 **1 · Install** — in Terminal:
 ```sh
-curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 ```
 
 **2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
@@ -72,7 +72,7 @@ It opens in your browser at <http://localhost:8080>. Image import is ready to us
 
 **1 · Install** — in PowerShell (no admin rights needed; everything installs in your user account):
 ```powershell
-irm https://github.com/schienstockd/cecelia/releases/latest/download/install.ps1 | iex
+irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
 
 **2 · Point at your projects folder** — create `C:\Users\<you>\cecelia\custom.toml`:
