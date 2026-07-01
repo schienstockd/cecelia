@@ -493,10 +493,11 @@ class NapariState:
         return napari.utils.Colormap(colors=colors, controls=controls, interpolation="zero")
 
     @staticmethod
-    def track_layer_name(value_name: str, path: str) -> str:
-        # prefixed by the SEGMENTATION value_name (e.g. "(C) Tracks /_tracked"), so tracks from
-        # several segmentations (A/B/C) are distinguishable in the layer list.
-        return f"({value_name}) Tracks {path}"
+    def track_layer_name(value_name: str, path: str, pop_type: str = "track") -> str:
+        # prefixed by pop_type + the SEGMENTATION value_name (e.g. "(track) (C) Tracks /_tracked"),
+        # so tracks from several segmentations (A/B/C) AND pop types (track gates vs trackclust
+        # cluster pops) are distinguishable and never collide in the layer list.
+        return f"({pop_type}) ({value_name}) Tracks {path}"
 
     def show_tracks(self, pops, value_name: str = "default",
                     tail_width: int = 4, tail_length: int = 30, pop_type: str = "track",
@@ -521,7 +522,8 @@ class NapariState:
         desired = {}
         for p in pops:
             vn = p.get("value_name", value_name)
-            desired[self.track_layer_name(vn, p.get("path") or p["name"])] = (vn, p)
+            pt = p.get("pop_type", "track")
+            desired[self.track_layer_name(vn, p.get("path") or p["name"], pt)] = (vn, p)
         # remove any stale Tracks layer not in `desired` (across ALL segmentations) — " Tracks "
         # uniquely identifies track layers (points are "(pt) /path", labels "(vn) Labels")
         for name in [l.name for l in self._viewer.layers

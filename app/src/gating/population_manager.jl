@@ -335,6 +335,9 @@ function _pop_df(load_map::Function, fetch::Function, pop_type::AbstractString, 
         base = fetch(vn, cols === nothing ? String[] : filter(!=("label"), cols))  # label + requested cols
         byrow = Dict(lab => i for (i, lab) in enumerate(base.label))
         for pop in vpops
+            # a pop may be defined on only some images of a pooled set (e.g. a cluster pop written
+            # to the run's `partOf` images): skip it where absent rather than erroring the whole set.
+            (is_root(pop) || has_pop(m, pop)) || continue
             labs = cells_in_pop(m, pop)
             isempty(labs) && continue
             rows = [byrow[l] for l in labs if haskey(byrow, l)]
@@ -421,22 +424,38 @@ end
 # granularity=:cell)` so a track gate can hand napari / downstream the cells of the gated tracks
 # (the "selecting a track pulls in all its cells" behaviour). Cell measures are NOT re-attached —
 # the gate is over track properties; callers wanting cell measures read them via a `:cell` pop_df.
-function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame)::DataFrame
-    (isempty(trackdf) || !("track_id" in names(trackdf))) && return DataFrame()
+function _expand_tracks_to_cells(img::CciaImage, trackdf::DataFrame; cell_cols=String[])::DataFrame
+    # the per-track frame identifies each track by `label` (label == track_id on the track table);
+    # older callers may pass an explicit `track_id` column. Accept either.
+    tidcol = "track_id" in names(trackdf) ? "track_id" : ("label" in names(trackdf) ? "label" : nothing)
+    (isempty(trackdf) || tidcol === nothing || !("value_name" in names(trackdf))) && return DataFrame()
+    ccols = String.(collect(cell_cols))
     frames = DataFrame[]
     for vn in unique(trackdf.value_name)
         sub = trackdf[trackdf.value_name .== vn, :]
-        cellobs = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
-        tid_cells = Dict{Int,Vector{Int}}()
-        for r in eachrow(cellobs)
-            (r.track_id isa Number && !isnan(r.track_id) && Int(r.track_id) > 0) || continue
-            push!(get!(tid_cells, Int(r.track_id), Int[]), Int(r.label))
-        end
+        # read member cells' track_id (+ any requested CELL columns, e.g. `live.cell.hmm.state.*`
+        # for the HMM plots — these are per-cell obs, not on the per-track table, so they must be
+        # carried here); unknown columns are ignored by the reader.
+        co = label_props(img; value_name=vn) |> lp -> select_cols(lp, unique(vcat("track_id", ccols))) |> as_df
+        keep = [r isa Number && !isnan(r) && Int(r) > 0 for r in co.track_id]
+        co = co[keep, :]; nrow(co) == 0 && continue
+        co[!, :track_id] = Int.(co.track_id)
+        tid_rows = Dict{Int,Vector{Int}}()
+        for (i, t) in enumerate(co.track_id); push!(get!(tid_rows, t, Int[]), i); end
+        present = intersect(ccols, names(co))                 # requested cols living on the CELL table
+        # requested cols that live on the TRACK table instead (e.g. `clusters.{suffix}` for the HMM
+        # plots' per-cluster mode) — carried onto every member cell as a per-track constant.
+        track_cols = intersect(setdiff(ccols, present), names(sub))
         for r in eachrow(sub)
-            cells = get(tid_cells, Int(r.track_id), Int[])
-            isempty(cells) && continue
-            push!(frames, DataFrame(label=cells, track_id=Int(r.track_id),
-                                    pop=String(r.pop), value_name=vn))
+            tid = Int(r[tidcol])
+            rows = get(tid_rows, tid, Int[])
+            isempty(rows) && continue
+            cdf = co[rows, :]
+            out = DataFrame(label=cdf.label, track_id=tid,
+                            pop=String(r.pop), value_name=vn)
+            for c in present;    out[!, c] = cdf[!, c]; end       # cell columns, per member cell
+            for c in track_cols; out[!, c] = fill(r[c], nrow(out)); end  # track columns, per-track constant
+            push!(frames, out)
         end
     end
     isempty(frames) ? DataFrame() : reduce((a, b) -> vcat(a, b; cols=:union), frames)
@@ -472,7 +491,10 @@ function _pop_df_track_gating(img::CciaImage, pops, default_vn::AbstractString;
 
     trackdf = _pop_df(load_map, fetch, pop_type, pops; default_vn=default_vn,
                       pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na)
-    granularity === :track ? trackdf : _expand_tracks_to_cells(img, trackdf)
+    # :cell expansion carries the requested cell columns (pop_cols that are per-cell obs, e.g. the
+    # HMM state/transition columns for the HMM plots) onto the member cells.
+    granularity === :track ? trackdf :
+        _expand_tracks_to_cells(img, trackdf; cell_cols=(pop_cols === nothing ? String[] : pop_cols))
 end
 
 # ── Derived populations ──────────────────────────────────────────────────────────

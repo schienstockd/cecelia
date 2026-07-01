@@ -164,7 +164,7 @@ function _plot_xy_raw(img, vn, pop_type, x, y, pop)
     end
     # cell scatter — chain idiom: select the two channels, push the population's label filter into
     # the reader (filter_rows), then materialise once.
-    lp = label_props(img; value_name = vn) |> select_cols(v, [x, y])
+    lp = label_props(img; value_name = vn) |> select_cols([x, y])
     if !is_root(pop)
         m = _live_map(img, vn, pop_type)
         # the pop may have vanished since the client last rendered (e.g. a plot/highlight still
@@ -174,6 +174,10 @@ function _plot_xy_raw(img, vn, pop_type, x, y, pop)
         filter_rows(lp, cells_in_pop(m, pop); by = :label)
     end
     df = as_df(lp)
+    # the requested axes may not exist on the cell table (e.g. a stale panel pointing at track columns
+    # like `live.track.*` while popType=flow) — `select_cols` drops unknown columns, so guard here and
+    # return empty rather than throwing a 500 (mirrors the track branch's `x in names(...)` guard).
+    (x in names(df) && y in names(df)) || return (Float64[], Float64[])
     (Float64.(df[!, x]), Float64.(df[!, y]))
 end
 
@@ -256,12 +260,20 @@ function api_gating_channels(req::HTTP.Request)
     # offer e.g. "mean CD4 per track" → axis `mean_intensity_0.mean` (track_cell_measures inverts it).
     if get(q, "popType", "flow") in ("track", "trackclust")
         motility = _track_motility_cols(img, vn)
-        cellmeas = col_names(label_props(img; value_name = vn); data_type = :vars)
+        lpc = label_props(img; value_name = vn)
+        cellmeas = col_names(lpc; data_type = :vars)         # aggregatable cell vars
+        cellobs  = col_names(lpc; data_type = :obs)          # aggregatable cell obs (HMM state/transitions)
+        chans = channel_columns(lpc)
+        versions = Dict{String,Any}(
+            v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
+        display = get(versions, _matching_channel_version(versions, length(chans)), String[])
         tpath = img_track_props_path(img, vn)
         tobs  = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
         return 200, JSON3.write((;
-            columns = motility,                                  # directly gateable per-track axes
-            cellMeasures = cellmeas,                             # aggregatable into track properties
+            columns = motility,                                  # whole-track motility (directly gateable)
+            cellMeasures = cellmeas,                             # cell vars → per-track numeric aggregates
+            cellObsMeasures = cellobs,                           # cell obs → per-track aggregates (HMM, …)
+            channelNames = display === nothing ? String[] : display,  # relabel intensity aggregates
             trackAggregates = ["mean", "median", "sum", "qUp", "qLow", "sd"],  # see track_props
             clusterSuffixes = _cluster_suffixes(tobs),           # trackclust runs in the track table
             clusterFeatures = _clust_features(tpath),

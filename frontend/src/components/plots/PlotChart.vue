@@ -11,6 +11,8 @@
 <script setup lang="ts">
 import { computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { buildPlotOptions, type BuildOpts } from '../../plots/plot'
+import { svgToImageURL, svgOf } from '../../plots/export'
+import { legendOverlay, titleOverlay } from '../../plots/overlays'
 import type { PlotDataResponse } from '../../plots/types'
 
 const props = defineProps<{ data: PlotDataResponse | null; opts: BuildOpts }>()
@@ -43,72 +45,28 @@ async function render() {
   const ink = props.opts.darkTheme ? '#e6e6e6' : '#111'
   if (props.opts.legend && base._colorLegend) {
     // continuous colour legend for matrix/heatmap (plot.ts stashes the colour scale in `_colorLegend`).
-    // Plot.legend renders a ramp for a continuous scheme / swatches for a discrete one.
-    legendNode = Plot.legend({ ...base._colorLegend,
-                               style: { background: 'transparent', color: ink, fontSize: '11px' } }) as HTMLElement
-    legendNode.classList.add('plot-legend-overlay')
-    legendNode.style.color = ink
-    host.value.append(legendNode)
+    legendNode = legendOverlay(Plot, base._colorLegend.color, ink)
+    if (legendNode) host.value.append(legendNode)
   } else {
     // deduped legend (plot.ts `_legend`) — one entry per DISTINCT colour, not per series key
     const leg = base._legend ?? base.color
     const dom: string[] = leg?.domain ?? []
     if (props.opts.legend && dom.length > 1) {
-      legendNode = Plot.legend({ color: { domain: leg.domain, range: leg.range },
-                                 style: { background: 'transparent', color: ink, fontSize: '11px' } }) as HTMLElement
-      legendNode.classList.add('plot-legend-overlay')
-      legendNode.style.color = ink
-      host.value.append(legendNode)
+      legendNode = legendOverlay(Plot, { domain: leg.domain, range: leg.range }, ink)
+      if (legendNode) host.value.append(legendNode)
     }
   }
   // title as an overlay (top-left) with the theme ink — see plot.ts note on why not opts.title
-  if (props.opts.title) {
-    titleNode = document.createElement('div')
-    titleNode.className = 'plot-title-overlay'
-    titleNode.textContent = props.opts.title
-    titleNode.style.color = ink
-    host.value.append(titleNode)
-  }
+  if (props.opts.title) { titleNode = titleOverlay(props.opts.title, ink); host.value.append(titleNode) }
 }
 
 // host background follows the dark-theme flag so there are no white gaps around a dark plot
 const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
 
-// the rendered <svg> (Plot returns a <figure> wrapper when there's a legend/title)
-function svgEl(): SVGSVGElement | null {
-  if (!node) return null
-  return (node as Element).tagName.toLowerCase() === 'svg'
-    ? (node as SVGSVGElement)
-    : (node as Element).querySelector('svg')
-}
-
-// expose image export to the host panel. SVG = serialize the node (native, crisp). PNG = rasterize
-// the SVG onto a 2× canvas.
+// expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
+// serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
 defineExpose({
-  async toImageURL(type: 'png' | 'svg'): Promise<string | null> {
-    const svg = svgEl()
-    if (!svg) return null
-    const xml = new XMLSerializer().serializeToString(svg)
-    const svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml)
-    if (type === 'svg') return svgUrl
-    const scale = 2
-    const w = svg.width.baseVal.value || svg.clientWidth
-    const h = svg.height.baseVal.value || svg.clientHeight
-    return await new Promise<string | null>(resolve => {
-      const img = new Image()
-      img.onload = () => {
-        const c = document.createElement('canvas')
-        c.width = w * scale; c.height = h * scale
-        const ctx = c.getContext('2d')
-        if (!ctx) { resolve(null); return }
-        ctx.fillStyle = 'white'; ctx.fillRect(0, 0, c.width, c.height)
-        ctx.scale(scale, scale); ctx.drawImage(img, 0, 0)
-        resolve(c.toDataURL('image/png'))
-      }
-      img.onerror = () => resolve(null)
-      img.src = svgUrl
-    })
-  },
+  toImageURL: (type: 'png' | 'svg') => svgToImageURL(svgOf(node as Element | null), type),
 })
 
 watch(() => [props.data, props.opts], render, { deep: true })

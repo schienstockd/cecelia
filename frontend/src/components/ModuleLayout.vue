@@ -19,8 +19,9 @@
     #right    { setUid, selectedUids,
                 selectedNames }                 — the right-hand panel.
     #below-table { setUid, selectedUids,
-                   selectedNames }              — content below the image table.
+                   selectedNames, selectUids }  — content below the image table.
                                                   Wrap each piece in <CollapsibleSection>.
+                                                  `selectUids(uids)` drives the image selection.
 
   Emits
   ─────
@@ -161,6 +162,13 @@ function onSelectionChange(uids: string[]) {
   selectedUids.value = uids
   emit('selectionChange', uids)
 }
+
+// Let below-table content drive the image selection (e.g. the cluster page's "select clustered
+// images"). Writes the shared selection store; ImageTable watches it and re-seeds its checkboxes,
+// which emits back through onSelectionChange to keep selectedUids in sync.
+function selectUids(uids: string[]) {
+  if (activeSet.value) project.setImageSelection(selScope.value, activeSet.value.uid, uids)
+}
 </script>
 
 <template>
@@ -253,6 +261,7 @@ function onSelectionChange(uids: string[]) {
             :set-uid="activeSet?.uid"
             :selected-uids="selectedUids"
             :selected-names="selectedNames"
+            :select-uids="selectUids"
           />
         </div>
       </div>

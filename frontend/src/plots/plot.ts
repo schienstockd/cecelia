@@ -85,6 +85,19 @@ export interface VisProps {
   labY: string                               // y-axis label override (R labY)
   fontSize: number                           // base font size px (R adjFontSize; one knob, see note)
 }
+// Colour range for a categorical axis of `n` levels from the chosen palette (R adjustColors). Returns
+// an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
+// scheme" (population colours aren't meaningful for e.g. HMM-state levels). Shared by the bespoke
+// cluster HMM panels so they honour the same palette knob as the generic charts.
+export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: number): string[] | null {
+  if (vis.palette === 'user') {
+    const pal = vis.userColors.split(',').map(s => s.trim()).filter(Boolean)
+    return Array.from({ length: n }, (_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6')
+  }
+  if (vis.palette === 'distinct') return distinctColors(n)
+  const pal = PALETTES[vis.palette]
+  return pal ? Array.from({ length: n }, (_, i) => pal[i % pal.length]) : null
+}
 export const defaultVis = (): VisProps => ({
   jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotate: false, darkTheme: true, facet: false,

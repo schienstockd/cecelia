@@ -346,14 +346,22 @@ endpoint.
 **Auto-refresh**: subscribes to `task:status` WS events in `onMounted`; when a task transitions
 to `"done"` the viewer refreshes its image data so newly written versions appear immediately.
 
-**Show populations** (`pi-palette` toggle, far right of the options row, after a `.opt-sep`
-divider): the single master on/off for displaying the gating populations as coloured cell-centroid
-Points layers in napari. POSTs `/api/napari/show-populations` with `show:true`/`false` (off clears
-the layers). Its state is **remembered** (`settings.napariShowPopulations`, default on) and
-auto-applied when an image opens, so populations show on open without re-clicking. While on, it
-**re-pushes on every `gating:popmap`** (subscribed in `onMounted`) so the overlay tracks gating
-live. Per-pop visibility and the dot-size slider live in the population manager — see the gating
-section.
+**Populations sub-menu** (per-pop-type point toggles, after a `.opt-sep` divider): one icon per
+CELL-grained pop type — `flow` (`pi-chart-scatter`) and `clust` (`pi-palette`) — each showing that
+pop type's populations as coloured cell-centroid Points in napari. **Icons match the sidebar module
+nav** (Gate/Cluster-cells/Track/Cluster-tracks) so a pop type reads the same everywhere. POSTs
+`/api/napari/show-populations` with `popType` + `show` and **blank valueName → the server resolves
+the ACTIVE segmentation** (the one gating/clustering write to; sending `labelNames[0]` was a bug —
+the first label set isn't necessarily active, so clust pops never resolved). The bridge namespaces
+layers by `(popType)` so flow and clust coexist.
+State is per-pop-type and **remembered** (`settings.popVisible`/`setPopVisible`, keyed by pop type;
+default off), auto-applied on image open, and **re-pushed on every `gating:popmap`** for the changed
+pop type so the overlay tracks edits live. Only cell-grained types are here: `track`/`trackclust`
+are track-grained (membership is track_ids, not cell labels) so points would be wrong — their viz is
+**ribbons** via `show-tracks` (two more toggles: `pi-directions` = gated track pops, `pi-sitemap` =
+trackclust cluster pops; both route through `pushTracks`, which sends `showGatedTracks` +
+`showTrackclust` in one call, and the bridge namespaces Tracks layers by `(popType)`). Per-pop
+visibility and the dot-size slider live in the population manager — see the gating section.
 (`docs/NAPARI.md` — linked brushing.) **Icon convention**: append new toggles at the end of the
 row; group unrelated toggles behind an `.opt-sep` divider.
 
@@ -536,6 +544,41 @@ page — and the universal canvas (Phase 4) — reuses them unchanged:
   toggle and an **Options** box (log scale, legend, point size/opacity — `VisProps`) both obey that
   scope: global = one value shared by every plot, local = the active plot only (mirrors the gating
   manager's plot-options model).
+- **`components/canvas/PopulationPanelShell.vue`** — the **shared chrome** for the floating population
+  panels: the draggable/collapsible container + top-right placement (`useFloatingPanel`), the header
+  (icon · title · count · collapse), the global/local **scope footer**, and the optional `PlotOptions`
+  block (rendered when the host passes a `vis` bag). Both `SeriesPicker` and `PopulationManager` wrap
+  it — the differing population LIST is the default slot; host-specific controls (the gating manager's
+  gate/viewer options) go in the `#options` slot. Slotted rows keep their own component's scoped CSS;
+  the shell owns only the chrome. One place for the chrome → the universal analysis canvas reuses it.
+- **`components/canvas/PlotOptions.vue`** — the **shared** `VisProps` styling controls (collapsible
+  Layout / Points / Colours / Labels sub-sections; props `vis`, emits `update:vis`). Embedded by BOTH
+  `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
+  knobs live in ONE place. `PopulationManager` renders it only when the host passes a `vis` bag (the
+  cluster canvas does; the gate canvas doesn't) — the "add plot styling to the pop manager" keyword.
+  The future universal analysis canvas gets the same controls for free.
+- **`plots/export.ts`** — the **shared** plot-export plumbing (`svgToImageURL` PNG/SVG rasterise,
+  `svgOf`, `downloadDataUrl`/`downloadBlob`, `rowsToCsv`, and `elementToImageURL`). Used by
+  `PlotChart.toImageURL` AND the bespoke cluster panels, so a plot that renders its own `<svg>` exports
+  identically to the generic renderer. `elementToImageURL(el, type, bg)` captures a whole host element
+  (plot `<svg>` **plus** HTML overlay legend/title) by wrapping a style-inlined clone in an SVG
+  `<foreignObject>` — the HMM panels use it so their overlay legends appear in the exported image
+  (plain `svgToImageURL` captures only the svg). `plotHostToImageURL(host, bg)` exports **WebGL /
+  canvas2D** plots (UMAP scatter, gate plot): it composites every `<canvas>` in the host (pass 1) then
+  the HTML/SVG overlay layer on top (pass 2), because canvas pixels can't be serialised via
+  `foreignObject`. This needs the WebGL context created with `preserveDrawingBuffer` — `ScatterGL`
+  pre-creates it (`getContext('webgl', { preserveDrawingBuffer: true })` before regl, which reuses the
+  canvas's existing context). Every cluster plot (UMAP, heatmap, HMM states/transitions) and the gate
+  plot carry a footer **duplicate** and/or **export** dropdown. A registered interactive view opts into
+  export by exposing `exportFormats: string[]` + `exportAs(kind)` via `defineExpose`; `InteractivePanel`
+  surfaces the dropdown generically (UMAP → PNG + CSV). `plots/plot.ts` also exports `paletteRange(vis, n)` (palette → colour list, or
+  `null` for 'standard') so bespoke panels honour the palette knob without re-deriving it.
+- **`plots/overlays.ts`** — the **shared** themed legend / title overlays (`legendOverlay`,
+  `titleOverlay`). Canvas plots render a BARE `<svg>` and float the legend/title as absolute overlays
+  with the theme ink — Observable Plot's inline `legend: true` wraps the chart in a `<figure>` whose
+  swatch legend sits on a white ground (light-grey text → invisible on the dark theme) and eats layout
+  height (clips the axis). Used by `PlotChart` AND the cluster HMM panels; the host must be
+  `position: relative` and ship the `.plot-legend-overlay` / `.plot-title-overlay` scoped CSS.
 - **`components/canvas/SummaryCanvas.vue`** — the workspace (`useCanvasPanels` + `CanvasPanel` +
   `SeriesPicker`). The **"+ Plot" picker** lists plot types from the registry
   (`GET /api/plots/definitions?module=…`). **Series come from the picker's eye-selection** — each is
@@ -648,7 +691,43 @@ toggleable cluster-number labels at each cluster centroid), summary → **`Clust
     together. clustPops/clustTracks record the run's uIDs in the `clustfeatures` sidecar (`{suffix →
     {features, partOf}}`), surfaced as `clusterMembers`. `ClusterPlots` writes only to the selected
     images in `partOf` and shows a banner naming any selected images that aren't in the run (and any
-    run images not selected) so the user can fix the selection.
+    run images not selected), with a **"Select clustered images"** button that sets the selection to
+    exactly the run's images. That button uses a `selectUids(uids)` callback `ModuleLayout` now exposes
+    on its `#below-table` slot — it writes the shared selection store, and `ImageTable` watches the
+    store and re-seeds its checkboxes (so below-table content can drive the selection generically).
+  - **Highlight → overlays**: the manager's per-pop **eye** toggles a `highlighted` set (persisted in
+    the canvas `shared` bag). `ClusterPlots` resolves it to `shownPops` ({path, name, colour,
+    clusterIds}) and feeds it to the views:
+    - **UMAP** (`UmapView`) colours each point by the population owning its cluster (grey for the
+      rest); legend switches to the shown pops + an "other" row. Recolours from cached codes — no
+      refetch on toggle.
+    - **Heatmap** (`ClusterHeatmapPanel`) switches its columns from raw clusters to the shown
+      populations: it requests the matrix with `pops = shownPops` and `category="pop"` (the pop_df
+      `pop` column), i.e. a per-population profile. No pops shown → per-cluster as before. (Reloads
+      when a pop's cluster **assignment** changes, not just its path.)
+  - **Scope** (the manager's global/local footer) works here like gating: GLOBAL = one highlight set
+    across all panels; LOCAL = each panel keeps its own (`state.hl`), so different UMAP/heatmap panels
+    can show different pops. `ClusterPlots` mirrors `GatingPlots`' `scope`/`panelHL`/`activeHL`.
+  - Plots run on the run-member images (`validUids`), and the set-pooled aggregation **skips images
+    where a pop is absent** (`_pop_df` guards `has_pop`), so a pop defined on a subset of the pooled
+    set never errors ("pop_membership: not found").
+- **HMM behaviour plots (track clustering only)** — two extra "+ Plot" types, since HMM state/
+  transition columns are categorical behaviour, not numeric heatmap material (they're filtered OUT of
+  the heatmap's features). Both follow the highlight/scope like every cluster plot (per-panel
+  `shownPops`); no pops highlighted → an empty-state prompt.
+  - **HMM states** (`ClusterHmmStatesPanel`) — per shown population, a 100%-stacked horizontal bar of
+    the within-population `live.cell.hmm.state.<m>` frequencies (reuses the `frequency` aggregation;
+    self-rendered with Observable Plot since the layout is a transpose of the shared stacked bar).
+  - **HMM transitions** (`ClusterHmmTransitionsPanel`) — per shown population (faceted), a from→to dot
+    grid sized/coloured by transition frequency (one `crosstab` request per pop, split on `_`).
+  - Backend: `pop_df(trackclust, …, granularity=:cell)` now carries requested **cell** columns onto
+    the member cells (`_expand_tracks_to_cells(…; cell_cols)`), so the cell-level HMM obs is available
+    per member cell. Ports `behaviourDTx.Rmd`.
+- **clustTracks "Cluster on" picker**: pick BASE measures (like the old R) — whole-track motility is
+  used directly; each cell measure (channels/morphology) and behaviour column (HMM state/transitions)
+  is aggregated to ALL per-track stats by the task automatically (no `×mean/×median` in the list). The
+  `labelPropsColsSelection` widget is popType-aware (was hardcoded to flow), so track clustering shows
+  the track feature universe. Plus a `minTracklength` filter.
 
 **Shared canvas shell (reused by the gating, track-gating, summary and universal canvases).** The
 floating-panel mechanics are factored out of the gating page so other module canvases reuse them

@@ -107,6 +107,14 @@ function seed() {
 }
 onMounted(seed)
 watch(() => props.setUid, seed)
+// Re-seed when the stored selection is changed from OUTSIDE the table (e.g. the cluster page's
+// "select clustered images" button writes the store directly). Guard against our own commit()
+// writes: only re-seed when the store differs from the current checkbox set, so this never loops.
+watch(() => project.getImageSelection(scope.value, props.setUid).join(','), (csv) => {
+  const stored = csv ? csv.split(',') : []
+  if (stored.length === selected.value.size && stored.every(u => selected.value.has(u))) return
+  seed()
+})
 
 const allSelected = computed(() =>
   images.value.length > 0 && selected.value.size === images.value.length

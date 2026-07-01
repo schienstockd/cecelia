@@ -20,8 +20,19 @@ async function _resError(res: Response): Promise<string> {
 
 const selectedValueName = ref('')
 const visibleLabels     = ref<Record<string, boolean>>({})
-const populationsShown  = ref(false)   // master "show gating populations as points" toggle
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
+
+// per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust)
+// belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
+// (membership is track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below /
+// per-segmentation directions), and trackclust ribbons are still to come. Layers are namespaced by
+// pop type in the bridge, so flow + clust coexist.
+// icons MATCH the sidebar module nav (Gate = pi-chart-scatter, Cluster cells = pi-palette,
+// Track = pi-share-alt, Cluster tracks = pi-sitemap) so a pop type reads the same everywhere.
+const POP_TYPES: { key: string; icon: string; label: string }[] = [
+  { key: 'flow',  icon: 'pi-chart-scatter', label: 'gating populations' },
+  { key: 'clust', icon: 'pi-palette',       label: 'cell-cluster populations' },
+]
 const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
@@ -44,7 +55,6 @@ const hasLabels   = computed(() => labelNames.value.length > 0)
 watch(napariImage, (img) => {
   // restore the remembered preference rather than always starting hidden — the actual layers
   // are (re)pushed by onNapariOpened / onGatingChange once the image + centroids are ready.
-  populationsShown.value = settings.napariShowPopulations
   gatedTracksShown.value = settings.napariShowGatedTracks
   colourByCol.value = settings.napariColourBy
   if (!img) { selectedValueName.value = ''; visibleLabels.value = {}; trackVns.value = {}; obsCols.value = []; return }
@@ -100,9 +110,13 @@ async function openInNapari(valueName: string) {
   }
 }
 
-// Push the gating populations to napari as centroid points. `valueName` defaults to the first
-// segmentation (label set); the server falls back to the active labelProps version when blank.
-async function pushPopulations(show: boolean, valueName?: string): Promise<boolean> {
+// Push a pop type's populations to napari as centroid points. When no `valueName` is given we send
+// BLANK so the server resolves the image's ACTIVE segmentation — the same one gating/clustering
+// (and the population manager's own napari toggle) write to. Defaulting to `labelNames[0]` was the
+// bug: the first label set isn't necessarily the active/clustered one, so clust pops never resolved
+// and only the manager's per-pop toggle (which uses the store's active value_name) showed them.
+// The bridge namespaces layers by `(popType)`, so flow/clust overlays coexist.
+async function pushPopulations(popType: string, show: boolean, valueName?: string): Promise<boolean> {
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return false
@@ -110,21 +124,17 @@ async function pushPopulations(show: boolean, valueName?: string): Promise<boole
     const res = await fetch('/api/napari/show-populations', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, imageUid: uid,
-                             valueName: valueName ?? labelNames.value[0] ?? undefined,
-                             popType: 'flow', show, pointsSize: settings.napariPointSize }),
+                             valueName: valueName || undefined,   // blank → server uses active segmentation
+                             popType, show, pointsSize: settings.napariPointSize }),
     })
     return res.ok
   } catch { return false }   // napari not running, etc.
 }
 
-// Master toggle for showing populations on the image; the choice is remembered (persisted in
-// settings) so it carries across image opens / sessions.
-async function togglePopulations() {
-  const next = !populationsShown.value
-  if (await pushPopulations(next)) {
-    populationsShown.value = next
-    settings.napariShowPopulations = next
-  }
+// Per-pop-type visibility toggle; the choice is remembered (persisted) so it carries across opens.
+async function togglePopType(popType: string) {
+  const next = !settings.popVisible(popType)
+  if (await pushPopulations(popType, next)) settings.setPopVisible(popType, next)
 }
 
 // Push the tracks for the currently-toggled-on segmentations (one Tracks layer per segmentation,
@@ -139,7 +149,9 @@ async function pushTracks(): Promise<boolean> {
     const res = await fetch('/api/napari/show-tracks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ projectUid, imageUid: uid, valueNames: onTrackVns.value,
-                             showGatedTracks: gatedTracksShown.value, colorBy: colourByCol.value }),
+                             showGatedTracks: gatedTracksShown.value,
+                             showTrackclust: settings.popVisible('trackclust'),
+                             colorBy: colourByCol.value }),
     })
     return res.ok
   } catch { return false }   // napari not running, etc.
@@ -158,6 +170,13 @@ async function toggleGatedTracks() {
   const next = !gatedTracksShown.value
   gatedTracksShown.value = next
   settings.napariShowGatedTracks = next
+  await pushTracks()
+}
+
+// Master toggle for the trackclust (track-cluster) populations as ribbons. Persisted per pop type
+// (settings.popVisible('trackclust')); re-pushes the track overlays (one call covers all ribbons).
+async function toggleTrackclust() {
+  settings.setPopVisible('trackclust', !settings.popVisible('trackclust'))
   await pushTracks()
 }
 
@@ -206,10 +225,15 @@ function onColourBy(e: Event) {
 function onGatingChange(data: Record<string, unknown>) {
   if (String(data.imageUid ?? '') !== projectStore.napariImageUid) return
   const vn = data.valueName as string | undefined
-  // points follow flow gating; gated TRACK pops follow track-gate edits → re-push when shown. The
-  // per-segmentation `_tracked` overlay is whole-segmentation, so it needs no gate-driven re-push.
-  if (data.popType === 'track') { if (gatedTracksShown.value) pushTracks() }
-  else if (populationsShown.value) pushPopulations(true, vn)
+  // track-grained edits (track / trackclust) re-push the RIBBONS (never points — points would be
+  // wrong for track_ids and orphaned by the viewer's toggles). Cell-grained edits (flow / clust)
+  // re-push that pop type's POINT overlay if it's visible.
+  const pt = String(data.popType ?? 'flow')
+  if (pt === 'track' || pt === 'trackclust') {
+    if (gatedTracksShown.value || settings.popVisible('trackclust')) pushTracks()
+  } else if (settings.popVisible(pt)) {
+    pushPopulations(pt, true, vn)
+  }
 }
 
 function onValueNameChange(e: Event) {
@@ -301,36 +325,37 @@ function onTaskStatus(data: Record<string, unknown>) {
 }
 
 function onNapariOpened() {
+  // everything runs in nextTick so the napariImage-derived state (labelNames, visibleLabels) has
+  // settled before we push overlays — the labels early-return must NOT skip the pop/track overlays.
   nextTick(() => {
-    if (!hasLabels.value) return
-    const toShow = Object.fromEntries(
-      Object.entries(napariImage.value?.labels ?? {}).filter(([vn]) => visibleLabels.value[vn])
-    )
-    if (!Object.keys(toShow).length) return
-    fetch('/api/napari/show-labels', {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ allLabels: toShow, showLabels: true }),
-    }).then(async res => {
-      if (!res.ok) { log.error(`Show labels on open failed: ${await _resError(res)}`, { source: 'napari' }); return }
-      if (colourByCol.value) pushColourLabels(colourByCol.value)   // apply remembered colour-by
-    }).catch(e =>
-      log.error(`Show labels on open failed: ${e instanceof Error ? e.message : String(e)}`,
-                { source: 'napari' }))
+    if (hasLabels.value) {
+      const toShow = Object.fromEntries(
+        Object.entries(napariImage.value?.labels ?? {}).filter(([vn]) => visibleLabels.value[vn])
+      )
+      if (Object.keys(toShow).length) {
+        fetch('/api/napari/show-labels', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ allLabels: toShow, showLabels: true }),
+        }).then(async res => {
+          if (!res.ok) { log.error(`Show labels on open failed: ${await _resError(res)}`, { source: 'napari' }); return }
+          if (colourByCol.value) pushColourLabels(colourByCol.value)   // apply remembered colour-by
+        }).catch(e =>
+          log.error(`Show labels on open failed: ${e instanceof Error ? e.message : String(e)}`,
+                    { source: 'napari' }))
+      }
+    }
+    // auto-show each pop type's point overlay that the user last had on (remembered preference)
+    for (const { key } of POP_TYPES) if (settings.popVisible(key)) pushPopulations(key, true)
+    // re-show the track overlays from the REMEMBERED state, read straight from settings (the trackVns
+    // ref is restored by the napariImage watch, which may not have run yet when this open event fires).
+    const uid = projectStore.napariImageUid
+    if (uid) {
+      trackVns.value = settings.getTrackVisibility(uid, labelNames.value)   // keep the ref in sync
+      gatedTracksShown.value = settings.napariShowGatedTracks
+      if (onTrackVns.value.length || gatedTracksShown.value || settings.popVisible('trackclust')) pushTracks()
+    }
   })
-  // auto-show gating populations on open when the user last had them on (remembered preference)
-  if (settings.napariShowPopulations) {
-    pushPopulations(true).then(ok => { populationsShown.value = ok })
-  }
-  // re-show the track overlays from the REMEMBERED state, read straight from settings (the trackVns
-  // ref is restored by the napariImage watch, which may not have run yet when this open event fires —
-  // reading settings directly, like populations above, avoids that race).
-  const uid = projectStore.napariImageUid
-  if (uid) {
-    trackVns.value = settings.getTrackVisibility(uid, labelNames.value)   // keep the ref in sync
-    gatedTracksShown.value = settings.napariShowGatedTracks
-    if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()
-  }
 }
 
 function onTaskResult(data: Record<string, unknown>) {
@@ -409,7 +434,7 @@ onUnmounted(() => {
             class="opt-btn row-act" :class="{ active: trackVns[vn] }"
             @click="toggleTrack(vn)"
             v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
-          ><i class="pi pi-directions" /></button>
+          ><i class="pi pi-share-alt" /></button>
           <button
             class="opt-btn danger row-act" :class="{ 'confirm': confirmDeleteVn === vn }"
             @click="onDeleteClick(vn)"
@@ -447,31 +472,40 @@ onUnmounted(() => {
         v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
       ><i class="pi pi-database" /></button>
 
-      <!-- population overlay (separated; more population-related toggles may join it here) -->
-      <span v-if="napariImage" class="opt-sep" aria-hidden="true" />
-      <button
-        v-if="napariImage"
-        class="opt-btn" :class="{ active: populationsShown }"
-        @click="togglePopulations"
-        v-tooltip.bottom="populationsShown ? 'Hide gating populations on the image' : 'Show gating populations as coloured cell points'"
-      ><i class="pi pi-palette" /></button>
-      <!-- master gated-track-populations toggle (TEST/SDGF); per-segmentation _tracked toggles live
-           in the labels list above (directions icon per row) -->
-      <button
-        v-if="napariImage"
-        class="opt-btn" :class="{ active: gatedTracksShown }"
-        @click="toggleGatedTracks"
-        v-tooltip.bottom="gatedTracksShown ? 'Hide gated track populations' : 'Show gated track populations (track-measure gates)'"
-      ><i class="pi pi-directions" /></button>
+      <!-- Populations sub-menu: one toggle per pop type, shown as coloured centroid points in napari
+           (layers namespaced by pop type, so they coexist). Distinct from the Tracks-ribbon toggle. -->
+      <template v-if="napariImage">
+        <span class="opt-sep" aria-hidden="true" />
+        <button
+          v-for="pt in POP_TYPES" :key="pt.key"
+          class="opt-btn" :class="{ active: settings.popVisible(pt.key) }"
+          @click="togglePopType(pt.key)"
+          v-tooltip.bottom="`${settings.popVisible(pt.key) ? 'Hide' : 'Show'} ${pt.label} (points)`"
+        ><i :class="['pi', pt.icon]" /></button>
+        <!-- Tracks as ribbons (TEST/SDGF gated track pops); per-segmentation _tracked toggles live
+             in the labels list above (directions icon per row) -->
+        <button
+          class="opt-btn" :class="{ active: gatedTracksShown }"
+          @click="toggleGatedTracks"
+          v-tooltip.bottom="gatedTracksShown ? 'Hide track-pop ribbons' : 'Show track populations as ribbons (track-measure gates)'"
+        ><i class="pi pi-share-alt" /></button>
+        <button
+          class="opt-btn" :class="{ active: settings.popVisible('trackclust') }"
+          @click="toggleTrackclust"
+          v-tooltip.bottom="settings.popVisible('trackclust') ? 'Hide track-cluster ribbons' : 'Show track-cluster populations as ribbons'"
+        ><i class="pi pi-sitemap" /></button>
+      </template>
       <!-- colour tracks + labels by an obs column (e.g. HMM state); '' = default colouring -->
-      <select
-        v-if="napariImage && obsCols.length"
-        class="opt-colourby" :value="colourByCol" @change="onColourBy"
+      <span
+        v-if="napariImage && obsCols.length" class="opt-colourby-wrap"
         v-tooltip.bottom="'Colour tracks + labels by a cell property (e.g. HMM state)'"
       >
-        <option value="">colour: default</option>
-        <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
-      </select>
+        <i class="pi pi-circle-fill" />
+        <select class="opt-colourby" :value="colourByCol" @change="onColourBy">
+          <option value="">colour: default</option>
+          <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
+        </select>
+      </span>
     </div>
   </div>
 </template>
@@ -501,8 +535,11 @@ onUnmounted(() => {
 
 /* visual styling from the global form base (style.css) */
 .viewer-select { width: 100%; font-size: 0.72rem; }
-/* compact colour-by dropdown in the options row */
-.opt-colourby { font-size: 0.7rem; max-width: 11rem; }
+/* colour-by dropdown: full width on its OWN line (the sidebar is narrow, so inline it clipped),
+   with a leading palette icon so it doesn't read as a stray dropdown among the icon toggles */
+.opt-colourby-wrap { flex: 1 0 100%; display: flex; align-items: center; gap: 0.3rem; color: var(--cc-text-dim); min-width: 0; }
+.opt-colourby-wrap .pi { font-size: 0.72rem; flex-shrink: 0; }
+.opt-colourby { font-size: 0.7rem; flex: 1; min-width: 0; }
 
 .viewer-hint {
   font-size: 0.72rem;

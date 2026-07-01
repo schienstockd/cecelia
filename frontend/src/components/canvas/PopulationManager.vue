@@ -14,11 +14,12 @@
   (clamped on-screen via useFloatingPanel); collapsible body.
 -->
 <script setup lang="ts">
-import { ref, computed, onMounted, useTemplateRef } from 'vue'
+import { ref, computed } from 'vue'
 import { useGatingStore, isReservedPopName, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useSettingsStore } from '../../stores/settings'
-import { useFloatingPanel } from '../../composables/useFloatingPanel'
+import PopulationPanelShell from './PopulationPanelShell.vue'
+import type { VisProps } from '../../plots/plot'
 
 const props = withDefaults(defineProps<{
   selected: string
@@ -30,32 +31,26 @@ const props = withDefaults(defineProps<{
   popType?: string                 // 'flow' (default) | 'track' | 'clust' | 'trackclust'
   clusterIds?: number[]            // cluster mode: the tickable cluster IDs for the active suffix
   suffix?: string                  // cluster mode: which clusters.{suffix} new pops filter on
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default' })
+  // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
+  // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
+  vis?: VisProps
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined })
 const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
   'update:lineWidth': [number]
   'update:gateLabels': [boolean]
   'update:axisFromZero': [boolean]
+  'update:vis': [patch: Partial<VisProps>]
   toggleHighlight: [string]
 }>()
 const g = useGatingStore()
 const log = useLogStore()
 const settings = useSettingsStore()
 
-const collapsed = ref(false)
-const optionsOpen = ref(false)     // extra-options box under Highlight
+const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
 const editing = ref<string | null>(null)
 const editName = ref('')
-
-// drag-to-move, clamped to the workspace (shared with the plot panels)
-const panel = useTemplateRef<HTMLElement>('panel')
-const { pos, startDrag } = useFloatingPanel(panel)
-// open at the top-right of the workspace so it doesn't start stacked on the plots
-onMounted(() => {
-  const par = panel.value?.offsetParent as HTMLElement | null
-  if (par) pos.value = { x: Math.max(16, par.clientWidth - (panel.value!.offsetWidth || 300) - 16), y: 16 }
-})
 
 function pick(p: FlatPop) { emit('update:selected', p.path) }
 function beginRename(p: FlatPop) { editing.value = p.path; editName.value = p.name }
@@ -113,18 +108,9 @@ async function addClusterPopulation() {
 </script>
 
 <template>
-  <div ref="panel" class="pop-manager" :style="{ left: pos.x + 'px', top: pos.y + 'px' }">
-    <div class="pm-header" @mousedown.prevent="startDrag">
-      <i class="pi pi-sitemap" />
-      <span class="pm-title">Populations</span>
-      <span class="pm-count">{{ g.flat.length }}</span>
-      <button class="pm-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
-              @click.stop="collapsed = !collapsed">
-        <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
-      </button>
-    </div>
-
-    <div v-show="!collapsed" class="pm-body">
+  <PopulationPanelShell :count="g.flat.length" :scope="scope" :vis="vis"
+                        @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
+    <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
       <div v-if="clusterMode" class="pm-add">
         <button class="pm-add-btn" @click="addClusterPopulation"
@@ -191,91 +177,68 @@ async function addClusterPopulation() {
           <span v-if="!props.clusterIds.length" class="pm-chip-empty">no clusters at this suffix</span>
         </div>
       </template>
-    </div>
 
-    <!-- options (collapsible), grouped by where they apply: plot vs viewer. In cluster mode there
-         are no gates (the plot group) — trackclust has no viewer control either, so it's hidden. -->
-    <div v-show="!collapsed" v-if="props.popType !== 'trackclust'" class="pm-opts">
-      <button class="pm-opts-toggle" @click="optionsOpen = !optionsOpen">
-        <i :class="optionsOpen ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-        <span>Options</span>
-      </button>
-      <div v-show="optionsOpen" class="pm-opts-body">
-        <template v-if="!clusterMode">
-        <div class="pm-opt-head"><span>plot</span></div>
-        <div class="pm-opt-row">
-          <span class="pm-opt-label">Gate labels</span>
-          <button class="seg-btn" :class="{ active: gateLabels }"
-                  v-tooltip.top="'Show population names on gates'"
-                  @click="emit('update:gateLabels', !gateLabels)"><i class="pi pi-tag" /></button>
-        </div>
-        <div class="pm-opt-row">
-          <span class="pm-opt-label">Line width</span>
-          <input type="range" min="0.5" max="4" step="0.5" :value="lineWidth"
-                 v-tooltip.top="'Gate line thickness'"
-                 @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
-          <span class="pm-opt-val">{{ lineWidth.toFixed(1) }}</span>
-        </div>
-        <div class="pm-opt-row">
-          <span class="pm-opt-label">Axis</span>
-          <div class="pm-seg">
-            <button class="seg-btn" :class="{ active: axisFromZero }"
-                    v-tooltip.top="'Whole-dataset scale (origin at 0) — axis stays fixed across populations'"
-                    @click="emit('update:axisFromZero', true)"><i class="pi pi-arrows-alt" /></button>
-            <button class="seg-btn" :class="{ active: !axisFromZero }"
-                    v-tooltip.top="'Autoscale to the selected population'"
-                    @click="emit('update:axisFromZero', false)"><i class="pi pi-arrow-down-left" /></button>
-          </div>
-        </div>
-        </template>
-
-        <!-- viewer-option group is popType-specific: flow/live/clust populations render as napari
-             Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
-             width is a plot-panel concern), so the group is hidden for those. -->
-        <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
-          <div class="pm-opt-head"><span>viewer</span></div>
-          <!-- napari point size (re-renders the napari overlay on release) -->
+    <!-- ── gate / viewer options (host-specific, #options slot). In cluster mode there are no gates
+         (the plot group); trackclust has no viewer control either, so the whole block is hidden. ── -->
+    <template v-if="props.popType !== 'trackclust'" #options>
+      <div class="pm-opts">
+        <button class="pm-opts-toggle" @click="optionsOpen = !optionsOpen">
+          <i :class="optionsOpen ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+          <span>Options</span>
+        </button>
+        <div v-show="optionsOpen" class="pm-opts-body">
+          <template v-if="!clusterMode">
+          <div class="pm-opt-head"><span>plot</span></div>
           <div class="pm-opt-row">
-            <span class="pm-opt-label">Napari dots</span>
-            <input type="range" min="1" max="20" step="1" :value="settings.napariPointSize"
-                   v-tooltip.top="'Population point size in napari'"
-                   @input="settings.napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
-                   @change="g.refreshNapariPops()" />
-            <span class="pm-opt-val">{{ settings.napariPointSize }}</span>
+            <span class="pm-opt-label">Gate labels</span>
+            <button class="seg-btn" :class="{ active: gateLabels }"
+                    v-tooltip.top="'Show population names on gates'"
+                    @click="emit('update:gateLabels', !gateLabels)"><i class="pi pi-tag" /></button>
           </div>
-        </template>
-      </div>
-    </div>
+          <div class="pm-opt-row">
+            <span class="pm-opt-label">Line width</span>
+            <input type="range" min="0.5" max="4" step="0.5" :value="lineWidth"
+                   v-tooltip.top="'Gate line thickness'"
+                   @input="emit('update:lineWidth', parseFloat(($event.target as HTMLInputElement).value))" />
+            <span class="pm-opt-val">{{ lineWidth.toFixed(1) }}</span>
+          </div>
+          <div class="pm-opt-row">
+            <span class="pm-opt-label">Axis</span>
+            <div class="pm-seg">
+              <button class="seg-btn" :class="{ active: axisFromZero }"
+                      v-tooltip.top="'Whole-dataset scale (origin at 0) — axis stays fixed across populations'"
+                      @click="emit('update:axisFromZero', true)"><i class="pi pi-arrows-alt" /></button>
+              <button class="seg-btn" :class="{ active: !axisFromZero }"
+                      v-tooltip.top="'Autoscale to the selected population'"
+                      @click="emit('update:axisFromZero', false)"><i class="pi pi-arrow-down-left" /></button>
+            </div>
+          </div>
+          </template>
 
-    <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->
-    <div v-show="!collapsed" class="pm-footer">
-      <div class="pm-seg">
-        <button class="seg-btn" :class="{ active: scope === 'global' }"
-                v-tooltip.top="'Global — options apply to every plot'"
-                @click="emit('update:scope', 'global')"><i class="pi pi-globe" /></button>
-        <button class="seg-btn" :class="{ active: scope === 'local' }"
-                v-tooltip.top="'Local — options apply to the active plot only'"
-                @click="emit('update:scope', 'local')"><i class="pi pi-map-marker" /></button>
+          <!-- viewer-option group is popType-specific: flow/live/clust populations render as napari
+               Points (size slider); track/trackclust render as Tracks ribbons (no point size — tail
+               width is a plot-panel concern), so the group is hidden for those. -->
+          <template v-if="props.popType !== 'track' && props.popType !== 'trackclust'">
+            <div class="pm-opt-head"><span>viewer</span></div>
+            <!-- napari point size (re-renders the napari overlay on release) -->
+            <div class="pm-opt-row">
+              <span class="pm-opt-label">Napari dots</span>
+              <input type="range" min="1" max="20" step="1" :value="settings.napariPointSize"
+                     v-tooltip.top="'Population point size in napari'"
+                     @input="settings.napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
+                     @change="g.refreshNapariPops()" />
+              <span class="pm-opt-val">{{ settings.napariPointSize }}</span>
+            </div>
+          </template>
+        </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </PopulationPanelShell>
 </template>
 
 <style scoped>
-.pop-manager {
-  position: absolute; z-index: 20; width: 300px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
-  font-size: 12px; color: var(--cc-text); user-select: none;
-}
-.pm-header {
-  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
-  cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);
-  border-radius: 6px 6px 0 0;
-}
-.pm-title { font-weight: 600; }
-.pm-count { color: var(--cc-text-dim); margin-left: auto; }
-.pm-body { max-height: 60vh; overflow-y: auto; }
+/* row / options styles — applied to content rendered into PopulationPanelShell's slots (slotted
+   content keeps THIS component's scoped styles; the floating chrome + scope footer live in the shell). */
 .pm-empty { padding: 12px; color: var(--cc-text-dim); }
 .pm-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px 6px; cursor: pointer; border-bottom: 1px solid var(--cc-border); }
 .pm-row:hover { background: var(--cc-surface-2); }
@@ -306,8 +269,7 @@ async function addClusterPopulation() {
 .pm-chip.on { font-weight: 700; }
 .pm-chip-empty { font-size: 10px; color: var(--cc-text-dim); font-style: italic; }
 
-/* ── footer scope toggle (icons only, bottom-right) ── */
-.pm-footer { display: flex; align-items: center; padding: 6px 8px; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
+/* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
 .pm-seg { display: inline-flex; gap: 4px; margin-left: auto; }
 .seg-btn {
   display: inline-flex; align-items: center; justify-content: center;

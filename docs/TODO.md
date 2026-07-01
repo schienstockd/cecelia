@@ -42,6 +42,29 @@ when a set-level mutating task lands.
 
 ## Medium priority
 
+**#00061** — **Canvas plot cleanup phase: export + gate-plot polish**
+Grab-bag of plot-canvas polish to do together in a cleanup pass (surfaced while wiring cluster/gate
+export):
+- **Gate plot: export footer overlays the plot.** The `#footer` Export dropdown added to
+  `GatePlotPanel` sits over the plot area (the gate panel's body isn't laid out to reserve footer
+  space like `CanvasPanel`'s other users). Reserve room / restructure so the footer doesn't cover the
+  scatter.
+- **Exported PNGs are very pixelated.** `rasterize()` in `plots/export.ts` renders at 2×. Bump the
+  scale factor (or make it configurable / DPR-aware) so exported images are crisp; also check the
+  `elementToImageURL` foreignObject path scales the same.
+- **UMAP doesn't appear in the exported PNG.** `plotHostToImageURL` composites `<canvas>` layers, but
+  the UMAP capture still comes out without the scatter — likely the regl canvas isn't being drawn to
+  the export canvas (timing: capture before a redraw, or the composited canvas rect/offset is wrong,
+  or regl's backing store size ≠ CSS size so `drawImage` needs the device-pixel dimensions). Verify
+  the WebGL layer is actually composited (it has `preserveDrawingBuffer` from regl-scatterplot).
+- **UMAP + heatmap don't respond to the dark-theme (VisProps) knob.** The HMM panels + pop-manager
+  now share `PlotOptions`/`vis`, but `ClusterHeatmapPanel` builds its `BuildOpts` from a bare
+  `defaultVis()` (ignores the panel's `vis` prop), and `UmapView` hardcodes the scatter background
+  (`#0d0b1a`). Wire the canvas `vis` (at least `darkTheme`) into both so the whole cluster canvas
+  themes consistently — heatmap: pass the panel `vis` into `opts`; UMAP: derive `backgroundColor` +
+  legend/label ink from `vis.darkTheme`.
+Do these as one focused canvas-export/theme cleanup rather than piecemeal.
+
 **#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
 Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
 launcher (done), and the update path (`pixi run update` done; in-app button pending) — rewrite

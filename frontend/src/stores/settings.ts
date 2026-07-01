@@ -46,6 +46,17 @@ export const useSettingsStore = defineStore('settings', () => {
   // populations but for the Tracks overlay. Default off (heavier). Mirrors napariShowPopulations.
   const napariShowGatedTracks = ref(localStorage.getItem('cc.napariShowGatedTracks') === 'true')
 
+  // per-pop-type napari overlay visibility: { [popType]: boolean } (flow / clust / track /
+  // trackclust). Each toggles that pop type's populations as coloured centroid points in napari
+  // (bridge namespaces layers by `(popType)`, so they coexist). Default hidden; persisted.
+  const _popVis = ref<Record<string, boolean>>(
+    JSON.parse(localStorage.getItem('cc.napariPopVisibility') ?? '{}'))
+  const popVisible = (popType: string): boolean => _popVis.value[popType] ?? false
+  function setPopVisible(popType: string, v: boolean) {
+    _popVis.value = { ..._popVis.value, [popType]: v }
+    localStorage.setItem('cc.napariPopVisibility', JSON.stringify(_popVis.value))
+  }
+
   // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
   // to free up working space. Both default expanded, both persist across sessions.
   const sidebarCollapsed = ref(localStorage.getItem('cc.sidebarCollapsed') === 'true')
@@ -96,5 +107,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
 
-  return { taskListAutoFollow, napariUpdateImage, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
+  return { taskListAutoFollow, napariUpdateImage, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, popVisible, setPopVisible, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
 })

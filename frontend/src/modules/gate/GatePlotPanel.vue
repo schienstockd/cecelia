@@ -12,7 +12,7 @@
   user selects in the manager.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { useGatingStore, isReservedPopName, type GateSpec, type TransformSpec } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
@@ -20,6 +20,7 @@ import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import ScatterGL from '../../components/plots/ScatterGL.vue'
 import PlotLayers, { type PopLayer } from '../../components/plots/PlotLayers.vue'
 import GateOverlay from '../../components/plots/GateOverlay.vue'
+import { plotHostToImageURL, downloadDataUrl } from '../../plots/export'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -189,6 +190,14 @@ function fmtTick(label: string): string {
   return label
 }
 
+// export the plot area (WebGL scatter + contour/pop layers + gate overlay + axis ticks) as a PNG —
+// composited via plots/export.ts (canvas pixels + HTML/canvas2D overlays). The scatter ground is navy.
+const plotEl = useTemplateRef<HTMLElement>('plotEl')
+function exportPng() {
+  const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
+  plotHostToImageURL(plotEl.value, '#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+}
+
 function ensureChannels() {
   const cols = g.columns
   if (!cols.length) return
@@ -225,6 +234,14 @@ onMounted(() => { ensureChannels(); fetchPlot() })
               v-tooltip.bottom="'Polygon gate (click vertices, double-click to close)'"
               @click="mode = mode === 'polygon' ? 'off' : 'polygon'"><i class="pi pi-share-alt" /></button>
     </template>
+    <!-- utility actions (export) in the footer, like the summary / cluster panels -->
+    <template #footer>
+      <select class="gp-export" v-tooltip.top="'Export the shown plot'" :disabled="!points"
+              @change="($event.target as HTMLSelectElement).value === 'png' && exportPng(); ($event.target as HTMLSelectElement).value = ''">
+        <option value="">⤓ Export</option>
+        <option value="png">Image (PNG)</option>
+      </select>
+    </template>
     <!-- controls: one row per axis (X, Y) + the displayed population, stacked so they don't wrap -->
     <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">X</span>
@@ -237,7 +254,7 @@ onMounted(() => { ensureChannels(); fetchPlot() })
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
         <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select></label>
     </div>
-    <div class="panel-plot">
+    <div ref="plotEl" class="panel-plot">
       <ScatterGL :points="points" :extents="extents" :color-mode="baseColorMode"
                  :opacity="baseOpacity" :point-size="basePointSize" />
       <PlotLayers :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
@@ -311,6 +328,7 @@ onMounted(() => { ensureChannels(); fetchPlot() })
 /* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
   writing-mode: vertical-rl; font-size: 13px; font-weight: 600; color: var(--cc-text); }
+.gp-export { font-size: 12px; max-width: 7rem; }
 .panel-loading { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--cc-text-dim); }
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: 4px; padding: 4px 6px; font-size: 11px; }

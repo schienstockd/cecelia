@@ -405,7 +405,9 @@ function _matrix_cols(measures, measure, category)
     elseif measure !== nothing
         push!(c, String(measure))
     end
-    category === nothing || push!(c, String(category))
+    # `pop` is the population category (per-population heatmap) — it's added by pop_df itself, not a
+    # real table column, so don't list it for the fetch (avoids a spurious "unknown column" warning).
+    category === nothing || String(category) == "pop" || push!(c, String(category))
     isempty(c) ? nothing : unique(c)
 end
 
