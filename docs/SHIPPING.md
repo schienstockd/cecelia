@@ -111,9 +111,17 @@ OS-independent:
    `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
 
-`install.sh`/`install.ps1` then download `…/releases/latest/download/cecelia.tar.gz`, install
-Pixi + Juliaup if missing, run `pixi install` (which resolves the GPU variant per-OS from
-`pixi.toml`'s platform-gated torch) + `julia --project=api instantiate`, and create the launcher.
+Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
+`releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a
+*non-prerelease* release, so while we're on release candidates (all `v*-rcN` marked prerelease) it
+404s; the raw path on `main` is always available. `install.{sh,ps1}` then resolve the newest
+published release themselves via the GitHub API (`/repos/…/releases`, newest first — *includes*
+prereleases) and download that tag's `cecelia.tar.gz`. `CECELIA_VERSION=v0.1.0-rcN` pins a specific
+tag. Once a stable (non-prerelease) release is cut, `releases/latest` also starts working, but the
+API-resolve path keeps working for RC-only states — so no installer change is needed at that point.
+They then install Pixi + Juliaup if missing, run `pixi install` (which resolves the GPU variant
+per-OS from `pixi.toml`'s platform-gated torch) + `julia --project=api instantiate`, and create the
+launcher.
 **First-run size:** the env is multi-GB and downloads at install time. `install.ps1` is authored but
 **not yet verified on Windows hardware** — the first real test is a Windows machine / runner.
 

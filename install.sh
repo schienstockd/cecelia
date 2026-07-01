@@ -5,7 +5,7 @@
 # prebuilt frontend, so no Node is needed), provisions the environment, and adds a desktop
 # launcher. Re-runnable — it replaces the install in place.
 #
-#   curl -LsSf https://github.com/schienstockd/cecelia/releases/latest/download/install.sh | sh
+#   curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 #
 # Env overrides:  CECELIA_VERSION=v0.1.0  CECELIA_HOME=~/.local/share/cecelia
 set -eu
@@ -43,11 +43,17 @@ JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
 [ -x "$JULIA" ] || err "Julia not found after install — open a new terminal and re-run."
 
 # ── Download the release bundle ──────────────────────────────────────────────
+# GitHub's `releases/latest` endpoint only ever resolves to a NON-prerelease release, so while the
+# project is still on release candidates (v*-rcN, all marked prerelease) it 404s. Resolve the newest
+# published release ourselves via the API — it lists prereleases too, newest first.
 if [ "$VERSION" = "latest" ]; then
-  URL="https://github.com/$REPO/releases/latest/download/cecelia.tar.gz"
-else
-  URL="https://github.com/$REPO/releases/download/$VERSION/cecelia.tar.gz"
+  say "Resolving the latest release…"
+  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" \
+             | grep -m1 '"tag_name":' | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
+  [ -n "$VERSION" ] || err "Could not resolve the latest release from the GitHub API."
+  say "Latest release is $VERSION"
 fi
+URL="https://github.com/$REPO/releases/download/$VERSION/cecelia.tar.gz"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 say "Downloading $URL"
