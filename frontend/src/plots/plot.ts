@@ -289,8 +289,11 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // a blank bound is filled from the data extent (so min-only or max-only works); +5% headroom on top.
   const ext = measureExtent(r)
   const uMin = parseFloat(o.yMin), uMax = parseFloat(o.yMax)
+  const hasUser = Number.isFinite(uMin) || Number.isFinite(uMax)
   let measDomain: number[] | null = null
   if (ext && isDist) {
+    // distribution charts (box/violin/strip/bar): the measure lives on the value axis, so we manage its
+    // full domain — include 0, +5% headroom, blank bound filled from the data extent.
     if (o.logScale) {
       const lo = Number.isFinite(uMin) && uMin > 0 ? uMin : ext.min
       const hi = Number.isFinite(uMax) ? uMax : ext.max
@@ -300,6 +303,13 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
       const hi = Number.isFinite(uMax) ? uMax : ext.max + (ext.max - lo) * 0.05
       if (hi > lo) measDomain = [lo, hi]
     }
+  } else if (hasUser && ext) {
+    // count/proportion charts (frequency, histogram, …) auto-scale their Y — but still HONOUR an explicit
+    // yMin/yMax (previously these were ignored). ext here is the value/count extent (series `value`), used
+    // only to fill a blank side; both sides given → used verbatim.
+    const lo = Number.isFinite(uMin) ? uMin : (o.nonNegative ? 0 : ext.min)
+    const hi = Number.isFinite(uMax) ? uMax : ext.max * 1.05
+    if (hi > lo) measDomain = [lo, hi]
   }
   opts[measAxis] = { ...(opts[measAxis] as object ?? {}), grid: o.grid,
                      ...(o.labY ? { label: o.labY } : {}), ...(measDomain ? { domain: measDomain } : {}) }
