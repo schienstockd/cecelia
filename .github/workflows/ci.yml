@@ -38,7 +38,7 @@ jobs:
         # macos-latest is arm64 (M-series) — the exact osx-arm64 target the workspace builds for.
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # Installs Pixi and materialises the default environment from pixi.lock (cached per platform).
       - name: Install Pixi + Python env
@@ -49,12 +49,12 @@ jobs:
 
       # Julia stays on juliaup/this action in dev + CI (not in the Pixi env). pixi run inherits PATH.
       - name: Install Julia
-        uses: julia-actions/setup-julia@v2
+        uses: julia-actions/setup-julia@v3
         with:
           version: '1.12'
 
       - name: Install Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 24
 
