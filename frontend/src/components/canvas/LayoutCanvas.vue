@@ -18,6 +18,7 @@ import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
+import { useClusterContext } from '../../composables/useClusterContext'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform } from '../../plots/layoutTemplates'
@@ -26,6 +27,7 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
+import PopulationManager from './PopulationManager.vue'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -66,10 +68,14 @@ const activeContent = computed<SlotContent | null>(() => entry.value.contents[en
 type PState = { sel: string[]; vis: VisProps; [k: string]: unknown }
 const st = (c: SlotContent): PState => c.state as PState
 
-// interactive views offerable here today (self-contained context). UMAP / cluster heatmap need
-// per-slot clustering context (a suffix picker) — a follow-up; only list the analysis-ready ones.
+// self-contained interactive views (read their own context / pops)
 const ANALYSIS_VIEWS = ['gatingStrategy']
 const interactiveOptions = computed(() => ANALYSIS_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
+// CLUSTERING views — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
+// fed the board cluster context, and the right rail shows the cluster PopulationManager when one is active.
+const CLUSTER_VIEWS = ['umap']
+const clusterOptions = computed(() => CLUSTER_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
+const isClusterSlot = (c: SlotContent | null): boolean => !!c && c.kind === 'interactive' && CLUSTER_VIEWS.includes(c.ref)
 // image-content views (napari screenshot slots) — grouped separately in the picker
 const IMAGE_VIEWS = ['filmstrip']
 const imageOptions = computed(() => IMAGE_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
@@ -79,13 +85,10 @@ function addPlot(i: number, val: string) {
   if (!val) return
   const sep = val.indexOf(':'); const kind = val.slice(0, sep); const ref = val.slice(sep + 1)
   if (kind === 'summary') layout.setContent(props.canvasKey, i, { kind: 'summary', ref, state: { specId: ref, sel: [], vis: defaultVis() } })
-  else if (kind === 'interactive') layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state: {} })
+  else if (kind === 'interactive') layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state: CLUSTER_VIEWS.includes(ref) ? { labels: true, hl: [] } : {} })
   layout.setActive(props.canvasKey, i)
 }
 function clearSlot(i: number) { layout.setContent(props.canvasKey, i, null) }
-
-// generic context handed to an interactive view in a slot (self-contained views read what they need)
-const ctxFor = () => ({ projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: activeVis.value })
 
 // duplicate a slot's plot into the NEXT EMPTY slot (deep-copy its state so you can tweak one thing);
 // no-op if the grid is full.
@@ -124,6 +127,42 @@ function setVis(patch: Partial<VisProps>) {
   else if (activeContent.value) st(activeContent.value).vis = { ...(st(activeContent.value).vis ?? defaultVis()), ...patch }
 }
 const panelSeries = (c: SlotContent): SeriesTarget[] => panelSel(c).map(parseTkey)
+
+// ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
+// the singleton gating store is driven unambiguously; only active when a cluster slot exists. ─────────
+const hasClusterSlot = computed(() => entry.value.contents.some(isClusterSlot))
+const clustPopType = computed<'clust' | 'trackclust'>({
+  get: () => (entry.value.shared.clustPopType as 'clust' | 'trackclust') ?? 'clust',
+  set: v => (entry.value.shared.clustPopType = v) })
+const clustSuffix = computed<string>({
+  get: () => (entry.value.shared.clustSuffix as string) ?? 'default',
+  set: v => (entry.value.shared.clustSuffix = v) })
+const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids, shownPopsFor } =
+  useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
+                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot })
+
+// cluster HIGHLIGHT — global (shared, one run per board) or per-slot (local), same scope as summary
+const clustHl = computed<string[]>({ get: () => (entry.value.shared.clustHl as string[]) ?? [], set: v => (entry.value.shared.clustHl = v) })
+const clustHlOf = (c: SlotContent): string[] => (st(c).hl as string[]) ?? []
+const panelClustHl = (c: SlotContent) => scope.value === 'global' ? clustHl.value : clustHlOf(c)
+const activeClustHl = computed(() => scope.value === 'global' ? clustHl.value
+  : (activeContent.value ? clustHlOf(activeContent.value) : []))
+const activeIsCluster = computed(() => isClusterSlot(activeContent.value))
+function toggleClustHl(path: string) {
+  if (scope.value === 'global') clustHl.value = toggle(clustHl.value, path)
+  else if (activeContent.value) st(activeContent.value).hl = toggle(clustHlOf(activeContent.value), path)
+}
+
+// context handed to an interactive slot: cluster views get the board cluster run + shown pops; the
+// self-contained views (gating strategy, filmstrip) just get the image/project context.
+function ctxFor(c: SlotContent) {
+  if (isClusterSlot(c)) return {
+    projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
+    popType: clustPopType.value, suffix: clustSuffix.value,
+    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
+  }
+  return { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
+}
 
 // prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
 // a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
@@ -222,6 +261,18 @@ defineExpose({ capturePage, collectCsvs })
             <input type="range" min="160" max="720" step="10" :value="rowHeight"
                    @input="rowHeight = +($event.target as HTMLInputElement).value" />
           </div>
+          <!-- clustering run: ONE per board (drives all cluster slots + the cluster pop manager) -->
+          <div v-if="hasClusterSlot" class="lc-clust" v-tooltip.bottom="'Clustering run shown by this board’s cluster plots'">
+            <span class="lc-lbl">cluster</span>
+            <select v-model="clustPopType">
+              <option value="clust">cells</option>
+              <option value="trackclust">tracks</option>
+            </select>
+            <select v-model="clustSuffix">
+              <option v-if="!clustSuffixes.length" :value="clustSuffix">{{ clustSuffix }}</option>
+              <option v-for="s in clustSuffixes" :key="s" :value="s">{{ s }}</option>
+            </select>
+          </div>
           <!-- compare + pool sit at the right of the layout row -->
           <div class="lc-right">
             <div v-if="canCompare" class="lc-compare"
@@ -285,7 +336,7 @@ defineExpose({ capturePage, collectCsvs })
             <InteractivePanel v-else-if="entry.contents[i]?.kind === 'interactive' && INTERACTIVE_VIEWS[entry.contents[i]!.ref]"
                               :ref="el => setInteractiveRef(i, el)"
                               :index="i" :active="i === entry.activeIndex" :docked="true"
-                              :view="entry.contents[i]!.ref" :context="ctxFor()" :state="entry.contents[i]!.state"
+                              :view="entry.contents[i]!.ref" :context="ctxFor(entry.contents[i]!)" :state="entry.contents[i]!.state"
                               :duplicable="true" :persist-key="`${canvasKey}:slot:${i}`"
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->
@@ -299,6 +350,9 @@ defineExpose({ capturePage, collectCsvs })
                 <optgroup v-if="interactiveOptions.length" label="Interactive">
                   <option v-for="v in interactiveOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
                 </optgroup>
+                <optgroup v-if="clusterOptions.length" label="Clustering">
+                  <option v-for="v in clusterOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
+                </optgroup>
                 <optgroup v-if="imageOptions.length" label="Image">
                   <option v-for="v in imageOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
                 </optgroup>
@@ -308,9 +362,16 @@ defineExpose({ capturePage, collectCsvs })
           </div>
         </div>
 
-        <!-- docked pop picker (control, not content — excluded from PDF) -->
+        <!-- docked pop manager (control, not content — excluded from PDF). Follows the ACTIVE slot:
+             cluster PopulationManager for a cluster slot, else the summary SeriesPicker. -->
         <div class="lc-rail">
-          <SeriesPicker :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
+          <PopulationManager v-if="activeIsCluster" :docked="true"
+                             :selected="''" :highlighted="activeClustHl" :scope="scope"
+                             :line-width="1" :gate-labels="false" :axis-from-zero="false"
+                             :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
+                             :suffix="clustSuffix" :vis="activeVis"
+                             @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
+          <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
         </div>
       </div>
@@ -330,6 +391,9 @@ defineExpose({ capturePage, collectCsvs })
 .lc-sep { width: 1px; height: 1.4rem; background: var(--cc-border); }
 .lc-nm { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .lc-nm input[type="range"] { width: 5rem; }
+.lc-clust { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
+  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
+.lc-clust select { font-size: 11px; }
 .lc-val { min-width: 0.9rem; text-align: center; font-weight: 700; color: var(--cc-text); }
 .seg-wrap { flex-wrap: wrap; }
 /* wrapped seg buttons keep separators between rows too */

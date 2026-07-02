@@ -18,10 +18,14 @@ export function useClusterContext(opts: {
   imageUids: Ref<string[]>
   popType: Ref<'clust' | 'trackclust'>
   suffix: Ref<string>
+  // gate the singleton-store drive + feature load (the Analysis canvas only wants this when a cluster
+  // slot exists; the cluster module leaves it on). Defaults to always-on.
+  enabled?: Ref<boolean>
 }) {
   const g = useGatingStore()
   const log = useLogStore()
   const { projectUid, imageUids, popType, suffix } = opts
+  const enabled = opts.enabled ?? computed(() => true)
 
   // per-suffix feature list each run actually used (interpretive columns), from the channels endpoint's
   // clusterFeatures sidecar; fall back to markers/motility if a run predates feature tracking.
@@ -41,6 +45,7 @@ export function useClusterContext(opts: {
   const featureOptions = computed<string[]>(() => allFeatures.value.filter(f => !HMM_RE.test(f)))
 
   async function loadFeatures() {
+    if (!enabled.value) return
     if (!projectUid.value || !imageUids.value[0]) { clusterFeatures.value = {}; featureFallback.value = []; return }
     const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: imageUids.value[0], popType: popType.value })
     try {
@@ -82,14 +87,14 @@ export function useClusterContext(opts: {
 
   // drive the (shared, pop_type-agnostic) gating store for the pop tree: primary = first valid image,
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
-  watch([validUids, suffix, popType, projectUid], () => {
-    if (!projectUid.value || !validUids.value.length) return
+  watch([validUids, suffix, popType, projectUid, enabled], () => {
+    if (!enabled.value || !projectUid.value || !validUids.value.length) return
     g.selectImage(validUids.value[0], resolvedVn.value, popType.value).then(() => {
       g.mirrorUids = validUids.value.slice(1)
     })
   }, { immediate: true })
-  // reload the run/feature metadata when the image set / project / popType changes
-  watch([projectUid, () => imageUids.value.join(','), popType], loadFeatures, { immediate: true })
+  // reload the run/feature metadata when the image set / project / popType changes (or on enable)
+  watch([projectUid, () => imageUids.value.join(','), popType, enabled], loadFeatures, { immediate: true })
 
   return {
     suffixes, clusterFeatures, featureFallback, nameMap, clusterIds, clusterMembers, resolvedVn,

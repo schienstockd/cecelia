@@ -33,37 +33,39 @@ export const UNIFORM_PRESETS: LayoutTemplate[] = [
 
 // Rectangular "comic plates": varied-size panels over a base grid (decision 8). Rectangular only —
 // angled panels are deferred; the filmstrip slot covers the angled-image use (decision 10).
+// Ordered into families so the picker reads as two tidy rows:
+//   ROW 1 — a wide FEATURE + small panels: split, big-left, and "top banner + N".
+//   ROW 2 — HEADER banner + a grid, and tall HERO / SIDEBAR layouts.
 export const COMIC_PRESETS: LayoutTemplate[] = [
+  // ── Row 1: feature + small panels ─────────────────────────────────────────
   // wide left + narrow right (single row)
   { id: 'wide-tall', label: '2 + 1', cols: 3, rows: 1,
     slots: ['1 / 1 / 2 / 3', '1 / 3 / 2 / 4'] },
-  // wide feature on top + two beneath
-  { id: 'feature-2', label: 'Top + 2', cols: 2, rows: 2,
-    slots: ['1 / 1 / 2 / 3', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3'] },
   // big square left + two stacked on the right
   { id: 'big-2', label: 'Big + 2', cols: 3, rows: 2,
     slots: ['1 / 1 / 3 / 3', '1 / 3 / 2 / 4', '2 / 3 / 3 / 4'] },
-  // wide feature on top + a row of three beneath
-  { id: 'feature-3', label: 'Feature + 3', cols: 3, rows: 2,
+  // wide feature on top + a row of two / three / four beneath (progressive family)
+  { id: 'feature-2', label: 'Top + 2', cols: 2, rows: 2,
+    slots: ['1 / 1 / 2 / 3', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3'] },
+  { id: 'feature-3', label: 'Top + 3', cols: 3, rows: 2,
     slots: ['1 / 1 / 2 / 4', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4'] },
-  // wide feature on top + a row of four beneath
   { id: 'feature-4', label: 'Top + 4', cols: 4, rows: 2,
     slots: ['1 / 1 / 2 / 5', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '2 / 4 / 3 / 5'] },
+  // ── Row 2: header banner + grid, and hero / sidebar ───────────────────────
+  // wide header banner on top + two rows of three / four smaller slots (all rows equal height)
+  { id: 'header-2x3', label: 'Header + 2×3', cols: 3, rows: 3,
+    slots: ['1 / 1 / 2 / 4', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '3 / 1 / 4 / 2', '3 / 2 / 4 / 3', '3 / 3 / 4 / 4'] },
+  { id: 'header-2x4', label: 'Header + 2×4', cols: 4, rows: 3,
+    slots: ['1 / 1 / 2 / 5', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '2 / 4 / 3 / 5', '3 / 1 / 4 / 2', '3 / 2 / 4 / 3', '3 / 3 / 4 / 4', '3 / 4 / 4 / 5'] },
   // tall hero left + two small right + wide footer
   { id: 'hero-3', label: 'Hero + 3', cols: 2, rows: 3,
     slots: ['1 / 1 / 3 / 2', '1 / 2 / 2 / 3', '2 / 2 / 3 / 3', '3 / 1 / 4 / 3'] },
-  // tall sidebar left + three stacked on the right
-  { id: 'side-3', label: 'Side + 3', cols: 3, rows: 3,
-    slots: ['1 / 1 / 4 / 2', '1 / 2 / 2 / 4', '2 / 2 / 3 / 4', '3 / 2 / 4 / 4'] },
   // large hero (2×2) with an L of five smaller panels
   { id: 'hero-quad', label: 'Hero + 5', cols: 3, rows: 3,
     slots: ['1 / 1 / 3 / 3', '1 / 3 / 2 / 4', '2 / 3 / 3 / 4', '3 / 1 / 4 / 2', '3 / 2 / 4 / 3', '3 / 3 / 4 / 4'] },
-  // wide header banner on top + two rows of three smaller slots (all rows equal height)
-  { id: 'header-2x3', label: 'Header + 2×3', cols: 3, rows: 3,
-    slots: ['1 / 1 / 2 / 4', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '3 / 1 / 4 / 2', '3 / 2 / 4 / 3', '3 / 3 / 4 / 4'] },
-  // wide header banner on top + two rows of four smaller slots (all rows equal height)
-  { id: 'header-2x4', label: 'Header + 2×4', cols: 4, rows: 3,
-    slots: ['1 / 1 / 2 / 5', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '2 / 4 / 3 / 5', '3 / 1 / 4 / 2', '3 / 2 / 4 / 3', '3 / 3 / 4 / 4', '3 / 4 / 4 / 5'] },
+  // tall sidebar left + three stacked on the right
+  { id: 'side-3', label: 'Side + 3', cols: 3, rows: 3,
+    slots: ['1 / 1 / 4 / 2', '1 / 2 / 2 / 4', '2 / 2 / 3 / 4', '3 / 2 / 4 / 4'] },
 ]
 
 export const ALL_PRESETS = [...UNIFORM_PRESETS, ...COMIC_PRESETS]

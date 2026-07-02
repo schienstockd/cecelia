@@ -34,7 +34,8 @@ const props = withDefaults(defineProps<{
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined })
+  docked?: boolean                 // fill a docked rail (Analysis canvas) instead of floating
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false })
 const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
@@ -108,7 +109,7 @@ async function addClusterPopulation() {
 </script>
 
 <template>
-  <PopulationPanelShell :count="g.flat.length" :scope="scope" :vis="vis"
+  <PopulationPanelShell :count="g.flat.length" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
