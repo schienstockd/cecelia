@@ -320,3 +320,21 @@ pops it can't consume. (`useSummaryData`'s current single global `sel` becomes t
 5. **No regression to summary toggling** — flow/live becomes one family; existing `useSummaryData`
    `gSel`/`toggleTarget` behaviour must be preserved exactly.
 6. **Active-slot edge cases** — empty / `noPicker` active slot → neutral picker state; sane default target.
+
+#### DECISION: one cluster run per board (resolves the singleton-store snag)
+
+Investigation found cluster pops live in the **singleton `useGatingStore`** (loaded via
+`g.selectImage(uid, vn, popType)`) and are toggled through **`PopulationManager`** (tickable cluster IDs),
+not `SeriesPicker`. The store holds ONE active (popType, suffix) at a time — so independent per-slot
+cluster runs can't coexist. **Decision (Dom): enforce a single cluster run per board.**
+
+Consequences (keeps model C working for clusters):
+- The board carries a **board-level cluster context**: `clustPopType` + `clustSuffix`, stored in the
+  layout entry; a small run-picker shows in the board bar once a cluster slot exists. All cluster slots
+  on the board share it, so the singleton store is driven once (via `useClusterContext`).
+- Right-rail manager swaps by ACTIVE slot family: `SeriesPicker` for summary slots, **`PopulationManager`
+  (cluster mode)** for cluster slots — both already exist, no fork.
+- Per-family scope holds: global cluster highlight is shared across the board's cluster slots (same run);
+  global summary selection across summary slots; local = active slot.
+- `useClusterContext(projectUid,imageUids,popType,suffix)` extracted from `ClusterPlots` (run list +
+  features + clusterIds/members + validUids + gating-store drive + `shownPopsFor`), reused by both.

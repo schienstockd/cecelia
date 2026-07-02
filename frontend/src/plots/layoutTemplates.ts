@@ -46,6 +46,9 @@ export const COMIC_PRESETS: LayoutTemplate[] = [
   // wide feature on top + a row of three beneath
   { id: 'feature-3', label: 'Feature + 3', cols: 3, rows: 2,
     slots: ['1 / 1 / 2 / 4', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4'] },
+  // wide feature on top + a row of four beneath
+  { id: 'feature-4', label: 'Top + 4', cols: 4, rows: 2,
+    slots: ['1 / 1 / 2 / 5', '2 / 1 / 3 / 2', '2 / 2 / 3 / 3', '2 / 3 / 3 / 4', '2 / 4 / 3 / 5'] },
   // tall hero left + two small right + wide footer
   { id: 'hero-3', label: 'Hero + 3', cols: 2, rows: 3,
     slots: ['1 / 1 / 3 / 2', '1 / 2 / 2 / 3', '2 / 2 / 3 / 3', '3 / 1 / 4 / 3'] },

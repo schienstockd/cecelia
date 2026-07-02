@@ -19,7 +19,7 @@ import { useProjectStore } from '../../stores/project'
 import { useGatingStore } from '../../stores/gating'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
-import { useLogStore } from '../../stores/log'
+import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView } from '../../components/canvas/interactiveViews'
 import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
@@ -41,7 +41,6 @@ const props = defineProps<{
 const meta = useProjectMetaStore()
 const project = useProjectStore()
 const g = useGatingStore()
-const log = useLogStore()
 const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
@@ -58,7 +57,16 @@ const activePanel = computed(() => panels.value.find(p => p.id === activeId.valu
 const { suffix, highlighted, scope, vis: gVis } = useViewState(shared, {
   suffix: 'default', highlighted: [] as string[], scope: 'global' as 'global' | 'local',
   vis: defaultVis() as VisProps })
-const suffixes = ref<string[]>([])
+
+// run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
+// highlight→shownPops resolution (shared with the Analysis canvas via useClusterContext).
+const {
+  suffixes, nameMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
+  runMembers, validUids, strayUids, missingUids, shownPopsFor,
+} = useClusterContext({
+  projectUid, imageUids: computed(() => props.imageUids),
+  popType: computed(() => props.popType), suffix,
+})
 
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
 function toggleHighlight(path: string) {
@@ -91,12 +99,6 @@ function duplicatePanel(s: ClusterPanelState) {
   activeId.value = id
 }
 
-// resolve a highlight set to shown populations (colour + owned cluster IDs) against the store tree
-const shownPopsFor = (hl: string[]) => g.flat
-  .filter(p => hl.includes(p.path))
-  .map(p => ({ path: p.path, name: p.name, colour: p.colour,
-               clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
-
 // drop stale highlights (global + each panel's local) as pops are deleted/renamed
 watch(() => g.flat.map(p => p.path).join('\n'), () => {
   const exist = new Set(g.flat.map(p => p.path))
@@ -119,82 +121,14 @@ function addKind(kind: string) {
   activeId.value = id
 }
 
-// per-suffix feature list each run actually used (clusters' interpretive columns), from the channels
-// endpoint's clusterFeatures sidecar; fall back to markers/motility if a run predates feature
-// tracking. RAW column names — the matrix selects by raw name and we relabel channels via nameMap.
-const clusterFeatures = ref<Record<string, string[]>>({})
-const featureFallback = ref<string[]>([])
-const nameMap = ref<Record<string, string>>({})   // raw channel column → display name
-// HMM behaviour columns (state / transition frequencies) are categorical-behaviour features — they
-// belong in the dedicated HMM plot types, NOT the numeric heatmap (they don't render there). Keep
-// them out of the heatmap's feature options.
-const HMM_RE = /live\.cell\.hmm\.(state|transitions)\b/
-const allFeatures = computed<string[]>(() => clusterFeatures.value[suffix.value] ?? featureFallback.value)
-const featureOptions = computed<string[]>(() => allFeatures.value.filter(f => !HMM_RE.test(f)))
-// per-suffix: the tickable cluster IDs (universe) and the uIDs the run clustered together (partOf)
-const clusterIds = ref<Record<string, number[]>>({})
-const clusterMembers = ref<Record<string, string[]>>({})
-const resolvedVn = ref('default')                  // segmentation value_name the channels resolved to
-// HMM behaviour cell-obs columns → the dedicated HMM plot types (track clustering only).
-const hmmStateCols = ref<string[]>([])             // live.cell.hmm.state.<name>
-const hmmTransitionCols = ref<string[]>([])        // live.cell.hmm.transitions.<name>
-
-async function loadFeatures() {
-  if (!projectUid.value || !props.imageUids[0]) { clusterFeatures.value = {}; featureFallback.value = []; return }
-  const q = new URLSearchParams({ projectUid: projectUid.value, imageUid: props.imageUids[0], popType: props.popType })
-  try {
-    const r = await fetch(`/api/gating/channels?${q}`)
-    if (!r.ok) { clusterFeatures.value = {}; featureFallback.value = []; return }
-    const d = await r.json()
-    clusterFeatures.value = d.clusterFeatures ?? {}
-    clusterIds.value = d.clusterIds ?? {}
-    clusterMembers.value = d.clusterMembers ?? {}
-    resolvedVn.value = d.valueName ?? 'default'
-    featureFallback.value = props.popType === 'trackclust' ? (d.columns ?? []) : (d.channels ?? [])
-    // raw channel column → display name (matrix aggregates by raw; heatmap relabels for display)
-    const chans: string[] = d.channels ?? [], names: string[] = d.channelNames ?? []
-    nameMap.value = Object.fromEntries(chans.map((c, i) => [c, names[i] ?? c]))
-    // HMM behaviour columns (track branch cellObsMeasures) → the HMM plot types
-    const obs: string[] = d.cellObsMeasures ?? []
-    hmmStateCols.value = obs.filter(c => c.startsWith('live.cell.hmm.state.'))
-    hmmTransitionCols.value = obs.filter(c => c.startsWith('live.cell.hmm.transitions.'))
-    // discovered cluster runs → page-level suffix dropdown; self-heal if the stored one is gone
-    suffixes.value = d.clusterSuffixes ?? []
-    if (suffixes.value.length && !suffixes.value.includes(suffix.value)) suffix.value = suffixes.value[0]
-  } catch (e) {
-    log.error(`Cluster features: ${e instanceof Error ? e.message : String(e)}`, { source: 'cluster' })
-    clusterFeatures.value = {}; featureFallback.value = []
-  }
-}
-
-// Cluster pops can only be defined for images IN THE RUN (those carrying clusters.{suffix} — the
-// recorded `partOf`). Restrict writes to that subset; surface the mismatch so the user can fix the
-// selection. If a run predates partOf recording (empty members), don't block — treat all selected.
-const runMembers = computed<string[]>(() => clusterMembers.value[suffix.value] ?? [])
-const validUids = computed<string[]>(() =>
-  runMembers.value.length ? props.imageUids.filter(u => runMembers.value.includes(u)) : props.imageUids)
-const strayUids = computed<string[]>(() =>
-  runMembers.value.length ? props.imageUids.filter(u => !runMembers.value.includes(u)) : [])
-const missingUids = computed<string[]>(() =>
-  runMembers.value.filter(u => !props.imageUids.includes(u)))
 const nameOf = (uid: string) =>
   project.activeSet()?.images.find(i => i.uid === uid)?.name ?? uid
-
-// drive the (shared, pop_type-agnostic) gating store for the pop tree: primary = first valid image,
-// the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
-watch([validUids, suffix, () => props.popType, projectUid], () => {
-  if (!projectUid.value || !validUids.value.length) return
-  g.selectImage(validUids.value[0], resolvedVn.value, props.popType).then(() => {
-    g.mirrorUids = validUids.value.slice(1)
-  })
-}, { immediate: true })
 
 // default a heatmap panel's features to the run's full feature set once known (don't clobber a pick)
 watch([featureOptions, () => panels.value.length], () => {
   if (!featureOptions.value.length) return
   for (const p of panels.value) if (p.state.kind === 'heatmap' && !(p.state.features?.length)) p.state.features = [...featureOptions.value]
 })
-watch([projectUid, () => props.imageUids.join(','), () => props.popType], loadFeatures)
 
 // the generic context an interactive view receives, per panel (so LOCAL scope can show different
 // pops per panel). Plots run on the run-MEMBER images (validUids), not the raw selection — a cluster
@@ -210,7 +144,6 @@ const ctxFor = (s: ClusterPanelState) => ({
 const selectedPop = ref('')
 
 onMounted(() => {
-  loadFeatures()
   // seed a UMAP + a heatmap ONLY when this canvas is empty (panels persist per `clust:${popType}`
   // across navigation — an unconditional add() would stack more on every remount).
   if (panels.value.length === 0) { addKind('umap'); addKind('heatmap') }
