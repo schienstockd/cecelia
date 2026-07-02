@@ -13,6 +13,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef, onMounted, onUnmounted } from 'vue'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 import { orientGate } from '../../plots/gateGeometry'
 import { plotHostToImageURL } from '../../plots/export'
 import type { VisProps } from '../../plots/plot'
@@ -226,6 +227,8 @@ async function loadPanels() {
 
 watch([imageUid, popType], () => { loadChannels().then(loadTree) }, { immediate: true })
 watch([valueName], loadTree)
+// a task finishing on THIS image → gates/stats may have changed; reload the tree (cascades to panels)
+useDataRefresh(() => [imageUid.value], () => { loadChannels().then(loadTree) })
 watch(panelDefs, loadPanels, { immediate: true })
 
 // ── PDF export: a plot-only, LIGHT-theme image (no toolbar). Single plot → the one cell's hi-res

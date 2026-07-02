@@ -30,6 +30,26 @@ export const useProjectStore = defineStore('project', () => {
   const sets = ref<CciaSet[]>([])
   const activeSetUid = ref<string | null>(null)
   const napariImageUid = ref<string | null>(null)
+  // Reload signal for the napari viewer: bumped by anything asking to refresh the SHOWN image (the
+  // image-table eye clicked on the already-open image). ViewerPanel owns the overlay logic, so it
+  // watches this tick and decides data-only vs full reopen (see settings.napariResetOnReload).
+  const napariReloadTick = ref(0)
+  const requestNapariReload = () => { napariReloadTick.value++ }
+  // Data freshness — TARGETED per-image invalidation. A finished task (ws `task:status` == 'done')
+  // bumps only the image(s) it touched; a plot watches `dataVersionFor(itsImages)` and refetches ONLY
+  // when one of the images IT shows changed — not on every task in the project. This replaces the
+  // per-plot reload buttons without the Shiny-style "invalidate the world". Set-scope tasks report one
+  // representative member uid (see api/src/sockets.jl), so set plots — which watch all their member
+  // images incl. the rep — still refresh; a non-rep member's single-image plot is the one gap (rare).
+  // See docs/todo/TASK_DATA_REFRESH_PLAN.md.
+  const dataVersion = ref<Record<string, number>>({})
+  const bumpDataVersion = (imageUid: string) => {
+    if (imageUid) dataVersion.value[imageUid] = (dataVersion.value[imageUid] ?? 0) + 1
+  }
+  // combined version for a set of images — reactive (reads the per-uid counters), so a plot can
+  // `watch(() => dataVersionFor(itsImageUids), refetch)` and only fire when one of them bumps.
+  const dataVersionFor = (uids: string[]): number =>
+    uids.reduce((sum, u) => sum + (dataVersion.value[u] ?? 0), 0)
 
   // Remembered per-page image selection (the run-table checkboxes), keyed by `${scope}|${setUid}`
   // so it survives navigating away from a module page and back. `scope` is the module name (so a
@@ -50,6 +70,7 @@ export const useProjectStore = defineStore('project', () => {
     sets.value = apiSets
     activeSetUid.value = sets.value[0]?.uid ?? null
     imageSelection.value = {}     // selections are per-project; don't carry across loads
+    dataVersion.value = {}        // per-image versions are per-project too (uids don't cross projects)
     useCanvasPanelsStore().clear()   // open plots are per-project too
     useAnalysisTabsStore().clear()   // …and the Analysis-canvas boards
     useAnalysisLayoutStore().clear() // …and their grid layouts
@@ -60,6 +81,7 @@ export const useProjectStore = defineStore('project', () => {
     activeSetUid.value = null
     napariImageUid.value = null
     imageSelection.value = {}
+    dataVersion.value = {}
     useCanvasPanelsStore().clear()
     useAnalysisTabsStore().clear()
     useAnalysisLayoutStore().clear()
@@ -158,5 +180,5 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  return { sets, activeSetUid, napariImageUid, activeSet, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, removeLabelSet }
 })

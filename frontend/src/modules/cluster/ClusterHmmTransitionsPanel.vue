@@ -15,6 +15,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef, nextTick } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import { elementToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
@@ -153,6 +154,7 @@ function exportAs(kind: string) {
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.suffix,
        () => measure.value, () => JSON.stringify(props.shownPops.map(p => [p.path, p.clusterIds]))], load)
+useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // styling is render-only (no refetch) — re-render when the vis bag changes
 watch(v, render, { deep: true })
 onMounted(() => {
@@ -181,7 +183,6 @@ defineExpose({ exportImage, getCsv })
               v-tooltip.bottom="'Which HMM measure to show'">
         <option v-for="c in hmmCols" :key="c" :value="c">{{ shortName(c) }}</option>
       </select>
-      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel -->
     <template #footer>

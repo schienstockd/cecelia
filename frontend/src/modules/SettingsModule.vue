@@ -133,6 +133,13 @@ onMounted(checkUpdates)
           <span class="toggle-label">Auto-follow running tasks in task manager</span>
         </label>
       </div>
+
+      <div class="field">
+        <label class="toggle-row" v-tooltip.right="'Keep plots in sync with your data: when a task finishes, any plot or population list showing the affected image(s) reloads on its own. Turn off to keep plots steady while you work — they update next time you open or change them.'">
+          <input type="checkbox" v-model="settings.autoRefreshOnTask" />
+          <span class="toggle-label">Auto-refresh plots when tasks finish</span>
+        </label>
+      </div>
     </section>
 
     <!-- ── Software updates ────────────────────────────────────────────── -->

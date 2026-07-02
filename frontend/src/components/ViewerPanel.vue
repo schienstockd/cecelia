@@ -321,12 +321,16 @@ function onTaskStatus(data: Record<string, unknown>) {
   if (String(data.status ?? '') !== 'done') return
   const napariUid = projectStore.napariImageUid
   if (!napariUid || String(data.imageUid ?? '') !== napariUid) return
-  openInNapari(selectedValueName.value)
+  reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
 }
 
-function onNapariOpened() {
-  // everything runs in nextTick so the napariImage-derived state (labelNames, visibleLabels) has
-  // settled before we push overlays — the labels early-return must NOT skip the pop/track overlays.
+// Re-push ALL of the image's DATA overlays (labels + colour-by + population/track points/ribbons),
+// each re-read from disk by its endpoint (show-labels/show-populations/show-tracks all replace their
+// layer in place). This is the "reload data" path — it touches NO image pyramid. Shared by the open
+// handler (after a full reopen) and reloadViewer's data-only branch.
+function pushAllOverlays() {
+  // run in nextTick so the napariImage-derived state (labelNames, visibleLabels) has settled before we
+  // push overlays — the labels early-return must NOT skip the pop/track overlays.
   nextTick(() => {
     if (hasLabels.value) {
       const toShow = Object.fromEntries(
@@ -358,6 +362,17 @@ function onNapariOpened() {
   })
 }
 
+function onNapariOpened() { pushAllOverlays() }
+
+// Refresh the SHOWN image. Data-only by default (re-push overlays, re-read from disk — the pyramid and
+// camera stay); only reopen the whole image when the user ticked reset, or nothing is shown yet. This
+// is what the eye (on the already-open image) and finished tasks call, so a plain reload no longer
+// yanks the image out from under the user (mirrors viewerManager.R: reopen only on reset / uID change).
+function reloadViewer() {
+  if (settings.napariResetOnReload || !projectStore.napariImageUid) openInNapari(selectedValueName.value)
+  else pushAllOverlays()
+}
+
 function onTaskResult(data: Record<string, unknown>) {
   const imageUid = String(data.imageUid ?? '')
   if (!imageUid || imageUid !== projectStore.napariImageUid) return
@@ -366,7 +381,7 @@ function onTaskResult(data: Record<string, unknown>) {
   const addedValueName = meta.valueName as string | undefined
   if (addedValueName) {
     selectedValueName.value = addedValueName
-    if (settings.napariUpdateImage) openInNapari(addedValueName)
+    if (settings.napariUpdateImage) reloadViewer()   // data-only unless reset
   }
 
   const labelValueName = meta.labelValueName as string | undefined
@@ -385,6 +400,9 @@ function onTaskResult(data: Record<string, unknown>) {
     })
   }
 }
+
+// the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
+watch(() => projectStore.napariReloadTick, () => reloadViewer())
 
 onMounted(() => {
   ws.on('napari:opened', onNapariOpened)
@@ -451,8 +469,14 @@ onUnmounted(() => {
       <button
         class="opt-btn" :class="{ active: settings.napariUpdateImage }"
         @click="settings.napariUpdateImage = !settings.napariUpdateImage"
-        v-tooltip.bottom="'Auto-update: reload image in Napari whenever a task finishes on that image'"
+        v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
       ><i class="pi pi-refresh" /></button>
+
+      <button
+        class="opt-btn" :class="{ active: settings.napariResetOnReload }"
+        @click="settings.napariResetOnReload = !settings.napariResetOnReload"
+        v-tooltip.bottom="'Reset on reload: reopen the whole image (not just data) when reloading — needed when a task changed the image pixels (drift/denoise). Off = reload data only.'"
+      ><i class="pi pi-image" /></button>
 
       <button
         class="opt-btn" :class="{ active: settings.napariAutoSaveLayerProps }"
@@ -474,8 +498,12 @@ onUnmounted(() => {
 
       <!-- Populations sub-menu: one toggle per pop type, shown as coloured centroid points in napari
            (layers namespaced by pop type, so they coexist). Distinct from the Tracks-ribbon toggle. -->
-      <template v-if="napariImage">
-        <span class="opt-sep" aria-hidden="true" />
+      <!-- population / overlay toggles: their OWN line (flex row break), led by a decorative dot at the
+           left — a distinct control group from the image-open options above, aligned with the
+           label/track-prop rows and the colour-by row below. -->
+      <div v-if="napariImage" class="opt-group">
+        <i class="pi pi-circle-fill opt-deco"
+           v-tooltip.bottom="'Toggles for the population types to show'" />
         <button
           v-for="pt in POP_TYPES" :key="pt.key"
           class="opt-btn" :class="{ active: settings.popVisible(pt.key) }"
@@ -494,7 +522,7 @@ onUnmounted(() => {
           @click="toggleTrackclust"
           v-tooltip.bottom="settings.popVisible('trackclust') ? 'Hide track-cluster ribbons' : 'Show track-cluster populations as ribbons'"
         ><i class="pi pi-sitemap" /></button>
-      </template>
+      </div>
       <!-- colour tracks + labels by an obs column (e.g. HMM state); '' = default colouring -->
       <span
         v-if="napariImage && obsCols.length" class="opt-colourby-wrap"
@@ -620,5 +648,22 @@ onUnmounted(() => {
   margin: 0.1rem 0.15rem;
   background: var(--cc-border);
   flex-shrink: 0;
+}
+/* population/overlay toggles on their own line (breaks the flex row), led by the dot at the left —
+   aligned with the label/track-prop rows above and the colour-by row below */
+.opt-group {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+/* dot marking that group — matches the colour-by dot (.opt-colourby-wrap .pi): same colour + size, and
+   carries a tooltip. Non-interactive (no click), but hoverable so the tooltip shows. */
+.opt-deco {
+  color: var(--cc-text-dim);
+  font-size: 0.72rem;
+  margin-left: 0.05rem;
+  flex-shrink: 0;
+  cursor: default;
 }
 </style>

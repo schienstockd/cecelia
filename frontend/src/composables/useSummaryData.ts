@@ -1,5 +1,6 @@
 import { ref, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { useWsStore } from '../stores/ws'
+import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
 import { tkey } from '../plots/series'
 import { defaultVis, type VisProps } from '../plots/plot'
@@ -101,6 +102,9 @@ export function useSummaryData(opts: {
     if (m.imageUid && imageUids.value.length && !imageUids.value.includes(m.imageUid)) return
     loadPops(); reloadToken.value++
   }
+  // a task finishing on one of THESE images → refetch (pop list may have new pops; data may have
+  // changed in place). Same mechanism as the gate popmap above; targeted per-image via useDataRefresh.
+  useDataRefresh(() => imageUids.value, () => { loadPops(); reloadToken.value++ })
   // the set of currently-valid target keys (for pruning host selections)
   const validSelKeys = computed(() => {
     const exist = new Set<string>()

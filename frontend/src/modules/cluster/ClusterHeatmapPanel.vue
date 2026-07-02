@@ -11,6 +11,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import PlotChart from '../../components/plots/PlotChart.vue'
@@ -100,6 +101,7 @@ async function load() {
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setUid, () => props.popType,
        () => props.suffix, () => features.value.join(','),
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))], load)
+useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 onMounted(load)
 // self-seed: default to the run's full feature set once known (don't clobber a user pick / an empty
 // pick the user made). Makes the panel work out-of-the-box on any host (no host-side seeding needed).
@@ -128,8 +130,6 @@ defineExpose({ exportImage, getCsv })
           <p v-if="!featureOptions.length" class="feat-empty">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
-      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load"
-              v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->
     <template #footer>

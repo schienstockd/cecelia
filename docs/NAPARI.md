@@ -195,6 +195,30 @@ They are reset on server restart (the `Ref`s are re-initialised). If napari is c
 
 ---
 
+## Reloading: data vs image
+
+**Reloading a shown image refreshes DATA only — never the image pyramid — unless the user ticks
+"reset".** Data reload = re-push the overlays via the existing endpoints (`show-labels`,
+`show-populations`, `show-tracks`, `colour-labels`), each of which re-reads from disk and **replaces its
+layer in place** (`_remove_layer` then add). The pyramid + camera stay. This is fully frontend-orchestrated
+(`ViewerPanel.reloadViewer()` → `pushAllOverlays()`); `POST /api/napari/open` is only for a *full* reopen.
+
+Who triggers what:
+- **Image-table eye** on the already-open image → `project.requestNapariReload()` → `ViewerPanel` reloads
+  data (full reopen only if reset). A *different* image → full `/api/napari/open`.
+- **Task finishes** (with the auto-update toggle on) → data reload (unless reset).
+- **`napariResetOnReload`** toggle (viewer panel, `pi-image`, default off) → reload reopens the whole
+  image. Needed when a task changed the *pixels* (drift/denoise). Mirrors the old R `viewerManager.R`
+  (reopen only on uID change / reset). See `docs/todo/TASK_DATA_REFRESH_PLAN.md`.
+
+Plot/data freshness elsewhere (not napari) rides `project.dataVersion` — a **per-image** version map
+bumped for the image a task touched (`ws.ts`, `task:status == 'done'`). Views watch
+`dataVersionFor(theirImages)` and refetch only when an image THEY show changed (targeted, not
+project-wide), which is why they no longer carry per-plot reload buttons. See
+`docs/todo/TASK_DATA_REFRESH_PLAN.md`.
+
+---
+
 ## 3D mode
 
 Setting `viewer.dims.ndisplay = 3` programmatically after `add_image` leaves the camera uninitialized for the 3D extent — the image is invisible until the user manually toggles (which calls `reset_view()` internally). Always follow with `viewer.reset_view()`:

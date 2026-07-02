@@ -179,6 +179,9 @@ async function doDelete() {
 async function openInNapari(imageUid: string) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
+  // clicking the eye on the ALREADY-open image = reload it. Delegate to ViewerPanel (it owns the
+  // overlay logic), which reloads DATA only unless the user ticked reset — no needless pyramid reopen.
+  if (project.napariImageUid === imageUid) { project.requestNapariReload(); return }
   napariLoading.value = new Set([...napariLoading.value, imageUid])
   const autoProps = settings.napariAutoSaveLayerProps
   try {
