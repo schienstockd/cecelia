@@ -15,10 +15,12 @@ import ImageStripView from '../plots/ImageStripView.vue'
 export interface InteractiveView {
   label: string
   component: Component
+  clusterPage?: boolean   // offered on the Cluster module page's +Plot picker (UMAP only). gatingStrategy
+                          // and filmstrip are Analysis-canvas-only, so they must NOT leak into it.
 }
 
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
-  umap: { label: 'UMAP', component: UmapView },
+  umap: { label: 'UMAP', component: UmapView, clusterPage: true },
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView },
   filmstrip: { label: 'Image / strip', component: ImageStripView },
 }

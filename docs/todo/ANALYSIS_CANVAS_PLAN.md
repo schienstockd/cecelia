@@ -338,3 +338,18 @@ Consequences (keeps model C working for clusters):
   global summary selection across summary slots; local = active slot.
 - `useClusterContext(projectUid,imageUids,popType,suffix)` extracted from `ClusterPlots` (run list +
   features + clusterIds/members + validUids + gating-store drive + `shownPopsFor`), reused by both.
+
+#### Phase G progress + remaining
+
+Landed: `useClusterContext`; **cluster UMAP** + **cluster heatmap** as analysis slots (one run per board;
+board run-picker; right rail swaps to a **read-only** `PopulationManager` for cluster slots — highlight
+only, no add/delete/rename/recolour/cluster-reassignment). Registry gained a `clusterPage` flag so
+`gatingStrategy`/`filmstrip` no longer leak into the Cluster module's +Plot picker (they're analysis-only).
+
+Remaining ("all plots from all module pages"):
+- **HMM state + HMM transition plots** (`ClusterHmmStatesPanel` / `ClusterHmmTransitionsPanel`,
+  trackclust-only) as analysis slots — same docked-panel pattern as the cluster heatmap, fed the board
+  cluster context (`hmmStateCols` / `hmmTransitionCols` from `useClusterContext`, `shownPops`, `suffix`).
+  Offer them in the "Clustering" picker group only when `clustPopType === 'trackclust'` and the cols exist.
+- Hi-res UMAP PDF export (expose `exportImage`/`hiRes` from `UmapView` like `GateScatterCell`; today it
+  falls back to a screen-res DOM snapshot).

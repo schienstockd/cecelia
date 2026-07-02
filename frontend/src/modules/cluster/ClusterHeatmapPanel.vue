@@ -29,10 +29,11 @@ const props = defineProps<{
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling (dark-theme etc.) — see ClusterPlots panelVis
   state: { features?: string[] }
+  docked?: boolean               // fill a grid slot (Analysis canvas) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
-const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg'): Promise<string | null> }>('plotRef')
+const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 // export the shown heatmap: CSV (the aggregated cells) or PNG/SVG (the rendered chart) — like SummaryPanel
 function exportAs(kind: string) {
@@ -100,11 +101,16 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setU
        () => props.suffix, () => features.value.join(','),
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))], load)
 onMounted(load)
+
+// docked (Analysis canvas) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
+function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.value) : null }
+defineExpose({ exportImage, getCsv })
 </script>
 
 <template>
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" title="Heatmap"
-               @activate="emit('activate', $event)" @remove="emit('remove')">
+               :docked="docked" @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
       <details class="feat">
         <summary v-tooltip.bottom="'Features (rows) — the measures this clustering run used'">
@@ -124,7 +130,8 @@ onMounted(load)
     <template #footer>
       <button class="hm-iconbtn" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same features) to tweak one thing'"><i class="pi pi-copy" /></button>
-      <select class="hm-export" v-tooltip.top="'Export the shown plot'" :disabled="!heatmap"
+      <!-- per-plot export dropped in a docked slot (the board exports to PDF); kept when floating -->
+      <select v-if="!docked" class="hm-export" v-tooltip.top="'Export the shown plot'" :disabled="!heatmap"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
         <option value="csv">Data (CSV)</option>

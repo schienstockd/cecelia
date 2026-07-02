@@ -109,7 +109,8 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
 // plot types in the "+ Plot" picker: every registered interactive view + the summary heatmap, plus
 // (track clustering only, when HMM columns exist) the HMM state / transition behaviour plots.
 const plotTypes = computed(() => [
-  ...Object.entries(INTERACTIVE_VIEWS).map(([kind, v]) => ({ kind, label: v.label })),
+  // only cluster-page interactive views (UMAP) — gatingStrategy/filmstrip are Analysis-canvas-only
+  ...Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.clusterPage).map(([kind, v]) => ({ kind, label: v.label })),
   { kind: 'heatmap', label: 'Heatmap' },
   ...(props.popType === 'trackclust' && hmmStateCols.value.length ? [{ kind: 'hmm-states', label: 'HMM states' }] : []),
   ...(props.popType === 'trackclust' && hmmTransitionCols.value.length ? [{ kind: 'hmm-transitions', label: 'HMM transitions' }] : []),

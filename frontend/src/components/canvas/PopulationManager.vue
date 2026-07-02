@@ -35,7 +35,9 @@ const props = withDefaults(defineProps<{
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
   docked?: boolean                 // fill a docked rail (Analysis canvas) instead of floating
-}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false })
+  readonly?: boolean               // read-only surface (Analysis board): highlight only — no add / delete /
+                                   // rename / recolour / cluster reassignment (project_analysis_canvas_readonly)
+}>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false, readonly: false })
 const emit = defineEmits<{
   'update:selected': [string]
   'update:scope': ['global' | 'local']
@@ -113,7 +115,7 @@ async function addClusterPopulation() {
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
-      <div v-if="clusterMode" class="pm-add">
+      <div v-if="clusterMode && !readonly" class="pm-add">
         <button class="pm-add-btn" @click="addClusterPopulation"
                 v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
           <i class="pi pi-plus" /> Add population
@@ -130,12 +132,12 @@ async function addClusterPopulation() {
              @click="pick(p)">
           <i v-if="p.transient" class="pi pi-map-marker pm-napari"
              v-tooltip.left="'Cells selected in napari (temporary)'" :style="{ color: p.colour }" />
-          <input v-else type="color" class="pm-swatch" :value="p.colour"
-                 v-tooltip.left="'Colour'"
+          <input v-else type="color" class="pm-swatch" :value="p.colour" :disabled="readonly"
+                 v-tooltip.left="readonly ? '' : 'Colour'"
                  @click.stop @change="g.updatePop(p.path, { colour: ($event.target as HTMLInputElement).value })" />
 
           <span v-if="editing !== p.path" class="pm-name"
-                @dblclick.stop="p.transient || beginRename(p)">{{ p.name }}</span>
+                @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
           <input v-else class="pm-rename" v-model="editName" autofocus
                  @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
 
@@ -154,7 +156,7 @@ async function addClusterPopulation() {
                   @click.stop="toggleNapari(p)">
             <i class="pi pi-images" />
           </button>
-          <button v-if="!p.transient" class="pm-icon danger" v-tooltip.left="'Delete population'"
+          <button v-if="!p.transient && !readonly" class="pm-icon danger" v-tooltip.left="'Delete population'"
                   @click.stop="g.deletePop(p.path)">
             <i class="pi pi-trash" />
           </button>
@@ -171,10 +173,10 @@ async function addClusterPopulation() {
         <div v-if="clusterMode && p.filter" class="pm-clusters"
              :style="{ paddingLeft: 22 + p.depth * 14 + 'px' }">
           <button v-for="id in props.clusterIds" :key="id" class="pm-chip"
-                  :class="{ on: popClusterIds(p).includes(id) }"
+                  :class="{ on: popClusterIds(p).includes(id), ro: readonly }" :disabled="readonly"
                   :style="popClusterIds(p).includes(id) ? { background: p.colour, borderColor: p.colour, color: '#111' } : {}"
                   v-tooltip.bottom="clusterOwner(id) && clusterOwner(id)?.path !== p.path ? `In “${clusterOwner(id)?.name}”` : ''"
-                  @click.stop="toggleCluster(p, id)">{{ id }}</button>
+                  @click.stop="!readonly && toggleCluster(p, id)">{{ id }}</button>
           <span v-if="!props.clusterIds.length" class="pm-chip-empty">no clusters at this suffix</span>
         </div>
       </template>
@@ -268,6 +270,10 @@ async function addClusterPopulation() {
   color: var(--cc-text-dim); cursor: pointer; font-variant-numeric: tabular-nums; transition: background 0.1s, color 0.1s, border-color 0.1s; }
 .pm-chip:hover { border-color: #7c3aed; color: var(--cc-text); }
 .pm-chip.on { font-weight: 700; }
+/* read-only (Analysis board): chips show assignment but aren't clickable */
+.pm-chip.ro { cursor: default; }
+.pm-chip.ro:hover { border-color: var(--cc-border); color: var(--cc-text-dim); }
+.pm-chip.ro.on:hover { color: #111; }
 .pm-chip-empty { font-size: 10px; color: var(--cc-text-dim); font-style: italic; }
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
