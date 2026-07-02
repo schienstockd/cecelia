@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-// Tab metadata for the multipage Analysis canvas (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A). Each
+// Tab metadata for the multipage Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A). Each
 // "tab" is an independent board; its plots live in the `canvasPanels` store under the canvas key
 // `${groupKey}:tab:${id}` (so tabs reuse the whole existing SummaryCanvas persistence machinery —
 // this store only owns the tab LIST + names + which one is active).

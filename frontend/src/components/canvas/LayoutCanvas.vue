@@ -12,12 +12,13 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
-import { computed, watch, ref, useTemplateRef } from 'vue'
+import { computed, watch, ref, useTemplateRef, onMounted, onUnmounted } from 'vue'
 import { plotHostToImageURL } from '../../plots/export'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisLayoutStore, type SlotContent } from '../../stores/analysisLayout'
 import { useSummaryData } from '../../composables/useSummaryData'
+import { useClusterContext } from '../../composables/useClusterContext'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import { UNIFORM_PRESETS, COMIC_PRESETS, uniform } from '../../plots/layoutTemplates'
@@ -26,6 +27,8 @@ import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
+import PopulationManager from './PopulationManager.vue'
+import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -45,6 +48,13 @@ const entry = computed(() => layout.entries[props.canvasKey])
 // board-level slot height: rows share a fixed total height (rowHeight × rows); the board scrolls in the
 // page if it's taller than the viewport. Default 320px/row.
 const rowHeight = computed({ get: () => entry.value.rowHeight ?? 320, set: v => (entry.value.rowHeight = v) })
+
+// grid size + height controls live in a ⚙ popover so the board bar doesn't crowd; close on outside click
+const optsOpen = ref(false)
+const optsRef = useTemplateRef<HTMLElement>('optsRef')
+function onDocClick(e: MouseEvent) { if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false }
+onMounted(() => document.addEventListener('mousedown', onDocClick))
+onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 const gridStyle = computed(() => ({
   gridTemplateColumns: entry.value.colTracks ?? `repeat(${entry.value.cols}, minmax(0, 1fr))`,
   gridTemplateRows: entry.value.rowTracks ?? `repeat(${entry.value.rows}, minmax(0, 1fr))`,
@@ -66,10 +76,27 @@ const activeContent = computed<SlotContent | null>(() => entry.value.contents[en
 type PState = { sel: string[]; vis: VisProps; [k: string]: unknown }
 const st = (c: SlotContent): PState => c.state as PState
 
-// interactive views offerable here today (self-contained context). UMAP / cluster heatmap need
-// per-slot clustering context (a suffix picker) — a follow-up; only list the analysis-ready ones.
+// self-contained interactive views (read their own context / pops)
 const ANALYSIS_VIEWS = ['gatingStrategy']
 const interactiveOptions = computed(() => ANALYSIS_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
+// CLUSTERING plots — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
+// the interactive UMAP (INTERACTIVE_VIEWS) + the cluster panels (CLUSTER_PANELS registry). Discovered
+// GENERICALLY via each registry's `analysisBoard` flag — no per-plot wiring here. A cluster slot is any
+// interactive slot whose ref is `umap` OR a registered cluster panel.
+const isClusterSlot = (c: SlotContent | null): boolean =>
+  !!c && c.kind === 'interactive' && (c.ref === 'umap' || isClusterPanel(c.ref))
+const clusterOptions = computed(() => {
+  const out: { key: string; label: string }[] = []
+  if (INTERACTIVE_VIEWS.umap?.analysisBoard) out.push({ key: 'umap', label: INTERACTIVE_VIEWS.umap.label })
+  for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
+    if (!def.analysisBoard) continue
+    if (def.trackOnly && clustPopType.value !== 'trackclust') continue          // HMM = track runs only
+    if (def.needsCols === 'hmmState' && !clustHmmStateCols.value.length) continue
+    if (def.needsCols === 'hmmTransition' && !clustHmmTransitionCols.value.length) continue
+    out.push({ key, label: def.label })
+  }
+  return out
+})
 // image-content views (napari screenshot slots) — grouped separately in the picker
 const IMAGE_VIEWS = ['filmstrip']
 const imageOptions = computed(() => IMAGE_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
@@ -79,13 +106,14 @@ function addPlot(i: number, val: string) {
   if (!val) return
   const sep = val.indexOf(':'); const kind = val.slice(0, sep); const ref = val.slice(sep + 1)
   if (kind === 'summary') layout.setContent(props.canvasKey, i, { kind: 'summary', ref, state: { specId: ref, sel: [], vis: defaultVis() } })
-  else if (kind === 'interactive') layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state: {} })
+  else if (kind === 'interactive') {
+    // cluster slots carry a `hl` (highlight) bag; panels self-seed the rest (e.g. heatmap features)
+    const state = ref === 'umap' ? { labels: true, hl: [] } : isClusterPanel(ref) ? { hl: [] } : {}
+    layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state })
+  }
   layout.setActive(props.canvasKey, i)
 }
 function clearSlot(i: number) { layout.setContent(props.canvasKey, i, null) }
-
-// generic context handed to an interactive view in a slot (self-contained views read what they need)
-const ctxFor = () => ({ projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: activeVis.value })
 
 // duplicate a slot's plot into the NEXT EMPTY slot (deep-copy its state so you can tweak one thing);
 // no-op if the grid is full.
@@ -125,6 +153,60 @@ function setVis(patch: Partial<VisProps>) {
 }
 const panelSeries = (c: SlotContent): SeriesTarget[] => panelSel(c).map(parseTkey)
 
+// ── cluster context: ONE clustering run per board (board-level popType + suffix in the shared bag) so
+// the singleton gating store is driven unambiguously; only active when a cluster slot exists. ─────────
+const hasClusterSlot = computed(() => entry.value.contents.some(isClusterSlot))
+const clustPopType = computed<'clust' | 'trackclust'>({
+  get: () => (entry.value.shared.clustPopType as 'clust' | 'trackclust') ?? 'clust',
+  set: v => (entry.value.shared.clustPopType = v) })
+const clustSuffix = computed<string>({
+  get: () => (entry.value.shared.clustSuffix as string) ?? 'default',
+  set: v => (entry.value.shared.clustSuffix = v) })
+const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
+        featureOptions: clustFeatureOptions, nameMap: clustNameMap,
+        hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor } =
+  useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
+                      popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot })
+
+// cluster HIGHLIGHT — global (shared, one run per board) or per-slot (local), same scope as summary
+const clustHl = computed<string[]>({ get: () => (entry.value.shared.clustHl as string[]) ?? [], set: v => (entry.value.shared.clustHl = v) })
+const clustHlOf = (c: SlotContent): string[] => (st(c).hl as string[]) ?? []
+const panelClustHl = (c: SlotContent) => scope.value === 'global' ? clustHl.value : clustHlOf(c)
+const activeClustHl = computed(() => scope.value === 'global' ? clustHl.value
+  : (activeContent.value ? clustHlOf(activeContent.value) : []))
+const activeIsCluster = computed(() => isClusterSlot(activeContent.value))
+function toggleClustHl(path: string) {
+  if (scope.value === 'global') clustHl.value = toggle(clustHl.value, path)
+  else if (activeContent.value) st(activeContent.value).hl = toggle(clustHlOf(activeContent.value), path)
+}
+
+// context handed to an interactive slot: cluster views get the board cluster run + shown pops; the
+// self-contained views (gating strategy, filmstrip) just get the image/project context.
+function ctxFor(c: SlotContent) {
+  if (isClusterSlot(c)) return {
+    projectUid: projectUid.value, imageUids: clustValidUids.value, setUid: setUid.value,
+    popType: clustPopType.value, suffix: clustSuffix.value,
+    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c),
+  }
+  return { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
+}
+
+// props for a cluster PANEL slot (CLUSTER_PANELS): the common bag + the panel-specific props its registry
+// entry maps from the shared cluster context — so the slot renders with one generic <component v-bind>.
+function clusterPanelProps(i: number) {
+  const c = entry.value.contents[i]!
+  const ctx = { featureOptions: clustFeatureOptions.value, nameMap: clustNameMap.value,
+                hmmStateCols: clustHmmStateCols.value, hmmTransitionCols: clustHmmTransitionCols.value }
+  return {
+    index: i, active: i === entry.value.activeIndex, arrange: null, docked: true,
+    projectUid: projectUid.value, setUid: setUid.value, imageUids: clustValidUids.value,
+    popType: clustPopType.value, suffix: clustSuffix.value,
+    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c), state: c.state,
+    persistKey: `${props.canvasKey}:slot:${i}`,
+    ...(CLUSTER_PANELS[c.ref].props?.(ctx) ?? {}),
+  }
+}
+
 // prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
 // a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
 // then persist-empty) a restored per-slot selection.
@@ -137,7 +219,9 @@ watch(segPops, () => {
 const gridRef = useTemplateRef<HTMLElement>('gridRef')
 const capturing = ref(false)
 function labelFor(c: SlotContent): string {
-  return c.kind === 'summary' ? (specById.value[c.ref]?.label ?? c.ref) : (INTERACTIVE_VIEWS[c.ref]?.label ?? c.ref)
+  if (c.kind === 'summary') return specById.value[c.ref]?.label ?? c.ref
+  if (isClusterPanel(c.ref)) return CLUSTER_PANELS[c.ref].label
+  return INTERACTIVE_VIEWS[c.ref]?.label ?? c.ref
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
@@ -166,11 +250,14 @@ async function capturePage() {
       if (!c || !el) continue
       // prefer the panel's plot-only light-theme export; fall back to a white-ground DOM snapshot
       // (e.g. filmstrip/image slots, which are already screenshots) with the chrome hidden.
+      // summary + cluster-heatmap panels expose exportImage()/getCsv() (summaryRefs); other interactive
+      // views expose exportImage() (interactiveRefs); anything else → white-ground DOM snapshot.
+      const summaryLike = c.kind === 'summary' || isClusterPanel(c.ref)
       let png: string | null = null
-      if (c.kind === 'summary') png = await summaryRefs.get(i)?.exportImage() ?? null
+      if (summaryLike) png = await summaryRefs.get(i)?.exportImage() ?? null
       else if (c.kind === 'interactive') png = await interactiveRefs.get(i)?.exportImage?.() ?? null
       if (!png) png = await plotHostToImageURL(el, '#ffffff')
-      const csv = c.kind === 'summary' ? (summaryRefs.get(i)?.getCsv() ?? null) : null
+      const csv = summaryLike ? (summaryRefs.get(i)?.getCsv() ?? null) : null
       const sr = el.getBoundingClientRect()
       const rect = { x: (sr.left - gr.left) / gr.width, y: (sr.top - gr.top) / gr.height,
                      w: sr.width / gr.width, h: sr.height / gr.height }
@@ -184,7 +271,7 @@ function collectCsvs(): { name: string; csv: string | null }[] {
   const out: { name: string; csv: string | null }[] = []
   for (let i = 0; i < entry.value.contents.length; i++) {
     const c = entry.value.contents[i]
-    if (c?.kind === 'summary') out.push({ name: labelFor(c), csv: summaryRefs.get(i)?.getCsv() ?? null })
+    if (c && (c.kind === 'summary' || isClusterPanel(c.ref))) out.push({ name: labelFor(c), csv: summaryRefs.get(i)?.getCsv() ?? null })
   }
   return out
 }
@@ -207,20 +294,36 @@ defineExpose({ capturePage, collectCsvs })
               {{ t.label }}
             </button>
           </div>
-          <div class="lc-nm" v-tooltip.bottom="'Custom uniform grid'">
-            <span class="lc-lbl">cols</span>
-            <input type="range" min="1" max="6" :value="entry.cols"
-                   @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
-            <span class="lc-val">{{ entry.cols }}</span>
-            <span class="lc-lbl">rows</span>
-            <input type="range" min="1" max="6" :value="entry.rows"
-                   @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
-            <span class="lc-val">{{ entry.rows }}</span>
+          <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
+          <div ref="optsRef" class="lc-opts">
+            <button class="lc-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+                    v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
+            <div v-if="optsOpen" class="lc-pop">
+              <label class="lc-pop-row"><span>cols</span>
+                <input type="range" min="1" max="6" :value="entry.cols"
+                       @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
+                <span class="lc-val">{{ entry.cols }}</span></label>
+              <label class="lc-pop-row"><span>rows</span>
+                <input type="range" min="1" max="6" :value="entry.rows"
+                       @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
+                <span class="lc-val">{{ entry.rows }}</span></label>
+              <label class="lc-pop-row"><span>height</span>
+                <input type="range" min="160" max="720" step="10" :value="rowHeight"
+                       @input="rowHeight = +($event.target as HTMLInputElement).value" />
+                <span class="lc-val">{{ rowHeight }}</span></label>
+            </div>
           </div>
-          <div class="lc-nm" v-tooltip.bottom="'Slot height (applies to all slots on the board)'">
-            <span class="lc-lbl">height</span>
-            <input type="range" min="160" max="720" step="10" :value="rowHeight"
-                   @input="rowHeight = +($event.target as HTMLInputElement).value" />
+          <!-- clustering run: ONE per board (drives all cluster slots + the cluster pop manager) -->
+          <div v-if="hasClusterSlot" class="lc-clust" v-tooltip.bottom="'Clustering run shown by this board’s cluster plots'">
+            <span class="lc-lbl">cluster</span>
+            <select v-model="clustPopType">
+              <option value="clust">cells</option>
+              <option value="trackclust">tracks</option>
+            </select>
+            <select v-model="clustSuffix">
+              <option v-if="!clustSuffixes.length" :value="clustSuffix">{{ clustSuffix }}</option>
+              <option v-for="s in clustSuffixes" :key="s" :value="s">{{ s }}</option>
+            </select>
           </div>
           <!-- compare + pool sit at the right of the layout row -->
           <div class="lc-right">
@@ -281,11 +384,17 @@ defineExpose({ capturePage, collectCsvs })
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
+            <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry
+                 (docked, board's single cluster run); no per-plot branch -->
+            <component v-else-if="entry.contents[i] && isClusterPanel(entry.contents[i]!.ref)"
+                       :is="CLUSTER_PANELS[entry.contents[i]!.ref].component" :ref="(el: unknown) => setSummaryRef(i, el)"
+                       v-bind="clusterPanelProps(i)"
+                       @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- interactive plot (UMAP / gating-strategy / …) -->
             <InteractivePanel v-else-if="entry.contents[i]?.kind === 'interactive' && INTERACTIVE_VIEWS[entry.contents[i]!.ref]"
                               :ref="el => setInteractiveRef(i, el)"
                               :index="i" :active="i === entry.activeIndex" :docked="true"
-                              :view="entry.contents[i]!.ref" :context="ctxFor()" :state="entry.contents[i]!.state"
+                              :view="entry.contents[i]!.ref" :context="ctxFor(entry.contents[i]!)" :state="entry.contents[i]!.state"
                               :duplicable="true" :persist-key="`${canvasKey}:slot:${i}`"
                               @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- empty slot: add a plot (summary spec or interactive view) -->
@@ -299,6 +408,9 @@ defineExpose({ capturePage, collectCsvs })
                 <optgroup v-if="interactiveOptions.length" label="Interactive">
                   <option v-for="v in interactiveOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
                 </optgroup>
+                <optgroup v-if="clusterOptions.length" label="Clustering">
+                  <option v-for="v in clusterOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
+                </optgroup>
                 <optgroup v-if="imageOptions.length" label="Image">
                   <option v-for="v in imageOptions" :key="v.key" :value="`interactive:${v.key}`">{{ v.label }}</option>
                 </optgroup>
@@ -308,9 +420,16 @@ defineExpose({ capturePage, collectCsvs })
           </div>
         </div>
 
-        <!-- docked pop picker (control, not content — excluded from PDF) -->
+        <!-- docked pop manager (control, not content — excluded from PDF). Follows the ACTIVE slot:
+             cluster PopulationManager for a cluster slot, else the summary SeriesPicker. -->
         <div class="lc-rail">
-          <SeriesPicker :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
+          <PopulationManager v-if="activeIsCluster" :docked="true" :readonly="true"
+                             :selected="''" :highlighted="activeClustHl" :scope="scope"
+                             :line-width="1" :gate-labels="false" :axis-from-zero="false"
+                             :pop-type="clustPopType" :cluster-ids="clustClusterIds[clustSuffix] ?? []"
+                             :suffix="clustSuffix" :vis="activeVis"
+                             @update:scope="scope = $event" @update:vis="setVis" @toggle-highlight="toggleClustHl" />
+          <SeriesPicker v-else :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis" :docked="true"
                         @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
         </div>
       </div>
@@ -330,6 +449,21 @@ defineExpose({ capturePage, collectCsvs })
 .lc-sep { width: 1px; height: 1.4rem; background: var(--cc-border); }
 .lc-nm { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
 .lc-nm input[type="range"] { width: 5rem; }
+.lc-clust { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
+  padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
+.lc-clust select { font-size: 11px; }
+/* ⚙ grid-size / height popover */
+.lc-opts { position: relative; display: inline-flex; }
+.lc-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
+  border: 1px solid var(--cc-border); border-radius: 5px; background: var(--cc-surface-2); color: var(--cc-text-dim);
+  cursor: pointer; font-size: 0.72rem; }
+.lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
+.lc-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 13rem;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--cc-surface-1);
+  border: 1px solid var(--cc-border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+.lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cc-text-dim); }
+.lc-pop-row span:first-child { width: 3rem; }
+.lc-pop-row input[type="range"] { flex: 1; }
 .lc-val { min-width: 0.9rem; text-align: center; font-weight: 700; color: var(--cc-text); }
 .seg-wrap { flex-wrap: wrap; }
 /* wrapped seg buttons keep separators between rows too */

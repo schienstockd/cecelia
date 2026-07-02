@@ -1,5 +1,5 @@
 <!--
-  Gating-strategy (hierarchy) plot — an interactive VIEW for the Analysis canvas (registered in
+  Gating-strategy (hierarchy) plot — an interactive VIEW for the Analysis board (registered in
   interactiveViews.ts). READ-ONLY (project_analysis_canvas_readonly): it visualises an existing gating
   scheme, never edits it. Ports the old R `.flowPlotGatedRaster`: walk the population tree, group each
   parent's children by their gate's channel-pair, and for each group render the PARENT's cells as a

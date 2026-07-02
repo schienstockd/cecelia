@@ -219,7 +219,7 @@ batch it rather than churn standalone.
 
 ## Fixed
 
-**#00036** — **Universal "Analysis canvas" page** (2026-07-01)
+**#00036** — **Universal "Analysis board" page** (2026-07-01)
 A standalone canvas at `/analysis` that hosts the SAME plot canvas as the per-module pages but with
 the **module filter off** — every plot spec is offerable, so plots can be combined across modules /
 images / segmentations on one board. Thin as anticipated: `SummaryCanvas` already supported the

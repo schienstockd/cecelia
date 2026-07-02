@@ -1,5 +1,5 @@
 <!--
-  Image / filmstrip slot for the Analysis canvas (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
+  Image / filmstrip slot for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
   slot holding N captioned images (a single image = a 1-cell strip) — for pipeline montages
   (raw → denoised → segmented → tracked). Each cell's image is a napari CANVAS screenshot
   (POST /api/napari/screenshot → PNG bytes → stored as a data URL in the slot state, so it persists and

@@ -21,7 +21,7 @@ const props = defineProps<{
   selected: string[]                  // selected target keys (tkey), in the current scope
   scope: 'global' | 'local'
   vis: VisProps                       // visual properties for the current scope
-  docked?: boolean                    // render in a fixed rail (Analysis canvas) instead of floating
+  docked?: boolean                    // render in a fixed rail (Analysis board) instead of floating
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]

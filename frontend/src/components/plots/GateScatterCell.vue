@@ -2,7 +2,7 @@
   The shared scatter+gate PLOT BODY: a WebGL scatter (ScatterGL) + contour/population layer
   (PlotLayers) + canvas2D gate layer (GateOverlay), with axis lines/ticks/labels and PNG export. This
   is the ONE gate-scatter renderer — extracted from GatePlotPanel so the read-only gating-strategy plot
-  (Analysis canvas) reuses it instead of forking a second one (feedback_use_existing_framework).
+  (Analysis board) reuses it instead of forking a second one (feedback_use_existing_framework).
 
   It renders whatever it's given: the host owns data fetching, axis selection, and gate state. Interactive
   use (Gate page) passes `mode` = rectangle/polygon and handles @draw/@edit; read-only use (Analysis
@@ -18,7 +18,7 @@ import type { GateSpec } from '../../stores/gating'
 import ScatterGL from './ScatterGL.vue'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import GateOverlay from './GateOverlay.vue'
-import { plotHostToImageURL } from '../../plots/export'
+import { rasterPlotToImageURL } from '../../plots/export'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -40,7 +40,7 @@ withDefaults(defineProps<{
   viewTick?: number
   loading?: boolean
   compact?: boolean                              // tight chrome for small montage panels (gating strategy)
-  readonly?: boolean                             // static gates — no move/resize (read-only Analysis canvas)
+  readonly?: boolean                             // static gates — no move/resize (read-only Analysis board)
 }>(), {
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
@@ -75,16 +75,13 @@ const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
   return null
 }
 // `light` = flip the ink/border vars (via .cc-light) so ticks/axis names read dark on a white ground —
-// used by the PDF export (dark theme is only for on-screen display).
-// The flow scatter is a RASTER, so its export sharpness is set by the scale relative to the on-screen
-// size. A small on-screen plot exports soft — so aim for a fixed ~2200px long side (scale bounded 4–14×)
-// regardless of slot size; regl scales point size with it, keeping the look constant but crisp.
+// used by the PDF export (dark theme is only for on-screen display). The crisp fixed-resolution raster
+// export (aim for a ~2200px long side so a small slot doesn't export soft) is the SHARED helper
+// rasterPlotToImageURL — the same path the cluster UMAP uses.
 async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null> {
   const el = hostEl.value
   if (light) el?.classList.add('cc-light')
-  const px = el ? Math.max(el.clientWidth, el.clientHeight) : 0
-  const scale = px ? Math.min(14, Math.max(4, Math.ceil(2200 / px))) : undefined
-  try { return await plotHostToImageURL(el, bg, { hiRes, scale }) }
+  try { return await rasterPlotToImageURL(el, bg, hiRes) }
   finally { if (light) el?.classList.remove('cc-light') }
 }
 // `hiRes` is exposed so a host that captures a LARGER element containing several of these cells (the

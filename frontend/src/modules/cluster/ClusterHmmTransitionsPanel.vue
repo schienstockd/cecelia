@@ -13,7 +13,7 @@
   on the first "_" and rendered as a faceted dot grid (self-contained Observable Plot).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, useTemplateRef, nextTick } from 'vue'
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import { defaultVis, type VisProps } from '../../plots/plot'
@@ -29,6 +29,7 @@ const props = defineProps<{
   hmmCols: string[]                       // live.cell.hmm.transitions.<measure>
   vis?: VisProps                          // plot styling (from the pop manager, global/local scope)
   state: { measure?: string }
+  docked?: boolean                        // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
@@ -49,8 +50,10 @@ let node: (HTMLElement | SVGElement) | null = null
 let legendNode: HTMLElement | null = null
 let titleNode: HTMLElement | null = null
 let ro: ResizeObserver | null = null
-// host background follows the dark-theme flag (no white border around a dark plot), like PlotChart
-const hostBg = computed(() => (v.value.darkTheme ? '#1f2226' : 'white'))
+// `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only)
+const forceLight = ref(false)
+const effDark = computed(() => forceLight.value ? false : v.value.darkTheme)
+const hostBg = computed(() => (effDark.value ? '#1f2226' : 'white'))
 // reactive so the empty-state / host v-show re-evaluate when data arrives (a bare array does not).
 const rows = ref<{ group: string; from: string; to: string; freq: number }[]>([])
 
@@ -105,8 +108,8 @@ async function render() {
   const w = Math.max(220, host.value.clientWidth || 380)
   const h = Math.max(180, host.value.clientHeight || 280)
   const o = v.value
-  const fg = o.darkTheme ? '#e6e6e6' : '#111'
-  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const fg = effDark.value ? '#e6e6e6' : '#111'
+  const bg = effDark.value ? '#1f2226' : 'white'
   const hi = Math.max(1e-9, ...rows.value.map(r => r.freq))
   const colorScale = { scheme: 'YlOrRd', label: 'freq', domain: [0, hi] }
   // The continuous colour ramp is placed as a VERTICAL bar in the right margin (not a top overlay) so
@@ -157,23 +160,34 @@ onMounted(() => {
   if (host.value && typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => render()); ro.observe(host.value) }
 })
 onBeforeUnmount(() => { ro?.disconnect(); ro = null; node?.remove(); node = null; legendNode?.remove(); legendNode = null; titleNode?.remove(); titleNode = null })
+
+// board export: a plot-only LIGHT re-render → PNG, and the shown rows as CSV (generic panel contract)
+async function exportImage(): Promise<string | null> {
+  forceLight.value = true
+  await nextTick(); await render()
+  const url = await elementToImageURL(host.value, 'png', '#ffffff')
+  forceLight.value = false; await render()
+  return url
+}
+function getCsv(): string | null { return rows.value.length ? rowsToCsv(rows.value) : null }
+defineExpose({ exportImage, getCsv })
 </script>
 
 <template>
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" title="HMM transitions"
-               @activate="emit('activate', $event)" @remove="emit('remove')">
+               :docked="docked" @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
       <select v-if="hmmCols.length > 1" v-model="measure" class="cc-sel"
               v-tooltip.bottom="'Which HMM measure to show'">
         <option v-for="c in hmmCols" :key="c" :value="c">{{ shortName(c) }}</option>
       </select>
-      <button class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
+      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel -->
     <template #footer>
       <button class="hmm-iconbtn" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same settings) to tweak one thing'"><i class="pi pi-copy" /></button>
-      <select class="hmm-export" v-tooltip.top="'Export the shown plot'" :disabled="!rows.length"
+      <select v-if="!docked" class="hmm-export" v-tooltip.top="'Export the shown plot'" :disabled="!rows.length"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
         <option value="csv">Data (CSV)</option>

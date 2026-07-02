@@ -281,6 +281,57 @@ graphics lib gives the cleaner publication look for pre-aggregated summaries. Ne
 job well, so we keep both. Never add or swap a charting library without updating this doc, `docs/PLOTS.md`,
 and the `cecelia-charting-decision` rationale.
 
+### Generic plot-integration interface (reuse across surfaces)
+
+A plot is defined **once** and appears on any surface — module page, **Analysis board**, and (future)
+the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot host wiring.** This is how you
+"drop a plot onto the board" without touching `LayoutCanvas`/`ClusterPlots`.
+
+**The contract a plot component must honour:**
+- **Self-contained**: renders from a standard prop bag + persisted `state`, and **seeds its own defaults**
+  (e.g. `ClusterHeatmapPanel` seeds `features` from the run — never rely on the host to seed). Persist
+  every user-settable option in `state` (see "Persisting view state").
+- **Standard bag**: `projectUid, setUid, imageUids, vis, state` (+ for cluster plots `popType, suffix,
+  shownPops`; + panel chrome `index, active, docked, persistKey`).
+- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (dark theme
+  is on-screen only), and `getCsv()` → the shown data. (Interactive views may instead expose
+  `exportFormats`/`exportAs`.)
+
+**Two registries carry the surface "checkboxes":**
+- `components/canvas/interactiveViews.ts` — WebGL/interactive VIEWS (hosted by `InteractivePanel`), flags
+  `clusterPage` / `analysisBoard`.
+- `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
+  `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
+  props generically.
+
+**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag, and
+renders each slot with one generic `<component :is v-bind>`. Adding a plot to a surface = write the
+component to the contract + one registry line + tick the flag. When you add the chain-whiteboard as a
+host, it consumes the *same* registries + contract — do not re-wire plots per node.
+
+**One mechanism across every surface — no per-page divergence.** The module page and the board host the
+*same* components the *same* way; there is not "the cluster page's way" and "the board's way":
+- **Cluster page** (`ClusterPlots.vue`) and **Analysis board** (`LayoutCanvas.vue`) both discover plots
+  from `INTERACTIVE_VIEWS` + `CLUSTER_PANELS` and render them with the identical generic
+  `<component :is v-bind>` (see each file's `clusterPanelProps`). Panel chrome differs only by `docked`
+  (a grid slot drops its own reload/controls/export; a floating panel keeps them).
+- **Behaviour / summary pages** (`SummaryCanvas.vue`) and the board's summary slots both render every
+  summary plot through one `SummaryPanel` driven by the server plot-spec registry
+  (`GET /api/plots/definitions`) — already a single mechanism.
+- **`docked` is the contract's chrome switch.** A view/panel reads `docked` to hide anything that only
+  makes sense free-floating (the reload button, the per-plot Export dropdown) — the board re-fetches on
+  context change and exports via PDF/CSV, so that chrome would be redundant in a slot. `InteractivePanel`
+  forwards `docked` to its view for exactly this.
+
+**Exception — the gating page (`gate/GatingPlots.vue`) is intentionally NOT registry-hosted.** It is a
+single, *write-capable* gate-drawing workspace (`GatePlotPanel` draws/edits gates), not a multi-type
+read-only plot host — the opposite of the board contract. The board hosts gating **read-only** via
+`GatingStrategyView` (an interactive-registry view, `analysisBoard: true`). Don't try to fold the
+gate-drawing surface into the registry.
+
+See **`docs/ANALYSIS.md`** for the Analysis board itself (tabs, comic-plate layout, persistence keys,
+the read-only cluster manager, and PDF/CSV export incl. the shared hi-res raster path).
+
 ---
 
 ## WS events — frontend side
@@ -519,7 +570,7 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   the host just re-renders with the new size. Exposes `toImageURL('png'|'svg')` — SVG serialises the
   node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
   clouds.
-The universal **Analysis canvas** (`/analysis`, `AnalysisModule.vue`) is **multipage**: `TabbedCanvas`
+The universal **Analysis board** (`/analysis`, `AnalysisModule.vue`) is **multipage**: `TabbedCanvas`
 wraps N independent boards, each a `SummaryCanvas` with no `module` prop (→ all plot specs). The tab
 LIST (names/order/active) lives in the `analysisTabs` store; each board's plots persist in
 `canvasPanels` under the canvas key `analysis:{projectUid}:tab:{id}` — i.e. tabs reuse the whole
@@ -533,7 +584,7 @@ multipage feature (interactive plots in the universal canvas, gating-strategy pl
 `docs/todo/ANALYSIS_CANVAS_PLAN.md`.
 
 These canvas components are **generic** (`components/canvas/`, NOT under a module) so every module
-page — and the Analysis canvas — reuses them unchanged:
+page — and the Analysis board — reuses them unchanged:
 - **`components/canvas/SummaryPanel.vue`** — one summary plot, wrapping `CanvasPanel`. Layout: the
   **controls row** (`#actions`) holds a **measure dropdown** (from the spec's `measureOptions`) and a
   **chart-type dropdown** (from `chartTypes`, shown when >1); the secondary options — **Split by**
@@ -563,13 +614,13 @@ page — and the Analysis canvas — reuses them unchanged:
   block (rendered when the host passes a `vis` bag). Both `SeriesPicker` and `PopulationManager` wrap
   it — the differing population LIST is the default slot; host-specific controls (the gating manager's
   gate/viewer options) go in the `#options` slot. Slotted rows keep their own component's scoped CSS;
-  the shell owns only the chrome. One place for the chrome → the universal analysis canvas reuses it.
+  the shell owns only the chrome. One place for the chrome → the universal analysis board reuses it.
 - **`components/canvas/PlotOptions.vue`** — the **shared** `VisProps` styling controls (collapsible
   Layout / Points / Colours / Labels sub-sections; props `vis`, emits `update:vis`). Embedded by BOTH
   `SeriesPicker` (summary canvas) and `PopulationManager` (gating / cluster canvas), so the styling
   knobs live in ONE place. `PopulationManager` renders it only when the host passes a `vis` bag (the
   cluster canvas does; the gate canvas doesn't) — the "add plot styling to the pop manager" keyword.
-  The universal Analysis canvas (`/analysis`) gets the same controls for free.
+  The universal Analysis board (`/analysis`) gets the same controls for free.
 - **`plots/export.ts`** — the **shared** plot-export plumbing (`svgToImageURL` PNG/SVG rasterise,
   `svgOf`, `downloadDataUrl`/`downloadBlob`, `rowsToCsv`, and `elementToImageURL`). Used by
   `PlotChart.toImageURL` AND the bespoke cluster panels, so a plot that renders its own `<svg>` exports

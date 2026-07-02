@@ -3,7 +3,7 @@
   Layout / Points / Colours / Labels sub-sections ported from the old R plotCharts adjustments.
   Presentational only: reads `vis`, emits `update:vis` patches. Embedded by SeriesPicker (summary
   canvas) and PopulationManager (gating / cluster canvas) so the styling UI lives in ONE place — the
-  same knobs everywhere, and the future universal analysis canvas gets them for free.
+  same knobs everywhere, and the future universal analysis board gets them for free.
 
   `sections` optionally restricts which sub-sections show (e.g. a plot family with no raw points hides
   Points). Default = all four.

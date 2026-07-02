@@ -320,3 +320,75 @@ pops it can't consume. (`useSummaryData`'s current single global `sel` becomes t
 5. **No regression to summary toggling** — flow/live becomes one family; existing `useSummaryData`
    `gSel`/`toggleTarget` behaviour must be preserved exactly.
 6. **Active-slot edge cases** — empty / `noPicker` active slot → neutral picker state; sane default target.
+
+#### DECISION: one cluster run per board (resolves the singleton-store snag)
+
+Investigation found cluster pops live in the **singleton `useGatingStore`** (loaded via
+`g.selectImage(uid, vn, popType)`) and are toggled through **`PopulationManager`** (tickable cluster IDs),
+not `SeriesPicker`. The store holds ONE active (popType, suffix) at a time — so independent per-slot
+cluster runs can't coexist. **Decision (Dom): enforce a single cluster run per board.**
+
+Consequences (keeps model C working for clusters):
+- The board carries a **board-level cluster context**: `clustPopType` + `clustSuffix`, stored in the
+  layout entry; a small run-picker shows in the board bar once a cluster slot exists. All cluster slots
+  on the board share it, so the singleton store is driven once (via `useClusterContext`).
+- Right-rail manager swaps by ACTIVE slot family: `SeriesPicker` for summary slots, **`PopulationManager`
+  (cluster mode)** for cluster slots — both already exist, no fork.
+- Per-family scope holds: global cluster highlight is shared across the board's cluster slots (same run);
+  global summary selection across summary slots; local = active slot.
+- `useClusterContext(projectUid,imageUids,popType,suffix)` extracted from `ClusterPlots` (run list +
+  features + clusterIds/members + validUids + gating-store drive + `shownPopsFor`), reused by both.
+
+#### Phase G progress + remaining
+
+Landed: `useClusterContext`; **cluster UMAP** + **cluster heatmap** as analysis slots (one run per board;
+board run-picker; right rail swaps to a **read-only** `PopulationManager` for cluster slots — highlight
+only, no add/delete/rename/recolour/cluster-reassignment). Registry gained a `clusterPage` flag so
+`gatingStrategy`/`filmstrip` no longer leak into the Cluster module's +Plot picker (they're analysis-only).
+
+Remaining ("all plots from all module pages") — **DONE**:
+- **HMM state + HMM transition plots** landed as analysis slots (docked-panel pattern, board cluster
+  context, offered in the "Clustering" picker only for `trackclust` runs with the cols).
+- **Hi-res UMAP PDF export** landed: `UmapView.exportImage()` forces a light theme and uses the shared
+  `rasterPlotToImageURL` helper (fixed ~2200px long side, WebGL re-render at scale) — same crisp path as
+  `GateScatterCell`; no more screen-res DOM-snapshot fallback (which also leaked chrome + dark theme).
+
+#### Generic plot-integration interface (the goal — no per-plot host wiring)
+
+A plot is defined ONCE and appears on any surface (cluster module page, analysis board, future
+whiteboard) via a flag — no bespoke host branch. The contract:
+
+1. **Component** is self-contained: renders from a standard prop bag + `state`, seeds its OWN defaults
+   (e.g. the heatmap seeds features from the run — never rely on the host to seed), and exposes
+   `exportImage()` (plot-only, light) + `getCsv()` for the board's PDF/CSV export.
+2. **Registry entry** declares WHERE it shows (the "checkboxes"): interactive WebGL views in
+   `interactiveViews.ts` (`clusterPage` / `analysisBoard` flags); summary-family cluster panels in
+   `clusterPanels.ts` (`analysisBoard`, `trackOnly`, `needsCols`, and a `props(ctx)` mapper so the host
+   binds panel-specific props generically).
+3. **Hosts render from the registry**: the +Plot picker filters by the surface flag; each slot is a
+   single generic `<component :is v-bind>` — no per-plot code in `LayoutCanvas` / `ClusterPlots`.
+
+Convergence work (rejig existing plots to the contract): make the cluster heatmap + HMM panels
+self-seed + expose `exportImage`/`getCsv` + accept the common bag; render both the cluster page and the
+board from the registries; then adding a plot = write the component + one registry line + tick the
+surface flag. Document in docs/UI.md (Interactive plots / cluster panels) + docs/MODULES.md.
+
+#### Generic integration — landed + cleanup
+Landed: `clusterPanels.ts` registry (heatmap + HMM states/transitions) with `analysisBoard`/`trackOnly`/
+`needsCols`/`props(ctx)`; `interactiveViews.ts` gained `analysisBoard`. The Analysis board renders every
+cluster plot GENERICALLY (`<component :is v-bind>` from the registry, picker from the flag) — no per-plot
+branch. Panels conform to the contract: `docked`, self-seed (heatmap features), `exportImage()` (light) +
+`getCsv()`. Interface documented in `docs/UI.md` ("Generic plot-integration interface").
+Landed (cleanup done): the **Cluster module page** (`ClusterPlots`) now renders cluster panels from the
+SAME `CLUSTER_PANELS` registry via one generic `<component :is v-bind="clusterPanelProps(p)">` (no more
+hard-coded heatmap/hmm branches); picker built from the registry flags; legacy persisted kinds migrated
+(`hmm-states`→`hmmStates`, `hmm-transitions`→`hmmTransitions`). `SummaryCanvas` was already registry-driven
+(server plot-spec registry → one `SummaryPanel`), so behaviour/summary pages already matched. The **gating
+page** stays out by design (write-capable gate-drawing surface; the board hosts read-only `GatingStrategyView`
+via the interactive registry) — documented as the explicit exception in `docs/UI.md`.
+`docked` is the contract's chrome switch: views/panels drop reload + per-plot export in a grid slot;
+`InteractivePanel` forwards `docked` to its view (fixed the lingering UMAP/heatmap/HMM reload buttons).
+Hi-res export unified: `plots/export.ts` gained `rasterExportScale` + `rasterPlotToImageURL` (one crisp
+fixed-~2200px-long-side path), shared by the gating scatter (`GateScatterCell`) and the cluster UMAP
+(`UmapView`) — fixed the low-res / dark-theme / chrome-in-PDF UMAP export. Chain-whiteboard host consumes
+the same registries + helpers when built.

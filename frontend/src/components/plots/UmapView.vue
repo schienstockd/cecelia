@@ -14,10 +14,10 @@
   the panel's persisted per-panel options bag (here just `labels`).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, nextTick, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import ScatterGL from './ScatterGL.vue'
-import { plotHostToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
+import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import type { VisProps } from '../../plots/plot'
 
 const props = defineProps<{
@@ -28,13 +28,25 @@ const props = defineProps<{
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
   state: { labels?: boolean }
+  docked?: boolean               // hosted in a grid slot (Analysis board) → drop the reload button
 }>()
 const log = useLogStore()
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
 
-// dark-theme knob (default dark, like the summary plots): drives the scatter ground + label chip.
-const dark = computed(() => props.vis?.darkTheme !== false)
+// `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only) —
+// like the cluster panels. It re-themes the OVERLAYS (label chips, legend ink) + the composite ground,
+// but deliberately NOT the WebGL scatter's own background (see `scatterGround`).
+const forceLight = ref(false)
+// On-screen scatter ground — the WebGL layer's background. Deliberately independent of `forceLight`:
+// changing ScatterGL's background prop fires an async re-render that races `exportCanvas` and snapshots
+// a BLANK point cloud. The export goes light via the composite `bg` arg + transparent host instead
+// (exactly like the gating cell, which never re-grounds its scatter for export).
+const screenDark = computed(() => props.vis?.darkTheme !== false)
+const scatterGround = computed(() => (screenDark.value ? '#0d0b1a' : '#ffffff'))
+// dark-theme knob (default dark): drives the label chip / legend ink AND the composite ground used as
+// the PNG background (points are drawn transparent, so this fill IS the exported ground).
+const dark = computed(() => !forceLight.value && screenDark.value)
 const ground = computed(() => (dark.value ? '#0d0b1a' : '#ffffff'))
 // label chip + legend ink follow the theme so they stay legible on the exported ground (a light
 // ground with the app's light legend ink was invisible — #00061 follow-up).
@@ -179,7 +191,16 @@ function exportAs(kind: string) {
     downloadBlob(`${stem}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
   }
 }
-defineExpose({ exportFormats: ['png', 'csv'], exportAs })
+// board export (surfaced by InteractivePanel.exportImage → the PDF): a plot-only, LIGHT-theme, HI-RES
+// PNG via the SHARED raster-export helper (rasterPlotToImageURL — the same crisp fixed-resolution path
+// as the gating scatter, GateScatterCell.exportImage), with the theme forced light so it reads on white.
+async function exportImage(): Promise<string | null> {
+  forceLight.value = true
+  await nextTick()   // let the ground + label/legend ink flip to light before we rasterize the host
+  try { return await rasterPlotToImageURL(plotEl.value, ground.value, hiRes) }
+  finally { forceLight.value = false }
+}
+defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 </script>
 
 <template>
@@ -187,17 +208,20 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs })
     <div class="uv-ctrl">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
-      <button class="cc-btn cc-btn-ghost" @click="load"
+      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load"
               v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
     <div ref="plotEl" class="uv-body">
-      <div class="uv-plot" :style="{ background: ground }">
+      <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
+           this opaque div OVER the transparent hi-res points (the points-missing bug). On-screen it
+           carries the scatter ground for the letterbox margins. -->
+      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround }">
         <template v-if="points && points.length">
           <ScatterGL ref="scatterRef" :points="points" :extents="extents" color-mode="category"
                      :categories="categories" :palette="palette" :point-size="4" :opacity="0.9"
-                     :background-color="ground" />
+                     :background-color="scatterGround" />
           <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
                 :style="{ left: lx(c.x), top: ly(c.y), ...labelStyle }">{{ c.label }}</span>
         </template>

@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { uniform, type LayoutTemplate } from '../plots/layoutTemplates'
 
-// Per-tab grid layout for the Analysis canvas (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
+// Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
 // chosen template (cols/rows + per-slot grid-area) and each slot's CONTENT, plus the canvas-level
 // `shared` bag consumed by useSummaryData. In-memory (survives navigation, not reload); cleared
