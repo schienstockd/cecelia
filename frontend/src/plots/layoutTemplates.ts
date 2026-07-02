@@ -1,4 +1,4 @@
-// Layout templates for the Analysis canvas (docs/todo/ANALYSIS_CANVAS_PLAN.md, decisions 4/8/10).
+// Layout templates for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, decisions 4/8/10).
 // One mechanism serves BOTH clean scientific grids AND rectangular "comic plates": a template is a
 // CSS-grid definition (cols × rows tracks) plus a grid-area string per slot. A uniform N×M is just the
 // generated case; comic plates are hand-defined span arrangements. Each tab picks a template; the page

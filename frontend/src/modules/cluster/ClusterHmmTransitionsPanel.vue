@@ -181,7 +181,7 @@ defineExpose({ exportImage, getCsv })
               v-tooltip.bottom="'Which HMM measure to show'">
         <option v-for="c in hmmCols" :key="c" :value="c">{{ shortName(c) }}</option>
       </select>
-      <button class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
+      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load" v-tooltip.bottom="'Reload'"><i class="pi pi-refresh" /></button>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel -->
     <template #footer>

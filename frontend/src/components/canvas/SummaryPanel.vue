@@ -35,7 +35,7 @@ const props = defineProps<{
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
-  docked?: boolean                     // fill a grid slot (Analysis canvas) instead of free-floating
+  docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')

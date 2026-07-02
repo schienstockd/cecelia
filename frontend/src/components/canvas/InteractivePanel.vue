@@ -18,7 +18,7 @@ const props = defineProps<{
   context: Record<string, unknown>
   state: Record<string, unknown>
   duplicable?: boolean            // show a footer Duplicate button (host wires @duplicate)
-  docked?: boolean                // fill a grid slot (Analysis canvas) instead of free-floating
+  docked?: boolean                // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const entry = computed(() => INTERACTIVE_VIEWS[props.view])
@@ -39,7 +39,9 @@ defineExpose({ exportImage })
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" :docked="docked"
                :title="entry?.label ?? view"
                @activate="emit('activate', $event)" @remove="emit('remove')">
-    <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
+    <!-- `docked` is forwarded to the view so it can drop its own chrome (reload/controls) in a grid
+         slot — part of the generic contract, same as SummaryPanel/cluster panels. -->
+    <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" :docked="docked" />
     <div v-else class="ip-missing">Unknown interactive plot “{{ view }}”.</div>
     <template v-if="duplicable || exportFormats.length" #footer>
       <button v-if="duplicable" class="ip-iconbtn" type="button" @click="emit('duplicate')"

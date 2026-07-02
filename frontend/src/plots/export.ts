@@ -125,6 +125,22 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
   return c.toDataURL('image/png')
 }
 
+// Export a WebGL/raster plot host (a regl point cloud + HTML/SVG overlays) at a CRISP FIXED
+// resolution, regardless of its on-screen size. A raster plot drawn at its screen backing store
+// exports soft on a small slot; instead we aim for a fixed ~`targetPx` long side (scale bounded
+// 4–14×) and let the `hiRes` resolver re-render the point cloud at that scale — regl scales the point
+// size with it, so the look stays constant but sharp. This is the ONE hi-res path shared by the gating
+// scatter (GateScatterCell) and the cluster UMAP (UmapView); don't reinvent the scale math per plot.
+export function rasterExportScale(host: HTMLElement | null, targetPx = 2200): number | undefined {
+  const px = host ? Math.max(host.clientWidth, host.clientHeight) : 0
+  return px ? Math.min(14, Math.max(4, Math.ceil(targetPx / px))) : undefined
+}
+export async function rasterPlotToImageURL(host: HTMLElement | null, bg: string,
+  hiRes: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null>,
+  targetPx = 2200): Promise<string | null> {
+  return plotHostToImageURL(host, bg, { hiRes, scale: rasterExportScale(host, targetPx) })
+}
+
 // find the <svg> in a rendered node (Observable Plot returns a <figure> wrapper when it has a legend)
 export function svgOf(node: Element | null): SVGSVGElement | null {
   if (!node) return null

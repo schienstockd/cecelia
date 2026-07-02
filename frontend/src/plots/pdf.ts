@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
 import { downloadBlob } from './export'
 
-// Multipage PDF of the Analysis canvas: ONE page per tab, laid out as that tab's grid (each slot image
+// Multipage PDF of the Analysis board: ONE page per tab, laid out as that tab's grid (each slot image
 // placed at its grid-area rectangle). Each summary plot's aggregated data can ride along as an embedded
 // CSV attachment (pdf-lib `attach`), so the figure + re-plottable data are one file
 // (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase E). Pure — the caller supplies captured slot PNGs + CSVs.

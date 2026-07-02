@@ -3,10 +3,12 @@
   (Cluster cells, popType="clust") and track clustering (Cluster tracks, popType="trackclust"). Built
   on the shared canvas shell (useCanvasPanels + CanvasPanel; docs/UI.md), like gating/summary.
 
-  Plots come in two families, both added from the one "+ Plot" picker and routed by family:
-   • INTERACTIVE (registry `INTERACTIVE_VIEWS`, e.g. UMAP) → generic InteractivePanel. Adding another
-     interactive plot = a new view component + one registry line; no change here.
-   • SUMMARY (server-aggregated, PlotChart) → here the cluster heatmap (ClusterHeatmapPanel).
+  Plots come in two families, both added from the one "+ Plot" picker and rendered GENERICALLY from
+  their registry — the SAME mechanism the Analysis board uses (see LayoutCanvas), so there is one way
+  to host a plot, not one per surface:
+   • INTERACTIVE (registry `INTERACTIVE_VIEWS`, e.g. UMAP) → generic InteractivePanel.
+   • CLUSTER PANELS (registry `CLUSTER_PANELS`, e.g. heatmap, HMM behaviour) → generic <component :is>.
+  Adding a cluster plot = a new component (to the contract) + one registry line; no change here.
 
   Page-level: the clustering-run (suffix) dropdown — you view one run at a time, like picking a
   segmentation. Clustering is set-scope, so plots pool across the selected images (shared UMAP space +
@@ -17,14 +19,12 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useGatingStore } from '../../stores/gating'
-import { useCanvasPanels } from '../../composables/useCanvasPanels'
+import { useCanvasPanels, type CanvasItem } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
 import { useClusterContext } from '../../composables/useClusterContext'
 import InteractivePanel from '../../components/canvas/InteractivePanel.vue'
 import { INTERACTIVE_VIEWS, isInteractiveView } from '../../components/canvas/interactiveViews'
-import ClusterHeatmapPanel from './ClusterHeatmapPanel.vue'
-import ClusterHmmStatesPanel from './ClusterHmmStatesPanel.vue'
-import ClusterHmmTransitionsPanel from './ClusterHmmTransitionsPanel.vue'
+import { CLUSTER_PANELS, isClusterPanel } from './clusterPanels'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import { defaultVis, type VisProps } from '../../plots/plot'
 
@@ -45,10 +45,18 @@ const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
 const canvasRef = ref<HTMLElement | null>(null)
+// NB: no `features: []` default — leave it undefined so the heatmap panel self-seeds its features
+// from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
+// deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade } =
-  useCanvasPanels<ClusterPanelState>(canvasRef, () => ({ kind: 'umap', features: [], labels: true, hl: [] }),
+  useCanvasPanels<ClusterPanelState>(canvasRef, () => ({ kind: 'umap', labels: true, hl: [] }),
     `clust:${props.popType}`)
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
+
+// migrate persisted panel kinds to the CLUSTER_PANELS registry keys (legacy hyphenated → camelCase),
+// so old canvases keep working now that the page renders panels generically from the registry.
+const KIND_ALIASES: Record<string, string> = { 'hmm-states': 'hmmStates', 'hmm-transitions': 'hmmTransitions' }
+for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.state.kind = a }
 
 // suffix is PAGE-LEVEL (you view one clustering run at a time, like picking a segmentation).
 // Highlighting the eye shows a pop on the UMAP (its colour, other clusters greyed) + breaks the
@@ -59,7 +67,7 @@ const { suffix, highlighted, scope, vis: gVis } = useViewState(shared, {
   vis: defaultVis() as VisProps })
 
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
-// highlight→shownPops resolution (shared with the Analysis canvas via useClusterContext).
+// highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
 const {
   suffixes, nameMap, clusterIds, featureOptions, hmmStateCols, hmmTransitionCols,
   runMembers, validUids, strayUids, missingUids, shownPopsFor,
@@ -106,14 +114,18 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
   for (const p of panels.value) if (p.state.hl) p.state.hl = p.state.hl.filter(x => exist.has(x))
 })
 
-// plot types in the "+ Plot" picker: every registered interactive view + the summary heatmap, plus
-// (track clustering only, when HMM columns exist) the HMM state / transition behaviour plots.
+// plot types in the "+ Plot" picker, discovered from the SAME two registries the Analysis board uses
+// (no per-plot wiring): cluster-page interactive views (UMAP) + the CLUSTER_PANELS (heatmap, and — for
+// track clustering with the right obs columns — the HMM behaviour plots).
 const plotTypes = computed(() => [
-  // only cluster-page interactive views (UMAP) — gatingStrategy/filmstrip are Analysis-canvas-only
+  // only cluster-page interactive views (UMAP) — gatingStrategy/filmstrip are Analysis-board-only
   ...Object.entries(INTERACTIVE_VIEWS).filter(([, v]) => v.clusterPage).map(([kind, v]) => ({ kind, label: v.label })),
-  { kind: 'heatmap', label: 'Heatmap' },
-  ...(props.popType === 'trackclust' && hmmStateCols.value.length ? [{ kind: 'hmm-states', label: 'HMM states' }] : []),
-  ...(props.popType === 'trackclust' && hmmTransitionCols.value.length ? [{ kind: 'hmm-transitions', label: 'HMM transitions' }] : []),
+  ...Object.entries(CLUSTER_PANELS).filter(([, def]) => {
+    if (def.trackOnly && props.popType !== 'trackclust') return false
+    if (def.needsCols === 'hmmState' && !hmmStateCols.value.length) return false
+    if (def.needsCols === 'hmmTransition' && !hmmTransitionCols.value.length) return false
+    return true
+  }).map(([kind, def]) => ({ kind, label: def.label })),
 ])
 function addKind(kind: string) {
   const id = add()
@@ -125,11 +137,20 @@ function addKind(kind: string) {
 const nameOf = (uid: string) =>
   project.activeSet()?.images.find(i => i.uid === uid)?.name ?? uid
 
-// default a heatmap panel's features to the run's full feature set once known (don't clobber a pick)
-watch([featureOptions, () => panels.value.length], () => {
-  if (!featureOptions.value.length) return
-  for (const p of panels.value) if (p.state.kind === 'heatmap' && !(p.state.features?.length)) p.state.features = [...featureOptions.value]
-})
+// props for a cluster PANEL (CLUSTER_PANELS): the common bag + the registry entry's panel-specific
+// props mapped from the shared cluster context — so the page renders every cluster panel with one
+// generic <component v-bind>, exactly like the Analysis board (LayoutCanvas.clusterPanelProps). Panels
+// self-seed their own defaults (e.g. heatmap features), so no host-side seeding is needed.
+function clusterPanelProps(p: CanvasItem<ClusterPanelState>) {
+  const ctx = { featureOptions: featureOptions.value, nameMap: nameMap.value,
+                hmmStateCols: hmmStateCols.value, hmmTransitionCols: hmmTransitionCols.value }
+  return {
+    projectUid: projectUid.value, setUid: setUid.value, imageUids: validUids.value,
+    popType: props.popType, suffix: suffix.value,
+    shownPops: shownPopsFor(panelHL(p.state)), vis: panelVis(p.state), state: p.state,
+    ...(CLUSTER_PANELS[p.state.kind].props?.(ctx) ?? {}),
+  }
+}
 
 // the generic context an interactive view receives, per panel (so LOCAL scope can show different
 // pops per panel). Plots run on the run-MEMBER images (validUids), not the raw selection — a cluster
@@ -209,26 +230,12 @@ onMounted(() => {
                             :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
                             :persist-key="`clust:${popType}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
-          <!-- summary (heatmap) -->
-          <ClusterHeatmapPanel v-else-if="p.state.kind === 'heatmap'" :index="i" :arrange="p.arrange"
-                            :active="p.id === activeId" :project-uid="projectUid" :set-uid="setUid"
-                            :image-uids="validUids" :pop-type="popType" :suffix="suffix"
-                            :feature-options="featureOptions" :name-map="nameMap" :shown-pops="shownPopsFor(panelHL(p.state))"
-                            :vis="panelVis(p.state)" :state="p.state"
-                            :persist-key="`clust:${popType}:${p.id}`"
-                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
-          <!-- HMM behaviour plots (track clustering) -->
-          <ClusterHmmStatesPanel v-else-if="p.state.kind === 'hmm-states'" :index="i" :arrange="p.arrange"
-                            :active="p.id === activeId" :project-uid="projectUid" :set-uid="setUid"
-                            :image-uids="validUids" :suffix="suffix" :hmm-cols="hmmStateCols"
-                            :shown-pops="shownPopsFor(panelHL(p.state))" :vis="panelVis(p.state)" :state="p.state"
-                            :persist-key="`clust:${popType}:${p.id}`"
-                            @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
-          <ClusterHmmTransitionsPanel v-else-if="p.state.kind === 'hmm-transitions'" :index="i" :arrange="p.arrange"
-                            :active="p.id === activeId" :project-uid="projectUid" :set-uid="setUid"
-                            :image-uids="validUids" :suffix="suffix" :hmm-cols="hmmTransitionCols"
-                            :shown-pops="shownPopsFor(panelHL(p.state))" :vis="panelVis(p.state)" :state="p.state"
-                            :persist-key="`clust:${popType}:${p.id}`"
+          <!-- cluster panels (heatmap / HMM behaviour) → GENERIC render from the CLUSTER_PANELS
+               registry — the SAME mechanism the Analysis board uses (LayoutCanvas). Adding a cluster
+               plot is one registry line; no per-plot branch here. -->
+          <component v-else-if="isClusterPanel(p.state.kind)" :is="CLUSTER_PANELS[p.state.kind].component"
+                            :index="i" :arrange="p.arrange" :active="p.id === activeId"
+                            v-bind="clusterPanelProps(p)" :persist-key="`clust:${popType}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
       </div>

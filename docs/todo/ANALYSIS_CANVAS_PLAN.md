@@ -346,13 +346,12 @@ board run-picker; right rail swaps to a **read-only** `PopulationManager` for cl
 only, no add/delete/rename/recolour/cluster-reassignment). Registry gained a `clusterPage` flag so
 `gatingStrategy`/`filmstrip` no longer leak into the Cluster module's +Plot picker (they're analysis-only).
 
-Remaining ("all plots from all module pages"):
-- **HMM state + HMM transition plots** (`ClusterHmmStatesPanel` / `ClusterHmmTransitionsPanel`,
-  trackclust-only) as analysis slots — same docked-panel pattern as the cluster heatmap, fed the board
-  cluster context (`hmmStateCols` / `hmmTransitionCols` from `useClusterContext`, `shownPops`, `suffix`).
-  Offer them in the "Clustering" picker group only when `clustPopType === 'trackclust'` and the cols exist.
-- Hi-res UMAP PDF export (expose `exportImage`/`hiRes` from `UmapView` like `GateScatterCell`; today it
-  falls back to a screen-res DOM snapshot).
+Remaining ("all plots from all module pages") — **DONE**:
+- **HMM state + HMM transition plots** landed as analysis slots (docked-panel pattern, board cluster
+  context, offered in the "Clustering" picker only for `trackclust` runs with the cols).
+- **Hi-res UMAP PDF export** landed: `UmapView.exportImage()` forces a light theme and uses the shared
+  `rasterPlotToImageURL` helper (fixed ~2200px long side, WebGL re-render at scale) — same crisp path as
+  `GateScatterCell`; no more screen-res DOM-snapshot fallback (which also leaked chrome + dark theme).
 
 #### Generic plot-integration interface (the goal — no per-plot host wiring)
 
@@ -380,6 +379,16 @@ Landed: `clusterPanels.ts` registry (heatmap + HMM states/transitions) with `ana
 cluster plot GENERICALLY (`<component :is v-bind>` from the registry, picker from the flag) — no per-plot
 branch. Panels conform to the contract: `docked`, self-seed (heatmap features), `exportImage()` (light) +
 `getCsv()`. Interface documented in `docs/UI.md` ("Generic plot-integration interface").
-Cleanup (defer): render the **Cluster module page** (`ClusterPlots`) from the same registry too (it still
-hard-codes heatmap/hmm branches + a `hmm-states`↔`hmmStates` kind-name mismatch — align keys, mind
-persisted panel kinds). Chain-whiteboard host consumes the same registries when built.
+Landed (cleanup done): the **Cluster module page** (`ClusterPlots`) now renders cluster panels from the
+SAME `CLUSTER_PANELS` registry via one generic `<component :is v-bind="clusterPanelProps(p)">` (no more
+hard-coded heatmap/hmm branches); picker built from the registry flags; legacy persisted kinds migrated
+(`hmm-states`→`hmmStates`, `hmm-transitions`→`hmmTransitions`). `SummaryCanvas` was already registry-driven
+(server plot-spec registry → one `SummaryPanel`), so behaviour/summary pages already matched. The **gating
+page** stays out by design (write-capable gate-drawing surface; the board hosts read-only `GatingStrategyView`
+via the interactive registry) — documented as the explicit exception in `docs/UI.md`.
+`docked` is the contract's chrome switch: views/panels drop reload + per-plot export in a grid slot;
+`InteractivePanel` forwards `docked` to its view (fixed the lingering UMAP/heatmap/HMM reload buttons).
+Hi-res export unified: `plots/export.ts` gained `rasterExportScale` + `rasterPlotToImageURL` (one crisp
+fixed-~2200px-long-side path), shared by the gating scatter (`GateScatterCell`) and the cluster UMAP
+(`UmapView`) — fixed the low-res / dark-theme / chrome-in-PDF UMAP export. Chain-whiteboard host consumes
+the same registries + helpers when built.

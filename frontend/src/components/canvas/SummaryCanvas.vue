@@ -26,7 +26,7 @@ import { defaultVis, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
-// The tabbed Analysis canvas passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
+// The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
 // independently; parents that switch the key MUST also `:key` this component by it so setup re-runs.
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey?: string }>()
 const ckey = props.canvasKey ?? `summary:${props.module ?? 'universal'}`

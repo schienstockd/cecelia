@@ -29,7 +29,7 @@ const props = defineProps<{
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling (dark-theme etc.) — see ClusterPlots panelVis
   state: { features?: string[] }
-  docked?: boolean               // fill a grid slot (Analysis canvas) instead of free-floating
+  docked?: boolean               // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const log = useLogStore()
@@ -107,7 +107,7 @@ watch(() => props.featureOptions, opts => {
   if (opts.length && props.state.features === undefined) props.state.features = [...opts]
 }, { immediate: true })
 
-// docked (Analysis canvas) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
+// docked (Analysis board) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
 async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
 function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.value) : null }
 defineExpose({ exportImage, getCsv })
@@ -128,7 +128,7 @@ defineExpose({ exportImage, getCsv })
           <p v-if="!featureOptions.length" class="feat-empty">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
-      <button class="cc-btn cc-btn-ghost" @click="load"
+      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load"
               v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->

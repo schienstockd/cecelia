@@ -42,5 +42,5 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 
 - `CLUSTERING_PLAN.md` — Leiden clustering (cells + tracks), GPU/RAPIDS parked. Cited from
   `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
-- `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis canvas + gating-strategy plot + PDF export
+- `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export
   (branch `feat/multipage-analysis-canvas`).

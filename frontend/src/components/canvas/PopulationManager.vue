@@ -34,7 +34,7 @@ const props = withDefaults(defineProps<{
   // OPTIONAL plot-styling block: when a host canvas passes `vis`, the shared PlotOptions styling
   // controls render below the gate options (same knobs as the summary SeriesPicker). Omit → no block.
   vis?: VisProps
-  docked?: boolean                 // fill a docked rail (Analysis canvas) instead of floating
+  docked?: boolean                 // fill a docked rail (Analysis board) instead of floating
   readonly?: boolean               // read-only surface (Analysis board): highlight only — no add / delete /
                                    // rename / recolour / cluster reassignment (project_analysis_canvas_readonly)
 }>(), { popType: 'flow', clusterIds: () => [], suffix: 'default', vis: undefined, docked: false, readonly: false })

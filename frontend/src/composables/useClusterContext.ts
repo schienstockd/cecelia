@@ -1,11 +1,11 @@
 // Shared CLUSTER context — the run list, per-run feature/cluster metadata, valid-image resolution, the
 // gating-store drive that loads a run's pop tree set-wide, and highlight→shownPops resolution. Extracted
-// from ClusterPlots so the Analysis canvas can host the cluster UMAP/heatmap without a divergent
+// from ClusterPlots so the Analysis board can host the cluster UMAP/heatmap without a divergent
 // re-implementation (feedback_use_existing_framework). Both callers own the `suffix` ref (page-level on
-// the cluster module; board-level on the analysis canvas — one run per board) and pass it in.
+// the cluster module; board-level on the analysis board — one run per board) and pass it in.
 //
 // NB: cluster pops live in the SINGLETON useGatingStore (loaded via g.selectImage(uid, vn, popType)); it
-// holds one (popType, suffix) at a time. That's why the analysis canvas enforces ONE cluster run per
+// holds one (popType, suffix) at a time. That's why the analysis board enforces ONE cluster run per
 // board — so this context drives the store once, unambiguously.
 import { ref, computed, watch, type Ref } from 'vue'
 import { useGatingStore } from '../stores/gating'
@@ -18,7 +18,7 @@ export function useClusterContext(opts: {
   imageUids: Ref<string[]>
   popType: Ref<'clust' | 'trackclust'>
   suffix: Ref<string>
-  // gate the singleton-store drive + feature load (the Analysis canvas only wants this when a cluster
+  // gate the singleton-store drive + feature load (the Analysis board only wants this when a cluster
   // slot exists; the cluster module leaves it on). Defaults to always-on.
   enabled?: Ref<boolean>
 }) {

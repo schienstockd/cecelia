@@ -5,7 +5,7 @@
   the draggable header (icon · title · count · collapse), the global/local scope footer, and the
   optional shared `PlotOptions` styling block. The differing bit — the population LIST — is the
   default slot; a host with its own extra controls (the gating manager's gate/viewer options) uses the
-  `#options` slot. One place for the chrome so the future universal analysis canvas reuses it too.
+  `#options` slot. One place for the chrome so the future universal analysis board reuses it too.
 -->
 <script setup lang="ts">
 import { ref, onMounted, useTemplateRef } from 'vue'
