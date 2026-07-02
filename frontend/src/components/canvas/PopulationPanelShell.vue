@@ -13,36 +13,43 @@ import { useFloatingPanel } from '../../composables/useFloatingPanel'
 import PlotOptions from './PlotOptions.vue'
 import type { VisProps } from '../../plots/plot'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   title?: string
   count?: number | string          // shown at the right of the header (population count)
   scope: 'global' | 'local'
   // when provided, the shared PlotOptions styling block renders above the footer (obeys `scope`)
   vis?: VisProps
   optionsSections?: ('layout' | 'points' | 'colours' | 'labels')[]
-}>(), { title: 'Populations', count: undefined, vis: undefined, optionsSections: undefined })
+  // DOCKED: render in-flow (a fixed rail, e.g. the Analysis-canvas layout) instead of a draggable
+  // floating box — no absolute positioning, no drag, full width of its container.
+  docked?: boolean
+}>(), { title: 'Populations', count: undefined, vis: undefined, optionsSections: undefined, docked: false })
 const emit = defineEmits<{
   'update:scope': ['global' | 'local']
   'update:vis': [patch: Partial<VisProps>]
 }>()
 
 const collapsed = ref(false)
-// drag-to-move, clamped to the workspace; open at the top-right so it doesn't start on the plots
+// drag-to-move, clamped to the workspace; open at the top-right so it doesn't start on the plots.
+// (docked mode ignores all of this — it renders in-flow.)
 const panel = useTemplateRef<HTMLElement>('panel')
 const { pos, startDrag } = useFloatingPanel(panel)
 onMounted(() => {
+  if (props.docked) return
   const par = panel.value?.offsetParent as HTMLElement | null
   if (par) pos.value = { x: Math.max(16, par.clientWidth - (panel.value!.offsetWidth || 300) - 16), y: 16 }
 })
+function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 </script>
 
 <template>
-  <div ref="panel" class="pop-manager" :style="{ left: pos.x + 'px', top: pos.y + 'px' }">
-    <div class="pm-header" @mousedown.prevent="startDrag">
+  <div ref="panel" class="pop-manager" :class="{ docked }"
+       :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }">
+    <div class="pm-header" @mousedown.prevent="onHeaderDown">
       <i class="pi pi-sitemap" />
       <span class="pm-title">{{ title }}</span>
       <span v-if="count !== undefined" class="pm-count">{{ count }}</span>
-      <button class="pm-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
+      <button v-if="!docked" class="pm-icon" v-tooltip.left="collapsed ? 'Expand' : 'Collapse'"
               @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
@@ -79,6 +86,9 @@ onMounted(() => {
   border-radius: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.4);
   font-size: 12px; color: var(--cc-text); user-select: none;
 }
+/* docked: in-flow rail (no float/drag/shadow), fills its container column */
+.pop-manager.docked { position: static; z-index: auto; width: 100%; box-shadow: none; }
+.pop-manager.docked .pm-header { cursor: default; }
 .pm-header {
   display: flex; align-items: center; gap: 6px; padding: 6px 8px;
   cursor: move; border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2);

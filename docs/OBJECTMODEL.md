@@ -24,6 +24,9 @@ Sets group images for processing. An image belongs to one set but lives independ
 {projects_dir}/{proj_uid}/
   project.json              — project manifest (set_uids list)
   .cecelia.lock             — naive write lock (see Transactions)
+  settings/                 — per-project UI config (persisted on Save project)
+    chains/{name}.json      — chain/whiteboard templates (migrated from the legacy top-level chains/)
+    analysisBoards.json     — Analysis-canvas tabs + grid layouts + captured screenshots
   0/
     {image_uid}/            — image data (OME-ZARR, written by bioformats2raw or tasks)
   1/

@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { useLogStore } from './log'
 import { useProjectStore, type CciaSet } from './project'
+import { useAnalysisTabsStore } from './analysisTabs'
+import { useAnalysisLayoutStore } from './analysisLayout'
 
 export type ProjectType = 'static' | 'live' | 'flow'
 
@@ -69,11 +71,18 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       const body = await res.json().catch(() => ({})) as {
         project?: ProjectRecord
         sets?: CciaSet[]
+        boards?: { tabs?: unknown; layouts?: Record<string, unknown> } | null
         error?: string
       }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       current.value = body.project!
-      projectStore.loadFromApi(body.sets ?? [])
+      projectStore.loadFromApi(body.sets ?? [])   // NB: clears the analysis stores — restore AFTER
+      // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
+      if (body.boards) {
+        const groupKey = `analysis:${body.project!.uid}`
+        useAnalysisTabsStore().load(groupKey, body.boards.tabs as never)
+        useAnalysisLayoutStore().load(body.boards.layouts as never)
+      }
       await fetchRecent()
       const nSets   = body.sets?.length ?? 0
       const nImages = body.sets?.reduce((n, s) => n + s.images.length, 0) ?? 0
@@ -93,10 +102,17 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
   async function saveProject(): Promise<void> {
     if (!current.value) return
     try {
+      // package the Analysis-canvas boards (tabs + per-tab grid layouts) for this project so they
+      // persist to analysisBoards.json alongside project.json
+      const groupKey = `analysis:${current.value.uid}`
+      const boards = {
+        tabs: useAnalysisTabsStore().serialize(groupKey),
+        layouts: useAnalysisLayoutStore().serialize(`${groupKey}:tab:`),
+      }
       const res = await fetch('/api/projects/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: current.value.uid }),
+        body: JSON.stringify({ uid: current.value.uid, boards }),
       })
       const body = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)

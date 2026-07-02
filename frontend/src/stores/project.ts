@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { useCanvasPanelsStore } from './canvasPanels'
+import { useAnalysisTabsStore } from './analysisTabs'
+import { useAnalysisLayoutStore } from './analysisLayout'
 
 export interface CciaImage {
   uid: string
@@ -49,6 +51,8 @@ export const useProjectStore = defineStore('project', () => {
     activeSetUid.value = sets.value[0]?.uid ?? null
     imageSelection.value = {}     // selections are per-project; don't carry across loads
     useCanvasPanelsStore().clear()   // open plots are per-project too
+    useAnalysisTabsStore().clear()   // …and the Analysis-canvas boards
+    useAnalysisLayoutStore().clear() // …and their grid layouts
   }
 
   function clear() {
@@ -57,6 +61,8 @@ export const useProjectStore = defineStore('project', () => {
     napariImageUid.value = null
     imageSelection.value = {}
     useCanvasPanelsStore().clear()
+    useAnalysisTabsStore().clear()
+    useAnalysisLayoutStore().clear()
   }
 
   function addSetFromApi(uid: string, name: string): CciaSet {

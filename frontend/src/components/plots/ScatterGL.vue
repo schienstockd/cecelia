@@ -174,7 +174,15 @@ async function render() {
   // and stay blank until some later event (changing a dropdown) forced a redraw. Cheap no-op when
   // the size is unchanged.
   resize()
+  await drawCurrent(1)
+}
+
+// draw the current encoding (density / category / flat). `pointMult` scales the point size — the export
+// path enlarges the backing store by `scale`, so points must grow by the same factor to keep the look.
+async function drawCurrent(pointMult = 1) {
+  if (!scatterplot) return
   const { x, y } = xy()
+  const ps = props.pointSize * pointMult
   if (props.colorMode === 'category' && x.length && (props.palette?.length ?? 0) > 0) {
     // colour-by-category (e.g. cluster on a UMAP): map each point's palette index → [0,1] so regl
     // picks pointColor[index]. The caller supplies one palette slot per category (incl. unclustered).
@@ -183,13 +191,13 @@ async function render() {
     const denom = Math.max(1, pal.length - 1)
     const v = new Float32Array(x.length)
     for (let i = 0; i < x.length; i++) v[i] = (cats[i] ?? 0) / denom
-    scatterplot.set({ colorBy: 'valueA', pointColor: pal, opacity: props.opacity, pointSize: props.pointSize })
+    scatterplot.set({ colorBy: 'valueA', pointColor: pal, opacity: props.opacity, pointSize: ps })
     await scatterplot.draw({ x, y, valueA: v })
   } else if (props.colorMode === 'density' && x.length) {
-    scatterplot.set({ colorBy: 'valueA', pointColor: RAMP, opacity: props.opacity, pointSize: props.pointSize })
+    scatterplot.set({ colorBy: 'valueA', pointColor: RAMP, opacity: props.opacity, pointSize: ps })
     await scatterplot.draw({ x, y, valueA: density() })
   } else {
-    scatterplot.set({ colorBy: null, pointColor: props.flatColor, opacity: props.opacity, pointSize: props.pointSize })
+    scatterplot.set({ colorBy: null, pointColor: props.flatColor, opacity: props.opacity, pointSize: ps })
     await scatterplot.draw({ x, y })
   }
 }
@@ -200,43 +208,36 @@ function resize() {
   scatterplot.set({ width: w, height: h, aspectRatio: aspect() })
 }
 
-// hi-res export: regl-scatterplot re-renders the point cloud at `scale`× (its on-screen backing
-// store is only CSS×DPR, so compositing the live canvas upscales → pixelated). Returns an offscreen
-// canvas at the higher resolution for the export compositor to draw crisply. See plots/export.ts.
-// We render on a TRANSPARENT ground (not the opaque backgroundColor) so the export is points-only —
-// it composites over the host's ground fill without a second opaque layer hiding the cloud, and
-// works the same for the gate plot (navy fill) and UMAP (themed fill). Falls back to null (→ the
-// compositor draws the live canvas) if the re-render fails, so points always appear.
+// hi-res export: enlarge the BACKING STORE by `scale`× and redraw, so the point cloud is captured at
+// high resolution (the on-screen backing is only CSS×DPR → compositing the live canvas upscales →
+// pixelated). We DON'T use regl's own `export({scale})`: it drops our custom `aspectRatio` on its
+// internal resize, so the fixed-camera gate scatter renders off-clip and returns a blank frame (hence
+// the old screen-res-snapshot fallback that looked soft). Instead we resize the canvas ourselves,
+// KEEPING aspectRatio, hold the on-screen DISPLAY size (so there's no visible jump), redraw on a
+// transparent ground (points-only → composites over the host fill), snapshot, then restore.
 async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   if (!scatterplot || !canvasEl.value) return null
-  // Snapshot the current on-screen frame FIRST. regl-scatterplot blits its WebGL output into this 2D
-  // user canvas, so it always holds exactly what's on screen (points + background). This is the
-  // guaranteed fallback: `export()` can throw or blank (observed on the gate scatter) and leave the
-  // live canvas mid-resize, so we must copy it BEFORE calling export.
   const live = canvasEl.value
-  const snap = document.createElement('canvas'); snap.width = live.width; snap.height = live.height
-  snap.getContext('2d')?.drawImage(live, 0, 0)
+  const { w, h } = box()
+  // guaranteed fallback: the current on-screen frame (screen resolution)
+  const fallback = document.createElement('canvas'); fallback.width = live.width; fallback.height = live.height
+  fallback.getContext('2d')?.drawImage(live, 0, 0)
+  const cssW = live.style.width, cssH = live.style.height
   try {
-    // hi-res re-render on a transparent ground (composites over the host fill without a second opaque
-    // layer). Use it only if it actually painted something; otherwise fall through to the snapshot.
-    scatterplot.set({ backgroundColor: [0, 0, 0, 0] })
-    const data = await scatterplot.export({ scale }) as ImageData
-    scatterplot.set({ backgroundColor: props.backgroundColor })
-    if (data && data.width) {
-      let painted = false
-      for (let i = 3; i < data.data.length; i += 4 * 97) { if (data.data[i] !== 0) { painted = true; break } }
-      if (painted) {
-        const c = document.createElement('canvas'); c.width = data.width; c.height = data.height
-        const cx = c.getContext('2d')
-        if (cx) { cx.putImageData(data, 0, 0); return c }
-      }
-    }
+    scatterplot.set({ backgroundColor: [0, 0, 0, 0], width: Math.round(w * scale), height: Math.round(h * scale), aspectRatio: aspect() })
+    live.style.width = cssW || `${w}px`; live.style.height = cssH || `${h}px`   // keep the on-screen size
+    await drawCurrent(scale)   // redraw the same encoding, point size scaled to match the big backing
+    const snap = document.createElement('canvas'); snap.width = live.width; snap.height = live.height
+    snap.getContext('2d')?.drawImage(live, 0, 0)
+    return snap.width > fallback.width ? snap : fallback
   } catch {
-    // export() can leave the live canvas mid-resize — restore the on-screen render
-    scatterplot?.set({ backgroundColor: props.backgroundColor })
-    resize(); render()
+    return fallback
+  } finally {
+    // restore the on-screen render (size + opaque ground + point size)
+    scatterplot.set({ backgroundColor: props.backgroundColor, width: w, height: h, aspectRatio: aspect() })
+    live.style.width = cssW; live.style.height = cssH
+    render()
   }
-  return snap.width ? snap : null   // fallback: the pre-export on-screen frame (screen resolution)
 }
 defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
 

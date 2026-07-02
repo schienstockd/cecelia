@@ -274,6 +274,24 @@ function api_napari_close(body_bytes::Vector{UInt8})
     end
 end
 
+# ── REST: POST /api/napari/screenshot ─────────────────────────────────────────
+# Capture the current napari CANVAS to a PNG and stream the bytes back (octet-stream, like the gating
+# binary routes). Used by the Analysis-canvas image / filmstrip slots. `send` is request-reply, so the
+# bridge has finished writing the file by the time `save_screenshot!` returns — read then delete it.
+function api_napari_screenshot(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    path = tempname() * ".png"
+    try
+        save_screenshot!(v, path; canvas_only = true)
+        return 200, read(path)   # Vector{UInt8} → octet-stream (server.jl)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    finally
+        isfile(path) && rm(path; force = true)
+    end
+end
+
 # ── REST: POST /api/napari/restart ────────────────────────────────────────────
 
 function api_napari_restart(body_bytes::Vector{UInt8})

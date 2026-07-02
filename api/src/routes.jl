@@ -2,8 +2,17 @@ using Dates
 
 # ── Chain template CRUD ───────────────────────────────────────────────────────
 
+# Per-project persisted UI config lives under `<proj>/settings/` (chains, analysis-canvas boards, …).
+_settings_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_uid, "settings")
+
 function _chains_dir_for_project(project_uid::String)
-    joinpath(projects_dir(), project_uid, "chains")
+    newdir = joinpath(_settings_dir_for_project(project_uid), "chains")
+    olddir = joinpath(projects_dir(), project_uid, "chains")   # legacy location (pre-settings/)
+    if isdir(olddir) && !isdir(newdir)
+        try; mkpath(_settings_dir_for_project(project_uid)); mv(olddir, newdir)
+        catch e; @warn "Could not migrate chains into settings/" project=project_uid exception=e; end
+    end
+    newdir
 end
 
 function api_chains_list(req::HTTP.Request)
@@ -266,8 +275,17 @@ function api_projects_load(body_bytes::Vector{UInt8})
     proj_obj = load_project(uid)
     sets     = [_set_payload(s) for s in proj_obj._sets]
 
+    # Analysis-canvas boards saved with the project (settings/); null when none saved yet.
+    boards = nothing
+    boards_file = joinpath(_settings_dir_for_project(uid), "analysisBoards.json")
+    if isfile(boards_file)
+        try; boards = JSON3.read(read(boards_file, String)); catch e
+            @warn "Could not read analysis boards" uid exception=e
+        end
+    end
+
     @info "Opened project" name=get(project, "name", "?") uid sets=length(sets)
-    200, JSON3.write((; project, sets))
+    200, JSON3.write((; project, sets, boards))
 end
 
 function api_projects_save(body_bytes::Vector{UInt8})
@@ -286,6 +304,18 @@ function api_projects_save(body_bytes::Vector{UInt8})
         open(meta_file, "w") do io; JSON3.write(io, raw); end
     catch e
         @warn "Could not update project metadata" uid exception=e
+    end
+
+    # persist the Analysis-canvas boards (tabs + grid layouts + captured screenshots) under settings/ so
+    # they survive reopen. Opaque JSON owned by the frontend — we just store/return it verbatim.
+    boards = get(body, :boards, nothing)
+    if boards !== nothing
+        try
+            settings = _settings_dir_for_project(uid); mkpath(settings)
+            open(joinpath(settings, "analysisBoards.json"), "w") do io; JSON3.write(io, boards); end
+        catch e
+            @warn "Could not save analysis boards" uid exception=e
+        end
     end
     200, JSON3.write((; ok=true))
 end
