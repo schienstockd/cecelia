@@ -141,19 +141,29 @@ function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
   }
   c.stroke()
 }
-// subtle population-name label centred just above the gate's top edge. An explicit `label` overrides
-// the derived name (the gating-strategy plot passes "name  pct%").
+// subtle population-name label centred at the gate's top edge. An explicit `label` overrides the
+// derived name (the gating-strategy plot passes "name  pct%").
 function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string) {
   const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1]))
   if (!pts.length) return
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, top = Math.min(...ys)
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const top = Math.min(...ys), bottom = Math.max(...ys)
   const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
   const c = ctx!; c.save()
-  c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'bottom'
+  c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'
   c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.7)'   // dark halo for legibility
-  c.strokeText(name, cx, top - 4)
-  c.fillStyle = colour; c.fillText(name, cx, top - 4); c.restore()
+  // normally sit just ABOVE the gate's top edge; if a gate near the plot top would push the label
+  // off-canvas at the top (it was getting clipped), put it just BELOW the gate instead; only if that
+  // would also clip (a gate spanning the full height) fall back to just inside the top edge.
+  const { h } = size(); const LABEL_H = 15             // ~12px glyphs + halo
+  let y: number, baseline: CanvasTextBaseline
+  if (top - 4 >= LABEL_H) { y = top - 4; baseline = 'bottom' }
+  else if (bottom + 4 + LABEL_H <= h) { y = bottom + 4; baseline = 'top' }
+  else { y = top + 4; baseline = 'top' }
+  c.textBaseline = baseline
+  c.strokeText(name, cx, y)
+  c.fillStyle = colour; c.fillText(name, cx, y); c.restore()
 }
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = '#fff'; c.strokeStyle = colour; c.lineWidth = 1.5
