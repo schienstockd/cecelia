@@ -65,9 +65,21 @@ const hostBg = computed(() => (props.opts?.darkTheme ? '#1f2226' : 'white'))
 
 // expose image export to the host panel (shared helper — see plots/export.ts). SVG = native
 // serialisation (crisp); PNG = rasterise onto a 2× canvas over white.
-defineExpose({
-  toImageURL: (type: 'png' | 'svg') => svgToImageURL(svgOf(node as Element | null), type),
-})
+// `light` = build a one-off LIGHT-theme node (dark ink on white) for PDF export, without disturbing the
+// on-screen (dark-theme) chart — dark theme is only for webpage display. Legend/title overlays are HTML
+// (not in the SVG), so — as with the existing per-plot PNG export — they're omitted from the image.
+async function toImageURL(type: 'png' | 'svg', light = false): Promise<string | null> {
+  if (!light) return svgToImageURL(svgOf(node as Element | null), type)
+  if (!host.value) return null
+  if (!Plot) Plot = await import('@observablehq/plot')
+  const base = props.data ? buildPlotOptions(Plot, props.data, { ...props.opts, darkTheme: false }) as any : null   // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!base) return null
+  const w = Math.max(160, host.value.clientWidth || 320)
+  const h = Math.max(140, host.value.clientHeight || 260)
+  const off = Plot.plot({ ...base, width: w, height: h }) as SVGElement
+  return svgToImageURL(svgOf(off as unknown as Element), type)
+}
+defineExpose({ toImageURL })
 
 watch(() => [props.data, props.opts], render, { deep: true })
 onMounted(() => {

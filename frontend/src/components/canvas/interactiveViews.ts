@@ -1,5 +1,7 @@
 import type { Component } from 'vue'
 import UmapView from '../plots/UmapView.vue'
+import GatingStrategyView from '../plots/GatingStrategyView.vue'
+import ImageStripView from '../plots/ImageStripView.vue'
 
 // Registry of INTERACTIVE plot views (client/WebGL point clouds with per-point interaction, e.g.
 // regl ScatterGL), keyed by a stable view id. This is the counterpart to SUMMARY plots — those are
@@ -17,6 +19,8 @@ export interface InteractiveView {
 
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
   umap: { label: 'UMAP', component: UmapView },
+  gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView },
+  filmstrip: { label: 'Image / strip', component: ImageStripView },
 }
 
 export const isInteractiveView = (key: string): boolean => key in INTERACTIVE_VIEWS

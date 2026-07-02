@@ -103,11 +103,13 @@ function loadImg(url: string): Promise<HTMLImageElement | null> {
 // is only CSS×DPR, so drawing the live canvas would upscale and pixelate). Resolver returns null →
 // composite the live canvas as-is (canvas2D overlays with no hi-res path).
 export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
-  opts: { hiRes?: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null> } = {}): Promise<string | null> {
+  opts: { hiRes?: (cv: HTMLCanvasElement, scale: number) => Promise<CanvasImageSource | null>; scale?: number } = {}): Promise<string | null> {
   if (!host) return null
   const w = host.clientWidth || host.offsetWidth, h = host.clientHeight || host.offsetHeight
   if (!w || !h) return null
-  const scale = RASTER_SCALE
+  // caller may force a higher scale (e.g. the flow/gate plot targets a fixed crisp resolution regardless
+  // of its on-screen size); both the WebGL re-render and the vector overlay rasterise at this scale.
+  const scale = opts.scale ?? RASTER_SCALE
   const c = document.createElement('canvas'); c.width = w * scale; c.height = h * scale
   const ctx = c.getContext('2d'); if (!ctx) return null
   ctx.scale(scale, scale)

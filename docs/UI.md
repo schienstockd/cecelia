@@ -519,9 +519,21 @@ aggregation is a PACKAGE function, the route is thin, rendering is frontend-only
   the host just re-renders with the new size. Exposes `toImageURL('png'|'svg')` — SVG serialises the
   node (native), PNG rasterises it at the DPR-aware `EXPORT_SCALE`. The summaries equivalent of `ScatterGL` for the big point
   clouds.
+The universal **Analysis canvas** (`/analysis`, `AnalysisModule.vue`) is **multipage**: `TabbedCanvas`
+wraps N independent boards, each a `SummaryCanvas` with no `module` prop (→ all plot specs). The tab
+LIST (names/order/active) lives in the `analysisTabs` store; each board's plots persist in
+`canvasPanels` under the canvas key `analysis:{projectUid}:tab:{id}` — i.e. tabs reuse the whole
+existing canvas machinery via `SummaryCanvas`'s optional `canvasKey` prop (which overrides the default
+`summary:{module|universal}` namespace and MUST be paired with a `:key` so setup re-runs on switch).
+Only the active board is mounted; switching tabs re-binds that board's stored panels. Boards are
+per-project — `TabbedCanvas` is `:key`ed by projectUid, and `analysisTabs`/`canvasPanels` are cleared
+on project open/close (`stores/project.ts`). Closing a tab calls `canvasPanels.drop(key)`. In-memory
+like the rest of the canvas state (survives navigation, not a full reload). Roadmap for the rest of the
+multipage feature (interactive plots in the universal canvas, gating-strategy plot, multipage PDF):
+`docs/todo/ANALYSIS_CANVAS_PLAN.md`.
+
 These canvas components are **generic** (`components/canvas/`, NOT under a module) so every module
-page — and the universal **Analysis canvas** (`/analysis`, `AnalysisModule.vue`: `SummaryCanvas` with
-no `module` prop → all specs) — reuses them unchanged:
+page — and the Analysis canvas — reuses them unchanged:
 - **`components/canvas/SummaryPanel.vue`** — one summary plot, wrapping `CanvasPanel`. Layout: the
   **controls row** (`#actions`) holds a **measure dropdown** (from the spec's `measureOptions`) and a
   **chart-type dropdown** (from `chartTypes`, shown when >1); the secondary options — **Split by**

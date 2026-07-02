@@ -20,7 +20,10 @@ const props = withDefaults(defineProps<{
   arrange?: ArrangeCmd | null
   // when set (`${canvasKey}:${panelId}`), drag position + size persist here across navigation
   persistKey?: string
-}>(), { active: false, removable: true, arrange: null })
+  // DOCKED: fill the parent slot (Analysis-canvas grid layout) instead of free-floating — no drag,
+  // no resize, no geometry persistence. Keeps the header/actions/body/footer chrome.
+  docked?: boolean
+}>(), { active: false, removable: true, arrange: null, docked: false })
 const emit = defineEmits<{ activate: [number]; remove: [] }>()
 
 const collapsed = ref(false)
@@ -44,6 +47,7 @@ function persist() {
 }
 watch(pos, persist, { deep: true })           // covers drag + Tile/Cascade
 onMounted(() => {
+  if (props.docked) return   // docked panels fill their slot; no saved geometry / resize tracking
   if (saved && root.value) { root.value.style.width = saved.w + 'px'; root.value.style.height = saved.h + 'px' }
   if (props.persistKey && root.value && typeof ResizeObserver !== 'undefined') {
     ro = new ResizeObserver(persist); ro.observe(root.value)   // covers manual resize
@@ -53,13 +57,14 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 </script>
 
 <template>
-  <div ref="root" class="panel" :class="{ active, collapsed }"
-       :style="{ left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">
+  <div ref="root" class="panel" :class="{ active, collapsed, docked }"
+       :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">
     <!-- title row: the WHOLE row drags (like PopulationManager); buttons stop the drag -->
-    <div class="panel-head" @mousedown.prevent="startDrag" v-tooltip.bottom="'Drag to move'">
-      <span class="panel-title"><i class="pi pi-arrows-alt drag-icon" />{{ title }}</span>
+    <div class="panel-head" @mousedown.prevent="docked || startDrag($event)"
+         v-tooltip.bottom="docked ? undefined : 'Drag to move'">
+      <span class="panel-title"><i v-if="!docked" class="pi pi-arrows-alt drag-icon" />{{ title }}</span>
       <span class="panel-spacer" />
-      <button class="panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
+      <button v-if="!docked" class="panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
               @mousedown.stop @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
@@ -86,6 +91,10 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
   width: 460px; height: 440px; min-width: 340px; min-height: 320px; resize: both; z-index: 5;
   transition: border-color 0.12s, box-shadow 0.12s; }
 .panel.active { border-color: #ff8c1a; box-shadow: 0 0 0 1px #ff8c1a, 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
+/* docked: fill the grid slot, no float/drag/resize/shadow */
+.panel.docked { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0; resize: none;
+  box-shadow: none; z-index: auto; }
+.panel.docked .panel-head { cursor: default; }
 /* collapsed: box shrinks to just the header (overrides any inline/resized height); no resize handle */
 .panel.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: move;

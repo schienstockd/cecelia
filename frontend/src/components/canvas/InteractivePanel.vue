@@ -18,6 +18,7 @@ const props = defineProps<{
   context: Record<string, unknown>
   state: Record<string, unknown>
   duplicable?: boolean            // show a footer Duplicate button (host wires @duplicate)
+  docked?: boolean                // fill a grid slot (Analysis canvas) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const entry = computed(() => INTERACTIVE_VIEWS[props.view])
@@ -29,10 +30,13 @@ const viewRef = useTemplateRef<any>('viewRef')
 const exportFormats = computed<string[]>(() => viewRef.value?.exportFormats ?? [])
 const FMT_LABEL: Record<string, string> = { png: 'Image (PNG)', svg: 'Image (SVG)', csv: 'Data (CSV)' }
 function onExport(kind: string) { if (kind) viewRef.value?.exportAs?.(kind) }
+// plot-only, light-theme PNG for the PDF export — delegated to the view if it implements exportImage
+async function exportImage(): Promise<string | null> { return (await viewRef.value?.exportImage?.()) ?? null }
+defineExpose({ exportImage })
 </script>
 
 <template>
-  <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey"
+  <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" :docked="docked"
                :title="entry?.label ?? view"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
@@ -40,7 +44,7 @@ function onExport(kind: string) { if (kind) viewRef.value?.exportAs?.(kind) }
     <template v-if="duplicable || exportFormats.length" #footer>
       <button v-if="duplicable" class="ip-iconbtn" type="button" @click="emit('duplicate')"
               v-tooltip.top="'Duplicate this plot (same settings) to tweak one thing'"><i class="pi pi-copy" /></button>
-      <select v-if="exportFormats.length" class="ip-export" v-tooltip.top="'Export the shown plot'"
+      <select v-if="exportFormats.length && !docked" class="ip-export" v-tooltip.top="'Export the shown plot'"
               @change="onExport(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
         <option v-for="f in exportFormats" :key="f" :value="f">{{ FMT_LABEL[f] ?? f }}</option>

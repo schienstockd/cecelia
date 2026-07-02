@@ -33,6 +33,7 @@ that resolve objects and call package functions.
 | GET | `/api/fs/list`, `/api/pools`, `/api/tasks/definitions` | filesystem, pools, task specs |
 | GET | `/api/chains`, `/api/chains/get`, POST `/api/chains/{save,delete}` | chain templates |
 | GET | `/api/napari/status`, POST `/api/napari/{open,close,restart,show-labels,show-populations,start-selection,stop-selection,event}` | napari bridge + gating linked brushing |
+| POST | `/api/napari/screenshot` | `projectUid` | **binary** PNG of the current napari canvas (`canvas_only`) — `save_screenshot!` to a temp file → stream the bytes → delete. `400` if napari not running. Feeds the Analysis-canvas image / filmstrip slots. |
 | — | **Gating** (below) | population manager + gating |
 
 Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTTP — see

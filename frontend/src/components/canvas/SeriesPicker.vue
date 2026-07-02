@@ -21,6 +21,7 @@ const props = defineProps<{
   selected: string[]                  // selected target keys (tkey), in the current scope
   scope: 'global' | 'local'
   vis: VisProps                       // visual properties for the current scope
+  docked?: boolean                    // render in a fixed rail (Analysis canvas) instead of floating
 }>()
 const emit = defineEmits<{
   toggle: [valueName: string, pop: string, popType: string]
@@ -35,7 +36,7 @@ const depthOf = (path: string) => Math.max(0, path.split('/').length - 2)
 </script>
 
 <template>
-  <PopulationPanelShell :count="total" :scope="scope" :vis="vis"
+  <PopulationPanelShell :count="total" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <div v-if="!total" class="pm-empty">No populations in the selected segmentations.</div>
     <template v-for="grp in groups" :key="grp.valueName">

@@ -17,10 +17,10 @@ import { useGatingStore, isReservedPopName, type GateSpec, type TransformSpec } 
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
-import ScatterGL from '../../components/plots/ScatterGL.vue'
-import PlotLayers, { type PopLayer } from '../../components/plots/PlotLayers.vue'
-import GateOverlay from '../../components/plots/GateOverlay.vue'
-import { plotHostToImageURL, downloadDataUrl } from '../../plots/export'
+import GateScatterCell from '../../components/plots/GateScatterCell.vue'
+import type { PopLayer } from '../../components/plots/PlotLayers.vue'
+import { orientGate } from '../../plots/gateGeometry'
+import { downloadDataUrl } from '../../plots/export'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -74,30 +74,12 @@ function plotQ(pop: string) {
 }
 const baseQ = computed(() => plotQ(parent.value))
 
-// Orient a child's gate to the current plot axes. The gate matches if its two channels are the
-// plot's two channels in EITHER order (R: .flowMatchGatingParamsForPop, order-independent); when
-// swapped, transpose the coords so it draws correctly. Returns null if it's a different axis pair.
-function orientGate(gate: GateSpec, xc: string, yc: string): GateSpec | null {
-  if (gate.x_channel === xc && gate.y_channel === yc) return gate
-  if (gate.x_channel === yc && gate.y_channel === xc) {
-    const base = { ...gate, x_channel: xc, y_channel: yc, x_transform: gate.y_transform, y_transform: gate.x_transform }
-    return gate.kind === 'rectangle'
-      ? { ...base, x_min: gate.y_min, x_max: gate.y_max, y_min: gate.x_min, y_max: gate.x_max }
-      : { ...base, vertices: gate.vertices?.map(v => [v[1], v[0]] as [number, number]) }
-  }
-  return null
-}
-// child gates of this panel's parent that live on the current axis pair → outlines (for edit)
+// child gates of this panel's parent that live on the current axis pair → outlines (for edit).
+// orientGate is shared with the read-only gating-strategy plot (plots/gateGeometry.ts).
 const currentGates = computed(() =>
   g.flat.filter(p => p.parent === parent.value && p.gate)
         .map(p => ({ path: p.path, colour: p.colour, gate: orientGate(p.gate!, xChan.value, yChan.value) }))
         .filter((p): p is { path: string; colour: string; gate: GateSpec } => p.gate !== null))
-
-// base render look: density for plain points; dim/flat backdrop for contour or pop-colour modes
-const baseColorMode = computed<'density' | 'flat'>(() =>
-  renderMode.value === 'points' && !showPops.value ? 'density' : 'flat')
-const baseOpacity = computed(() => renderMode.value === 'contour' ? 0.22 : showPops.value ? 0.35 : 1)
-const basePointSize = computed(() => renderMode.value === 'contour' ? 2 : 3)
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
@@ -176,40 +158,12 @@ async function onEdit(e: { path: string; gate: GateSpec }) {
   await g.setGate(e.path, e.gate)
 }
 
-// ticks positioned against the LIVE view extents so labels track pan/zoom
-const tickX = (pos: number) => `${((pos - viewExtents.value.xMin) / Math.max(1e-9, viewExtents.value.xMax - viewExtents.value.xMin)) * 100}%`
-const tickY = (pos: number) => `${(1 - (pos - viewExtents.value.yMin) / Math.max(1e-9, viewExtents.value.yMax - viewExtents.value.yMin)) * 100}%`
-// abbreviate big numbers (262144 → 262.1k) so axis labels don't crowd; leave small ones as-is
-function fmtTick(label: string): string {
-  const n = parseFloat(label)
-  if (!isFinite(n)) return label
-  const a = Math.abs(n), trim = (s: string) => s.replace(/\.0$/, '')
-  if (a >= 1e9) return trim((n / 1e9).toFixed(1)) + 'G'
-  if (a >= 1e6) return trim((n / 1e6).toFixed(1)) + 'M'
-  if (a >= 1e3) return trim((n / 1e3).toFixed(1)) + 'k'
-  return label
-}
-
-// export the plot area (WebGL scatter + contour/pop layers + gate overlay + axis ticks + labels) as a
-// PNG — composited via plots/export.ts (canvas pixels + HTML/canvas2D overlays). The capture host is
-// `.plot-capture` (which INCLUDES the axis-label margins), not `.panel-plot`, so the x/y axis names
-// aren't clipped off the bottom/left edge. The scatter is re-rendered hi-res so points stay crisp.
-const plotEl = useTemplateRef<HTMLElement>('plotEl')
-type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }
-const scatterRef = useTemplateRef<LayerExport>('scatterRef')
-const layersRef = useTemplateRef<LayerExport>('layersRef')
-const overlayRef = useTemplateRef<LayerExport>('overlayRef')
-// each stacked canvas (WebGL scatter + canvas2D contours/gates) re-renders itself at export scale so
-// nothing is upscaled from the screen-DPR backing store; route each live canvas to its layer.
-const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
-  for (const r of [scatterRef, layersRef, overlayRef]) {
-    if (cv === r.value?.getCanvas()) return (await r.value?.exportCanvas(scale)) ?? null
-  }
-  return null
-}
+// export the plot as PNG — GateScatterCell owns the composite (canvas pixels + HTML/canvas2D overlays,
+// each layer re-rendered hi-res); we just name the file.
+const cell = useTemplateRef<{ exportImage(bg?: string): Promise<string | null> }>('cell')
 function exportPng() {
   const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
-  plotHostToImageURL(plotEl.value, '#0d0b1a', { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
+  cell.value?.exportImage('#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
 }
 
 function ensureChannels() {
@@ -272,26 +226,13 @@ watch(hlVersion, loadPopLayers)
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
         <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select></label>
     </div>
-    <div ref="plotEl" class="plot-capture">
-     <div class="panel-plot">
-      <ScatterGL ref="scatterRef" :points="points" :extents="extents" :color-mode="baseColorMode"
-                 :opacity="baseOpacity" :point-size="basePointSize" />
-      <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
-                  :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
-      <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="currentGates" :view-tick="viewTick"
-                   :line-width="gateLineWidth" :show-labels="gateLabels"
-                   @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'" />
-      <span class="axisline axisline-x" />
-      <span class="axisline axisline-y" />
-      <span v-for="t in xTicks" :key="'x'+t.pos" class="xtick" :style="{ left: tickX(t.pos) }">
-        <span class="xtick-mark" /><span class="xtick-lbl">{{ fmtTick(t.label) }}</span>
-      </span>
-      <span v-for="t in yTicks" :key="'y'+t.pos" class="ytick" :style="{ top: tickY(t.pos) }">
-        <span class="ytick-lbl">{{ fmtTick(t.label) }}</span><span class="ytick-mark" />
-      </span>
-      <span class="axis-x">{{ g.colLabel(xChan) }}</span>
-      <span class="axis-y">{{ g.colLabel(yChan) }}</span>
-      <div v-if="loading" class="panel-loading">…</div>
+    <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
+                     :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
+                     :x-label="g.colLabel(xChan)" :y-label="g.colLabel(yChan)"
+                     :pop-layers="popLayers" :render-mode="renderMode" :show-pops="showPops"
+                     :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
+                     :view-tick="viewTick" :loading="loading"
+                     @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus
@@ -301,8 +242,7 @@ watch(hlVersion, loadPopLayers)
         <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
         <span v-if="nameReserved" class="name-hint">names can't start with “_” (reserved for tracked / clustering)</span>
       </div>
-     </div>
-    </div>
+    </GateScatterCell>
   </CanvasPanel>
 </template>
 
@@ -331,33 +271,8 @@ watch(hlVersion, loadPopLayers)
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
 .cc-btn.on { border-color: var(--cc-accent); color: var(--cc-accent); }
-/* capture host for PNG export: the axis labels/ticks live in this padding (relative to .panel-plot,
-   at negative offsets), so exporting THIS element — not .panel-plot — includes the x/y axis names
-   instead of clipping them at the edge (#00061). The label-space that used to be .panel-plot's
-   margin is now this padding. min-height is modest so plot + padding + footer all fit inside the
-   default panel height without the panel's overflow:hidden clipping the bottom label. */
-.plot-capture { position: relative; flex: 1; min-height: 218px; min-width: 0; display: flex; box-sizing: border-box;
-  padding: 18px 22px 50px 84px; }
-/* min-width:0 so this flex-row item can shrink below the scatter canvas's intrinsic width — without
-   it the panel grows on resize-right but won't shrink back on resize-left. */
-.panel-plot { position: relative; flex: 1; min-height: 150px; min-width: 0; }
-.axisline { position: absolute; background: var(--cc-border); pointer-events: none; }
-.axisline-x { left: 0; right: 0; bottom: 0; height: 1px; }
-.axisline-y { left: 0; top: 0; bottom: 0; width: 1px; }
-/* x ticks: mark hangs below the baseline, label under it */
-.xtick { position: absolute; bottom: 0; transform: translate(-50%, 100%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
-.xtick-mark { width: 1px; height: 5px; background: var(--cc-text-dim); }
-.xtick-lbl { margin-top: 3px; font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
-/* y ticks: label then mark, anchored so the mark touches the left axis */
-.ytick { position: absolute; left: 0; transform: translate(-100%, -50%); display: flex; align-items: center; pointer-events: none; }
-.ytick-mark { width: 5px; height: 1px; background: var(--cc-text-dim); }
-.ytick-lbl { margin-right: 3px; font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
-.axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 600; color: var(--cc-text); }
-/* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
-.axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
-  writing-mode: vertical-rl; font-size: 13px; font-weight: 600; color: var(--cc-text); }
 .gp-export { font-size: 12px; max-width: 7rem; }
-.panel-loading { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--cc-text-dim); }
+/* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
   background: var(--cc-surface-1); border: 1px solid var(--cc-accent); border-radius: 4px; padding: 4px 6px; font-size: 11px; }
 .panel-name input { background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-border); border-radius: 3px; padding: 1px 5px; width: 90px; }

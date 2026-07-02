@@ -35,9 +35,10 @@ const props = defineProps<{
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
+  docked?: boolean                     // fill a grid slot (Analysis canvas) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
-const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg'): Promise<string | null> }>('plotRef')
+const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
 const measureOpts = computed(() => props.spec.dataSource.measureOptions ?? [props.spec.dataSource.measure])
@@ -223,9 +224,13 @@ async function fetchData() {
   } finally { loading.value = false }
 }
 
-// errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger
+// errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger.
+// matrixCategory is included because for heatmaps the category resolves ASYNC (from obsCols loaded on
+// mount) — without it the heatmap's first fetch bails ("pick a category") and never re-runs until the
+// user re-picks. (Vue batches multi-source watches, so a user pick that changes groupBy + category
+// still fires once.)
 watch([() => props.series, measure, chartType, bins, normalize, groupBy, () => props.collapseSeries,
-       matrixMode, zscore, matrixNormalize,
+       matrixMode, zscore, matrixNormalize, matrixCategory,
        () => props.imageUid, () => props.setUid, () => props.groupAttr,
        () => props.imageUids, () => props.scope, () => props.reloadToken], fetchData, { deep: true })
 onMounted(fetchData)
@@ -265,11 +270,16 @@ function exportAs(kind: string) {
     })
   }
 }
+// the shown (aggregated) data as a CSV string — for embedding into the PDF export as an attachment
+function getCsv(): string | null { return result.value ? plotDataToCsv(result.value) : null }
+// a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
+async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
+defineExpose({ getCsv, exportImage })
 </script>
 
 <template>
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :title="spec.label"
-               :persist-key="persistKey"
+               :persist-key="persistKey" :docked="docked"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
       <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid) -->
@@ -355,10 +365,11 @@ function exportAs(kind: string) {
     <!-- utility actions live in the footer so the header/controls never clip -->
     <template #footer>
       <button class="sp-iconbtn" type="button" @click="emit('duplicate')"
-              v-tooltip.top="'Duplicate this plot (same series + settings) to tweak one thing'">
+              v-tooltip.top="docked ? 'Duplicate this plot into the next empty slot' : 'Duplicate this plot (same series + settings) to tweak one thing'">
         <i class="pi pi-copy" />
       </button>
-      <select class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result"
+      <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
+      <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
         <option value="csv">Data (CSV)</option>

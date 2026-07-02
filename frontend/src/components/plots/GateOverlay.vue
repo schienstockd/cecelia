@@ -21,11 +21,12 @@ type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
   extents: Ext                              // LIVE (zoom-synced) view extents
   mode: 'off' | 'rectangle' | 'polygon'
-  gates?: { path: string; colour: string; gate: GateSpec }[]
+  gates?: { path: string; colour: string; gate: GateSpec; label?: string }[]
   viewTick?: number                          // bump → redraw (camera moved)
   lineWidth?: number                         // gate stroke width
   showLabels?: boolean                       // draw the population name on each gate
-}>(), { lineWidth: 1.5, showLabels: false })
+  readonly?: boolean                         // fully static: draw outlines only, never move/resize/draw
+}>(), { lineWidth: 1.5, showLabels: false, readonly: false })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
@@ -140,13 +141,14 @@ function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
   }
   c.stroke()
 }
-// subtle population-name label centred just above the gate's top edge
-function drawGateLabel(g: GateSpec, path: string, colour: string) {
+// subtle population-name label centred just above the gate's top edge. An explicit `label` overrides
+// the derived name (the gating-strategy plot passes "name  pct%").
+function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string) {
   const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1]))
   if (!pts.length) return
   const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2, top = Math.min(...ys)
-  const name = path.split('/').filter(Boolean).pop() ?? ''
+  const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
   const c = ctx!; c.save()
   c.font = 'bold 12px system-ui, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'bottom'
   c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.7)'   // dark halo for legibility
@@ -171,7 +173,7 @@ function paintGates() {
   for (const g of props.gates ?? []) {
     const spec = g.path === editPath && draft.value ? draft.value : g.gate
     strokeShape(spec, g.colour || '#fafafa')
-    if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa')
+    if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa', g.label)
   }
 }
 function draw() {
@@ -269,6 +271,7 @@ function onEditUp() {
 
 // ── proximity: toggle overlay pointer-events so regl keeps pan/zoom in empty space ──
 function onParentMove(e: MouseEvent) {
+  if (props.readonly) return   // read-only: overlay never becomes interactive (no move/resize)
   if (props.mode !== 'off' || editHandle) return
   const h = hitTest(evtPx(e))
   hover.value = h
