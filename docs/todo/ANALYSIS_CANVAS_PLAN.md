@@ -353,3 +353,33 @@ Remaining ("all plots from all module pages"):
   Offer them in the "Clustering" picker group only when `clustPopType === 'trackclust'` and the cols exist.
 - Hi-res UMAP PDF export (expose `exportImage`/`hiRes` from `UmapView` like `GateScatterCell`; today it
   falls back to a screen-res DOM snapshot).
+
+#### Generic plot-integration interface (the goal — no per-plot host wiring)
+
+A plot is defined ONCE and appears on any surface (cluster module page, analysis board, future
+whiteboard) via a flag — no bespoke host branch. The contract:
+
+1. **Component** is self-contained: renders from a standard prop bag + `state`, seeds its OWN defaults
+   (e.g. the heatmap seeds features from the run — never rely on the host to seed), and exposes
+   `exportImage()` (plot-only, light) + `getCsv()` for the board's PDF/CSV export.
+2. **Registry entry** declares WHERE it shows (the "checkboxes"): interactive WebGL views in
+   `interactiveViews.ts` (`clusterPage` / `analysisBoard` flags); summary-family cluster panels in
+   `clusterPanels.ts` (`analysisBoard`, `trackOnly`, `needsCols`, and a `props(ctx)` mapper so the host
+   binds panel-specific props generically).
+3. **Hosts render from the registry**: the +Plot picker filters by the surface flag; each slot is a
+   single generic `<component :is v-bind>` — no per-plot code in `LayoutCanvas` / `ClusterPlots`.
+
+Convergence work (rejig existing plots to the contract): make the cluster heatmap + HMM panels
+self-seed + expose `exportImage`/`getCsv` + accept the common bag; render both the cluster page and the
+board from the registries; then adding a plot = write the component + one registry line + tick the
+surface flag. Document in docs/UI.md (Interactive plots / cluster panels) + docs/MODULES.md.
+
+#### Generic integration — landed + cleanup
+Landed: `clusterPanels.ts` registry (heatmap + HMM states/transitions) with `analysisBoard`/`trackOnly`/
+`needsCols`/`props(ctx)`; `interactiveViews.ts` gained `analysisBoard`. The Analysis board renders every
+cluster plot GENERICALLY (`<component :is v-bind>` from the registry, picker from the flag) — no per-plot
+branch. Panels conform to the contract: `docked`, self-seed (heatmap features), `exportImage()` (light) +
+`getCsv()`. Interface documented in `docs/UI.md` ("Generic plot-integration interface").
+Cleanup (defer): render the **Cluster module page** (`ClusterPlots`) from the same registry too (it still
+hard-codes heatmap/hmm branches + a `hmm-states`↔`hmmStates` kind-name mismatch — align keys, mind
+persisted panel kinds). Chain-whiteboard host consumes the same registries when built.

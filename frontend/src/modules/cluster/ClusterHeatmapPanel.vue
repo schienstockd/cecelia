@@ -101,6 +101,11 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.setU
        () => props.suffix, () => features.value.join(','),
        () => JSON.stringify((props.shownPops ?? []).map(p => [p.path, p.clusterIds]))], load)
 onMounted(load)
+// self-seed: default to the run's full feature set once known (don't clobber a user pick / an empty
+// pick the user made). Makes the panel work out-of-the-box on any host (no host-side seeding needed).
+watch(() => props.featureOptions, opts => {
+  if (opts.length && props.state.features === undefined) props.state.features = [...opts]
+}, { immediate: true })
 
 // docked (Analysis canvas) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
 async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }

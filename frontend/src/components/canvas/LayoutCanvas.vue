@@ -28,7 +28,7 @@ import InteractivePanel from './InteractivePanel.vue'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
-import ClusterHeatmapPanel from '../../modules/cluster/ClusterHeatmapPanel.vue'
+import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
 
@@ -79,17 +79,24 @@ const st = (c: SlotContent): PState => c.state as PState
 // self-contained interactive views (read their own context / pops)
 const ANALYSIS_VIEWS = ['gatingStrategy']
 const interactiveOptions = computed(() => ANALYSIS_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
-// CLUSTERING views — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
-// fed the board cluster context, and the right rail shows the cluster PopulationManager when one is active.
-// `umap` is a registered interactive view; `clusterHeatmap` is a docked ClusterHeatmapPanel (rendered by
-// a dedicated slot branch, not InteractivePanel). Both belong to the board's single cluster run.
-const CLUSTER_VIEWS = ['umap', 'clusterHeatmap']
-const clusterOptions = computed(() => [
-  ...CLUSTER_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })),
-  { key: 'clusterHeatmap', label: 'Cluster heatmap' },
-])
-const isClusterSlot = (c: SlotContent | null): boolean => !!c && c.kind === 'interactive' && CLUSTER_VIEWS.includes(c.ref)
-const isClusterHeatmap = (c: SlotContent | null): boolean => !!c && c.kind === 'interactive' && c.ref === 'clusterHeatmap'
+// CLUSTERING plots — one clustering run per board (see useClusterContext / ANALYSIS_CANVAS_PLAN Phase G):
+// the interactive UMAP (INTERACTIVE_VIEWS) + the cluster panels (CLUSTER_PANELS registry). Discovered
+// GENERICALLY via each registry's `analysisBoard` flag — no per-plot wiring here. A cluster slot is any
+// interactive slot whose ref is `umap` OR a registered cluster panel.
+const isClusterSlot = (c: SlotContent | null): boolean =>
+  !!c && c.kind === 'interactive' && (c.ref === 'umap' || isClusterPanel(c.ref))
+const clusterOptions = computed(() => {
+  const out: { key: string; label: string }[] = []
+  if (INTERACTIVE_VIEWS.umap?.analysisBoard) out.push({ key: 'umap', label: INTERACTIVE_VIEWS.umap.label })
+  for (const [key, def] of Object.entries(CLUSTER_PANELS)) {
+    if (!def.analysisBoard) continue
+    if (def.trackOnly && clustPopType.value !== 'trackclust') continue          // HMM = track runs only
+    if (def.needsCols === 'hmmState' && !clustHmmStateCols.value.length) continue
+    if (def.needsCols === 'hmmTransition' && !clustHmmTransitionCols.value.length) continue
+    out.push({ key, label: def.label })
+  }
+  return out
+})
 // image-content views (napari screenshot slots) — grouped separately in the picker
 const IMAGE_VIEWS = ['filmstrip']
 const imageOptions = computed(() => IMAGE_VIEWS.filter(k => k in INTERACTIVE_VIEWS).map(k => ({ key: k, label: INTERACTIVE_VIEWS[k].label })))
@@ -100,7 +107,8 @@ function addPlot(i: number, val: string) {
   const sep = val.indexOf(':'); const kind = val.slice(0, sep); const ref = val.slice(sep + 1)
   if (kind === 'summary') layout.setContent(props.canvasKey, i, { kind: 'summary', ref, state: { specId: ref, sel: [], vis: defaultVis() } })
   else if (kind === 'interactive') {
-    const state = ref === 'umap' ? { labels: true, hl: [] } : ref === 'clusterHeatmap' ? { features: [], hl: [] } : {}
+    // cluster slots carry a `hl` (highlight) bag; panels self-seed the rest (e.g. heatmap features)
+    const state = ref === 'umap' ? { labels: true, hl: [] } : isClusterPanel(ref) ? { hl: [] } : {}
     layout.setContent(props.canvasKey, i, { kind: 'interactive', ref, state })
   }
   layout.setActive(props.canvasKey, i)
@@ -155,7 +163,8 @@ const clustSuffix = computed<string>({
   get: () => (entry.value.shared.clustSuffix as string) ?? 'default',
   set: v => (entry.value.shared.clustSuffix = v) })
 const { suffixes: clustSuffixes, clusterIds: clustClusterIds, validUids: clustValidUids,
-        featureOptions: clustFeatureOptions, nameMap: clustNameMap, shownPopsFor } =
+        featureOptions: clustFeatureOptions, nameMap: clustNameMap,
+        hmmStateCols: clustHmmStateCols, hmmTransitionCols: clustHmmTransitionCols, shownPopsFor } =
   useClusterContext({ projectUid, imageUids: computed(() => props.imageUids),
                       popType: clustPopType, suffix: clustSuffix, enabled: hasClusterSlot })
 
@@ -182,6 +191,22 @@ function ctxFor(c: SlotContent) {
   return { projectUid: projectUid.value, imageUids: props.imageUids, setUid: setUid.value, vis: panelVis(c) }
 }
 
+// props for a cluster PANEL slot (CLUSTER_PANELS): the common bag + the panel-specific props its registry
+// entry maps from the shared cluster context — so the slot renders with one generic <component v-bind>.
+function clusterPanelProps(i: number) {
+  const c = entry.value.contents[i]!
+  const ctx = { featureOptions: clustFeatureOptions.value, nameMap: clustNameMap.value,
+                hmmStateCols: clustHmmStateCols.value, hmmTransitionCols: clustHmmTransitionCols.value }
+  return {
+    index: i, active: i === entry.value.activeIndex, arrange: null, docked: true,
+    projectUid: projectUid.value, setUid: setUid.value, imageUids: clustValidUids.value,
+    popType: clustPopType.value, suffix: clustSuffix.value,
+    shownPops: shownPopsFor(panelClustHl(c)), vis: panelVis(c), state: c.state,
+    persistKey: `${props.canvasKey}:slot:${i}`,
+    ...(CLUSTER_PANELS[c.ref].props?.(ctx) ?? {}),
+  }
+}
+
 // prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
 // a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
 // then persist-empty) a restored per-slot selection.
@@ -195,7 +220,7 @@ const gridRef = useTemplateRef<HTMLElement>('gridRef')
 const capturing = ref(false)
 function labelFor(c: SlotContent): string {
   if (c.kind === 'summary') return specById.value[c.ref]?.label ?? c.ref
-  if (isClusterHeatmap(c)) return 'Cluster heatmap'
+  if (isClusterPanel(c.ref)) return CLUSTER_PANELS[c.ref].label
   return INTERACTIVE_VIEWS[c.ref]?.label ?? c.ref
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
@@ -227,7 +252,7 @@ async function capturePage() {
       // (e.g. filmstrip/image slots, which are already screenshots) with the chrome hidden.
       // summary + cluster-heatmap panels expose exportImage()/getCsv() (summaryRefs); other interactive
       // views expose exportImage() (interactiveRefs); anything else → white-ground DOM snapshot.
-      const summaryLike = c.kind === 'summary' || isClusterHeatmap(c)
+      const summaryLike = c.kind === 'summary' || isClusterPanel(c.ref)
       let png: string | null = null
       if (summaryLike) png = await summaryRefs.get(i)?.exportImage() ?? null
       else if (c.kind === 'interactive') png = await interactiveRefs.get(i)?.exportImage?.() ?? null
@@ -246,7 +271,7 @@ function collectCsvs(): { name: string; csv: string | null }[] {
   const out: { name: string; csv: string | null }[] = []
   for (let i = 0; i < entry.value.contents.length; i++) {
     const c = entry.value.contents[i]
-    if (c && (c.kind === 'summary' || isClusterHeatmap(c))) out.push({ name: labelFor(c), csv: summaryRefs.get(i)?.getCsv() ?? null })
+    if (c && (c.kind === 'summary' || isClusterPanel(c.ref))) out.push({ name: labelFor(c), csv: summaryRefs.get(i)?.getCsv() ?? null })
   }
   return out
 }
@@ -359,17 +384,12 @@ defineExpose({ capturePage, collectCsvs })
                           :vis="panelVis(entry.contents[i]!)" :ui="entry.contents[i]!.state" :collapse-series="poolGroups"
                           :reload-token="reloadToken" :persist-key="`${canvasKey}:slot:${i}`"
                           @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
-            <!-- cluster heatmap (docked ClusterHeatmapPanel; board's single cluster run) -->
-            <ClusterHeatmapPanel v-else-if="isClusterHeatmap(entry.contents[i])"
-                          :ref="el => setSummaryRef(i, el)"
-                          :index="i" :active="i === entry.activeIndex" :docked="true" :arrange="null"
-                          :project-uid="projectUid" :set-uid="setUid" :image-uids="clustValidUids"
-                          :pop-type="clustPopType" :suffix="clustSuffix"
-                          :feature-options="clustFeatureOptions" :name-map="clustNameMap"
-                          :shown-pops="shownPopsFor(panelClustHl(entry.contents[i]!))"
-                          :vis="panelVis(entry.contents[i]!)" :state="entry.contents[i]!.state"
-                          :persist-key="`${canvasKey}:slot:${i}`"
-                          @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
+            <!-- cluster PANEL (heatmap / HMM …) — rendered GENERICALLY from the CLUSTER_PANELS registry
+                 (docked, board's single cluster run); no per-plot branch -->
+            <component v-else-if="entry.contents[i] && isClusterPanel(entry.contents[i]!.ref)"
+                       :is="CLUSTER_PANELS[entry.contents[i]!.ref].component" :ref="(el: unknown) => setSummaryRef(i, el)"
+                       v-bind="clusterPanelProps(i)"
+                       @activate="layout.setActive(canvasKey, i)" @remove="clearSlot(i)" @duplicate="duplicateSlot(i)" />
             <!-- interactive plot (UMAP / gating-strategy / …) -->
             <InteractivePanel v-else-if="entry.contents[i]?.kind === 'interactive' && INTERACTIVE_VIEWS[entry.contents[i]!.ref]"
                               :ref="el => setInteractiveRef(i, el)"

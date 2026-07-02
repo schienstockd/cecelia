@@ -281,6 +281,34 @@ graphics lib gives the cleaner publication look for pre-aggregated summaries. Ne
 job well, so we keep both. Never add or swap a charting library without updating this doc, `docs/PLOTS.md`,
 and the `cecelia-charting-decision` rationale.
 
+### Generic plot-integration interface (reuse across surfaces)
+
+A plot is defined **once** and appears on any surface — module page, **Analysis board**, and (future)
+the **chain whiteboard** (`docs/SCHEDULER.md`) — via a flag. **No per-plot host wiring.** This is how you
+"drop a plot onto the board" without touching `LayoutCanvas`/`ClusterPlots`.
+
+**The contract a plot component must honour:**
+- **Self-contained**: renders from a standard prop bag + persisted `state`, and **seeds its own defaults**
+  (e.g. `ClusterHeatmapPanel` seeds `features` from the run — never rely on the host to seed). Persist
+  every user-settable option in `state` (see "Persisting view state").
+- **Standard bag**: `projectUid, setUid, imageUids, vis, state` (+ for cluster plots `popType, suffix,
+  shownPops`; + panel chrome `index, active, docked, persistKey`).
+- **Export hooks** for the board's PDF/CSV: `exportImage()` → a plot-only **light-theme** PNG (dark theme
+  is on-screen only), and `getCsv()` → the shown data. (Interactive views may instead expose
+  `exportFormats`/`exportAs`.)
+
+**Two registries carry the surface "checkboxes":**
+- `components/canvas/interactiveViews.ts` — WebGL/interactive VIEWS (hosted by `InteractivePanel`), flags
+  `clusterPage` / `analysisBoard`.
+- `modules/cluster/clusterPanels.ts` — summary-family cluster PANELS (wrap `CanvasPanel`), flags
+  `analysisBoard` / `trackOnly` / `needsCols`, plus a `props(ctx)` mapper so the host binds panel-specific
+  props generically.
+
+**Hosts render from the registries**: each builds its `+Plot` picker by filtering on its own flag, and
+renders each slot with one generic `<component :is v-bind>`. Adding a plot to a surface = write the
+component to the contract + one registry line + tick the flag. When you add the chain-whiteboard as a
+host, it consumes the *same* registries + contract — do not re-wire plots per node.
+
 ---
 
 ## WS events — frontend side
