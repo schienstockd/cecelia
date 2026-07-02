@@ -6,8 +6,22 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.taskListAutoFollow') !== 'false'  // default true
   )
 
+  // Auto-refresh plots + pop lists when a task finishes successfully (the per-image task-refresh; see
+  // composables/useDataRefresh). On by default; users who find plots refetching under them distracting
+  // can turn it off (they then refresh on the next navigation / input change).
+  const autoRefreshOnTask = ref(
+    localStorage.getItem('cc.autoRefreshOnTask') !== 'false'   // default true
+  )
+
   const napariUpdateImage = ref(
     localStorage.getItem('cc.napariUpdateImage') === 'true'    // default false
+  )
+
+  // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
+  // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
+  // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
+  const napariResetOnReload = ref(
+    localStorage.getItem('cc.napariResetOnReload') === 'true'  // default false
   )
 
   const napariAutoSaveLayerProps = ref(
@@ -95,7 +109,9 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
+  watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
+  watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariShow3D,             v => localStorage.setItem('cc.napariShow3D',             String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
@@ -107,5 +123,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
 
-  return { taskListAutoFollow, napariUpdateImage, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, popVisible, setPopVisible, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, popVisible, setPopVisible, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
 })

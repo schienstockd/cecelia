@@ -98,6 +98,16 @@ export const useWsStore = defineStore('ws', () => {
               useProjectStore().updateImageStatus(imageUid, status as any)
             }
           }
+          // successful completion → the touched image(s)' data on disk may have changed (in place, same
+          // value_name/suffix → no filepath change to react to). Bump each image's data version so only
+          // the plots showing them refetch (targeted, not project-wide). A set/combined task sends the
+          // full member list in `imageUids` (else fall back to the single `imageUid`) so EVERY member is
+          // invalidated, not just the representative. Replaces the reload buttons.
+          if (status === 'done') {
+            const uids = Array.isArray(data.imageUids) && data.imageUids.length
+              ? (data.imageUids as string[]) : (imageUid ? [imageUid] : [])
+            for (const u of uids) useProjectStore().bumpDataVersion(u)
+          }
         }
       }
 

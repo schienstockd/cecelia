@@ -318,10 +318,11 @@ host, it consumes the *same* registries + contract — do not re-wire plots per 
 - **Behaviour / summary pages** (`SummaryCanvas.vue`) and the board's summary slots both render every
   summary plot through one `SummaryPanel` driven by the server plot-spec registry
   (`GET /api/plots/definitions`) — already a single mechanism.
-- **`docked` is the contract's chrome switch.** A view/panel reads `docked` to hide anything that only
-  makes sense free-floating (the reload button, the per-plot Export dropdown) — the board re-fetches on
-  context change and exports via PDF/CSV, so that chrome would be redundant in a slot. `InteractivePanel`
-  forwards `docked` to its view for exactly this.
+- **`docked` is the contract's chrome switch.** A panel reads `docked` to hide anything that only makes
+  sense free-floating (e.g. the per-plot Export dropdown) — the board re-fetches on context change and
+  exports via PDF/CSV, so that chrome is redundant in a slot. `SummaryPanel` and the cluster panels use
+  it; `InteractivePanel` can forward it to a view that needs it (none do today — plots stay fresh via
+  `useDataRefresh`, so there are no per-plot reload buttons to hide).
 
 **Exception — the gating page (`gate/GatingPlots.vue`) is intentionally NOT registry-hosted.** It is a
 single, *write-capable* gate-drawing workspace (`GatePlotPanel` draws/edits gates), not a multi-type
@@ -349,9 +350,36 @@ onUnmounted(() => {
 })
 ```
 
-For task results, the `task:result` message updates `img.filepaths[valueName]` in the Pinia project store automatically (handled in `ws.ts`). Panels that react to new results should `watch` the relevant image store field.
+For task results, the `task:result` message updates `img.filepaths[valueName]` in the Pinia project store automatically (handled in `ws.ts`). Panels that need to re-fetch when a task changes data should use **`useDataRefresh`** (see *Data freshness* below), not a hand-rolled watch.
 
 Full WS message-type reference is in `ARCHITECTURE.md`.
+
+---
+
+## Data freshness — task-refresh (no per-plot reload buttons)
+
+A task can rewrite data **in place** (same `value_name` / clustering `suffix`), so `img.filepaths`
+doesn't change and a plot keyed on it never re-fetches. Rather than give every plot a manual reload
+button, plots auto-refresh off a **targeted, per-image version signal**:
+
+- `stores/project.ts` holds `dataVersion: Record<imageUid, number>`. On a successful task (`ws.ts`,
+  `task:status == 'done'`) it bumps the touched image(s) — `bumpDataVersion(uid)`. A **set/combined**
+  task reports all its members in the status message's `imageUids` (the backend sends the member list,
+  not just the representative — see `api/src/sockets.jl`), so every member is bumped.
+- Plots subscribe with the **one primitive**, `composables/useDataRefresh.ts`:
+  ```ts
+  useDataRefresh(() => props.imageUids, load)   // refetch only when a task touches one of THESE images
+  ```
+  It watches `project.dataVersionFor(theirImages)` and calls the reload fn only when an image *that plot
+  shows* changed — never on unrelated tasks. Used by `useSummaryData`, `UmapView`, the cluster panels
+  (heatmap / HMM) and `GatingStrategyView`. **Do not** re-import the store and hand-weave a `dataVersion`
+  watch in a new plot — call `useDataRefresh`.
+- Gated by the global **`autoRefreshOnTask`** setting (Settings → Interface, on by default). Because
+  `useDataRefresh` is the single chokepoint, that one toggle governs every plot; off → plots refresh on
+  the next navigation / input change instead.
+
+This mirrors the older gate path (`gating:popmap` → `reloadToken`) and the old R app's success-time
+`retrieveState`. The **napari viewer** refresh is a separate, data-vs-image path — see `docs/NAPARI.md`.
 
 ---
 

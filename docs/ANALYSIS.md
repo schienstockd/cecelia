@@ -52,7 +52,8 @@ No `LayoutCanvas` change.
 ### `docked` — the chrome switch
 Every hosted plot reads `docked` (true in a board slot). Docked plots drop the chrome that only makes
 sense free-floating — the **reload** button and the per-plot **Export** dropdown — because the board
-re-fetches on context change and exports via PDF/CSV. `InteractivePanel` forwards `docked` to its view.
+re-fetches on context change and exports via PDF/CSV. (`SummaryPanel` + cluster panels take `docked`; a
+future interactive view that grows free-floating-only chrome would take it via `InteractivePanel` too.)
 
 ### Clustering — one run per board
 Cluster plots (UMAP + `CLUSTER_PANELS`) share **one clustering run per board**: board-level

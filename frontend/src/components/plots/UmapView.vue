@@ -16,6 +16,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, nextTick, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 import ScatterGL from './ScatterGL.vue'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import type { VisProps } from '../../plots/plot'
@@ -28,7 +29,6 @@ const props = defineProps<{
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
   state: { labels?: boolean }
-  docked?: boolean               // hosted in a grid slot (Analysis board) → drop the reload button
 }>()
 const log = useLogStore()
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
@@ -169,6 +169,7 @@ async function load() {
 }
 
 watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix], load)
+useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
 watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
 onMounted(load)
@@ -208,8 +209,6 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
     <div class="uv-ctrl">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
-      <button v-if="!docked" class="cc-btn cc-btn-ghost" @click="load"
-              v-tooltip.bottom="'Reload (e.g. after re-running clustering at the same suffix)'"><i class="pi pi-refresh" /></button>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>

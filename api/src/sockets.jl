@@ -9,7 +9,11 @@ function ws_send(ws, msg)
 end
 
 ws_log(ws, task_id, line)              = ws_send(ws, (; type="task:log",      taskId=task_id, line=line))
-ws_status(ws, task_id, status, uid="") = ws_send(ws, (; type="task:status",   taskId=task_id, status=status, imageUid=uid))
+# `image_uids` carries ALL images a task touched — for a set/combined task, `uid` is just the
+# representative (first) member, so the frontend needs the full list to invalidate every member's plots
+# (task-refresh; see docs/todo/TASK_DATA_REFRESH_PLAN.md). Defaults empty → single-image tasks fall back
+# to `imageUid` on the frontend.
+ws_status(ws, task_id, status, uid=""; image_uids=String[]) = ws_send(ws, (; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids))
 ws_result(ws, task_id, uid, meta)      = ws_send(ws, (; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 
 function ws_progress(ws, task_id, fraction::Float64)
@@ -149,7 +153,9 @@ function handle_task_run(ws, data)
                                   final_status[] = rec.status
                               end)
             isnothing(result) || ws_result(ws, task_id, rep, result)
-            ws_status(ws, task_id, string(final_status[]), rep)
+            # a set task touched EVERY member — send the full list so the frontend invalidates all of
+            # their plots, not just the representative's (closes the non-rep-member gap).
+            ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs])
             return
         end
 
