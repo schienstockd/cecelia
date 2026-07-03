@@ -525,6 +525,24 @@ const { defs, reload: reloadDefs } = useTaskDefs('myCategory')   // must match J
 
 > **Functions not showing on the module page?** `useTaskDefs` fetches on mount and auto-retries up to 5 times (2 s apart) if the server is still starting. If defs are still empty after that, `TaskRunner` shows a **Reload** button — click it to retry. The most common causes: (1) the Julia server isn't running yet; (2) a task JSON file has a syntax error (check the Julia console for `Skipping malformed task spec` warnings); (3) `api/src/routes.jl` was changed but the server wasn't restarted — those files are not Revise-tracked.
 
+### Remembering task params
+
+`TaskRunner` does **not** keep param values in `localStorage`. They are remembered **per object in
+`ccid.json`** (`meta["funParams"]["<fun_name>"]`), mirroring the old R `moduleFunParams`:
+
+- **On run**, `api/src/sockets.jl` (`_remember_fun_params`) saves the submitted params to **each
+  processed image** (a record of what params produced it) *and* to the **set** (the shared
+  last-used default). The frontend sends `setUid` in `task:run` for this.
+- **On load**, `TaskRunner` fetches `GET /api/tasks/funparams?projectUid&fun&imageUid?&setUid?` and
+  populates the form **image → set → task-defaults**. It passes `imageUid` only when exactly one
+  image is selected (the form is one config applied to all selected images, so with several
+  selected it shows the set-level default). The fetch re-runs on function change and on project/set
+  switch — which is what stops one project's params leaking into another (there is no project-keyed
+  localStorage; `ccid.json` is the single source of truth).
+
+Whiteboard chain nodes are unaffected — their params live in the per-project chain template, not in
+`funParams`.
+
 `ModuleLayout` provides the image table on the left and the `#right` slot for the task panel. Key props:
 
 | Prop | Default | Effect |

@@ -95,12 +95,28 @@ function handle_chain_run(ws, data)
     end
 end
 
+# Persist last-used params to each image dir + the set dir ({proj}/1/{uid}/ccid.json → meta.funParams).
+# Dir-based (no object load) — see write_module_fun_params! in app/src/model/image.jl.
+function _remember_fun_params(proj_root::String, fun::String, params::Dict{String,Any},
+                              image_uid::String, image_uids::Vector{String}, set_uid::String)
+    uids = !isempty(image_uids) ? image_uids : (isempty(image_uid) ? String[] : [image_uid])
+    try
+        for u in uids
+            write_module_fun_params!(joinpath(proj_root, "1", u), fun, params)
+        end
+        isempty(set_uid) || write_module_fun_params!(joinpath(proj_root, "1", set_uid), fun, params)
+    catch ex
+        @warn "Could not persist funParams" fun exception=ex   # best-effort; never block the run
+    end
+end
+
 function handle_task_run(ws, data)
     task_id     = String(get(data, :taskId, ""))
     fun_name    = String(get(data, :funName, ""))
     project_uid = String(get(data, :projectUid, ""))
     image_uid   = String(get(data, :imageUid, ""))
     image_uids  = String[String(u) for u in get(data, :imageUids, [])]
+    set_uid     = String(get(data, :setUid, ""))
     pool_name   = String(get(data, :poolName, ""))
     params      = _to_str_dict(get(data, :params, nothing))
 
@@ -110,6 +126,12 @@ function handle_task_run(ws, data)
         ws_status(ws, task_id, "failed")
         return
     end
+
+    # Remember the params for this run (R parity: saveModuleFunParams). Persist to each processed
+    # image (a record of what params produced it) and to the set (the shared last-used default) so
+    # the module-page form is pre-populated next time (image → set → task-defaults). Done here, at
+    # dispatch, so it sticks regardless of run outcome — like the old taskManager did at launch.
+    _remember_fun_params(proj_root, fun_name, params, image_uid, image_uids, set_uid)
 
     Threads.@spawn begin
         task_struct = try

@@ -155,6 +155,28 @@ function api_task_definitions(req::HTTP.Request)
     200, JSON3.write(result)
 end
 
+# ── Task param memory (funParams) ─────────────────────────────────────────────
+# GET /api/tasks/funparams?projectUid=&fun=&imageUid=&setUid=
+# Returns the last-used params for `fun`, resolved image → set → none (R parity). The frontend
+# passes imageUid only when exactly one image is selected (else the shared set-level default).
+function api_task_fun_params(req::HTTP.Request)
+    q     = HTTP.queryparams(HTTP.URI(req.target))
+    proj  = get(q, "projectUid", "")
+    fun   = get(q, "fun", "")
+    imgu  = get(q, "imageUid", "")
+    setu  = get(q, "setUid", "")
+    (isempty(proj) || isempty(fun)) &&
+        return 400, JSON3.write((; error = "projectUid and fun are required"))
+
+    proj_root = joinpath(projects_dir(), proj)
+    params = isempty(imgu) ? nothing :
+             Cecelia.read_module_fun_params(joinpath(proj_root, "1", imgu), fun)
+    if isnothing(params) && !isempty(setu)
+        params = Cecelia.read_module_fun_params(joinpath(proj_root, "1", setu), fun)
+    end
+    200, JSON3.write((; params = params))
+end
+
 # ── Resource pools ───────────────────────────────────────────────────────────
 
 function api_pools_list(_req)

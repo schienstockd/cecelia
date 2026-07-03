@@ -240,6 +240,21 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00067** — **Per-image task-param memory (R moduleFunParams port); replaces cross-project localStorage** (2026-07-03)
+Module-page task params were kept in `localStorage` keyed by `module:task` — not scoped by project,
+so switching projects left the previous project's image/channel/pop selections in the form. The old
+R app instead remembered params **per object in `ccid.rds`** (`saveModuleFunParams`/`moduleFunParams`).
+Ported that: params live in `ccid.json` under `meta["funParams"]["<fun_name>"]`, saved on run to
+each processed **image** (record of what produced it) *and* the **set** (shared last-used default),
+via dir-based `write_module_fun_params!`/`read_module_fun_params` (`app/src/model/image.jl`) — a
+targeted `ccid.json` read-modify-write (same idiom tasks use for `filepath`), dir-based so the set
+never loads all its images. `api/src/sockets.jl` (`_remember_fun_params`) saves on `task:run` (needs
+the new `setUid` in the message); `GET /api/tasks/funparams` resolves image → set → none. `TaskRunner`
+fetches from it and populates image → set → task-defaults (imageUid passed only when exactly one
+image is selected — the form is one config for all selected). No more localStorage for params →
+never leaks across projects. Tests: funParams round-trip in `runtests.jl`. Docs: OBJECTMODEL.md,
+MODULES.md, API.md.
+
 **#00066** — **Whiteboard: set tasks weren't picnic nodes; downstream input value_name couldn't be pre-wired** (2026-07-03)
 Two chain-authoring gaps surfaced while building real pipelines. (1) **Scope wasn't inherited from
 the task spec.** HMM/clustering tasks declare `"scope": "set"` in their JSON, but the whiteboard

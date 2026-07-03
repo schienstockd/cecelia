@@ -108,6 +108,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_meta(req)
         elseif path == "/api/tasks/definitions"
             api_task_definitions(req)
+        elseif path == "/api/tasks/funparams"
+            api_task_fun_params(req)
         elseif path == "/api/pools"
             api_pools_list(req)
         elseif path == "/api/chains"
