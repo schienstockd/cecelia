@@ -62,6 +62,18 @@ function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
     spec
 end
 
+# Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
+# This makes the output handle a single, introspectable source of truth (the JSON) rather than a
+# constant buried in the task's .jl: the whiteboard reads the same field to prefill a downstream
+# node's input `valueName` (see ChainModule value-name propagation). Falls back to `default` when
+# the spec declares no fixed output (e.g. tasks whose output name is a user-set param instead).
+function _spec_output_value_name(task::CciaTask, default::String)::String
+    spec = _task_spec(task)
+    isnothing(spec) && return default
+    v = get(spec, "outputValueName", nothing)
+    isnothing(v) ? default : string(v)
+end
+
 # Subclasses define their spec path by implementing this or we use naming convention.
 # Default: look for <category>/<task>.json next to the .jl file.
 function _spec_path(task::CciaTask)::Union{String, Nothing}

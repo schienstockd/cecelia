@@ -5,6 +5,7 @@
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "default",
+  "outputValueName": "driftCorrected",
   "params": [
     {
       "key": "valueName",

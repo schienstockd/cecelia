@@ -37,6 +37,10 @@ export interface TaskDef {
   params: ParamDef[]
   resource_pool?: string  // default resource profile for this task
   scope?: string          // "image" (default) | "set" — set-scope runs once over all selected images
+  outputValueName?: string // the value_name this task produces (e.g. "cpCorrected"); read by the
+                           // whiteboard to prefill a downstream node's input valueName. Absent when
+                           // the output name is a user-set param instead (segment.cellpose).
+  outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'
 }
 
 export type ParamValues = Record<string, unknown>

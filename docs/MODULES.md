@@ -77,7 +77,7 @@ im_path  = joinpath(proj_dir, "0", img.uid, string(filename))
 
 ```julia
 out_path       = joinpath(proj_dir, "0", img.uid, "ccidMyResult.zarr")
-out_value_name = "myResult"
+out_value_name = _spec_output_value_name(task, "myResult")   # from the JSON, not hardcoded
 out_filename   = "ccidMyResult.zarr"
 
 # … run the actual work (Python subprocess or pure Julia) …
@@ -90,6 +90,23 @@ return Dict{String,Any}("valueName" => out_value_name, "filename" => out_filenam
 ```
 
 Return `nothing` on failure. The scheduler marks the task failed and the frontend shows it in red.
+
+**Declare a fixed output value_name in the JSON, don't hardcode it in the `.jl`.** A producer's
+output handle is a **single source of truth**: a top-level `"outputValueName"` in the task spec.
+Read it with `_spec_output_value_name(task, "<fallback>")` (`app/src/tasks/task.jl`) rather than
+writing a bare string literal, so the whiteboard can introspect it and prefill a downstream node's
+input `valueName` (see *Value-name propagation* in `docs/SCHEDULER.md`). The fallback keeps a task
+working if the JSON field is ever missing.
+
+```json
+{ "task": "cellposeCorrect", "fun_name": "cleanupImages.cellposeCorrect",
+  "resource_pool": "gpu", "outputValueName": "cpCorrected", "params": [ … ] }
+```
+
+Two other output shapes exist, both already introspectable and not to be re-expressed as a bare
+literal: a task whose output name is **user-chosen** exposes an `outputValueName` **param** (e.g.
+`segment.cellpose`), and a **composite** declares a top-level `outputValueName` that its executor
+collapses `ccid.json` down to (see *`outputValueName` — canonical output registration* below).
 
 ### Running a Python subprocess
 
@@ -430,7 +447,7 @@ Most tasks are **image-scope**: the GUI runs them once per selected image. A **s
 A set-scope task differs from an image-scope task in three places:
 
 1. **`_run_task` dispatches on a vector.** Define `_run_task(::MyTask, imgs::Vector{CciaImage}, params; on_log, on_progress, on_process)` instead of the single-`img` form. Build the pooled cross-image table with `pop_df(imgs, uids, pop_type, pops; …)` (it stacks per-image rows and tags each with a `uID` column). Write results back **per image** (loop `imgs`, write each one's labelProps). See `app/src/tasks/behaviour/hmm_states.jl`.
-2. **The JSON spec declares `"scope": "set"`.** This is what routes the run. `task_scope(task)` reads it (default `"image"`).
+2. **The JSON spec declares `"scope": "set"`.** This is what routes the run. `task_scope(task)` reads it (default `"image"`). It also makes the task a **picnic node** on the whiteboard automatically — a chain node inherits its scope from this field (`_task_default_scope`, see `docs/SCHEDULER.md` → *Node scopes*), so you never restate scope when building a chain.
    ```json
    { "fun_name": "behaviour.hmm_states", "task": "hmmStates", "label": "HMM States", "category": "Behaviour", "scope": "set", "env": ["local"], "resource_pool": "default", "params": [ … ] }
    ```

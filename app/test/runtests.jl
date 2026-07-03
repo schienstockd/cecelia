@@ -318,6 +318,40 @@ end
     end
 
     # ── Chain template round-trip ─────────────────────────────────────────────
+    # ── Chain node scope defaults from the task spec (single source of truth) ────
+    # A node built without an explicit scope inherits the task JSON's "scope": set-scope
+    # tasks (behaviour.hmm, clustTracks.cluster) become picnic nodes automatically, image
+    # tasks stay image-scope. An explicit scope always overrides.
+    @testset "Chain node scope inherits from task spec" begin
+        @test Cecelia._task_default_scope("clustTracks.cluster") == "set"
+        @test Cecelia._task_default_scope("behaviour.hmm")        == "set"
+        @test Cecelia._task_default_scope("importImages.remove")  == "image"
+        @test Cecelia._task_default_scope("nonexistent.task")     == "image"   # unknown fn → image
+
+        # chain_node / ChainNode with no scope kwarg resolve from the spec …
+        @test chain_node("clustTracks.cluster").scope == "set"
+        @test chain_node("importImages.remove").scope == "image"
+        @test ChainNode(id="x", fn="behaviour.hmm").scope == "set"
+        # … and an explicit scope still wins (force a set task to run per-image)
+        @test chain_node("clustTracks.cluster"; scope="image").scope == "image"
+
+        # Deserialisation: a node dict with no "scope" key also inherits from the spec
+        @test Cecelia._node_from_dict(Dict("id"=>"n", "fn"=>"clustTracks.cluster")).scope == "set"
+        # …while a stored scope (frozen template) is honoured verbatim
+        @test Cecelia._node_from_dict(Dict("id"=>"n", "fn"=>"clustTracks.cluster",
+                                           "scope"=>"image")).scope == "image"
+    end
+
+    # ── Producer output value_name is declared in the JSON spec (introspectable) ──
+    # The whiteboard reads this to prefill a downstream node's input `valueName`.
+    @testset "Output value_name from spec" begin
+        @test Cecelia._spec_output_value_name(CellposeCorrect(), "fallback") == "cpCorrected"
+        @test Cecelia._spec_output_value_name(DriftCorrect(),    "fallback") == "driftCorrected"
+        @test Cecelia._spec_output_value_name(AfCorrect(),       "fallback") == "afCorrected"
+        # A task that declares no top-level outputValueName falls back to the caller's default
+        @test Cecelia._spec_output_value_name(RemoveImage(), "fallback") == "fallback"
+    end
+
     @testset "Chain template round-trip" begin
         proj = create_project!(name="chain-tpl-$(rand(1000:9999))", kind="static")
 

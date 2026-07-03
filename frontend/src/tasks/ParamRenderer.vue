@@ -14,6 +14,9 @@ export interface ParamContext {
   images: CciaImage[]
   projectUid?: string        // popSelection: needed to query the gating popmap
   values?: ParamValues       // sibling param values (popSelection reads valueName)
+  extraValueNames?: string[] // valueNameSelection: value_names not (yet) on disk — e.g. the output
+                             // of an upstream whiteboard node ("cpCorrected") that only exists once
+                             // the chain runs. Merged into the option list so it can be selected.
 }
 
 const props = defineProps<{
@@ -44,12 +47,18 @@ function imageFieldKeys(img: CciaImage, field: string | undefined): string[] {
 }
 
 const availableValueNames = computed(() => {
+  const extra = props.context?.extraValueNames ?? []
   const images = props.context?.images ?? []
-  if (images.length === 0) return ['default']
-  const field = props.param.field
-  const sets = images.map(img => new Set(imageFieldKeys(img, field)))
-  const first = sets[0]
-  return [...first].filter(k => sets.every(s => s.has(k)))
+  // Base names: intersection of what exists on the selected images (or just "default" if none).
+  const base = images.length === 0
+    ? ['default']
+    : (() => {
+        const field = props.param.field
+        const sets = images.map(img => new Set(imageFieldKeys(img, field)))
+        return [...sets[0]].filter(k => sets.every(s => s.has(k)))
+      })()
+  // Union in chain-propagated names (upstream node outputs), de-duplicated, preserving order.
+  return [...new Set([...base, ...extra])]
 })
 
 // When images change, auto-select an appropriate value name.
@@ -58,6 +67,9 @@ const availableValueNames = computed(() => {
 watch(() => props.context?.images, (images) => {
   if (props.param.type !== 'valueNameSelection') return
   if (!images || images.length === 0) return
+  // Keep an already-valid selection — notably an edge-propagated chain value like
+  // "cpCorrected" — rather than resetting it to the active/first name on every image change.
+  if (props.modelValue && availableValueNames.value.includes(props.modelValue as string)) return
   const field = props.param.field
   const first = availableValueNames.value[0] ?? 'default'
   const preferred = (field === undefined || field === 'filepath')

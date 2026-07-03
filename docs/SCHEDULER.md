@@ -191,6 +191,14 @@ node routes to the correct global pool even when the task spec's default differs
 | `"set"` | Dedicated set-scope thread | Once for the whole set, after ALL images arrive at the barrier |
 | `"incremental"` | Dedicated watcher thread | After each upstream node:done event, debounced |
 
+**Scope is inherited from the task spec, not restated per node.** The task JSON's `"scope"` field
+is the single source of truth (`task_scope`, `task.jl`). A `ChainNode` / `chain_node` built with no
+explicit `scope` resolves it from the spec via `_task_default_scope(fn)` (`chain.jl`) — so
+`chain_node("behaviour.hmm")` and dragging HMM/clustering onto the whiteboard both produce a
+picnic node without the author naming the scope. An explicit non-empty `scope` still overrides
+(force a set task per-image if ever needed); a frozen template's stored scope is honoured verbatim.
+The whiteboard drop handler mirrors this — `def.scope ?? 'image'` picks the node's visual type.
+
 ### Set-scope (picnic) nodes
 
 A picnic node is a synchronisation point: every image must arrive before anything runs.
@@ -247,6 +255,34 @@ thread loop. A failed plot never kills the pipeline. The `incremental_ids` set i
 `_execute_image_chain!` is the mechanism.
 
 ---
+
+## Value-name propagation between linked nodes
+
+A processing task consumes an input image version (a `valueName`) and produces a new one — e.g.
+`cleanupImages.cellposeCorrect` reads `default` and writes `cpCorrected`. Because the output only
+exists on disk **after** the chain runs, a downstream node's `valueNameSelection` widget can't
+offer it from the image (the image still only has `default` at authoring time). Two pieces close
+this gap so a chain like `import → cellposeCorrect → afDriftCorrect` can be wired before any image
+is processed:
+
+1. **Declared output (introspectable).** Every producer declares its output value_name in the JSON
+   spec — a top-level `"outputValueName"` for a fixed output (`cpCorrected`, `driftCorrected`,
+   `afCorrected`), or an `outputValueName` **param** when the user names it (`segment.cellpose`).
+   The task's `_run_task` reads the fixed form via `_spec_output_value_name(task, default)` instead
+   of hardcoding the string, so exactly one place states it. `GET /api/tasks/definitions` serves
+   the field to the whiteboard.
+
+2. **Edge-driven prefill (whiteboard).** On connecting A→B, `ChainModule.vue` reads A's declared
+   output (`nodeOutputValueName`) and prefills every field-compatible `valueNameSelection` param on
+   B with it (`propagateValueName`) — matched by field (`filepath` vs `labels`). The value is
+   **auto-populated but editable**: it's offered through `paramContext.extraValueNames` (upstream
+   outputs merged into the dropdown even though they don't exist on the image yet), and
+   `ParamRenderer`'s auto-select watch keeps an already-valid edge value instead of resetting it to
+   the image's active version.
+
+The chain executor already threads real outputs at run time — the composite step-wiring
+(`params["valueName"] = result["valueName"]`, `task.jl`) and each node re-reading `ccid.json` — so
+propagation is an **authoring-time convenience**, not a second execution path.
 
 ## Template vs run record
 
