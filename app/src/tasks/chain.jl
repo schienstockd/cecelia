@@ -96,7 +96,25 @@ end
 
 # ── Filesystem helpers ────────────────────────────────────────────────────────
 
-_chains_dir(proj::CciaProject)::String         = joinpath(proj.root, "chains")
+# Chains live under `<proj>/settings/chains/` — the same location the API layer reads/writes
+# (`_chains_dir_for_project` in api/src/routes.jl). These MUST agree: the whiteboard saves a
+# template through the API, then `run_chain` loads it through here. They diverged once (API moved
+# chains into settings/, this stayed at `<proj>/chains/`) and every chain run failed with
+# "template not found" — keep them in sync. Mirrors the API's legacy-location migration so a
+# REPL-first project (or one predating settings/) is picked up too.
+function _chains_dir(proj::CciaProject)::String
+    newdir = joinpath(proj.root, "settings", "chains")
+    olddir = joinpath(proj.root, "chains")   # legacy location (pre-settings/)
+    if isdir(olddir) && !isdir(newdir)
+        try
+            mkpath(joinpath(proj.root, "settings"))
+            mv(olddir, newdir)
+        catch e
+            @warn "Could not migrate chains into settings/" project=proj.uid exception=e
+        end
+    end
+    newdir
+end
 _template_path(proj::CciaProject, name::String) = joinpath(_chains_dir(proj), "$name.json")
 _runs_dir(proj::CciaProject)::String           = joinpath(_chains_dir(proj), "runs")
 _cache_dir(proj::CciaProject)::String          = joinpath(_chains_dir(proj), ".cache")
