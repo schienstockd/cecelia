@@ -346,14 +346,16 @@ function onCanvasDrop(event: DragEvent) {
   const def = dragDef
   dragDef = null
   const id = `${def.fun_name}.${Date.now()}`
-  const scope = 'image'  // default; user can change in config panel
+  // Scope defaults from the task spec: a set-scope task (behaviour.hmm, clustTracks.cluster)
+  // drops in as a picnic node. The user can still change it in the config panel.
+  const scope = def.scope ?? 'image'
   const initialParams: Record<string, unknown> = {}
   for (const p of def.params) {
     if (p.default !== undefined) initialParams[p.key] = p.default
   }
   addNodes([{
     id,
-    type: 'task',
+    type: scope === 'set' ? 'picnic' : 'task',
     position: pos,
     data: {
       fn:             def.fun_name,
@@ -366,6 +368,59 @@ function onCanvasDrop(event: DragEvent) {
   }])
 }
 
+// ── Value-name propagation ────────────────────────────────────────────────────
+// A processing task's output value_name (e.g. cellposeCorrect → "cpCorrected") only exists on
+// disk after the chain runs, so a downstream node's `valueNameSelection` can't offer it from the
+// image. Instead we read the producer's declared output (TaskDef.outputValueName, or an
+// `outputValueName` param for tasks whose output name is user-set) and, when an edge is drawn,
+// prefill the downstream node's input valueName with it — auto-populated but still editable.
+
+function taskDefFor(fn: string): TaskDef | undefined {
+  return allTaskDefs.value.find(d => d.fun_name === fn)
+}
+
+// filepath vs labels — the two image fields a value_name can live under. Consumer params tag this
+// via `field` ('labels' | 'filepath' | 'imFilepath'); anything not 'labels' is a filepath.
+function normField(f: string | undefined): 'filepath' | 'labels' {
+  return f === 'labels' ? 'labels' : 'filepath'
+}
+
+// The value_name a node produces, or null if it declares none (import, plots, …).
+function nodeOutputValueName(node: Node): { name: string; field: 'filepath' | 'labels' } | null {
+  const def = taskDefFor(node.data.fn)
+  if (!def) return null
+  if (def.outputValueName)
+    return { name: def.outputValueName, field: normField(def.outputField) }
+  // Output name is a user-set param (e.g. segment.cellpose "outputValueName") → labels output.
+  const outParam = def.params?.find(p => p.key === 'outputValueName')
+  if (outParam) {
+    const v = (node.data.params?.outputValueName ?? outParam.default) as unknown
+    if (v) return { name: String(v), field: normField(outParam.field) || 'labels' }
+  }
+  return null
+}
+
+// Prefill every field-compatible valueNameSelection param on `target` with `source`'s output.
+function propagateValueName(sourceId: string, targetId: string) {
+  const source = findNode(sourceId)
+  const target = findNode(targetId)
+  if (!source || !target) return
+  const out = nodeOutputValueName(source)
+  if (!out) return
+  const def = taskDefFor(target.data.fn)
+  if (!def) return
+  const patch: Record<string, unknown> = {}
+  for (const p of def.params ?? []) {
+    if (p.type === 'valueNameSelection' && normField(p.field) === out.field)
+      patch[p.key] = out.name
+  }
+  if (Object.keys(patch).length) {
+    updateNode(targetId, {
+      data: { ...target.data, params: { ...target.data.params, ...patch } },
+    })
+  }
+}
+
 // ── Edge connections ─────────────────────────────────────────────────────────
 
 onConnect((params) => {
@@ -374,6 +429,7 @@ onConnect((params) => {
     id: `${params.source}->${params.target}`,
     style: { stroke: 'var(--cc-accent, #a78bfa)' },
   }])
+  if (params.source && params.target) propagateValueName(params.source, params.target)
 })
 
 // Double-click an edge to remove it.
@@ -447,7 +503,15 @@ const paramContext = computed(() => {
   const imgs = runSelectedUids.value.length
     ? runImages.value.filter(i => runSelectedUids.value.includes(i.uid))
     : runImages.value
-  return { images: imgs }
+  // Value_names produced by nodes feeding the selected node — offered in its valueNameSelection
+  // dropdowns even though they don't exist on the image until the chain runs.
+  const extraValueNames = selectedNodeId.value
+    ? edges.value
+        .filter(e => e.target === selectedNodeId.value)
+        .map(e => { const s = findNode(e.source); return s ? nodeOutputValueName(s)?.name : null })
+        .filter((n): n is string => !!n)
+    : []
+  return { images: imgs, extraValueNames }
 })
 
 const runAllSelected = computed(() =>

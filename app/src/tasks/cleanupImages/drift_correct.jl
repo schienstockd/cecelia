@@ -56,7 +56,7 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] Drift correction complete.")
 
-    out_value_name = "driftCorrected"
+    out_value_name = _spec_output_value_name(task, "driftCorrected")
     out_filename   = "ccidDriftCorrected.ome.zarr"
 
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))

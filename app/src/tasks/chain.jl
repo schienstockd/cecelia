@@ -32,9 +32,25 @@ struct ChainNode
     resource_pool::String
 end
 
-ChainNode(; id, fn, scope="image", params=Dict{String,Any}(),
+# Default scope for a task fun_name, read from its JSON spec's "scope" field. The task JSON is
+# the single source of truth for scope: set-scope (picnic) tasks like behaviour.hmm and
+# clustTracks.cluster declare "scope": "set" there, so a node built from them — in the REPL or
+# dragged onto the whiteboard — becomes a picnic node without the author restating it. Unknown
+# fn or specless task → "image".
+function _task_default_scope(fn::String)::String
+    try
+        task_scope(_task_from_fun_name(fn))   # reads the spec's "scope" field (task.jl)
+    catch
+        "image"
+    end
+end
+
+# An empty scope means "inherit from the task spec" (see _task_default_scope). An explicit
+# non-empty scope always wins, so a caller can still force image-scope on a set task if needed.
+ChainNode(; id, fn, scope="", params=Dict{String,Any}(),
             barrier_policy="all", resource_pool="") =
-    ChainNode(id, fn, scope, params, barrier_policy, resource_pool)
+    ChainNode(id, fn, isempty(scope) ? _task_default_scope(fn) : scope,
+              params, barrier_policy, resource_pool)
 
 struct ChainEdge
     from::String
@@ -91,7 +107,9 @@ function _node_from_dict(d)::ChainNode
     ChainNode(
         string(get(d, "id", get(d, :id, ""))),
         string(get(d, "fn", get(d, :fn, ""))),
-        string(get(d, "scope", get(d, :scope, "image"))),
+        let sc = string(get(d, "scope", get(d, :scope, "")))
+            isempty(sc) ? _task_default_scope(string(get(d, "fn", get(d, :fn, "")))) : sc
+        end,
         Dict{String,Any}(string(k) => v
                          for (k, v) in get(d, "params", get(d, :params, Dict()))),
         string(get(d, "barrier_policy", get(d, :barrier_policy, "all"))),
@@ -945,7 +963,7 @@ Thin constructor for ChainNode with auto-generated id.
 """
 function chain_node(fn::String;
                     id::String             = gen_uid(),
-                    scope::String          = "image",
+                    scope::String          = "",   # "" → inherit from the task spec (see _task_default_scope)
                     params::Dict{String,Any} = Dict{String,Any}(),
                     barrier_policy::String = "all",
                     resource_pool::String  = "")::ChainNode

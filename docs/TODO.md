@@ -240,6 +240,25 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00066** — **Whiteboard: set tasks weren't picnic nodes; downstream input value_name couldn't be pre-wired** (2026-07-03)
+Two chain-authoring gaps surfaced while building real pipelines. (1) **Scope wasn't inherited from
+the task spec.** HMM/clustering tasks declare `"scope": "set"` in their JSON, but the whiteboard
+drop handler hardcoded `scope='image'` (and `chain_node`/`ChainNode` defaulted to `"image"`), so
+they dropped in as ordinary per-image nodes instead of picnic nodes. The task JSON is now the single
+source of truth: `_task_default_scope(fn)` (`chain.jl`, delegating to `task_scope`) resolves an
+empty scope from the spec in `ChainNode`/`chain_node`/`_node_from_dict`; the frontend uses
+`def.scope ?? 'image'`. An explicit scope and a frozen template's stored scope still win. (2)
+**Downstream nodes couldn't select an upstream node's output value_name** (`import → cellposeCorrect
+→ afDriftCorrect` — `cpCorrected` doesn't exist on the image until the chain runs). Unified the
+producer output contract as a top-level `"outputValueName"` in the JSON (added to
+`cellpose_correct`/`drift_correct`/`af_correct`; read via `_spec_output_value_name(task, default)`
+instead of a hardcoded literal). On drawing an edge, `ChainModule.propagateValueName` prefills the
+downstream node's field-compatible `valueNameSelection` params with the upstream output
+(auto-populated, editable); `paramContext.extraValueNames` + `ParamRenderer` (union into the option
+list, keep an already-valid edge value) make the not-yet-on-disk name selectable. Docs:
+SCHEDULER.md (*Node scopes*, *Value-name propagation*), MODULES.md. Tests: scope-from-spec +
+output-value-name-from-spec in `runtests.jl`.
+
 **#00065** — **Task-manager "cancel all" + per-project task-list scoping; resync silently no-op'd against processed variants** (2026-07-03)
 Three related fixes to today's real-data testing round. (1) Added a "cancel all" button next to
 "clear finished" in the module Tasks sidebar — cancels every running/queued task for that

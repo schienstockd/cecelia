@@ -73,7 +73,7 @@ function _run_task(task::AfCorrect, img::CciaImage, params::Dict{String,Any};
 
     on_log("[INFO] AF correction complete.")
 
-    out_value_name = "afCorrected"
+    out_value_name = _spec_output_value_name(task, "afCorrected")
     out_filename   = "ccidAfCorrected.ome.zarr"
 
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
