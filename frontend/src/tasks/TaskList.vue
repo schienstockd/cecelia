@@ -6,16 +6,20 @@ import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
+import { useProjectMetaStore } from '../stores/projectMeta'
 
-const props  = defineProps<{ module: string }>()
-const tasks  = useTaskStore()
-const ws     = useWsStore()
-const router = useRouter()
+const props       = defineProps<{ module: string }>()
+const tasks       = useTaskStore()
+const ws          = useWsStore()
+const router      = useRouter()
+const projectMeta = useProjectMetaStore()
 
 const expanded  = ref<Set<string>>(new Set())
 const copied    = ref<Set<string>>(new Set())
 
-const items = computed(() => tasks.forModule(props.module))
+// Scoped to the current project — otherwise switching projects leaves the previous project's
+// (e.g. cancelled) tasks visible in this module's list.
+const items = computed(() => tasks.forModule(props.module, projectMeta.current?.uid))
 
 
 function toggleLog(id: string) {

@@ -192,63 +192,28 @@ Do not add a `useGPU` param to task JSON or Julia handlers.
 
 ## Windows compatibility
 
-All code must run on Linux, macOS, and Windows. Key differences:
+All code must run on Linux, macOS, and Windows. Each of these has already caused a real bug —
+use the named helper, don't re-derive the platform branch inline:
 
-### Python venv layout
-| Platform | Path inside `.venv` |
-|----------|----------------------|
-| Linux / macOS | `bin/python3` |
-| Windows | `Scripts\python.exe` |
+- **Python venv path** differs (`bin/python3` vs `Scripts\python.exe`) — always branch on
+  `Sys.iswindows()`, never hardcode one.
+- **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
+  `.bat` vs no-extension.
+- **Process killing** — use `_kill_tree(pid)` in `api/src/sockets.jl`; never write
+  `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
+  handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia
+  process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
+  port** instead of process name.
+- **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
+  processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
+- **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
+- **Path separators** — always `joinpath()`, never string-concatenate paths.
+- **`[PROGRESS]` line endings** — `eachline()` already strips `\r\n` on Windows, no special-casing
+  needed.
 
-Always branch in Julia:
-```julia
-const MY_PYTHON = Sys.iswindows() ?
-    joinpath(root, ".venv", "Scripts", "python.exe") :
-    joinpath(root, ".venv", "bin", "python3")
-```
-
-### bioformats2raw binary name
-```julia
-Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw"
-```
-`bioformats2raw_bin()` in `config.jl` already handles this — don't hardcode the name.
-
-### Process killing
-Use `_kill_tree(pid)` in `api/src/sockets.jl`. Never write `kill`/`pgrep`/`pkill` inline.
-- Unix: recursive `pgrep -P` + `kill -TERM`
-- Windows: `taskkill /F /T /PID` (whole subtree, one shot)
-
-`Base.Process` has no `.pid` field — get the OS PID via libuv:
-```julia
-pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
-```
-
-**`proc.exitcode` is 0 for signal-killed processes.** libuv stores the signal in `proc.termsignal`. Always check both:
-```julia
-ok = proc.exitcode == 0 && proc.termsignal == 0
-```
-Each task's inline subprocess loop does this check (see `tasks/importImages/omezarr.jl`, `tasks/cleanupImages/cellpose_correct.jl`).
-
-### Directory size
-Use `_dir_bytes(path)` in `app/src/utils.jl`:
-- Unix: `du -sb` · Windows: `walkdir + filesize`
-
-### Stopping processes
-The `stop` / `stop-backend` / `stop-napari` pixi tasks kill by **listening port** (`lsof` on unix,
-`Get-NetTCPConnection` on Windows), not by process name — name-matching self-matches the task's own
-shell and was orphaning the napari bridge. Never use `taskkill /IM julia.exe` — it kills all Julia
-processes on the machine.
-
-### Run templates (pixi tasks)
-Launcher logic lives in `pixi.toml` tasks (`pixi run <task>`: `dev`/`prod`/`frontend`/`build`/`napari`/
-`stop`), not shell scripts. Tasks are cross-platform via the deno task shell; for OS-specific commands
-(e.g. killing by port) add a `[target.<platform>.tasks]` override instead of a separate script.
-
-### Path separators
-Always use `joinpath()` in Julia. Never concatenate paths with `/`.
-
-### `[PROGRESS]` line endings
-`eachline()` strips `\r\n` on Windows — the regex `^\[PROGRESS\] (\d+)/(\d+)$` is safe as-is.
+Launcher logic for all of the above lives in `pixi.toml` tasks (`dev`/`prod`/`frontend`/`napari`/
+`stop`), not shell scripts — add a `[target.<platform>.tasks]` override for OS-specific commands
+rather than a separate script.
 
 ---
 
@@ -375,13 +340,10 @@ OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
   verb, extend the owner's function (`import DataFrames: transform`) rather than exporting your own.
 
 ### HTTP.jl v2 WebSocket
-- Use `HTTP.listen(handle_stream, host, port)` — NOT `HTTP.serve`. `HTTP.serve` is the high-level request→response API; `HTTP.listen` is the stream API that supports WS upgrades.
-- Stream handler signature: `handle_stream(stream::HTTP.Stream)` — access request via `req = stream.message`
-- WS upgrade check: `HTTP.WebSockets.isupgrade(req)` then `HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin)->true)`
-- HTTP responses in stream handler: `HTTP.setstatus(stream, N)` + `HTTP.setheader(stream, k=>v)` + `HTTP.startwrite(stream)` + `write(stream, body)` — do NOT return an `HTTP.Response` object
-- Read POST body before writing: `body_bytes = read(stream)` — call this before any `HTTP.setstatus` / `HTTP.startwrite`
-- `check_origin = (req, origin) -> true` required in dev (Vite proxy sends a different origin)
-- WS message loop: `while true; msg = HTTP.WebSockets.receive(ws); ...` — not `for msg in ws`
+Use `HTTP.listen`, not `HTTP.serve` — the latter is request→response only and doesn't support
+WS upgrades. Full stream-handler/WS-upgrade/response conventions are in
+[`docs/API.md`](docs/API.md) → *HTTP.jl v2 conventions* — read that before touching
+`api/src/server.jl` or `api/src/sockets.jl`.
 
 ---
 
@@ -436,6 +398,16 @@ if omezarr is True and 'multiscales' not in zgroup.attrs:
 ```
 Never assume one format — always detect.
 
+**Exception, and a trap:** `read_ome_metadata` (`app/src/tasks/importImages/omezarr.jl`) does **not**
+do this detection — it hardcodes the bioformats2raw nested layout (`zarr/0/.zattrs`), because it
+only ever needs to read the *original import's* calibration metadata (`PhysicalSize*`,
+`TimeIncrement*`). Downstream processed variants (drift/AF-correct, cellpose-correct) write the
+flat layout and carry **no** OME calibration at all — no `unit` on axes, no OME-XML sidecar — so
+pointing this reader at whichever zarr is currently `active` silently returns nothing (this bit
+`resync_ome_meta!` once: it originally read `img_filepath(img)` and quietly no-opped on any image
+with a processed variant active). Any caller of `read_ome_metadata` must resolve
+`img_filepath(img, VERSIONED_DEFAULT_VAL)` — the `"default"` zarr — never the active one.
+
 ---
 
 ## Versioned variable pattern (ccid.json)
@@ -459,15 +431,5 @@ Without this, `get(dict, "default", nothing)` returns `nothing` silently even wh
 
 ## Input definition — param type reference
 
-| type | widget | extra fields |
-|------|--------|-------------|
-| `int` / `float` + min/max | slider | `min`, `max`, `step` |
-| `bool` | checkbox | — |
-| `text` | text input | — |
-| `select` | dropdown | `options: [{label, value}]`, `multiple` |
-| `channelSelection` | channel picker (from image metadata) | `multiple` |
-| `valueNameSelection` | segmentation name picker | `field` |
-| `popSelection` | population picker | `multiple`, `includeRoot` |
-| `labelPropsSelection` | label property picker | `multiple` |
-| `group` | repeatable block | `repeatable`, `sortable`, `params` |
-| `section` | collapsible box | `collapsed`, `params` |
+Full widget-type reference (every type, extra fields, JSON examples) lives in
+[`docs/MODULES.md`](docs/MODULES.md) — don't duplicate it here.

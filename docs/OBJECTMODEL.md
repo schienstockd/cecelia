@@ -117,7 +117,7 @@ Written by `save!(proj::CciaProject)`. Runtime fields (`root`, `_sets`) are not 
 | `labels` | versioned dict | Paths to label zarrs inside `1/{uid}/data/` |
 | `label_props` | versioned dict | Paths to label property files |
 | `attr` | flat dict | User-defined string metadata (used for filtering) |
-| `meta` | free dict | OME metadata extracted at import: `SizeC`, `SizeZ`, `SizeX`, `SizeY`, etc. |
+| `meta` | free dict | OME metadata extracted at import: `SizeC`, `SizeZ`, `SizeX`, `SizeY`, `PhysicalSizeX/Y/Z` (µm/px), `PhysicalSizeUnit`, `TimeIncrement` (seconds/frame), `TimeIncrementUnit`, etc. Physical-size/timing keys are absent (not defaulted) when the source file carried no usable value — the API surfaces them raw/nullable so the frontend can tell "genuinely missing" apart from "confirmed 0/1"; see the metadata-editor warning icon in `docs/UI.md`. `PhysicalSizeZ_raw` is set alongside a corrected `PhysicalSizeZ` when the importer's ImageJ-TIFF Z-spacing auto-fix overrides bioformats2raw's value (see `app/src/tasks/importImages/omezarr.jl`). Images imported before these keys existed can be backfilled without a re-import via `resync_ome_meta!`/`POST /api/images/meta/resync`, which re-reads them from the `"default"` (original bioformats2raw) zarr — deliberately not whichever version is currently `active`, since processed variants (drift/cellpose-correct) carry no OME calibration metadata at all; see `CLAUDE.md` → *OME-ZARR dual-format*. |
 
 `_dir` (the absolute path to `1/{uid}/`) is runtime-only and never written to disk.
 

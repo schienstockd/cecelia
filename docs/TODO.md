@@ -61,6 +61,27 @@ select; (b) a resampling step that emits overlapping sub-tracks as first-class r
 per-image frame-interval normalisation so cross-rate comparison needs no manual skip. Settle the
 storage/UX before building. Not urgent.
 
+**#00063** 🔹 needs-input — **Vendor-specific OME metadata quirks: Olympus/Imaris timelapse interval, MACSIMA channel names**
+> **Needs you:** a real `.oir` (Olympus), `.ims` (Imaris), or MACSIMA-exported file to verify
+> against — the regex/XPath ports below are untested without one.
+
+The old R `cciaImage.R` has two more format-specific metadata fallbacks beyond the plain OME
+`TimeIncrement`/per-plane `DeltaT` case (that one *is* being ported — see the physical-size/
+time-interval metadata work referencing `bioformats2raw`'s `OME/METADATA.ome.xml`):
+- **`omeXMLTimelapseInfo`** (`cciaImage.R:405-516`) dispatches on the original file extension:
+  `.oir` reads a `TIMELAPSE` `StructuredAnnotations` node and pulls the interval from a specific
+  axis-step annotation (falling back to per-plane `DeltaT` if that's zero); `.ims` reads a
+  `Time_Step`/`Time_Interval_[s]` annotation node. Neither shape is standard OME XML.
+- **`omeXMLChannels`** (`cciaImage.R:336-364`) tries `StructuredAnnotations//MapAnnotation` "Dye"
+  labels first (MACSIMA-specific), falling back to standard `Channel` `Name` attributes only if
+  that's empty.
+Both would read from the same `OME/METADATA.ome.xml` bioformats2raw already writes. Deferred
+rather than blind-ported because there's no fixture to confirm the regex/XPath shapes still match
+current bioformats2raw output. When a real file surfaces: port the R logic into the import task's
+OME-XML fallback chain (time: after the plain-`DeltaT` fallback; channels: only when standard
+`Channel.Name` is missing/generic), log clearly when a vendor path fires, and add the file as a
+fixture per #00014.
+
 **#00037** — **Whiteboard plot integration** (deferred)
 Plot nodes in the chain whiteboard (`ChainModule.vue`). A collapsible **"Plots"** box is already in
 the palette (under "Module functions") with a "coming soon" placeholder. Notes:
@@ -218,6 +239,40 @@ batch it rather than churn standalone.
 ---
 
 ## Fixed
+
+**#00065** — **Task-manager "cancel all" + per-project task-list scoping; resync silently no-op'd against processed variants** (2026-07-03)
+Three related fixes to today's real-data testing round. (1) Added a "cancel all" button next to
+"clear finished" in the module Tasks sidebar — cancels every running/queued task for that
+module+project via the same per-task `task:cancel`/`chain:cancel` path, deduping chain runs. (2)
+`TaskList.vue` showed a previous project's (e.g. cancelled) tasks after switching projects —
+`useTaskStore().forModule()`/`clearFinished()` only filtered by module, not project. Added an
+optional `projectUid` filter, threaded through `TaskList`/`TaskRunner`/`ImageTable`; the global
+`/tasks` manager intentionally keeps the unscoped cross-project view. (3) The new
+"resync flagged from file" button (see #00064) silently did nothing on images with a processed
+variant (drift/cellpose-correct) active — `resync_ome_meta!` read `img_filepath(img)` (whatever's
+`active`), but those outputs use the flat NGFF layout with no axis `unit` and no OME-XML sidecar,
+which `read_ome_metadata` (Julia; unlike the Python `zarr_utils.py` reader) doesn't detect at all —
+it only understands the bioformats2raw nested layout. Fixed by always resolving the `"default"`
+(original import) zarr instead — physical size/timing are acquisition properties, unaffected by
+downstream correction tasks anyway. See CLAUDE.md → *OME-ZARR dual-format*.
+
+**#00064** — **Physical-size & timing metadata: review, edit, and per-image warnings** (2026-07-03)
+Root-caused a napari bug on a real 3D timecourse: collapsed Z-spacing and "t = n" instead of real
+time. Two independent causes — `bioformats2raw` converts a source TIFF's non-micron calibration
+unit (e.g. ImageJ `unit=inch`) correctly for X/Y but not Z, and this file had no genuine time
+interval anywhere in its metadata. Since auto-detection can never cover every vendor quirk, built a
+full review/edit system instead of a point fix: an ImageJ-tag Z-spacing auto-correction at import
+(`read_imagej_physical_size_run.py`), an OME-XML per-plane `DeltaT` fallback (ports the old R
+`omeXMLTimelapseInfo` crutch), raw/nullable `PhysicalSizeX/Y/Z`/`PhysicalSizeUnit`/`TimeIncrement`/
+`TimeIncrementUnit` in the image payload, a warning icon + `PhysicalSizeDialog.vue` modal (Apply /
+Copy-to-selected / Fill-flagged, mixed-value detection) reachable from every module's image table,
+and `POST /api/images/meta/set` which keeps all three metadata copies in sync — `ccid.json`,
+the OME-ZARR's own `.zattrs` NGFF scale, and `OME/METADATA.ome.xml`'s `<Pixels>` attributes (napari
+reads `TimeIncrement` from the XML unconditionally, with no `.zattrs` fallback). Also added
+`resync_ome_meta!`/`POST /api/images/meta/resync` + a table header button to backfill these fields
+for images imported before this metadata was tracked at all, without a re-import. Deferred
+vendor-specific quirks (Olympus/Imaris timelapse annotations, MACSIMA channel-name metadata) to
+**#00063**. See `docs/OBJECTMODEL.md`, `docs/API.md`, `docs/UI.md`.
 
 **#00036** — **Universal "Analysis board" page** (2026-07-01)
 A standalone canvas at `/analysis` that hosts the SAME plot canvas as the per-module pages but with

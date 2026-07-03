@@ -229,16 +229,30 @@ export const useWsStore = defineStore('ws', () => {
 
           if (meta.cleared) {
             // primary image removed: wipe dimensions/channels, reset image to pending
-            patch.sizeC        = undefined
-            patch.sizeT        = undefined
-            patch.sizeZ        = undefined
-            patch.channelNames = []
+            patch.sizeC            = undefined
+            patch.sizeT            = undefined
+            patch.sizeZ            = undefined
+            patch.channelNames     = []
+            patch.physicalSizeX    = undefined
+            patch.physicalSizeY    = undefined
+            patch.physicalSizeZ    = undefined
+            patch.physicalSizeUnit = undefined
+            patch.physicalSizeZCorrected = undefined
+            patch.timeIncrement    = undefined
+            patch.timeIncrementUnit = undefined
             useProjectStore().updateImageStatus(imageUid, 'pending')
           } else {
             if (meta.SizeC !== undefined) patch.sizeC = Number(meta.SizeC)
             if (meta.SizeT !== undefined) patch.sizeT = Number(meta.SizeT)
             if (meta.SizeZ !== undefined) patch.sizeZ = Number(meta.SizeZ)
             if (Array.isArray(meta.channel_names)) patch.channelNames = meta.channel_names as string[]
+            if (meta.PhysicalSizeX !== undefined) patch.physicalSizeX = Number(meta.PhysicalSizeX)
+            if (meta.PhysicalSizeY !== undefined) patch.physicalSizeY = Number(meta.PhysicalSizeY)
+            if (meta.PhysicalSizeZ !== undefined) patch.physicalSizeZ = Number(meta.PhysicalSizeZ)
+            if (meta.PhysicalSizeUnit !== undefined) patch.physicalSizeUnit = String(meta.PhysicalSizeUnit)
+            if (meta.PhysicalSizeZ_raw !== undefined) patch.physicalSizeZCorrected = true
+            if (meta.TimeIncrement !== undefined) patch.timeIncrement = Number(meta.TimeIncrement)
+            if (meta.TimeIncrementUnit !== undefined) patch.timeIncrementUnit = String(meta.TimeIncrementUnit)
           }
           useProjectStore().updateImageMeta(imageUid, patch)
         }

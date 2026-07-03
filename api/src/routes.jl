@@ -615,6 +615,95 @@ function api_images_channelnames(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# Generic bulk merge into an image's `meta` dict — one endpoint for any meta field (physical
+# size/unit, time interval, …) rather than a one-off route per field. `values` maps
+# uid → partial dict of meta keys to merge in (same shape idea as api_images_attr_set, but the
+# per-uid value is itself a dict instead of a scalar).
+function api_images_meta_set(body_bytes::Vector{UInt8})
+    proj_dir, data, err = _parse_meta_request(body_bytes)
+    isnothing(proj_dir) && return 400, JSON3.write((; error=err))
+    project_uid = String(get(data, :projectUid, ""))
+    values_raw  = get(data, :values, nothing)
+    isnothing(values_raw) && return 400, JSON3.write((; error="values required"))
+
+    for (image_uid, fields_raw) in values_raw
+        fields = Dict{String,Any}(String(k) => v for (k, v) in fields_raw)
+        _mutate_images!(project_uid, [String(image_uid)]) do img
+            for (k, v) in fields
+                # a JSON `null` deletes the key (e.g. clearing a stale PhysicalSizeZ_raw marker
+                # once a trusted value replaces an auto-corrected one) rather than setting it
+                isnothing(v) ? delete!(img.meta, k) : (img.meta[k] = v)
+            end
+        end
+
+        # Also correct the two metadata copies napari actually reads — the NGFF `.zattrs` scale
+        # (spatial rendering, incl. the 3D view) and the OME-XML `<Pixels>` attributes (the
+        # timestamp overlay's `TimeIncrement` — napari reads this file UNCONDITIONALLY, with no
+        # `.zattrs` fallback, unlike spatial scale). Without both, a physical-size fix only changes
+        # ccid.json's display copy and napari keeps showing the old value / "t = N".
+        axis_updates = Dict{String,Float64}()
+        for (key, axis) in (("PhysicalSizeX", "x"), ("PhysicalSizeY", "y"),
+                            ("PhysicalSizeZ", "z"), ("TimeIncrement", "t"))
+            v = get(fields, key, nothing)
+            v isa Real && (axis_updates[axis] = Float64(v))
+        end
+
+        xml_attrs = Dict{String,String}()
+        spatial_unit_raw = get(fields, "PhysicalSizeUnit", nothing)
+        ome_spatial_unit = spatial_unit_raw isa AbstractString ?
+            ome_xml_unit_name(spatial_unit_raw) : nothing
+        for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
+                                ("PhysicalSizeZ", "PhysicalSizeZUnit"))
+            v = get(fields, key, nothing)
+            if v isa Real
+                xml_attrs[key] = string(Float64(v))
+                isnothing(ome_spatial_unit) || (xml_attrs[unit_key] = ome_spatial_unit)
+            end
+        end
+        tv = get(fields, "TimeIncrement", nothing)
+        if tv isa Real
+            xml_attrs["TimeIncrement"] = string(Float64(tv))
+            tu = get(fields, "TimeIncrementUnit", nothing)
+            tu isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(tu))
+        end
+
+        if !isempty(axis_updates) || !isempty(xml_attrs)
+            img = init_object(project_uid, String(image_uid))
+            if img isa CciaImage
+                zarr_path = img_filepath(img)
+                if !isnothing(zarr_path) && isdir(zarr_path)
+                    isempty(axis_updates) || update_ome_scale!(zarr_path, axis_updates)
+                    isempty(xml_attrs)    || update_ome_xml_pixels!(zarr_path, xml_attrs)
+                end
+            end
+        end
+    end
+    200, JSON3.write((; ok=true))
+end
+
+# Backfill physical-size/timing meta for images imported before this metadata was tracked (or
+# whose ccid.json lost these fields) — re-derives them from the already-converted OME-ZARR (same
+# reader ImportOmezarr uses) without touching the original source file or re-running
+# bioformats2raw. Returns the refreshed payload per uid so the frontend can drop the warning icon
+# immediately, no page reload needed.
+function api_images_meta_resync(body_bytes::Vector{UInt8})
+    proj_dir, data, err = _parse_meta_request(body_bytes)
+    isnothing(proj_dir) && return 400, JSON3.write((; error=err))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uids  = [String(u) for u in get(data, :imageUids, [])]
+    isempty(image_uids) && return 400, JSON3.write((; error="imageUids required"))
+
+    images = Dict{String,Any}()
+    for uid in image_uids
+        img = init_object(project_uid, uid)
+        img isa CciaImage || continue
+        resync_ome_meta!(img)
+        reloaded = init_object(project_uid, uid)
+        reloaded isa CciaImage && (images[uid] = _image_payload(reloaded))
+    end
+    200, JSON3.write((; ok=true, images=images))
+end
+
 # ── Internal helpers ──────────────────────────────────────────────────────────
 # Project listing reads project.json directly (lightweight discovery, no object
 # graph). Image/set payloads are sourced from the model (CciaImage/CciaSet) so
@@ -647,6 +736,17 @@ function _meta_int(meta::AbstractDict, key::String)
     v isa Integer ? v : tryparse(Int, string(v))
 end
 
+function _meta_float(meta::AbstractDict, key::String)
+    v = get(meta, key, nothing)
+    isnothing(v) && return nothing
+    v isa Real ? Float64(v) : tryparse(Float64, string(v))
+end
+
+function _meta_str(meta::AbstractDict, key::String)
+    v = get(meta, key, nothing)
+    isnothing(v) ? nothing : string(v)
+end
+
 # Frontend-shaped payload for one image, sourced from the model. Response shaping
 # (camelCase, field selection) is the API's job; data access goes through CciaImage
 # so ccid.json parsing has a single home.
@@ -667,6 +767,19 @@ function _image_payload(img::CciaImage)
         sizeC           = _meta_int(img.meta, "SizeC"),
         sizeT           = _meta_int(img.meta, "SizeT"),
         sizeZ           = _meta_int(img.meta, "SizeZ"),
+        # Raw/nullable — NOT img_physical_sizes' 1.0-default-for-computation fallback. The UI
+        # needs to tell "genuinely missing" apart from "explicitly confirmed 1.0".
+        physicalSizeX     = _meta_float(img.meta, "PhysicalSizeX"),
+        physicalSizeY     = _meta_float(img.meta, "PhysicalSizeY"),
+        physicalSizeZ     = _meta_float(img.meta, "PhysicalSizeZ"),
+        physicalSizeUnit  = _meta_str(img.meta, "PhysicalSizeUnit"),
+        # set when the ImageJ-TIFF Z-spacing auto-fix overrode bioformats2raw's value at import
+        # (see omezarr.jl) — the corrected number is still only as good as the source file's own
+        # ImageJ tag, so the frontend keeps flagging it for the user to confirm, not just silently
+        # trusting it because the ratio now looks plausible.
+        physicalSizeZCorrected = haskey(img.meta, "PhysicalSizeZ_raw"),
+        timeIncrement     = _meta_float(img.meta, "TimeIncrement"),
+        timeIncrementUnit = _meta_str(img.meta, "TimeIncrementUnit"),
         channelNames    = isnothing(ch) ? String[] : ch,
         filepath        = active_fn,
         activeValueName = active_vn,

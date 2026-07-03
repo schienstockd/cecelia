@@ -214,6 +214,27 @@ const runLabel = computed(() => {
   return `Run on ${n} image${n > 1 ? 's' : ''}`
 })
 
+// ── Cancel all running/queued tasks for this module ────────────────────────
+const activeTasks = computed(() =>
+  taskStore.forModule(props.module, projectMeta.current?.uid)
+    .filter(t => t.status === 'running' || t.status === 'queued')
+)
+
+function cancelAll() {
+  const cancelledChainRuns = new Set<string>()
+  for (const t of activeTasks.value) {
+    if (t.chainRunId) {
+      if (cancelledChainRuns.has(t.chainRunId)) continue
+      cancelledChainRuns.add(t.chainRunId)
+      taskStore.cancelChainRun(t.chainRunId)
+      ws.send({ type: 'chain:cancel', runId: t.chainRunId })
+    } else {
+      taskStore.cancel(t.id)
+      ws.send({ type: 'task:cancel', taskId: t.id })
+    }
+  }
+}
+
 // ── Sidebar resize ────────────────────────────────────────────────────────────
 const MIN_W = 200
 const MAX_W = 600
@@ -343,13 +364,23 @@ onUnmounted(() => {
     <section class="runner-section tasks-section">
       <div class="tasks-heading">
         <h3 class="section-heading">Tasks</h3>
-        <button
-          class="clear-btn"
-          @click="taskStore.clearFinished(module)"
-          v-tooltip.left="'Remove all completed and failed tasks from the list.'"
-        >
-          <i class="pi pi-filter-slash" />
-        </button>
+        <div class="tasks-heading-actions">
+          <button
+            v-if="activeTasks.length"
+            class="clear-btn danger"
+            @click="cancelAll"
+            v-tooltip.left="`Cancel all ${activeTasks.length} running/queued task(s) in this module.`"
+          >
+            <i class="pi pi-times-circle" />
+          </button>
+          <button
+            class="clear-btn"
+            @click="taskStore.clearFinished(module, projectMeta.current?.uid)"
+            v-tooltip.left="'Remove all completed and failed tasks from the list.'"
+          >
+            <i class="pi pi-filter-slash" />
+          </button>
+        </div>
       </div>
       <div class="tasks-scroll">
         <TaskList :module="module" />
@@ -399,6 +430,11 @@ onUnmounted(() => {
 }
 .tasks-heading .section-heading { margin-bottom: 0; }
 
+.tasks-heading-actions {
+  display: flex;
+  gap: 0.15rem;
+}
+
 .clear-btn {
   background: none;
   border: none;
@@ -409,6 +445,7 @@ onUnmounted(() => {
   border-radius: 0.2rem;
 }
 .clear-btn:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+.clear-btn.danger:hover { background: #7f1d1d55; color: #fca5a5; }
 
 .tasks-section {
   flex: 1;
