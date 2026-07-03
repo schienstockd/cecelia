@@ -240,6 +240,18 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00068** — **Every whiteboard chain run failed: "Chain template not found"** (2026-07-03)
+The API layer reads/writes chain templates under `<proj>/settings/chains/` (`_chains_dir_for_project`,
+after chains were consolidated into `settings/`), but the package's `_chains_dir` (`chain.jl`) still
+pointed at the legacy `<proj>/chains/`. So the whiteboard **saved** a template via the API (into
+`settings/chains/`, "Chain X saved" succeeded) and then `run_chain` **loaded** it via the package
+(from `<proj>/chains/`) → `ErrorException("Chain template not found: …/chains/3P.json")` on every
+run. Repointed `_chains_dir` at `settings/chains` to match the API, mirroring its legacy-location
+migration so REPL-first / pre-`settings/` projects are picked up too (templates, runs, and .cache all
+move together). Regression guard: the round-trip test now asserts the template lands under
+`settings/chains/` and not `chains/`. Docs: SCHEDULER.md (*Template vs run record* — added a
+"paths must match the API" note).
+
 **#00067** — **Per-image task-param memory (R moduleFunParams port); replaces cross-project localStorage** (2026-07-03)
 Module-page task params were kept in `localStorage` keyed by `module:task` — not scoped by project,
 so switching projects left the previous project's image/channel/pop selections in the form. The old

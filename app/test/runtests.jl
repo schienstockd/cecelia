@@ -363,6 +363,12 @@ end
         )
         save_chain_template!(proj, tpl)
 
+        # Templates must land under settings/chains — the SAME dir the API reads/writes
+        # (api/src/routes.jl _chains_dir_for_project). A divergence here made every whiteboard
+        # chain run fail with "template not found" (saved via API, loaded via package).
+        @test isfile(joinpath(proj.root, "settings", "chains", "test-chain.json"))
+        @test !isfile(joinpath(proj.root, "chains", "test-chain.json"))
+
         loaded = load_chain_template(proj, "test-chain")
         @test loaded.name == "test-chain"
         @test length(loaded.nodes) == 2

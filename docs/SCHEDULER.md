@@ -288,12 +288,20 @@ propagation is an **authoring-time convenience**, not a second execution path.
 
 Two distinct artifacts. This matters for reproducibility.
 
-**Template** (`<project>/chains/<name>.json`) — reusable, no images baked in.
+**Template** (`<project>/settings/chains/<name>.json`) — reusable, no images baked in.
 Editing a template after a run has started does not retroactively change what that run did.
 
-**Run record** (`<project>/chains/runs/<run_id>/run.json`) — created when a template is applied
-to a set of images. Stores a **frozen copy** of the template via a SHA-256 content hash, not a
-pointer to the template file. The template content is cached once under `chains/.cache/<hash>.json`.
+> **Path must match the API.** Chains live under `settings/chains/`, computed identically by the
+> package (`_chains_dir` in `chain.jl`) and the API (`_chains_dir_for_project` in `api/src/routes.jl`).
+> The whiteboard **saves** a template through the API, then `run_chain` **loads** it through the
+> package — if the two dirs disagree, every chain run fails with "template not found". They once
+> diverged (API moved to `settings/chains/`, the package stayed at `<project>/chains/`); both now
+> also migrate a legacy `<project>/chains/` on access. A round-trip test asserts the settings/ path.
+
+**Run record** (`<project>/settings/chains/runs/<run_id>/run.json`) — created when a template is
+applied to a set of images. Stores a **frozen copy** of the template via a SHA-256 content hash, not
+a pointer to the template file. The template content is cached once under
+`settings/chains/.cache/<hash>.json`.
 
 Run records store `template_hash` (not the template inline) to keep `run.json` compact.
 `load_chain_run` resolves the hash to the cached template.
