@@ -83,17 +83,20 @@ export const useTaskStore = defineStore('tasks', () => {
     if (idx !== -1) tasks.value.splice(idx, 1)
   }
 
-  function clearFinished(module: string) {
+  function clearFinished(module: string, projectUid?: string) {
     const done = new Set<TaskStatus>(['done', 'failed', 'cancelled'])
     for (let i = tasks.value.length - 1; i >= 0; i--) {
       const t = tasks.value[i]
-      if (t.module === module && done.has(t.status))
+      if (t.module === module && done.has(t.status) && (!projectUid || t.projectUid === projectUid))
         tasks.value.splice(i, 1)
     }
   }
 
-  function forModule(module: string) {
-    return tasks.value.filter(t => t.module === module)
+  // projectUid is optional so callers that genuinely want the cross-project view (the /tasks
+  // manager) can still get everything — the per-module sidebar (TaskList/TaskRunner) always
+  // passes the current project so switching projects doesn't leave a stale task list visible.
+  function forModule(module: string, projectUid?: string) {
+    return tasks.value.filter(t => t.module === module && (!projectUid || t.projectUid === projectUid))
   }
 
   const running = () => tasks.value.filter(t => t.status === 'running' || t.status === 'queued')

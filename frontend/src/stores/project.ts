@@ -12,6 +12,13 @@ export interface CciaImage {
   sizeC?: number | null
   sizeT?: number | null
   sizeZ?: number | null
+  physicalSizeX?: number | null
+  physicalSizeY?: number | null
+  physicalSizeZ?: number | null
+  physicalSizeUnit?: string | null
+  physicalSizeZCorrected?: boolean | null
+  timeIncrement?: number | null
+  timeIncrementUnit?: string | null
   channelNames?: string[]
   filepath?: string                       // active version filename (for display)
   activeValueName?: string                // active value name (the _active key from versioned dict)

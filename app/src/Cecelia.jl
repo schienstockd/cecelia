@@ -58,7 +58,8 @@ export CciaTask
 export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
 export TestImageTask, TestSetTask, IncrementalPlotTask
-export ImportOmezarr, read_ome_metadata
+export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
+export resync_ome_meta!
 export RemoveImage
 export CellposeCorrect
 export CellposeSegment

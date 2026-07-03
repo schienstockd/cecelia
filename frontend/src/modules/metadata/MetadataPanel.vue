@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useLogStore } from '../../stores/log'
+import { metadataWarning } from '../../lib/imageMetadataWarnings'
+import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
 
 const props = defineProps<{
   setUid: string | undefined
@@ -252,10 +254,30 @@ async function copyChannelNamesToAll() {
 }
 
 const attrDisabled = computed(() => !selectedAttr.value)
+
+// ── Physical size & timing — opens the shared modal (PhysicalSizeDialog.vue) rather than
+// cramming a full editor into this narrow sidebar; see feedback after the first version shipped.
+
+const showPhysDialog = ref(false)
+const physFocusUid = computed(() => props.selectedUids[0] ?? setImages.value[0]?.uid ?? null)
+const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(i)).length)
 </script>
 
 <template>
   <aside class="metadata-panel">
+
+    <!-- ── Physical size & timing ───────────────────────────────── -->
+    <section class="panel-section">
+      <div class="section-title">Physical size &amp; timing</div>
+      <button class="btn-ghost btn-sm" :disabled="!physFocusUid" @click="showPhysDialog = true"
+        v-tooltip.bottom="'View or fix voxel size and frame interval for the selected image(s).'">
+        <i class="pi pi-ruler" /> Open editor
+        <span v-if="flaggedCount" class="warn-count" v-tooltip.bottom="`${flaggedCount} image(s) in this set are flagged`">{{ flaggedCount }}</span>
+      </button>
+    </section>
+    <PhysicalSizeDialog v-if="showPhysDialog && setUid && physFocusUid"
+      :set-uid="setUid" :focus-uid="physFocusUid" :selected-uids="selectedUids"
+      @close="showPhysDialog = false" />
 
     <!-- ── Attribute management ─────────────────────────────────── -->
     <section class="panel-section">
@@ -487,6 +509,13 @@ const attrDisabled = computed(() => !selectedAttr.value)
 }
 
 .mt-2 { margin-top: 0.5rem; }
+
+.warn-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.1rem; height: 1.1rem; padding: 0 0.3rem;
+  border-radius: 999px; font-size: 0.65rem; font-weight: 700;
+  background: #7c2d1244; color: #fcd34d;
+}
 
 .btn-sm {
   display: flex; align-items: center; gap: 0.3rem;

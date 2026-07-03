@@ -5,6 +5,8 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useSettingsStore } from '../stores/settings'
+import { metadataWarning } from '../lib/imageMetadataWarnings'
+import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 
 const props = defineProps<{
   setUid: string
@@ -22,6 +24,24 @@ const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
 const taskStore   = useTaskStore()
 const settings    = useSettingsStore()
+
+// opens right where you are — no page navigation needed
+const physSizeDialogUid = ref<string | null>(null)
+
+// Two distinct affordances, kept visually separate: the warning (any module, always visible when
+// flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
+// lives after the name alongside the other row-hover actions (copy UID) on every row — flagged or
+// not — on the pages where reviewing/propagating physical size is a primary task, so a known-good
+// image can be opened deliberately and used as the Copy/Fill-flagged reference.
+function warnIconFor(img: CciaImage): { tip: string } | null {
+  const w = metadataWarning(img)
+  return w ? { tip: w.short } : null
+}
+function pageIconFor(): { tip: string } | null {
+  if (props.module === 'metadata' || props.module === 'import')
+    return { tip: 'View or edit physical size & timing' }
+  return null
+}
 
 // ── Selection ─────────────────────────────────────────────────────────────────
 
@@ -130,6 +150,57 @@ function toggleAll() {
   commit()
 }
 
+// Quick way to batch-fix physical-size/timing warnings: select every flagged image in one click,
+// then open a clean reference image's dialog and Copy/Fill flagged onto exactly this selection.
+const flaggedUids = computed(() => images.value.filter(i => metadataWarning(i)).map(i => i.uid))
+// "Active" = the current selection IS exactly the flagged set — drives both the toggle behaviour
+// and the icon colour (gray = not applied, amber = applied).
+const flaggedActive = computed(() =>
+  flaggedUids.value.length > 0 &&
+  selected.value.size === flaggedUids.value.length &&
+  flaggedUids.value.every(u => selected.value.has(u))
+)
+function selectFlagged() {
+  selected.value = flaggedActive.value ? new Set() : new Set(flaggedUids.value)
+  commit()
+}
+
+// For images imported before physical-size/timing metadata was tracked in ccid.json (or whose
+// meta lost these fields): the OME-ZARR itself is already correct, so re-derive `meta` straight
+// from it (same reader the importer uses) instead of asking the user to re-import or type values
+// back in by hand.
+const resyncing = ref(false)
+async function resyncFlagged() {
+  const uids = flaggedUids.value
+  const projectUid = projectMeta.current?.uid
+  if (!uids.length || !projectUid || resyncing.value) return
+  resyncing.value = true
+  try {
+    const res = await fetch('/api/images/meta/resync', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUids: uids }),
+    })
+    const body = await res.json().catch(() => ({})) as { ok?: boolean; images?: Record<string, Partial<CciaImage>>; error?: string }
+    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+    for (const [uid, img] of Object.entries(body.images ?? {})) {
+      project.updateImageMeta(uid, {
+        physicalSizeX: img.physicalSizeX,
+        physicalSizeY: img.physicalSizeY,
+        physicalSizeZ: img.physicalSizeZ,
+        physicalSizeUnit: img.physicalSizeUnit,
+        physicalSizeZCorrected: img.physicalSizeZCorrected,
+        timeIncrement: img.timeIncrement,
+        timeIncrementUnit: img.timeIncrementUnit,
+      })
+    }
+    log.info(`Re-read physical size & timing from file for ${uids.length} image(s).`, { source: 'import' })
+  } catch (e) {
+    log.error(`Failed to resync metadata: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  } finally {
+    resyncing.value = false
+  }
+}
+
 function toggle(uid: string) {
   if (props.singleSelect) {
     // radio-style: clicking selects only this image (clicking the selected one clears it)
@@ -214,7 +285,7 @@ async function openInNapari(imageUid: string) {
 
 function imageModuleStatus(img: CciaImage): TaskStatus | 'pending' | null {
   if (!props.module) return null
-  const t = taskStore.forModule(props.module).find(t => t.imageUid === img.uid)
+  const t = taskStore.forModule(props.module, projectMeta.current?.uid).find(t => t.imageUid === img.uid)
   if (t) return t.status
   if (props.module === 'import') {
     const s = img.status as string
@@ -339,6 +410,17 @@ onUnmounted(stopResize)
         <!-- resizable: name -->
         <th class="col-resize" :style="{ width: colW('name'), minWidth: colW('name') }">
           Name
+          <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn"
+            :class="{ active: flaggedActive }" @click.stop="selectFlagged"
+            v-tooltip.bottom="flaggedActive ? 'Deselect flagged images' : `Select all ${flaggedUids.length} flagged image(s)`">
+            <i class="pi pi-exclamation-triangle" />
+          </button>
+          <button v-if="flaggedUids.length && (module === 'metadata' || module === 'import')"
+            class="select-flagged-btn" :disabled="resyncing"
+            @click.stop="resyncFlagged"
+            v-tooltip.bottom="`Re-read physical size & timing from file for all ${flaggedUids.length} flagged image(s) — use if they were imported before this check existed and are actually fine.`">
+            <i :class="['pi', resyncing ? 'pi-spin pi-spinner' : 'pi-sync']" />
+          </button>
           <div class="resize-handle" @mousedown.stop.prevent="startResize('name', $event)" />
         </th>
 
@@ -403,13 +485,23 @@ onUnmounted(stopResize)
         </td>
 
         <td class="col-resize td-name">
-          <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
-          <span class="uid-row">
-            <span class="img-uid">{{ img.uid }}</span>
-            <button class="uid-copy" @click.stop="copyUid(img.uid)"
+          <span class="name-row">
+            <button v-if="warnIconFor(img)" class="warn-icon-btn" @click.stop="physSizeDialogUid = img.uid"
+              v-tooltip.right="warnIconFor(img)!.tip">
+              <i class="pi pi-exclamation-triangle" />
+            </button>
+            <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
+            <button v-if="pageIconFor()" class="row-icon-btn" @click.stop="physSizeDialogUid = img.uid"
+              v-tooltip.right="pageIconFor()!.tip">
+              <i class="pi pi-file-edit" />
+            </button>
+            <button class="row-icon-btn" @click.stop="copyUid(img.uid)"
               v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
               <i :class="copiedUid === img.uid ? 'pi pi-check' : 'pi pi-copy'" />
             </button>
+          </span>
+          <span class="uid-row">
+            <span class="img-uid">{{ img.uid }}</span>
           </span>
         </td>
 
@@ -463,6 +555,10 @@ onUnmounted(stopResize)
       </tr>
     </tbody>
   </table>
+
+  <PhysicalSizeDialog v-if="physSizeDialogUid"
+    :set-uid="setUid" :focus-uid="physSizeDialogUid" :selected-uids="[...selected]"
+    @close="physSizeDialogUid = null" />
 </template>
 
 <style scoped>
@@ -502,6 +598,16 @@ onUnmounted(stopResize)
   white-space: nowrap;
   overflow: hidden;
 }
+
+.select-flagged-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--cc-text-dim); font-size: 0.72rem; padding: 0.1rem 0.3rem;
+  margin-left: 0.3rem; border-radius: 0.2rem; vertical-align: middle;
+}
+.select-flagged-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
+.select-flagged-btn.active { color: #fbbf24; }
+.select-flagged-btn.active:hover { color: #fcd34d; }
+.select-flagged-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .image-row { border-bottom: 1px solid var(--cc-border); cursor: pointer; transition: background 0.08s; }
 .image-row:hover { background: var(--cc-surface-1); }
@@ -556,6 +662,26 @@ th:hover .resize-handle::after { opacity: 1; }
 
 .td-name .cell-text { color: var(--cc-text); }
 
+.name-row { display: flex; align-items: center; gap: 0.3rem; min-width: 0; }
+.name-row .cell-text { flex: 1; min-width: 0; }
+
+/* always visible when flagged — impossible-to-miss, sits in front of the name */
+.warn-icon-btn {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  color: #fbbf24; font-size: 0.75rem; padding: 0.1rem; line-height: 1;
+}
+.warn-icon-btn:hover { color: #fcd34d; }
+
+/* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
+.row-icon-btn {
+  flex-shrink: 0; background: none; border: none; cursor: pointer;
+  color: var(--cc-text-dim); font-size: 0.72rem; padding: 0.1rem 0.2rem;
+  border-radius: 0.2rem; line-height: 1;
+  opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+.image-row:hover .row-icon-btn { opacity: 1; }
+.row-icon-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
+
 /* editable attribute cell: click to edit; subtle hover affordance */
 .attr-cell { cursor: text; border-radius: 3px; padding: 0 2px; }
 .attr-cell:hover { background: var(--cc-surface-2); outline: 1px dashed var(--cc-border); }
@@ -579,21 +705,6 @@ th:hover .resize-handle::after { opacity: 1; }
   flex: 1;
   min-width: 0;
 }
-.uid-copy {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--cc-text-dim);
-  font-size: 0.65rem;
-  padding: 0.1rem 0.2rem;
-  border-radius: 0.2rem;
-  line-height: 1;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-tr:hover .uid-copy { opacity: 1; }
-.uid-copy:hover { color: var(--cc-text); background: var(--cc-surface-2); }
 
 .dim { color: var(--cc-text-dim); }
 

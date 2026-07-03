@@ -22,6 +22,22 @@ that resolve objects and call package functions.
 - **WS broadcast**: `broadcast_ws(Dict(...))` pushes JSON to all connected clients
   (`stores/ws.ts` dispatches by `type`). See WS message reference in `ARCHITECTURE.md`.
 
+### HTTP.jl v2 conventions
+
+- Use `HTTP.listen(handle_stream, host, port)` — **not** `HTTP.serve`. `HTTP.serve` is the
+  high-level request→response API; `HTTP.listen` is the stream API that supports WS upgrades.
+- Stream handler signature: `handle_stream(stream::HTTP.Stream)` — access the request via
+  `req = stream.message`.
+- WS upgrade check: `HTTP.WebSockets.isupgrade(req)` then
+  `HTTP.WebSockets.upgrade(handle_ws, stream; check_origin=(req, origin)->true)`.
+  `check_origin = (req, origin) -> true` is required in dev — the Vite proxy sends a different
+  origin.
+- HTTP responses in a stream handler: `HTTP.setstatus(stream, N)` + `HTTP.setheader(stream, k=>v)`
+  + `HTTP.startwrite(stream)` + `write(stream, body)` — do **not** return an `HTTP.Response` object.
+- Read the POST body before writing a response: `body_bytes = read(stream)`, before any
+  `HTTP.setstatus` / `HTTP.startwrite`.
+- WS message loop: `while true; msg = HTTP.WebSockets.receive(ws); ...` — not `for msg in ws`.
+
 ## Route index
 
 | Method | Path | Purpose |
@@ -30,6 +46,8 @@ that resolve objects and call package functions.
 | GET | `/api/projects`, POST `/api/projects/{list,create,load,save,rename}` | project CRUD |
 | POST | `/api/sets/{create,delete}` | set CRUD |
 | GET | `/api/images/meta`, POST `/api/images/{register,delete,channelnames,labels/delete}`, `/api/images/attr/{create,delete,set}` | image CRUD/metadata |
+| POST | `/api/images/meta/set` | `{projectUid, values: {uid: {<meta keys>}}}` — generic bulk merge into an image's `meta` dict (physical size/unit, time interval, or any future field) via `_mutate_images!`, same shape idea as `attr/set` but the per-uid value is a partial dict instead of a scalar. Add new `meta` fields here, not a new one-off route. |
+| POST | `/api/images/meta/resync` | `{projectUid, imageUids: [...]}` — backfills physical-size/timing `meta` for images imported before that metadata was tracked, by re-reading the `"default"` (original bioformats2raw) zarr — never the active version, see CLAUDE.md → *OME-ZARR dual-format* — via `resync_ome_meta!`/`read_ome_metadata`. No re-import, no source-file access. Returns `{ok, images: {uid: <full image payload>}}` so the frontend can drop the warning icon immediately. |
 | GET | `/api/fs/list`, `/api/pools`, `/api/tasks/definitions` | filesystem, pools, task specs |
 | GET | `/api/chains`, `/api/chains/get`, POST `/api/chains/{save,delete}` | chain templates |
 | GET | `/api/napari/status`, POST `/api/napari/{open,close,restart,show-labels,show-populations,start-selection,stop-selection,event}` | napari bridge + gating linked brushing |

@@ -224,6 +224,43 @@ Both default expanded and persist across sessions/navigation.
 
 Emits `selectionChange(uids: string[])`. `ModuleLayout` handles this internally.
 
+**Metadata warning icon.** A row shows a `pi-exclamation-triangle` next to the image name when
+`metadataWarning(img)` (`frontend/src/lib/imageMetadataWarnings.ts` — the single source of truth,
+shared with `PhysicalSizeDialog`'s inline warning so the two never disagree) flags missing/suspect
+physical size or time-interval metadata. This includes `physicalSizeZCorrected` (the import-time
+ImageJ-TIFF Z-spacing auto-fix, `omezarr.jl`) — an auto-corrected value stays flagged for human
+confirmation even when it now looks plausible, since the source tag it was derived from (the
+file's own ImageJ `spacing`/`unit`) isn't independently verifiable and has been observed to be a
+placeholder rather than a real per-slice calibration on real data. Clicking the icon opens
+`PhysicalSizeDialog.vue` right there (own local `physSizeDialogUid` ref — no page navigation),
+focused on that image with the current checkbox selection carried in as the target set for
+Apply/Fill-flagged. Shown on every module page — the icon isn't gated behind `showAttrs`/`module`.
+
+**Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
+not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
+the 280px `MetadataPanel` sidebar and was unreadable. Follows the `ProjectPanel.vue` hand-rolled
+modal shell (`.pp-overlay`/`.pp-modal` — no PrimeVue Dialog). Explanatory text lives in tooltips
+(the header's `pi-info-circle`, per-field labels, button tooltips), not inline paragraphs.
+Actions all write only the toggled fields (X/Y/Z/Δt chips — untick what's already correct so a fix
+to one axis doesn't also rewrite ones that are fine): **Apply** (to the selection it was opened
+with, or just the focused image if none), **Copy to selected** (the other selected images),
+**Fill flagged** (only the *other* selected images that currently show a warning — the
+batch-fix-from-a-known-good-reference workflow). Also reachable via an "Open editor" button in
+`MetadataPanel`'s sidebar (no specific image clicked — focuses the first selected/set image)
+alongside a flagged-count badge for the set.
+
+**Name-column header buttons** (`ImageTable.vue`, next to "Name"): a `pi-exclamation-triangle`
+toggle to select/deselect every currently-flagged image in one click (`selectFlagged`, amber when
+active, shown on every module page), and a `pi-sync` **"Resync flagged from file"** button
+(`resyncFlagged` → `POST /api/images/meta/resync`), shown only on `module === 'metadata' | 'import'`
+(same gating as the page-icon "open editor" button), for images that were imported *before*
+physical-size/timing `meta` was tracked at all. Their OME-ZARR is already correct, so this
+re-derives `meta` straight from the `"default"` (original bioformats2raw) zarr, deliberately never
+whichever version is currently `active` — drift/cellpose-correct outputs carry no OME calibration
+metadata at all, see CLAUDE.md → *OME-ZARR dual-format* — rather than asking the user to type
+known-good values back in or re-import. Both header buttons operate on `flaggedUids`, not the
+checkbox selection.
+
 ---
 
 ## TaskRunner component
@@ -247,6 +284,18 @@ selects the pool matching the task def's `resource_pool` field. The chosen pool 
 `poolName` in the `task:run` WS message, which `handle_task_run` in `sockets.jl` passes to
 `run_task` as the `pool_name` override kwarg. The old concurrent-task slider
 (`task:setLimit` / `tasksLimit`) has been removed entirely.
+
+**Task list scoping.** `useTaskStore().forModule(module, projectUid?)` and `clearFinished(module,
+projectUid?)` take an optional `projectUid` — `TaskList.vue`/`TaskRunner.vue` always pass the
+current project's uid so switching projects doesn't leave a previous project's (e.g. cancelled)
+tasks visible in the module sidebar. The global `/tasks` manager (`TasksModule.vue`) intentionally
+omits it — that page is the cross-project view. `TaskEntry.projectUid` is what makes the filter
+possible; it's stamped on every entry at `add()`/`addFromChainEvent()`.
+
+**Cancel all** — a `pi-times-circle` button next to "Clear finished" in the Tasks section header,
+shown only when the current module+project has running/queued tasks. Cancels every one of them via
+the same per-task path as the individual cancel button (`task:cancel`/`chain:cancel` over WS,
+deduping so a multi-node chain run only sends one `chain:cancel`).
 
 ---
 
