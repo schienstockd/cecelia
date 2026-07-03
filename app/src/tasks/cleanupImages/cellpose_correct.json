@@ -5,6 +5,7 @@
   "category": "Cleanup",
   "env": ["local"],
   "resource_pool": "gpu",
+  "outputValueName": "cpCorrected",
   "params": [
     {
       "key": "valueName",

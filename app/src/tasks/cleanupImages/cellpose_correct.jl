@@ -60,7 +60,7 @@ function _run_task(task::CellposeCorrect, img::CciaImage, params::Dict{String,An
 
     on_log("[INFO] Cellpose correction complete.")
 
-    out_value_name = "cpCorrected"
+    out_value_name = _spec_output_value_name(task, "cpCorrected")
     out_filename   = "ccidCpCorrected.ome.zarr"
 
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
