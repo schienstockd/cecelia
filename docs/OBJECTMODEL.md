@@ -121,6 +121,18 @@ Written by `save!(proj::CciaProject)`. Runtime fields (`root`, `_sets`) are not 
 
 `_dir` (the absolute path to `1/{uid}/`) is runtime-only and never written to disk.
 
+### `meta["funParams"]` — remembered task params
+
+`meta` also holds `funParams`: a `{ "<fun_name>": { …params… } }` map of the **last-used parameters
+for each task**, mirroring the old R `moduleFunParams`. Stored on both the **image** (a record of
+what params produced it) and the **set** (the shared last-used default). The module-page form
+populates from image → set → task-defaults (see `docs/MODULES.md` → *Remembering task params*).
+Written via the dir-based `write_module_fun_params!(ccid_dir, fun, params)` / read via
+`read_module_fun_params(ccid_dir, fun)` (`app/src/model/image.jl`) — a targeted `ccid.json`
+read-modify-write (same idiom a task uses to register its output `filepath`), **dir-based** so
+remembering a param blob on the set never has to load all its images. `CciaSet.meta` carries the
+same `funParams` key.
+
 ---
 
 ## Versioned fields

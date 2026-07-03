@@ -143,6 +143,54 @@ function save!(img::CciaImage)
     end
 end
 
+# ── Per-task param memory (funParams) ───────────────────────────────────────────
+# Mirrors the old R `saveModuleFunParams`/`moduleFunParams`: the last-used params for a task are
+# remembered in the object's ccid.json under `meta["funParams"][fun_name]`. On run they are saved
+# to each processed IMAGE (a record of what params produced it) AND to the SET (the shared
+# last-used default); the module-page form is populated image → set → task-defaults.
+#
+# This is a targeted read-modify-write of ccid.json (same idiom a task uses to register its output
+# filepath) rather than load-object → save! — deliberately **dir-based** so remembering a param blob
+# on the set never has to load all of the set's images (`save!(::CciaSet)` cascades to every child).
+const FUN_PARAMS_META_KEY = "funParams"
+
+"""
+    read_module_fun_params(ccid_dir, fun) -> Dict | nothing
+
+Last-used params for task `fun` stored in `<ccid_dir>/ccid.json` under `meta["funParams"]`, or
+`nothing` if absent. `ccid_dir` is an object metadata dir (`{proj}/1/{uid}/`) — image or set.
+"""
+function read_module_fun_params(ccid_dir::String, fun::String)::Union{Dict{String,Any},Nothing}
+    path = joinpath(ccid_dir, "ccid.json")
+    isfile(path) || return nothing
+    raw  = JSON3.read(read(path, String), Dict{String,Any})
+    meta = get(raw, "meta", nothing)
+    meta isa AbstractDict || return nothing
+    fp = get(meta, FUN_PARAMS_META_KEY, nothing)
+    fp isa AbstractDict || return nothing
+    v = get(fp, fun, nothing)
+    v isa AbstractDict ? Dict{String,Any}(String(k) => vv for (k, vv) in v) : nothing
+end
+
+"""
+    write_module_fun_params!(ccid_dir, fun, params)
+
+Remember `params` as the last-used params for task `fun` in `<ccid_dir>/ccid.json`
+(`meta["funParams"][fun]`), preserving every other field. No-op if the file is absent.
+"""
+function write_module_fun_params!(ccid_dir::String, fun::String, params::AbstractDict)
+    path = joinpath(ccid_dir, "ccid.json")
+    isfile(path) || return nothing
+    raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String), Dict{String,Any}))
+    meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict{String,Any}()))
+    fp   = Dict{String,Any}(String(k) => v for (k, v) in get(meta, FUN_PARAMS_META_KEY, Dict{String,Any}()))
+    fp[fun] = Dict{String,Any}(String(k) => v for (k, v) in params)
+    meta[FUN_PARAMS_META_KEY] = fp
+    raw["meta"] = meta
+    open(path, "w") do io; JSON3.pretty(io, raw); end
+    nothing
+end
+
 """
 Physical pixel sizes for the image, read from `img.meta`.
 Returns `(pixel_res, time_step)` where `pixel_res` is a `Vector{Float64}` of µm/px per

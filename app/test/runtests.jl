@@ -176,6 +176,47 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Per-task param memory (funParams) — R moduleFunParams parity ─────────────
+    # Last-used params are remembered in ccid.json under meta["funParams"][fun], per image and per
+    # set. Guards: round-trips through save!/init_object, per-fun keys don't clobber, set-level too.
+    @testset "funParams per-object memory" begin
+        proj = create_project!(name="fp-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        save!(img)
+
+        @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect") === nothing  # absent
+
+        p = Dict{String,Any}("valueName" => "cpCorrected", "driftChannel" => ["DAPI"])
+        write_module_fun_params!(img._dir, "cleanupImages.driftCorrect", p)
+        got = read_module_fun_params(img._dir, "cleanupImages.driftCorrect")
+        @test !isnothing(got)
+        @test got["valueName"] == "cpCorrected"
+        @test got["driftChannel"] == ["DAPI"]
+
+        # init_object loads funParams into the object's meta; a load-modify-save then preserves them
+        # (the loaded object carries funParams, so save! doesn't drop them — unlike a stale object).
+        r = init_object(proj.uid, img.uid)
+        @test haskey(r.meta, "funParams")
+        r.status = "done"; save!(r)
+        r2 = init_object(proj.uid, img.uid)
+        @test r2.status == "done"
+        @test read_module_fun_params(r2._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
+
+        # a second task's params coexist under its own key (no clobber)
+        write_module_fun_params!(img._dir, "cleanupImages.cellposeCorrect",
+                                 Dict{String,Any}("valueName" => "default"))
+        @test read_module_fun_params(img._dir, "cleanupImages.driftCorrect")["valueName"] == "cpCorrected"
+        @test read_module_fun_params(img._dir, "cleanupImages.cellposeCorrect")["valueName"] == "default"
+
+        # set-level memory uses the same dir-based mechanism on the set's ccid.json
+        write_module_fun_params!(s._dir, "cleanupImages.driftCorrect",
+                                 Dict{String,Any}("valueName" => "setDefault"))
+        @test read_module_fun_params(s._dir, "cleanupImages.driftCorrect")["valueName"] == "setDefault"
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Channel names use the versioned convention ──────────────────────────────
     # Regression guard: channel names were stored unversioned under meta, where the
     # task/API readers (which use top-level versioned imChannelNames) never saw them.

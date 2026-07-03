@@ -64,29 +64,34 @@ watch(taskDef, (def) => {
   if (def) selectedPool.value = def.resource_pool ?? 'default'
 })
 
-// param values — restored from saved state, then reset to defaults on function change
+// param values — populated from the object's remembered funParams (image → set → task-defaults),
+// mirroring the old R moduleFunParams. Persistence is server-side (saved on run, to each processed
+// image and to the set — see api/src/sockets.jl _remember_fun_params), so there is NO localStorage
+// for params here: ccid.json is the single source of truth, which is also why params never leak
+// across projects.
 const paramValues = ref<ParamValues>({})
 
-function storageKey(task: string) {
-  return `cc-params:${props.module}:${task}`
-}
+// Which image's remembered params drive the form: the one selected image, else none. The form is a
+// single config applied to ALL selected images, so with several selected we show the set-level
+// last-used default rather than any single image's record.
+const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
+const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
-function loadSavedParams(def: TaskDef): ParamValues {
+async function fetchSavedParams(def: TaskDef): Promise<ParamValues> {
+  const projectUid = projectMeta.current?.uid ?? ''
+  if (!projectUid) return {}
+  const qs = new URLSearchParams({ projectUid, fun: def.fun_name })
+  if (drivingImageUid.value) qs.set('imageUid', drivingImageUid.value)
+  if (setUid.value) qs.set('setUid', setUid.value)
   try {
-    const raw = localStorage.getItem(storageKey(def.task))
-    if (raw) return JSON.parse(raw) as ParamValues
-  } catch { /* ignore */ }
-  return {}
+    const res = await fetch(`/api/tasks/funparams?${qs.toString()}`)
+    if (!res.ok) return {}
+    const d = await res.json() as { params?: ParamValues | null }
+    return d.params ?? {}
+  } catch { return {} }
 }
 
-function saveParams(task: string, vals: ParamValues) {
-  try { localStorage.setItem(storageKey(task), JSON.stringify(vals)) }
-  catch { /* ignore */ }
-}
-
-function initParams(def: TaskDef | undefined) {
-  if (!def) return
-  const saved = loadSavedParams(def)
+function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues {
   const vals: ParamValues = {}
   for (const p of def.params) {
     if (p.type === 'section') {
@@ -100,7 +105,18 @@ function initParams(def: TaskDef | undefined) {
       vals[p.key] = saved[p.key] ?? p.default ?? null
     }
   }
-  paramValues.value = vals
+  return vals
+}
+
+// Saved params are fetched from the server, so guard against a slower earlier request landing after
+// a newer one (function/selection changed mid-flight).
+let paramReqSeq = 0
+async function initParams(def: TaskDef | undefined) {
+  if (!def) return
+  const seq = ++paramReqSeq
+  const saved = await fetchSavedParams(def)
+  if (seq !== paramReqSeq) return
+  paramValues.value = buildParamValues(def, saved)
 }
 
 // Flatten top-level section params before sending — sections are UI containers only.
@@ -121,13 +137,14 @@ function flattenParams(def: TaskDef, vals: ParamValues): ParamValues {
 }
 
 watch(selectedTask, (task) => {
-  // save current values before switching away
-  const prev = props.defs.find(d => d.task !== task)
-  if (prev) saveParams(prev.task, paramValues.value)
-  localStorage.setItem(`cc-fn:${props.module}`, task)
+  localStorage.setItem(`cc-fn:${props.module}`, task)   // remember last-used function per module
 })
 
-watch(taskDef, initParams, { immediate: true })
+// Populate the form from remembered funParams: on function change, and on project/set switch
+// (setUid changes when the active set/project changes — this is what stops one project's params
+// leaking into another). Narrowing the selection to a single image reloads that image's record.
+watch([taskDef, setUid], () => initParams(taskDef.value), { immediate: true })
+watch(drivingImageUid, (uid) => { if (uid) initParams(taskDef.value) })
 
 // When defs load from the API (async), pick the saved function or fall back to the first.
 watch(() => props.defs, (defs) => {
@@ -148,8 +165,7 @@ function run() {
   const def = taskDef.value
   const params = flattenParams(def, paramValues.value)
 
-  // persist params and last-used function
-  saveParams(def.task, paramValues.value)
+  // params are persisted server-side on run (per image + set); just remember the last-used function
   localStorage.setItem(`cc-fn:${props.module}`, def.task)
 
   const projectUid = projectMeta.current?.uid ?? ''
@@ -174,7 +190,7 @@ function run() {
     })
     ws.send({
       type: 'task:run', taskId: t.id, funName: def.fun_name, params,
-      imageUid: rep, imageUids: uids, projectUid, poolName: selectedPool.value,
+      imageUid: rep, imageUids: uids, projectUid, setUid: setUid.value, poolName: selectedPool.value,
     })
     return
   }
@@ -202,6 +218,7 @@ function run() {
       params:     params,
       imageUid:   uid,
       projectUid,
+      setUid:     setUid.value,
       poolName:   selectedPool.value,
     })
     // Status is driven by the backend: 'running' if a slot was free, 'queued' otherwise.
