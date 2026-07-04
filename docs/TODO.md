@@ -257,11 +257,20 @@ edit. Repointed both `update_ome_scale!`/`update_ome_xml_pixels!` at `img_filepa
 (3) **Unit edits never reached the zarr.** `update_ome_scale!` rewrote scale numbers but not NGFF axis
 `unit`s, and `read_ome_metadata` won't trust a t-scale (or read a spatial unit) without one — so a
 unit-only or time-interval edit vanished on resync. `update_ome_scale!` now takes a `units` map and
-rewrites axis units too. Net: `meta/set` and `resync` now agree on the default zarr as the single source
-of truth; edits persist, resync only backfills. Tests: new "OME metadata read/edit/resync" testset in
-`runtests.jl` (`_delta_t_fallback`, `read_ome_metadata` placeholder/fallback, `update_ome_scale!`
-ratio+units, `update_ome_xml_pixels!`, merge fill-only-vs-overwrite, `resync_ome_meta!` end-to-end) —
-the feature previously shipped with none. Docs: API.md, OBJECTMODEL.md.
+rewrites axis units too. (4) **Import corrections never reached the zarr.** The ImageJ Z-spacing fix and
+the per-plane DeltaT time interval were written only to ccid.json, so `img_physical_sizes` (analysis)
+used the corrected numbers while napari — reading the zarr — kept showing the raw spacing / "t = N". The
+import now copies them back into the zarr (only when something diverges: a corrected Z, or a timelapse),
+so the viewer matches what analysis computes with; the value stays flagged for human confirmation. The
+field→zarr translation now lives in ONE place — `sync_zarr_calibration!` — used by both the importer and
+`meta/set` (was duplicated). Also hardened: the `<Plane>` DeltaT scan matches non-self-closing tags, and
+the OME-XML attr insert anchors on the `<Pixels` token (handles an attribute-less `<Pixels>`). Net:
+`meta/set`, `resync`, and import all agree on the default zarr as the single source of truth; edits and
+auto-corrections persist, resync only backfills. Tests: new "OME metadata read/edit/resync" testset in
+`runtests.jl` (`_delta_t_fallback` incl. non-self-closing, `read_ome_metadata` placeholder/fallback,
+`update_ome_scale!` ratio+units, `update_ome_xml_pixels!`, `sync_zarr_calibration!`, merge
+fill-only-vs-overwrite, `resync_ome_meta!` end-to-end) — the feature previously shipped with none.
+Docs: API.md, OBJECTMODEL.md.
 
 **#00068** — **Every whiteboard chain run failed: "Chain template not found"** (2026-07-03)
 The API layer reads/writes chain templates under `<proj>/settings/chains/` (`_chains_dir_for_project`,

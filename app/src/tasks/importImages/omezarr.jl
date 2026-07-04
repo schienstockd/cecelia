@@ -15,7 +15,9 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
     isfile(xml_file) || return nothing
     try
         xml = read(xml_file, String)
-        for m in eachmatch(r"<Plane\b[^>]*?/>", xml)
+        # match the <Plane …> opening tag whether self-closing (`/>`, bioformats2raw) or not
+        # (`>…</Plane>`, some vendors) — DeltaT is an attribute on the opening tag either way
+        for m in eachmatch(r"<Plane\b[^>]*?>", xml)
             tag = m.match
             occursin(r"TheZ=\"0\"", tag) || continue
             occursin(r"TheT=\"1\"", tag) || continue
@@ -257,15 +259,85 @@ function update_ome_xml_pixels!(zarr_path::String, attrs::Dict{String,String})
         tag = m.match
         for (k, v) in attrs
             attr_re = Regex(k * "=\"[^\"]*\"")
+            # replace an existing attr in place; else insert right after the `<Pixels` token — anchor
+            # on the token (not a literal `"<Pixels "`) so a bare `<Pixels>` gets it too. The
+            # original separator (space or `>`) is preserved, keeping the tag well-formed.
             tag = occursin(attr_re, tag) ?
                 replace(tag, attr_re => "$k=\"$v\"") :
-                replace(tag, "<Pixels " => "<Pixels $k=\"$v\" "; count = 1)
+                replace(tag, r"<Pixels\b" => "<Pixels $k=\"$v\""; count = 1)
         end
         new_xml = replace(xml, m.match => tag; count = 1)
         open(xml_file, "w") do io; write(io, new_xml); end
     catch e
         @warn "Could not update OME-XML Pixels attributes" zarr_path exception = e
     end
+end
+
+# Meta keys that carry calibration (the ccid.json / import / editor shape). `sync_zarr_calibration!`
+# is the single translator from these to the zarr's own copies — used by BOTH the importer and the
+# metadata editor so the field→axis/XML mapping never lives in two places.
+const _CALIBRATION_META_KEYS = (
+    "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
+    "TimeIncrement", "TimeIncrementUnit",
+)
+
+"""Whether `meta` carries any calibration value worth syncing into the zarr (a `nothing` — a JSON
+`null` clear — doesn't count). Lets a caller skip the (non-trivial) object load when there's
+nothing to do."""
+has_calibration_meta(meta::AbstractDict) =
+    any(k -> !isnothing(get(meta, k, nothing)), _CALIBRATION_META_KEYS)
+
+"""
+Copy the physical-size/timing values in a `meta`-shaped dict (keys in `_CALIBRATION_META_KEYS` — the
+same names ccid.json, the importer, and the frontend editor all use) INTO the zarr's own calibration
+copies: the NGFF `.zattrs` scale + axis units (`update_ome_scale!`) and the OME-XML `<Pixels>` attrs
+(`update_ome_xml_pixels!`, which napari reads unconditionally for the time interval).
+
+This is the one place both `ImportOmezarr` (materialising its ImageJ Z-spacing fix + DeltaT time
+fallback) and `api_images_meta_set` (a user edit) funnel through, so napari always renders the SAME
+calibration ccid.json / `img_physical_sizes` already compute with — otherwise the two diverge (the
+viewer showing the raw spacing / "t = N" while analysis uses the corrected number). `zarr_path` must
+be the `"default"` (bioformats2raw) zarr — the only layout these writers understand
+(CLAUDE.md → OME-ZARR dual-format).
+"""
+function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
+    # numeric scale, per axis
+    axis_updates = Dict{String,Float64}()
+    for (key, axis) in (("PhysicalSizeX", "x"), ("PhysicalSizeY", "y"),
+                        ("PhysicalSizeZ", "z"), ("TimeIncrement", "t"))
+        v = get(meta, key, nothing)
+        v isa Real && (axis_updates[axis] = Float64(v))
+    end
+
+    # NGFF axis units — one PhysicalSizeUnit covers x/y/z; TimeIncrementUnit is the t axis
+    unit_updates = Dict{String,String}()
+    spatial_unit = get(meta, "PhysicalSizeUnit", nothing)
+    if spatial_unit isa AbstractString
+        for axis in ("x", "y", "z"); unit_updates[axis] = spatial_unit; end
+    end
+    time_unit = get(meta, "TimeIncrementUnit", nothing)
+    time_unit isa AbstractString && (unit_updates["t"] = time_unit)
+
+    # OME-XML <Pixels> attributes (napari reads the time interval only from here)
+    xml_attrs   = Dict{String,String}()
+    ome_spatial = spatial_unit isa AbstractString ? ome_xml_unit_name(spatial_unit) : nothing
+    for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
+                            ("PhysicalSizeZ", "PhysicalSizeZUnit"))
+        v = get(meta, key, nothing)
+        if v isa Real
+            xml_attrs[key] = string(Float64(v))
+            isnothing(ome_spatial) || (xml_attrs[unit_key] = ome_spatial)
+        end
+    end
+    tv = get(meta, "TimeIncrement", nothing)
+    if tv isa Real
+        xml_attrs["TimeIncrement"] = string(Float64(tv))
+        time_unit isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(time_unit))
+    end
+
+    (isempty(axis_updates) && isempty(unit_updates)) ||
+        update_ome_scale!(zarr_path, axis_updates; units = unit_updates)
+    isempty(xml_attrs) || update_ome_xml_pixels!(zarr_path, xml_attrs)
 end
 
 # ── ccid.json helpers ─────────────────────────────────────────────────────────
@@ -458,6 +530,17 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                 rm(result_file; force = true)
             end
         end
+    end
+
+    # Copy our import-time corrections back INTO the zarr's own calibration (`.zattrs` + OME-XML),
+    # so napari renders the same numbers ccid.json / `img_physical_sizes` (analysis) will use —
+    # otherwise the ImageJ Z-spacing fix and the per-plane DeltaT time interval live only in
+    # ccid.json and the viewer keeps showing the raw spacing / "t = N". Only when something actually
+    # diverges from what bioformats2raw wrote: a corrected Z, or a timelapse (the DeltaT fallback /
+    # unit-less-t placeholder cases). The value stays flagged for human confirmation regardless —
+    # this just keeps the viewer honest about the number we've already decided to compute with.
+    if haskey(zarr_meta, "PhysicalSizeZ_raw") || get(zarr_meta, "SizeT", 1) > 1
+        sync_zarr_calibration!(zarr_out, zarr_meta)
     end
 
     _update_image_status!(img, "done")

@@ -2724,6 +2724,15 @@ end
                           planes = [(z = 0, t = 1, dt = 30.0)])      # no unit → seconds
                 @test Cecelia._delta_t_fallback(d) == 30.0
             end
+            # non-self-closing <Plane>…</Plane> (some vendors) — DeltaT is on the opening tag
+            mktempdir() do d
+                mkpath(joinpath(d, "OME"))
+                write(joinpath(d, "OME", "METADATA.ome.xml"),
+                      "<OME><Image><Pixels>" *
+                      "<Plane TheZ=\"0\" TheT=\"1\" DeltaT=\"3\" DeltaTUnit=\"s\"><Annotation/></Plane>" *
+                      "</Pixels></Image></OME>")
+                @test Cecelia._delta_t_fallback(d) == 3.0
+            end
             @test isnothing(Cecelia._delta_t_fallback(joinpath(tempdir(), "nope-$(rand(UInt32))")))
         end
 
@@ -2797,6 +2806,30 @@ end
                 @test !occursin("PhysicalSizeZ=\"0.6\"", out)
                 @test occursin("TimeIncrement=\"5.0\"", out)         # inserted
                 @test occursin("SizeX=\"4\"", out)                   # untouched
+            end
+        end
+
+        # ── sync_zarr_calibration!: one translator (meta shape → zarr) for import + editor ──
+        @testset "sync_zarr_calibration!" begin
+            @test !Cecelia.has_calibration_meta(Dict{String,Any}("SizeC" => 2))
+            @test !Cecelia.has_calibration_meta(Dict{String,Any}("PhysicalSizeZ" => nothing))  # null clear
+            @test Cecelia.has_calibration_meta(Dict{String,Any}("PhysicalSizeZ" => 3.0))
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "z", "y", "x"], level_scales = [[1.0, 0.6, 0.5, 0.5]],
+                          shape = [3, 1, 4, 4],
+                          planes = [(z = 0, t = 1, dt = 0.0, unit = "s")])  # OME/ dir + <Pixels>
+                # a meta-shaped correction (as ccid.json / the importer / the editor produce it)
+                Cecelia.sync_zarr_calibration!(d, Dict{String,Any}(
+                    "PhysicalSizeZ" => 3.0, "PhysicalSizeUnit" => "micrometer",
+                    "TimeIncrement" => 5.0, "TimeIncrementUnit" => "second"))
+                # .zattrs now round-trips the corrected spatial value + unit
+                m = read_ome_metadata(d)
+                @test m["PhysicalSizeZ"] == 3.0
+                @test m["PhysicalSizeUnit"] == "micrometer"
+                # OME-XML <Pixels> carries the time interval napari reads unconditionally
+                xml = read(joinpath(d, "OME", "METADATA.ome.xml"), String)
+                @test occursin("TimeIncrement=\"5.0\"", xml)
+                @test occursin("TimeIncrementUnit=\"s\"", xml)
             end
         end
 

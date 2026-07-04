@@ -658,62 +658,19 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
             end
         end
 
-        # Also correct the two metadata copies napari actually reads — the NGFF `.zattrs` scale
-        # (spatial rendering, incl. the 3D view) and the OME-XML `<Pixels>` attributes (the
-        # timestamp overlay's `TimeIncrement` — napari reads this file UNCONDITIONALLY, with no
-        # `.zattrs` fallback, unlike spatial scale). Without both, a physical-size fix only changes
-        # ccid.json's display copy and napari keeps showing the old value / "t = N".
-        axis_updates = Dict{String,Float64}()
-        for (key, axis) in (("PhysicalSizeX", "x"), ("PhysicalSizeY", "y"),
-                            ("PhysicalSizeZ", "z"), ("TimeIncrement", "t"))
-            v = get(fields, key, nothing)
-            v isa Real && (axis_updates[axis] = Float64(v))
-        end
-
-        # NGFF axis `unit` for `.zattrs` (keeps `read_ome_metadata`/`resync_ome_meta!` re-reading
-        # the corrected unit — and lets it trust a newly-added t interval; see update_ome_scale!).
-        # One PhysicalSizeUnit covers x/y/z; TimeIncrementUnit is the t axis.
-        unit_updates = Dict{String,String}()
-        spatial_unit_raw = get(fields, "PhysicalSizeUnit", nothing)
-        if spatial_unit_raw isa AbstractString
-            for axis in ("x", "y", "z")
-                unit_updates[axis] = spatial_unit_raw
-            end
-        end
-        time_unit_raw = get(fields, "TimeIncrementUnit", nothing)
-        time_unit_raw isa AbstractString && (unit_updates["t"] = time_unit_raw)
-
-        xml_attrs = Dict{String,String}()
-        ome_spatial_unit = spatial_unit_raw isa AbstractString ?
-            ome_xml_unit_name(spatial_unit_raw) : nothing
-        for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
-                                ("PhysicalSizeZ", "PhysicalSizeZUnit"))
-            v = get(fields, key, nothing)
-            if v isa Real
-                xml_attrs[key] = string(Float64(v))
-                isnothing(ome_spatial_unit) || (xml_attrs[unit_key] = ome_spatial_unit)
-            end
-        end
-        tv = get(fields, "TimeIncrement", nothing)
-        if tv isa Real
-            xml_attrs["TimeIncrement"] = string(Float64(tv))
-            tu = get(fields, "TimeIncrementUnit", nothing)
-            tu isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(tu))
-        end
-
-        if !isempty(axis_updates) || !isempty(xml_attrs) || !isempty(unit_updates)
+        # Copy any physical-size/timing edit INTO the zarr's own calibration (`.zattrs` scale/units
+        # + OME-XML `<Pixels>`), so napari renders what ccid.json/analysis use — without it a fix
+        # only changes ccid's display copy and napari keeps showing the old value / "t = N". Same
+        # translator the importer uses (`sync_zarr_calibration!`), so the field→zarr mapping lives in
+        # ONE place. Targets the "default" (bioformats2raw) zarr, NOT the active version: processed
+        # variants (drift/cellpose-correct) carry a flat NGFF layout with no unit/OME-XML, and
+        # `resync_ome_meta!` re-reads the default anyway. See CLAUDE.md → OME-ZARR dual-format.
+        if Cecelia.has_calibration_meta(fields)
             img = init_object(project_uid, String(image_uid))
             if img isa CciaImage
-                # Calibration lives in the "default" (original bioformats2raw) zarr, NOT whatever
-                # version is active — processed variants (drift/cellpose-correct) carry a flat NGFF
-                # layout with no unit/OME-XML, so patching them is a no-op and `resync_ome_meta!`
-                # re-reads the default anyway. See CLAUDE.md → OME-ZARR dual-format.
                 zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
-                if !isnothing(zarr_path) && isdir(zarr_path)
-                    (isempty(axis_updates) && isempty(unit_updates)) ||
-                        update_ome_scale!(zarr_path, axis_updates; units = unit_updates)
-                    isempty(xml_attrs) || update_ome_xml_pixels!(zarr_path, xml_attrs)
-                end
+                (isnothing(zarr_path) || !isdir(zarr_path)) ||
+                    Cecelia.sync_zarr_calibration!(zarr_path, fields)
             end
         end
     end
