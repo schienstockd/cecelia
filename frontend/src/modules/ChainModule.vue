@@ -13,6 +13,7 @@ import '@vue-flow/core/dist/theme-default.css'
 import ChainTaskNode from '../components/ChainTaskNode.vue'
 import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
+import ChainLiveLabel from '../components/ChainLiveLabel.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -43,9 +44,10 @@ const {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: NodeTypesObject = {
-  task:   markRaw(ChainTaskNode)   as any,
-  picnic: markRaw(ChainPicnicNode) as any,
-  live:   markRaw(ChainLiveNode)   as any,
+  task:      markRaw(ChainTaskNode)   as any,
+  picnic:    markRaw(ChainPicnicNode) as any,
+  live:      markRaw(ChainLiveNode)   as any,
+  liveLabel: markRaw(ChainLiveLabel)  as any,
 }
 
 // ── Live view ─────────────────────────────────────────────────────────────────
@@ -72,37 +74,170 @@ watch(liveRunIds, (ids, oldIds) => {
     selectedRunId.value = ids[0]
 }, { immediate: true })
 
-// Build VueFlow nodes for the live view: grid of nodeId (Y) × imageUid (X)
-const liveNodes = computed<Node[]>(() => {
-  const run = selectedRunId.value
-  const tasks = chainTasks.value.filter(t => t.chainRunId === run)
-  if (!tasks.length) return []
+// ── Live-run layout: rows = images, columns = tasks in execution order ──────────
+// The run reads left→right along the chain (import → … → segment), one row per image, with edges
+// linking each row's tasks so fan-out (one node → two branches) is visible. Node order and edges
+// come from the run's chain template; fetched by name (falls back to a task-derived layout if the
+// template is gone). Copy run ID lets you reference a run in logs / REPL (load_chain_run).
 
-  const nodeIds = [...new Set(tasks.map(t => t.chainNodeId!))].sort()
-  const imageIds = [...new Set(tasks.map(t => t.imageUid))].sort()
-  const nodeIdxMap = Object.fromEntries(nodeIds.map((id, i) => [id, i]))
-  const imgIdxMap  = Object.fromEntries(imageIds.map((id, i) => [id, i]))
+interface LiveTemplateNode { id: string; fn: string; params?: Record<string, unknown> }
+interface LiveTemplate { nodes: LiveTemplateNode[]; edges: { from: string; to: string }[] }
+const liveTemplate = ref<LiveTemplate | null>(null)
 
-  return tasks.map(t => ({
-    id:       t.id,
-    type:     'live',
-    position: {
-      x: imgIdxMap[t.imageUid]  * 160 + 20,
-      y: nodeIdxMap[t.chainNodeId!] * 110 + 20,
-    },
-    data: {
-      fn:         t.funName,
-      label:      t.label,
-      imageUid:   t.imageUid,
-      status:     t.status,
-      startedAt:  t.startedAt?.getTime(),
-      finishedAt: t.finishedAt?.getTime(),
-    },
-    draggable: false,
-    selectable: false,
-    connectable: false,
-  }))
+// Topological order of node ids (Kahn) — the execution order used for the columns.
+function topoOrder(nodes: { id: string }[], edges: { from: string; to: string }[]): string[] {
+  const indeg = new Map(nodes.map(n => [n.id, 0]))
+  const succ  = new Map(nodes.map(n => [n.id, [] as string[]]))
+  for (const e of edges) {
+    if (!indeg.has(e.to) || !succ.has(e.from)) continue
+    indeg.set(e.to, (indeg.get(e.to) ?? 0) + 1)
+    succ.get(e.from)!.push(e.to)
+  }
+  const q = nodes.filter(n => (indeg.get(n.id) ?? 0) === 0).map(n => n.id)
+  const out: string[] = []
+  while (q.length) {
+    const id = q.shift()!
+    out.push(id)
+    for (const c of succ.get(id) ?? []) {
+      indeg.set(c, indeg.get(c)! - 1)
+      if (indeg.get(c) === 0) q.push(c)
+    }
+  }
+  for (const n of nodes) if (!out.includes(n.id)) out.push(n.id)  // cycle safety
+  return out
+}
+
+// Fetch the template for the selected run's chain (for column order + edges).
+watch(selectedRunId, async (runId) => {
+  liveTemplate.value = null
+  if (!runId) return
+  const chain = chainTasks.value.find(t => t.chainRunId === runId)?.chainName
+  const uid   = projectMeta.current?.uid
+  if (!chain || !uid) return
+  try {
+    const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(chain)}`)
+    if (!res.ok) return
+    const t = await res.json() as LiveTemplate
+    liveTemplate.value = { nodes: t.nodes ?? [], edges: t.edges ?? [] }
+  } catch { /* fall back to task-derived layout (no edges) */ }
+}, { immediate: true })
+
+const LIVE = { colW: 190, laneH: 84, bandGap: 30, padX: 150, padY: 40 }
+
+function imageName(uid: string): string {
+  for (const s of project.sets) {
+    const img = s.images.find(i => i.uid === uid)
+    if (img) return img.name
+  }
+  return uid.slice(0, 8)
+}
+
+// A distinguishing suffix for a node — the value_name it produces (or consumes), so the two
+// branches of a fan-out (same fn, different output like "T" vs "default") are told apart.
+function nodeVariant(nodeId: string): string {
+  const p = liveTemplate.value?.nodes.find(n => n.id === nodeId)?.params ?? {}
+  const v = (p as Record<string, unknown>).outputValueName ?? (p as Record<string, unknown>).valueName
+  return v ? String(v) : ''
+}
+
+// Layered layout of the run's DAG (shared by nodes + edges):
+//   layer = longest path from a root  → the X column (execution depth)
+//   lane  = index of the node within its layer → the Y offset inside an image's band
+// Fan-out siblings share a layer (same column) but get different lanes, so a branch visibly
+// splits into parallel tracks. Each image is one band; a band is `bandLanes` tall.
+const liveLayout = computed(() => {
+  const tasks = chainTasks.value.filter(t => t.chainRunId === selectedRunId.value)
+  const taskNodeIds = new Set(tasks.map(t => t.chainNodeId!))
+  const tmpl = liveTemplate.value
+  let nodes: LiveTemplateNode[] = tmpl?.nodes.filter(n => taskNodeIds.has(n.id)) ?? []
+  let edges = tmpl?.edges.filter(e => taskNodeIds.has(e.from) && taskNodeIds.has(e.to)) ?? []
+  if (!nodes.length) {   // fallback: no template → linear, no edges
+    nodes = [...taskNodeIds].map(id => ({ id, fn: '' }))
+    edges = []
+  }
+  const order = topoOrder(nodes, edges)
+  const preds = new Map(nodes.map(n => [n.id, [] as string[]]))
+  for (const e of edges) preds.get(e.to)?.push(e.from)
+  const layer = new Map<string, number>()
+  for (const id of order) {
+    const ps = preds.get(id) ?? []
+    layer.set(id, ps.length ? Math.max(...ps.map(p => layer.get(p) ?? 0)) + 1 : 0)
+  }
+  const perLayer = new Map<number, number>()
+  const lane = new Map<string, number>()
+  for (const id of order) {
+    const L = layer.get(id)!
+    const k = perLayer.get(L) ?? 0
+    lane.set(id, k)
+    perLayer.set(L, k + 1)
+  }
+  const bandLanes = Math.max(1, ...perLayer.values())
+  const imageIds = [...new Set(tasks.map(t => t.imageUid))]
+    .sort((a, b) => imageName(a).localeCompare(imageName(b)))
+  return { tasks, edges, layer, lane, bandLanes, imageIds }
 })
+
+const liveNodes = computed<Node[]>(() => {
+  const { tasks, layer, lane, bandLanes, imageIds } = liveLayout.value
+  if (!tasks.length) return []
+  const rowOf  = new Map(imageIds.map((id, i) => [id, i]))
+  const bandH  = bandLanes * LIVE.laneH
+  const bandY  = (r: number) => LIVE.padY + r * (bandH + LIVE.bandGap)
+  const nodes: Node[] = []
+
+  // Row header (image name), vertically centred in the band.
+  imageIds.forEach(uid => nodes.push({
+    id: `row:${uid}`, type: 'liveLabel',
+    position: { x: 8, y: bandY(rowOf.get(uid)!) + (bandH - 20) / 2 },
+    data: { text: imageName(uid), sub: uid.slice(0, 6), kind: 'row' },
+    draggable: false, selectable: false, connectable: false,
+  }))
+  // Task nodes, placed at (layer → x, lane → y within band).
+  for (const t of tasks) {
+    const L = layer.get(t.chainNodeId!)
+    const K = lane.get(t.chainNodeId!)
+    const r = rowOf.get(t.imageUid)
+    if (L === undefined || K === undefined || r === undefined) continue
+    nodes.push({
+      id: t.id, type: 'live',
+      position: { x: LIVE.padX + L * LIVE.colW, y: bandY(r) + K * LIVE.laneH },
+      data: {
+        fn: t.funName, label: t.label, variant: nodeVariant(t.chainNodeId!),
+        imageUid: t.imageUid, status: t.status,
+        startedAt: t.startedAt?.getTime(), finishedAt: t.finishedAt?.getTime(),
+      },
+      draggable: false, selectable: false, connectable: false,
+    })
+  }
+  return nodes
+})
+
+// Edges: each DAG edge replicated per image band, linking that band's task nodes. A fan-out node
+// (afDriftCorrect → two segmentations) has two outgoing edges to two lanes → a visible split.
+const liveEdges = computed<Edge[]>(() => {
+  const { tasks, edges, imageIds } = liveLayout.value
+  if (!edges.length || !tasks.length) return []
+  const idOf = new Map(tasks.map(t => [`${t.chainNodeId}::${t.imageUid}`, t.id]))
+  const out: Edge[] = []
+  for (const uid of imageIds) {
+    for (const e of edges) {
+      const s = idOf.get(`${e.from}::${uid}`)
+      const d = idOf.get(`${e.to}::${uid}`)
+      if (s && d) out.push({
+        id: `${s}->${d}`, source: s, target: d,
+        style: { stroke: 'var(--cc-border, #3f3f46)', strokeWidth: 1.5 },
+      })
+    }
+  }
+  return out
+})
+
+function copyRunId() {
+  if (!selectedRunId.value) return
+  navigator.clipboard?.writeText(selectedRunId.value)
+    .then(() => log.info(`Copied run ID ${selectedRunId.value}`, { source: 'whiteboard' }))
+    .catch(() => { /* clipboard blocked — non-critical */ })
+}
 
 // ── Chain list & selection ───────────────────────────────────────────────────
 
@@ -614,12 +749,20 @@ onActivated(async () => {
         <label class="live-label">Run</label>
         <select
           v-if="liveRunIds.length"
-          class="chain-select"
+          class="chain-select live-run-select"
           :value="selectedRunId"
           @change="selectedRunId = ($event.target as HTMLSelectElement).value"
         >
           <option v-for="id in liveRunIds" :key="id" :value="id">{{ runLabel(id) }}</option>
         </select>
+        <button
+          v-if="selectedRunId"
+          class="wb-btn live-copy-btn"
+          @click="copyRunId"
+          v-tooltip.bottom="`Copy run ID (${selectedRunId}) — e.g. for load_chain_run in the REPL`"
+        >
+          <i class="pi pi-copy" />
+        </button>
         <span v-else class="live-hint">No chain tasks yet — start a chain run to see live progress.</span>
       </div>
 
@@ -627,7 +770,7 @@ onActivated(async () => {
         <VueFlow
           id="chain-live"
           :nodes="liveNodes"
-          :edges="[]"
+          :edges="liveEdges"
           :node-types="nodeTypes"
           :nodes-draggable="false"
           :edges-updatable="false"
@@ -1028,6 +1171,17 @@ onActivated(async () => {
   color: var(--cc-text-dim);
   flex-shrink: 0;
 }
+
+/* Live toolbar: keep the run selector tight (it otherwise stretches full width via .chain-select
+   flex:1) with the copy button right beside it. */
+.live-run-select {
+  flex: 0 0 auto;
+  width: auto;
+  max-width: 240px;
+}
+
+.live-copy-btn { flex: 0 0 auto; color: var(--cc-text-dim); }
+.live-copy-btn:hover:not(:disabled) { color: var(--cc-text); }
 
 .live-hint {
   font-size: 0.72rem;

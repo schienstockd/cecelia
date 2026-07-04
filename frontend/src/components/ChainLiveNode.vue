@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { Handle, Position } from '@vue-flow/core'
 import type { TaskStatus } from '../stores/tasks'
 
 const props = defineProps<{
@@ -7,6 +8,7 @@ const props = defineProps<{
   data: {
     fn: string
     label?: string
+    variant?: string      // distinguishing value_name (e.g. fan-out output "T" vs "default")
     imageUid: string
     status: TaskStatus
     startedAt?: number    // epoch ms
@@ -58,6 +60,9 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
 
 <template>
   <div class="live-node" :style="{ borderColor: STATUS_COLORS[data.status] }">
+    <!-- anchor points for the execution-order edges (not user-connectable) -->
+    <Handle type="target" :position="Position.Left" class="live-handle" :connectable="false" />
+    <Handle type="source" :position="Position.Right" class="live-handle" :connectable="false" />
     <div class="live-status-bar" :style="{ background: STATUS_COLORS[data.status] }">
       <i :class="['pi', STATUS_ICONS[data.status]]"
          :style="{ color: STATUS_TEXT[data.status] }" />
@@ -66,8 +71,10 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
       </span>
       <span v-if="elapsed" class="live-elapsed">{{ elapsed }}</span>
     </div>
-    <div class="live-fn">{{ data.label ?? data.fn.split('.').pop() }}</div>
-    <div class="live-uid">{{ data.imageUid.slice(0, 8) }}…</div>
+    <div class="live-fn">
+      {{ data.label ?? data.fn.split('.').pop() }}
+      <span v-if="data.variant" class="live-variant">{{ data.variant }}</span>
+    </div>
   </div>
 </template>
 
@@ -81,6 +88,15 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
   min-width: 110px;
   cursor: default;
   position: relative;
+}
+
+/* handles are pure edge anchors here — keep them subtle and non-interactive */
+.live-handle {
+  width: 6px;
+  height: 6px;
+  background: #52525b;
+  border: none;
+  opacity: 0.5;
 }
 
 .live-status-bar {
@@ -108,19 +124,26 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
 }
 
 .live-fn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   color: var(--cc-text, #e2e2f0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 130px;
+  max-width: 150px;
 }
 
-.live-uid {
+.live-variant {
   font-size: 9px;
-  color: var(--cc-text-dim, #8b8ca7);
-  font-family: monospace;
-  margin-top: 2px;
+  font-family: var(--cc-mono, monospace);
+  font-weight: 600;
+  color: var(--cc-accent, #a78bfa);
+  background: color-mix(in srgb, var(--cc-accent, #a78bfa) 18%, transparent);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
 }
 </style>
