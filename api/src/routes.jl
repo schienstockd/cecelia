@@ -94,7 +94,7 @@ function api_chains_run(req::HTTP.Request)
     (isempty(uid) || isempty(rid)) && return 400, JSON3.write((; error="projectUid and runId required"))
     proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
     run  = try load_chain_run(proj, rid) catch; return 404, JSON3.write((; error="run not found: $rid")) end
-    nodes = [(; id=n.id, fn=n.fn) for n in run.template_snapshot.nodes]
+    nodes = [(; id=n.id, fn=n.fn, params=n.params) for n in run.template_snapshot.nodes]
     edges = [(; from=e.from, to=e.to) for e in run.template_snapshot.edges]
     states = Dict{String,Any}()
     for (u, nm) in run.image_states

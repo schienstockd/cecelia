@@ -953,12 +953,13 @@ onActivated(async () => {
           <i class="pi pi-refresh" />
         </button>
         <button
-          class="wb-btn live-copy-btn"
+          class="wb-btn qc-toggle"
           :class="{ 'qc-on': showQc }"
           @click="showQc = !showQc"
           v-tooltip.bottom="'Show/hide the segmentation QC row'"
         >
-          <i class="pi pi-chart-bar" /> QC
+          <i class="pi pi-chart-bar" />
+          <span>QC</span>
         </button>
         <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
       </div>
@@ -1395,9 +1396,23 @@ onActivated(async () => {
   max-width: 240px;
 }
 
-.live-copy-btn { flex: 0 0 auto; width: auto; padding: 0 0.4rem; gap: 0.25rem; display: flex; align-items: center; color: var(--cc-text-dim); }
+.live-copy-btn { flex: 0 0 auto; color: var(--cc-text-dim); }
 .live-copy-btn:hover:not(:disabled) { color: var(--cc-text); }
-.live-copy-btn.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
+
+/* labelled toggle (icon + "QC") — auto width, unlike the square icon buttons */
+.qc-toggle {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 0.5rem;
+  gap: 0.3rem;
+  display: flex;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--cc-text-dim);
+}
+.qc-toggle:hover:not(:disabled) { color: var(--cc-text); }
+.qc-toggle.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
 
 .qc-expand-overlay {
   position: absolute; inset: 0; z-index: 20;
