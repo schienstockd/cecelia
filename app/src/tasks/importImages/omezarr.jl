@@ -15,7 +15,9 @@ function _delta_t_fallback(zarr_path::String)::Union{Float64,Nothing}
     isfile(xml_file) || return nothing
     try
         xml = read(xml_file, String)
-        for m in eachmatch(r"<Plane\b[^>]*?/>", xml)
+        # match the <Plane …> opening tag whether self-closing (`/>`, bioformats2raw) or not
+        # (`>…</Plane>`, some vendors) — DeltaT is an attribute on the opening tag either way
+        for m in eachmatch(r"<Plane\b[^>]*?>", xml)
             tag = m.match
             occursin(r"TheZ=\"0\"", tag) || continue
             occursin(r"TheT=\"1\"", tag) || continue
@@ -140,9 +142,17 @@ spacing even after the editor said it was fixed. `updates` maps axis name ("x"/"
 new value AT LEVEL 0; every pyramid level's scale for that axis is rescaled by the same ratio
 (new/old), so a level-dependent downsampling factor (x/y shrink per level; z/t normally don't) is
 preserved rather than clobbered with one flat value.
+
+`units` maps the same axis names to an NGFF unit name ("micrometer"/"second"/…) and rewrites each
+axis's `unit` field. This matters for round-tripping: `read_ome_metadata` derives
+`PhysicalSizeUnit`/`TimeIncrementUnit` from the axis `unit`, and — for the t axis — will only trust
+the t scale AT ALL when a unit is present (a unit-less t scale is treated as a placeholder). So a
+correction that changes only the unit, or that adds a real time interval to a file that had none,
+must write the unit here too or a later `resync_ome_meta!` re-read wouldn't see it.
 """
-function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64})
-    isempty(updates) && return
+function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64};
+                           units::Dict{String,String} = Dict{String,String}())
+    (isempty(updates) && isempty(units)) && return
     zattrs_file = joinpath(zarr_path, "0", ".zattrs")
     isfile(zattrs_file) || return
     try
@@ -151,48 +161,67 @@ function update_ome_scale!(zarr_path::String, updates::Dict{String,Float64})
         (isnothing(multiscales) || isempty(multiscales)) && return
         ms = Dict{String,Any}(String(k) => v for (k, v) in first(multiscales))
 
-        axes     = [lowercase(string(get(ax, :name, ""))) for ax in get(ms, "axes", [])]
+        ax_list  = get(ms, "axes", [])
+        axes     = [lowercase(string(get(ax, :name, ""))) for ax in ax_list]
         datasets = get(ms, "datasets", [])
         isempty(datasets) && return
 
+        changed = false
+
+        # numeric scale — rescale every level by the level-0 ratio (preserves per-level downsampling)
         level0 = Dict{String,Any}(String(k) => v for (k, v) in first(datasets))
         level0_scale = nothing
         for ct in get(level0, "coordinateTransformations", [])
             string(get(ct, :type, "")) == "scale" &&
                 (level0_scale = collect(Float64, get(ct, :scale, [])))
         end
-        isnothing(level0_scale) && return
-
         ratios = Dict{Int,Float64}()
-        for (axis_name, new_val) in updates
-            idx = findfirst(==(axis_name), axes)
-            isnothing(idx) && continue
-            old_val = level0_scale[idx]
-            old_val == 0 && continue
-            ratios[idx] = new_val / old_val
-        end
-        isempty(ratios) && return
-
-        new_datasets = map(datasets) do d
-            dd = Dict{String,Any}(String(k) => v for (k, v) in d)
-            cts = get(dd, "coordinateTransformations", [])
-            new_cts = map(cts) do ct
-                ctd = Dict{String,Any}(String(k) => v for (k, v) in ct)
-                if string(get(ctd, "type", "")) == "scale"
-                    scale = collect(Float64, get(ctd, "scale", []))
-                    for (idx, r) in ratios
-                        scale[idx] *= r
-                    end
-                    ctd["scale"] = scale
-                end
-                ctd
+        if !isnothing(level0_scale)
+            for (axis_name, new_val) in updates
+                idx = findfirst(==(axis_name), axes)
+                isnothing(idx) && continue
+                old_val = level0_scale[idx]
+                old_val == 0 && continue
+                ratios[idx] = new_val / old_val
             end
-            dd["coordinateTransformations"] = new_cts
-            dd
         end
-        ms["datasets"]        = new_datasets
-        multiscales_new       = [ms; multiscales[2:end]...]
-        raw["multiscales"]    = multiscales_new
+        if !isempty(ratios)
+            new_datasets = map(datasets) do d
+                dd = Dict{String,Any}(String(k) => v for (k, v) in d)
+                cts = get(dd, "coordinateTransformations", [])
+                new_cts = map(cts) do ct
+                    ctd = Dict{String,Any}(String(k) => v for (k, v) in ct)
+                    if string(get(ctd, "type", "")) == "scale"
+                        scale = collect(Float64, get(ctd, "scale", []))
+                        for (idx, r) in ratios
+                            scale[idx] *= r
+                        end
+                        ctd["scale"] = scale
+                    end
+                    ctd
+                end
+                dd["coordinateTransformations"] = new_cts
+                dd
+            end
+            ms["datasets"] = new_datasets
+            changed = true
+        end
+
+        # axis units — see docstring: what read_ome_metadata reads back, and the t-axis trust gate
+        if !isempty(units)
+            new_axes = map(ax_list) do ax
+                axd = Dict{String,Any}(String(k) => v for (k, v) in ax)
+                nm  = lowercase(string(get(axd, "name", "")))
+                haskey(units, nm) && (axd["unit"] = units[nm])
+                axd
+            end
+            ms["axes"] = new_axes
+            changed = true
+        end
+
+        changed || return
+        multiscales_new    = [ms; multiscales[2:end]...]
+        raw["multiscales"] = multiscales_new
         open(zattrs_file, "w") do io; JSON3.write(io, raw); end
     catch e
         @warn "Could not update OME-ZARR scale metadata" zarr_path exception = e
@@ -230,15 +259,85 @@ function update_ome_xml_pixels!(zarr_path::String, attrs::Dict{String,String})
         tag = m.match
         for (k, v) in attrs
             attr_re = Regex(k * "=\"[^\"]*\"")
+            # replace an existing attr in place; else insert right after the `<Pixels` token — anchor
+            # on the token (not a literal `"<Pixels "`) so a bare `<Pixels>` gets it too. The
+            # original separator (space or `>`) is preserved, keeping the tag well-formed.
             tag = occursin(attr_re, tag) ?
                 replace(tag, attr_re => "$k=\"$v\"") :
-                replace(tag, "<Pixels " => "<Pixels $k=\"$v\" "; count = 1)
+                replace(tag, r"<Pixels\b" => "<Pixels $k=\"$v\""; count = 1)
         end
         new_xml = replace(xml, m.match => tag; count = 1)
         open(xml_file, "w") do io; write(io, new_xml); end
     catch e
         @warn "Could not update OME-XML Pixels attributes" zarr_path exception = e
     end
+end
+
+# Meta keys that carry calibration (the ccid.json / import / editor shape). `sync_zarr_calibration!`
+# is the single translator from these to the zarr's own copies — used by BOTH the importer and the
+# metadata editor so the field→axis/XML mapping never lives in two places.
+const _CALIBRATION_META_KEYS = (
+    "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit",
+    "TimeIncrement", "TimeIncrementUnit",
+)
+
+"""Whether `meta` carries any calibration value worth syncing into the zarr (a `nothing` — a JSON
+`null` clear — doesn't count). Lets a caller skip the (non-trivial) object load when there's
+nothing to do."""
+has_calibration_meta(meta::AbstractDict) =
+    any(k -> !isnothing(get(meta, k, nothing)), _CALIBRATION_META_KEYS)
+
+"""
+Copy the physical-size/timing values in a `meta`-shaped dict (keys in `_CALIBRATION_META_KEYS` — the
+same names ccid.json, the importer, and the frontend editor all use) INTO the zarr's own calibration
+copies: the NGFF `.zattrs` scale + axis units (`update_ome_scale!`) and the OME-XML `<Pixels>` attrs
+(`update_ome_xml_pixels!`, which napari reads unconditionally for the time interval).
+
+This is the one place both `ImportOmezarr` (materialising its ImageJ Z-spacing fix + DeltaT time
+fallback) and `api_images_meta_set` (a user edit) funnel through, so napari always renders the SAME
+calibration ccid.json / `img_physical_sizes` already compute with — otherwise the two diverge (the
+viewer showing the raw spacing / "t = N" while analysis uses the corrected number). `zarr_path` must
+be the `"default"` (bioformats2raw) zarr — the only layout these writers understand
+(CLAUDE.md → OME-ZARR dual-format).
+"""
+function sync_zarr_calibration!(zarr_path::String, meta::AbstractDict)
+    # numeric scale, per axis
+    axis_updates = Dict{String,Float64}()
+    for (key, axis) in (("PhysicalSizeX", "x"), ("PhysicalSizeY", "y"),
+                        ("PhysicalSizeZ", "z"), ("TimeIncrement", "t"))
+        v = get(meta, key, nothing)
+        v isa Real && (axis_updates[axis] = Float64(v))
+    end
+
+    # NGFF axis units — one PhysicalSizeUnit covers x/y/z; TimeIncrementUnit is the t axis
+    unit_updates = Dict{String,String}()
+    spatial_unit = get(meta, "PhysicalSizeUnit", nothing)
+    if spatial_unit isa AbstractString
+        for axis in ("x", "y", "z"); unit_updates[axis] = spatial_unit; end
+    end
+    time_unit = get(meta, "TimeIncrementUnit", nothing)
+    time_unit isa AbstractString && (unit_updates["t"] = time_unit)
+
+    # OME-XML <Pixels> attributes (napari reads the time interval only from here)
+    xml_attrs   = Dict{String,String}()
+    ome_spatial = spatial_unit isa AbstractString ? ome_xml_unit_name(spatial_unit) : nothing
+    for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
+                            ("PhysicalSizeZ", "PhysicalSizeZUnit"))
+        v = get(meta, key, nothing)
+        if v isa Real
+            xml_attrs[key] = string(Float64(v))
+            isnothing(ome_spatial) || (xml_attrs[unit_key] = ome_spatial)
+        end
+    end
+    tv = get(meta, "TimeIncrement", nothing)
+    if tv isa Real
+        xml_attrs["TimeIncrement"] = string(Float64(tv))
+        time_unit isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(time_unit))
+    end
+
+    (isempty(axis_updates) && isempty(unit_updates)) ||
+        update_ome_scale!(zarr_path, axis_updates; units = unit_updates)
+    isempty(xml_attrs) || update_ome_xml_pixels!(zarr_path, xml_attrs)
 end
 
 # ── ccid.json helpers ─────────────────────────────────────────────────────────
@@ -265,21 +364,33 @@ const _OME_DERIVED_META_KEYS = (
     "TimeIncrement", "TimeIncrementUnit",
 )
 
+# `overwrite`:
+#   true  (import) — re-read is authoritative: clear the derived keys first (see
+#          `_OME_DERIVED_META_KEYS`) so a value THIS read no longer produces can't linger as a
+#          zombie, and take the fresh channel names.
+#   false (backfill / `resync_ome_meta!`) — fill-only: set a key ONLY when it's genuinely absent,
+#          never clobber a value already on disk. That value may be a human correction, or the
+#          ImageJ-TIFF Z auto-fix, both of which live only in ccid.json and are NOT reproducible by
+#          re-reading the zarr — a plain overwrite would silently revert them. Channel names are
+#          likewise left untouched (the user may have renamed them).
 function _merge_zarr_meta_into_ccid!(img::CciaImage, zarr_meta::Dict;
                                       zarr_filename::Union{String,Nothing} = nothing,
-                                      value_name::String = VERSIONED_DEFAULT_VAL)
+                                      value_name::String = VERSIONED_DEFAULT_VAL,
+                                      overwrite::Bool = true)
     isempty(zarr_meta) && isnothing(zarr_filename) && return
     ccid = joinpath(img._dir, "ccid.json")
     try
         raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
         m   = Dict{String,Any}(String(k) => v for (k, v) in get(raw, "meta", Dict()))
-        for k in _OME_DERIVED_META_KEYS
-            delete!(m, k)
+        if overwrite
+            for k in _OME_DERIVED_META_KEYS
+                delete!(m, k)
+            end
         end
         for (k, v) in zarr_meta
             if k == "channel_names"
-                versioned_set_field!(raw, "imChannelNames", collect(String, v))
-            else
+                overwrite && versioned_set_field!(raw, "imChannelNames", collect(String, v))
+            elseif overwrite || !haskey(m, k)
                 m[k] = v
             end
         end
@@ -297,8 +408,14 @@ Backfill an already-imported image's physical-size/timing `meta` fields by re-re
 its OME-ZARR — the same reader `ImportOmezarr` uses at import time — WITHOUT re-running
 bioformats2raw. For images converted before this metadata was tracked (or whose `meta` predates
 the `PhysicalSizeUnit`/`TimeIncrementUnit` fields), the zarr itself is already correct; only
-`ccid.json`'s `meta` dict is stale/missing these keys. Safe and idempotent to call on an image
-that's already up to date — it just re-derives the same values a fresh import would produce.
+`ccid.json`'s `meta` dict is stale/missing these keys.
+
+Strictly a FILL-ONLY backfill (`overwrite=false`): it adds fields that are genuinely absent and
+never overwrites one already on disk. This is NOT equivalent to a fresh import — it does not re-run
+the ImageJ-TIFF Z-spacing auto-fix (that step lives in the import task, outside `read_ome_metadata`,
+and its result — a corrected `PhysicalSizeZ` + `PhysicalSizeZ_raw` marker — is stored only in
+ccid.json). Overwriting would silently revert both that auto-fix and any human correction back to
+bioformats2raw's raw value; fill-only makes resync safe to run on any image, corrected or not.
 
 Deliberately reads the `VERSIONED_DEFAULT_VAL` ("default") zarr — the original bioformats2raw
 output — rather than whichever version is currently `active`. Downstream tasks (drift/AF
@@ -315,7 +432,7 @@ function resync_ome_meta!(img::CciaImage)::Bool
     (isnothing(zarr_path) || !isdir(zarr_path)) && return false
     zarr_meta = read_ome_metadata(zarr_path)
     isempty(zarr_meta) && return false
-    _merge_zarr_meta_into_ccid!(img, zarr_meta)
+    _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
     true
 end
 
@@ -413,6 +530,17 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
                 rm(result_file; force = true)
             end
         end
+    end
+
+    # Copy our import-time corrections back INTO the zarr's own calibration (`.zattrs` + OME-XML),
+    # so napari renders the same numbers ccid.json / `img_physical_sizes` (analysis) will use —
+    # otherwise the ImageJ Z-spacing fix and the per-plane DeltaT time interval live only in
+    # ccid.json and the viewer keeps showing the raw spacing / "t = N". Only when something actually
+    # diverges from what bioformats2raw wrote: a corrected Z, or a timelapse (the DeltaT fallback /
+    # unit-less-t placeholder cases). The value stays flagged for human confirmation regardless —
+    # this just keeps the viewer honest about the number we've already decided to compute with.
+    if haskey(zarr_meta, "PhysicalSizeZ_raw") || get(zarr_meta, "SizeT", 1) > 1
+        sync_zarr_calibration!(zarr_out, zarr_meta)
     end
 
     _update_image_status!(img, "done")

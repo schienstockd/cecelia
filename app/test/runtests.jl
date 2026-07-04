@@ -2053,6 +2053,45 @@ end
         end
     end
 
+    # ── Segmentation integrity (QC) plot data (KDIeEm, timecourse) ───────────────
+    # count per (image, timepoint) via group_by=temporal, + a per-timepoint measure distribution.
+    # See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
+    @testset "segmentation QC data (KDIeEm)" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        if !have_fixture(h5)
+            @test_skip "segmentation QC (fixture missing)"
+        else
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+            img = CciaImage(uid="KDIeEm", dir=td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+
+            # root "/" = ALL measured cells (no gating file present)
+            total = nrow(pop_df(img, "flow", ["/"]; value_name="B", pop_cols=["area"]))
+            @test total > 0
+
+            # count, whole image (no timepoint split) → one series, value == total cells
+            whole = segmentation_qc_data(img; value_name="B", measure=nothing)
+            @test whole["chartType"] == "count"
+            @test length(whole["series"]) == 1
+            @test whole["series"][1]["value"] == Float64(total)
+
+            # count per timepoint → one series per t; counts partition the total
+            byT = segmentation_qc_data(img; value_name="B", measure=nothing, per_timepoint=true)
+            @test byT["groupBy"] == "t"
+            @test length(byT["series"]) > 1
+            @test sum(s["value"] for s in byT["series"]) == Float64(total)
+
+            # per-timepoint area distribution reuses the same temporal grouping
+            area = segmentation_qc_data(img; value_name="B", measure="area", per_timepoint=true)
+            @test area["measure"] == "area"
+            @test length(area["series"]) == length(byT["series"])
+
+            # temporal-column resolution: present for this timecourse fixture
+            @test Cecelia._segmentation_temporal_col(img, "B") == "t"
+        end
+    end
+
     # ── track table: path/naming helpers + JSON-safety (pure, no fixture) ─────
     @testset "track table helpers" begin
         td = mktempdir()
@@ -2623,6 +2662,226 @@ end
         @test task_scope(_task_from_fun_name("behaviour.hmm")) == "set"
         @test task_scope(_task_from_fun_name("behaviour.hmm_states")) == "set"
         @test task_scope(_task_from_fun_name("tracking.track_measures")) == "image"
+    end
+
+    # ── Physical-size / timing metadata (import review, edit, resync) ──────────────
+    # All fixtures are synthetic temp zarrs (no real data) — these functions are pure
+    # readers/writers over the bioformats2raw nested layout (`zarr/0/.zattrs`, `zarr/OME`).
+    @testset "OME metadata read/edit/resync" begin
+        # Build a minimal bioformats2raw-shaped zarr: `0/.zattrs` (multiscales) + optional
+        # `0/0/.zarray` (shape → SizeC/T/Z) + optional `OME/METADATA.ome.xml` (planes).
+        function make_zarr(dir; axes, level_scales, units = Dict{String,String}(),
+                           shape = nothing, planes = nothing)
+            mkpath(joinpath(dir, "0"))
+            ax_objs = map(axes) do a
+                o = Dict{String,Any}("name" => a,
+                    "type" => a in ("x", "y", "z") ? "space" : (a == "t" ? "time" : "channel"))
+                haskey(units, a) && (o["unit"] = units[a])
+                o
+            end
+            datasets = [Dict{String,Any}("path" => string(i - 1),
+                          "coordinateTransformations" =>
+                              [Dict{String,Any}("type" => "scale", "scale" => level_scales[i])])
+                        for i in eachindex(level_scales)]
+            zattrs = Dict{String,Any}("multiscales" =>
+                [Dict{String,Any}("axes" => ax_objs, "datasets" => datasets)])
+            open(joinpath(dir, "0", ".zattrs"), "w") do io; JSON3.write(io, zattrs); end
+            if !isnothing(shape)
+                mkpath(joinpath(dir, "0", "0"))
+                open(joinpath(dir, "0", "0", ".zarray"), "w") do io
+                    JSON3.write(io, Dict{String,Any}("shape" => shape))
+                end
+            end
+            if !isnothing(planes)
+                mkpath(joinpath(dir, "OME"))
+                body = join([
+                    "<Plane TheZ=\"$(p.z)\" TheT=\"$(p.t)\" DeltaT=\"$(p.dt)\"" *
+                    (haskey(p, :unit) ? " DeltaTUnit=\"$(p.unit)\"" : "") * "/>"
+                    for p in planes], "\n")
+                open(joinpath(dir, "OME", "METADATA.ome.xml"), "w") do io
+                    write(io, "<OME><Image><Pixels>$body</Pixels></Image></OME>")
+                end
+            end
+            dir
+        end
+
+        # ── _delta_t_fallback: per-plane DeltaT (TheZ=0, TheT=1), unit-converted to seconds ──
+        @testset "_delta_t_fallback" begin
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "z", "y", "x"], level_scales = [[1.0, 1.0, 0.5, 0.5]],
+                          planes = [(z = 0, t = 0, dt = 0.0, unit = "ms"),
+                                    (z = 0, t = 1, dt = 5000.0, unit = "ms"),
+                                    (z = 0, t = 2, dt = 10000.0, unit = "ms")])
+                @test Cecelia._delta_t_fallback(d) == 5.0            # 5000 ms → 5 s, from TheT=1
+            end
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
+                          planes = [(z = 0, t = 1, dt = 2.0, unit = "min")])
+                @test Cecelia._delta_t_fallback(d) == 120.0          # 2 min → 120 s
+            end
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "y", "x"], level_scales = [[1.0, 0.5, 0.5]],
+                          planes = [(z = 0, t = 1, dt = 30.0)])      # no unit → seconds
+                @test Cecelia._delta_t_fallback(d) == 30.0
+            end
+            # non-self-closing <Plane>…</Plane> (some vendors) — DeltaT is on the opening tag
+            mktempdir() do d
+                mkpath(joinpath(d, "OME"))
+                write(joinpath(d, "OME", "METADATA.ome.xml"),
+                      "<OME><Image><Pixels>" *
+                      "<Plane TheZ=\"0\" TheT=\"1\" DeltaT=\"3\" DeltaTUnit=\"s\"><Annotation/></Plane>" *
+                      "</Pixels></Image></OME>")
+                @test Cecelia._delta_t_fallback(d) == 3.0
+            end
+            @test isnothing(Cecelia._delta_t_fallback(joinpath(tempdir(), "nope-$(rand(UInt32))")))
+        end
+
+        # ── read_ome_metadata: unit-less-t placeholder is rejected; DeltaT fills the gap ──
+        @testset "read_ome_metadata" begin
+            # t axis has a scale (1.0) but NO unit → placeholder, must NOT become TimeIncrement=1.0;
+            # SizeT>1 so the DeltaT fallback kicks in and supplies the real interval.
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "z", "y", "x"],
+                          level_scales = [[1.0, 0.6, 0.5, 0.5]],
+                          units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"),
+                          shape = [3, 1, 4, 4],
+                          planes = [(z = 0, t = 1, dt = 7.0, unit = "s")])
+                m = read_ome_metadata(d)
+                @test m["SizeT"] == 3
+                @test m["PhysicalSizeX"] == 0.5
+                @test m["PhysicalSizeZ"] == 0.6
+                @test m["PhysicalSizeUnit"] == "micrometer"
+                @test m["TimeIncrement"] == 7.0                       # from DeltaT, not the 1.0 placeholder
+                @test m["TimeIncrementUnit"] == "second"
+            end
+            # t axis WITH a unit → trusted verbatim, no fallback needed.
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "y", "x"], level_scales = [[2.5, 0.5, 0.5]],
+                          units = Dict("t" => "second", "x" => "micrometer", "y" => "micrometer"),
+                          shape = [4, 8, 8])
+                m = read_ome_metadata(d)
+                @test m["TimeIncrement"] == 2.5
+                @test m["TimeIncrementUnit"] == "second"
+            end
+        end
+
+        # ── update_ome_scale!: level-0 value set, other levels keep their downsample ratio; units ──
+        @testset "update_ome_scale!" begin
+            mktempdir() do d
+                # z doesn't downsample (0.6, 0.6); x halves per level (0.5, 1.0)
+                make_zarr(d; axes = ["z", "y", "x"],
+                          level_scales = [[0.6, 0.5, 0.5], [0.6, 1.0, 1.0]])
+                update_ome_scale!(d, Dict("z" => 3.0, "x" => 0.65);
+                    units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"))
+                z = JSON3.read(read(joinpath(d, "0", ".zattrs"), String))
+                dss = z[:multiscales][1][:datasets]
+                s0 = dss[1][:coordinateTransformations][1][:scale]
+                s1 = dss[2][:coordinateTransformations][1][:scale]
+                @test s0[1] == 3.0 && s1[1] == 3.0                   # z ratio 5× applied to both levels
+                @test s0[3] == 0.65 && isapprox(s1[3], 1.3)          # x ratio 1.3× preserves downsample
+                m = read_ome_metadata(d)
+                @test m["PhysicalSizeUnit"] == "micrometer"          # axis unit now round-trips
+                @test m["PhysicalSizeZ"] == 3.0
+            end
+            # unit-only edit (no numeric change) still writes the axis unit
+            mktempdir() do d
+                make_zarr(d; axes = ["y", "x"], level_scales = [[0.5, 0.5]])
+                @test isnothing(get(read_ome_metadata(d), "PhysicalSizeUnit", nothing))
+                update_ome_scale!(d, Dict{String,Float64}();
+                                  units = Dict("x" => "nanometer", "y" => "nanometer"))
+                @test read_ome_metadata(d)["PhysicalSizeUnit"] == "nanometer"
+            end
+        end
+
+        # ── update_ome_xml_pixels!: replace an existing attr, insert a missing one ──
+        @testset "update_ome_xml_pixels!" begin
+            mktempdir() do d
+                mkpath(joinpath(d, "OME"))
+                xml_file = joinpath(d, "OME", "METADATA.ome.xml")
+                write(xml_file, "<OME><Image><Pixels SizeX=\"4\" PhysicalSizeZ=\"0.6\">" *
+                                "<Plane/></Pixels></Image></OME>")
+                update_ome_xml_pixels!(d, Dict("PhysicalSizeZ" => "3.0", "TimeIncrement" => "5.0"))
+                out = read(xml_file, String)
+                @test occursin("PhysicalSizeZ=\"3.0\"", out)         # replaced
+                @test !occursin("PhysicalSizeZ=\"0.6\"", out)
+                @test occursin("TimeIncrement=\"5.0\"", out)         # inserted
+                @test occursin("SizeX=\"4\"", out)                   # untouched
+            end
+        end
+
+        # ── sync_zarr_calibration!: one translator (meta shape → zarr) for import + editor ──
+        @testset "sync_zarr_calibration!" begin
+            @test !Cecelia.has_calibration_meta(Dict{String,Any}("SizeC" => 2))
+            @test !Cecelia.has_calibration_meta(Dict{String,Any}("PhysicalSizeZ" => nothing))  # null clear
+            @test Cecelia.has_calibration_meta(Dict{String,Any}("PhysicalSizeZ" => 3.0))
+            mktempdir() do d
+                make_zarr(d; axes = ["t", "z", "y", "x"], level_scales = [[1.0, 0.6, 0.5, 0.5]],
+                          shape = [3, 1, 4, 4],
+                          planes = [(z = 0, t = 1, dt = 0.0, unit = "s")])  # OME/ dir + <Pixels>
+                # a meta-shaped correction (as ccid.json / the importer / the editor produce it)
+                Cecelia.sync_zarr_calibration!(d, Dict{String,Any}(
+                    "PhysicalSizeZ" => 3.0, "PhysicalSizeUnit" => "micrometer",
+                    "TimeIncrement" => 5.0, "TimeIncrementUnit" => "second"))
+                # .zattrs now round-trips the corrected spatial value + unit
+                m = read_ome_metadata(d)
+                @test m["PhysicalSizeZ"] == 3.0
+                @test m["PhysicalSizeUnit"] == "micrometer"
+                # OME-XML <Pixels> carries the time interval napari reads unconditionally
+                xml = read(joinpath(d, "OME", "METADATA.ome.xml"), String)
+                @test occursin("TimeIncrement=\"5.0\"", xml)
+                @test occursin("TimeIncrementUnit=\"s\"", xml)
+            end
+        end
+
+        # ── _merge_zarr_meta_into_ccid!: overwrite=true is authoritative; false is fill-only ──
+        @testset "merge fill-only vs overwrite" begin
+            proj = create_project!(name = "meta-merge-$(rand(1000:9999))", kind = "static")
+            s    = add_set!(proj; name = "set")
+            # Simulate an ImageJ-corrected image: PhysicalSizeZ + the ccid-only PhysicalSizeZ_raw marker
+            img  = add_image!(s; name = "img", meta = Dict{String,Any}(
+                "PhysicalSizeZ" => 3.0, "PhysicalSizeZ_raw" => 0.6))
+
+            # Fill-only backfill: existing keys survive, genuinely-missing ones get filled.
+            Cecelia._merge_zarr_meta_into_ccid!(img,
+                Dict{String,Any}("PhysicalSizeZ" => 0.6, "PhysicalSizeX" => 0.5); overwrite = false)
+            r = init_object(proj.uid, img.uid)
+            @test r.meta["PhysicalSizeZ"] == 3.0                     # NOT reverted to the raw 0.6
+            @test r.meta["PhysicalSizeZ_raw"] == 0.6                 # marker NOT dropped
+            @test r.meta["PhysicalSizeX"] == 0.5                     # filled (was absent)
+
+            # Authoritative import merge: clears derived keys, takes the fresh read verbatim.
+            Cecelia._merge_zarr_meta_into_ccid!(r,
+                Dict{String,Any}("PhysicalSizeZ" => 0.6); overwrite = true)
+            r2 = init_object(proj.uid, img.uid)
+            @test r2.meta["PhysicalSizeZ"] == 0.6
+            @test !haskey(r2.meta, "PhysicalSizeZ_raw")              # zombie marker cleared
+            rm(proj.root; recursive = true)
+        end
+
+        # ── resync_ome_meta! end-to-end: fill-only backfill never reverts a correction ──
+        @testset "resync_ome_meta! fill-only" begin
+            proj = create_project!(name = "meta-resync-$(rand(1000:9999))", kind = "static")
+            s    = add_set!(proj; name = "set")
+            img  = add_image!(s; name = "img", meta = Dict{String,Any}(
+                "PhysicalSizeZ" => 3.0, "PhysicalSizeZ_raw" => 0.6))   # ImageJ-corrected, ccid-only
+
+            # Register a "default" zarr on disk carrying the RAW (pre-correction) calibration.
+            zdir = joinpath(img_zero_dir(img), "img.ome.zarr")
+            make_zarr(zdir; axes = ["z", "y", "x"], level_scales = [[0.6, 0.5, 0.5]],
+                      units = Dict("x" => "micrometer", "y" => "micrometer", "z" => "micrometer"),
+                      shape = [1, 8, 8])
+            img.filepath["default"]         = "img.ome.zarr"
+            img.filepath[VERSIONED_ACTIVE_KEY] = "default"
+            save!(img)
+
+            @test resync_ome_meta!(init_object(proj.uid, img.uid))
+            r = init_object(proj.uid, img.uid)
+            @test r.meta["PhysicalSizeZ"] == 3.0                     # correction survives resync
+            @test r.meta["PhysicalSizeZ_raw"] == 0.6                 # marker survives
+            @test r.meta["PhysicalSizeUnit"] == "micrometer"         # genuinely-missing field filled
+            @test r.meta["PhysicalSizeX"] == 0.5
+            rm(proj.root; recursive = true)
+        end
     end
 
 end
