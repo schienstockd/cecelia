@@ -234,3 +234,45 @@ function api_plot_data(body_bytes::Vector{UInt8})
         return _gerr(400, sprint(showerror, e))
     end
 end
+
+# ── Segmentation integrity (QC) plot ──────────────────────────────────────────
+# POST body: { projectUid, (imageUid | setUid [+imageUids]), valueName?, measure?, chartType?,
+#   perTimepoint? }. Thin wrapper over the package `segmentation_qc_data` preset — it targets the
+# segmentation's root population and resolves the temporal column server-side (so the frontend
+# needn't know the obsm temporal column name). Returns the same shape as /api/plot_data → PlotChart
+# renders it unchanged. See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
+function api_segmentation_qc(body_bytes::Vector{UInt8})
+    body = try
+        JSON3.read(String(body_bytes), Dict{String,Any})
+    catch
+        return _gerr(400, "invalid JSON body")
+    end
+    proj = string(get(body, "projectUid", ""))
+    isempty(proj) && return _gerr(400, "projectUid required")
+    vn_v    = get(body, "valueName", nothing); vn = (vn_v === nothing || isempty(string(vn_v))) ? nothing : string(vn_v)
+    m_v     = get(body, "measure", nothing);   measure = m_v === nothing ? nothing : (isempty(string(m_v)) ? nothing : string(m_v))
+    ct_v    = get(body, "chartType", nothing); ct = (ct_v === nothing || isempty(string(ct_v))) ? nothing : string(ct_v)
+    per_t   = Bool(get(body, "perTimepoint", false))
+    set_uid = string(get(body, "setUid", ""))
+    img_uid = string(get(body, "imageUid", ""))
+    try
+        if !isempty(set_uid)
+            s = init_object(proj, set_uid)
+            s isa CciaSet || return _gerr(400, "setUid is not a set: $set_uid")
+            want = get(body, "imageUids", nothing)
+            wantset = want === nothing ? nothing : Set(String[string(u) for u in want])
+            imgs = [im for im in s._images if wantset === nothing || im.uid in wantset]
+            isempty(imgs) && return _gerr(400, "no matching images in set $set_uid")
+            return 200, JSON3.write(segmentation_qc_data(imgs, [im.uid for im in imgs];
+                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
+        else
+            isempty(img_uid) && return _gerr(400, "imageUid or setUid required")
+            im = init_object(proj, img_uid)
+            im isa CciaImage || return _gerr(400, "imageUid is not an image: $img_uid")
+            return 200, JSON3.write(segmentation_qc_data(im;
+                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
+        end
+    catch e
+        return _gerr(400, sprint(showerror, e))
+    end
+end

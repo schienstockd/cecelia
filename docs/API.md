@@ -51,6 +51,8 @@ that resolve objects and call package functions.
 | GET | `/api/fs/list`, `/api/pools`, `/api/tasks/definitions` | filesystem, pools, task specs |
 | GET | `/api/tasks/funparams?projectUid&fun&imageUid?&setUid?` | last-used task params, resolved image → set → none (R `moduleFunParams`; see `docs/MODULES.md` → *Remembering task params*) |
 | GET | `/api/chains`, `/api/chains/get`, POST `/api/chains/{save,delete}` | chain templates |
+| GET | `/api/chains/runs?projectUid` · `/api/chains/run?projectUid&runId` | list persisted run records / load one run's frozen template + per-node status (Live view run history; see `docs/SCHEDULER.md` → *Loading past runs*) |
+| POST | `/api/plots/segmentation-qc` | segmentation integrity plot data (count / morphology, per image or per timepoint; `docs/todo/SEGMENTATION_QC_PLOT_PLAN.md`) |
 | GET | `/api/napari/status`, POST `/api/napari/{open,close,restart,show-labels,show-populations,start-selection,stop-selection,event}` | napari bridge + gating linked brushing |
 | POST | `/api/napari/screenshot` | `projectUid` | **binary** PNG of the current napari canvas (`canvas_only`) — `save_screenshot!` to a temp file → stream the bytes → delete. `400` if napari not running. Feeds the Analysis-canvas image / filmstrip slots. |
 | — | **Gating** (below) | population manager + gating |

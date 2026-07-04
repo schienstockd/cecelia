@@ -71,9 +71,10 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
       </span>
       <span v-if="elapsed" class="live-elapsed">{{ elapsed }}</span>
     </div>
-    <div class="live-fn">
-      {{ data.label ?? data.fn.split('.').pop() }}
-      <span v-if="data.variant" class="live-variant">{{ data.variant }}</span>
+    <div class="live-fn">{{ data.label ?? data.fn.split('.').pop() }}</div>
+    <!-- output value_name on its own line so a long label doesn't clip it -->
+    <div v-if="data.variant" class="live-variant-row">
+      <span class="live-variant">{{ data.variant }}</span>
     </div>
   </div>
 </template>
@@ -124,18 +125,18 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
 }
 
 .live-fn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
   font-size: 11px;
   font-weight: 600;
   color: var(--cc-text, #e2e2f0);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 150px;
+  max-width: 160px;
 }
 
+.live-variant-row {
+  margin-top: 3px;
+}
 .live-variant {
   font-size: 9px;
   font-family: var(--cc-mono, monospace);
@@ -143,7 +144,6 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
   color: var(--cc-accent, #a78bfa);
   background: color-mix(in srgb, var(--cc-accent, #a78bfa) 18%, transparent);
   border-radius: 3px;
-  padding: 0 4px;
-  flex-shrink: 0;
+  padding: 1px 4px;
 }
 </style>

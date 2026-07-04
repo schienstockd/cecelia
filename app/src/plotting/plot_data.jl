@@ -226,6 +226,18 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         return withgb(Dict{String,Any}("chartType" => "bar", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
 
+    elseif chart_type == "count"
+        # # objects per series (row count) — the segmentation-integrity headline. Needs NO measure.
+        # With by_image + group_by="t" each series is one (image, timepoint) bucket, so this yields
+        # cell count per timepoint per image — the temporal-consistency time series (drops/spikes are
+        # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
+        # or a line over the ordered group (t). See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
+        groups = sgroups(df)
+        series = [merge(base(g), Dict("value" => Float64(nrow(g.sub)), "n" => nrow(g.sub)))
+                  for g in groups]
+        return withgb(Dict{String,Any}("chartType" => "count", "measureType" => "numeric",
+                                "granularity" => String(granularity), "series" => series))
+
     elseif chart_type == "boxplot"
         # per-series box statistics of a continuous measure (Tukey: box = q1..q3, whiskers to the
         # furthest point within 1.5·IQR, + median and mean). This is the cross-image "compare track
@@ -254,7 +266,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         return withgb(Dict{String,Any}("chartType" => "boxplot", "measure" => m, "measureType" => mtype,
                                 "granularity" => String(granularity), "series" => series))
     else
-        error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | boxplot)")
+        error("plot_summary_data: unknown chart_type '$chart_type' (expected points | histogram | frequency | bar | count | boxplot)")
     end
 end
 

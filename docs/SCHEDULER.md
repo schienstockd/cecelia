@@ -306,6 +306,20 @@ a pointer to the template file. The template content is cached once under
 Run records store `template_hash` (not the template inline) to keep `run.json` compact.
 `load_chain_run` resolves the hash to the cached template.
 
+### Loading past runs into the Live view
+
+The whiteboard Live tab renders runs from **two sources**, normalised to one task-like shape:
+1. **Live** — the in-memory task store (WS `chain:node:*` events), for a run happening/just-happened
+   this session.
+2. **Persisted** — loaded from disk so a past run survives a reload. `GET /api/chains/runs?projectUid`
+   lists run records (id, chain, `createdAt`, image count — read straight from each `run.json`
+   header, newest first); `GET /api/chains/run?projectUid&runId` returns a run's frozen template
+   (nodes/edges for the layered layout) + per-image per-node **status** (`load_chain_run`). The Live
+   view synthesises task entries from `image_states` (funName from the frozen template node, label
+   from the task def); persisted runs have **status but no timing** (`ImageNodeState` stores no
+   started/finished — the elapsed timer is live-only). The run dropdown merges both, tags live runs
+   `· live`, and labels each with its timestamp.
+
 ---
 
 ## Resume and restart semantics

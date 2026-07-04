@@ -86,6 +86,26 @@ The panel's chart-type dropdown offers **only the charts valid for the selected 
 Backend returns `measureType` so the panel filters; specs keep `chartTypes` as the *allowed* set and
 the panel intersects with what's valid for the measure.
 
+### `count` — objects per series (no measure)
+
+`chart_type = "count"` returns the **row count** per series (`value` = # objects, same series shape
+as `bar`), needing **no** `measure`. It's the segmentation-integrity headline: with `by_image` +
+`group_by = "<temporal col>"` each series is one `(image, timepoint)` bucket, so `count` yields
+**cell count per timepoint** — the temporal-consistency time series (drops/spikes are visible). The
+frontend renders it as a bar, or a line over the ordered `group` (t).
+
+### Segmentation QC preset
+
+`segmentation_qc_data(img; value_name, measure, chart_type, per_timepoint)`
+(`app/src/plotting/segmentation_qc.jl`) is a thin wrapper over `plot_summary_data` for the
+segmentation integrity plot: it targets the **root** population (`"/"` = all measured cells),
+defaults to `count` (no measure) or a `boxplot` distribution (with a measure), and — when
+`per_timepoint=true` on a timecourse — sets `group_by` to the image's temporal column (resolved via
+`temporal_columns`; `nothing` on a static image → single per-image series). One entry point shared by
+REPL / API / tests / the whiteboard QC node. `SEGMENTATION_QC_MEASURES` lists the morphology QC set
+(area, solidity, aspect_ratio, eccentricity); intensity QC is per-channel. See
+`docs/todo/SEGMENTATION_QC_PLOT_PLAN.md`.
+
 ## 3. Unified encoding model
 
 - **Numeric distribution** (box / violin / strip / bar): **group = X axis** (one box/violin/column/

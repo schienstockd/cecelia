@@ -59,6 +59,51 @@ function api_chains_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# GET /api/chains/runs?projectUid — list persisted run records (newest first) for the Live view.
+# Reads each run.json's header fields directly (cheap; no template-cache resolution). Runs live under
+# settings/chains/runs/<id>/run.json.
+function api_chains_runs(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    uid   = get(query, "projectUid", "")
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    runs_dir = joinpath(_chains_dir_for_project(uid), "runs")
+    isdir(runs_dir) || return 200, JSON3.write((; runs=Any[]))
+    out = Any[]
+    for d in readdir(runs_dir; join=true)
+        isdir(d) || continue
+        rj = joinpath(d, "run.json")
+        isfile(rj) || continue
+        raw = try JSON3.read(read(rj, String)) catch; continue end
+        push!(out, (; runId     = string(get(raw, :id, basename(d))),
+                      chainName  = string(get(raw, :chain_name, "")),
+                      createdAt  = Float64(get(raw, :created_at, 0.0)),
+                      imageCount = length(get(raw, :image_uids, []))))
+    end
+    sort!(out; by = r -> r.createdAt, rev = true)
+    200, JSON3.write((; runs = out))
+end
+
+# GET /api/chains/run?projectUid&runId — a single persisted run's frozen template (nodes/edges for
+# the layered layout) + per-image per-node status, so the Live view can render a past run from disk.
+function api_chains_run(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    uid   = get(query, "projectUid", "")
+    rid   = get(query, "runId", "")
+    (isempty(uid) || isempty(rid)) && return 400, JSON3.write((; error="projectUid and runId required"))
+    proj = try load_project(uid) catch e; return 404, JSON3.write((; error=sprint(showerror, e))) end
+    run  = try load_chain_run(proj, rid) catch; return 404, JSON3.write((; error="run not found: $rid")) end
+    nodes = [(; id=n.id, fn=n.fn) for n in run.template_snapshot.nodes]
+    edges = [(; from=e.from, to=e.to) for e in run.template_snapshot.edges]
+    states = Dict{String,Any}()
+    for (u, nm) in run.image_states
+        states[u] = Dict{String,Any}(nid => string(st.status) for (nid, st) in nm)
+    end
+    200, JSON3.write((; runId=run.id, chainName=run.chain_name, createdAt=run.created_at,
+                        imageUids=run.image_uids, nodes=nodes, edges=edges, imageStates=states))
+end
+
 function api_chains_save(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
