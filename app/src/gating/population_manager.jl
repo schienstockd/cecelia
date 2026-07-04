@@ -757,6 +757,21 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         return copy(df)
     end
 
+    # `labels` pop_type: ALL cells of the segmentation's labelProps, UNGATED — no gating map, no
+    # membership eval. Mirrors the old R popType "labels" (`labelsPopUtils`). This is the raw
+    # segmentation-output data source (e.g. the segmentation-integrity QC canvas): every measured
+    # object of `resolved_vn`, tagged with a single "labels" pop so the summary framework groups it
+    # like any other population. `pops` is ignored (there are no sub-populations).
+    if String(pop_type) == "labels"
+        lp = label_props(img; value_name=resolved_vn) |> v -> rename_channels!(v, !raw_channel_names)
+        isnothing(pop_cols) || select_cols(lp, String.(pop_cols))
+        df = as_df(lp; include_x=(pop_cols === nothing ? include_x : true), include_obs=include_obs)
+        df[!, "value_name"] .= resolved_vn
+        df[!, "pop"]        .= "labels"
+        img._pop_df_cache[ckey] = df
+        return copy(df)
+    end
+
     # Derived pop_types (e.g. `live`): gates are stored under `flow`; layer the derived pops
     # (e.g. _tracked) on top, transiently. Pop_types with no registered derived specs load normally.
     groups = _group_pops_by_value_name(pops, resolved_vn)
