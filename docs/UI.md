@@ -247,7 +247,10 @@ with, or just the focused image if none), **Copy to selected** (the other select
 **Fill flagged** (only the *other* selected images that currently show a warning — the
 batch-fix-from-a-known-good-reference workflow). Also reachable via an "Open editor" button in
 `MetadataPanel`'s sidebar (no specific image clicked — focuses the first selected/set image)
-alongside a flagged-count badge for the set.
+alongside a flagged-count badge for the set. When a target already has processed versions or
+segmentations, a second (informational) line via `downstreamArtifactsNote` reminds that those were
+built with the current calibration and must be re-run — corrections/measurements read pixel size
+from the zarr, not this dialog, so an edit doesn't reach them retroactively.
 
 **Name-column header buttons** (`ImageTable.vue`, next to "Name"): a `pi-exclamation-triangle`
 toggle to select/deselect every currently-flagged image in one click (`selectFlagged`, amber when

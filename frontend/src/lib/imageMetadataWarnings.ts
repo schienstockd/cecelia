@@ -118,3 +118,17 @@ export function metadataWarning(img: CciaImage): MetadataWarning | null {
 export function flaggedFields(img: CciaImage): Set<PhysField> {
   return new Set(fieldIssues(img).map(i => i.field))
 }
+
+// Processed versions (drift/AF/cellpose) and segmentations bake in the calibration they were built
+// with — corrections and measurements read pixel size from the image zarr, not this dialog — so a
+// calibration change (or one that was wrong from the start) doesn't reach them until they're re-run.
+export function downstreamArtifactsNote(img: CciaImage): MetadataWarning | null {
+  const hasVariants = Object.keys(img.filepaths ?? {}).some(k => k !== 'default')
+  const hasSegs = Object.keys(img.labels ?? {}).length > 0
+  if (!hasVariants && !hasSegs) return null
+  return {
+    short: 'Has processed versions/segmentations — re-run them after correcting',
+    long: 'Existing corrections, segmentations and measurements were built with the current ' +
+      'calibration and won’t update on their own. Re-run them so analysis uses the new values.',
+  }
+}
