@@ -670,8 +670,20 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
             v isa Real && (axis_updates[axis] = Float64(v))
         end
 
-        xml_attrs = Dict{String,String}()
+        # NGFF axis `unit` for `.zattrs` (keeps `read_ome_metadata`/`resync_ome_meta!` re-reading
+        # the corrected unit — and lets it trust a newly-added t interval; see update_ome_scale!).
+        # One PhysicalSizeUnit covers x/y/z; TimeIncrementUnit is the t axis.
+        unit_updates = Dict{String,String}()
         spatial_unit_raw = get(fields, "PhysicalSizeUnit", nothing)
+        if spatial_unit_raw isa AbstractString
+            for axis in ("x", "y", "z")
+                unit_updates[axis] = spatial_unit_raw
+            end
+        end
+        time_unit_raw = get(fields, "TimeIncrementUnit", nothing)
+        time_unit_raw isa AbstractString && (unit_updates["t"] = time_unit_raw)
+
+        xml_attrs = Dict{String,String}()
         ome_spatial_unit = spatial_unit_raw isa AbstractString ?
             ome_xml_unit_name(spatial_unit_raw) : nothing
         for (key, unit_key) in (("PhysicalSizeX", "PhysicalSizeXUnit"), ("PhysicalSizeY", "PhysicalSizeYUnit"),
@@ -689,13 +701,18 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
             tu isa AbstractString && (xml_attrs["TimeIncrementUnit"] = ome_xml_unit_name(tu))
         end
 
-        if !isempty(axis_updates) || !isempty(xml_attrs)
+        if !isempty(axis_updates) || !isempty(xml_attrs) || !isempty(unit_updates)
             img = init_object(project_uid, String(image_uid))
             if img isa CciaImage
-                zarr_path = img_filepath(img)
+                # Calibration lives in the "default" (original bioformats2raw) zarr, NOT whatever
+                # version is active — processed variants (drift/cellpose-correct) carry a flat NGFF
+                # layout with no unit/OME-XML, so patching them is a no-op and `resync_ome_meta!`
+                # re-reads the default anyway. See CLAUDE.md → OME-ZARR dual-format.
+                zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
                 if !isnothing(zarr_path) && isdir(zarr_path)
-                    isempty(axis_updates) || update_ome_scale!(zarr_path, axis_updates)
-                    isempty(xml_attrs)    || update_ome_xml_pixels!(zarr_path, xml_attrs)
+                    (isempty(axis_updates) && isempty(unit_updates)) ||
+                        update_ome_scale!(zarr_path, axis_updates; units = unit_updates)
+                    isempty(xml_attrs) || update_ome_xml_pixels!(zarr_path, xml_attrs)
                 end
             end
         end

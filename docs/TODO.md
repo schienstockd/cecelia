@@ -240,6 +240,29 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00069** — **Metadata resync silently reverted corrections; meta-edits missed napari's source of truth** (2026-07-04)
+Audit-driven cleanup of the physical-size/timing feature (#00064/#00065). Three coherence bugs, one
+root cause — the writer (`meta/set`) and the re-reader (`resync_ome_meta!`) disagreed about where
+calibration lives. (1) **Resync was destructive.** `resync_ome_meta!` re-read the `"default"` zarr and
+merged it with `overwrite=true`, unconditionally clearing `_OME_DERIVED_META_KEYS` first — so it reverted
+the ImageJ-TIFF Z auto-fix and any human correction (both ccid.json-only, not reproducible from the zarr)
+back to bioformats2raw's raw value, and dropped the `PhysicalSizeZ_raw` "confirm me" marker. Its docstring
+even claimed idempotency it didn't have. Fixed: added `overwrite` to `_merge_zarr_meta_into_ccid!`; resync
+now calls it **fill-only** (`overwrite=false`) — fills genuinely-absent keys, never clobbers an existing
+one (channel names included). (2) **`meta/set` wrote the wrong zarr.** It patched `img_filepath(img)`
+(the *active* version) — but calibration lives only in the `"default"` zarr (processed variants carry a
+flat NGFF layout, no unit, no OME-XML), so on a processed-active image the patch silently no-op'd, and even
+on a fresh import the authoritative default was left uncorrected → a later resync couldn't re-derive the
+edit. Repointed both `update_ome_scale!`/`update_ome_xml_pixels!` at `img_filepath(img, "default")`.
+(3) **Unit edits never reached the zarr.** `update_ome_scale!` rewrote scale numbers but not NGFF axis
+`unit`s, and `read_ome_metadata` won't trust a t-scale (or read a spatial unit) without one — so a
+unit-only or time-interval edit vanished on resync. `update_ome_scale!` now takes a `units` map and
+rewrites axis units too. Net: `meta/set` and `resync` now agree on the default zarr as the single source
+of truth; edits persist, resync only backfills. Tests: new "OME metadata read/edit/resync" testset in
+`runtests.jl` (`_delta_t_fallback`, `read_ome_metadata` placeholder/fallback, `update_ome_scale!`
+ratio+units, `update_ome_xml_pixels!`, merge fill-only-vs-overwrite, `resync_ome_meta!` end-to-end) —
+the feature previously shipped with none. Docs: API.md, OBJECTMODEL.md.
+
 **#00068** — **Every whiteboard chain run failed: "Chain template not found"** (2026-07-03)
 The API layer reads/writes chain templates under `<proj>/settings/chains/` (`_chains_dir_for_project`,
 after chains were consolidated into `settings/`), but the package's `_chains_dir` (`chain.jl`) still
