@@ -108,6 +108,11 @@ literal: a task whose output name is **user-chosen** exposes an `outputValueName
 `segment.cellpose`), and a **composite** declares a top-level `outputValueName` that its executor
 collapses `ccid.json` down to (see *`outputValueName` — canonical output registration* below).
 
+**`qcPlot` (optional).** A top-level `"qcPlot": "<plotId>"` on a task spec declares its default QC
+plot (e.g. `segment.cellposeMeasure` / `segment.measureLabels` → `"segmentationQc"`). The whiteboard
+Live view then auto-shows a QC thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no
+other wiring needed.
+
 ### Running a Python subprocess
 
 Spawn the task's Python runner through **`run_py`** (`app/src/py_runner.jl`) — the single place

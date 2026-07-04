@@ -14,6 +14,8 @@ import ChainTaskNode from '../components/ChainTaskNode.vue'
 import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
+import ChainQcNode from '../components/ChainQcNode.vue'
+import SegmentationQcPanel from '../components/plots/SegmentationQcPanel.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -48,6 +50,7 @@ const nodeTypes: NodeTypesObject = {
   picnic:    markRaw(ChainPicnicNode) as any,
   live:      markRaw(ChainLiveNode)   as any,
   liveLabel: markRaw(ChainLiveLabel)  as any,
+  qc:        markRaw(ChainQcNode)      as any,
 }
 
 // ── Live view ─────────────────────────────────────────────────────────────────
@@ -268,10 +271,25 @@ const liveLayout = computed(() => {
 const liveNodes = computed<Node[]>(() => {
   const { tasks, layer, lane, bandLanes, imageIds } = liveLayout.value
   if (!tasks.length) return []
-  const rowOf  = new Map(imageIds.map((id, i) => [id, i]))
-  const bandH  = bandLanes * LIVE.laneH
-  const bandY  = (r: number) => LIVE.padY + r * (bandH + LIVE.bandGap)
+  const rowOf   = new Map(imageIds.map((id, i) => [id, i]))
+  const bandH   = bandLanes * LIVE.laneH
+  const gridTop = LIVE.padY + qcBandH.value        // leave room for the QC band above the grid
+  const bandY   = (r: number) => gridTop + r * (bandH + LIVE.bandGap)
   const nodes: Node[] = []
+
+  // QC band: one aggregate QC thumbnail per QC-producing column, aligned to its column, above the grid.
+  if (showQc.value) {
+    for (const col of qcColumns.value) {
+      const s = qcData.value.get(col.nodeId) ?? {}
+      nodes.push({
+        id: `qc:${col.nodeId}`, type: 'qc',
+        position: { x: LIVE.padX + col.layer * LIVE.colW, y: 10 },
+        data: { label: col.label, valueName: col.valueName,
+                total: s.total, values: s.values, imageCount: s.imageCount, loading: s.loading },
+        draggable: false, selectable: false, connectable: false,
+      })
+    }
+  }
 
   // Row header (image name), vertically centred in the band.
   imageIds.forEach(uid => nodes.push({
@@ -325,6 +343,77 @@ function copyRunId() {
   navigator.clipboard?.writeText(selectedRunId.value)
     .then(() => log.info(`Copied run ID ${selectedRunId.value}`, { source: 'whiteboard' }))
     .catch(() => { /* clipboard blocked — non-critical */ })
+}
+
+// ── Live QC row ────────────────────────────────────────────────────────────────
+// A task whose def declares `qcPlot` gets an aggregate QC thumbnail in a band above the grid,
+// aligned to its column (segmentation → cell count over the run's images). Toggle to show/hide;
+// click a thumbnail to expand the full QC panel. Refreshes as images clear the stage (incremental).
+const showQc = ref(true)
+interface QcSummary { total?: number; values?: number[]; imageCount?: number; loading?: boolean }
+const qcData = ref<Map<string, QcSummary>>(new Map())          // keyed by chainNodeId
+const qcExpand = ref<{ label: string; valueName: string; imageUids: string[] } | null>(null)
+
+function defFor(fn: string) { return allTaskDefs.value.find(d => d.fun_name === fn) }
+
+// QC-producing columns in the selected run: distinct nodes whose task declares a qcPlot.
+const qcColumns = computed(() => {
+  const { tasks, layer } = liveLayout.value
+  const seen = new Map<string, { nodeId: string; label: string; valueName: string; layer: number }>()
+  for (const t of tasks) {
+    if (seen.has(t.chainNodeId)) continue
+    const def = defFor(t.funName)
+    if (def?.qcPlot) seen.set(t.chainNodeId, {
+      nodeId: t.chainNodeId, label: def.label ?? t.funName,
+      valueName: nodeVariant(t.chainNodeId) || 'default', layer: layer.get(t.chainNodeId) ?? 0,
+    })
+  }
+  return [...seen.values()]
+})
+const qcBandH = computed(() => (showQc.value && qcColumns.value.length) ? 92 : 0)
+
+// Fetch the aggregate QC (cell count per image) for each QC column of the selected run. Debounced,
+// re-runs as tasks complete so the count fills in during a live run.
+let qcFetchTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleQcFetch() {
+  if (qcFetchTimer) clearTimeout(qcFetchTimer)
+  qcFetchTimer = setTimeout(fetchQcData, 250)
+}
+async function fetchQcData() {
+  const uid = projectMeta.current?.uid
+  const { imageIds } = liveLayout.value
+  if (!uid || !showQc.value || !qcColumns.value.length || !imageIds.length) return
+  for (const col of qcColumns.value) {
+    const cur = new Map(qcData.value)
+    cur.set(col.nodeId, { ...(cur.get(col.nodeId) ?? {}), loading: true })
+    qcData.value = cur
+    try {
+      const res = await fetch('/api/plots/segmentation-qc', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectUid: uid, valueName: col.valueName, imageUids: imageIds, chartType: 'count' }),
+      })
+      const summary: QcSummary = { loading: false, imageCount: imageIds.length }
+      if (res.ok) {
+        const r = await res.json() as { series?: { value?: number }[] }
+        const vals = (r.series ?? []).map(s => Number(s.value ?? 0))
+        summary.values = vals
+        summary.total = vals.reduce((a, b) => a + b, 0)
+      }
+      const m = new Map(qcData.value); m.set(col.nodeId, summary); qcData.value = m
+    } catch {
+      const m = new Map(qcData.value); m.set(col.nodeId, { loading: false }); qcData.value = m
+    }
+  }
+}
+
+// Refresh when the run, its completed-task count, or the toggle changes (incremental fill-in).
+const doneCount = computed(() => selectedRunTasks.value.filter(t => t.status === 'done').length)
+watch([selectedRunId, showQc, doneCount, qcColumns], () => { qcData.value = new Map(); scheduleQcFetch() })
+
+function onLiveNodeClick(nodeId: string) {
+  const col = qcColumns.value.find(c => c.nodeId === nodeId)
+  if (!col) return
+  qcExpand.value = { label: col.label, valueName: col.valueName, imageUids: liveLayout.value.imageIds }
 }
 
 // ── Chain list & selection ───────────────────────────────────────────────────
@@ -863,6 +952,14 @@ onActivated(async () => {
         >
           <i class="pi pi-refresh" />
         </button>
+        <button
+          class="wb-btn live-copy-btn"
+          :class="{ 'qc-on': showQc }"
+          @click="showQc = !showQc"
+          v-tooltip.bottom="'Show/hide the segmentation QC row'"
+        >
+          <i class="pi pi-chart-bar" /> QC
+        </button>
         <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
       </div>
 
@@ -880,9 +977,27 @@ onActivated(async () => {
           :max-zoom="2"
           fit-view-on-init
           class="vue-flow-canvas"
+          @node-click="onLiveNodeClick(($event as NodeMouseEvent).node.id)"
         >
           <Background pattern-color="#2a2742" :gap="20" />
         </VueFlow>
+
+        <!-- QC expand overlay -->
+        <div v-if="qcExpand" class="qc-expand-overlay" @click.self="qcExpand = null">
+          <div class="qc-expand-card">
+            <div class="qc-expand-head">
+              <span>Segmentation QC · {{ qcExpand.valueName }}</span>
+              <button class="wb-btn" @click="qcExpand = null"><i class="pi pi-times" /></button>
+            </div>
+            <div class="qc-expand-body">
+              <SegmentationQcPanel
+                :project-uid="projectMeta.current?.uid ?? ''"
+                :value-name="qcExpand.valueName"
+                :image-uids="qcExpand.imageUids"
+              />
+            </div>
+          </div>
+        </div>
       </div>
       <div v-else class="live-empty">
         <i class="pi pi-hourglass" style="font-size:2rem; opacity:0.2" />
@@ -1280,8 +1395,26 @@ onActivated(async () => {
   max-width: 240px;
 }
 
-.live-copy-btn { flex: 0 0 auto; color: var(--cc-text-dim); }
+.live-copy-btn { flex: 0 0 auto; width: auto; padding: 0 0.4rem; gap: 0.25rem; display: flex; align-items: center; color: var(--cc-text-dim); }
 .live-copy-btn:hover:not(:disabled) { color: var(--cc-text); }
+.live-copy-btn.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
+
+.qc-expand-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.qc-expand-card {
+  width: min(760px, 90%); height: min(70%, 560px);
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.5rem;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.qc-expand-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--cc-border);
+  font-size: 0.8rem; font-weight: 600; color: var(--cc-text);
+}
+.qc-expand-body { flex: 1; min-height: 0; }
 
 .live-hint {
   font-size: 0.72rem;

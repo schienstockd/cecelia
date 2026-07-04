@@ -306,6 +306,17 @@ a pointer to the template file. The template content is cached once under
 Run records store `template_hash` (not the template inline) to keep `run.json` compact.
 `load_chain_run` resolves the hash to the cached template.
 
+### Live QC row
+
+A task whose JSON spec declares `"qcPlot": "<plotId>"` (e.g. `segment.cellposeMeasure` →
+`segmentationQc`) gets an **automatic QC thumbnail** in the Live view — a band above the image grid,
+one aggregate thumbnail per QC-producing column, aligned to that column. QC is **not** a chain node:
+it's an always-available overlay tied to the producing node, toggled from the Live toolbar. The
+thumbnail (`ChainQcNode`) shows the aggregate cell count + a per-image sparkline (from
+`POST /api/plots/segmentation-qc`, debounced, re-run as images clear the stage — incremental fill);
+clicking it expands the full `SegmentationQcPanel`. Distinct from user-dragged plot nodes (a
+separate, later mechanism); see `docs/todo/SEGMENTATION_QC_PLOT_PLAN.md`.
+
 ### Loading past runs into the Live view
 
 The whiteboard Live tab renders runs from **two sources**, normalised to one task-like shape:

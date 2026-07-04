@@ -126,9 +126,11 @@ measure .h5ad ──(pop_df + temporal "t")──> plot_data._summary_agg (add "
 ## Build phases
 
 **Status (2026-07-04):** P1 ✅ (count agg + `segmentation_qc` preset + tests). P2 ✅ (route
-`/api/plots/segmentation-qc` + `SegmentationQcPanel` on the segment module page). Also landed
-alongside: **Live-view run-history loading** (`/api/chains/runs` + `/api/chains/run`) so past runs
-load from disk — foundational for viewing a past run's QC. P3 (Live QC row) remaining.
+`/api/plots/segmentation-qc` + `SegmentationQcPanel` on the segment module page). P3 ✅ (Live QC row:
+`qcPlot` field on segment tasks, `ChainQcNode` thumbnail band above the grid, show/hide toggle,
+click-to-expand `SegmentationQcPanel`, incremental refetch as images clear the stage). Also landed:
+**Live-view run-history loading** (`/api/chains/runs` + `/api/chains/run`) so past runs load from
+disk. User-dragged plot nodes (mechanism #2) remain a separate follow-up.
 
 
 - **P1 — backend data.** `count` aggregation + `line`-over-`group_col` in `plot_data.jl`;

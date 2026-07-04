@@ -253,20 +253,31 @@ function api_segmentation_qc(body_bytes::Vector{UInt8})
     m_v     = get(body, "measure", nothing);   measure = m_v === nothing ? nothing : (isempty(string(m_v)) ? nothing : string(m_v))
     ct_v    = get(body, "chartType", nothing); ct = (ct_v === nothing || isempty(string(ct_v))) ? nothing : string(ct_v)
     per_t   = Bool(get(body, "perTimepoint", false))
-    set_uid = string(get(body, "setUid", ""))
-    img_uid = string(get(body, "imageUid", ""))
+    set_uid  = string(get(body, "setUid", ""))
+    img_uid  = string(get(body, "imageUid", ""))
+    uids_raw = get(body, "imageUids", nothing)
+    uids     = uids_raw === nothing ? String[] : String[string(u) for u in uids_raw]
     try
         if !isempty(set_uid)
             s = init_object(proj, set_uid)
             s isa CciaSet || return _gerr(400, "setUid is not a set: $set_uid")
-            want = get(body, "imageUids", nothing)
-            wantset = want === nothing ? nothing : Set(String[string(u) for u in want])
+            wantset = isempty(uids) ? nothing : Set(uids)
             imgs = [im for im in s._images if wantset === nothing || im.uid in wantset]
             isempty(imgs) && return _gerr(400, "no matching images in set $set_uid")
             return 200, JSON3.write(segmentation_qc_data(imgs, [im.uid for im in imgs];
                                     value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
+        elseif !isempty(uids)
+            # a run carries image UIDs but no set — load each image directly.
+            imgs = CciaImage[]
+            for u in uids
+                obj = try init_object(proj, u) catch; continue end
+                obj isa CciaImage && push!(imgs, obj)
+            end
+            isempty(imgs) && return _gerr(400, "no valid images in imageUids")
+            return 200, JSON3.write(segmentation_qc_data(imgs, [im.uid for im in imgs];
+                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
         else
-            isempty(img_uid) && return _gerr(400, "imageUid or setUid required")
+            isempty(img_uid) && return _gerr(400, "imageUid, imageUids, or setUid required")
             im = init_object(proj, img_uid)
             im isa CciaImage || return _gerr(400, "imageUid is not an image: $img_uid")
             return 200, JSON3.write(segmentation_qc_data(im;

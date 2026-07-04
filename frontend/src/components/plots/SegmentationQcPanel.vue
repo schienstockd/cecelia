@@ -68,7 +68,8 @@ async function load() {
       chartType: metric.value === 'count' ? 'count' : 'boxplot',
       measure: metric.value === 'count' ? undefined : metric.value,
     }
-    if (props.setUid) { body.setUid = props.setUid; body.imageUids = props.imageUids }
+    if (props.setUid) body.setUid = props.setUid
+    if (props.imageUids.length > 1 || props.setUid) body.imageUids = props.imageUids
     else body.imageUid = props.imageUids[0]
     const res = await fetch('/api/plots/segmentation-qc', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),

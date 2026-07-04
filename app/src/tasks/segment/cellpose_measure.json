@@ -5,5 +5,6 @@
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "gpu-light",
-  "composite": ["segment.cellpose", "segment.measureLabels"]
+  "composite": ["segment.cellpose", "segment.measureLabels"],
+  "qcPlot": "segmentationQc"
 }
