@@ -400,8 +400,17 @@ run_chain(proj, uids; chain="my-chain")
                               → :failed
                               → :cancelled (cancel_chain_run! killed the subprocess mid-run)
          → :queued → :cancelled (cancel flag seen before the pool worker picked it up)
-         → :skipped  (fault isolation: predecessor :failed/:cancelled)
+         → :skipped  (fault isolation: a DIRECT predecessor is :failed/:cancelled/:skipped)
 ```
+
+**Fault isolation is per-predecessor, not global.** A node is skipped only when one of its *own*
+direct predecessors failed/was cancelled/was skipped — not when *any* node in the chain failed.
+This keeps independent branches of a fan-out independent: with `afDriftCorrect → {segA, segB}`, a
+failure in `segA` does not skip `segB` (they share only the upstream ancestor). `:skipped` is in
+the trigger set so a failure propagates transitively down a branch (pred failed → node skipped →
+its successor sees a skipped pred → also skipped). Topo order guarantees every predecessor's status
+is set before a node is evaluated. Incremental (plot) predecessors never gate. The predecessor map
+is built from `template_snapshot.edges` in `_execute_image_chain!`.
 
 `:queued` is the slot-wait state (job submitted to its pool, no worker free yet); `:running` is
 set when a pool worker actually starts the job — see Queue visibility above.

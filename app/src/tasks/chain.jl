@@ -410,6 +410,14 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
     # Exclude them from fault-isolation checks so a failed plot never kills the pipeline.
     incremental_ids = Set(n.id for n in ordered_nodes if n.scope == "incremental")
 
+    # Direct predecessors per node — for predecessor-based fault isolation. In a fan-out
+    # (afDriftCorrect → two independent segmentations) a failed sibling must NOT skip the other
+    # branch, so we gate on a node's OWN predecessors, not on "did any node anywhere fail".
+    preds = Dict{String,Vector{String}}(n.id => String[] for n in ordered_nodes)
+    for e in run.template_snapshot.edges
+        haskey(preds, e.to) && push!(preds[e.to], e.from)
+    end
+
     for node in ordered_nodes
         # Set-scope (picnic) node: always arrive at barrier (avoids deadlock even when
         # cancelled). If cancelled, skip waiting for the set-scope runner to finish.
@@ -430,11 +438,19 @@ function _execute_image_chain!(run::ChainRun, image_uid::String,
             continue
         end
 
-        # Fault isolation: skip downstream nodes if any earlier non-incremental node failed.
-        if any(st.status ∈ (:failed, :cancelled)
-               for (nid, st) in run.image_states[image_uid] if nid ∉ incremental_ids)
-            _update_node_state!(run, image_uid, node.id; status=:skipped, fn=node.fn)
-            continue
+        # Fault isolation: skip this node only if one of ITS OWN predecessors failed/was skipped —
+        # so independent branches in a fan-out stay independent (a failed sibling doesn't skip us).
+        # `:skipped` is in the trigger set so a failure propagates transitively down a branch
+        # (pred failed → this node skipped → its successor sees a skipped pred → also skipped).
+        # Topo order guarantees every predecessor's status is already set when we reach this node.
+        # Incremental (plot) predecessors never gate.
+        let states = run.image_states[image_uid]
+            if any(p -> p ∉ incremental_ids && haskey(states, p) &&
+                        states[p].status ∈ (:failed, :cancelled, :skipped),
+                   preds[node.id])
+                _update_node_state!(run, image_uid, node.id; status=:skipped, fn=node.fn)
+                continue
+            end
         end
 
         effective_params = _apply_overrides(node.params, node.id, overrides)
