@@ -10,7 +10,7 @@ import { ref, computed, watch } from 'vue'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
-import { metadataWarning, flaggedFields, type PhysField as WarnField } from '../lib/imageMetadataWarnings'
+import { metadataWarning, flaggedFields, downstreamArtifactsNote, type PhysField as WarnField } from '../lib/imageMetadataWarnings'
 
 const props = defineProps<{
   setUid: string
@@ -26,6 +26,14 @@ const log         = useLogStore()
 const setImages = computed(() => project.sets.find(s => s.uid === props.setUid)?.images ?? [])
 const focusedImg = computed(() => setImages.value.find(i => i.uid === props.focusUid) ?? null)
 const focusedWarning = computed(() => focusedImg.value ? metadataWarning(focusedImg.value) : null)
+// Any target that already has processed versions/segmentations built from its current calibration.
+const downstreamNote = computed(() => {
+  for (const uid of targetUids.value) {
+    const note = downstreamArtifactsNote(setImages.value.find(i => i.uid === uid) ?? ({} as CciaImage))
+    if (note) return note
+  }
+  return null
+})
 
 // Always includes — and leads with — the focused image (the one whose icon was actually
 // clicked), regardless of whether it happens to be checked: opening an image's own editor must
@@ -250,6 +258,10 @@ async function fillFlagged() {
           <i class="pi pi-exclamation-triangle" /> {{ focusedWarning.short }}
         </p>
 
+        <p v-if="downstreamNote" class="rerun-line" v-tooltip.bottom="downstreamNote.long">
+          <i class="pi pi-history" /> {{ downstreamNote.short }}
+        </p>
+
         <div class="toggle-row" v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct.'">
           <label class="toggle-chip" :class="{ on: includeX, warn: targetFlags.has('x') }"><input type="checkbox" v-model="includeX" />X</label>
           <label class="toggle-chip" :class="{ on: includeY, warn: targetFlags.has('y') }"><input type="checkbox" v-model="includeY" />Y</label>
@@ -357,6 +369,14 @@ async function fillFlagged() {
   display: flex; align-items: center; gap: 0.4rem; margin: 0;
   font-size: 0.78rem; color: #fcd34d;
   background: #7c2d1244; border: 1px solid #92400e55;
+  border-radius: 0.3rem; padding: 0.35rem 0.55rem; cursor: help;
+}
+
+/* Informational (not an error): downstream artifacts need a re-run after a calibration change. */
+.rerun-line {
+  display: flex; align-items: center; gap: 0.4rem; margin: 0;
+  font-size: 0.78rem; color: var(--cc-text-dim);
+  background: var(--cc-surface-2); border: 1px solid var(--cc-border);
   border-radius: 0.3rem; padding: 0.35rem 0.55rem; cursor: help;
 }
 
