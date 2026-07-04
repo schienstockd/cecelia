@@ -485,6 +485,53 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Fault isolation is per-predecessor, not global (DAG fan-out) ─────────────
+    # A failed branch must not skip a SIBLING branch that shares only an upstream ancestor
+    # (e.g. afDriftCorrect → two independent segmentations). Regression guard for the
+    # over-broad "any node failed → skip" check that skipped independent branches.
+    @testset "Chain fault isolation — independent fan-out" begin
+        proj = create_project!(name="chain-fanout-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+
+        # a → { b (fails), c (ok) } — c is independent of b, must still run
+        save_chain_template!(proj, ChainTemplate("fanout",
+            [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
+             ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+            [ChainEdge("a","b"), ChainEdge("a","c")]))
+        st = run_chain(proj, [img.uid]; chain="fanout").image_states[img.uid]
+        @test st["a"].status == :done
+        @test st["b"].status == :failed
+        @test st["c"].status == :done       # independent sibling — NOT skipped by b's failure
+
+        # a (fails) → { b, c } — the shared ancestor failing skips BOTH branches
+        save_chain_template!(proj, ChainTemplate("fanout-root-fail",
+            [ChainNode(id="a", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
+             ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+            [ChainEdge("a","b"), ChainEdge("a","c")]))
+        st2 = run_chain(proj, [img.uid]; chain="fanout-root-fail").image_states[img.uid]
+        @test st2["a"].status == :failed
+        @test st2["b"].status == :skipped
+        @test st2["c"].status == :skipped
+
+        # transitive: a → b(fail) → c → d — skip propagates down the branch via :skipped
+        save_chain_template!(proj, ChainTemplate("chain-transitive",
+            [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="b", fn="nonexistent.task",    scope="image", params=Dict{String,Any}()),
+             ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+            [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d")]))
+        st3 = run_chain(proj, [img.uid]; chain="chain-transitive").image_states[img.uid]
+        @test st3["a"].status == :done
+        @test st3["b"].status == :failed
+        @test st3["c"].status == :skipped   # pred b failed
+        @test st3["d"].status == :skipped   # pred c skipped → propagates
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Picnic node — require_all aborts if any image failed upstream ────────
     @testset "Picnic node — require_all policy" begin
         proj = create_project!(name="picnic-req-$(rand(1000:9999))", kind="static")
