@@ -402,11 +402,15 @@ Never assume one format — always detect.
 do this detection — it hardcodes the bioformats2raw nested layout (`zarr/0/.zattrs`), because it
 only ever needs to read the *original import's* calibration metadata (`PhysicalSize*`,
 `TimeIncrement*`). Downstream processed variants (drift/AF-correct, cellpose-correct) write the
-flat layout and carry **no** OME calibration at all — no `unit` on axes, no OME-XML sidecar — so
-pointing this reader at whichever zarr is currently `active` silently returns nothing (this bit
-`resync_ome_meta!` once: it originally read `img_filepath(img)` and quietly no-opped on any image
-with a processed variant active). Any caller of `read_ome_metadata` must resolve
-`img_filepath(img, VERSIONED_DEFAULT_VAL)` — the `"default"` zarr — never the active one.
+**flat** layout — multiscales at the *root* `.zattrs` — so this reader, looking at `zarr/0/.zattrs`,
+finds nothing there. (Those variants *do* carry calibration — `create_multiscales` writes the
+`.zattrs` scale and `save_meta_in_zarr` writes an `OME/METADATA.ome.xml` sidecar; they only omit
+the NGFF axis `unit`. So napari renders them correctly; it's specifically `read_ome_metadata`'s
+nested-layout assumption that can't read them.) Pointing this reader at whichever zarr is currently
+`active` therefore silently returns nothing (this bit `resync_ome_meta!` once: it originally read
+`img_filepath(img)` and quietly no-opped on any image with a processed variant active). Any caller
+of `read_ome_metadata` must resolve `img_filepath(img, VERSIONED_DEFAULT_VAL)` — the `"default"`
+zarr — never the active one.
 
 ---
 
