@@ -73,8 +73,14 @@ const measureOpts = computed(() => {
 })
 // each option reads the persisted panel state, falling back to the spec default; writing persists it.
 const measure = computed<string>({ get: () => props.ui.measure ?? props.spec.dataSource.measure, set: v => (props.ui.measure = v) })
-// drop a persisted/selected measure that isn't available for the current data (avoids a 400 fetch)
-watch(measureOpts, opts => { if (opts.length && !opts.includes(measure.value)) measure.value = opts[0] })
+// drop a persisted/selected measure that isn't available for the current data (avoids a 400 fetch).
+// Only act once columns have loaded (measuresFromData needs varCols; otherwise the transient fallback
+// list would reset the user's pick mid-load and it'd "cycle"). No-op writes are skipped by the guard.
+const colsLoaded = computed(() => varCols.value.length > 0 || obsCols.value.length > 0)
+watch([measureOpts, colsLoaded], () => {
+  if (colsLoaded.value && measureOpts.value.length && !measureOpts.value.includes(measure.value))
+    measure.value = measureOpts.value[0]
+})
 const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.spec.chartTypes[0], set: v => (props.ui.chartType = v) })
 const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
 const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
@@ -107,8 +113,19 @@ const groupByOpts = computed<string[]>(() => {
   return [...new Set([...hints, ...discovered])]
 })
 const groupBy = computed<string>({ get: () => props.ui.groupBy ?? '', set: v => (props.ui.groupBy = v) })
-// drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col)
-watch(groupByOpts, opts => { if (groupBy.value && !opts.includes(groupBy.value)) groupBy.value = '' })
+// drop a persisted groupBy that isn't available for the current data (avoids requesting a missing col).
+// Only once the columns have actually loaded (groupByOpts non-empty) — otherwise the transient empty
+// list during an async reload would wipe a valid selection (e.g. per-timepoint `t`) and it'd "cycle".
+watch(groupByOpts, opts => { if (opts.length && groupBy.value && !opts.includes(groupBy.value)) groupBy.value = '' })
+
+// TIME SERIES: grouping by a TEMPORAL column (t) → a geom_smooth LOESS line over time (thousands of
+// frames would be thousands of bars/boxes otherwise). Applies to count and to any measure — the
+// per-frame mean is fitted, so the box/violin selection collapses to a clean trend. Declared here
+// (before the fetch watch, which lists it as a source) to avoid a temporal-dead-zone crash at setup.
+const timeSeries = computed(() => !!groupBy.value && temporalCols.value.includes(groupBy.value))
+// LOESS span as a % of points (geom_smooth `span`); the CI ribbon toggle. Render-only, persisted.
+const smooth = computed<number>({ get: () => props.ui.smooth ?? 30, set: v => (props.ui.smooth = v) })
+const interval = computed<boolean>({ get: () => props.ui.interval ?? true, set: v => (props.ui.interval = v) })
 
 // ── heatmap (matrix) options — generic profile / crosstab grid (docs/PLOTS.md §9) ──
 // profile = measures × category (the discovered categorical column) → "signature" (z-scorable);
@@ -188,6 +205,14 @@ const crossImage = computed(() => !!props.setUid)
 const result = ref<PlotDataResponse | null>(null)
 const loading = ref(false)
 const error = ref('')
+// Fetch coordination. Rapid setting changes cascade through several watchers (measure → validCharts →
+// chartType, groupBy → timeSeries, …); without this those fired overlapping requests whose responses
+// landed out of order — the panel showed a stale result and the chart-type/measure selects appeared to
+// "cycle". A short debounce coalesces a burst into one request; a monotonic sequence token means only
+// the LATEST request may write `result` (older in-flight responses are discarded).
+let fetchSeq = 0
+let fetchTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleFetch() { if (fetchTimer) clearTimeout(fetchTimer); fetchTimer = setTimeout(fetchData, 60) }
 
 // applicable chart types = the spec's allowed set ∩ the charts valid for the detected measure type
 // (docs/PLOTS.md §2). Before the first response (no measureType) just show the spec's set.
@@ -213,6 +238,8 @@ function applyImageSelector(body: Record<string, unknown>) {
 }
 
 async function fetchData() {
+  if (fetchTimer) { clearTimeout(fetchTimer); fetchTimer = null }
+  const seq = ++fetchSeq                                   // only this call may write `result` (see below)
   if (!props.series.length) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
   loading.value = true; error.value = ''
@@ -238,10 +265,13 @@ async function fetchData() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       })
       if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
-      result.value = await res.json() as PlotDataResponse
+      const r = await res.json() as PlotDataResponse
+      if (seq !== fetchSeq) return                         // superseded by a newer request — discard
+      result.value = r
     } catch (e) {
+      if (seq !== fetchSeq) return
       error.value = e instanceof Error ? e.message : String(e); result.value = null
-    } finally { loading.value = false }
+    } finally { if (seq === fetchSeq) loading.value = false }
     return
   }
 
@@ -284,10 +314,12 @@ async function fetchData() {
     })
 
     const parts = await Promise.all(requests)
+    if (seq !== fetchSeq) return                           // superseded by a newer request — discard
     result.value = { ...parts[0], series: parts.flatMap(p => p.series) }
   } catch (e) {
+    if (seq !== fetchSeq) return
     error.value = e instanceof Error ? e.message : String(e); result.value = null
-  } finally { loading.value = false }
+  } finally { if (seq === fetchSeq) loading.value = false }
 }
 
 // errorMetric is render-only (the bar response carries sd/sem/ci95) → not a fetch trigger.
@@ -295,11 +327,16 @@ async function fetchData() {
 // mount) — without it the heatmap's first fetch bails ("pick a category") and never re-runs until the
 // user re-picks. (Vue batches multi-source watches, so a user pick that changes groupBy + category
 // still fires once.)
-watch([() => props.series, measure, chartType, bins, normalize, groupBy, () => props.collapseSeries,
+// Watch STABLE primitive keys (not the series array by identity — the parent rebuilds it every render,
+// which fired spurious refetches). `timeSeries` is included because it selects the aggregation
+// (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
+watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'),
+       measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
        matrixMode, zscore, matrixNormalize, matrixCategory,
-       () => props.imageUid, () => props.setUid, () => props.groupAttr,
-       () => props.imageUids, () => props.scope, () => props.reloadToken], fetchData, { deep: true })
-onMounted(fetchData)
+       () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
+       () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken],
+      scheduleFetch)
+onMounted(scheduleFetch)
 
 const byImage = computed(() => crossImage.value && (props.scope ?? 'per_image') === 'per_image')
 
@@ -309,14 +346,6 @@ const hasData = computed(() => {
   if (!r) return false
   return r.chartType === 'matrix' ? (r.cells?.length ?? 0) > 0 : r.series.length > 0
 })
-
-// TIME SERIES: grouping by a TEMPORAL column (t) → a geom_smooth LOESS line over time (thousands of
-// frames would be thousands of bars/boxes otherwise). Applies to count and to any measure — the
-// per-frame mean is fitted, so the box/violin selection collapses to a clean trend.
-const timeSeries = computed(() => !!groupBy.value && temporalCols.value.includes(groupBy.value))
-// LOESS span as a % of points (geom_smooth `span`); the CI ribbon toggle. Render-only, persisted.
-const smooth = computed<number>({ get: () => props.ui.smooth ?? 30, set: v => (props.ui.smooth = v) })
-const interval = computed<boolean>({ get: () => props.ui.interval ?? true, set: v => (props.ui.interval = v) })
 
 // the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
 // (chart type, error metric, vis props) recompute here without a refetch.
