@@ -306,6 +306,35 @@ a pointer to the template file. The template content is cached once under
 Run records store `template_hash` (not the template inline) to keep `run.json` compact.
 `load_chain_run` resolves the hash to the cached template.
 
+### Live QC row
+
+A task whose JSON spec declares `"qcPlot": "<plotDefId>"` (e.g. `segment.cellposeMeasure` /
+`segment.measureLabels` → `segmentation_qc`) gets an **automatic QC thumbnail** in the Live view — a
+band above the image grid, aligned to the producing column. QC is **not** a chain node: it's an
+always-available overlay tied to the producing node, toggled from the Live toolbar. Because a segment
+run may produce several segmentations, each QC column shows **one thumbnail per `value_name`** (B, T,
+…), stacked. The value_names are discovered from the canonical population picker
+(`/api/plots/populations?popType=labels`); each thumbnail (`ChainQcNode`) shows the aggregate cell
+count + a per-image sparkline (from `POST /api/plot_data`, `popType=labels` + `chartType=count`, one
+request per run image, debounced, re-run as images clear the stage — incremental fill). Clicking a
+thumbnail expands the full segment QC canvas (`SummaryCanvas module="segment"`). This reuses the
+canonical plot framework end-to-end (registry def + `SummaryCanvas` + `/api/plot_data`) — there is no
+bespoke QC route or panel. Distinct from user-dragged plot nodes (a separate, later mechanism).
+
+### Loading past runs into the Live view
+
+The whiteboard Live tab renders runs from **two sources**, normalised to one task-like shape:
+1. **Live** — the in-memory task store (WS `chain:node:*` events), for a run happening/just-happened
+   this session.
+2. **Persisted** — loaded from disk so a past run survives a reload. `GET /api/chains/runs?projectUid`
+   lists run records (id, chain, `createdAt`, image count — read straight from each `run.json`
+   header, newest first); `GET /api/chains/run?projectUid&runId` returns a run's frozen template
+   (nodes/edges for the layered layout) + per-image per-node **status** (`load_chain_run`). The Live
+   view synthesises task entries from `image_states` (funName from the frozen template node, label
+   from the task def); persisted runs have **status but no timing** (`ImageNodeState` stores no
+   started/finished — the elapsed timer is live-only). The run dropdown merges both, tags live runs
+   `· live`, and labels each with its timestamp.
+
 ---
 
 ## Resume and restart semantics

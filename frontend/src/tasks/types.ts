@@ -41,6 +41,8 @@ export interface TaskDef {
                            // whiteboard to prefill a downstream node's input valueName. Absent when
                            // the output name is a user-set param instead (segment.cellpose).
   outputField?: string    // which image field the output lands in ('filepath' | 'labels'); default 'filepath'
+  qcPlot?: string         // plotDefinitions id of this task's default QC plot (e.g. "segmentation_qc"); if set,
+                          // the whiteboard Live view auto-shows a QC thumbnail linked to this node
 }
 
 export type ParamValues = Record<string, unknown>

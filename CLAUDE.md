@@ -31,6 +31,7 @@ See also:
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |
 | Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
+| **Adding ANY plot (module page OR board)** — registry + `SummaryCanvas`, never a bespoke panel/route | `docs/PLOTS.md` → *Hosting*, `docs/ANALYSIS.md` |
 | Task JSON, registry, module pages, composite pattern | `docs/MODULES.md` |
 | Napari bridge, commands, OME-ZARR, contrast, layer props | `docs/NAPARI.md` |
 | Object model, ccid.json, versioned fields, disk layout | `docs/OBJECTMODEL.md` |

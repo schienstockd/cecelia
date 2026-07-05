@@ -30,6 +30,7 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
     case 'boxplot':              return { chartType: 'boxplot', rawPoints: true }   // + jitter overlay
     case 'stacked': case 'stacked100': return { chartType: 'frequency', normalize: false }
     case 'heatmap':              return { chartType: 'matrix' }                     // profile / crosstab grid
+    case 'count':                return { chartType: 'count' }                     // row count per series (no measure)
     default:                     return { chartType: c }
   }
 }
@@ -111,6 +112,9 @@ export interface BuildOpts extends VisProps {
   errorMetric: 'sd' | 'sem' | 'ci95'     // bar error bars
   colorOf: (s: PlotSeries) => string     // series colour from the host
   nonNegative?: boolean                  // floor numeric error bars / whiskers at 0
+  smooth?: number                        // trend line: rolling-mean window (1 = raw)
+  trend?: boolean                        // render as a geom_smooth line over an ordered X (time series)
+  interval?: boolean                     // trend line: draw the ±95% confidence ribbon
 }
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
@@ -234,6 +238,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // matrix/heatmap is a pooled grid (cells, not series) — its own builder + theme, returned early so
   // none of the per-series colour-scale / measure-axis post-processing below applies.
   if (o.chartType === 'heatmap') return buildHeatmap(Plot, r, o)
+  // time series (measure/count over an ordered column, e.g. t) → a geom_smooth line, not thousands
+  // of bars/boxes.
+  if (o.trend && r.groupBy) return buildTrendLine(Plot, r, o)
   if (!r.series.length) return null
   const d = dimsOf(r.series, o.byImage)
   const keyOf = (s: PlotSeries) => keyFor(s, d)
@@ -261,6 +268,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
     case 'stacked':    opts = frequency(Plot, r, o, keyOf, color, 'stack'); break
     case 'stacked100': opts = frequency(Plot, r, o, keyOf, color, 'stack100'); break
     case 'bar':        opts = barChart(Plot, r, o, keyOf, color, logY); break
+    case 'count':      opts = barChart(Plot, r, o, keyOf, color, logY); break   // # objects per series, drawn as bars
     case 'boxplot':    opts = boxplot(Plot, r, o, keyOf, color, logY); break
     case 'violin':     opts = violin(Plot, r, o, keyOf, color, logY); break
     case 'strip':      opts = strip(Plot, r, o, keyOf, color, logY); break
@@ -281,7 +289,7 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   // applied to the built scales so we don't thread them through every builder. The MEASURE axis is Y
   // for the distribution charts (X when rotated — coord_flip); the POSITION (series) axis is the
   // other. range/label(labY) target the measure axis; labX/rotate-X-labels target the position axis.
-  const isDist = new Set<ChartType>(['boxplot', 'violin', 'strip', 'bar']).has(o.chartType)
+  const isDist = new Set<ChartType>(['boxplot', 'violin', 'strip', 'bar', 'count']).has(o.chartType)
   const measAxis = (isDist && o.rotate) ? 'x' : 'y'
   const posAxis = measAxis === 'y' ? 'x' : 'y'
 
@@ -390,6 +398,126 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   if (o.rotateXLabel) opts.marginBottom = 84
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }
+  return opts
+}
+
+// LOESS (local linear regression, degree 1, tricube weights) — the smoother ggplot's geom_smooth uses
+// by default. Evaluated at `grid` x's over data (xs, ys); returns the fitted value AND the standard
+// error of the fit at each grid point (from the local "hat" weights l: se = σ·‖l‖, with σ² a lag-1
+// first-difference noise estimate — no O(n²) refit). `span` ∈ (0,1] is the fraction of points in each
+// local window. The se widens where data is sparse (window edges) — the geom_smooth ribbon shape.
+function loess(xs: number[], ys: number[], grid: number[], span: number): { y: number; se: number }[] {
+  const n = xs.length
+  const q = Math.max(2, Math.min(n, Math.ceil(span * n)))
+  let dsum = 0, dn = 0
+  for (let i = 1; i < n; i++) { const dd = ys[i] - ys[i - 1]; dsum += dd * dd; dn++ }
+  const sigma2 = dn ? dsum / (2 * dn) : 0                 // Var(lag-1 diff)/2 ≈ residual variance
+  return grid.map(x0 => {
+    const dist = xs.map(x => Math.abs(x - x0))
+    const dmax = [...dist].sort((a, b) => a - b)[Math.min(q - 1, n - 1)] || 1e-9
+    let Sw = 0, Swx = 0, Swxx = 0, Swy = 0, Swxy = 0
+    const wv = new Array<number>(n)
+    for (let i = 0; i < n; i++) {
+      const u = dist[i] / dmax, w = u < 1 ? (1 - u * u * u) ** 3 : 0
+      wv[i] = w
+      if (!w) continue
+      Sw += w; Swx += w * xs[i]; Swxx += w * xs[i] * xs[i]; Swy += w * ys[i]; Swxy += w * xs[i] * ys[i]
+    }
+    const det = Sw * Swxx - Swx * Swx
+    let y0: number, l2 = 0
+    if (Sw === 0) { y0 = NaN }
+    else if (Math.abs(det) < 1e-12) {                    // degenerate (all x equal in window) → weighted mean
+      y0 = Swy / Sw
+      for (let i = 0; i < n; i++) if (wv[i]) { const li = wv[i] / Sw; l2 += li * li }
+    } else {
+      const b = (Sw * Swxy - Swx * Swy) / det, a = (Swy - b * Swx) / Sw
+      y0 = a + b * x0
+      const c1 = Swxx - x0 * Swx, c2 = x0 * Sw - Swx
+      for (let i = 0; i < n; i++) if (wv[i]) { const li = wv[i] * (c1 + xs[i] * c2) / det; l2 += li * li }
+    }
+    return { y: y0, se: Math.sqrt(sigma2 * l2) }
+  })
+}
+
+// ── time-series trend line, geom_smooth-style (Plot.line + optional Plot.areaY) ──────
+// A measure (mean per group) or count grouped by an ORDERED column (t) → ONE line per series
+// (image·segmentation·population), so a timecourse with thousands of frames reads as a curve, not
+// thousands of bars/boxes. The group level is the X axis; `s.value` is the per-group aggregate
+// (count, or the mean from the `bar` aggregation).
+//
+// Like ggplot's geom_smooth (method "loess"), each series is fitted with LOESS and drawn as the fitted
+// CURVE plus — when `o.interval` — a shaded ±95% confidence ribbon of the FIT (ŷ ± 1.96·se). The line
+// is the model, not the raw values. `o.smooth` is the span as a percentage of points (geom_smooth's
+// `span`). One line per image/segmentation, coloured distinctly so per-image series are separable
+// (population colours collide when the same pop spans several images).
+function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Record<string, unknown> | null {
+  if (!r.series.length) return null
+  const d = { ...dimsOf(r.series, o.byImage), grp: false }   // group level → X axis, not a series
+  const keyOf = (s: PlotSeries) => keyFor(s, d)
+  let color = colourScale(r.series, keyOf, o.colorOf)
+  // distinguish lines: if population colours collide (same pop across images) or a non-standard palette
+  // is picked, assign distinct hues per line key.
+  const collide = new Set(color.range).size < color.domain.length
+  if (o.palette === 'user') {
+    const pal = o.userColors.split(',').map(s => s.trim()).filter(Boolean)
+    color = { ...color, range: color.domain.map((_, i) => pal.length ? pal[i % pal.length] : '#9aa0a6') }
+  } else if (collide || (o.palette && o.palette !== 'standard')) {
+    const pal = (o.palette && o.palette !== 'standard' && o.palette !== 'distinct') ? (PALETTES[o.palette] ?? []) : []
+    const hues = pal.length ? color.domain.map((_, i) => pal[i % pal.length]) : distinctColors(color.domain.length)
+    color = { ...color, range: hues }
+  }
+  const lines = new Map<string, { x: number; y: number }[]>()
+  for (const s of r.series) {
+    const x = Number(s.group), y = Number(s.value)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue
+    const k = keyOf(s)
+    ;(lines.get(k) ?? lines.set(k, []).get(k)!).push({ x, y })
+  }
+  const span = Math.min(1, Math.max(0.05, (o.smooth ?? 30) / 100)), floor = o.nonNegative && !o.logScale
+  const fit: { series: string; x: number; y: number; lo: number; hi: number }[] = []
+  let hi = 0
+  for (const [k, pts] of lines) {
+    pts.sort((a, b) => a.x - b.x)
+    const xs = pts.map(p => p.x), ys = pts.map(p => p.y)
+    const x0 = xs[0], x1 = xs[xs.length - 1]
+    // evaluate the fit on a grid across the x-range (≤120 points — a smooth curve, cheap to render)
+    const m = Math.max(2, Math.min(120, xs.length))
+    const grid = xs.length <= m ? xs.slice() : Array.from({ length: m }, (_, i) => x0 + (x1 - x0) * i / (m - 1))
+    loess(xs, ys, grid, span).forEach((p, i) => {
+      if (!Number.isFinite(p.y)) return
+      const lo = floor ? Math.max(0, p.y - 1.96 * p.se) : p.y - 1.96 * p.se, up = p.y + 1.96 * p.se
+      if ((o.interval ? up : p.y) > hi) hi = o.interval ? up : p.y
+      fit.push({ series: k, x: grid[i], y: p.y, lo, hi: up })
+    })
+  }
+  if (!fit.length) return null
+  const fg = o.darkTheme ? '#e6e6e6' : '#111'
+  const bg = o.darkTheme ? '#1f2226' : 'white'
+  const yhi = o.logScale ? hi : hi * 1.05
+  const legend = dedupLegend(color)
+  const legendN = legend.domain.length
+  let topPad = 12
+  if (o.legend && legendN > 1) topPad = 20 + Math.min(3, Math.ceil(legendN / 3)) * 22
+  if (o.title) topPad = Math.max(topPad, 34)
+  const base = r.chartType === 'count' ? 'count' : (r.measure ?? 'value')
+  const marks: unknown[] = []
+  if (o.interval) marks.push(
+    Plot.areaY(fit, { x: 'x', y1: 'lo', y2: 'hi', fill: 'series', z: 'series', fillOpacity: 0.15 }))
+  marks.push(
+    Plot.line(fit, { x: 'x', y: 'y', stroke: 'series', z: 'series', strokeWidth: 2 }),
+    Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
+    Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
+  )
+  const opts: Record<string, unknown> = {
+    ...THEME, color, marginTop: topPad,
+    style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
+    x: { label: o.labX || r.groupBy || 't', grid: o.grid, ...(o.rotateXLabel ? { tickRotate: -45 } : {}) },
+    y: { label: o.labY || `${base} (loess)`, grid: o.grid,
+         ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
+    marks,
+  }
+  if (o.rotateXLabel) opts.marginBottom = 64
+  ;(opts as Record<string, unknown>)._legend = legend
   return opts
 }
 
@@ -512,7 +640,8 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     const lo = (s.value ?? 0) - e
     return { series: k, xi: i, xlo: i - 0.32, xhi: i + 0.32, value: s.value,
              lo: floor ? Math.max(0, lo) : lo, hi: (s.value ?? 0) + e, n: s.n,
-             tip: `${k}\nmean ${fmt(s.value)}\n${o.errorMetric} ±${fmt(e)}\nn ${s.n}` }
+             tip: o.chartType === 'count' ? `${k}\ncount ${fmt(s.value)}`
+                                          : `${k}\nmean ${fmt(s.value)}\n${o.errorMetric} ±${fmt(e)}\nn ${s.n}` }
   })
   const f = fxCh(o), a = axM(o)
   const RuleMeas = o.rotate ? Plot.ruleY : Plot.ruleX   // spans the measure axis (error bar)
@@ -520,7 +649,7 @@ function barChart(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
   return {
     ...THEME, color,
     [a.pos]: xScale(labels, o), ...fxScale(o),
-    [a.meas]: { label: `mean ${r.measure}`, grid: false, ...logY },
+    [a.meas]: { label: o.chartType === 'count' ? 'count' : `mean ${r.measure}`, grid: false, ...logY },
     marks: [
       Plot.rect(rows, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.measLo]: 0, [a.measHi]: 'value', fill: 'series', title: 'tip', tip: true, ...f }),
       RuleMeas(rows, { [a.pos]: 'xi', [a.measLo]: 'lo', [a.measHi]: 'hi', stroke: 'currentColor', ...f }),   // error bar
@@ -644,6 +773,8 @@ export function plotDataToCsv(r: PlotDataResponse): string {
     case 'bar':
       return tbl([...idH, 'mean', 'sd', 'sem', 'ci95', 'n'],
                  r.series.map(s => [...id(s), s.value, s.sd, s.sem, s.ci95, s.n]))
+    case 'count':
+      return tbl([...idH, 'count'], r.series.map(s => [...id(s), s.value]))
     case 'boxplot':
       return tbl([...idH, 'q1', 'median', 'q3', 'lower', 'upper', 'mean', 'n'],
                  r.series.map(s => [...id(s), s.q1, s.median, s.q3, s.lower, s.upper, s.mean, s.n]))

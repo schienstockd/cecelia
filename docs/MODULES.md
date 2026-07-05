@@ -108,6 +108,11 @@ literal: a task whose output name is **user-chosen** exposes an `outputValueName
 `segment.cellpose`), and a **composite** declares a top-level `outputValueName` that its executor
 collapses `ccid.json` down to (see *`outputValueName` — canonical output registration* below).
 
+**`qcPlot` (optional).** A top-level `"qcPlot": "<plotDefId>"` on a task spec declares its default QC
+plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` /
+`segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
+thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
+
 ### Running a Python subprocess
 
 Spawn the task's Python runner through **`run_py`** (`app/src/py_runner.jl`) — the single place
@@ -568,17 +573,30 @@ To add a button above the table (e.g. "Add images"):
 
 ### Below-table content
 
-For plots or supplementary panels below the image table:
+**RULE — a plot below the image table MUST use the plot registry + `SummaryCanvas`. Never a bespoke
+chart component or a bespoke `/api/plots/*` route.** There is **one** way to host a plot (module page
+*and* the `/analysis` board): a `plotDefinitions/*.json` registry entry rendered by `SummaryCanvas` →
+`SummaryPanel` → `PlotChart`. Reusing `PlotChart` alone in a hand-rolled panel is **not** compliance
+— that's the anti-pattern (it was done once for segmentation QC and had to be reworked). See
+`docs/PLOTS.md` → *Hosting* and `docs/ANALYSIS.md` → *Plot families*.
+
+To add a module-page plot:
+1. Write `app/src/plotDefinitions/<id>.json` — `{ id, label, module: "<thisModule>", family: "summary",
+   chartTypes, dataSource: { popType, granularity, measure, measureOptions }, scopeModes,
+   whiteboardCompatible }`. Served via `GET /api/plots/definitions`. Data comes from the existing
+   `POST /api/plot_data` (`plot_summary_data`) — no new route.
+2. Host it below the table with `SummaryCanvas` (the reference is `BehaviourModule.vue`):
 
 ```vue
-<template #below-table>
-  <CollapsibleSection label="My chart">
-    <MyChart :data="chartData" />
-  </CollapsibleSection>
+<template #below-table="{ selectedUids }">
+  <SummaryCanvas :image-uids="selectedUids" module="<thisModule>" />
 </template>
 ```
 
-Import `CollapsibleSection` from `'../components/CollapsibleSection.vue'`.
+`whiteboardCompatible: true` also makes it available on the whiteboard — one definition, both places.
+
+`CollapsibleSection` (from `'../components/CollapsibleSection.vue'`) is only for **non-plot**
+supplementary panels (previews, tables, controls) — never wrap a bespoke chart in it.
 
 ### RULE: persist every user-settable option (do NOT use a bare `ref()`)
 

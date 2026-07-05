@@ -1,0 +1,19 @@
+{
+  "id": "segmentation_qc",
+  "label": "Segmentation QC",
+  "module": "segment",
+  "family": "summary",
+  "chartTypes": ["count", "boxplot", "violin", "strip", "bar", "histogram"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "labels",
+    "granularity": "cell",
+    "measure": "area",
+    "measuresFromData": true,
+    "groupByOptions": ["t"]
+  },
+  "scopeModes": ["per_image", "summarised"],
+  "params": [
+    { "key": "bins", "label": "Bins", "type": "int", "min": 10, "max": 100, "step": 5, "default": 30 }
+  ]
+}

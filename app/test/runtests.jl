@@ -1825,6 +1825,17 @@ end
         dedup = plot_population_groups([:img1, :img2], names_for, load, ["live"])
         @test length(dedup) == 1
         @test length(dedup[1].populations) == length(cpops)         # no duplicates across images
+
+        # LABELS (gateless): no gating map — one selectable pop per segmentation value_name, named by
+        # the value_name, tagged pop_type "labels" (segmentation QC: B/T plot side by side).
+        names2 = _ -> ["B", "T"]
+        lab = plot_population_groups([:img1], names2, (args...) -> error("must not load a map for labels"),
+                                     ["labels"])
+        @test [g.value_name for g in lab] == ["B", "T"]
+        @test all(g -> length(g.populations) == 1, lab)
+        bp = only(lab[1].populations)
+        @test bp.path == "/labels" && bp.name == "B" && bp.pop_type == "labels"
+        @test only(lab[2].populations).name == "T"
     end
 
     # ── Gating engine: recompute, membership, filtered (tracked) pops ─────────
@@ -2056,39 +2067,49 @@ end
     # ── Segmentation integrity (QC) plot data (KDIeEm, timecourse) ───────────────
     # count per (image, timepoint) via group_by=temporal, + a per-timepoint measure distribution.
     # See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
-    @testset "segmentation QC data (KDIeEm)" begin
+    # ── labels pop_type + count aggregation (segmentation QC data source, R parity) ──
+    @testset "labels pop_type + count (KDIeEm)" begin
         h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
         if !have_fixture(h5)
-            @test_skip "segmentation QC (fixture missing)"
+            @test_skip "labels pop_type (fixture missing)"
         else
             td = mktempdir(); mkpath(joinpath(td, "labelProps"))
             cp(h5, joinpath(td, "labelProps", "B.h5ad"))
             img = CciaImage(uid="KDIeEm", dir=td)
             img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
 
-            # root "/" = ALL measured cells (no gating file present)
-            total = nrow(pop_df(img, "flow", ["/"]; value_name="B", pop_cols=["area"]))
-            @test total > 0
+            # `labels` = ALL measured cells, ungated, one "labels" pop; pops arg is ignored.
+            all = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"])
+            @test nrow(all) > 0
+            @test Set(names(all)) ⊇ Set(["label", "area", "pop", "value_name"])
+            @test unique(all.pop) == ["/labels"]
+            @test unique(all.value_name) == ["B"]
 
-            # count, whole image (no timepoint split) → one series, value == total cells
-            whole = segmentation_qc_data(img; value_name="B", measure=nothing)
+            # cell count via the summary aggregator over labels — one series, value == total.
+            whole = plot_summary_data(img, "labels", String[], "count"; value_name="B")
             @test whole["chartType"] == "count"
             @test length(whole["series"]) == 1
-            @test whole["series"][1]["value"] == Float64(total)
+            @test whole["series"][1]["value"] == Float64(nrow(all))
 
-            # count per timepoint → one series per t; counts partition the total
-            byT = segmentation_qc_data(img; value_name="B", measure=nothing, per_timepoint=true)
+            # count per timepoint (group_by the temporal column) → counts partition the total.
+            byT = plot_summary_data(img, "labels", String[], "count"; value_name="B", group_by="t")
             @test byT["groupBy"] == "t"
             @test length(byT["series"]) > 1
-            @test sum(s["value"] for s in byT["series"]) == Float64(total)
+            @test sum(s["value"] for s in byT["series"]) == Float64(nrow(all))
 
-            # per-timepoint area distribution reuses the same temporal grouping
-            area = segmentation_qc_data(img; value_name="B", measure="area", per_timepoint=true)
+            # a morphology distribution over labels, per timepoint
+            area = plot_summary_data(img, "labels", String[], "boxplot"; value_name="B",
+                                     measure="area", group_by="t")
             @test area["measure"] == "area"
             @test length(area["series"]) == length(byT["series"])
 
-            # temporal-column resolution: present for this timecourse fixture
-            @test Cecelia._segmentation_temporal_col(img, "B") == "t"
+            # targets signature (the path the summary canvas + whiteboard QC row use: series =
+            # [(value_name, "labels")]) — count over the "labels" pop yields the same total.
+            tg = plot_summary_data(img, "labels", [("B", "/labels")], "count")
+            @test tg["chartType"] == "count"
+            @test length(tg["series"]) == 1
+            @test tg["series"][1]["value"] == Float64(nrow(all))
+            @test tg["series"][1]["pop"] == "B/labels"    # manager-form id round-trips
         end
     end
 

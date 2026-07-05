@@ -16,6 +16,7 @@ export type ChartType =
   | 'histogram' | 'bar' | 'boxplot' | 'violin' | 'strip'   // numeric
   | 'frequency' | 'stacked' | 'stacked100'                 // categorical
   | 'heatmap'                                              // matrix (profile / crosstab) — measure-type independent
+  | 'count'                                                // # objects per series (row count) — measure-independent; the segmentation-integrity headline
 
 export interface PlotSpec {
   id: string
@@ -31,6 +32,10 @@ export interface PlotSpec {
     granularity: 'cell' | 'track'
     measure: string
     measureOptions?: string[]
+    // when true, the measure list is ALL numeric measurements actually present on the image (the var
+    // columns), not the static `measureOptions` — e.g. segmentation QC offers every regionprops/
+    // intensity measure the segmentation has. `measure` stays the default (shown first if present).
+    measuresFromData?: boolean
     // optional categorical columns the user may split a measure by (the generic groupBy sub-axis,
     // e.g. an HMM state); '' / absent → no split. Reusable for any categorical obs column.
     groupByOptions?: string[]

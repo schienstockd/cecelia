@@ -10,7 +10,7 @@
   Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
 import PlotChart from '../plots/PlotChart.vue'
 import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
@@ -31,7 +31,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total' }
+        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean }
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -41,9 +41,40 @@ const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
-const measureOpts = computed(() => props.spec.dataSource.measureOptions ?? [props.spec.dataSource.measure])
+// the columns actually present on the selected image+segmentation (loaded below), so we never offer a
+// measure that doesn't exist — regionprops sets differ (2D vs 3D, version), so e.g. `aspect_ratio`
+// may be absent and requesting it would 400 ("column not found"). Before the columns load, `present`
+// is empty and we fall back to the spec's full list (the default measure is always valid).
+// discovered columns of the selected image+segmentation (loaded in loadObsCols below). Declared up
+// here — BEFORE measureOpts/its watch — because `watch(measureOpts)` evaluates its getter at setup,
+// which reads these refs; declaring them later would be a temporal-dead-zone crash.
+const varCols = ref<string[]>([])        // var columns (morphology + intensity)
+const channelCols = ref<string[]>([])    // intensity var columns specifically (mean_intensity_* / renamed)
+const obsCols = ref<string[]>([])        // obs columns (live.cell.*, hmm.state, cluster ids, …)
+const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — groupable but not in obs
+const measureOpts = computed(() => {
+  const ds = props.spec.dataSource
+  // measuresFromData: offer every MORPHOLOGY measurement present — all var columns EXCEPT the
+  // per-channel intensities (mean_intensity_*) — so segmentation QC lists the shape descriptors
+  // (area, extent, eccentricity, solidity, axis lengths, aspect_ratio, …) it actually has, not a
+  // curated subset and not the intensity channels. Default measure first.
+  if (ds.measuresFromData && varCols.value.length) {
+    const intensity = new Set(channelCols.value)
+    const morph = varCols.value.filter(c => !intensity.has(c))
+    const rest = morph.filter(c => c !== ds.measure).sort((a, b) => a.localeCompare(b))
+    return morph.includes(ds.measure) ? [ds.measure, ...rest] : rest
+  }
+  // otherwise the static list, narrowed to what's actually present (avoids a 400 "column not found")
+  const all = ds.measureOptions ?? [ds.measure]
+  const present = new Set([...varCols.value, ...obsCols.value])
+  if (!present.size) return all
+  const ok = all.filter(m => present.has(m))
+  return ok.length ? ok : all
+})
 // each option reads the persisted panel state, falling back to the spec default; writing persists it.
 const measure = computed<string>({ get: () => props.ui.measure ?? props.spec.dataSource.measure, set: v => (props.ui.measure = v) })
+// drop a persisted/selected measure that isn't available for the current data (avoids a 400 fetch)
+watch(measureOpts, opts => { if (opts.length && !opts.includes(measure.value)) measure.value = opts[0] })
 const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.spec.chartTypes[0], set: v => (props.ui.chartType = v) })
 const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
 const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
@@ -53,19 +84,24 @@ const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorM
 // offer a column that doesn't exist — that produced an "ignoring unknown columns" warning and an
 // empty split), filtered to categorical-looking names; a spec may add explicit hints that exist.
 const CATEGORICAL_OBS = /(\.hmm\.state\.|\.hmm\.transitions\.|\.clusters?\.|track_generation|track_state)/
-const obsCols = ref<string[]>([])
 async function loadObsCols() {
   const vn = props.series[0]?.valueName
-  if (!props.imageUid || !vn) { obsCols.value = []; return }
+  if (!props.imageUid || !vn) { obsCols.value = []; temporalCols.value = []; return }
   try {
     const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
     const res = await fetch(`/api/gating/channels?${q}`)
-    obsCols.value = res.ok ? ((await res.json() as { obsColumns?: string[] }).obsColumns ?? []) : []
-  } catch { obsCols.value = [] }
+    const j = res.ok ? (await res.json() as { columns?: string[]; channels?: string[]; obsColumns?: string[]; temporalColumns?: string[] }) : {}
+    varCols.value = j.columns ?? []
+    channelCols.value = j.channels ?? []
+    obsCols.value = j.obsColumns ?? []
+    temporalCols.value = j.temporalColumns ?? []
+  } catch { varCols.value = []; channelCols.value = []; obsCols.value = []; temporalCols.value = [] }
 }
 watch([() => props.imageUid, () => props.series.map(t => t.valueName).join(',')], loadObsCols, { immediate: true })
 const groupByOpts = computed<string[]>(() => {
-  const present = new Set(obsCols.value)
+  // temporal cols live in obsm (not obs) but ARE groupable (the per-timepoint QC/consistency view),
+  // so they count as "present" for spec hints alongside the discovered categorical obs columns.
+  const present = new Set([...obsCols.value, ...temporalCols.value])
   const hints = (props.spec.dataSource.groupByOptions ?? []).filter(c => present.has(c))
   const discovered = obsCols.value.filter(c => CATEGORICAL_OBS.test(c))
   return [...new Set([...hints, ...discovered])]
@@ -115,7 +151,30 @@ const optsOpen = ref(false)
 const optsRef = useTemplateRef<HTMLElement>('optsRef')
 const hasOpts = computed(() => groupByOpts.value.length > 0
   || chartType.value === 'heatmap'
-  || (['histogram', 'bar', 'frequency'] as ChartType[]).includes(chartType.value))
+  || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
+// The options popover MUST escape the panel's `overflow: hidden` (the card clips the plot area), so it
+// is `position: fixed`, positioned from the trigger button on open and clamped to the viewport — never
+// clipped, regardless of where the (draggable) panel sits or which edge it's near. Any new plot popover
+// should follow this pattern rather than a plain absolute child of the panel. See docs/PLOTS.md §0.
+const popStyle = ref<Record<string, string>>({})
+watch(optsOpen, async open => {
+  if (!open) { popStyle.value = {}; return }
+  // stay OUT OF FLOW while measuring (fixed) so the popover never inflates the wrap — otherwise the
+  // anchor rect grows by the popover's own size and the placement is thrown off.
+  popStyle.value = { position: 'fixed', visibility: 'hidden' }
+  await nextTick()
+  const wrap = optsRef.value                        // inline-flex around just the button (popover is fixed)
+  const pop = wrap?.querySelector('.sp-pop') as HTMLElement | null
+  if (!wrap || !pop) return
+  const a = wrap.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight
+  const vw = window.innerWidth, vh = window.innerHeight
+  let left = a.right - w                            // right-aligned to the button…
+  if (left < 4) left = a.left                       // …flipped rightward if that clips the left edge
+  left = Math.max(4, Math.min(left, vw - w - 4))
+  let top = a.bottom + 4
+  if (top + h > vh - 4) top = Math.max(4, a.top - h - 4)   // open above if no room below
+  popStyle.value = { position: 'fixed', top: `${top}px`, left: `${left}px`, right: 'auto', visibility: 'visible' }
+})
 function onDocClick(e: MouseEvent) {
   if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false
 }
@@ -136,8 +195,8 @@ const validCharts = computed<ChartType[]>(() => {
   const mt = result.value?.measureType
   if (!mt) return props.spec.chartTypes
   const ok = new Set(chartsForMeasure(mt))
-  // heatmap is a pooled grid, independent of the measure's numeric/categorical type — always keep it.
-  const v = props.spec.chartTypes.filter(c => ok.has(c) || c === 'heatmap')
+  // heatmap (pooled grid) and count (row count) are measure-independent — always keep them.
+  const v = props.spec.chartTypes.filter(c => ok.has(c) || c === 'heatmap' || c === 'count')
   return v.length ? v : props.spec.chartTypes
 })
 watch(validCharts, v => { if (!v.includes(chartType.value)) chartType.value = v[0] })
@@ -186,7 +245,12 @@ async function fetchData() {
     return
   }
 
-  const be = backendChart(chartType.value)         // several charts share one server aggregation
+  // several charts share one server aggregation. For a TIME SERIES (grouped by t) we fit a LOESS line
+  // client-side, so we only need the per-frame AGGREGATE: `count` for the count chart, else the MEAN
+  // (the `bar` aggregation) — the box/violin selection collapses to the trend.
+  const be = timeSeries.value
+    ? { chartType: chartType.value === 'count' ? 'count' : 'bar', rawPoints: false }
+    : backendChart(chartType.value)
   try {
     // Group targets by pop_type — each /api/plot_data request resolves all its series under ONE
     // pop_type, so a plot mixing `live` (/_tracked) with `track` gates needs one request per group.
@@ -200,7 +264,9 @@ async function fetchData() {
       const body: Record<string, unknown> = {
         projectUid: props.projectUid,
         popType: pt, granularity: props.spec.dataSource.granularity,
-        chartType: be.chartType, measure: measure.value,
+        chartType: be.chartType,
+        // count is a row count — no measure. Sending one would just fetch an unused column.
+        ...(chartType.value === 'count' ? {} : { measure: measure.value }),
         series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
         bins: bins.value,
         normalize: be.normalize ?? normalize.value,
@@ -244,12 +310,21 @@ const hasData = computed(() => {
   return r.chartType === 'matrix' ? (r.cells?.length ?? 0) > 0 : r.series.length > 0
 })
 
+// TIME SERIES: grouping by a TEMPORAL column (t) → a geom_smooth LOESS line over time (thousands of
+// frames would be thousands of bars/boxes otherwise). Applies to count and to any measure — the
+// per-frame mean is fitted, so the box/violin selection collapses to a clean trend.
+const timeSeries = computed(() => !!groupBy.value && temporalCols.value.includes(groupBy.value))
+// LOESS span as a % of points (geom_smooth `span`); the CI ribbon toggle. Render-only, persisted.
+const smooth = computed<number>({ get: () => props.ui.smooth ?? 30, set: v => (props.ui.smooth = v) })
+const interval = computed<boolean>({ get: () => props.ui.interval ?? true, set: v => (props.ui.interval = v) })
+
 // the build options handed to PlotChart (which lazy-loads Plot and renders). Render-only inputs
 // (chart type, error metric, vis props) recompute here without a refetch.
 const buildOpts = computed<BuildOpts>(() => ({
   chartType: chartType.value, byImage: byImage.value, normalize: normalize.value,
   errorMetric: errorMetric.value, colorOf: props.seriesColor,
   nonNegative: true,               // the measures plotted here are non-negative
+  trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity
 }))
 
@@ -282,8 +357,9 @@ defineExpose({ getCsv, exportImage })
                :persist-key="persistKey" :docked="docked"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
-      <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid) -->
-      <select v-if="chartType !== 'heatmap'" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
+      <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid and
+           for a row count) -->
+      <select v-if="chartType !== 'heatmap' && chartType !== 'count'" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
         <option v-for="m in measureOpts" :key="m" :value="m">{{ m }}</option>
       </select>
       <select v-if="validCharts.length > 1" v-model="chartType" class="sp-chart"
@@ -297,7 +373,7 @@ defineExpose({ getCsv, exportImage })
                 v-tooltip.bottom="'Plot options'">
           <i class="pi pi-sliders-h" />
         </button>
-        <div v-if="optsOpen" class="sp-pop" :class="{ 'sp-pop--left': chartType === 'heatmap' }" @click.stop>
+        <div v-if="optsOpen" class="sp-pop" :style="popStyle" @click.stop>
           <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
           <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row"
                  v-tooltip.left="'Split the measure by a categorical column (e.g. HMM state)'">
@@ -357,6 +433,16 @@ defineExpose({ getCsv, exportImage })
             <span>Proportion</span>
             <input type="checkbox" v-model="normalize" />
           </label>
+          <template v-if="timeSeries">
+            <label class="sp-pop-row" v-tooltip.left="'LOESS span — % of points in each local fit (geom_smooth span)'">
+              <span>Smooth span</span>
+              <input type="number" min="5" max="100" step="5" v-model.number="smooth" />
+            </label>
+            <label class="sp-pop-row" v-tooltip.left="'Show the ±95% confidence ribbon of the fit'">
+              <span>Interval</span>
+              <input type="checkbox" v-model="interval" />
+            </label>
+          </template>
         </div>
       </div>
 
@@ -403,12 +489,13 @@ defineExpose({ getCsv, exportImage })
 
 /* options popover */
 .sp-pop-wrap { position: relative; display: inline-flex; }
-.sp-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; min-width: 11rem;
+/* position: fixed so the popover escapes the panel's overflow:hidden and never clips; the exact
+   top/left are set inline on open (see the popStyle watcher). fixed here (not just inline) keeps it out
+   of flow on the first render frame too, so it never inflates the anchor wrap. Only the box look + this
+   positioning mode live here. New plot popovers should reuse this pattern (docs/PLOTS.md §0). */
+.sp-pop { position: fixed; z-index: 40; min-width: 11rem;
   display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--cc-border);
   border-radius: 6px; background: var(--cc-surface-2); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
-/* heatmap plots hide the measure/chart selects, so the options button is the leftmost control —
-   anchor the popover to the LEFT (open rightward into the panel) so it isn't clipped by the box edge */
-.sp-pop--left { right: auto; left: 0; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 12px; color: var(--cc-text-dim); }
 .sp-pop-row select { font-size: 12px; max-width: 7rem; }

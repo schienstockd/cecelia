@@ -14,11 +14,13 @@ import ChainTaskNode from '../components/ChainTaskNode.vue'
 import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
+import ChainQcNode from '../components/ChainQcNode.vue'
+import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
-import { useTaskStore } from '../stores/tasks'
+import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
@@ -48,30 +50,113 @@ const nodeTypes: NodeTypesObject = {
   picnic:    markRaw(ChainPicnicNode) as any,
   live:      markRaw(ChainLiveNode)   as any,
   liveLabel: markRaw(ChainLiveLabel)  as any,
+  qc:        markRaw(ChainQcNode)      as any,
 }
 
 // ── Live view ─────────────────────────────────────────────────────────────────
 
+const selectedRunId = ref<string>('')
+
+// A run's tasks come from ONE of two sources: the in-memory task store (a run happening/just
+// happened this session) OR a persisted run.json loaded from disk (a past run — survives reload).
+// Both are normalised to this shape so the layout/nodes/edges code is source-agnostic.
+interface LiveTaskLike {
+  id: string; chainRunId: string; chainNodeId: string; imageUid: string
+  funName: string; label?: string; status: TaskStatus
+  startedAt?: number; finishedAt?: number; chainName?: string
+}
+
+// Live tasks (from WS events) for this project.
 const chainTasks = computed(() =>
   taskStore.tasks.filter(t => !!t.chainRunId && t.projectUid === projectMeta.current?.uid)
 )
-
-// Group by runId → unique run IDs, newest first (unshift order from task store)
 const liveRunIds = computed(() => [...new Set(chainTasks.value.map(t => t.chainRunId!))])
-const selectedRunId = ref<string>('')
 
-// Display label for a run: "chainName / runId"
-function runLabel(runId: string): string {
-  const task = chainTasks.value.find(t => t.chainRunId === runId)
-  const chain = task?.chainName
-  return chain ? `${chain} / ${runId}` : runId
+// Persisted runs listed from disk (GET /api/chains/runs) + a cache of fully-loaded ones.
+interface RunMeta { runId: string; chainName: string; createdAt: number; imageCount: number }
+interface LoadedRun { chainName: string; createdAt: number; nodes: LiveTemplateNode[]; edges: { from: string; to: string }[]; tasks: LiveTaskLike[] }
+const persistedRuns = ref<RunMeta[]>([])
+const loadedRuns = ref<Map<string, LoadedRun>>(new Map())
+
+async function loadRunList() {
+  const uid = projectMeta.current?.uid
+  if (!uid) { persistedRuns.value = []; return }
+  try {
+    const res = await fetch(`/api/chains/runs?projectUid=${uid}`)
+    if (res.ok) persistedRuns.value = ((await res.json()).runs ?? []) as RunMeta[]
+  } catch { /* non-critical */ }
 }
 
-watch(liveRunIds, (ids, oldIds) => {
-  if (!ids.length) return
-  // Switch to the newest run whenever a new one appears, or if current is gone.
-  if (!ids.includes(selectedRunId.value) || ids.length > (oldIds?.length ?? 0))
-    selectedRunId.value = ids[0]
+// Load a persisted run's frozen template + per-node status, synthesising task-like entries.
+async function loadRun(runId: string) {
+  if (loadedRuns.value.has(runId)) return
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  try {
+    const res = await fetch(`/api/chains/run?projectUid=${uid}&runId=${encodeURIComponent(runId)}`)
+    if (!res.ok) return
+    const r = await res.json() as { chainName: string; createdAt: number
+      nodes: LiveTemplateNode[]; edges: { from: string; to: string }[]
+      imageStates: Record<string, Record<string, string>> }
+    const nodeFn = new Map(r.nodes.map(n => [n.id, n.fn]))
+    const labelOf = (fn: string) => allTaskDefs.value.find(d => d.fun_name === fn)?.label ?? fn.split('.').pop() ?? fn
+    const tasks: LiveTaskLike[] = []
+    for (const [uid2, nm] of Object.entries(r.imageStates)) {
+      for (const [nid, status] of Object.entries(nm)) {
+        const fn = nodeFn.get(nid) ?? nid
+        tasks.push({ id: `${runId}:${nid}:${uid2}`, chainRunId: runId, chainNodeId: nid,
+          imageUid: uid2, funName: fn, label: labelOf(fn), status: status as TaskStatus, chainName: r.chainName })
+      }
+    }
+    const m = new Map(loadedRuns.value)
+    m.set(runId, { chainName: r.chainName, createdAt: r.createdAt, nodes: r.nodes, edges: r.edges, tasks })
+    loadedRuns.value = m
+  } catch { /* non-critical */ }
+}
+
+// Dropdown options: persisted runs ∪ live runs, newest first, each with a timestamp for context.
+interface RunOption { runId: string; chainName: string; createdAt: number; live: boolean }
+const runOptions = computed<RunOption[]>(() => {
+  const map = new Map<string, RunOption>()
+  for (const r of persistedRuns.value)
+    map.set(r.runId, { runId: r.runId, chainName: r.chainName, createdAt: r.createdAt, live: false })
+  for (const id of liveRunIds.value) {
+    const t = chainTasks.value.find(t => t.chainRunId === id)
+    const created = map.get(id)?.createdAt ?? (t?.startedAt ? t.startedAt.getTime() / 1000 : 0)
+    map.set(id, { runId: id, chainName: t?.chainName ?? map.get(id)?.chainName ?? '', createdAt: created, live: true })
+  }
+  return [...map.values()].sort((a, b) => b.createdAt - a.createdAt)
+})
+
+function fmtRunTime(sec: number): string {
+  if (!sec) return ''
+  return new Date(sec * 1000).toLocaleString(undefined,
+    { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+function runLabel(o: RunOption): string {
+  const base = o.chainName ? `${o.chainName} / ${o.runId}` : o.runId
+  const ts = fmtRunTime(o.createdAt)
+  return `${base}${ts ? ` · ${ts}` : ''}${o.live ? ' · live' : ''}`
+}
+
+// Tasks for the selected run — live (task store) if present, else the loaded persisted run.
+const selectedRunTasks = computed<LiveTaskLike[]>(() => {
+  const rid = selectedRunId.value
+  if (!rid) return []
+  const live = chainTasks.value.filter(t => t.chainRunId === rid).map(t => ({
+    id: t.id, chainRunId: t.chainRunId!, chainNodeId: t.chainNodeId!, imageUid: t.imageUid,
+    funName: t.funName, label: t.label, status: t.status,
+    startedAt: t.startedAt?.getTime(), finishedAt: t.finishedAt?.getTime(), chainName: t.chainName,
+  } as LiveTaskLike))
+  return live.length ? live : (loadedRuns.value.get(rid)?.tasks ?? [])
+})
+
+// Auto-select: focus a newly-appeared live run; else keep a valid selection, else newest.
+watch(runOptions, (opts, old) => {
+  if (!opts.length) return
+  const fresh = opts.find(o => o.live && !(old ?? []).some(p => p.runId === o.runId))
+  if (fresh) { selectedRunId.value = fresh.runId; return }
+  if (!opts.some(o => o.runId === selectedRunId.value)) selectedRunId.value = opts[0].runId
 }, { immediate: true })
 
 // ── Live-run layout: rows = images, columns = tasks in execution order ──────────
@@ -107,13 +192,19 @@ function topoOrder(nodes: { id: string }[], edges: { from: string; to: string }[
   return out
 }
 
-// Fetch the template for the selected run's chain (for column order + edges).
+// Template (column order + edges) for the selected run. A persisted run carries its own FROZEN
+// template (nodes/edges from run.json); a live run fetches the current template by chain name.
 watch(selectedRunId, async (runId) => {
   liveTemplate.value = null
   if (!runId) return
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  const isLive = liveRunIds.value.includes(runId)
+  if (!isLive) await loadRun(runId)                 // persisted → load template + states from disk
+  const loaded = loadedRuns.value.get(runId)
+  if (loaded) { liveTemplate.value = { nodes: loaded.nodes, edges: loaded.edges }; return }
   const chain = chainTasks.value.find(t => t.chainRunId === runId)?.chainName
-  const uid   = projectMeta.current?.uid
-  if (!chain || !uid) return
+  if (!chain) return
   try {
     const res = await fetch(`/api/chains/get?projectUid=${uid}&name=${encodeURIComponent(chain)}`)
     if (!res.ok) return
@@ -146,8 +237,8 @@ function nodeVariant(nodeId: string): string {
 // Fan-out siblings share a layer (same column) but get different lanes, so a branch visibly
 // splits into parallel tracks. Each image is one band; a band is `bandLanes` tall.
 const liveLayout = computed(() => {
-  const tasks = chainTasks.value.filter(t => t.chainRunId === selectedRunId.value)
-  const taskNodeIds = new Set(tasks.map(t => t.chainNodeId!))
+  const tasks = selectedRunTasks.value
+  const taskNodeIds = new Set(tasks.map(t => t.chainNodeId))
   const tmpl = liveTemplate.value
   let nodes: LiveTemplateNode[] = tmpl?.nodes.filter(n => taskNodeIds.has(n.id)) ?? []
   let edges = tmpl?.edges.filter(e => taskNodeIds.has(e.from) && taskNodeIds.has(e.to)) ?? []
@@ -180,10 +271,28 @@ const liveLayout = computed(() => {
 const liveNodes = computed<Node[]>(() => {
   const { tasks, layer, lane, bandLanes, imageIds } = liveLayout.value
   if (!tasks.length) return []
-  const rowOf  = new Map(imageIds.map((id, i) => [id, i]))
-  const bandH  = bandLanes * LIVE.laneH
-  const bandY  = (r: number) => LIVE.padY + r * (bandH + LIVE.bandGap)
+  const rowOf   = new Map(imageIds.map((id, i) => [id, i]))
+  const bandH   = bandLanes * LIVE.laneH
+  const gridTop = LIVE.padY + qcBandH.value        // leave room for the QC band above the grid
+  const bandY   = (r: number) => gridTop + r * (bandH + LIVE.bandGap)
   const nodes: Node[] = []
+
+  // QC band: for each QC-producing column, one thumbnail per value_name (B, T, …) stacked vertically,
+  // aligned to the column, above the grid.
+  if (showQc.value) {
+    for (const col of qcColumns.value) {
+      qcValueNames.value.forEach((vn, i) => {
+        const s = qcData.value.get(qcKey(col.nodeId, vn)) ?? {}
+        nodes.push({
+          id: `qc:${col.nodeId}::${vn}`, type: 'qc',
+          position: { x: LIVE.padX + col.layer * LIVE.colW, y: 10 + i * QC_THUMB_H },
+          data: { label: col.label, valueName: vn,
+                  total: s.total, values: s.values, imageCount: s.imageCount, loading: s.loading },
+          draggable: false, selectable: false, connectable: false,
+        })
+      })
+    }
+  }
 
   // Row header (image name), vertically centred in the band.
   imageIds.forEach(uid => nodes.push({
@@ -194,17 +303,17 @@ const liveNodes = computed<Node[]>(() => {
   }))
   // Task nodes, placed at (layer → x, lane → y within band).
   for (const t of tasks) {
-    const L = layer.get(t.chainNodeId!)
-    const K = lane.get(t.chainNodeId!)
+    const L = layer.get(t.chainNodeId)
+    const K = lane.get(t.chainNodeId)
     const r = rowOf.get(t.imageUid)
     if (L === undefined || K === undefined || r === undefined) continue
     nodes.push({
       id: t.id, type: 'live',
       position: { x: LIVE.padX + L * LIVE.colW, y: bandY(r) + K * LIVE.laneH },
       data: {
-        fn: t.funName, label: t.label, variant: nodeVariant(t.chainNodeId!),
+        fn: t.funName, label: t.label, variant: nodeVariant(t.chainNodeId),
         imageUid: t.imageUid, status: t.status,
-        startedAt: t.startedAt?.getTime(), finishedAt: t.finishedAt?.getTime(),
+        startedAt: t.startedAt, finishedAt: t.finishedAt,
       },
       draggable: false, selectable: false, connectable: false,
     })
@@ -237,6 +346,112 @@ function copyRunId() {
   navigator.clipboard?.writeText(selectedRunId.value)
     .then(() => log.info(`Copied run ID ${selectedRunId.value}`, { source: 'whiteboard' }))
     .catch(() => { /* clipboard blocked — non-critical */ })
+}
+
+// ── Live QC row ────────────────────────────────────────────────────────────────
+// A task whose def declares `qcPlot` gets an aggregate QC thumbnail in a band above the grid,
+// aligned to its column (segmentation → cell count over the run's images). Toggle to show/hide;
+// click a thumbnail to expand the full QC panel. Refreshes as images clear the stage (incremental).
+const showQc = ref(true)
+interface QcSummary { total?: number; values?: number[]; imageCount?: number; loading?: boolean }
+const qcData = ref<Map<string, QcSummary>>(new Map())          // keyed by `${nodeId}::${valueName}`
+const qcExpand = ref<{ label: string; valueName: string; imageUids: string[] } | null>(null)
+const qcKey = (nodeId: string, vn: string) => `${nodeId}::${vn}`
+
+function defFor(fn: string) { return allTaskDefs.value.find(d => d.fun_name === fn) }
+
+// The segmentations (value_names) produced in this run, discovered from the canonical populations
+// picker (popType=labels → one entry per value_name). Segmentations are shared across the run's
+// images (same pipeline), so the first image is representative. Drives one QC thumbnail per value_name.
+const qcValueNames = ref<string[]>([])
+async function loadQcValueNames() {
+  const uid = projectMeta.current?.uid
+  const first = liveLayout.value.imageIds[0]
+  if (!uid || !first) { qcValueNames.value = []; return }
+  try {
+    const q = `projectUid=${uid}&imageUid=${first}&popType=labels`
+    const res = await fetch(`/api/plots/populations?${q}`)
+    const groups = res.ok ? (await res.json() as { valueName: string }[]) : []
+    qcValueNames.value = groups.map(g => g.valueName)
+  } catch { qcValueNames.value = [] }
+}
+
+// QC-producing columns in the selected run: distinct nodes whose task declares a qcPlot.
+const qcColumns = computed(() => {
+  const { tasks, layer } = liveLayout.value
+  const seen = new Map<string, { nodeId: string; label: string; layer: number }>()
+  for (const t of tasks) {
+    if (seen.has(t.chainNodeId)) continue
+    const def = defFor(t.funName)
+    if (def?.qcPlot) seen.set(t.chainNodeId, {
+      nodeId: t.chainNodeId, label: def.label ?? t.funName, layer: layer.get(t.chainNodeId) ?? 0,
+    })
+  }
+  return [...seen.values()]
+})
+// Each QC column shows one thumbnail per value_name (B, T, …), stacked vertically. Band height fits
+// the tallest stack.
+const QC_THUMB_H = 92
+const qcBandH = computed(() =>
+  (showQc.value && qcColumns.value.length && qcValueNames.value.length)
+    ? qcValueNames.value.length * QC_THUMB_H : 0)
+
+// Fetch the QC cell count per image for each (QC column × value_name) of the selected run, via the
+// canonical /api/plot_data (popType=labels, chartType=count) — one request per image (no set handle
+// here), so `values` is the per-image count series and `total` their sum. Debounced; re-runs as tasks
+// complete so the count fills in during a live run.
+let qcFetchTimer: ReturnType<typeof setTimeout> | null = null
+function scheduleQcFetch() {
+  if (qcFetchTimer) clearTimeout(qcFetchTimer)
+  qcFetchTimer = setTimeout(fetchQcData, 250)
+}
+async function fetchQcData() {
+  const uid = projectMeta.current?.uid
+  const { imageIds } = liveLayout.value
+  if (!uid || !showQc.value || !qcColumns.value.length || !imageIds.length || !qcValueNames.value.length) return
+  for (const col of qcColumns.value) {
+    for (const vn of qcValueNames.value) {
+      const key = qcKey(col.nodeId, vn)
+      const cur = new Map(qcData.value)
+      cur.set(key, { ...(cur.get(key) ?? {}), loading: true })
+      qcData.value = cur
+      try {
+        const counts = await Promise.all(imageIds.map(async imageUid => {
+          const res = await fetch('/api/plot_data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectUid: uid, imageUid, popType: 'labels', chartType: 'count',
+              series: [{ valueName: vn, pop: '/labels' }],
+            }),
+          })
+          if (!res.ok) return 0
+          const r = await res.json() as { series?: { value?: number }[] }
+          return (r.series ?? []).reduce((a, s) => a + Number(s.value ?? 0), 0)
+        }))
+        const summary: QcSummary = {
+          loading: false, imageCount: imageIds.length,
+          values: counts, total: counts.reduce((a, b) => a + b, 0),
+        }
+        const m = new Map(qcData.value); m.set(key, summary); qcData.value = m
+      } catch {
+        const m = new Map(qcData.value); m.set(key, { loading: false }); qcData.value = m
+      }
+    }
+  }
+}
+
+// Refresh when the run, its completed-task count, the toggle, or the discovered value_names change.
+const doneCount = computed(() => selectedRunTasks.value.filter(t => t.status === 'done').length)
+watch([selectedRunId, () => liveLayout.value.imageIds.join(',')], loadQcValueNames, { immediate: true })
+watch([selectedRunId, showQc, doneCount, qcColumns, qcValueNames],
+      () => { qcData.value = new Map(); scheduleQcFetch() })
+
+// A QC thumbnail id is `qc:${nodeId}::${valueName}` — expand it to the full segmentation QC canvas.
+function onLiveNodeClick(nodeId: string) {
+  if (!nodeId.startsWith('qc:')) return
+  const [, vn] = nodeId.slice(3).split('::')
+  if (!vn) return
+  qcExpand.value = { label: 'Segmentation QC', valueName: vn, imageUids: liveLayout.value.imageIds }
 }
 
 // ── Chain list & selection ───────────────────────────────────────────────────
@@ -704,10 +919,15 @@ async function runChain() {
 
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
-watch(() => projectMeta.current?.uid, () => loadChainList(), { immediate: true })
+// Project switch: reload templates AND persisted run history (clear the loaded-run cache so a stale
+// project's runs don't linger).
+watch(() => projectMeta.current?.uid, () => { loadedRuns.value = new Map(); loadChainList(); loadRunList() }, { immediate: true })
+
+// Refresh the run list when opening the Live tab (a run may have finished since last look).
+watch(activeTab, tab => { if (tab === 'live') loadRunList() })
 
 onMounted(async () => {
-  await Promise.all([loadAllTaskDefs(), loadChainList(), loadPools()])
+  await Promise.all([loadAllTaskDefs(), loadChainList(), loadPools(), loadRunList()])
 })
 
 // onActivated fires when KeepAlive restores the component. Retry loading defs
@@ -748,12 +968,12 @@ onActivated(async () => {
       <div class="live-toolbar">
         <label class="live-label">Run</label>
         <select
-          v-if="liveRunIds.length"
+          v-if="runOptions.length"
           class="chain-select live-run-select"
           :value="selectedRunId"
           @change="selectedRunId = ($event.target as HTMLSelectElement).value"
         >
-          <option v-for="id in liveRunIds" :key="id" :value="id">{{ runLabel(id) }}</option>
+          <option v-for="o in runOptions" :key="o.runId" :value="o.runId">{{ runLabel(o) }}</option>
         </select>
         <button
           v-if="selectedRunId"
@@ -763,7 +983,22 @@ onActivated(async () => {
         >
           <i class="pi pi-copy" />
         </button>
-        <span v-else class="live-hint">No chain tasks yet — start a chain run to see live progress.</span>
+        <button
+          class="wb-btn live-copy-btn"
+          @click="loadRunList"
+          v-tooltip.bottom="'Reload run history from disk'"
+        >
+          <i class="pi pi-refresh" />
+        </button>
+        <button
+          class="wb-btn qc-toggle"
+          :class="{ 'qc-on': showQc }"
+          @click="showQc = !showQc"
+          v-tooltip.bottom="'Show/hide the segmentation QC row'"
+        >
+          <i class="pi pi-chart-bar" />
+        </button>
+        <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
       </div>
 
       <div v-if="liveNodes.length" class="live-canvas-wrap">
@@ -780,9 +1015,23 @@ onActivated(async () => {
           :max-zoom="2"
           fit-view-on-init
           class="vue-flow-canvas"
+          @node-click="onLiveNodeClick(($event as NodeMouseEvent).node.id)"
         >
           <Background pattern-color="#2a2742" :gap="20" />
         </VueFlow>
+
+        <!-- QC expand overlay -->
+        <div v-if="qcExpand" class="qc-expand-overlay" @click.self="qcExpand = null">
+          <div class="qc-expand-card">
+            <div class="qc-expand-head">
+              <span>Segmentation QC · {{ qcExpand.valueName }}</span>
+              <button class="wb-btn" @click="qcExpand = null"><i class="pi pi-times" /></button>
+            </div>
+            <div class="qc-expand-body">
+              <SummaryCanvas :image-uids="qcExpand.imageUids" module="segment" />
+            </div>
+          </div>
+        </div>
       </div>
       <div v-else class="live-empty">
         <i class="pi pi-hourglass" style="font-size:2rem; opacity:0.2" />
@@ -1182,6 +1431,28 @@ onActivated(async () => {
 
 .live-copy-btn { flex: 0 0 auto; color: var(--cc-text-dim); }
 .live-copy-btn:hover:not(:disabled) { color: var(--cc-text); }
+
+/* QC row toggle — a square icon button like the others; accent tint when on */
+.qc-toggle { color: var(--cc-text-dim); }
+.qc-toggle:hover:not(:disabled) { color: var(--cc-text); }
+.qc-toggle.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
+
+.qc-expand-overlay {
+  position: absolute; inset: 0; z-index: 20;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.qc-expand-card {
+  width: 96%; height: 94%;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.5rem;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.qc-expand-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--cc-border);
+  font-size: 0.8rem; font-weight: 600; color: var(--cc-text);
+}
+.qc-expand-body { flex: 1; min-height: 0; overflow: auto; }
 
 .live-hint {
   font-size: 0.72rem;

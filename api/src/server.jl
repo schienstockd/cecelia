@@ -116,6 +116,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_list(req)
         elseif path == "/api/chains/get"
             api_chains_get(req)
+        elseif path == "/api/chains/runs"
+            api_chains_runs(req)
+        elseif path == "/api/chains/run"
+            api_chains_run(req)
         elseif path == "/api/napari/status"
             api_napari_status(req)
         elseif path == "/api/gating/channels"

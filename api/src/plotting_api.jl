@@ -8,6 +8,15 @@
 
 const _PLOT_SPECS_ROOT = joinpath(@__DIR__, "..", "..", "app", "src", "plotDefinitions")
 
+# JSON has no NaN/Inf literal, so JSON3.write throws on them. Aggregates legitimately produce
+# non-finite values (mean of an empty/all-NaN group, sd/sem/ci95 when n<2, a measure like
+# `aspect_ratio` = minor/major that's NaN when major=0). Recursively map every non-finite float to
+# `nothing` (→ JSON null) so the client just sees a gap instead of the whole request 500-ing.
+_json_safe(x::AbstractDict) = Dict{String,Any}(string(k) => _json_safe(v) for (k, v) in x)
+_json_safe(x::AbstractVector) = Any[_json_safe(v) for v in x]
+_json_safe(x::AbstractFloat) = isfinite(x) ? x : nothing
+_json_safe(x) = x
+
 # ── GET /api/plots/definitions[?module=X] — the plot-type registry ────────────────
 # Flat list of plot specs (each carries its own `module`); the frontend groups by module and
 # filters the per-module vs universal canvas. Optional `module` query narrows server-side.
@@ -212,7 +221,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map)
-            return 200, JSON3.write(result)
+            return 200, JSON3.write(_json_safe(result))
         end
         # single image
         img, err = _gating_image(proj, string(get(body, "imageUid", "")))
@@ -229,8 +238,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize)
-        return 200, JSON3.write(result)
+        return 200, JSON3.write(_json_safe(result))
     catch e
         return _gerr(400, sprint(showerror, e))
     end
 end
+

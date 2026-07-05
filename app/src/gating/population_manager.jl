@@ -582,6 +582,21 @@ skipped.
 """
 function plot_population_groups(imgs, value_names_for::Function, load_map::Function,
                                 pop_types::Vector{String})
+    # Gateless pop_type (`labels` = ungated all-cells, R parity): there is no gating map to flatten —
+    # each segmentation IS its own population, named by its value_name. One selectable entry per vn, so
+    # the user overlays whole segmentations (B, T, …) side by side. The path is the fixed "/labels" tag
+    # the `labels` pop_df branch stamps (matched by `_series_groups` at plot time); it must start with
+    # "/" like any pop path so the manager-form id (`value_name + path`) round-trips through the
+    # frontend's `tkey`/`parseTkey` and colour map.
+    if all(==("labels"), pop_types)
+        vn_order = String[]
+        for img in imgs, vn in value_names_for(img)
+            v = String(vn); v in vn_order || push!(vn_order, v)
+        end
+        return [(value_name = v,
+                 populations = [(path = "/labels", name = v, colour = "#7c93b8", pop_type = "labels")])
+                for v in vn_order]
+    end
     vn_order = String[]
     order = Dict{String,Vector{Tuple{String,String}}}()                       # vn → ordered (pt, path)
     meta  = Dict{String,Dict{Tuple{String,String},Tuple{String,String,String}}}()  # vn → key → (name,colour,pt)
@@ -753,6 +768,27 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                                   categorical=categorical, pop_cols=pop_cols,
                                   unique_labels=unique_labels, drop_na=drop_na,
                                   granularity=granularity)
+        img._pop_df_cache[ckey] = df
+        return copy(df)
+    end
+
+    # `labels` pop_type: ALL cells of the segmentation's labelProps, UNGATED — no gating map, no
+    # membership eval. Mirrors the old R popType "labels" (`labelsPopUtils`). This is the raw
+    # segmentation-output data source (e.g. the segmentation-integrity QC canvas): every measured
+    # object of `resolved_vn`, tagged with a single "/labels" pop path so the summary framework groups
+    # it like any other population (path starts with "/", matching the picker + manager-form id).
+    # `pops` is ignored (there are no sub-populations).
+    if String(pop_type) == "labels"
+        lp = label_props(img; value_name=resolved_vn) |> v -> rename_channels!(v, !raw_channel_names)
+        isnothing(pop_cols) || select_cols(lp, String.(pop_cols))
+        # When no columns are requested (e.g. a bare cell COUNT), read neither X nor obs — just
+        # label/centroids. Reading every obs measure for millions of cells only to count rows needlessly
+        # loads the (single-process) API and would stall e.g. a queued napari open. With pop_cols set,
+        # `select_cols` already narrows the read to exactly those columns.
+        df = as_df(lp; include_x=(pop_cols === nothing ? include_x : true),
+                       include_obs=(pop_cols === nothing ? false : include_obs))
+        df[!, "value_name"] .= resolved_vn
+        df[!, "pop"]        .= "/labels"
         img._pop_df_cache[ckey] = df
         return copy(df)
     end
