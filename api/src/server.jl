@@ -335,14 +335,21 @@ function handle_stream(stream::HTTP.Stream)
     end
 
     body_bytes = read(stream)
-    # A handler exception would otherwise surface as an opaque 500 with no body — catch it,
-    # log it, and return the message as JSON so the client (and logs) show the real cause.
-    status, body = try
-        handle_http(req, body_bytes)
-    catch e
-        @error "Unhandled error in $(req.method) $(req.target)" exception = (e, catch_backtrace())
-        500, JSON3.write((; error = sprint(showerror, e)))
-    end
+    # Run the handler on the thread POOL (not this connection's task), so a CPU/IO-bound handler — e.g.
+    # a big HDF5 label-table read, a blocking C call that never yields — doesn't stall the accept loop
+    # or other in-flight requests (a napari open would otherwise queue behind it). Under `-t 1` this is
+    # just a cooperative task (no behaviour change); under `-t auto` it's real parallelism. Shared state
+    # is already lock-guarded (WS clients, napari, chain runs) and Julia HDF5 is serialised via
+    # `_with_h5`. Error handling lives INSIDE the spawned task, so `fetch` always yields a (status, body)
+    # tuple and never rethrows a TaskFailedException.
+    status, body = fetch(Threads.@spawn begin
+        try
+            handle_http(req, body_bytes)
+        catch e
+            @error "Unhandled error in $(req.method) $(req.target)" exception = (e, catch_backtrace())
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end)
 
     # Binary handlers (gating plotdata/density/membership) return a byte vector → octet-stream;
     # everything else returns a JSON string.
