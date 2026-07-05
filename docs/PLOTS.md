@@ -1,5 +1,23 @@
 # Summary plots: chart types × data source × measure type
 
+## Hosting — ONE way (registry + `SummaryCanvas`)
+
+Every plot — on a **module page** or the **`/analysis` board** — is hosted the same way. Do **not**
+build a bespoke chart component or a bespoke `/api/plots/<thing>` route.
+
+1. A `app/src/plotDefinitions/<id>.json` registry entry (`{ id, label, module, family: "summary",
+   chartTypes, dataSource: { popType, granularity, measure, measureOptions }, scopeModes,
+   whiteboardCompatible }`), served by `GET /api/plots/definitions`.
+2. Rendered by `SummaryCanvas` → `SummaryPanel` → `PlotChart` (Observable Plot). Data comes from the
+   single `POST /api/plot_data` aggregator (`plot_summary_data`). `whiteboardCompatible: true` makes
+   the same definition available on the whiteboard too.
+
+Reusing `PlotChart` alone inside a hand-rolled panel is **not** compliance — that's the anti-pattern.
+A new data source is a new `popType` in `pop_df` (e.g. `labels` = ungated all-cells), **not** a new
+route. See `docs/MODULES.md` → *Below-table content* and `docs/ANALYSIS.md` → *Plot families*.
+
+---
+
 Design for the analysis-plot canvas (behaviour module today; universal canvas later): a coherent set
 of chart types whose appearance is well-defined for **one image / multiple images / pooled**, and for
 **numeric / categorical** measures. This is the agreed spec for the renderer; it also fixes the
@@ -34,6 +52,13 @@ panel, and `PlotChart` draws the legend separately via `Plot.legend()` as an **a
 (top-right, consumes no layout height, forced dark `#111` text on the white ground). The menu shows
 friendly labels (`strip`→"beeswarm", `stacked100`→"100% stacked"); the internal `ChartType` is
 unchanged.
+
+**Option popovers MUST use `position: fixed`.** A `SummaryPanel` (like every canvas panel) has
+`overflow: hidden` on its card so the plot area clips cleanly — which also clips any `position:
+absolute` child that extends past the panel, e.g. the plot-options popover, especially for a panel
+near the canvas's left edge. So the popover is positioned **`fixed`**, computed from its trigger
+button on open and clamped to the viewport (see `SummaryPanel.vue` → the `popStyle` watcher). When you
+add a new plot with its own popover/menu, follow this pattern — a plain absolute child WILL clip.
 
 ## 1. The three dimensions
 
@@ -94,17 +119,25 @@ as `bar`), needing **no** `measure`. It's the segmentation-integrity headline: w
 **cell count per timepoint** — the temporal-consistency time series (drops/spikes are visible). The
 frontend renders it as a bar, or a line over the ordered `group` (t).
 
-### Segmentation QC preset
+### Segmentation QC plot
 
-`segmentation_qc_data(img; value_name, measure, chart_type, per_timepoint)`
-(`app/src/plotting/segmentation_qc.jl`) is a thin wrapper over `plot_summary_data` for the
-segmentation integrity plot: it targets the **root** population (`"/"` = all measured cells),
-defaults to `count` (no measure) or a `boxplot` distribution (with a measure), and — when
-`per_timepoint=true` on a timecourse — sets `group_by` to the image's temporal column (resolved via
-`temporal_columns`; `nothing` on a static image → single per-image series). One entry point shared by
-REPL / API / tests / the whiteboard QC node. `SEGMENTATION_QC_MEASURES` lists the morphology QC set
-(area, solidity, aspect_ratio, eccentricity); intensity QC is per-channel. See
-`docs/todo/SEGMENTATION_QC_PLOT_PLAN.md`.
+The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*
+above). `app/src/plotDefinitions/segmentation_qc.json` (`module: "segment"`, `family: "summary"`,
+`whiteboardCompatible: true`) drives it via `SummaryCanvas`:
+
+- **Data source = the `labels` popType** (ungated all-cells, R parity). The population picker
+  (`/api/plots/populations?popType=labels`) surfaces **one selectable population per segmentation
+  `value_name`** (B, T, …), so segmentations plot side by side.
+- **Chart types**: `count` (the cell-count headline — # objects per series, no measure) plus the
+  morphology distributions (`boxplot`/`violin`/`strip`/`bar`/`histogram`) over
+  `area`/`solidity`/`aspect_ratio`/`eccentricity`.
+- **Per-timepoint (temporal-consistency) view**: the def lists `groupByOptions: ["t"]`; temporal
+  columns live in `obsm` (not `obs`), so `/api/gating/channels` reports them as `temporalColumns` and
+  `SummaryPanel` treats them as valid groupBy options. Grouping `count` by `t` yields cell count per
+  timepoint (drops/spikes visible). On a static image there is no temporal column, so it's absent.
+
+Hosted on the segment module page (`SegmentModule.vue` → `<SummaryCanvas module="segment">`) and, via
+`whiteboardCompatible`, expandable from the whiteboard Live QC row.
 
 ## 3. Unified encoding model
 

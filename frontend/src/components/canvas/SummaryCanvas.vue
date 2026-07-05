@@ -42,7 +42,7 @@ const setUid = computed(() => project.activeSetUid)
 interface PanelState {
   specId: string; sel: string[]; vis: VisProps
   chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'
-  groupBy?: string
+  groupBy?: string; smooth?: number; interval?: boolean
   matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
 }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')

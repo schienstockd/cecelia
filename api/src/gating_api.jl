@@ -249,7 +249,7 @@ function api_gating_channels(req::HTTP.Request)
     if !_has_label_props(img)
         return 200, JSON3.write((;
             columns = String[], channels = String[], channelNames = String[],
-            channelNameVersions = Dict{String,Any}(), obsColumns = String[],
+            channelNameVersions = Dict{String,Any}(), obsColumns = String[], temporalColumns = String[],
             cellMeasures = String[], trackAggregates = String[], clusterSuffixes = String[],
             clusterFeatures = Dict{String,Any}(), clusterMembers = Dict{String,Any}(),
             valueNames = String[], valueName = vn, popType = get(q, "popType", "flow")))
@@ -299,6 +299,7 @@ function api_gating_channels(req::HTTP.Request)
         channelNames = display === nothing ? String[] : display,
         channelNameVersions = versions,
         obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
+        temporalColumns = temporal_columns(lp),          # obsm temporal col(s) (e.g. "t") — groupable for the per-timepoint QC view
         clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
         clusterFeatures = _clust_features(img_label_props_path(img, vn)),
         clusterMembers  = _clust_members(img_label_props_path(img, vn)),        # uIDs clustered together (partOf)

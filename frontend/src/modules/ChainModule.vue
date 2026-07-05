@@ -15,7 +15,7 @@ import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
 import ChainQcNode from '../components/ChainQcNode.vue'
-import SegmentationQcPanel from '../components/plots/SegmentationQcPanel.vue'
+import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -277,16 +277,19 @@ const liveNodes = computed<Node[]>(() => {
   const bandY   = (r: number) => gridTop + r * (bandH + LIVE.bandGap)
   const nodes: Node[] = []
 
-  // QC band: one aggregate QC thumbnail per QC-producing column, aligned to its column, above the grid.
+  // QC band: for each QC-producing column, one thumbnail per value_name (B, T, …) stacked vertically,
+  // aligned to the column, above the grid.
   if (showQc.value) {
     for (const col of qcColumns.value) {
-      const s = qcData.value.get(col.nodeId) ?? {}
-      nodes.push({
-        id: `qc:${col.nodeId}`, type: 'qc',
-        position: { x: LIVE.padX + col.layer * LIVE.colW, y: 10 },
-        data: { label: col.label, valueName: col.valueName,
-                total: s.total, values: s.values, imageCount: s.imageCount, loading: s.loading },
-        draggable: false, selectable: false, connectable: false,
+      qcValueNames.value.forEach((vn, i) => {
+        const s = qcData.value.get(qcKey(col.nodeId, vn)) ?? {}
+        nodes.push({
+          id: `qc:${col.nodeId}::${vn}`, type: 'qc',
+          position: { x: LIVE.padX + col.layer * LIVE.colW, y: 10 + i * QC_THUMB_H },
+          data: { label: col.label, valueName: vn,
+                  total: s.total, values: s.values, imageCount: s.imageCount, loading: s.loading },
+          draggable: false, selectable: false, connectable: false,
+        })
       })
     }
   }
@@ -351,29 +354,52 @@ function copyRunId() {
 // click a thumbnail to expand the full QC panel. Refreshes as images clear the stage (incremental).
 const showQc = ref(true)
 interface QcSummary { total?: number; values?: number[]; imageCount?: number; loading?: boolean }
-const qcData = ref<Map<string, QcSummary>>(new Map())          // keyed by chainNodeId
+const qcData = ref<Map<string, QcSummary>>(new Map())          // keyed by `${nodeId}::${valueName}`
 const qcExpand = ref<{ label: string; valueName: string; imageUids: string[] } | null>(null)
+const qcKey = (nodeId: string, vn: string) => `${nodeId}::${vn}`
 
 function defFor(fn: string) { return allTaskDefs.value.find(d => d.fun_name === fn) }
+
+// The segmentations (value_names) produced in this run, discovered from the canonical populations
+// picker (popType=labels → one entry per value_name). Segmentations are shared across the run's
+// images (same pipeline), so the first image is representative. Drives one QC thumbnail per value_name.
+const qcValueNames = ref<string[]>([])
+async function loadQcValueNames() {
+  const uid = projectMeta.current?.uid
+  const first = liveLayout.value.imageIds[0]
+  if (!uid || !first) { qcValueNames.value = []; return }
+  try {
+    const q = `projectUid=${uid}&imageUid=${first}&popType=labels`
+    const res = await fetch(`/api/plots/populations?${q}`)
+    const groups = res.ok ? (await res.json() as { valueName: string }[]) : []
+    qcValueNames.value = groups.map(g => g.valueName)
+  } catch { qcValueNames.value = [] }
+}
 
 // QC-producing columns in the selected run: distinct nodes whose task declares a qcPlot.
 const qcColumns = computed(() => {
   const { tasks, layer } = liveLayout.value
-  const seen = new Map<string, { nodeId: string; label: string; valueName: string; layer: number }>()
+  const seen = new Map<string, { nodeId: string; label: string; layer: number }>()
   for (const t of tasks) {
     if (seen.has(t.chainNodeId)) continue
     const def = defFor(t.funName)
     if (def?.qcPlot) seen.set(t.chainNodeId, {
-      nodeId: t.chainNodeId, label: def.label ?? t.funName,
-      valueName: nodeVariant(t.chainNodeId) || 'default', layer: layer.get(t.chainNodeId) ?? 0,
+      nodeId: t.chainNodeId, label: def.label ?? t.funName, layer: layer.get(t.chainNodeId) ?? 0,
     })
   }
   return [...seen.values()]
 })
-const qcBandH = computed(() => (showQc.value && qcColumns.value.length) ? 92 : 0)
+// Each QC column shows one thumbnail per value_name (B, T, …), stacked vertically. Band height fits
+// the tallest stack.
+const QC_THUMB_H = 92
+const qcBandH = computed(() =>
+  (showQc.value && qcColumns.value.length && qcValueNames.value.length)
+    ? qcValueNames.value.length * QC_THUMB_H : 0)
 
-// Fetch the aggregate QC (cell count per image) for each QC column of the selected run. Debounced,
-// re-runs as tasks complete so the count fills in during a live run.
+// Fetch the QC cell count per image for each (QC column × value_name) of the selected run, via the
+// canonical /api/plot_data (popType=labels, chartType=count) — one request per image (no set handle
+// here), so `values` is the per-image count series and `total` their sum. Debounced; re-runs as tasks
+// complete so the count fills in during a live run.
 let qcFetchTimer: ReturnType<typeof setTimeout> | null = null
 function scheduleQcFetch() {
   if (qcFetchTimer) clearTimeout(qcFetchTimer)
@@ -382,38 +408,50 @@ function scheduleQcFetch() {
 async function fetchQcData() {
   const uid = projectMeta.current?.uid
   const { imageIds } = liveLayout.value
-  if (!uid || !showQc.value || !qcColumns.value.length || !imageIds.length) return
+  if (!uid || !showQc.value || !qcColumns.value.length || !imageIds.length || !qcValueNames.value.length) return
   for (const col of qcColumns.value) {
-    const cur = new Map(qcData.value)
-    cur.set(col.nodeId, { ...(cur.get(col.nodeId) ?? {}), loading: true })
-    qcData.value = cur
-    try {
-      const res = await fetch('/api/plots/segmentation-qc', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: uid, valueName: col.valueName, imageUids: imageIds, chartType: 'count' }),
-      })
-      const summary: QcSummary = { loading: false, imageCount: imageIds.length }
-      if (res.ok) {
-        const r = await res.json() as { series?: { value?: number }[] }
-        const vals = (r.series ?? []).map(s => Number(s.value ?? 0))
-        summary.values = vals
-        summary.total = vals.reduce((a, b) => a + b, 0)
+    for (const vn of qcValueNames.value) {
+      const key = qcKey(col.nodeId, vn)
+      const cur = new Map(qcData.value)
+      cur.set(key, { ...(cur.get(key) ?? {}), loading: true })
+      qcData.value = cur
+      try {
+        const counts = await Promise.all(imageIds.map(async imageUid => {
+          const res = await fetch('/api/plot_data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              projectUid: uid, imageUid, popType: 'labels', chartType: 'count',
+              series: [{ valueName: vn, pop: '/labels' }],
+            }),
+          })
+          if (!res.ok) return 0
+          const r = await res.json() as { series?: { value?: number }[] }
+          return (r.series ?? []).reduce((a, s) => a + Number(s.value ?? 0), 0)
+        }))
+        const summary: QcSummary = {
+          loading: false, imageCount: imageIds.length,
+          values: counts, total: counts.reduce((a, b) => a + b, 0),
+        }
+        const m = new Map(qcData.value); m.set(key, summary); qcData.value = m
+      } catch {
+        const m = new Map(qcData.value); m.set(key, { loading: false }); qcData.value = m
       }
-      const m = new Map(qcData.value); m.set(col.nodeId, summary); qcData.value = m
-    } catch {
-      const m = new Map(qcData.value); m.set(col.nodeId, { loading: false }); qcData.value = m
     }
   }
 }
 
-// Refresh when the run, its completed-task count, or the toggle changes (incremental fill-in).
+// Refresh when the run, its completed-task count, the toggle, or the discovered value_names change.
 const doneCount = computed(() => selectedRunTasks.value.filter(t => t.status === 'done').length)
-watch([selectedRunId, showQc, doneCount, qcColumns], () => { qcData.value = new Map(); scheduleQcFetch() })
+watch([selectedRunId, () => liveLayout.value.imageIds.join(',')], loadQcValueNames, { immediate: true })
+watch([selectedRunId, showQc, doneCount, qcColumns, qcValueNames],
+      () => { qcData.value = new Map(); scheduleQcFetch() })
 
+// A QC thumbnail id is `qc:${nodeId}::${valueName}` — expand it to the full segmentation QC canvas.
 function onLiveNodeClick(nodeId: string) {
-  const col = qcColumns.value.find(c => c.nodeId === nodeId)
-  if (!col) return
-  qcExpand.value = { label: col.label, valueName: col.valueName, imageUids: liveLayout.value.imageIds }
+  if (!nodeId.startsWith('qc:')) return
+  const [, vn] = nodeId.slice(3).split('::')
+  if (!vn) return
+  qcExpand.value = { label: 'Segmentation QC', valueName: vn, imageUids: liveLayout.value.imageIds }
 }
 
 // ── Chain list & selection ───────────────────────────────────────────────────
@@ -959,7 +997,6 @@ onActivated(async () => {
           v-tooltip.bottom="'Show/hide the segmentation QC row'"
         >
           <i class="pi pi-chart-bar" />
-          <span>QC</span>
         </button>
         <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
       </div>
@@ -991,11 +1028,7 @@ onActivated(async () => {
               <button class="wb-btn" @click="qcExpand = null"><i class="pi pi-times" /></button>
             </div>
             <div class="qc-expand-body">
-              <SegmentationQcPanel
-                :project-uid="projectMeta.current?.uid ?? ''"
-                :value-name="qcExpand.valueName"
-                :image-uids="qcExpand.imageUids"
-              />
+              <SummaryCanvas :image-uids="qcExpand.imageUids" module="segment" />
             </div>
           </div>
         </div>
@@ -1399,18 +1432,8 @@ onActivated(async () => {
 .live-copy-btn { flex: 0 0 auto; color: var(--cc-text-dim); }
 .live-copy-btn:hover:not(:disabled) { color: var(--cc-text); }
 
-/* labelled toggle (icon + "QC") — auto width, unlike the square icon buttons */
-.qc-toggle {
-  flex: 0 0 auto;
-  width: auto;
-  padding: 0 0.5rem;
-  gap: 0.3rem;
-  display: flex;
-  align-items: center;
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--cc-text-dim);
-}
+/* QC row toggle — a square icon button like the others; accent tint when on */
+.qc-toggle { color: var(--cc-text-dim); }
 .qc-toggle:hover:not(:disabled) { color: var(--cc-text); }
 .qc-toggle.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
 
@@ -1420,7 +1443,7 @@ onActivated(async () => {
   display: flex; align-items: center; justify-content: center;
 }
 .qc-expand-card {
-  width: min(760px, 90%); height: min(70%, 560px);
+  width: 96%; height: 94%;
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.5rem;
   display: flex; flex-direction: column; overflow: hidden;
 }
@@ -1429,7 +1452,7 @@ onActivated(async () => {
   padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--cc-border);
   font-size: 0.8rem; font-weight: 600; color: var(--cc-text);
 }
-.qc-expand-body { flex: 1; min-height: 0; }
+.qc-expand-body { flex: 1; min-height: 0; overflow: auto; }
 
 .live-hint {
   font-size: 0.72rem;

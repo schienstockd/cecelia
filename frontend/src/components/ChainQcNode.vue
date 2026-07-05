@@ -2,7 +2,7 @@
   Live-view QC thumbnail — a compact, always-on summary for a processing node whose task declares a
   `qcPlot` (e.g. segmentation). Sits in the QC band above the image grid, aligned to that node's
   column. Clean + simple: headline cell count + a tiny per-image sparkline. Click → expand to the
-  full QC panel (handled by ChainModule). See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
+  full QC canvas (handled by ChainModule). See docs/SCHEDULER.md → Live QC row, docs/PLOTS.md → Segmentation QC plot.
 -->
 <script setup lang="ts">
 import { computed } from 'vue'

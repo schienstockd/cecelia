@@ -50,7 +50,7 @@ export flatten_pop_tree, plot_pop_types, plot_population_groups
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df
-export plot_summary_data, segmentation_qc_data, SEGMENTATION_QC_MEASURES
+export plot_summary_data
 export track_props, track_cell_measures
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 
@@ -107,7 +107,6 @@ include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
 include("plotting/plot_data.jl")
-include("plotting/segmentation_qc.jl")
 include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
 include("model/set.jl")

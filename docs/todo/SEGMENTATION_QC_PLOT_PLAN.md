@@ -1,5 +1,14 @@
 # Segmentation Integrity (QC) Plot — module page + whiteboard node
 
+> **⚠️ SUPERSEDED / DONE (2026-07-04).** This plan is historical. An early build followed it as a
+> *bespoke* preset (`segmentation_qc.jl` + `/api/plots/segmentation-qc` + `SegmentationQcPanel.vue`),
+> which violated the plot-hosting rule (a plot = a `plotDefinitions/*.json` registry entry rendered by
+> `SummaryCanvas`, never a bespoke route/panel). It was reworked to the **canonical framework**:
+> `app/src/plotDefinitions/segmentation_qc.json` (`popType: "labels"`, chart types `count` +
+> morphology, `groupByOptions: ["t"]`), hosted by `SummaryCanvas module="segment"` on the segment page
+> and expandable from the whiteboard Live QC row. **Do not rebuild the bespoke version.** Current docs:
+> `docs/PLOTS.md` → *Segmentation QC plot*, `docs/SCHEDULER.md` → *Live QC row*. Kept only for history.
+
 **Status:** planned (2026-07-04). Build target: a segmentation-integrity/consistency QC plot rendered
 BOTH on the segment module page and as a whiteboard **plot node**, in one effort.
 

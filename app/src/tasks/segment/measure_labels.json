@@ -5,7 +5,7 @@
   "category": "Segment",
   "env": ["local"],
   "resource_pool": "default",
-  "qcPlot": "segmentationQc",
+  "qcPlot": "segmentation_qc",
   "params": [
     {
       "key": "outputValueName",

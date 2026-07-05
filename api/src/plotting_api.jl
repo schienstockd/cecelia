@@ -8,6 +8,15 @@
 
 const _PLOT_SPECS_ROOT = joinpath(@__DIR__, "..", "..", "app", "src", "plotDefinitions")
 
+# JSON has no NaN/Inf literal, so JSON3.write throws on them. Aggregates legitimately produce
+# non-finite values (mean of an empty/all-NaN group, sd/sem/ci95 when n<2, a measure like
+# `aspect_ratio` = minor/major that's NaN when major=0). Recursively map every non-finite float to
+# `nothing` (→ JSON null) so the client just sees a gap instead of the whole request 500-ing.
+_json_safe(x::AbstractDict) = Dict{String,Any}(string(k) => _json_safe(v) for (k, v) in x)
+_json_safe(x::AbstractVector) = Any[_json_safe(v) for v in x]
+_json_safe(x::AbstractFloat) = isfinite(x) ? x : nothing
+_json_safe(x) = x
+
 # ── GET /api/plots/definitions[?module=X] — the plot-type registry ────────────────
 # Flat list of plot specs (each carries its own `module`); the frontend groups by module and
 # filters the per-module vs universal canvas. Optional `module` query narrows server-side.
@@ -212,7 +221,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map)
-            return 200, JSON3.write(result)
+            return 200, JSON3.write(_json_safe(result))
         end
         # single image
         img, err = _gating_image(proj, string(get(body, "imageUid", "")))
@@ -229,61 +238,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
                               normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize)
-        return 200, JSON3.write(result)
+        return 200, JSON3.write(_json_safe(result))
     catch e
         return _gerr(400, sprint(showerror, e))
     end
 end
 
-# ── Segmentation integrity (QC) plot ──────────────────────────────────────────
-# POST body: { projectUid, (imageUid | setUid [+imageUids]), valueName?, measure?, chartType?,
-#   perTimepoint? }. Thin wrapper over the package `segmentation_qc_data` preset — it targets the
-# segmentation's root population and resolves the temporal column server-side (so the frontend
-# needn't know the obsm temporal column name). Returns the same shape as /api/plot_data → PlotChart
-# renders it unchanged. See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
-function api_segmentation_qc(body_bytes::Vector{UInt8})
-    body = try
-        JSON3.read(String(body_bytes), Dict{String,Any})
-    catch
-        return _gerr(400, "invalid JSON body")
-    end
-    proj = string(get(body, "projectUid", ""))
-    isempty(proj) && return _gerr(400, "projectUid required")
-    vn_v    = get(body, "valueName", nothing); vn = (vn_v === nothing || isempty(string(vn_v))) ? nothing : string(vn_v)
-    m_v     = get(body, "measure", nothing);   measure = m_v === nothing ? nothing : (isempty(string(m_v)) ? nothing : string(m_v))
-    ct_v    = get(body, "chartType", nothing); ct = (ct_v === nothing || isempty(string(ct_v))) ? nothing : string(ct_v)
-    per_t   = Bool(get(body, "perTimepoint", false))
-    set_uid  = string(get(body, "setUid", ""))
-    img_uid  = string(get(body, "imageUid", ""))
-    uids_raw = get(body, "imageUids", nothing)
-    uids     = uids_raw === nothing ? String[] : String[string(u) for u in uids_raw]
-    try
-        if !isempty(set_uid)
-            s = init_object(proj, set_uid)
-            s isa CciaSet || return _gerr(400, "setUid is not a set: $set_uid")
-            wantset = isempty(uids) ? nothing : Set(uids)
-            imgs = [im for im in s._images if wantset === nothing || im.uid in wantset]
-            isempty(imgs) && return _gerr(400, "no matching images in set $set_uid")
-            return 200, JSON3.write(segmentation_qc_data(imgs, [im.uid for im in imgs];
-                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
-        elseif !isempty(uids)
-            # a run carries image UIDs but no set — load each image directly.
-            imgs = CciaImage[]
-            for u in uids
-                obj = try init_object(proj, u) catch; continue end
-                obj isa CciaImage && push!(imgs, obj)
-            end
-            isempty(imgs) && return _gerr(400, "no valid images in imageUids")
-            return 200, JSON3.write(segmentation_qc_data(imgs, [im.uid for im in imgs];
-                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
-        else
-            isempty(img_uid) && return _gerr(400, "imageUid, imageUids, or setUid required")
-            im = init_object(proj, img_uid)
-            im isa CciaImage || return _gerr(400, "imageUid is not an image: $img_uid")
-            return 200, JSON3.write(segmentation_qc_data(im;
-                                    value_name = vn, measure = measure, chart_type = ct, per_timepoint = per_t))
-        end
-    catch e
-        return _gerr(400, sprint(showerror, e))
-    end
-end

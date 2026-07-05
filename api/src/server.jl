@@ -226,8 +226,6 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_pop_rename(body_bytes)
         elseif path == "/api/plot_data"
             api_plot_data(body_bytes)
-        elseif path == "/api/plots/segmentation-qc"
-            api_segmentation_qc(body_bytes)
         elseif path == "/api/update/apply"
             api_update_apply(body_bytes)
         else

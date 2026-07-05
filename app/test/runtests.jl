@@ -1825,6 +1825,17 @@ end
         dedup = plot_population_groups([:img1, :img2], names_for, load, ["live"])
         @test length(dedup) == 1
         @test length(dedup[1].populations) == length(cpops)         # no duplicates across images
+
+        # LABELS (gateless): no gating map — one selectable pop per segmentation value_name, named by
+        # the value_name, tagged pop_type "labels" (segmentation QC: B/T plot side by side).
+        names2 = _ -> ["B", "T"]
+        lab = plot_population_groups([:img1], names2, (args...) -> error("must not load a map for labels"),
+                                     ["labels"])
+        @test [g.value_name for g in lab] == ["B", "T"]
+        @test all(g -> length(g.populations) == 1, lab)
+        bp = only(lab[1].populations)
+        @test bp.path == "/labels" && bp.name == "B" && bp.pop_type == "labels"
+        @test only(lab[2].populations).name == "T"
     end
 
     # ── Gating engine: recompute, membership, filtered (tracked) pops ─────────
@@ -2071,7 +2082,7 @@ end
             all = pop_df(img, "labels", String[]; value_name="B", pop_cols=["area"])
             @test nrow(all) > 0
             @test Set(names(all)) ⊇ Set(["label", "area", "pop", "value_name"])
-            @test unique(all.pop) == ["labels"]
+            @test unique(all.pop) == ["/labels"]
             @test unique(all.value_name) == ["B"]
 
             # cell count via the summary aggregator over labels — one series, value == total.
@@ -2091,6 +2102,14 @@ end
                                      measure="area", group_by="t")
             @test area["measure"] == "area"
             @test length(area["series"]) == length(byT["series"])
+
+            # targets signature (the path the summary canvas + whiteboard QC row use: series =
+            # [(value_name, "labels")]) — count over the "labels" pop yields the same total.
+            tg = plot_summary_data(img, "labels", [("B", "/labels")], "count")
+            @test tg["chartType"] == "count"
+            @test length(tg["series"]) == 1
+            @test tg["series"][1]["value"] == Float64(nrow(all))
+            @test tg["series"][1]["pop"] == "B/labels"    # manager-form id round-trips
         end
     end
 

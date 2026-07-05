@@ -231,7 +231,7 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # With by_image + group_by="t" each series is one (image, timepoint) bucket, so this yields
         # cell count per timepoint per image — the temporal-consistency time series (drops/spikes are
         # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
-        # or a line over the ordered group (t). See docs/todo/SEGMENTATION_QC_PLOT_PLAN.md.
+        # or a line over the ordered group (t). See docs/PLOTS.md → Segmentation QC plot.
         groups = sgroups(df)
         series = [merge(base(g), Dict("value" => Float64(nrow(g.sub)), "n" => nrow(g.sub)))
                   for g in groups]
