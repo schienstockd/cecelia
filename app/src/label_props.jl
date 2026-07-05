@@ -2,6 +2,16 @@ using HDF5
 using DataFrames
 using JSON3
 
+# HDF5.jl / the underlying libhdf5 we link is NOT thread-safe: concurrent `h5open` (even on different
+# files) from parallel tasks can crash or corrupt. This is the single Julia HDF5 chokepoint — every
+# read/write here goes through `_with_h5`, which serialises access under one process-wide lock. It's a
+# no-op under `-t 1`, and the safety net once the server runs multithreaded (parallel API handlers AND
+# the scheduler's per-image task functions, both of which land here). ReentrantLock so a task that
+# nests HDF5 calls doesn't self-deadlock.
+const _HDF5_LOCK = ReentrantLock()
+_with_h5(f::Function, path::AbstractString, mode::AbstractString="r") =
+    lock(() -> h5open(f, path, mode), _HDF5_LOCK)
+
 # ── LabelProps — Julia-native lazy reader for AnnData .h5ad ──────────────────────
 #
 # Mirrors the old Python `LabelPropsView` (inst/py/label_props_view.py) but reads
@@ -168,7 +178,7 @@ end
 
 """Feature names (var_names) or obs column names."""
 function col_names(lp::LabelProps; data_type::Symbol=:vars)::Vector{String}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         if data_type === :vars
             return _as_strings(read(fid["var/_index"]))
         elseif data_type === :obs
@@ -186,7 +196,7 @@ _intensity_measure(fid) = haskey(fid, "uns/intensity_measure") ?
 
 """Per-channel intensity var names (e.g. `mean_intensity_0`). Renamed to channel names if requested."""
 function channel_columns(lp::LabelProps; as_channel_names::Bool=false)::Vector{String}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         vars = _as_strings(read(fid["var/_index"]))
         measure = _intensity_measure(fid)
         pat = Regex("(^|_)$(measure)_intensity_\\d+\$")
@@ -210,7 +220,7 @@ end
 """Spatial centroid column names from `uns/spatial_cols` (skimage order: z?, y, x),
 optionally restricted to `order` length. Mirrors the Python `LabelPropsView.centroid_columns`."""
 function centroid_columns(lp::LabelProps; order=nothing)::Vector{String}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         cols = haskey(fid, "uns/spatial_cols") ? _as_strings(read(fid["uns/spatial_cols"])) : String[]
         if !isnothing(order)
             want = ["centroid-$(i)" for i in 0:(length(order)-1)]   # array-order names
@@ -223,7 +233,7 @@ end
 """Temporal column names from `uns/temporal_cols` (e.g. `["t"]`; empty for non-timecourse).
 Mirrors the Python `LabelPropsView.temporal_columns`."""
 function temporal_columns(lp::LabelProps)::Vector{String}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         haskey(fid, "uns/temporal_cols") ? _as_strings(read(fid["uns/temporal_cols"])) : String[]
     end
 end
@@ -236,7 +246,7 @@ end
 Reads only the requested columns from disk. Always includes a `label` column.
 """
 function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=lp.include_obs)::DataFrame
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         # ── index + sizes ──
         labels_raw = _as_strings(read(fid["obs/_index"]))
         n_obs = length(labels_raw)
@@ -330,7 +340,7 @@ as_matrix(lp::LabelProps) = as_df(lp; include_x=true, include_obs=false)
 Names of the `obsm` matrices present in the file (e.g. `["spatial", "temporal", "X_umap"]`).
 """
 function obsm_keys(lp::LabelProps)::Vector{String}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         haskey(fid, "obsm") ? collect(String, keys(fid["obsm"])) : String[]
     end
 end
@@ -344,7 +354,7 @@ column from `as_df` for alignment. Returns a `0×0` matrix if the key is absent.
 (AnnData writes `(n_obs, k)` C-order; HDF5.jl may report it transposed).
 """
 function obsm(lp::LabelProps, key::AbstractString)::Matrix{Float64}
-    h5open(lp.path, "r") do fid
+    _with_h5(lp.path, "r") do fid
         haskey(fid, "obsm/$key") || return Matrix{Float64}(undef, 0, 0)
         n_obs = length(_as_strings(read(fid["obs/_index"])))
         dset  = fid["obsm/$key"]
@@ -442,7 +452,7 @@ function save!(lp::LabelProps)
     # dataset (e.g. overwriting a categorical hmm.state with a numeric one in one chain).
     drops = filter(c -> c ∉ valcols, drops)
 
-    h5open(lp.path, "r+") do fid
+    _with_h5(lp.path, "r+") do fid
         obs        = fid["obs"]
         idx_labels = _maybe_int.(_as_strings(read(obs["_index"])))
         rowof      = Dict(l => i for (i, l) in enumerate(idx_labels))
