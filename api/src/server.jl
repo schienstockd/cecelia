@@ -388,4 +388,6 @@ function start(; host=HOST, port=PORT)
     HTTP.listen(handle_stream, host, port)
 end
 
-start()
+# Auto-start on load — EXCEPT when `CECELIA_NO_SERVE` is set, so `api/test/runtests.jl` can `include`
+# this file to get the handlers (and shared state like `_BOUND_HOST`) without binding a socket.
+haskey(ENV, "CECELIA_NO_SERVE") || start()

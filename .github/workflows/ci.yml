@@ -63,6 +63,11 @@ jobs:
       - name: Instantiate Julia (server env)
         run: julia --project=api -e 'using Pkg; Pkg.instantiate()'
 
+      # API-layer unit tests: load the handlers with CECELIA_NO_SERVE (no socket) and exercise them
+      # directly. Fixture-free, so it runs on every OS in the matrix.
+      - name: API tests
+        run: pixi run test-api
+
       - name: Build frontend
         working-directory: frontend
         run: |
