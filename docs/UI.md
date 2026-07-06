@@ -333,6 +333,26 @@ graphics lib gives the cleaner publication look for pre-aggregated summaries. Ne
 job well, so we keep both. Never add or swap a charting library without updating this doc, `docs/PLOTS.md`,
 and the `cecelia-charting-decision` rationale.
 
+### Plot loading state — delayed spinner
+
+Heavy plots (a slow `/api/plot_data`, a big WebGL point fetch) must show they're working — a blank
+panel reads as "frozen". But a spinner that flashes on every quick plot is worse noise. So the rule:
+**a delayed spinner, never an immediate one.**
+
+- `composables/useDelayedLoading.ts` — `useDelayedLoading(loadingRef, delayMs = 350)` → a `show` ref
+  that flips true ONLY if loading stays true past the threshold, and clears instantly when it ends.
+  Fast/cheap plots finish before 350 ms, so they never flash it; only genuinely heavy loads reveal it.
+  Use `toRef(props, 'loading')` when the loading state is a prop.
+- `components/plots/PlotSpinner.vue` — the shared wheel overlay. Put it inside a `position: relative`
+  container: `<PlotSpinner v-if="showSpinner" label="Loading…" />`. It's `pointer-events: none`, so it
+  never blocks the plot underneath, and honours `prefers-reduced-motion`.
+
+Do **not** hand-roll per-plot "…" text or an immediate spinner. **Small/embedded plots stay out**: the
+gating-strategy montage tiles (compact `GateScatterCell`) keep an unobtrusive dot, not a wheel per tile
+— gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel` and the full-size
+`GateScatterCell` (Gate page); `UmapView` has its own empty-state wheel. New heavy plots: reuse these
+two primitives.
+
 ### Generic plot-integration interface (reuse across surfaces)
 
 A plot is defined **once** and appears on any surface — module page, **Analysis board**, and (future)
