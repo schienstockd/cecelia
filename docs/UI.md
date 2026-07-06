@@ -196,12 +196,25 @@ The image table itself is already in a `CollapsibleSection` ("Images") managed b
 
 ### 2 — Register the route
 
-`frontend/src/main.ts`:
+`frontend/src/main.ts` — **lazy-load the component** (see *Route-level code splitting* below); do **not**
+add a static `import` at the top:
 ```ts
-import SegmentModule from './modules/SegmentModule.vue'
-// ...
-{ path: '/segment', component: SegmentModule, meta: { label: 'Segment' } },
+{ path: '/segment', component: () => import('./modules/SegmentModule.vue'), meta: { label: 'Segment' } },
 ```
+
+#### Route-level code splitting
+
+Every module page uses `component: () => import('./modules/…')` so each becomes its own chunk fetched on
+navigation, not part of the initial `index` bundle. This matters: eagerly importing all pages once put
+the whole app (Chain whiteboard + `@vue-flow`, the plot stack, every modal) into a single ~1.2 MB chunk
+at boot; lazy routes cut the **initial** JS to ~240 KB (~54 KB gzip, an ~87% drop). A new page **must**
+follow the lazy form — a static top-of-file `import X from './modules/X.vue'` silently pulls that page
+(and its deps) back into the boot bundle.
+
+Same rule for a **heavy library used on one screen**: dynamic-import it at the call site rather than at
+module top, so it splits into its own on-demand chunk. Precedents: `@observablehq/plot`
+(`await import('@observablehq/plot')` in `PlotChart`/cluster panels) and `pdf-lib`
+(`await import('pdf-lib')` inside `plots/pdf.ts`'s export function — loads only when the user exports).
 
 ### 3 — Add the sidebar entry
 
