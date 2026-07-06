@@ -76,9 +76,16 @@ function api_repl(body_bytes::Vector{UInt8})
     isempty(code) && return 400, JSON3.write((; error = "empty code"))
     value = nothing; errmsg = nothing; output = ""
     # capture stdout+stderr so `println`/`@info` show in the console. `redirect_stdout` swaps the
-    # PROCESS-global stream, so evals are serialised under a lock (one at a time) to avoid two evals —
-    # or another thread's output — clobbering each other; an async reader drains the pipe so large
-    # output can't deadlock on a full pipe buffer.
+    # PROCESS-global stream, so evals are serialised under a lock (one at a time) to avoid two evals
+    # clobbering each other; an async reader drains the pipe so large output can't deadlock on a full
+    # pipe buffer.
+    #
+    # KNOWN LIMITATION (accepted, not fixed — see docs/API.md): the lock only serialises evals against
+    # each other. Under `-t auto`, any OTHER handler / pool task running concurrently with an eval has
+    # its stdout/stderr (`println`/`@info`/`@warn`) captured into this pipe too — so during an eval,
+    # unrelated server-log lines may appear in the console output or go missing from the server log. A
+    # real fix needs per-task output capture rather than a process-global redirect, which isn't worth
+    # the machinery for a loopback-only, opt-in debug console. The UI shows a note to this effect.
     lock(_REPL_LOCK) do
         old_o, old_e = stdout, stderr
         rd, wr = redirect_stdout()
