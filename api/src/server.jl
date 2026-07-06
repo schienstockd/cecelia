@@ -19,47 +19,42 @@ include("repl_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
-const _ws_clients      = Set{Any}()
+# Outbound broadcast is DECOUPLED from the caller, with a PER-CLIENT queue. Task events fan out on
+# every log/progress/status line from many worker threads; writing sockets inline would (a) let
+# concurrent worker threads write the SAME socket at once (frame corruption) and (b) let one
+# slow/half-open client BLOCK a worker — which stalls a pool slot and, cascaded, leaves every task
+# stuck at :queued. Instead each client gets its own bounded queue drained by its own background
+# task: callers enqueue a pre-serialised frame per client (non-blocking, DROP on overflow), so a
+# stuck client backs up ONLY its own queue and is dropped alone — it can neither block a worker nor,
+# via head-of-line blocking on a shared sender, freeze telemetry for the other clients. WS telemetry
+# is lossy-safe (the console reconciles from GET /api/tasks); a worker thread must never block on WS I/O.
+const _WS_OUT_CAP      = 4096
+const _ws_clients      = Dict{Any,Channel{String}}()   # ws => its private outbound queue
 const _ws_clients_lock = ReentrantLock()
 
-# Outbound broadcast is DECOUPLED from the caller. Task events now fan out on every log/progress/status
-# line from many worker threads; writing sockets inline would (a) let concurrent worker threads write
-# the SAME socket at once (frame corruption) and (b) let one slow/half-open client BLOCK a worker —
-# which stalls a pool slot and, cascaded, leaves every task stuck at :queued. Instead callers enqueue a
-# pre-serialised frame and a single background task drains the queue, writes to each client, and prunes
-# any that error. The queue is bounded and DROPS on overflow — WS telemetry is lossy-safe, and a worker
-# thread must never block on WS I/O.
-const _WS_OUT_CAP        = 4096
-const _WS_OUT            = Channel{String}(_WS_OUT_CAP)
-const _ws_sender_started = Ref(false)
-
-function _ws_sender_loop()
-    for json in _WS_OUT
-        clients = lock(_ws_clients_lock) do; copy(_ws_clients); end
-        dead = Any[]
-        for ws in clients
-            try; HTTP.WebSockets.send(ws, json); catch; push!(dead, ws); end
+# One sender per client: drains that client's queue in order and writes frames. Exits when the queue
+# is closed (on disconnect) or a send fails; either way the client is removed.
+function _ws_client_sender(ws, q::Channel{String})
+    try
+        for json in q
+            HTTP.WebSockets.send(ws, json)
         end
-        isempty(dead) || lock(_ws_clients_lock) do
-            for ws in dead; delete!(_ws_clients, ws); end
-        end
-    end
-end
-
-function _ws_ensure_sender!()
-    _ws_sender_started[] && return
-    lock(_ws_clients_lock) do
-        _ws_sender_started[] && return
-        _ws_sender_started[] = true
-        Threads.@spawn _ws_sender_loop()
+    catch
+        # send failed / client gone — drop it (handle_ws's finally also cleans up on the receive side)
+        lock(_ws_clients_lock) do; delete!(_ws_clients, ws); end
+        try; close(ws); catch; end
     end
 end
 
 function broadcast_ws(msg::Dict)
-    _ws_ensure_sender!()
-    json = JSON3.write(msg)
-    # non-blocking enqueue: drop when the buffer is full (a stuck client backing up) rather than block
-    Base.n_avail(_WS_OUT) < _WS_OUT_CAP && put!(_WS_OUT, json)
+    json   = JSON3.write(msg)
+    queues = lock(_ws_clients_lock) do; collect(values(_ws_clients)); end
+    for q in queues
+        # non-blocking, per-client: skip this frame for a client whose queue is full (it's stuck),
+        # never block the caller (a worker thread). The check-then-put race can only ever cost a
+        # microsecond wait behind a HEALTHY client's drain, never a block behind a stuck one.
+        isopen(q) && Base.n_avail(q) < _WS_OUT_CAP && try; put!(q, json); catch; end
+    end
     nothing
 end
 
@@ -131,6 +126,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             200, JSON3.write((; ok=true, version="CeceliaAPI"))
         elseif path == "/api/diagnostics"
             api_diagnostics(req)
+        elseif path == "/api/diagnostics/packages"
+            api_packages(req)
         elseif path == "/api/version"
             api_version(req)
         elseif path == "/api/update/check"
@@ -280,7 +277,9 @@ end
 # ── WebSocket handler ─────────────────────────────────────────────────────────
 
 function handle_ws(ws)
-    lock(_ws_clients_lock) do; push!(_ws_clients, ws); end
+    q = Channel{String}(_WS_OUT_CAP)
+    lock(_ws_clients_lock) do; _ws_clients[ws] = q; end
+    Threads.@spawn _ws_client_sender(ws, q)   # per-client drain (see broadcast_ws)
     try
         while true
             raw = HTTP.WebSockets.receive(ws)
@@ -295,6 +294,7 @@ function handle_ws(ws)
         e isa HTTP.WebSockets.WebSocketError || @warn "WS error" exception = e
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, ws); end
+        close(q)   # signal this client's sender task to exit
     end
 end
 
@@ -418,7 +418,6 @@ const _BOUND_HOST = Ref{String}("")
 
 function start(; host=HOST, port=PORT)
     _BOUND_HOST[] = string(host)
-    _ws_ensure_sender!()   # start the single WS broadcast drainer before we accept connections
     @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end

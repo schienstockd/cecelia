@@ -13,6 +13,8 @@
 # operator must relaunch with `CECELIA_HOST=127.0.0.1`. Server code is `include`d into `Main`, so eval
 # runs with `Cecelia`, `projects_dir`, etc. in scope — the point of a debug console.
 
+import Pkg   # for the in-process Julia package inventory (api_packages)
+
 const _REPL_LOCK = ReentrantLock()   # serialise evals (redirect_stdout is process-global)
 # `_repl_on` is a RUNTIME toggle (the Settings switch flips it via POST /api/repl/config); it seeds from
 # CECELIA_REPL at startup so the env var still auto-enables. It is NOT a security boundary — eval is
@@ -32,11 +34,62 @@ function api_repl_config(body_bytes::Vector{UInt8})
     200, JSON3.write((; replEnabled = _repl_on[], loopback = _host_is_loopback(), replAvailable = _repl_available()))
 end
 
+# Installed-build provenance: the installer writes `.cecelia-version` at the install root (the repo
+# root, two levels up from api/src) — a tag for stable, "dev @ <branch> <sha>" for the dev channel.
+# Absent in a plain source/dev checkout → report that instead. See docs/SHIPPING.md → install channels.
+function _installed_version()
+    f = joinpath(dirname(dirname(@__DIR__)), ".cecelia-version")
+    isfile(f) || return "dev (source checkout)"
+    v = strip(read(f, String))
+    isempty(v) ? "unknown" : v
+end
+
+# GET /api/diagnostics/packages — the installed-package inventory, split by ecosystem because the two
+# stacks are provisioned SEPARATELY and neither tool sees the other: the Python analysis env (conda +
+# pypi) lives in Pixi, while Julia is on juliaup + Manifest (docs/SHIPPING.md → "Julia and Node are not
+# in Pixi"). So `pixi list` alone misses every Julia package. We query both:
+#   • Julia  — in-process via Pkg.dependencies() (the server IS Julia; free, no subprocess)
+#   • Python — `pixi list --json` at the install root (conda + pypi = the complete engine env)
+# Lazy — its own endpoint, not part of /api/diagnostics — because the pixi subprocess is slowish and
+# shouldn't run on every Settings load.
+function _julia_packages()
+    pkgs = [(; name = i.name, version = i.version === nothing ? "" : string(i.version))
+            for (_, i) in Pkg.dependencies() if i.name !== nothing]
+    sort(pkgs; by = p -> lowercase(p.name))
+end
+
+function _pixi_packages()
+    root = dirname(dirname(@__DIR__))   # install/repo root — where pixi.toml lives (server cwd is api/)
+    out  = read(Cmd(`pixi list --json`; dir = root), String)
+    arr  = JSON3.read(out)
+    pkgs = [(; name     = string(p.name),
+               version  = string(p.version),
+               kind     = haskey(p, :kind) ? string(p.kind) : "",
+               explicit = haskey(p, :is_explicit) && p.is_explicit === true) for p in arr]
+    sort(pkgs; by = p -> lowercase(p.name))
+end
+
+function api_packages(::HTTP.Request)
+    jl = try
+        _julia_packages()
+    catch e
+        @warn "Julia package list failed" exception = e
+        NamedTuple[]
+    end
+    py, pyerr = try
+        _pixi_packages(), nothing
+    catch e
+        NamedTuple[], "Could not run `pixi list` (is pixi on PATH?): " * sprint(showerror, e)
+    end
+    200, JSON3.write((; julia = jl, python = py, pythonError = pyerr))
+end
+
 function api_diagnostics(::HTTP.Request)
     gb(x) = round(x / 2^30; digits = 2)
     200, JSON3.write((;
         threads     = Threads.nthreads(),
         julia       = string(VERSION),
+        version     = _installed_version(),
         projectsDir = projects_dir(),
         memFreeGB   = gb(Sys.free_memory()),
         memTotalGB  = gb(Sys.total_memory()),

@@ -69,7 +69,8 @@ Settings → Debug console UI shows a note to this effect.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | liveness |
-| GET | `/api/diagnostics` | server health: threads, Julia version, memory, bound host/port, projects dir, debug-console state — powers Settings → Diagnostics |
+| GET | `/api/diagnostics` | server health: threads, Julia version, **installed version** (`.cecelia-version`), memory, bound host/port, projects dir, debug-console state — powers Settings → Diagnostics |
+| GET | `/api/diagnostics/packages` | installed-package inventory: `{julia, python, pythonError}` — Julia via in-process `Pkg.dependencies()`, Python via `pixi list --json` (lazy; backs the Settings → Diagnostics "Packages…" dialog) |
 | POST | `/api/repl` | `{code}` — evaluate Julia in the server's `Main` (value + captured stdout/stderr + error). **Gated**: only when the debug console is toggled on AND the server is loopback-bound; a `0.0.0.0` bind always refuses it. Localhost-only dev tool (`repl_api.jl`) |
 | POST | `/api/repl/config` | `{enabled}` — flip the runtime debug-console toggle (Settings → Developer). Not a security boundary; eval is still loopback-gated |
 | GET | `/api/projects`, POST `/api/projects/{list,create,load,save,rename}` | project CRUD |
@@ -90,12 +91,16 @@ Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTT
 are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
 to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,
 `pixi run console`) both see live progress. (They're keyed by `taskId`, so clients filter to what they
-care about. Chain events already broadcast.) Broadcast is **decoupled from the caller**: `broadcast_ws`
-enqueues a pre-serialised frame onto a bounded, drop-on-full channel that a single background task
-drains and writes to each client (pruning any that error). This is deliberate — task events fan out on
-every log/progress line from many worker threads, so writing sockets inline would let concurrent
-threads corrupt a shared socket and let one slow/half-open client block a worker (which strands a pool
-slot → tasks stuck at `queued`). Workers must never block on WS I/O. `handle_task_run` forwards
+care about. Chain events already broadcast.) Broadcast is **decoupled from the caller, per client**:
+each connected socket has its own bounded, drop-on-full queue drained by its own background task, and
+`broadcast_ws` enqueues a pre-serialised frame onto every client's queue (non-blocking; it skips a
+client whose queue is full). This is deliberate — task events fan out on every log/progress line from
+many worker threads, so writing sockets inline would let concurrent threads corrupt a shared socket
+and let one slow/half-open client block a worker (which strands a pool slot → tasks stuck at `queued`).
+Workers must never block on WS I/O. The **per-client** queue (rather than one shared drainer) also
+means a single stuck client only ever loses *its own* frames — it can't head-of-line-block delivery to
+the other tabs or the console. WS telemetry is lossy-safe: the console reconciles the authoritative
+state from `GET /api/tasks`, so a dropped frame self-heals. `handle_task_run` forwards
 `queued`/`running` **and
 `cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
 cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker
