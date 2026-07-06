@@ -147,7 +147,9 @@ Node are not in Pixi*.) The multi-GB Pixi env is cached across re-runs, so a dev
 re-downloads the few-MB source and rebuilds the frontend (seconds), not the environment.
 
 **Provenance.** Both channels write `<install>/.cecelia-version` — the tag for stable, `dev @ <branch>
-<sha>` for dev (the SHA resolved via the commits API) — so a bug report can name the exact state.
+<sha>` for dev (the SHA resolved via the commits API) — so a bug report can name the exact state. The
+server reads it back via `GET /api/diagnostics` (`_installed_version()`; a plain source checkout with no
+such file reports `dev (source checkout)`) and it shows as the **Version** row in Settings → Diagnostics.
 
 The branch archive wraps everything in one `<repo>-<branch>/` dir, so the dev extraction uses
 `tar --strip-components=1`; the flat release bundle must not (it would hoist `api/`'s contents to the

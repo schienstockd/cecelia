@@ -7,6 +7,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import BaseModal from './BaseModal.vue'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
@@ -237,21 +238,14 @@ async function fillFlagged() {
 </script>
 
 <template>
-  <div class="pp-overlay" @click.self="emit('close')">
-    <div class="pp-modal">
+  <BaseModal width="480px" @close="emit('close')">
+    <template #title>
+      <i class="pi pi-ruler" /> Physical size &amp; timing
+      <i class="pi pi-info-circle info-dot"
+         v-tooltip.bottom="'Read from the file at import when possible. A flagged value means we couldn\'t find it, or it looked unusual — check Fiji (Image ▸ Properties) or your acquisition settings.'" />
+    </template>
 
-      <div class="pp-header">
-        <span class="pp-title">
-          <i class="pi pi-ruler" /> Physical size &amp; timing
-          <i class="pi pi-info-circle info-dot"
-             v-tooltip.bottom="'Read from the file at import when possible. A flagged value means we couldn\'t find it, or it looked unusual — check Fiji (Image ▸ Properties) or your acquisition settings.'" />
-        </span>
-        <button class="pp-close" @click="emit('close')" v-tooltip.left="'Close'">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-
-      <div class="pp-body pp-form">
+      <div class="pp-form">
         <p v-if="focusedImg" class="focus-name">{{ focusedImg.name }}</p>
 
         <p v-if="focusedWarning" class="warn-line" v-tooltip.bottom="focusedWarning.long">
@@ -301,66 +295,31 @@ async function fillFlagged() {
         </div>
       </div>
 
-      <div class="pp-footer">
-        <button class="btn-ghost btn-sm" :disabled="propagating" @click="fillFlagged"
-          v-tooltip.top="'Fill this image\'s values into the OTHER selected images that are flagged — same-session acquisitions usually match exactly.'">
-          <i v-if="propagating" class="pi pi-spin pi-cog" /><i v-else class="pi pi-share-alt" />
-          Fill flagged
-        </button>
-        <button class="btn-ghost btn-sm" :disabled="copying" @click="copyToSelected"
-          v-tooltip.top="'Copy this image\'s values to the other selected images.'">
-          <i v-if="copying" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
-          Copy to selected
-        </button>
-        <span class="footer-spacer" />
-        <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
-        <button class="btn-primary btn-sm" :disabled="saving" @click="apply"
-          v-tooltip.top="`Apply to ${targetUids.length} image(s). Doesn't retroactively recompute derived measures (e.g. track speed).`">
-          <i v-if="saving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-check" />
-          Apply
-        </button>
-      </div>
-
-    </div>
-  </div>
+    <template #footer>
+      <button class="btn-ghost btn-sm" :disabled="propagating" @click="fillFlagged"
+        v-tooltip.top="'Fill this image\'s values into the OTHER selected images that are flagged — same-session acquisitions usually match exactly.'">
+        <i v-if="propagating" class="pi pi-spin pi-cog" /><i v-else class="pi pi-share-alt" />
+        Fill flagged
+      </button>
+      <button class="btn-ghost btn-sm" :disabled="copying" @click="copyToSelected"
+        v-tooltip.top="'Copy this image\'s values to the other selected images.'">
+        <i v-if="copying" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
+        Copy to selected
+      </button>
+      <span class="footer-spacer" />
+      <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
+      <button class="btn-primary btn-sm" :disabled="saving" @click="apply"
+        v-tooltip.top="`Apply to ${targetUids.length} image(s). Doesn't retroactively recompute derived measures (e.g. track speed).`">
+        <i v-if="saving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-check" />
+        Apply
+      </button>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
-.pp-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.65);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 500;
-}
-.pp-modal {
-  background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-  border-radius: 0.6rem;
-  width: 480px;
-  max-width: 96vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.5);
-}
-
-.pp-header {
-  display: flex; align-items: center;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
-.pp-title { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--cc-text); display: flex; gap: 0.45rem; align-items: center; }
+/* Shell (overlay/box/header/footer) lives in BaseModal; only dialog-specific styles remain here. */
 .info-dot { font-size: 0.72rem; color: var(--cc-text-dim); cursor: default; }
-.pp-close {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.8rem;
-  padding: 0.2rem 0.4rem; border-radius: 0.25rem;
-}
-.pp-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-
-.pp-body { flex: 1; overflow-y: auto; }
 .pp-form { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.75rem; }
 
 .focus-name { margin: 0; font-size: 0.82rem; font-weight: 600; color: var(--cc-text); }
@@ -404,13 +363,6 @@ async function fillFlagged() {
 .field-input.mixed { border: 1px dashed #60a5fa !important; background: #1e3a5f55; cursor: help; }
 .unit-input { flex: 0 0 4.2rem; }
 
-.pp-footer {
-  display: flex; align-items: center; gap: 0.4rem;
-  padding: 0.65rem 1rem;
-  border-top: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-}
 .footer-spacer { flex: 1; }
 
 .btn-sm {

@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
+import BaseModal from './BaseModal.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -76,19 +77,10 @@ const typeColour: Record<ProjectType, string> = {
 </script>
 
 <template>
-  <div class="pp-overlay" @click.self="$emit('close')">
-    <div class="pp-modal">
+  <BaseModal title="Project Manager" icon="pi-folder-open" width="700px" @close="$emit('close')">
 
-      <!-- header -->
-      <div class="pp-header">
-        <span class="pp-title"><i class="pi pi-folder-open" /> Project Manager</span>
-        <button class="pp-close" @click="$emit('close')"
-          v-tooltip.left="'Close without changing the current project.'">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-
-      <!-- tabs -->
+    <!-- tabs -->
+    <template #toolbar>
       <div class="pp-tabs">
         <button
           class="pp-tab"
@@ -107,6 +99,7 @@ const typeColour: Record<ProjectType, string> = {
           <i class="pi pi-plus" /> New project
         </button>
       </div>
+    </template>
 
       <!-- ── RECENT tab ─────────────────────────────────────────────────── -->
       <div v-if="tab === 'recent'" class="pp-body">
@@ -253,45 +246,11 @@ const typeColour: Record<ProjectType, string> = {
         </template>
       </div>
 
-    </div>
-  </div>
+  </BaseModal>
 </template>
 
 <style scoped>
-.pp-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.65);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 500;
-}
-
-.pp-modal {
-  background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-  border-radius: 0.6rem;
-  width: 700px;
-  max-width: 96vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.5);
-}
-
-/* header */
-.pp-header {
-  display: flex; align-items: center;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
-.pp-title { flex: 1; font-size: 0.9rem; font-weight: 600; color: var(--cc-text); display: flex; gap: 0.5rem; align-items: center; }
-.pp-close {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.8rem;
-  padding: 0.2rem 0.4rem; border-radius: 0.25rem;
-}
-.pp-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+/* Shell (overlay/box/header) lives in BaseModal; only panel-specific styles remain here. */
 
 /* tabs */
 .pp-tabs {
@@ -311,8 +270,8 @@ const typeColour: Record<ProjectType, string> = {
 .pp-tab:hover { color: var(--cc-text); }
 .pp-tab.active { color: var(--cc-accent); border-bottom-color: var(--cc-accent); }
 
-/* body */
-.pp-body { flex: 1; overflow-y: auto; }
+/* body — BaseModal's cc-modal-body owns the scroll; the tab panes are plain flow. */
+.pp-body { display: flex; flex-direction: column; }
 
 .pp-empty {
   display: flex; flex-direction: column; align-items: center;
