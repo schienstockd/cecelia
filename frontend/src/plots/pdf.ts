@@ -1,5 +1,7 @@
-import { PDFDocument } from 'pdf-lib'
 import { downloadBlob } from './export'
+
+// pdf-lib is large and only needed when the user actually exports — dynamic-import it inside
+// exportTabsToPdf so it lands in its own chunk fetched on export, not the initial bundle.
 
 // Multipage PDF of the Analysis board: ONE page per tab, laid out as that tab's grid (each slot image
 // placed at its grid-area rectangle). Each summary plot's aggregated data can ride along as an embedded
@@ -27,6 +29,7 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 const safe = (s: string) => s.replace(/[^\w.-]+/g, '_')
 
 export async function exportTabsToPdf(pages: PdfPage[], filename = 'analysis.pdf') {
+  const { PDFDocument } = await import('pdf-lib')
   const doc = await PDFDocument.create()
   for (const page of pages) {
     // A4, oriented to the board: wide (aspect ≥ 1) → landscape, tall → portrait
