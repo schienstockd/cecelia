@@ -93,16 +93,22 @@ def rechunk_store(path, xy_tile=512, replace=False, force=False):
 
 
 def _find_stores(root):
-    """Yield every ``*.ome.zarr`` dir under `root` without descending into one."""
-    if root.endswith(".ome.zarr"):
-        yield root
+    """Yield every ``*.ome.zarr`` dir under `root` without descending into one. Backups
+    (``*.bak.ome.zarr``) and temps (``*.rechunk_tmp``) are skipped — `--replace` leaves a backup
+    behind, and a rescan must NOT then re-rechunk that backup (its own name also ends in .ome.zarr)."""
+    root_norm = root.rstrip("/")
+    if root_norm.endswith(".ome.zarr"):
+        if not root_norm.endswith(".bak.ome.zarr"):           # explicit backup target → skip
+            yield root
         return
     for dirpath, dirnames, _ in os.walk(root):
         keep = []
         for d in dirnames:
+            if d.endswith((".bak.ome.zarr", ".rechunk_tmp")):
+                continue                              # never yield OR descend into backups/temps
             if d.endswith(".ome.zarr"):
                 yield os.path.join(dirpath, d)
-            elif not d.endswith((".bak.ome.zarr", ".rechunk_tmp")):
+            else:
                 keep.append(d)
         dirnames[:] = keep
 
