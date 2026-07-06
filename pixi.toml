@@ -95,6 +95,10 @@ build    = { cmd = "npm run build", cwd = "frontend" }  # static production buil
 # Napari bridge (port 7655) standalone — normally the backend launches it; run this to debug it alone.
 napari = { cmd = "python3 napari_bridge.py", cwd = "napari" }
 
+# Headless task console — read-only live view of scheduler tasks over the server's WebSocket.
+# Reporting only (no run/cancel); safe alongside the GUI. `-- --stream` for append-only log output.
+console = { cmd = "julia --project task_console.jl", cwd = "api" }
+
 # One-click launch (the desktop-shortcut entrypoint): start the prod server, wait for /api/health,
 # open the default browser at :8080. The Julia server serves the built frontend, so run `build` first.
 app = "python app.py"

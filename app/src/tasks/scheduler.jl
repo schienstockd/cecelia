@@ -13,6 +13,19 @@ function list_pools()
     end
 end
 
+"""
+Snapshot of tasks currently known to the scheduler (queued or running) as named tuples.
+Deregistered on completion, so this is a live view of in-flight work only — nothing terminal.
+`status` is stringified for JSON. Mirrors `list_pools()`; read-only reporting, no control.
+"""
+function list_tasks()
+    lock(_TASKS_LOCK) do
+        [(; id=rec.id, fun_name=rec.fun_name, pool_name=rec.pool_name,
+           image_uid=rec.image_uid, chain_run_id=rec.chain_run_id,
+           status=string(rec.status)) for rec in values(_TASKS)]
+    end
+end
+
 function cancel_chain_run!(run_id::String)
     # 1) Flag the run so the executor skips not-yet-started nodes (checked between nodes).
     lock(_CANCELLED_CHAINS_LOCK) do; push!(_CANCELLED_CHAINS, run_id); end
