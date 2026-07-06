@@ -143,9 +143,26 @@ class NapariState:
         # timecourse: show an elapsed-time stamp that follows the t slider (ports old `add_timestamp`)
         self._setup_timestamp(path)
 
-        if show_3d:
+        # 3D view is a per-set preference applied "where possible": only switch to volumetric display
+        # when the image actually has a z-axis with depth. A 2D image (no z, or z==1) stays 2D, so
+        # clicking through a mixed 2D/3D set with the toggle on shows each image correctly rather than
+        # forcing a flat plane into a rotatable 3D view.
+        if show_3d and (self._z_axis_len() or 0) > 1:
             self._viewer.dims.ndisplay = 3
             self._viewer.reset_view()
+
+    def _z_axis_len(self):
+        """Length of the image's `z` axis, or None if there is no `z` axis / no data loaded.
+        Reads from the full (channel-inclusive) data shape, since `self._axes` includes `c`."""
+        if not self._axes or not self._im_data:
+            return None
+        low = [a.lower() for a in self._axes]
+        if "z" not in low:
+            return None
+        try:
+            return int(self._im_data[0].shape[low.index("z")])
+        except Exception:
+            return None
 
     def _time_axis_len(self):
         """Length of the image's `t` axis, or None if there is no `t` axis / no data loaded.

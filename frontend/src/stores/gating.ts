@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { useLogStore } from './log'
 import { useProjectMetaStore } from './projectMeta'
+import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
@@ -75,6 +76,7 @@ function gateSignatures(tree: PopTree): Map<string, string> {
 export const useGatingStore = defineStore('gating', () => {
   const log = useLogStore()
   const meta = useProjectMetaStore()
+  const projStore = useProjectStore()
   const settings = useSettingsStore()
 
   const imageUid  = ref<string | null>(null)
@@ -110,6 +112,8 @@ export const useGatingStore = defineStore('gating', () => {
   // transient pops (e.g. the napari cell selection) — auto-highlighted on the plots
   const transientPaths = computed(() => flat.value.filter(p => p.transient).map(p => p.path))
   const projectUid = () => meta.current?.uid ?? ''
+  // the set the gated image belongs to — keys the per-set napari point size (see settings store)
+  const napariSetUid = () => (imageUid.value ? projStore.setUidOfImage(imageUid.value) : null) ?? ''
 
   // resolve a raw column to its display label: intensity columns → channel name (R
   // change_channel_names), everything else (morphology, etc.) stays as-is.
@@ -263,7 +267,7 @@ export const useGatingStore = defineStore('gating', () => {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectUid: projectUid(), imageUid: imageUid.value,
                                valueName: valueName.value, popType: popType.value,
-                               pointsSize: settings.napariPointSize, ...extra }),
+                               pointsSize: settings.getPointSize(napariSetUid()), ...extra }),
       })
       const d = await res.json().catch(() => ({})) as { error?: string }
       if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)

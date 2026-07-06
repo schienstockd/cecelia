@@ -17,6 +17,7 @@
 import { ref, computed } from 'vue'
 import { useGatingStore, isReservedPopName, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
+import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import PopulationPanelShell from './PopulationPanelShell.vue'
 import type { VisProps } from '../../plots/plot'
@@ -49,7 +50,16 @@ const emit = defineEmits<{
 }>()
 const g = useGatingStore()
 const log = useLogStore()
+const projectStore = useProjectStore()
 const settings = useSettingsStore()
+
+// napari point size is a PER-SET viewer preference (keyed by the gated image's set), set once and
+// held across the set's images. Guard the setter so we never write under an empty set key.
+const napariSetUid = computed(() => (g.imageUid ? projectStore.setUidOfImage(g.imageUid) : null) ?? '')
+const napariPointSize = computed<number>({
+  get: () => settings.getPointSize(napariSetUid.value),
+  set: v => { if (napariSetUid.value) settings.setPointSize(napariSetUid.value, v) },
+})
 
 const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
 const editing = ref<string | null>(null)
@@ -226,11 +236,11 @@ async function addClusterPopulation() {
             <!-- napari point size (re-renders the napari overlay on release) -->
             <div class="pm-opt-row">
               <span class="pm-opt-label">Napari dots</span>
-              <input type="range" min="1" max="20" step="1" :value="settings.napariPointSize"
-                     v-tooltip.top="'Population point size in napari'"
-                     @input="settings.napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
+              <input type="range" min="1" max="20" step="1" :value="napariPointSize"
+                     v-tooltip.top="'Population point size in napari (per experiment/set)'"
+                     @input="napariPointSize = parseInt(($event.target as HTMLInputElement).value)"
                      @change="g.refreshNapariPops()" />
-              <span class="pm-opt-val">{{ settings.napariPointSize }}</span>
+              <span class="pm-opt-val">{{ napariPointSize }}</span>
             </div>
           </template>
         </div>

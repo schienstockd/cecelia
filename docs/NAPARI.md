@@ -230,10 +230,10 @@ project-wide), which is why they no longer carry per-plot reload buttons. See
 
 ## 3D mode
 
-Setting `viewer.dims.ndisplay = 3` programmatically after `add_image` leaves the camera uninitialized for the 3D extent — the image is invisible until the user manually toggles (which calls `reset_view()` internally). Always follow with `viewer.reset_view()`:
+Setting `viewer.dims.ndisplay = 3` programmatically after `add_image` leaves the camera uninitialized for the 3D extent — the image is invisible until the user manually toggles (which calls `reset_view()` internally). Always follow with `viewer.reset_view()`. The `show_3d` toggle is a per-set preference applied *where possible*, so it only takes effect when the image has a z-axis with depth (a 2D image stays 2D — see *Viewer preference scoping*):
 
 ```python
-if show_3d:
+if show_3d and (self._z_axis_len() or 0) > 1:
     self._viewer.dims.ndisplay = 3
     self._viewer.reset_view()
 ```
@@ -411,9 +411,33 @@ state, a `live.track.*` measure, a cluster id) instead of their defaults. Ports 
 **UI control — "Colour by" dropdown (ViewerPanel).** Next to the Show populations / Show tracks
 toggles, a dropdown lists the open segmentation's obs columns (`/api/gating/channels`). Picking one
 re-pushes the tracks with `colorBy` (if shown) and POSTs `colour-labels`; "colour: default" resets
-both. The choice is **remembered** (`settings.napariColourBy`) and re-applied on image open (labels
-recoloured after they're shown; tracks carry `colorBy` via `pushTracks`). A remembered column not
-present in the newly-opened segmentation is dropped.
+both. The choice is remembered **per set** (see *Viewer preference scoping* below) and re-applied on
+open — labels recoloured after they're shown, tracks via `pushTracks`. It is **NOT global**: a
+colour-by chosen in one experiment must never bleed onto another set's images (that silently
+recoloured plain labels — and for a segmentation with no obs columns there's no dropdown to reset it,
+so napari's distinct default colouring just vanished). On-open the labels are recoloured **only if the
+opened segmentation actually has that column** (`obsCols.includes`); if the current image's
+segmentation lacks the set's column the local selection is blanked for display **but the persisted
+per-set value is kept** (another image in the set may have it — it's restored per image on open).
+
+### Viewer preference scoping — global / per-set / per-image
+
+napari viewer preferences persist at **three** scopes; the rule is: **per-image** when applying it to
+the wrong image is destructive or can't be undone from the UI; **per-set** when it's an experiment-level
+viewing choice you set once and hold across a set's images; **global** when it's a workflow/UI
+preference that either no-ops or shows something obvious-and-toggleable everywhere.
+
+| Scope | Settings (store keys) | Why |
+|---|---|---|
+| **Per-image** (`getLabelVisibility`/`getTrackVisibility`, keyed by image uid) | which of *this image's* segmentations show labels / tracks (the per-segmentation rows) | segmentations differ image to image; row state is inherently image-specific |
+| **Per-set** (`get/set{ColourBy,Show3D,ShowGatedTracks,PointSize,PopVisible}`, one `cc.napariSetPrefs` map keyed by **set uid**) | colour-by · show-3D · gated-tracks toggle · point size · per-popType overlay visibility | one experiment = consistent viewing; set once, holds as you click through the set. Bleed to *another* set is prevented, but re-picking per image is avoided |
+| **Global** (plain `localStorage`) | update-on-task · reset-on-reload · auto-save-props · as-dask · task-follow · auto-refresh · sidebar/right collapse | workflow/UI prefs, not viewing state |
+
+The set uid for the open/gated image comes from `projectStore.setUidOfImage(imageUid)`. Historical note:
+the old R app made these **global** (Shiny bookmarks made that easy), but per-set was always the intent —
+global colour-by is exactly what silently broke plain-label colouring across images. **show-3D** is
+applied "where possible": the bridge only switches to `ndisplay = 3` when the image has a z-axis with
+depth (`_z_axis_len() > 1`), so a 2D image opened with the set's 3D toggle on stays flat.
 
 ### Producer direction — cell selection (napari → flow plots)
 
