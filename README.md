@@ -106,6 +106,51 @@ in-app **Update** button when a new release is available.
 
 ---
 
+## Monitoring tasks (terminal console)
+
+Long jobs — segmentation, tracking, and whole **chain runs** — are handled by a background scheduler.
+Alongside the in-app view, you can watch them from a terminal with a live, **read-only** dashboard:
+which tasks are running, their progress, how many are queued, and how many have finished. It only
+*reads* the running Cecelia (it never starts or cancels anything), so it's safe to leave open next to
+the app.
+
+With Cecelia running, from the install directory:
+
+```sh
+# Linux / macOS
+cd ~/.local/share/cecelia && pixi run console
+```
+```powershell
+# Windows
+cd $env:LOCALAPPDATA\cecelia ; pixi run console
+```
+
+Add `-- --stream` for an append-only log you can pipe to a file (`pixi run console -- --stream | tee run.log`).
+Press `Ctrl-C` to close it — your tasks keep running.
+
+---
+
+## Bleeding-edge builds (dev channel)
+
+To run the **current GitHub state** without waiting for a tagged release, set `CECELIA_CHANNEL=dev`.
+The installer then downloads the latest `main` instead of a release and builds the frontend locally,
+so **[Node.js](https://nodejs.org) (npm) ≥ 20 must be installed**. Re-run the same command to update
+to the newest `main`. The installed commit is recorded in `.cecelia-version` for bug reports.
+
+```sh
+# Linux / macOS
+curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_CHANNEL=dev sh
+```
+```powershell
+# Windows
+$env:CECELIA_CHANNEL='dev'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
+```
+
+Everything else (projects folder, running) is identical to a stable install. Dev builds track HEAD,
+so expect the occasional rough edge — for routine use, prefer the default stable channel above.
+
+---
+
 ## Developing
 
 Running from source with hot-reload (`pixi run dev` + `pixi run frontend`) is covered in
