@@ -71,6 +71,23 @@ def chunks(im_array):
     return [x if isinstance(x, int) else x[0] for x in im_chunks]
 
 
+def plane_chunks(shape, dim_utils=None, xy_tile=512):
+    """Per-plane chunking for an OME-ZARR consumed by napari: 1 along the non-spatial axes
+    (T/C/Z) and `xy_tile`-capped along the two spatial axes (Y/X). napari slices per (t,c,z),
+    so a chunk must NOT span the time/channel axes — `dask`'s `chunks='auto'` packs the whole
+    time series into one ~128 MB chunk, which makes a single plane cost a full-timecourse read
+    (slow first open, fast once OS-cached). Spatial axes come from `dim_utils` when available,
+    else assumed to be the last two (bioformats2raw TCZYX order)."""
+    n = len(shape)
+    spatial = set()
+    order = getattr(dim_utils, "im_dim_order", None) if dim_utils is not None else None
+    if order and len(order) == n:
+        spatial = {i for i, ax in enumerate(order) if str(ax).upper() in ("X", "Y")}
+    if not spatial:
+        spatial = {n - 2, n - 1}
+    return tuple(min(int(s), xy_tile) if i in spatial else 1 for i, s in enumerate(shape))
+
+
 def open_labels_as_dask(filepath, multiscales=None):
     zarr_data, zarr_group_info = open_labels_as_zarr(filepath, multiscales=multiscales)
     return zarr_data_to_dask(zarr_data), zarr_group_info
@@ -198,12 +215,16 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     multiscales_zarr.attrs['multiscales'] = [ms_entry]
 
     if isinstance(im_array, dask.array.core.Array):
-        # Write into the group so the sub-array inherits zarr v2 format.
+        # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
+        # dask array's own chunksize, which for a correction built via `chunks='auto'` spans the whole
+        # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read. `da.store`
+        # writes across the differing source chunking fine.
+        pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
-            "0", shape=im_array.shape, chunks=im_array.chunksize, dtype=im_array.dtype
+            "0", shape=im_array.shape, chunks=pchunks, dtype=im_array.dtype
         )
         da.store(im_array, dest, lock=False)
-        im_chunks = chunks(im_array)
+        im_chunks = list(pchunks)
     elif isinstance(im_array, zarr.Array):
         dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks, dtype=im_array.dtype)
         dest[:] = im_array[:]
