@@ -114,6 +114,9 @@ Rationale and the full packaging/update model live in [`docs/SHIPPING.md`](SHIPP
   without binding a socket, then calls handlers directly (no live server, no ports). Fixture-free, so
   it runs in CI (`.github/workflows/ci.yml`) on every OS. Covers diagnostics + the debug-console
   gating/eval; extend it as more adapters gain logic worth pinning.
+- **Frontend:** `npm test` (Vitest, `frontend/`) for pure logic extracted out of `.vue` SFCs into
+  `src/utils/*` (e.g. `startDot.ts` — the chain start-dot save/reload round-trip). Keep testable logic
+  in plain `.ts` modules rather than the component so it can be unit-tested without mounting Vue.
 
 ## Diagnostics & debug console
 

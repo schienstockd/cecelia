@@ -617,13 +617,26 @@ The tab badge shows the count of currently-running nodes.
 |---|---|---|
 | `"task"` | `"image"` or `"incremental"` | Purple accent border, solid (image) or dashed (incremental) |
 | `"picnic"` | `"set"` | Amber/orange border, ◆ badge, barrier policy shown |
+| `"start"` | (not a task) | UML initial node — a filled dot; drag + link to the first task(s). Moveable, source-only |
 | `"live"` | (live view only) | Status-colored header bar; grey=queued, blue=running, green=done, red=failed, grey=cancelled |
 
-Custom node components: `ChainTaskNode.vue`, `ChainPicnicNode.vue`, `ChainLiveNode.vue`.
+Custom node components: `ChainTaskNode.vue`, `ChainStartNode.vue`, `ChainPicnicNode.vue`, `ChainLiveNode.vue`.
+
+**Start dot (UML initial node).** A moveable dot (reserved id `__start__`, one per chain) marking where a
+run begins — added by the toolbar button and **by default on a new chain** (which then centers/zooms on
+it so it's obviously visible). You link it to the task(s) a run should start from; **only tasks reachable
+from it run**, the rest stay in the editor as drafts (backend `_prune_to_start`, `docs/SCHEDULER.md`). So
+drop it mid-chain to run just the later tasks, or link it to one branch and leave another as a draft. It's
+not a task: excluded from `nodes` on save and recorded as `startTargets` (the linked node ids); its
+position persists under `positions['__start__']`. No start dot / unlinked ⇒ `startTargets` empty ⇒ run the
+whole chain (backward-compatible). The config panel shows only a hint for it (no scope/params).
 
 ### Chain JSON format
 
-The whiteboard sends the standard `{name, nodes[], edges[]}` template format plus an optional `positions: {nodeId: {x, y}}` field. The backend preserves all fields verbatim (the scheduler ignores unknown fields when loading). Positions are purely a whiteboard concern — they survive save/load cycles but don't affect chain execution.
+The whiteboard sends the standard `{name, nodes[], edges[]}` template format plus optional `positions:
+{nodeId: {x, y}}` and `startTargets: string[]` (the UML start-dot links) fields. The backend preserves all
+fields verbatim (the scheduler ignores unknown fields when loading). Positions are purely a whiteboard
+concern; `startTargets` drives which subgraph a run executes (`_prune_to_start`).
 
 ### Per-node param form
 

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { shortId } from '../utils/id'
 
 export type TaskStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
@@ -30,7 +31,7 @@ export const useTaskStore = defineStore('tasks', () => {
   const _seqRef = ref(0)
 
   function add(t: Omit<TaskEntry, 'id' | 'log' | 'seq'>): TaskEntry {
-    const entry: TaskEntry = { ...t, id: crypto.randomUUID(), log: [], seq: ++_seqRef.value }
+    const entry: TaskEntry = { ...t, id: shortId(), log: [], seq: ++_seqRef.value }
     tasks.value.unshift(entry)
     return entry
   }
