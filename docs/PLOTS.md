@@ -117,6 +117,14 @@ The panel's chart-type dropdown offers **only the charts valid for the selected 
 Backend returns `measureType` so the panel filters; specs keep `chartTypes` as the *allowed* set and
 the panel intersects with what's valid for the measure.
 
+**Time series overrides the set.** When the `groupBy` column is a **temporal** column (`t`), per-frame
+distribution charts make no sense (thousands of boxes), so the dropdown switches to **`trend`**
+(measure mean per frame, geom_smooth/LOESS line) and **`count`** (cells per frame over time, also a
+line), and the selection is moved onto `trend`. Unticking `t` restores the measure-type set. `trend`
+is a real chart type — not a hidden render mode — so the menu label always matches what's drawn (this
+fixed "boxplot secretly renders a smooth line"). The LOESS span (%) and CI-ribbon toggle appear only
+in this mode; render is `buildTrendLine` in `plot.ts`.
+
 ### `count` — objects per series (no measure)
 
 `chart_type = "count"` returns the **row count** per series (`value` = # objects, same series shape

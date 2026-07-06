@@ -204,7 +204,7 @@ function onDocClick(e: MouseEvent) {
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 // friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
-const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked' }
+const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked', trend: 'trend (mean/t)', count: 'count' }
 const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 
 const crossImage = computed(() => !!props.setUid)
@@ -223,6 +223,12 @@ function scheduleFetch() { if (fetchTimer) clearTimeout(fetchTimer); fetchTimer 
 // applicable chart types = the spec's allowed set ∩ the charts valid for the detected measure type
 // (docs/PLOTS.md §2). Before the first response (no measureType) just show the spec's set.
 const validCharts = computed<ChartType[]>(() => {
+  // TIME SERIES (grouped by a temporal column, t): the only sensible charts are a trend LINE over
+  // time — measure mean per frame (`trend`, geom_smooth/LOESS) or cell count per frame (`count`).
+  // Distribution charts (boxplot/histogram/violin) would be thousands of per-frame boxes, so they're
+  // dropped — which is why selecting `t` swaps the menu to [trend, count] and the reset watch below
+  // moves the selection onto `trend` (no more "boxplot that secretly renders a smooth line").
+  if (timeSeries.value) return ['trend', 'count']
   const mt = result.value?.measureType
   if (!mt) return props.spec.chartTypes
   const ok = new Set(chartsForMeasure(mt))
