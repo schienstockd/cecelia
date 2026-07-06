@@ -303,6 +303,7 @@ function run_task(task::CciaTask, img::CciaImage, params::Dict{String,Any};
                   on_progress::Function      = (n, t) -> nothing,
                   on_process::Function       = _ -> nothing,
                   on_status_change::Function = _ -> nothing)
+    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     validate_params(task, params)
     fun_name  = _fun_name_from_task(task)
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name
@@ -337,6 +338,7 @@ function run_task(task::CciaTask, imgs::Vector{CciaImage}, params::Dict{String,A
                   on_process::Function       = _ -> nothing,
                   on_status_change::Function = _ -> nothing)
     isempty(imgs) && error("run_task (set-scope): no images")
+    params = _flatten_sections(task, params)   # lift nested `section` params (chain-saved) to top level
     validate_params(task, params)
     fun_name  = _fun_name_from_task(task)
     pool_name = isempty(pool_name) ? _task_pool_name(task) : pool_name

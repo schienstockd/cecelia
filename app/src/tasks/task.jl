@@ -238,6 +238,46 @@ function _task_spec(task::CompositeTask)::Union{Dict{String,Any}, Nothing}
     end
 end
 
+# `section` params are a UI grouping only — their sub-params belong at the TOP LEVEL of the params
+# dict, which is where validate_params and every task's `_run_task` read them. The module-page runner
+# flattens before sending (frontend `TaskRunner.flattenParams`), but the whiteboard/chain persists them
+# NESTED under the section key (e.g. `measureOptions => {extendedMeasures: true}`), so a chain run would
+# otherwise drop every section param (extendedMeasures, the imageTiling block, …) to its default.
+# `run_task` normalises here so both paths — and already-saved chains — behave identically. Composites
+# carry no params of their own, so their section keys come from the sub-task specs.
+function _section_keys(task::CciaTask)::Set{String}
+    spec = _task_spec(task)
+    ks = Set{String}()
+    isnothing(spec) && return ks
+    for step in get(spec, "composite", String[])
+        sub = try _task_from_fun_name(string(step)) catch; nothing end
+        isnothing(sub) || union!(ks, _section_keys(sub))
+    end
+    for p in get(spec, "params", [])
+        (p isa AbstractDict && string(get(p, "type", "")) == "section") && push!(ks, string(get(p, "key", "")))
+    end
+    ks
+end
+
+# Lift nested `section` sub-params to the top level. Idempotent: already-flat params have no section
+# key to lift; an explicit top-level value is never clobbered by a section entry of the same name.
+function _flatten_sections(task::CciaTask, params::Dict{String,Any})::Dict{String,Any}
+    section_keys = _section_keys(task)
+    isempty(section_keys) && return params
+    out = params; copied = false
+    for k in section_keys
+        v = get(out, k, nothing)
+        v isa AbstractDict || continue
+        copied || (out = copy(out); copied = true)
+        for (sk, sv) in v
+            skk = string(sk)
+            haskey(out, skk) || (out[skk] = sv)
+        end
+        delete!(out, k)
+    end
+    out
+end
+
 """
     task_scope(task) -> "image" | "set"
 

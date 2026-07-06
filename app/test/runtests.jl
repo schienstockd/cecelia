@@ -148,6 +148,32 @@ end
             ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    # ── Section-param flattening (whiteboard/chain stores section params NESTED) ───
+    # Regression: a chain node saves `section` params under the section key (e.g.
+    # measureOptions => {extendedMeasures: true}), but tasks read them flat. run_task must lift them.
+    @testset "Section params flatten (chain nesting)" begin
+        ml = _task_from_fun_name("segment.measureLabels")
+        # measureLabels declares `measureOptions` + `imageTiling` sections
+        @test "measureOptions" in Cecelia._section_keys(ml)
+        @test "imageTiling"    in Cecelia._section_keys(ml)
+        nested = Dict{String,Any}(
+            "outputValueName" => "T",
+            "measureOptions"  => Dict{String,Any}("extendedMeasures" => true, "saveMeshes" => false),
+            "imageTiling"     => Dict{String,Any}("blockSize" => 4096, "overlap" => 0))
+        flat = Cecelia._flatten_sections(ml, nested)
+        @test flat["extendedMeasures"] == true          # was buried under measureOptions
+        @test flat["blockSize"] == 4096                  # was buried under imageTiling
+        @test !haskey(flat, "measureOptions")            # section container dropped
+        @test flat["outputValueName"] == "T"             # top-level survives
+        # composite pulls section keys from its sub-tasks (cellpose + measureLabels)
+        comp = _task_from_fun_name("segment.cellposeMeasure")
+        @test "measureOptions" in Cecelia._section_keys(comp)
+        @test Cecelia._flatten_sections(comp,
+            Dict{String,Any}("measureOptions" => Dict{String,Any}("extendedMeasures" => true)))["extendedMeasures"] == true
+        # already-flat params are unchanged (idempotent)
+        @test Cecelia._flatten_sections(ml, Dict{String,Any}("extendedMeasures" => true))["extendedMeasures"] == true
+    end
+
     # ── Dispatch + param validation — ClustTracks (clustTracks.cluster, set-scope) ───
     @testset "Param validation — ClustTracks" begin
         @test _task_from_fun_name("clustTracks.cluster") isa ClustTracks

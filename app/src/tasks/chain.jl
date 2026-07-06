@@ -613,8 +613,10 @@ function _run_set_scope_node!(run::ChainRun, node::ChainNode,
     end
 
     result = try
+        # set-scope nodes call _run_task directly (not via run_task), so flatten nested `section`
+        # params here too — else a chain-saved section param (e.g. clustering options) is dropped.
         _run_task(task_struct, imgs,
-                  merge(effective_params, Dict("_task_id" => tid));
+                  _flatten_sections(task_struct, merge(effective_params, Dict("_task_id" => tid)));
                   on_log      = line -> Base.invokelatest(on_log, "[set/$(node.id)] $line"),
                   on_process  = _ -> nothing)
     catch e
@@ -675,7 +677,7 @@ function _run_incremental_node!(run::ChainRun, node::ChainNode,
 
     function run_plot!(imgs_snap::Vector{CciaImage})
         result = try
-            _run_task(task_struct, imgs_snap, effective_params;
+            _run_task(task_struct, imgs_snap, _flatten_sections(task_struct, effective_params);
                       on_log     = line -> Base.invokelatest(on_log, "[incr/$(node.id)] $line"),
                       on_process = _ -> nothing)
         catch e
