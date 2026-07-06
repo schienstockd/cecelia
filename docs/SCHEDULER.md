@@ -369,6 +369,27 @@ Iterates nodes in topological order. For each node and each image:
 Staleness propagates downstream via a topo-ordered predecessor map — if n3 re-runs because its
 params changed, n4 and n5 are also reset even if their own params are unchanged.
 
+### Explicit start node (`start_node` — "resume from here")
+
+`_reset_stale_nodes!` only re-runs nodes that are *stale* (failed / crashed / params-changed) and
+their descendants — a node that is `:done` with unchanged params is always kept and skipped. To
+**force** a re-run of a completed section (e.g. re-do measurements with the same params), `run_chain`
+takes an optional `start_node`:
+
+```julia
+run_chain(proj, String[]; run_id, start_node = "n3")   # re-run n3 + everything downstream
+```
+
+`_force_restart_from!` resets `start_node` **and all its descendants** (`_descendants`, transitive
+successors over the edge set) back to `:pending` across every image — regardless of status or
+`params_hash`. It runs *after* `_reset_stale_nodes!`, so it only ever adds to the reset set. Upstream
+(ancestor) nodes are untouched: they stay `:done` and are skipped. This is the whiteboard Live-tab
+"resume from here" — pick a node, everything from it down re-runs, everything above it is reused.
+
+The WS `chain:run` message carries `runId` (→ resume) and optional `startNode`; the frontend Live
+tab sends them when you hit **Resume** (with or without a picked node). See `docs/UI.md` → Chain
+whiteboard.
+
 ### In-place restart (no new task record)
 
 Resume re-uses the existing `run.id`. There is no "new task created" on resume — the run record
