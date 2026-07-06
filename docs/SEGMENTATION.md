@@ -245,11 +245,15 @@ Flat `Dict{String,String}` — value_name → h5ad filename. Written by `measure
 
 ### Morphology properties
 
-**2D**: area, perimeter, eccentricity, orientation, major/minor axis, solidity, feret diameter, convex area, equivalent diameter, extent → derived: aspect ratio, perimeter-to-area, oblate index.
+The derived shape descriptors are ported from the old R `measure_utils.py` so the two versions agree
+(`oblate`/`prolate` are **axis-length ratios**, not a circularity proxy). `bbox` is **not** saved — it's a
+structural extent, not a QC measure, and nothing reads it.
 
-**3D basic** (skimage): area (voxel count = volume), extent, solidity, equivalent diameter, euler number, feret diameter max, inertia tensor eigenvalues → derived: major/minor/intermediate axis lengths.
+**2D**: area, perimeter, eccentricity, orientation, major/minor axis, solidity, feret diameter, convex area, equivalent diameter, extent → derived: `oblate` (minor/major), `prolate` (major/minor), `aspect_ratio` (major/equivalent_diameter), `perimeter_to_area` (perimeter²/area), `fill` ((convex−area)/convex).
 
-**3D extended** (`extendedMeasures=true`, requires trimesh): surface area, mesh volume, convex hull area/volume, sphericity, compactness, surface-to-volume, ellipsoid axis lengths from convex hull vertex PCA, ellipticity oblate/prolate. Overrides skimage axis lengths with ellipsoid-fit values.
+**3D basic** (skimage, no mesh): area (voxel count = volume), extent, `equivalent_diameter_area`, `euler_number`, inertia tensor eigenvalues → derived: major/interm/minor axis lengths **and** the ellipticity ratios `ellipticity_oblate` (minor/major), `ellipticity_prolate` (major/minor), `ellipticity_interm_oblate` (minor/interm), `ellipticity_interm_prolate` (interm/minor). Axis ratios come from the moments — no mesh — so a plain 3D segmentation gets oblate/prolate too. `solidity` is **not** available here (needs a convex hull → extended).
+
+**3D extended** (`extendedMeasures=true`, requires trimesh): `surface_area`, `volume_mesh`, convex hull area/volume, `solidity` (mesh/hull volume), `sphericity`, `compactness`, `surface_to_volume`, `feret_diameter_max_mesh`, ellipsoid axis lengths from convex-hull vertex PCA, and the same `ellipticity_*` ratios (computed from those axis lengths — one formula for both paths). Overrides skimage axis lengths with ellipsoid-fit values.
 
 ### $include template system
 
