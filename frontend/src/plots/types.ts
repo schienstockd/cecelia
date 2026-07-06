@@ -17,6 +17,7 @@ export type ChartType =
   | 'frequency' | 'stacked' | 'stacked100'                 // categorical
   | 'heatmap'                                              // matrix (profile / crosstab) — measure-type independent
   | 'count'                                                // # objects per series (row count) — measure-independent; the segmentation-integrity headline
+  | 'trend'                                                // time series: measure mean per timepoint, geom_smooth (LOESS) line over t
 
 export interface PlotSpec {
   id: string
