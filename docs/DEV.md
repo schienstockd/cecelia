@@ -86,7 +86,8 @@ git push -u origin feat/<short-slug>
 ## CI
 
 Every push/PR runs `.github/workflows/ci.yml` (smoke: fresh checkout → `pixi install` →
-`julia … instantiate` → frontend build → server serves `/api/health` + the frontend). It runs the
+`julia … instantiate` → API tests → frontend build → **frontend tests (Vitest)** → server serves
+`/api/health` + the frontend). It runs the
 **full chain as a matrix on Linux, Windows and macOS-arm64** (`fail-fast: false`), so a
 platform-specific install/build/boot failure is caught in CI rather than by a tester — e.g. a PyPI
 dep with no macOS wheel falling back to a source build (TODO #00062). The repo is public, so
@@ -107,16 +108,24 @@ Rationale and the full packaging/update model live in [`docs/SHIPPING.md`](SHIPP
 
 ## Tests
 
-- **Package (headless Cecelia):** `pixi run test-pkg` (`app/test/runtests.jl`). Some testsets
-  `@test_skip` when their `test-data/` fixtures are absent.
+Three categories, one per language layer. **All three run in CI** (`.github/workflows/ci.yml`) on every
+OS in the matrix, and each has a `pixi run` task:
+
+- **Package (headless Cecelia):** `pixi run test-pkg` (`app/test/runtests.jl`). The data model,
+  persistence, task dispatch, scheduler + chain logic. Some testsets `@test_skip` when their
+  `test-data/` fixtures are absent.
 - **API adapters:** `pixi run test-api` (`api/test/runtests.jl`). Loads `server.jl` with
   `CECELIA_NO_SERVE=1` so the handlers + shared state (`_BOUND_HOST`, `_repl_on`, …) are defined
-  without binding a socket, then calls handlers directly (no live server, no ports). Fixture-free, so
-  it runs in CI (`.github/workflows/ci.yml`) on every OS. Covers diagnostics + the debug-console
-  gating/eval; extend it as more adapters gain logic worth pinning.
-- **Frontend:** `npm test` (Vitest, `frontend/`) for pure logic extracted out of `.vue` SFCs into
-  `src/utils/*` (e.g. `startDot.ts` — the chain start-dot save/reload round-trip). Keep testable logic
-  in plain `.ts` modules rather than the component so it can be unit-tested without mounting Vue.
+  without binding a socket, then calls handlers directly (no live server, no ports). Fixture-free.
+  Covers diagnostics + the debug-console gating/eval; extend it as more adapters gain logic worth pinning.
+- **Frontend:** `pixi run test-frontend` (Vitest, `frontend/` — or `npm test` there directly).
+  **Scope is deliberately narrow: pure logic extracted out of `.vue` SFCs into `src/utils/*`**
+  (e.g. `startDot.ts` — the chain start-dot save/reload round-trip, which mirrors the Julia
+  `_prune_to_start` pruning; a two-sided contract that can silently drift). **No component mounting,
+  no jsdom, no DOM/E2E** — those are a separate, heavier decision (`@vue/test-utils`, a DOM shim) not
+  taken here. Vitest is zero-config on top of the existing Vite toolchain, so the category stays cheap.
+  The convention this enforces: **keep testable logic in plain `.ts` modules, not the component**, so it
+  can be unit-tested without mounting Vue.
 
 ## Diagnostics & debug console
 
