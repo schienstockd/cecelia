@@ -105,6 +105,16 @@ Cut **off `main`** after the relevant PRs have merged, by pushing a tag:
 
 Rationale and the full packaging/update model live in [`docs/SHIPPING.md`](SHIPPING.md).
 
+## Tests
+
+- **Package (headless Cecelia):** `pixi run test-pkg` (`app/test/runtests.jl`). Some testsets
+  `@test_skip` when their `test-data/` fixtures are absent.
+- **API adapters:** `pixi run test-api` (`api/test/runtests.jl`). Loads `server.jl` with
+  `CECELIA_NO_SERVE=1` so the handlers + shared state (`_BOUND_HOST`, `_repl_on`, …) are defined
+  without binding a socket, then calls handlers directly (no live server, no ports). Fixture-free, so
+  it runs in CI (`.github/workflows/ci.yml`) on every OS. Covers diagnostics + the debug-console
+  gating/eval; extend it as more adapters gain logic worth pinning.
+
 ## Diagnostics & debug console
 
 **Settings → Diagnostics** (always on) shows server threads, Julia version, memory, the bound
