@@ -95,10 +95,12 @@ function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues {
   const vals: ParamValues = {}
   for (const p of def.params) {
     if (p.type === 'section') {
+      // Sections are stored flat (flattenParams hoists children to the top level on run), so read
+      // the child from the flat key. savedSection is kept first for any legacy nested records.
       const savedSection = ((saved[p.key] ?? {}) as ParamValues)
       const sectionVals: ParamValues = {}
       for (const sp of p.params ?? []) {
-        sectionVals[sp.key] = savedSection[sp.key] ?? sp.default ?? null
+        sectionVals[sp.key] = savedSection[sp.key] ?? saved[sp.key] ?? sp.default ?? null
       }
       vals[p.key] = sectionVals
     } else {
