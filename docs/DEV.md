@@ -104,3 +104,28 @@ Cut **off `main`** after the relevant PRs have merged, by pushing a tag:
   makes the `releases/latest` install one-liner resolve.
 
 Rationale and the full packaging/update model live in [`docs/SHIPPING.md`](SHIPPING.md).
+
+## Diagnostics & debug console
+
+**Settings → Diagnostics** (always on) shows server threads, Julia version, memory, the bound
+host/port, and the projects dir — read from `GET /api/diagnostics`. Use it to confirm the API is
+multithreaded (`threads` > 1; the server also logs `threads=N` at startup) and to see the bind.
+
+**Settings → Developer → "Enable debug console"** exposes a Julia REPL that evaluates in the running
+server's `Main` (so `Cecelia`, `projects_dir`, scheduler/napari state are all in scope) — e.g.
+`Threads.nthreads()`, inspecting a `label_props`, poking a `CciaImage`. It returns the value plus
+captured `stdout`/`stderr`.
+
+Because that is arbitrary code execution, it is gated:
+
+- **Hard gate — a loopback bind.** Eval runs only when the server is bound to `127.0.0.1`/`::1`. A
+  `0.0.0.0` (network-reachable) server refuses it regardless of the toggle — the OS won't accept a
+  remote connection to a loopback socket, so there's no header to spoof. The default bind is loopback
+  (`CECELIA_HOST`), so it works out of the box locally; deliberately exposing the server with
+  `CECELIA_HOST=0.0.0.0` disables the console.
+- **Runtime toggle.** The Settings switch flips a server flag via `POST /api/repl/config` (no
+  restart); it seeds from `CECELIA_REPL=1`. Off by default. It is *not* a security boundary — the
+  loopback gate is.
+
+Implementation: `api/src/repl_api.jl`. `redirect_stdout` is process-global, so evals are serialised
+under a lock and drained by an async pipe reader.

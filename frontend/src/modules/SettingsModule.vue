@@ -76,11 +76,69 @@ async function applyUpdate() {
 }
 
 onMounted(checkUpdates)
+
+// ── Diagnostics + debug console ──────────────────────────────────────────────
+interface Diag {
+  threads: number; julia: string; projectsDir: string
+  memFreeGB: number; memTotalGB: number; gcLiveMB: number
+  host: string; port: number; loopback: boolean
+  replEnabled: boolean; replAvailable: boolean
+}
+const diag = ref<Diag | null>(null)
+const diagBusy = ref(false)
+const replToggle = ref(false)   // mirrors the server's runtime enable flag (diag.replEnabled)
+async function loadDiag() {
+  diagBusy.value = true
+  try {
+    diag.value = await (await fetch('/api/diagnostics')).json() as Diag
+    replToggle.value = !!diag.value?.replEnabled
+  } catch { diag.value = null }
+  finally { diagBusy.value = false }
+}
+// flip the server-side runtime flag; loopback bind is still required for the console to work (server-side)
+async function toggleRepl() {
+  const enabled = replToggle.value
+  try {
+    await fetch('/api/repl/config', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+    })
+  } catch { /* ignore — loadDiag re-syncs the true state */ }
+  await loadDiag()
+}
+
+// gated debug REPL (only rendered when the server reports replEnabled)
+interface ReplEntry { code: string; ok: boolean; value?: string; output?: string; error?: string }
+const replCode = ref('')
+const replBusy = ref(false)
+const replLog = ref<ReplEntry[]>([])
+async function runRepl() {
+  const code = replCode.value.trim()
+  if (!code || replBusy.value) return
+  replBusy.value = true
+  try {
+    const res = await fetch('/api/repl', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    })
+    const d = await res.json() as { ok?: boolean; value?: string; output?: string; error?: string }
+    replLog.value.push({ code, ok: res.ok && !!d.ok, value: d.value, output: d.output, error: d.error })
+    if (res.ok) replCode.value = ''
+  } catch (e) {
+    replLog.value.push({ code, ok: false, error: String(e) })
+  } finally { replBusy.value = false }
+}
+// ⌘/Ctrl+Enter runs (plain Enter stays a newline — it's a multi-line editor)
+function replKeydown(e: KeyboardEvent) {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runRepl() }
+}
+onMounted(loadDiag)
 </script>
 
 <template>
   <div class="settings-page">
     <h1 class="page-title">Settings</h1>
+
+    <div class="settings-cols">
+    <div class="settings-col">
 
     <!-- ── Project ─────────────────────────────────────────────────────── -->
     <section class="settings-section">
@@ -179,13 +237,103 @@ onMounted(checkUpdates)
 
       <span v-if="updateMsg" class="field-hint">{{ updateMsg }}</span>
     </section>
+
+    </div>
+    <div class="settings-col">
+
+    <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Diagnostics</h2>
+
+      <div v-if="diag" class="diag-grid">
+        <span>Server threads</span><span class="mono">{{ diag.threads }}</span>
+        <span>Julia</span><span class="mono">{{ diag.julia }}</span>
+        <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>
+        <span>Host</span><span class="mono">{{ diag.host }}:{{ diag.port }}</span>
+        <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>
+      </div>
+
+      <div class="field-row" style="margin-top:0.6rem">
+        <button class="save-btn" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
+          <i :class="['pi', diagBusy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Refresh
+        </button>
+      </div>
+      <span v-if="diag && diag.threads > 1" class="field-hint">Multithreaded API active ({{ diag.threads }} threads).</span>
+      <span v-else-if="diag" class="field-hint">Single-threaded — relaunch the API with <code>-t auto</code> for parallelism.</span>
+    </section>
+
+    <!-- ── Developer ───────────────────────────────────────────────────── -->
+    <section v-if="diag" class="settings-section">
+      <h2 class="section-title">Developer</h2>
+
+      <div class="field">
+        <label class="toggle-row" v-tooltip.right="'Show a Julia console that evaluates code in the running server. Only works when the server is loopback-bound (127.0.0.1); a network-bound server refuses it regardless.'">
+          <input type="checkbox" v-model="replToggle" @change="toggleRepl" />
+          <span class="toggle-label">Enable debug console</span>
+        </label>
+      </div>
+
+      <!-- toggle is on but the server is network-bound → eval is refused server-side (loopback required) -->
+      <span v-if="replToggle && !diag.loopback" class="field-hint">
+        The server is bound to <code>{{ diag.host }}</code>, so the console is disabled for safety.
+        Relaunch loopback-only to use it: <code>CECELIA_HOST=127.0.0.1 CECELIA_REPL=1 pixi run dev</code>.
+      </span>
+    </section>
+
+    <!-- ── Debug console — only when BOTH gates pass: flag on AND loopback bind ─── -->
+    <section v-if="diag?.replAvailable" class="settings-section">
+      <h2 class="section-title">Debug console</h2>
+      <span class="field-hint">
+        Evaluates Julia in the running server process (<code>CECELIA_REPL</code> on, loopback-bound).
+        Full access to the server — use with care.
+      </span>
+
+      <div v-if="replLog.length" class="repl-log">
+        <div v-for="(e, i) in replLog" :key="i" class="repl-entry">
+          <div class="repl-code">» {{ e.code }}</div>
+          <pre v-if="e.output" class="repl-out">{{ e.output }}</pre>
+          <pre v-if="e.value" class="repl-val">{{ e.value }}</pre>
+          <pre v-if="e.error" class="repl-err">{{ e.error }}</pre>
+        </div>
+      </div>
+
+      <textarea
+        class="repl-input mono"
+        v-model="replCode"
+        rows="3"
+        spellcheck="false"
+        placeholder="Threads.nthreads()"
+        @keydown="replKeydown"
+      />
+      <div class="field-row" style="margin-top:0.5rem">
+        <button class="save-btn" :disabled="replBusy || !replCode.trim()" @click="runRepl">
+          <i :class="['pi', replBusy ? 'pi-spin pi-cog' : 'pi-play']" /> Run (⌘/Ctrl+Enter)
+        </button>
+      </div>
+    </section>
+
+    </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
 .settings-page {
-  max-width: 560px;
+  max-width: 1180px;
   padding: 2rem 2.5rem;
+}
+
+/* two columns: existing settings left, diagnostics/developer right. Collapses to one on narrow
+   viewports. `align-items: start` so the columns don't stretch to equal height. */
+.settings-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 3rem;
+  align-items: start;
+}
+.settings-col { min-width: 0; }
+@media (max-width: 860px) {
+  .settings-cols { grid-template-columns: 1fr; gap: 0; }
 }
 
 .page-title {
@@ -283,5 +431,42 @@ onMounted(checkUpdates)
 .no-project {
   font-size: 0.8rem;
   color: var(--cc-text-dim);
+}
+
+/* diagnostics key/value grid */
+.diag-grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 0.9rem;
+  font-size: 0.78rem;
+  color: var(--cc-text);
+}
+.diag-grid > span:nth-child(odd) { color: var(--cc-text-dim); }
+.mono { font-family: var(--cc-mono); font-size: 0.74rem; word-break: break-all; }
+.field-hint code, .diag-grid code { font-family: var(--cc-mono); font-size: 0.72rem; }
+
+/* debug console */
+.repl-log {
+  max-height: 320px;
+  overflow: auto;
+  margin: 0.6rem 0;
+  border: 1px solid var(--cc-border);
+  border-radius: 0.35rem;
+  background: var(--cc-surface-1);
+  padding: 0.4rem 0.6rem;
+}
+.repl-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--cc-border); }
+.repl-entry:last-child { border-bottom: none; }
+.repl-code { font-family: var(--cc-mono); font-size: 0.74rem; color: var(--cc-accent); white-space: pre-wrap; }
+.repl-out, .repl-val, .repl-err {
+  margin: 0.2rem 0 0; font-family: var(--cc-mono); font-size: 0.72rem;
+  white-space: pre-wrap; word-break: break-word;
+}
+.repl-out { color: var(--cc-text-dim); }
+.repl-val { color: var(--cc-text); }
+.repl-err { color: var(--cc-danger, #f87171); }
+.repl-input {
+  width: 100%; resize: vertical; font-family: var(--cc-mono); font-size: 0.76rem;
+  padding: 0.5rem; border-radius: 0.35rem;
 }
 </style>

@@ -15,6 +15,7 @@ include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
 include("update_api.jl")
+include("repl_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -96,6 +97,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     if method == "GET"
         status, body = if path == "/api/health"
             200, JSON3.write((; ok=true, version="CeceliaAPI"))
+        elseif path == "/api/diagnostics"
+            api_diagnostics(req)
         elseif path == "/api/version"
             api_version(req)
         elseif path == "/api/update/check"
@@ -226,6 +229,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_pop_rename(body_bytes)
         elseif path == "/api/plot_data"
             api_plot_data(body_bytes)
+        elseif path == "/api/repl"
+            api_repl(body_bytes)
+        elseif path == "/api/repl/config"
+            api_repl_config(body_bytes)
         elseif path == "/api/update/apply"
             api_update_apply(body_bytes)
         else
@@ -366,11 +373,18 @@ end
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-const HOST = get(ENV, "CECELIA_HOST", "0.0.0.0")
+# Cecelia is a LOCAL app, so bind loopback by default — not reachable from the network, which is both
+# the safer default and what lets the debug console run (its hard gate is a loopback bind). Set
+# CECELIA_HOST=0.0.0.0 to deliberately expose it (the console then refuses to run).
+const HOST = get(ENV, "CECELIA_HOST", "127.0.0.1")
 const PORT = parse(Int, get(ENV, "CECELIA_PORT", "8080"))
+# The address the server is ACTUALLY bound to (set in `start`). The debug REPL keys off this: it only
+# runs when the bind is loopback, so a loopback bind — not a spoofable header — is the network control.
+const _BOUND_HOST = Ref{String}("")
 
 function start(; host=HOST, port=PORT)
-    @info "CeceliaAPI starting" host port projects_dir=projects_dir()
+    _BOUND_HOST[] = string(host)
+    @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end
 

@@ -1,9 +1,11 @@
 # HTTP / WebSocket API
 
 The Julia API server (`api/src/server.jl`) exposes the package over HTTP + WS on port
-**8080** (Vite dev proxies `/api` and `/ws` → 8080). The package itself
-(`Cecelia.jl`) is headless and HTTP-agnostic (`ARCHITECTURE.md`); routes are thin adapters
-that resolve objects and call package functions.
+**8080** (Vite dev proxies `/api` and `/ws` → 8080). It binds **`127.0.0.1`** by default
+(Cecelia is a local app); set `CECELIA_HOST=0.0.0.0` to expose it on the network. Handlers run on
+the thread pool (`-t auto`), so a blocking read doesn't stall the accept loop; Julia HDF5 access is
+serialised (`_with_h5`). The package itself (`Cecelia.jl`) is headless and HTTP-agnostic
+(`ARCHITECTURE.md`); routes are thin adapters that resolve objects and call package functions.
 
 ## Conventions
 
@@ -43,6 +45,9 @@ that resolve objects and call package functions.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | liveness |
+| GET | `/api/diagnostics` | server health: threads, Julia version, memory, bound host/port, projects dir, debug-console state — powers Settings → Diagnostics |
+| POST | `/api/repl` | `{code}` — evaluate Julia in the server's `Main` (value + captured stdout/stderr + error). **Gated**: only when the debug console is toggled on AND the server is loopback-bound; a `0.0.0.0` bind always refuses it. Localhost-only dev tool (`repl_api.jl`) |
+| POST | `/api/repl/config` | `{enabled}` — flip the runtime debug-console toggle (Settings → Developer). Not a security boundary; eval is still loopback-gated |
 | GET | `/api/projects`, POST `/api/projects/{list,create,load,save,rename}` | project CRUD |
 | POST | `/api/sets/{create,delete}` | set CRUD |
 | GET | `/api/images/meta`, POST `/api/images/{register,delete,channelnames,labels/delete}`, `/api/images/attr/{create,delete,set}` | image CRUD/metadata |
