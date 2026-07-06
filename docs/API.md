@@ -7,6 +7,30 @@ the thread pool (`-t auto`), so a blocking read doesn't stall the accept loop; J
 serialised (`_with_h5`). The package itself (`Cecelia.jl`) is headless and HTTP-agnostic
 (`ARCHITECTURE.md`); routes are thin adapters that resolve objects and call package functions.
 
+## Thread safety (`-t auto`)
+
+Every handler runs on the thread pool, so two requests can execute concurrently. Anything they
+share must be guarded. All Python runs as a **subprocess** (`run_py`) — there is no in-process
+CPython/PyCall, so the GIL is a non-issue. The locks that exist:
+
+| Shared state | Lock | Where |
+|---|---|---|
+| HDF5 / `.h5ad` access | `_HDF5_LOCK` (`_with_h5`) | `app/src/label_props.jl` |
+| Task-spec cache (`_SPEC_CACHE`) | `_SPEC_CACHE_LOCK` | `app/src/tasks/task.jl` |
+| Motion-dims cache (`_MOTION_DIMS_CACHE`) | `_MOTION_DIMS_CACHE_LOCK` | `app/src/tasks/tracking/track_measures.jl` |
+| Gating pop CRUD (load→mutate→save) | `_POPMAP_LOCK` + atomic temp-file write | `api/src/gating_api.jl`, `app/src/gating/population_manager.jl` |
+| Scheduler task registry / pools / cancels | `_TASKS_LOCK` / `_POOLS_LOCK` / `_CANCELLED_CHAINS_LOCK` | `app/src/tasks/scheduler.jl` |
+| The single napari bridge process | `_viewer_lock` (`_with_viewer`) — every handler holds it across its send-sequence | `api/src/napari_api.jl` |
+
+`TaskRecord.proc` is `@atomic` (written by a worker, read by `cancel_task!`).
+
+**Known limitation — debug console output capture.** `/api/repl` uses `redirect_stdout`, which
+swaps the **process-global** stream. `_REPL_LOCK` serialises evals against each other, but any
+*other* handler/task running concurrently with an eval has its `println`/`@info` captured into the
+eval's pipe (or missing from the server log) for the eval's duration. Accepted, not fixed: a real
+fix needs per-task output capture, disproportionate for a loopback-only, opt-in dev console. The
+Settings → Debug console UI shows a note to this effect.
+
 ## Conventions
 
 - **Routing**: a flat dispatch in `server.jl` `handle_http(req, body_bytes)` — GET reads

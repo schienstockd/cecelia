@@ -2,8 +2,12 @@ abstract type CciaTask end
 
 # ── Spec loading ──────────────────────────────────────────────────────────────
 
-const _SPEC_CACHE    = Dict{String, Any}()
-const _FRAGMENTS_DIR = joinpath(@__DIR__, "fragments")
+const _SPEC_CACHE      = Dict{String, Any}()
+# _task_spec is called on every run_task (validate_params/task_scope/pool lookup) and from
+# handle_task_run — concurrent under `-t auto`. An unlocked lazy Dict write can rehash mid-read
+# on another thread → corruption/crash. Serialise the check-and-fill (specs are tiny; contention nil).
+const _SPEC_CACHE_LOCK = ReentrantLock()
+const _FRAGMENTS_DIR   = joinpath(@__DIR__, "fragments")
 
 # Expand a params array: items with {"$include": "name"} are replaced in-place
 # by all items from fragments/name.json. Recurses into nested dicts.
@@ -49,17 +53,19 @@ end
 
 function _task_spec(task::CciaTask)::Union{Dict{String,Any}, Nothing}
     key = string(typeof(task))
-    haskey(_SPEC_CACHE, key) && return _SPEC_CACHE[key]
+    lock(_SPEC_CACHE_LOCK) do
+        haskey(_SPEC_CACHE, key) && return _SPEC_CACHE[key]
 
-    # Map type name → relative spec path inside app/src/tasks/
-    spec_file = _spec_path(task)
-    isnothing(spec_file) && return nothing
-    isfile(spec_file) || return nothing
+        # Map type name → relative spec path inside app/src/tasks/
+        spec_file = _spec_path(task)
+        isnothing(spec_file) && return nothing
+        isfile(spec_file) || return nothing
 
-    spec = JSON3.read(read(spec_file, String), Dict{String,Any})
-    spec = _resolve_spec_includes(spec, _FRAGMENTS_DIR)
-    _SPEC_CACHE[key] = spec
-    spec
+        spec = JSON3.read(read(spec_file, String), Dict{String,Any})
+        spec = _resolve_spec_includes(spec, _FRAGMENTS_DIR)
+        _SPEC_CACHE[key] = spec
+        spec
+    end
 end
 
 # Resolve a producer task's output value_name from its JSON spec's top-level "outputValueName".
@@ -220,14 +226,16 @@ end
 # Override spec caching: CompositeTask type alone is not unique — include fun_name.
 function _task_spec(task::CompositeTask)::Union{Dict{String,Any}, Nothing}
     key = "CompositeTask:$(task.fun_name)"
-    haskey(_SPEC_CACHE, key) && return _SPEC_CACHE[key]
-    spec_file = _spec_path(task)
-    isnothing(spec_file) && return nothing
-    isfile(spec_file)    || return nothing
-    spec = JSON3.read(read(spec_file, String), Dict{String,Any})
-    spec = _resolve_spec_includes(spec, _FRAGMENTS_DIR)
-    _SPEC_CACHE[key] = spec
-    spec
+    lock(_SPEC_CACHE_LOCK) do
+        haskey(_SPEC_CACHE, key) && return _SPEC_CACHE[key]
+        spec_file = _spec_path(task)
+        isnothing(spec_file) && return nothing
+        isfile(spec_file)    || return nothing
+        spec = JSON3.read(read(spec_file, String), Dict{String,Any})
+        spec = _resolve_spec_includes(spec, _FRAGMENTS_DIR)
+        _SPEC_CACHE[key] = spec
+        spec
+    end
 end
 
 """

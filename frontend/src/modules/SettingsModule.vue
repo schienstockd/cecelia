@@ -284,8 +284,8 @@ onMounted(loadDiag)
     <section v-if="diag?.replAvailable" class="settings-section">
       <h2 class="section-title">Debug console</h2>
       <span class="field-hint">
-        Evaluates Julia in the running server process (<code>CECELIA_REPL</code> on, loopback-bound).
-        Full access to the server — use with care.
+        Evaluates Julia in the running server — full access, use with care.
+        Concurrent task logs may briefly appear here during a run.
       </span>
 
       <div v-if="replLog.length" class="repl-log">

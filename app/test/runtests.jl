@@ -1726,6 +1726,8 @@ end
         td = mktempdir()
         save_pop_map!(m, td)
         @test isfile(gating_path(td, "B"))
+        # atomic write: the temp file is renamed into place, never left behind
+        @test !isfile(gating_path(td, "B") * ".tmp")
         m2 = load_pop_map(td, "B")
         @test pop_paths(m2) == pop_paths(m)
         @test pop_at(m2, "/cd4").colour == "#f00"

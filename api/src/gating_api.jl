@@ -194,6 +194,14 @@ function _broadcast_popmap(project_uid, image_uid, vn, pop_type, m::PopulationMa
         "valueName" => vn, "popType" => pop_type, "tree" => to_tree(m)))
 end
 
+# Serialise gating pop CRUD. Each handler does load_pop_map → mutate → save_pop_map!; under
+# `-t auto` two concurrent edits to the same map (rapid clicks / two tabs) would otherwise both
+# load the same tree and the second save would clobber the first (lost update). One process-wide
+# ReentrantLock held across the whole load→save is enough — gating edits are user-paced and cheap,
+# so contention across images/value_names is negligible. (save_pop_map! also writes atomically.)
+const _POPMAP_LOCK = ReentrantLock()
+_with_popmap_lock(f) = lock(f, _POPMAP_LOCK)
+
 # persist a mutated map then broadcast — re-injecting the transient napari pop AFTER save
 # (so it never hits disk) but BEFORE broadcast (so the client keeps showing it). Returns the
 # tree (incl. the transient pop) for the HTTP response.
@@ -489,77 +497,87 @@ end
 function api_gating_pop_add(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "name") || return _gerr(400, "name required")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
-    gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(body["gate"]) : nothing
-    flt = get(body, "filter", nothing)
-    try
-        add_pop!(m, String(body["name"]); parent = String(get(body, "parent", ROOT)),
-                 gate = gate, colour = String(get(body, "colour", "#ffffff")),
-                 show = Bool(get(body, "show", true)),
-                 filter_measure = flt === nothing ? nothing : get(flt, "measure", nothing),
-                 filter_fun     = flt === nothing ? nothing : get(flt, "fun", nothing),
-                 filter_values  = flt === nothing ? nothing : get(flt, "values", nothing),
-                 filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", false)),
-                 is_track = Bool(get(body, "is_track", false)))
-    catch e
-        return _gerr(400, sprint(showerror, e))
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(body["gate"]) : nothing
+        flt = get(body, "filter", nothing)
+        try
+            add_pop!(m, String(body["name"]); parent = String(get(body, "parent", ROOT)),
+                     gate = gate, colour = String(get(body, "colour", "#ffffff")),
+                     show = Bool(get(body, "show", true)),
+                     filter_measure = flt === nothing ? nothing : get(flt, "measure", nothing),
+                     filter_fun     = flt === nothing ? nothing : get(flt, "fun", nothing),
+                     filter_values  = flt === nothing ? nothing : get(flt, "values", nothing),
+                     filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", false)),
+                     is_track = Bool(get(body, "is_track", false)))
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
+        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
     end
-    200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
 end
 
 function api_gating_pop_set_gate(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "gate")) || return _gerr(400, "path and gate required")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
-    has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-    try
-        set_gate!(m, String(body["path"]), gate_from_spec(body["gate"]))
-    catch e
-        return _gerr(400, sprint(showerror, e))
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        try
+            set_gate!(m, String(body["path"]), gate_from_spec(body["gate"]))
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
+        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
     end
-    200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
 end
 
 function api_gating_pop_delete(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "path") || return _gerr(400, "path required")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
-    has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-    del_pop!(m, String(body["path"]))
-    200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        del_pop!(m, String(body["path"]))
+        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
+    end
 end
 
 function api_gating_pop_update(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "path") || return _gerr(400, "path required")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
-    has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-    p = pop_at(m, String(body["path"]))
-    haskey(body, "colour") && (p.colour = String(body["colour"]))
-    haskey(body, "show")   && (p.show = Bool(body["show"]))
-    # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
-    # `clust`/`trackclust` pop by rewriting its filter (typically filter_values). Mutates only the
-    # keys present in the `filter` dict, so a `{values:[…]}` tick leaves measure/fun untouched.
-    flt = get(body, "filter", nothing)
-    if flt !== nothing
-        haskey(flt, "measure")     && (p.filter_measure = get(flt, "measure", nothing))
-        haskey(flt, "fun")         && (p.filter_fun = get(flt, "fun", nothing))
-        haskey(flt, "values")      && (p.filter_values = get(flt, "values", nothing))
-        haskey(flt, "default_all") && (p.filter_default_all = Bool(get(flt, "default_all", false)))
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        p = pop_at(m, String(body["path"]))
+        haskey(body, "colour") && (p.colour = String(body["colour"]))
+        haskey(body, "show")   && (p.show = Bool(body["show"]))
+        # filter update — the tick-cluster-into-population UX toggles which cluster IDs belong to a
+        # `clust`/`trackclust` pop by rewriting its filter (typically filter_values). Mutates only the
+        # keys present in the `filter` dict, so a `{values:[…]}` tick leaves measure/fun untouched.
+        flt = get(body, "filter", nothing)
+        if flt !== nothing
+            haskey(flt, "measure")     && (p.filter_measure = get(flt, "measure", nothing))
+            haskey(flt, "fun")         && (p.filter_fun = get(flt, "fun", nothing))
+            haskey(flt, "values")      && (p.filter_values = get(flt, "values", nothing))
+            haskey(flt, "default_all") && (p.filter_default_all = Bool(get(flt, "default_all", false)))
+        end
+        200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
     end
-    200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
 end
 
 function api_gating_pop_rename(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "newName")) || return _gerr(400, "path and newName required")
-    m = load_pop_map(img; value_name = vn, pop_type = pt)
-    has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
-    newpath = try
-        rename_pop!(m, String(body["path"]), String(body["newName"]))
-    catch e
-        return _gerr(400, sprint(showerror, e))
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")
+        newpath = try
+            rename_pop!(m, String(body["path"]), String(body["newName"]))
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
+        tree = _persist_and_broadcast!(m, img, body, vn, pt)
+        200, JSON3.write((; tree = tree, path = newpath))
     end
-    tree = _persist_and_broadcast!(m, img, body, vn, pt)
-    200, JSON3.write((; tree = tree, path = newpath))
 end

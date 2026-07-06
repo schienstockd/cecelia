@@ -11,6 +11,13 @@ const _viewer_starting = Ref(false)
 const _current_zarr_path = Ref{Union{String,Nothing}}(nothing)
 const _current_task_dir  = Ref{Union{String,Nothing}}(nothing)
 
+# Serialise all interaction with the single bridge process. Under `-t auto` two concurrent napari
+# requests would otherwise interleave command sequences on the one bridge (e.g. a screenshot mid-open,
+# or two opens racing the `_current_*` refs → a stale auto-save target). Hold this around each
+# handler's full send-sequence so bridge interaction is single-flighted. `_viewer_lock` is reentrant,
+# so `_ensure_viewer!`'s own locking nests fine.
+_with_viewer(f) = lock(f, _viewer_lock)
+
 # coerce a JSON value (Int/Float/String/null) to a non-negative Int; blank/garbage → 0.
 # Used for the z-window dial, which can arrive as null (empty input) or a float.
 function _to_int(x)::Int
@@ -102,6 +109,7 @@ function _execute_pending_open()
     isnothing(pending) && return
     v = _viewer()
     isnothing(v) && return
+    _with_viewer() do
     try
         # Re-resolve _active at fire time — a task may have completed between the
         # eye-button click and Napari becoming ready.
@@ -134,6 +142,7 @@ function _execute_pending_open()
     catch e
         @warn "Failed to open pending image in Napari" exception = e
     end
+    end  # _with_viewer
 end
 
 function _do_open!(v::NapariViewer, zarr_path::String, task_dir::String,
@@ -233,6 +242,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
 
     v = _viewer()
     isnothing(v) && return 500, JSON3.write((; error = "Viewer not initialised"))
+    _with_viewer() do
     try
         # Auto-save layer props for the currently open image before switching
         if auto_save && !isnothing(_current_zarr_path[]) && !isnothing(_current_task_dir[])
@@ -259,6 +269,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
         @warn "Failed to open image in Napari" image_uid exception = e
         500, JSON3.write((; error = sprint(showerror, e)))
     end
+    end  # _with_viewer
 end
 
 # ── REST: POST /api/napari/close ──────────────────────────────────────────────
@@ -266,11 +277,13 @@ end
 function api_napari_close(body_bytes::Vector{UInt8})
     v = _viewer()
     isnothing(v) && return 200, JSON3.write((; ok = true, message = "Napari was not running"))
-    try
-        close!(v)
-        200, JSON3.write((; ok = true))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            close!(v)
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -282,6 +295,7 @@ function api_napari_screenshot(body_bytes::Vector{UInt8})
     v = _viewer()
     (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
     path = tempname() * ".png"
+    _with_viewer() do
     try
         save_screenshot!(v, path; canvas_only = true)
         return 200, read(path)   # Vector{UInt8} → octet-stream (server.jl)
@@ -290,6 +304,7 @@ function api_napari_screenshot(body_bytes::Vector{UInt8})
     finally
         isfile(path) && rm(path; force = true)
     end
+    end  # _with_viewer
 end
 
 # ── REST: POST /api/napari/restart ────────────────────────────────────────────
@@ -297,11 +312,13 @@ end
 function api_napari_restart(body_bytes::Vector{UInt8})
     v = _viewer()
     isnothing(v) && return api_napari_open(body_bytes)
-    try
-        restart!(v)
-        200, JSON3.write((; ok = true))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            restart!(v)
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -315,11 +332,13 @@ function api_napari_show_labels(body_bytes::Vector{UInt8})
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
-    try
-        _show_all_labels!(v, all_labels, show)
-        200, JSON3.write((; ok = true))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            _show_all_labels!(v, all_labels, show)
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -364,13 +383,15 @@ function api_napari_show_populations(body_bytes::Vector{UInt8})
                 "show" => p.show, "is_track" => p.is_track, "label_ids" => labs))
         end
     end   # show=false → empty pops → bridge removes the existing pop layers
-    try
-        send(v, Dict{String,Any}("type" => "show_populations", "pop_type" => pop_type,
-            "value_name" => vn, "points_size" => points_size, "pops" => pops))
-        200, JSON3.write((; ok = true, n = length(pops)))
-    catch e
-        @warn "show_populations failed" exception = e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "show_populations", "pop_type" => pop_type,
+                "value_name" => vn, "points_size" => points_size, "pops" => pops))
+            200, JSON3.write((; ok = true, n = length(pops)))
+        catch e
+            @warn "show_populations failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -468,13 +489,15 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
             end
         end
     end   # empty want + no gated + no trackclust → empty pops → bridge removes existing track layers
-    try
-        send(v, Dict{String,Any}("type" => "show_tracks",
-            "tail_width" => tail_width, "color_by" => color_by, "pops" => pops))
-        200, JSON3.write((; ok = true, n = length(pops)))
-    catch e
-        @warn "show_tracks failed" exception = e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "show_tracks",
+                "tail_width" => tail_width, "color_by" => color_by, "pops" => pops))
+            200, JSON3.write((; ok = true, n = length(pops)))
+        catch e
+            @warn "show_tracks failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -494,12 +517,14 @@ function api_napari_colour_labels(body_bytes::Vector{UInt8})
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
-    try
-        send(v, Dict{String,Any}("type" => "colour_labels", "value_name" => vn, "column" => column))
-        200, JSON3.write((; ok = true))
-    catch e
-        @warn "colour_labels failed" exception = e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "colour_labels", "value_name" => vn, "column" => column))
+            200, JSON3.write((; ok = true))
+        catch e
+            @warn "colour_labels failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -521,14 +546,16 @@ function api_napari_start_selection(body_bytes::Vector{UInt8})
     # (default) ignores z and selects across the whole stack (docs/NAPARI.md).
     z_mode   = String(get(data, :zMode, "stack"))
     z_window = _to_int(get(data, :zWindow, 0))
-    try
-        send(v, Dict{String,Any}("type" => "start_cell_selection",
-            "project_uid" => project_uid, "image_uid" => image_uid,
-            "value_name" => vn, "api_url" => api_url,
-            "z_mode" => z_mode, "z_window" => z_window))
-        200, JSON3.write((; ok = true))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "start_cell_selection",
+                "project_uid" => project_uid, "image_uid" => image_uid,
+                "value_name" => vn, "api_url" => api_url,
+                "z_mode" => z_mode, "z_window" => z_window))
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -543,12 +570,14 @@ function api_napari_selection_scope(body_bytes::Vector{UInt8})
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
     z_mode   = String(get(data, :zMode, "stack"))
     z_window = _to_int(get(data, :zWindow, 0))
-    try
-        send(v, Dict{String,Any}("type" => "update_selection_scope",
-            "z_mode" => z_mode, "z_window" => z_window))
-        200, JSON3.write((; ok = true))
-    catch e
-        500, JSON3.write((; error = sprint(showerror, e)))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "update_selection_scope",
+                "z_mode" => z_mode, "z_window" => z_window))
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
     end
 end
 
@@ -574,7 +603,9 @@ function api_napari_stop_selection(body_bytes::Vector{UInt8})
     v = _viewer()
     if v !== nothing
         # "Cell selection" mirrors SELECTION_LAYER in napari_bridge.py
-        try; send(v, Dict{String,Any}("type" => "remove_layer", "name" => "Cell selection")); catch; end
+        _with_viewer() do
+            try; send(v, Dict{String,Any}("type" => "remove_layer", "name" => "Cell selection")); catch; end
+        end
     end
     200, JSON3.write((; ok = true))
 end

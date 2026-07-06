@@ -254,9 +254,15 @@ gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::Abst
 function save_pop_map!(m::PopulationMap, task_dir::AbstractString)
     dir = gating_dir(task_dir)
     isdir(dir) || mkpath(dir)
-    open(gating_path(task_dir, m.value_name; pop_type=m.pop_type), "w") do f
+    path = gating_path(task_dir, m.value_name; pop_type=m.pop_type)
+    # Write to a temp file then atomically rename, so a concurrent reader never observes a
+    # half-written (truncated) JSON. The load→mutate→save critical section is itself serialised
+    # by `_POPMAP_LOCK` in the gating API handlers (against lost updates); this guards the file.
+    tmp = path * ".tmp"
+    open(tmp, "w") do f
         JSON3.pretty(f, to_tree(m; include_transient = false))
     end
+    mv(tmp, path; force = true)
     m
 end
 

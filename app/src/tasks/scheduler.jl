@@ -127,7 +127,10 @@ mutable struct TaskRecord
     image_uid::String
     chain_run_id::String                    # "" for standalone tasks; run.id for chain nodes
     status::Symbol                          # :queued | :running | :done | :failed | :cancelled
-    proc::Union{Base.Process, Nothing}
+    # Written by a worker thread (on_process), read by cancel_task! on another — `@atomic` gives
+    # guaranteed cross-thread visibility of the assignment (the cancel-before-set logical race is
+    # already handled by the on_process race guard below).
+    @atomic proc::Union{Base.Process, Nothing}
     on_status_change::Function
 end
 
@@ -181,7 +184,7 @@ function cancel_task!(task_id::String)
     rec = lock(_TASKS_LOCK) do; get(_TASKS, task_id, nothing); end
     isnothing(rec) && return
     _set_status!(rec, :cancelled)
-    proc = rec.proc
+    proc = @atomic rec.proc
     isnothing(proc) && return
     try
         pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
@@ -225,7 +228,7 @@ function _execute_job!(job::TaskJob)
                   on_log      = line -> Base.invokelatest(job.on_log, line),
                   on_progress = (n, t) -> Base.invokelatest(job.on_progress, n, t),
                   on_process  = proc -> begin
-                      rec.proc = proc
+                      @atomic rec.proc = proc
                       # Race guard: if cancel arrived between :running and now, rec.proc
                       # was nothing when cancel_task! ran, so the kill was skipped. Kill
                       # here now that we hold the process handle.
