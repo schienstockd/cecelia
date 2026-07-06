@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import BaseModal from './BaseModal.vue'
 import { useLogStore } from '../stores/log'
 
 const emit = defineEmits<{
@@ -105,19 +106,10 @@ const breadcrumbs = computed(() => {
 </script>
 
 <template>
-  <div class="fb-overlay" @click.self="$emit('close')">
-    <div class="fb-modal">
+  <BaseModal title="Select images" width="680px" @close="$emit('close')">
 
-      <!-- header -->
-      <div class="fb-header">
-        <span class="fb-title">Select images</span>
-        <button class="fb-close" @click="$emit('close')"
-          v-tooltip.left="'Close without selecting.'">
-          <i class="pi pi-times" />
-        </button>
-      </div>
-
-      <!-- breadcrumbs -->
+    <!-- breadcrumbs -->
+    <template #toolbar>
       <div class="fb-breadcrumbs">
         <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
           <span v-if="i > 0" class="crumb-sep">/</span>
@@ -127,6 +119,7 @@ const breadcrumbs = computed(() => {
           </button>
         </template>
       </div>
+    </template>
 
       <!-- body -->
       <div class="fb-body">
@@ -213,69 +206,33 @@ const breadcrumbs = computed(() => {
         </table>
       </div>
 
-      <!-- footer -->
-      <div class="fb-footer">
-        <span class="sel-count" v-if="selected.size > 0">
-          {{ selected.size }} file{{ selected.size > 1 ? 's' : '' }} selected
-        </span>
-        <span class="sel-count dim" v-else>No files selected</span>
+    <template #footer>
+      <span class="sel-count" v-if="selected.size > 0">
+        {{ selected.size }} file{{ selected.size > 1 ? 's' : '' }} selected
+      </span>
+      <span class="sel-count dim" v-else>No files selected</span>
 
-        <div class="footer-actions">
-          <button class="btn-ghost btn-sm" @click="$emit('close')"
-            v-tooltip.top="'Cancel and close the file browser.'">
-            Cancel
-          </button>
-          <button class="btn-primary btn-sm"
-            :disabled="selected.size === 0"
-            @click="confirm"
-            v-tooltip.top="selected.size > 0
-              ? `Add ${selected.size} selected file(s) to the set.`
-              : 'Select at least one image file first.'">
-            <i class="pi pi-plus" />
-            Add {{ selected.size > 0 ? selected.size : '' }} to set
-          </button>
-        </div>
+      <div class="footer-actions">
+        <button class="btn-ghost btn-sm" @click="$emit('close')"
+          v-tooltip.top="'Cancel and close the file browser.'">
+          Cancel
+        </button>
+        <button class="btn-primary btn-sm"
+          :disabled="selected.size === 0"
+          @click="confirm"
+          v-tooltip.top="selected.size > 0
+            ? `Add ${selected.size} selected file(s) to the set.`
+            : 'Select at least one image file first.'">
+          <i class="pi pi-plus" />
+          Add {{ selected.size > 0 ? selected.size : '' }} to set
+        </button>
       </div>
-
-    </div>
-  </div>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
-.fb-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.65);
-  display: flex; align-items: center; justify-content: center;
-  z-index: 500;
-}
-
-.fb-modal {
-  background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-  border-radius: 0.6rem;
-  width: 680px;
-  max-width: 95vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 24px 48px rgba(0,0,0,0.5);
-}
-
-/* header */
-.fb-header {
-  display: flex; align-items: center;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--cc-border);
-  flex-shrink: 0;
-}
-.fb-title { font-size: 0.9rem; font-weight: 600; color: var(--cc-text); flex: 1; }
-.fb-close {
-  background: none; border: none; cursor: pointer;
-  color: var(--cc-text-dim); font-size: 0.8rem;
-  padding: 0.2rem 0.4rem; border-radius: 0.25rem;
-}
-.fb-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
+/* Shell (overlay/box/header/footer) lives in BaseModal; only browser-specific styles remain here. */
 
 /* breadcrumbs */
 .fb-breadcrumbs {
@@ -295,8 +252,7 @@ const breadcrumbs = computed(() => {
 }
 .crumb:hover { background: var(--cc-surface-2); }
 
-/* body */
-.fb-body { flex: 1; overflow-y: auto; }
+/* body — BaseModal's cc-modal-body owns the scroll; .fb-body needs no shell styling. */
 
 .fb-state {
   display: flex; align-items: center; gap: 0.5rem;
@@ -343,13 +299,6 @@ const breadcrumbs = computed(() => {
 .fb-empty { text-align: center; padding: 2rem; color: var(--cc-text-dim); font-size: 0.8rem; }
 
 /* footer */
-.fb-footer {
-  display: flex; align-items: center; gap: 0.75rem;
-  padding: 0.65rem 1rem;
-  border-top: 1px solid var(--cc-border);
-  background: var(--cc-surface-1);
-  flex-shrink: 0;
-}
 .sel-count { font-size: 0.78rem; color: var(--cc-text); flex: 1; }
 .footer-actions { display: flex; gap: 0.4rem; }
 

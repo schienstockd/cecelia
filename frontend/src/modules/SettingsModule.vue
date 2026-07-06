@@ -2,6 +2,9 @@
 import { ref, watch, onMounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import PackagesDialog from '../components/PackagesDialog.vue'
+
+const showPackages = ref(false)
 
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
@@ -79,7 +82,7 @@ onMounted(checkUpdates)
 
 // ── Diagnostics + debug console ──────────────────────────────────────────────
 interface Diag {
-  threads: number; julia: string; projectsDir: string
+  threads: number; julia: string; version: string; projectsDir: string
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean
@@ -246,6 +249,7 @@ onMounted(loadDiag)
       <h2 class="section-title">Diagnostics</h2>
 
       <div v-if="diag" class="diag-grid">
+        <span>Version</span><span class="mono">{{ diag.version }}</span>
         <span>Server threads</span><span class="mono">{{ diag.threads }}</span>
         <span>Julia</span><span class="mono">{{ diag.julia }}</span>
         <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>
@@ -253,9 +257,12 @@ onMounted(loadDiag)
         <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>
       </div>
 
-      <div class="field-row" style="margin-top:0.6rem">
+      <div class="field-row" style="margin-top:0.6rem; gap:0.5rem">
         <button class="save-btn" :disabled="diagBusy" @click="loadDiag" v-tooltip.right="'Re-read server diagnostics'">
           <i :class="['pi', diagBusy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Refresh
+        </button>
+        <button class="save-btn" @click="showPackages = true" v-tooltip.right="'List every installed Python (pixi) and Julia package'">
+          <i class="pi pi-box" /> Packages…
         </button>
       </div>
       <span v-if="diag && diag.threads > 1" class="field-hint">Multithreaded API active ({{ diag.threads }} threads).</span>
@@ -314,6 +321,8 @@ onMounted(loadDiag)
 
     </div>
     </div>
+
+    <PackagesDialog v-if="showPackages" @close="showPackages = false" />
   </div>
 </template>
 

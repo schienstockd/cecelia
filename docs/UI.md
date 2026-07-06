@@ -66,6 +66,50 @@ the "old-school inputs look inconsistent" bug). Keep only layout in scoped style
 
 ---
 
+## Modals & dialogs — always use `BaseModal`
+
+**Every centred modal/dialog is built on `frontend/src/components/BaseModal.vue`. Never hand-roll an
+overlay (`position:fixed; inset:0`) again** — that copy-paste is how we ended up with four near-identical
+shells (`ProjectPanel`, `PhysicalSizeDialog`, `FileBrowser`, …). We do **not** use PrimeVue Dialog.
+
+`BaseModal` provides the dimmed overlay, the centred surface box, the header (icon + title + ✕), and
+close-on-✕ / click-outside / **Escape**. You provide the content via slots.
+
+- **Props:** `title` (string), `icon` (a PrimeIcons class, e.g. `pi-box`), `width` (CSS, default
+  `480px`), `height` (optional fixed CSS height; omit to size to content, capped at `90vh`).
+- **Slots:** default = the scrolling **body**; `#footer` = pinned action row; `#toolbar` = a pinned row
+  under the header (search bars, tabs, breadcrumbs); `#title` = override the whole title area (e.g. to
+  add an info-dot tooltip). The body scrolls; header/toolbar/footer stay pinned.
+- **Emits:** `close` — the host owns visibility (`v-if` + `@close`).
+
+Minimal dialog — copy this:
+
+```vue
+<script setup lang="ts">
+import BaseModal from './BaseModal.vue'
+const emit = defineEmits<{ (e: 'close'): void }>()
+</script>
+
+<template>
+  <BaseModal title="My dialog" icon="pi-cog" width="520px" @close="emit('close')">
+    <div style="padding: 1rem">…body…</div>            <!-- scrolls -->
+    <template #footer>
+      <span style="flex:1" />                            <!-- push buttons right -->
+      <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
+      <button class="btn-primary btn-sm" @click="…">Save</button>
+    </template>
+  </BaseModal>
+</template>
+```
+
+Host it with `v-if`: `<MyDialog v-if="show" @close="show = false" />`. Put dialog-specific CSS in the
+child's scoped `<style>`; the shell (overlay/box/header/footer) is BaseModal's — don't restyle it.
+Working examples: `PackagesDialog.vue` (toolbar + body), `PhysicalSizeDialog.vue` (`#title` slot +
+footer), `FileBrowser.vue` (toolbar + footer). *(An in-canvas overlay like `GateOverlay` is a
+different thing — that's `position:absolute` inside a plot, not a modal.)*
+
+---
+
 ## Pinia array reactivity
 
 Use `splice()` to mutate arrays in place inside setup stores.
@@ -238,8 +282,8 @@ Apply/Fill-flagged. Shown on every module page — the icon isn't gated behind `
 
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
-the 280px `MetadataPanel` sidebar and was unreadable. Follows the `ProjectPanel.vue` hand-rolled
-modal shell (`.pp-overlay`/`.pp-modal` — no PrimeVue Dialog). Explanatory text lives in tooltips
+the 280px `MetadataPanel` sidebar and was unreadable. Built on the shared `BaseModal` shell (see
+*Modals & dialogs* above — no PrimeVue Dialog). Explanatory text lives in tooltips
 (the header's `pi-info-circle`, per-field labels, button tooltips), not inline paragraphs.
 Actions all write only the toggled fields (X/Y/Z/Δt chips — untick what's already correct so a fix
 to one axis doesn't also rewrite ones that are fine): **Apply** (to the selection it was opened
