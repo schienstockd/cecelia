@@ -597,6 +597,18 @@ falling back to `fn.split('.').pop()` only if defs haven't loaded yet.
 (not `failed`). `setStatus` makes user-initiated `cancelled` sticky, so a late backend event can't
 flip a cancelled task back to running/done/green.
 
+**Resume / resume-from-here**: the Live toolbar has a **Resume** button (`resumeRun`) that re-runs
+the selected run — WS `chain:run` with `runId` (no `chain`/`imageUids` needed; the backend restores
+them from the run). By default it re-runs only failed / unfinished / params-changed nodes (see
+`docs/SCHEDULER.md` → *Resume*). Clicking a **task node** picks it as the **start node**
+(`restartNodeId`, a chain-template node id); the button then sends `startNode` too, force-re-running
+that node **and everything downstream** even if `:done` — so it's obvious *where* a resume begins.
+The picked node (solid accent + "resume from" badge) and its descendants (`rerunNodeIds`, dashed
+accent) are highlighted; a ✕ clears the pick. Resume is disabled while the run is busy (`resumeBusy`
+— any node running/queued). A resumed run **merges** live status over the persisted snapshot
+(`selectedRunTasks`), so skipped `:done` nodes stay on the graph while the re-run section updates
+live, rather than the graph collapsing to only the re-run nodes.
+
 The tab badge shows the count of currently-running nodes.
 
 ### Node types

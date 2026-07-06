@@ -13,6 +13,8 @@ const props = defineProps<{
     status: TaskStatus
     startedAt?: number    // epoch ms
     finishedAt?: number   // epoch ms
+    nodeId?: string       // chain template node id (for "resume from here")
+    restart?: 'start' | 'rerun'   // 'start' = chosen resume node; 'rerun' = downstream (will re-run)
   }
 }>()
 
@@ -59,10 +61,12 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
 </script>
 
 <template>
-  <div class="live-node" :style="{ borderColor: STATUS_COLORS[data.status] }">
+  <div class="live-node" :class="{ 'restart-start': data.restart === 'start', 'restart-rerun': data.restart === 'rerun' }"
+       :style="{ borderColor: data.restart ? undefined : STATUS_COLORS[data.status] }">
     <!-- anchor points for the execution-order edges (not user-connectable) -->
     <Handle type="target" :position="Position.Left" class="live-handle" :connectable="false" />
     <Handle type="source" :position="Position.Right" class="live-handle" :connectable="false" />
+    <span v-if="data.restart === 'start'" class="restart-badge">resume from</span>
     <div class="live-status-bar" :style="{ background: STATUS_COLORS[data.status] }">
       <i :class="['pi', STATUS_ICONS[data.status]]"
          :style="{ color: STATUS_TEXT[data.status] }" />
@@ -87,8 +91,32 @@ const STATUS_ICONS: Record<TaskStatus, string> = {
   padding: 5px 9px;
   font-size: 11px;
   min-width: 110px;
-  cursor: default;
+  cursor: pointer;              /* clickable: pick as the resume-from node */
   position: relative;
+}
+
+/* resume-from highlight: the chosen start node (solid accent) + everything downstream that will
+   re-run (dashed accent). Overrides the status border while a start node is picked. */
+.live-node.restart-start {
+  border-color: var(--cc-accent, #a78bfa) !important;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-accent, #a78bfa) 40%, transparent);
+}
+.live-node.restart-rerun {
+  border-style: dashed;
+  border-color: var(--cc-accent, #a78bfa) !important;
+}
+.restart-badge {
+  position: absolute;
+  top: -8px; left: 6px;
+  font-size: 8px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cc-surface-1, #1e1b2e);
+  background: var(--cc-accent, #a78bfa);
+  border-radius: 3px;
+  padding: 1px 4px;
+  z-index: 1;
 }
 
 /* handles are pure edge anchors here — keep them subtle and non-interactive */

@@ -55,13 +55,19 @@ function handle_chain_run(ws, data)
     project_uid = String(get(data, :projectUid, ""))
     chain_name  = String(get(data, :chain, ""))
     image_uids  = String[String(u) for u in get(data, :imageUids, [])]
+    # Resume: a `runId` re-runs a persisted run (restore from disk, re-do failed/incomplete/changed
+    # nodes). An optional `startNode` force-restarts that node + everything downstream ("resume from
+    # here"). When resuming, `chain`/`imageUids` are read from the run, so they're not required.
+    run_id      = String(get(data, :runId, ""))
+    start_node  = String(get(data, :startNode, ""))
+    resuming    = !isempty(run_id)
 
-    if isempty(project_uid) || isempty(chain_name)
+    if isempty(project_uid) || (!resuming && isempty(chain_name))
         HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
                                                error="projectUid and chain are required")))
         return
     end
-    if isempty(image_uids)
+    if !resuming && isempty(image_uids)
         HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
                                                error="No images selected")))
         return
@@ -77,18 +83,29 @@ function handle_chain_run(ws, data)
 
     HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:started",
                                            chain=chain_name,
+                                           runId=(resuming ? run_id : nothing),
                                            imageCount=length(image_uids))))
 
     Threads.@spawn try
-        run_chain(proj, image_uids; chain=chain_name,
-                  on_cancel_check = is_chain_cancelled,
-                  on_log = line -> begin
-                      println(line)
-                      broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
-                  end)
+        if resuming
+            run_chain(proj, String[]; run_id=run_id,
+                      start_node = isempty(start_node) ? nothing : start_node,
+                      on_cancel_check = is_chain_cancelled,
+                      on_log = line -> begin
+                          println(line)
+                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
+                      end)
+        else
+            run_chain(proj, image_uids; chain=chain_name,
+                      on_cancel_check = is_chain_cancelled,
+                      on_log = line -> begin
+                          println(line)
+                          broadcast_ws(Dict{String,Any}("type" => "chain:log", "line" => line))
+                      end)
+        end
         broadcast_ws(Dict{String,Any}("type" => "chain:run:done", "chain" => chain_name))
     catch e
-        @warn "chain:run error" chain=chain_name exception=e
+        @warn "chain:run error" chain=chain_name run_id=run_id exception=e
         broadcast_ws(Dict{String,Any}("type"  => "chain:run:failed",
                                       "chain" => chain_name,
                                       "error" => string(e)))

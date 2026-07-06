@@ -469,6 +469,49 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Chain resume — explicit start node (re-run from here) ─────────────────
+    @testset "Chain resume — start node force-restart" begin
+        # descendants: pure graph reachability over n1→n2→n3
+        tpl = ChainTemplate(
+            "restart-chain",
+            [ChainNode(id="n1", fn="importImages.remove",
+                       params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default")),
+             ChainNode(id="n2", fn="importImages.remove",
+                       params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default")),
+             ChainNode(id="n3", fn="importImages.remove",
+                       params=Dict{String,Any}("valueName"=>"default","newDefault"=>"default"))],
+            [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
+        )
+        @test Cecelia._descendants(tpl, "n1") == Set(["n2","n3"])
+        @test Cecelia._descendants(tpl, "n2") == Set(["n3"])
+        @test isempty(Cecelia._descendants(tpl, "n3"))
+
+        # force-restart from n2 on a run whose nodes are all :done → n2,n3 reset to :pending; n1 kept
+        proj = create_project!(name="chain-restart-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        img.status = "done"; save!(img)
+        states = Dict(img.uid => Dict(
+            "n1" => Cecelia.ImageNodeState(), "n2" => Cecelia.ImageNodeState(),
+            "n3" => Cecelia.ImageNodeState()))
+        for nid in ("n1","n2","n3")
+            states[img.uid][nid].status      = :done
+            states[img.uid][nid].params_hash = "h"
+        end
+        run = Cecelia.ChainRun("rid", "restart-chain", proj.uid, [img.uid], tpl,
+                               "hash", states, time(), joinpath(Cecelia._runs_dir(proj), "rid"),
+                               ReentrantLock(), Dict{String,Channel{Nothing}}(),
+                               Dict{String,Channel{Nothing}}())
+        mkpath(run._dir)
+        Cecelia._force_restart_from!(run, "n2")
+        @test run.image_states[img.uid]["n1"].status == :done       # upstream untouched
+        @test run.image_states[img.uid]["n2"].status == :pending    # start node reset
+        @test run.image_states[img.uid]["n3"].status == :pending    # downstream reset
+        @test run.image_states[img.uid]["n2"].params_hash === nothing
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Chain run — set-scope (picnic) node ──────────────────────────────────
     @testset "Chain run — picnic node" begin
         proj = create_project!(name="chain-picnic-$(rand(1000:9999))", kind="static")

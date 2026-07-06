@@ -763,6 +763,46 @@ end
 
 # ── Resume helpers ────────────────────────────────────────────────────────────
 
+# All nodes reachable downstream of `node_id` (successors, transitively) — NOT including itself.
+function _descendants(template::ChainTemplate, node_id::String)::Set{String}
+    succ = Dict{String,Vector{String}}()
+    for e in template.edges
+        push!(get!(succ, e.from, String[]), e.to)
+    end
+    out   = Set{String}()
+    queue = String[node_id]
+    while !isempty(queue)
+        n = popfirst!(queue)
+        for c in get(succ, n, String[])
+            if c ∉ out
+                push!(out, c)
+                push!(queue, c)
+            end
+        end
+    end
+    out
+end
+
+# Explicit "start node" for resume: force `start_node` and everything downstream back to :pending
+# across ALL images, even nodes that are :done with matching params (which `_reset_stale_nodes!`
+# would otherwise keep and skip). This is the whiteboard "resume from here" — re-run a completed
+# section (e.g. measurements) without touching upstream nodes, which stay :done and are skipped.
+function _force_restart_from!(run::ChainRun, start_node::String)
+    targets = _descendants(run.template_snapshot, start_node)
+    push!(targets, start_node)
+    changed = false
+    for uid in run.image_uids, nid in targets
+        haskey(run.image_states[uid], nid) || continue
+        st = run.image_states[uid][nid]
+        if st.status != :pending
+            st.status = :pending; st.params_hash = nothing
+            st.result = nothing;  st.task_id     = nothing
+            changed   = true
+        end
+    end
+    changed && _save_run!(run)
+end
+
 # Pre-pass before re-running a chain: resets nodes that need re-execution.
 # Handles crash recovery (:running → :failed), retries (:failed/:skipped/:cancelled → :pending),
 # params staleness (:done with changed params → :pending), and propagates dirtiness downstream.
@@ -894,16 +934,19 @@ overrides: node_id => param overrides merged on top of template params.
 function run_chain(proj::CciaProject, image_uids::Vector{String};
                    chain::String                  = "",
                    run_id::Union{String,Nothing}  = nothing,
+                   start_node::Union{String,Nothing} = nothing,
                    overrides::Dict{String,Any}    = Dict{String,Any}(),
                    on_log::Function               = line -> println(line),
                    on_status_change::Function     = _ -> nothing,
                    on_cancel_check::Function      = _ -> false)::ChainRun
 
     if !isnothing(run_id)
-        # Resume: restore run from disk, reset stale/failed nodes, keep :done ones
+        # Resume: restore run from disk, reset stale/failed nodes, keep :done ones. An explicit
+        # `start_node` additionally force-restarts that node + everything downstream (re-run from here).
         run           = load_chain_run(proj, run_id)
         ordered_nodes = _topo_sort(run.template_snapshot)
         _reset_stale_nodes!(run, overrides, ordered_nodes)
+        isnothing(start_node) || _force_restart_from!(run, start_node)
     else
         isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
         isempty(image_uids) && error("run_chain requires at least one image UID")

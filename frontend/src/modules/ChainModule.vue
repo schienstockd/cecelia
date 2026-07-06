@@ -139,7 +139,10 @@ function runLabel(o: RunOption): string {
   return `${base}${ts ? ` · ${ts}` : ''}${o.live ? ' · live' : ''}`
 }
 
-// Tasks for the selected run — live (task store) if present, else the loaded persisted run.
+// Tasks for the selected run. Persisted (run.json) is the full frozen graph; live (task store) is
+// this session's in-flight nodes. On a RESUME both exist: only the re-run nodes emit live events, so
+// we OVERLAY live status onto the persisted snapshot (by node+image) rather than replacing it — else
+// the skipped :done nodes would vanish from the graph while the resumed section runs.
 const selectedRunTasks = computed<LiveTaskLike[]>(() => {
   const rid = selectedRunId.value
   if (!rid) return []
@@ -148,7 +151,15 @@ const selectedRunTasks = computed<LiveTaskLike[]>(() => {
     funName: t.funName, label: t.label, status: t.status,
     startedAt: t.startedAt?.getTime(), finishedAt: t.finishedAt?.getTime(), chainName: t.chainName,
   } as LiveTaskLike))
-  return live.length ? live : (loadedRuns.value.get(rid)?.tasks ?? [])
+  const persisted = loadedRuns.value.get(rid)?.tasks ?? []
+  if (!live.length) return persisted
+  if (!persisted.length) return live
+  const key = (t: LiveTaskLike) => `${t.chainNodeId}::${t.imageUid}`
+  const liveByKey = new Map(live.map(t => [key(t), t]))
+  const persistedKeys = new Set(persisted.map(key))
+  const merged = persisted.map(t => liveByKey.get(key(t)) ?? t)     // live wins where present
+  for (const t of live) if (!persistedKeys.has(key(t))) merged.push(t)   // + any brand-new node
+  return merged
 })
 
 // Auto-select: focus a newly-appeared live run; else keep a valid selection, else newest.
@@ -314,6 +325,9 @@ const liveNodes = computed<Node[]>(() => {
         fn: t.funName, label: t.label, variant: nodeVariant(t.chainNodeId),
         imageUid: t.imageUid, status: t.status,
         startedAt: t.startedAt, finishedAt: t.finishedAt,
+        nodeId: t.chainNodeId,                       // template node id — for "resume from here"
+        restart: t.chainNodeId === restartNodeId.value ? 'start'
+               : rerunNodeIds.value.has(t.chainNodeId) ? 'rerun' : undefined,
       },
       draggable: false, selectable: false, connectable: false,
     })
@@ -446,12 +460,58 @@ watch([selectedRunId, () => liveLayout.value.imageIds.join(',')], loadQcValueNam
 watch([selectedRunId, showQc, doneCount, qcColumns, qcValueNames],
       () => { qcData.value = new Map(); scheduleQcFetch() })
 
-// A QC thumbnail id is `qc:${nodeId}::${valueName}` — expand it to the full segmentation QC canvas.
-function onLiveNodeClick(nodeId: string) {
-  if (!nodeId.startsWith('qc:')) return
-  const [, vn] = nodeId.slice(3).split('::')
-  if (!vn) return
-  qcExpand.value = { label: 'Segmentation QC', valueName: vn, imageUids: liveLayout.value.imageIds }
+// A live-graph node click does one of two things by node type:
+//  • a QC thumbnail (`qc:${nodeId}::${valueName}`) → expand the full segmentation QC canvas;
+//  • a task node → pick/unpick it as the RESUME START NODE (re-run from here). The picked node and
+//    everything downstream are then highlighted so it's obvious what a Resume will re-run.
+function onLiveNodeClick(node: { id: string; data?: Record<string, unknown> }) {
+  if (node.id.startsWith('qc:')) {
+    const [, vn] = node.id.slice(3).split('::')
+    if (!vn) return
+    qcExpand.value = { label: 'Segmentation QC', valueName: vn, imageUids: liveLayout.value.imageIds }
+    return
+  }
+  const nid = node.data?.nodeId as string | undefined
+  if (!nid || resumeBusy.value) return                          // no picking a start node mid-run
+  restartNodeId.value = restartNodeId.value === nid ? null : nid
+}
+
+// ── Resume ───────────────────────────────────────────────────────────────────
+// The chosen "resume from here" node (a chain template node id), and everything downstream of it —
+// what a Resume with a start node will re-run. Used to highlight the graph and label the button.
+const restartNodeId = ref<string | null>(null)
+const rerunNodeIds = computed<Set<string>>(() => {
+  const start = restartNodeId.value
+  const edges = liveTemplate.value?.edges
+  if (!start || !edges) return new Set()
+  const succ = new Map<string, string[]>()
+  for (const e of edges) (succ.get(e.from) ?? succ.set(e.from, []).get(e.from)!).push(e.to)
+  const out = new Set<string>([start]); const q = [start]
+  while (q.length) { for (const c of succ.get(q.shift()!) ?? []) if (!out.has(c)) { out.add(c); q.push(c) } }
+  return out
+})
+const restartLabel = computed(() => {
+  if (!restartNodeId.value) return ''
+  const n = liveTemplate.value?.nodes.find(nn => nn.id === restartNodeId.value)
+  return n ? (allTaskDefs.value.find(d => d.fun_name === n.fn)?.label ?? n.fn.split('.').pop() ?? n.fn) : ''
+})
+// A run is busy (can't resume) while any of its nodes are running/queued.
+const resumeBusy = computed(() =>
+  selectedRunTasks.value.some(t => t.status === 'running' || t.status === 'queued'))
+// clear the start-node pick when switching runs (it refers to the selected run's template)
+watch(selectedRunId, () => { restartNodeId.value = null })
+
+function resumeRun() {
+  const uid = projectMeta.current?.uid
+  const rid = selectedRunId.value
+  if (!uid || !rid || resumeBusy.value) return
+  ws.send({
+    type:       'chain:run',
+    projectUid: uid,
+    runId:      rid,
+    ...(restartNodeId.value ? { startNode: restartNodeId.value } : {}),
+  })
+  restartNodeId.value = null
 }
 
 // ── Chain list & selection ───────────────────────────────────────────────────
@@ -977,6 +1037,28 @@ onActivated(async () => {
         </select>
         <button
           v-if="selectedRunId"
+          class="wb-btn live-resume-btn"
+          :disabled="resumeBusy"
+          @click="resumeRun"
+          v-tooltip.bottom="resumeBusy
+            ? 'Run is still in progress'
+            : restartLabel
+              ? `Re-run from “${restartLabel}” and everything downstream (upstream stays done)`
+              : 'Resume: re-run failed / unfinished / changed nodes. Click a node to re-run from there instead.'"
+        >
+          <i class="pi pi-play" />
+          <span class="live-resume-lbl">{{ restartLabel ? `Resume from ${restartLabel}` : 'Resume' }}</span>
+        </button>
+        <button
+          v-if="restartNodeId"
+          class="wb-btn live-copy-btn"
+          @click="restartNodeId = null"
+          v-tooltip.bottom="'Clear the resume-from node'"
+        >
+          <i class="pi pi-times" />
+        </button>
+        <button
+          v-if="selectedRunId"
           class="wb-btn live-copy-btn"
           @click="copyRunId"
           v-tooltip.bottom="`Copy run ID (${selectedRunId}) — e.g. for load_chain_run in the REPL`"
@@ -1015,7 +1097,7 @@ onActivated(async () => {
           :max-zoom="2"
           fit-view-on-init
           class="vue-flow-canvas"
-          @node-click="onLiveNodeClick(($event as NodeMouseEvent).node.id)"
+          @node-click="onLiveNodeClick(($event as NodeMouseEvent).node)"
         >
           <Background pattern-color="#2a2742" :gap="20" />
         </VueFlow>
