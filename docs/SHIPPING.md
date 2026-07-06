@@ -125,6 +125,34 @@ launcher.
 **First-run size:** the env is multi-GB and downloads at install time. `install.ps1` is authored but
 **not yet verified on Windows hardware** — the first real test is a Windows machine / runner.
 
+### Install channels (stable vs dev)
+
+`CECELIA_CHANNEL` selects *what* the installer fetches; the provisioning (Pixi + Juliaup +
+`julia instantiate`) is identical either way.
+
+| `CECELIA_CHANNEL` | Source | Frontend | To update |
+|---|---|---|---|
+| `stable` (default) | newest tagged Release's `cecelia.tar.gz` | prebuilt (shipped in the bundle) | re-run installer / `pixi run update` / in-app Update |
+| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm ci && npm run build`) | re-run installer (re-downloads current `main`) |
+
+**Why a dev channel.** So testers can track HEAD without a tag being cut every couple of days. GitHub
+serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —
+so the dev path just points the *same* installer at that URL. `CECELIA_BRANCH` overrides the branch.
+
+**The one extra requirement: Node.** A release bundle ships a prebuilt `frontend/dist`; a branch
+archive is source only, so the dev channel builds the frontend on the machine and therefore needs
+Node.js (npm) on PATH — the installer errors clearly if it's absent. (Node stays on fnm in dev and is
+baked into the release bundle for stable, so this is the one case an end user needs it — see *Julia and
+Node are not in Pixi*.) The multi-GB Pixi env is cached across re-runs, so a dev "update" only
+re-downloads the few-MB source and rebuilds the frontend (seconds), not the environment.
+
+**Provenance.** Both channels write `<install>/.cecelia-version` — the tag for stable, `dev @ <branch>
+<sha>` for dev (the SHA resolved via the commits API) — so a bug report can name the exact state.
+
+The branch archive wraps everything in one `<repo>-<branch>/` dir, so the dev extraction uses
+`tar --strip-components=1`; the flat release bundle must not (it would hoist `api/`'s contents to the
+root). This is the only structural difference between the two paths.
+
 ---
 
 ## Updates
