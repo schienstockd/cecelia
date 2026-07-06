@@ -115,6 +115,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_task_fun_params(req)
         elseif path == "/api/pools"
             api_pools_list(req)
+        elseif path == "/api/tasks"
+            api_tasks_list(req)
         elseif path == "/api/chains"
             api_chains_list(req)
         elseif path == "/api/chains/get"

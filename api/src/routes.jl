@@ -229,6 +229,13 @@ function api_pools_list(_req)
     200, JSON3.write(pools)
 end
 
+# Point-in-time snapshot of queued/running tasks (reporting only — no control).
+# The WS `task:*` / `chain:node:*` stream is the live feed; this fills in what is
+# already in-flight when a console first connects.
+function api_tasks_list(_req)
+    200, JSON3.write(list_tasks())
+end
+
 # ── Filesystem browser ────────────────────────────────────────────────────────
 
 const FS_ROOT = get(ENV, "CECELIA_FS_ROOT", homedir())

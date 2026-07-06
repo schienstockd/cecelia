@@ -73,7 +73,7 @@ export AfCorrect, DriftCorrect, CompositeTask
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
 export run_task, run_tasks
-export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools
+export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks
 export resize_pool!
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
