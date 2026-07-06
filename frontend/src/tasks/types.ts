@@ -67,4 +67,9 @@ export interface ChainTemplate {
   name: string
   nodes: ChainNodeSpec[]
   edges: ChainEdgeSpec[]
+  // UML start-dot targets: node ids the start dot links to. When set, a run executes only the nodes
+  // reachable from these (rest are drafts). Persisted verbatim; the whiteboard also stores the dot's
+  // position under positions['__start__'].
+  startTargets?: string[]
+  positions?: Record<string, { x: number; y: number }>
 }

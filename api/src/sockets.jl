@@ -1,24 +1,22 @@
 # ── WebSocket helpers ─────────────────────────────────────────────────────────
 
-function ws_send(ws, msg)
-    try
-        HTTP.WebSockets.send(ws, JSON3.write(msg))
-    catch e
-        @warn "WS send failed" exception = e
-    end
-end
+# Task events (log / status / progress / result) are keyed by taskId and BROADCAST to every connected
+# client — not just the socket that launched the task. So a second GUI tab AND the read-only task
+# console (api/task_console.jl) both get live progress; previously these went point-to-point to the
+# launching socket, which is why the console (a separate client) showed chain runs — those already
+# broadcast — but never a module task's progress. The `ws` arg is kept for call-site compatibility.
+_broadcast_task(msg::NamedTuple) = broadcast_ws(Dict{String,Any}(String(k) => v for (k, v) in pairs(msg)))
 
-ws_log(ws, task_id, line)              = ws_send(ws, (; type="task:log",      taskId=task_id, line=line))
+ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",      taskId=task_id, line=line))
 # `image_uids` carries ALL images a task touched — for a set/combined task, `uid` is just the
 # representative (first) member, so the frontend needs the full list to invalidate every member's plots
 # (task-refresh; see docs/todo/TASK_DATA_REFRESH_PLAN.md). Defaults empty → single-image tasks fall back
 # to `imageUid` on the frontend.
-ws_status(ws, task_id, status, uid=""; image_uids=String[]) = ws_send(ws, (; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids))
-ws_result(ws, task_id, uid, meta)      = ws_send(ws, (; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
+ws_status(_ws, task_id, status, uid=""; image_uids=String[]) = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids))
+ws_result(_ws, task_id, uid, meta)     = _broadcast_task((; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 
-function ws_progress(ws, task_id, fraction::Float64)
-    ws_send(ws, (; type="task:progress", taskId=task_id, progress=clamp(fraction, 0.0, 1.0)))
-end
+ws_progress(_ws, task_id, fraction::Float64) =
+    _broadcast_task((; type="task:progress", taskId=task_id, progress=clamp(fraction, 0.0, 1.0)))
 ws_progress(ws, task_id, n::Int, total::Int) =
     ws_progress(ws, task_id, total > 0 ? n / total : 0.0)
 
@@ -186,7 +184,11 @@ function handle_task_run(ws, data)
                               on_log           = line -> ws_log(ws, task_id, line),
                               on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
                               on_status_change = rec -> begin
-                                  if rec.status in (:queued, :running)
+                                  # queued/running forwarded live; also forward :cancelled at once (it
+                                  # has no result to order before it) so a cancelled task — especially a
+                                  # still-QUEUED one — reflects immediately, not only when a worker later
+                                  # dequeues and skips it. :done/:failed still wait for the final send.
+                                  if rec.status in (:queued, :running, :cancelled)
                                       ws_status(ws, task_id, string(rec.status), rep)
                                   end
                                   final_status[] = rec.status
@@ -218,8 +220,10 @@ function handle_task_run(ws, data)
                           on_log           = line -> ws_log(ws, task_id, line),
                           on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
                           on_status_change = rec -> begin
-                              # Forward queued/running immediately; hold terminal until after result.
-                              if rec.status in (:queued, :running)
+                              # Forward queued/running immediately, and :cancelled too (no result to
+                              # order before it) so a cancelled — especially still-QUEUED — task
+                              # reflects at once. Hold :done/:failed until after the result is sent.
+                              if rec.status in (:queued, :running, :cancelled)
                                   ws_status(ws, task_id, string(rec.status), image_uid)
                               end
                               final_status[] = rec.status

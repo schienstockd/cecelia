@@ -512,6 +512,33 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Chain start dot — prune to the reachable subgraph ─────────────────────
+    @testset "Chain start dot — prune to reachable subgraph" begin
+        tpl = ChainTemplate(
+            "start-chain",
+            [ChainNode(id="a", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="b", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="c", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="d", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="x", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="y", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+            [ChainEdge("a","b"), ChainEdge("b","c"), ChainEdge("c","d"), ChainEdge("x","y")],
+            ["c"],                                          # start dot → c (mid-chain)
+        )
+        pruned = Cecelia._prune_to_start(tpl)
+        @test Set(n.id for n in pruned.nodes) == Set(["c","d"])        # c + downstream only
+        @test Set((e.from, e.to) for e in pruned.edges) == Set([("c","d")])
+        @test isempty(pruned.start_targets)                            # consumed into the node set
+        # disconnected draft branch (x→y) dropped; a→b upstream of the start dot dropped too
+        @test !any(n.id in ("a","b","x","y") for n in pruned.nodes)
+        # no start targets ⇒ unchanged (run the whole chain)
+        @test length(Cecelia._prune_to_start(ChainTemplate("t", tpl.nodes, tpl.edges)).nodes) == 6
+        # start dot pointing ONLY at since-deleted nodes ⇒ fall back to run-all, not an empty run
+        stale = Cecelia._prune_to_start(ChainTemplate("t", tpl.nodes, tpl.edges, ["ghost"]))
+        @test length(stale.nodes) == 6
+        @test isempty(stale.start_targets)
+    end
+
     # ── Chain run — set-scope (picnic) node ──────────────────────────────────
     @testset "Chain run — picnic node" begin
         proj = create_project!(name="chain-picnic-$(rand(1000:9999))", kind="static")
@@ -550,6 +577,43 @@ end
         # Set-scope task log appeared exactly once (ran once, not once per image)
         set_logs = filter(l -> contains(l, "setTask ran"), logs)
         @test length(set_logs) == 1
+
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Chain start dot — end-to-end run prunes to the reachable subgraph ─────
+    # Reservation guard: pruning to a start dot must still work when the reachable subgraph contains a
+    # picnic (set-scope barrier) node. The target becomes a root — its dropped upstream doesn't block
+    # it — and the barrier still fires once across all images. Also covers the save/load round-trip of
+    # `startTargets` and that pruned-out nodes never enter the run.
+    @testset "Chain start dot — run prunes to subgraph (set-scope)" begin
+        proj = create_project!(name="chain-startrun-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        imgs = map(("img-a", "img-b")) do nm; add_image!(s; name=nm); end
+
+        # n1(image) → n2(set) → n3(image); start dot → n2, so n1 is an upstream draft (excluded)
+        tpl = ChainTemplate(
+            "startrun-chain",
+            [ChainNode(id="n1", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}()),
+             ChainNode(id="n2", fn="testTasks.setTask",   scope="set",   params=Dict{String,Any}()),
+             ChainNode(id="n3", fn="testTasks.imageTask", scope="image", params=Dict{String,Any}())],
+            [ChainEdge("n1","n2"), ChainEdge("n2","n3")],
+            ["n2"],                                        # start dot → n2 (a set-scope node)
+        )
+        save_chain_template!(proj, tpl)
+
+        logs = String[]
+        run = run_chain(proj, [i.uid for i in imgs]; chain="startrun-chain",
+                        on_log = line -> push!(logs, line))
+
+        # only the reachable subgraph exists in the run — n1 pruned out entirely
+        @test Set(keys(run.image_states[imgs[1].uid])) == Set(["n2", "n3"])
+        for img in imgs
+            @test run.image_states[img.uid]["n2"].status == :done   # set-scope barrier fired as root
+            @test run.image_states[img.uid]["n3"].status == :done
+        end
+        @test run.image_states[imgs[1].uid]["n2"].result["image_count"] == 2
+        @test length(filter(l -> contains(l, "setTask ran"), logs)) == 1   # ran once, not per image
 
         rm(proj.root; recursive=true)
     end

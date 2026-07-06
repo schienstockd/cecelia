@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onActivated, markRaw } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, markRaw, nextTick } from 'vue'
 defineOptions({ name: 'ChainModule' })
 import {
   VueFlow, useVueFlow,
@@ -11,6 +11,7 @@ import { Background } from '@vue-flow/background'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import ChainTaskNode from '../components/ChainTaskNode.vue'
+import ChainStartNode from '../components/ChainStartNode.vue'
 import ChainPicnicNode from '../components/ChainPicnicNode.vue'
 import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
@@ -24,6 +25,7 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
+import { START_ID, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
 
@@ -41,12 +43,13 @@ const {
   addNodes, addEdges, removeNodes, removeEdges,
   findNode, updateNode, toObject,
   onConnect, onNodeClick, onEdgeDoubleClick,
-  screenToFlowCoordinate,
+  screenToFlowCoordinate, setCenter,
 } = useVueFlow({ id: 'chain-whiteboard' })
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const nodeTypes: NodeTypesObject = {
   task:      markRaw(ChainTaskNode)   as any,
+  start:     markRaw(ChainStartNode)  as any,
   picnic:    markRaw(ChainPicnicNode) as any,
   live:      markRaw(ChainLiveNode)   as any,
   liveLabel: markRaw(ChainLiveLabel)  as any,
@@ -557,6 +560,15 @@ async function loadChain(name: string) {
   }
 }
 
+// the single UML start dot (an initial node, not a task) — START_ID + pure round-trip in utils/startDot
+const hasStartNode = computed(() => nodes.value.some(n => n.id === START_ID))
+
+// Add the start dot once, near the top-left; the user drags it and links it to the first task(s).
+function addStartNode() {
+  if (hasStartNode.value) return
+  addNodes([{ id: START_ID, type: 'start', position: { x: 20, y: 40 }, data: {} }])
+}
+
 function applyTemplate(
   tmpl: ChainTemplate,
   positions: Record<string, { x: number; y: number }>,
@@ -596,15 +608,29 @@ function applyTemplate(
     style:  { stroke: 'var(--cc-accent, #a78bfa)' },
   }))
 
+  // Reconstruct the UML start dot + its edges (pure logic in utils/startDot): links restored from the
+  // persisted startTargets (dropping any since-deleted), position from the reserved '__start__' key —
+  // and the dot is kept even when unlinked if a position was saved (so the default dot survives reload).
+  const start = buildStartGraph(
+    tmpl.startTargets,
+    new Set(tmpl.nodes.map(n => n.id)),
+    positions[START_ID] ?? { x: 20, y: 40 },
+    START_ID in positions,
+  )
+  if (start) { newNodes.push(start.node); newEdges.push(...start.edges) }
+
   addNodes(newNodes)
   addEdges(newEdges)
 }
 
 function currentTemplate(): ChainTemplate & { positions: Record<string, {x:number; y:number}> } {
   const obj = toObject()
+  // The UML start dot is not a task: exclude it from nodes/edges and instead record the tasks it
+  // links to as `startTargets` (pure logic in utils/startDot). Its position is still persisted
+  // (positions['__start__']) so it reappears where the user left it — even when unlinked.
   return {
     name:  activeChain.value,
-    nodes: obj.nodes.map(n => ({
+    nodes: obj.nodes.filter(n => n.id !== START_ID).map(n => ({
       id:             n.id,
       fn:             n.data.fn,
       scope:          n.data.scope,
@@ -612,7 +638,10 @@ function currentTemplate(): ChainTemplate & { positions: Record<string, {x:numbe
       barrier_policy: n.data.barrier_policy,
       resource_pool:  n.data.resource_pool,
     })),
-    edges: obj.edges.map(e => ({ from: e.source, to: e.target })),
+    edges: obj.edges
+      .filter(e => !touchesStart(e))
+      .map(e => ({ from: e.source, to: e.target })),
+    startTargets: startTargetsOf(obj.edges),
     positions: Object.fromEntries(obj.nodes.map(n => [n.id, n.position])),
   }
 }
@@ -685,8 +714,14 @@ async function createChain() {
     removeNodes(nodes.value.map(n => n.id))
     removeEdges(edges.value.map(e => e.id))
     selectedNodeId.value = null
+    addStartNode()                       // new chains get a UML start dot by default — link it to the first task
     newChainName.value = ''
     showNewInput.value = false
+    // Center + zoom on the start dot (which sits at ~20,40) so it's obviously visible on an otherwise
+    // empty canvas — "here's the start, drop your first task to the right" — instead of parked
+    // off-screen at the origin. Offset right so there's room for tasks.
+    await nextTick()
+    setCenter(230, 60, { zoom: 1, duration: 350 })
     log.info(`Chain "${name}" created.`, { source: 'whiteboard' })
   } catch (e) {
     log.error(`Create failed: ${e}`, { source: 'whiteboard' })
@@ -834,12 +869,15 @@ function propagateValueName(sourceId: string, targetId: string) {
 // ── Edge connections ─────────────────────────────────────────────────────────
 
 onConnect((params) => {
+  const fromStart = params.source === START_ID
   addEdges([{
     ...params,
     id: `${params.source}->${params.target}`,
-    style: { stroke: 'var(--cc-accent, #a78bfa)' },
+    // start-dot edges are dashed (they mark the entry, not a data dependency)
+    style: { stroke: 'var(--cc-accent, #a78bfa)', ...(fromStart ? { strokeDasharray: '4 3' } : {}) },
   }])
-  if (params.source && params.target) propagateValueName(params.source, params.target)
+  // value-name propagation is a task→task concern; the start dot has no output, so skip it there
+  if (params.source && params.target && !fromStart) propagateValueName(params.source, params.target)
 })
 
 // Double-click an edge to remove it.
@@ -1157,6 +1195,14 @@ onActivated(async () => {
           </button>
           <button
             class="wb-btn"
+            :disabled="!activeChain || hasStartNode"
+            @click="addStartNode"
+            v-tooltip.right="'Add a start node — link it to the task(s) a run begins from. Only tasks reachable from it run; the rest stay as drafts.'"
+          >
+            <i class="pi pi-circle-fill" />
+          </button>
+          <button
+            class="wb-btn"
             :disabled="!activeChain"
             @click="loadChain(activeChain)"
             v-tooltip.right="'Reload chain from disk — discards unsaved edits.'"
@@ -1336,7 +1382,7 @@ onActivated(async () => {
       <template v-if="selectedNode">
 
         <div class="config-header">
-          <div class="config-title">Node</div>
+          <div class="config-title">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</div>
           <button
             class="wb-btn wb-btn-danger"
             @click="deleteSelectedNode"
@@ -1346,6 +1392,12 @@ onActivated(async () => {
           </button>
         </div>
 
+        <div v-if="selectedNode.type === 'start'" class="config-section">
+          <p class="no-params-hint">Link this to the task(s) a run should begin from. Only tasks
+          reachable from it will run — the rest stay in the editor as drafts.</p>
+        </div>
+
+        <template v-else>
         <!-- Identity -->
         <div class="config-section">
           <label class="config-label">ID</label>
@@ -1418,6 +1470,7 @@ onActivated(async () => {
         <div class="config-section" v-else>
           <span class="no-params-hint">Function not found in task definitions.</span>
         </div>
+        </template>
 
       </template>
 
@@ -1518,6 +1571,18 @@ onActivated(async () => {
 .qc-toggle { color: var(--cc-text-dim); }
 .qc-toggle:hover:not(:disabled) { color: var(--cc-text); }
 .qc-toggle.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
+
+/* Resume is a LABELLED action, not a 26px icon square (.wb-btn) — auto-width + padding + gap so the
+   play icon and text both show, accent-styled as the Live tab's primary action. */
+.live-resume-btn {
+  width: auto;
+  padding: 0 0.55rem;
+  gap: 0.35rem;
+  color: var(--cc-accent);
+  border-color: var(--cc-accent);
+}
+.live-resume-btn:hover:not(:disabled) { background: var(--cc-accent); color: #fff; }
+.live-resume-lbl { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
 
 .qc-expand-overlay {
   position: absolute; inset: 0; z-index: 20;

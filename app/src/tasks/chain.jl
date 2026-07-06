@@ -61,7 +61,12 @@ struct ChainTemplate
     name::String
     nodes::Vector{ChainNode}
     edges::Vector{ChainEdge}
+    # UML "start" dot targets: node ids the start dot links to. When non-empty, a run executes ONLY the
+    # nodes reachable from these (their inclusive descendants) — everything else is a draft, left in the
+    # editor but skipped. Empty ⇒ run the whole chain from its natural roots (backward-compatible).
+    start_targets::Vector{String}
 end
+ChainTemplate(name, nodes, edges) = ChainTemplate(name, nodes, edges, String[])
 
 # ── Run record ────────────────────────────────────────────────────────────────
 
@@ -153,6 +158,7 @@ function load_chain_template(proj::CciaProject, name::String)::ChainTemplate
         string(get(raw, :name, name)),
         [_node_from_dict(n) for n in get(raw, :nodes, [])],
         [_edge_from_dict(e) for e in get(raw, :edges, [])],
+        String[string(s) for s in get(raw, :startTargets, get(raw, :start_targets, []))],
     )
 end
 
@@ -169,6 +175,7 @@ function save_chain_template!(proj::CciaProject, t::ChainTemplate)::ChainTemplat
                        barrier_policy=n.barrier_policy, resource_pool=n.resource_pool)
                      for n in t.nodes],
             edges = [(; from=e.from, to=e.to) for e in t.edges],
+            startTargets = t.start_targets,
         ))
     end
     t
@@ -186,6 +193,7 @@ function _template_json(t::ChainTemplate)::String
                    barrier_policy=n.barrier_policy, resource_pool=n.resource_pool)
                  for n in t.nodes],
         edges = [(; from=e.from, to=e.to) for e in t.edges],
+        startTargets = t.start_targets,
     ))
 end
 
@@ -224,6 +232,7 @@ function load_template_from_cache(proj::CciaProject, hash::String)::ChainTemplat
         string(get(raw, :name, "")),
         [_node_from_dict(n) for n in get(raw, :nodes, [])],
         [_edge_from_dict(e) for e in get(raw, :edges, [])],
+        String[string(s) for s in get(raw, :startTargets, get(raw, :start_targets, []))],
     )
 end
 
@@ -783,6 +792,30 @@ function _descendants(template::ChainTemplate, node_id::String)::Set{String}
     out
 end
 
+# UML start-dot pruning: restrict a template to the nodes reachable from its `start_targets` (their
+# inclusive descendants). Targets become effective roots — edges into them from now-excluded nodes are
+# dropped, so a mid-chain start runs from there on, and disconnected branches (unreachable from the
+# start dot) drop out as drafts. No start targets ⇒ the template is returned unchanged (run all).
+function _prune_to_start(template::ChainTemplate)::ChainTemplate
+    isempty(template.start_targets) && return template
+    ids  = Set(n.id for n in template.nodes)
+    exec = Set{String}()
+    for t in template.start_targets
+        t in ids || continue                       # stale target (node since deleted) — ignore
+        push!(exec, t)
+        union!(exec, _descendants(template, t))
+    end
+    # All targets stale ⇒ fall back to running the whole chain rather than erroring on an empty run
+    # (a dangling start dot shouldn't brick the run — better to run everything and let the user notice).
+    if isempty(exec)
+        @warn "Chain start dot targets no existing nodes — running the whole chain" targets=template.start_targets
+        return ChainTemplate(template.name, template.nodes, template.edges, String[])
+    end
+    nodes = [n for n in template.nodes if n.id in exec]
+    edges = [e for e in template.edges if e.from in exec && e.to in exec]
+    ChainTemplate(template.name, nodes, edges, String[])   # start consumed into the node set
+end
+
 # Explicit "start node" for resume: force `start_node` and everything downstream back to :pending
 # across ALL images, even nodes that are :done with matching params (which `_reset_stale_nodes!`
 # would otherwise keep and skip). This is the whiteboard "resume from here" — re-run a completed
@@ -951,7 +984,11 @@ function run_chain(proj::CciaProject, image_uids::Vector{String};
         isempty(chain) && error("run_chain requires `chain` name when `run_id` is not given")
         isempty(image_uids) && error("run_chain requires at least one image UID")
 
-        template      = load_chain_template(proj, chain)
+        # UML start dot: if the template has start targets, run ONLY the reachable subgraph (the rest
+        # are drafts). Pruning here means every downstream stage (topo, states, resume) sees one clean
+        # effective template — targets are roots, unreachable branches simply don't exist for this run.
+        template      = _prune_to_start(load_chain_template(proj, chain))
+        isempty(template.nodes) && error("run_chain: start dot reaches no nodes (nothing to run)")
         ordered_nodes = _topo_sort(template)
 
         image_states  = Dict{String,Dict{String,ImageNodeState}}(

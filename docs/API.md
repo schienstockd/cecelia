@@ -86,7 +86,21 @@ Settings → Debug console UI shows a note to this effect.
 | — | **Gating** (below) | population manager + gating |
 
 Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTTP — see
-`ARCHITECTURE.md` and `SCHEDULER.md`.
+`ARCHITECTURE.md` and `SCHEDULER.md`. Task events (`task:log`/`task:status`/`task:progress`/`task:result`)
+are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
+to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,
+`pixi run console`) both see live progress. (They're keyed by `taskId`, so clients filter to what they
+care about. Chain events already broadcast.) Broadcast is **decoupled from the caller**: `broadcast_ws`
+enqueues a pre-serialised frame onto a bounded, drop-on-full channel that a single background task
+drains and writes to each client (pruning any that error). This is deliberate — task events fan out on
+every log/progress line from many worker threads, so writing sockets inline would let concurrent
+threads corrupt a shared socket and let one slow/half-open client block a worker (which strands a pool
+slot → tasks stuck at `queued`). Workers must never block on WS I/O. `handle_task_run` forwards
+`queued`/`running` **and
+`cancelled`** from `on_status_change` immediately (cancel has no result to order before it), so
+cancelling a task — especially a still-**queued** one — reflects at once instead of only when a worker
+later dequeues and skips it; `done`/`failed` are held until the result is sent. The console drops its
+whole view on reconnect (a localhost drop = server restart), so stale tasks don't linger.
 
 ---
 

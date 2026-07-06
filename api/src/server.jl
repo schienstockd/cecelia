@@ -22,13 +22,45 @@ include("repl_api.jl")
 const _ws_clients      = Set{Any}()
 const _ws_clients_lock = ReentrantLock()
 
-function broadcast_ws(msg::Dict)
-    clients = lock(_ws_clients_lock) do; copy(_ws_clients); end
-    for ws in clients
-        try
-            HTTP.WebSockets.send(ws, JSON3.write(msg))
-        catch; end
+# Outbound broadcast is DECOUPLED from the caller. Task events now fan out on every log/progress/status
+# line from many worker threads; writing sockets inline would (a) let concurrent worker threads write
+# the SAME socket at once (frame corruption) and (b) let one slow/half-open client BLOCK a worker —
+# which stalls a pool slot and, cascaded, leaves every task stuck at :queued. Instead callers enqueue a
+# pre-serialised frame and a single background task drains the queue, writes to each client, and prunes
+# any that error. The queue is bounded and DROPS on overflow — WS telemetry is lossy-safe, and a worker
+# thread must never block on WS I/O.
+const _WS_OUT_CAP        = 4096
+const _WS_OUT            = Channel{String}(_WS_OUT_CAP)
+const _ws_sender_started = Ref(false)
+
+function _ws_sender_loop()
+    for json in _WS_OUT
+        clients = lock(_ws_clients_lock) do; copy(_ws_clients); end
+        dead = Any[]
+        for ws in clients
+            try; HTTP.WebSockets.send(ws, json); catch; push!(dead, ws); end
+        end
+        isempty(dead) || lock(_ws_clients_lock) do
+            for ws in dead; delete!(_ws_clients, ws); end
+        end
     end
+end
+
+function _ws_ensure_sender!()
+    _ws_sender_started[] && return
+    lock(_ws_clients_lock) do
+        _ws_sender_started[] && return
+        _ws_sender_started[] = true
+        Threads.@spawn _ws_sender_loop()
+    end
+end
+
+function broadcast_ws(msg::Dict)
+    _ws_ensure_sender!()
+    json = JSON3.write(msg)
+    # non-blocking enqueue: drop when the buffer is full (a stuck client backing up) rather than block
+    Base.n_avail(_WS_OUT) < _WS_OUT_CAP && put!(_WS_OUT, json)
+    nothing
 end
 
 # ── Chain event → WS bridge ───────────────────────────────────────────────────
@@ -386,6 +418,7 @@ const _BOUND_HOST = Ref{String}("")
 
 function start(; host=HOST, port=PORT)
     _BOUND_HOST[] = string(host)
+    _ws_ensure_sender!()   # start the single WS broadcast drainer before we accept connections
     @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end

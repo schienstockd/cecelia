@@ -390,6 +390,24 @@ The WS `chain:run` message carries `runId` (→ resume) and optional `startNode`
 tab sends them when you hit **Resume** (with or without a picked node). See `docs/UI.md` → Chain
 whiteboard.
 
+### Fresh-run start dot (`start_targets` — UML initial node)
+
+For a *fresh* run there's an authored entry point: a **UML start dot** on the edit whiteboard, linked
+to the task(s) a run begins from. It's persisted as `ChainTemplate.start_targets` (the node ids the
+dot links to; the dot isn't a task). At run start, `run_chain` calls `_prune_to_start`:
+
+- `start_targets` empty ⇒ template unchanged — run the whole chain from its natural roots (backward-
+  compatible; existing chains are untouched).
+- non-empty ⇒ execute **only the reachable subgraph** — the inclusive descendants of the targets.
+  Edges into a target from now-excluded nodes are dropped, so a target becomes an effective root.
+
+So dropping the dot mid-chain runs from there onward (upstream tasks kept in the editor as drafts,
+skipped for the run), and linking it to one branch runs that branch while a disconnected branch stays
+a draft. Pruning happens once, up front, so every downstream stage (topo sort, per-image state,
+resume, the frozen `template_snapshot`) sees one clean effective template — no node knows it was
+pruned. Distinct from `start_node` above: `start_targets` is a persisted *authoring* choice for fresh
+runs; `start_node` is a transient *resume* choice made on the Live tab.
+
 ### In-place restart (no new task record)
 
 Resume re-uses the existing `run.id`. There is no "new task created" on resume — the run record

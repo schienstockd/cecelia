@@ -141,6 +141,7 @@ function api_task_definitions(req::HTTP.Request)
     for entry in readdir(_TASK_SPECS_ROOT; join=true)
         isdir(entry) || continue
         entry == frag_dir && continue          # skip shared fragments
+        basename(entry) == "testTasks" && continue   # dev-only stubs for the test suite — never user-facing
         category = basename(entry)
         (!isempty(cat) && category != cat) && continue
         specs = Any[]
