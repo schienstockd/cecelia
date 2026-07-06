@@ -30,9 +30,10 @@ try:
 except ImportError:
     _HAS_TRIMESH = False
 
-# 2D regionprops (standard set)
+# 2D regionprops (standard set). `bbox` is intentionally NOT measured — it's a structural extent,
+# not a QC morphology measure, and nothing downstream reads it (it only cluttered the h5ad var).
 _PROPS_2D = [
-    'label', 'centroid', 'bbox', 'area',
+    'label', 'centroid', 'area',
     'eccentricity', 'orientation', 'perimeter',
     'convex_area', 'equivalent_diameter', 'extent',
     'feret_diameter_max', 'major_axis_length', 'minor_axis_length', 'solidity',
@@ -40,15 +41,15 @@ _PROPS_2D = [
 
 # 3D regionprops — used when extendedMeasures is False or trimesh is unavailable.
 # solidity excluded: qhull convex hull fails for cells spanning only one Z-slice,
-# flooding stderr. feret_diameter_max excluded: O(n²) voxel distance matrix.
+# flooding stderr. feret_diameter_max excluded: O(n²) voxel distance matrix. bbox excluded (see 2D).
 _PROPS_3D = [
-    'label', 'centroid', 'bbox', 'area', 'extent',
+    'label', 'centroid', 'area', 'extent',
     'equivalent_diameter_area', 'euler_number', 'inertia_tensor_eigvals',
 ]
 
 # Minimal 3D props used when trimesh handles shape descriptors.
 _PROPS_3D_BASE = [
-    'label', 'centroid', 'bbox', 'area', 'extent',
+    'label', 'centroid', 'area', 'extent',
 ]
 
 
@@ -175,17 +176,21 @@ class MeasureUtils:
         return df
 
     def _add_2d_derived(self, df: pd.DataFrame) -> pd.DataFrame:
+        # 2D shape descriptors — ported verbatim from the old R measure_utils.py so the two versions
+        # agree (2D block, lines ~570-596). Axis-length ratios (NOT the circularity proxy the interim
+        # port used): oblate/prolate are minor↔major axis ratios, matching the 3D ellipticity set.
         if 'major_axis_length' in df and 'minor_axis_length' in df:
-            maj = df['major_axis_length'].replace(0, np.nan)
-            df['aspect_ratio']      = df['minor_axis_length'] / maj
+            maj  = df['major_axis_length'].replace(0, np.nan)
+            minr = df['minor_axis_length'].replace(0, np.nan)
+            df['oblate']  = df['minor_axis_length'] / maj      # ∈ (0,1], 1 = round
+            df['prolate'] = df['major_axis_length'] / minr     # ≥ 1
+        if 'major_axis_length' in df and 'equivalent_diameter' in df:      # Mesmer-style aspect ratio
+            df['aspect_ratio'] = df['major_axis_length'] / df['equivalent_diameter'].replace(0, np.nan)
         if 'perimeter' in df and 'area' in df:
-            area = df['area'].replace(0, np.nan)
-            df['perimeter_to_area'] = df['perimeter'] / area
-            # circularity / oblate proxy
-            df['oblate']  = (4 * np.pi * area) / (df['perimeter'] ** 2).replace(0, np.nan)
-        if 'minor_axis_length' in df and 'major_axis_length' in df:
-            maj = df['major_axis_length'].replace(0, np.nan)
-            df['prolate'] = df['minor_axis_length'] ** 2 / (maj * df.get('interm_axis_length', maj)).replace(0, np.nan)
+            df['perimeter_to_area'] = (df['perimeter'] ** 2) / df['area'].replace(0, np.nan)
+        if 'convex_area' in df and 'area' in df:                          # fraction of hull NOT filled
+            ca = df['convex_area'].replace(0, np.nan)
+            df['fill'] = (df['convex_area'] - df['area']) / ca
         return df
 
     def _add_3d_derived(self, df: pd.DataFrame) -> pd.DataFrame:
@@ -205,6 +210,25 @@ class MeasureUtils:
             df['interm_axis_length'] = axes[np.arange(len(axes)), idx[:, 1]]
             df['minor_axis_length']  = axes[np.arange(len(axes)), idx[:, 2]]
             df.drop(columns=ev_cols, inplace=True)
+            # ellipticity ratios from the ellipsoid axis lengths — cheap (no mesh, no extendedMeasures),
+            # so a plain 3D segmentation gets oblate/prolate too. Ports the old R 3D ellipticity set
+            # (measure_utils.py lines ~557-560): minor↔major and the intermediate-axis variants.
+            df = self._add_ellipticity(df)
+        return df
+
+    @staticmethod
+    def _add_ellipticity(df: pd.DataFrame) -> pd.DataFrame:
+        """3D ellipticity ratios from major ≥ interm ≥ minor axis lengths (old R `ellipticity_*`)."""
+        need = ('major_axis_length', 'interm_axis_length', 'minor_axis_length')
+        if not all(c in df for c in need):
+            return df
+        maj    = df['major_axis_length'].replace(0, np.nan)
+        interm = df['interm_axis_length'].replace(0, np.nan)
+        minr   = df['minor_axis_length'].replace(0, np.nan)
+        df['ellipticity_oblate']         = df['minor_axis_length']  / maj      # ∈ (0,1], 1 = spherical
+        df['ellipticity_prolate']        = df['major_axis_length']  / minr     # ≥ 1
+        df['ellipticity_interm_oblate']  = df['minor_axis_length']  / interm
+        df['ellipticity_interm_prolate'] = df['interm_axis_length'] / minr
         return df
 
     # ── extended 3D via trimesh ───────────────────────────────────────────────
@@ -243,9 +267,10 @@ class MeasureUtils:
                 'euler_number_mesh':  float(mesh.euler_number),
             }
 
-            # solidity from mesh volumes
+            # solidity from mesh volumes (only meaningful measure of solidity in 3D → keep the plain
+            # name, matching old R; the 2D regionprops `solidity` never coexists with the mesh path)
             if ch.volume > 0:
-                row['solidity_mesh'] = float(mesh.volume) / float(ch.volume)
+                row['solidity'] = float(mesh.volume) / float(ch.volume)
 
             # surface-to-volume
             if mesh.volume > 0:
@@ -266,9 +291,8 @@ class MeasureUtils:
                 row['major_axis_length']  = float(radii[0])
                 row['interm_axis_length'] = float(radii[1])
                 row['minor_axis_length']  = float(radii[2])
-                if radii[0] > 0:
-                    row['ellipticity_oblate']  = radii[2] / radii[0]
-                    row['ellipticity_prolate'] = radii[1] / radii[0]
+                # ellipticity ratios are derived from these axis lengths below (via _add_ellipticity),
+                # so both the mesh and moments paths use the SAME formula (was inconsistent here).
             except Exception:
                 pass
 
@@ -289,6 +313,8 @@ class MeasureUtils:
             for col in ext_df.columns:
                 if col not in ('major_axis_length', 'interm_axis_length', 'minor_axis_length'):
                     df[col] = ext_df[col]
+            # ellipticity ratios from the mesh-derived axis lengths — same formula as the moments path
+            df = self._add_ellipticity(df)
 
         return df
 

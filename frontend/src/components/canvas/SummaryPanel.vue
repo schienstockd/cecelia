@@ -48,6 +48,9 @@ const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === 
 // discovered columns of the selected image+segmentation (loaded in loadObsCols below). Declared up
 // here — BEFORE measureOpts/its watch — because `watch(measureOpts)` evaluates its getter at setup,
 // which reads these refs; declaring them later would be a temporal-dead-zone crash.
+// structural regionprops that are not QC morphology measures (bounding box, centroid, raw inertia
+// eigvals, the label index). New measurements no longer save bbox; this also hides it in existing data.
+const STRUCTURAL_COL = /^(label$|bbox[-_]|centroid[-_]|inertia_tensor)/
 const varCols = ref<string[]>([])        // var columns (morphology + intensity)
 const channelCols = ref<string[]>([])    // intensity var columns specifically (mean_intensity_* / renamed)
 const obsCols = ref<string[]>([])        // obs columns (live.cell.*, hmm.state, cluster ids, …)
@@ -60,7 +63,10 @@ const measureOpts = computed(() => {
   // curated subset and not the intensity channels. Default measure first.
   if (ds.measuresFromData && varCols.value.length) {
     const intensity = new Set(channelCols.value)
-    const morph = varCols.value.filter(c => !intensity.has(c))
+    // structural regionprops (bounding box, centroid, raw inertia eigvals, the label index) are not
+    // QC morphology measures. New measurements no longer save bbox at all (measure_utils), but existing
+    // h5ads still carry `bbox-*` — filter them here so the list stays to actual shape descriptors.
+    const morph = varCols.value.filter(c => !intensity.has(c) && !STRUCTURAL_COL.test(c))
     const rest = morph.filter(c => c !== ds.measure).sort((a, b) => a.localeCompare(b))
     return morph.includes(ds.measure) ? [ds.measure, ...rest] : rest
   }

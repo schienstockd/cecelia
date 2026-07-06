@@ -64,7 +64,13 @@ add a new plot with its own popover/menu, follow this pattern — a plain absolu
 
 1. **Measure type** — auto-detected (`project_measure_type_detection`): **numeric** (continuous, e.g.
    `live.track.speed`) vs **categorical** (string / integer-coded, e.g. `live.cell.hmm.state.*`,
-   `track_generation`). Decides which chart types are *applicable*.
+   `track_generation`). Decides which chart types are *applicable*. **Structural rule:** a **`var`
+   column (morphology/intensity) is always numeric** — even integer-valued ones (`euler_number`,
+   voxel-count `area`) — so the integer-code heuristic never mislabels a shape measure as categorical
+   (which would drop the numeric charts and reset the panel to `count`). The heuristic runs only for
+   `obs` measures, where genuine categoricals are anyway written as anndata `categorical`. This
+   replaces the old R `config.yml parameters.labelStats` per-column map (`_var_measure_set` in
+   `plot_data.jl`).
 2. **Data source** — **one image** / **multiple images (`per_image`)** / **pooled** (images merged) /
    **by attribute** (images grouped by one or more shared image attributes, e.g. `Treatment`, or
    `Treatment` × `Mouse`). Set by the canvas "compare" control; orthogonal to chart type. *By attribute*

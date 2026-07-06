@@ -128,12 +128,29 @@ function _downsample(vals::Vector{Float64}, cap::Int)::Vector{Float64}
     vals[round.(Int, range(1, n; length = cap))]
 end
 
+# Morphology/intensity `var` columns are quantitative by construction — an integer-valued one
+# (`euler_number`, voxel-count `area`) is STILL numeric. The categorical heuristic (`_is_categorical_col`)
+# is only for `obs` columns (hmm.state, clusters, generation — written as anndata categoricals). So the
+# measure type of a var column is always numeric; only an obs measure defers to detection. This is the
+# structural rule that replaces the old R `config.yml parameters.labelStats` per-column map.
+function _var_measure_set(img::CciaImage, value_name)::Set{String}
+    vn = something(value_name, get(img.label_props, "_active", "default"))
+    try
+        Set(String.(col_names(label_props(img; value_name=vn); data_type=:vars)))
+    catch
+        Set{String}()
+    end
+end
+_var_measure_set(imgs::AbstractVector{<:CciaImage}, value_name)::Set{String} =
+    isempty(imgs) ? Set{String}() : _var_measure_set(first(imgs), value_name)
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
 function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       measure::Union{AbstractString,Nothing}, granularity::Symbol,
                       nbins::Int, normalize::Symbol, by_image::Bool,
+                      var_cols::Set{String}=Set{String}(),
                       group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
                       raw_points::Bool=false, max_points::Int=1500,
                       matrix_mode::Union{AbstractString,Nothing}=nothing,
@@ -159,7 +176,8 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     # detected measure type (numeric vs categorical) so the panel can offer only the applicable
     # chart types (docs/PLOTS.md §2). Auto-detection is shared with track_props (`_is_categorical_col`).
     mtype = (measure !== nothing && String(measure) in names(df)) ?
-            (_is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
+            (String(measure) in var_cols ? "numeric" :                        # var = quantitative, always
+             _is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
     if chart_type == "points"
         # raw (downsampled) values per series — the data source for strip/jitter and (client-side
         # density) violin charts. No server aggregation beyond the per-group downsample.
@@ -444,6 +462,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                 raw_channel_names=(chart_type == "matrix"))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
+                 var_cols=_var_measure_set(img, value_name),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
@@ -469,7 +488,8 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                 raw_channel_names=(chart_type == "matrix"))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
-                          group_by=group_by, collapse_series=collapse_series,
+                          group_by=group_by, var_cols=_var_measure_set(imgs, value_name),
+                          collapse_series=collapse_series,
                           raw_points=raw_points, max_points=max_points,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
@@ -520,6 +540,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                raw_channel_names=(chart_type == "matrix")))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
+                 var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
@@ -546,7 +567,9 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                raw_channel_names=(chart_type == "matrix")))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
-                          group_by=group_by, collapse_series=collapse_series,
+                          group_by=group_by,
+                          var_cols=_var_measure_set(imgs, isempty(targets) ? nothing : first(targets)[1]),
+                          collapse_series=collapse_series,
                           raw_points=raw_points, max_points=max_points,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
