@@ -104,11 +104,20 @@ If a raw (uncorrected) image appears empty, check `zarr_array.dtype` — `>u2` o
 `layer.reset_contrast_limits()` silently sets `[0, 65535]` for dask/zarr arrays that haven't been computed yet (napari 0.7.1 behaviour — it can't scan an uncomputed array).
 
 Instead we use `_set_contrast_from_sample(layer)`:
+- Samples the **coarsest** pyramid level (`raw[-1]`), not the full-res level — this is a contrast
+  *estimate*, so reading the smallest level is orders of magnitude less I/O. It matters because this
+  runs once **per visible layer**, and with `channel_axis` set each channel is its own layer, so a
+  full-res sample would read one full-res plane per channel on every open.
 - Indexes the middle position along every axis except Y and X (so for CZYX: middle C, middle Z, all Y, all X)
 - Computes 1st–99.9th percentile of non-zero pixels
 - Falls back to `reset_contrast_limits()` only if the sample is too sparse or computation fails
 
 This runs on every visible layer after `add_image`.
+
+**OME-XML metadata is parsed once per store.** `_read_unit_from_ome_xml` / `_read_scale_from_ome_xml`
+/ `_read_time_increment` all go through `_load_ome_xml`, which is `lru_cache`d on `(path, mtime)` — a
+long-lived bridge parses each store's `METADATA.ome.xml` at most once instead of 2–3× per open, and
+the lazy `ome_types` import (pydantic model build) is paid only on the first parse.
 
 ---
 
