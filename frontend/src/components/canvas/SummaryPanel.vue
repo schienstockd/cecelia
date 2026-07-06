@@ -13,6 +13,8 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
 import PlotChart from '../plots/PlotChart.vue'
+import PlotSpinner from '../plots/PlotSpinner.vue'
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
@@ -210,6 +212,8 @@ const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
 const crossImage = computed(() => !!props.setUid)
 const result = ref<PlotDataResponse | null>(null)
 const loading = ref(false)
+// delayed spinner — only shows if a fetch runs past the threshold, so quick plots never flash it
+const showSpinner = useDelayedLoading(loading)
 const error = ref('')
 // Fetch coordination. Rapid setting changes cascade through several watchers (measure → validCharts →
 // chartType, groupBy → timeSeries, …); without this those fired overlapping requests whose responses
@@ -502,10 +506,9 @@ defineExpose({ getCsv, exportImage })
     <div class="sp-body">
       <div v-if="!series.length" class="sp-msg">Select one or more populations (eye icon) to plot.</div>
       <div v-else-if="error" class="sp-msg sp-err">{{ error }}</div>
-      <div v-else-if="!hasData && loading" class="sp-msg">…</div>
-      <div v-else-if="!hasData" class="sp-msg">No data for the selected populations.</div>
-      <PlotChart v-else ref="plotRef" :data="result" :opts="buildOpts" />
-      <div v-if="loading && hasData" class="sp-loading">…</div>
+      <div v-else-if="!hasData && !loading" class="sp-msg">No data for the selected populations.</div>
+      <PlotChart v-else-if="hasData" ref="plotRef" :data="result" :opts="buildOpts" />
+      <PlotSpinner v-if="showSpinner" label="Loading…" />
     </div>
   </CanvasPanel>
 </template>
@@ -538,5 +541,4 @@ defineExpose({ getCsv, exportImage })
 .sp-body { position: relative; flex: 1; min-height: 200px; padding: 8px; overflow: hidden; }
 .sp-msg { display: flex; align-items: center; justify-content: center; height: 100%; color: var(--cc-text-dim); font-size: 12px; text-align: center; padding: 12px; }
 .sp-err { color: var(--cc-danger, #f87171); }
-.sp-loading { position: absolute; top: 6px; right: 8px; font-size: 11px; color: var(--cc-text-dim); }
 </style>

@@ -13,16 +13,18 @@
   (each layer re-renders hi-res), so both hosts export identically.
 -->
 <script setup lang="ts">
-import { useTemplateRef } from 'vue'
+import { useTemplateRef, toRef } from 'vue'
 import type { GateSpec } from '../../stores/gating'
 import ScatterGL from './ScatterGL.vue'
+import PlotSpinner from './PlotSpinner.vue'
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import GateOverlay from './GateOverlay.vue'
 import { rasterPlotToImageURL } from '../../plots/export'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   points: Float32Array | null
   extents: Ext                                   // fixed full-data range (ScatterGL)
   viewExtents: Ext                               // live (zoom-synced) extents (PlotLayers/GateOverlay/ticks)
@@ -46,6 +48,10 @@ withDefaults(defineProps<{
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
+
+// delayed spinner for the full-size scatter only; compact montage cells (gating strategy) are small
+// plots — they keep the unobtrusive dot rather than a wheel over every tile.
+const showSpinner = useDelayedLoading(toRef(props, 'loading'))
 
 // ticks positioned against the LIVE view extents so labels track pan/zoom
 const tickX = (pos: number, e: Ext) => `${((pos - e.xMin) / Math.max(1e-9, e.xMax - e.xMin)) * 100}%`
@@ -117,7 +123,8 @@ function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat
       </span>
       <span class="axis-x">{{ xLabel }}</span>
       <span class="axis-y">{{ yLabel }}</span>
-      <div v-if="loading" class="panel-loading">…</div>
+      <PlotSpinner v-if="showSpinner && !compact" label="Loading…" />
+      <div v-else-if="loading && compact" class="panel-loading">…</div>
       <slot />
     </div>
   </div>
