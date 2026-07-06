@@ -74,6 +74,13 @@ jobs:
           npm ci
           npm run build
 
+      # Frontend unit tests (Vitest): pure logic extracted from .vue SFCs into src/utils/*
+      # (e.g. the chain start-dot save/reload round-trip). node_modules is already installed by the
+      # build step's `npm ci`. Fast + fixture-free, so it runs on every OS in the matrix.
+      - name: Frontend tests
+        working-directory: frontend
+        run: npm test
+
       - name: Start server and verify health + frontend serving
         run: |
           set -uo pipefail
