@@ -252,6 +252,20 @@ docs/TODO.md.)
    + derived `/_tracked`) and `track` gates (per-track-measure gates from `{vn}__tracks.json`), each
    tagged with its `popType`; the panel groups series by popType and fetches one `/api/plot_data` per
    group, merging the results. So `/_tracked` and a track gate can sit on one plot.
+9. **Column-load coordination (fetch defers until cols are current).** `SummaryPanel` discovers each
+   image's columns async (`/api/gating/channels` → `varCols`/`obsCols`/…). On an image/segmentation
+   switch those refs are **not** cleared mid-load — clearing them would reset the user's measure pick
+   and make the selects "cycle" — so for the async window they still describe the *previous* image.
+   For `measuresFromData` plots (the QC morphology list is built from the image's own columns) a fetch
+   fired in that window would request the previous image's measure — e.g. 3D-only `euler_number`
+   against a 2D image → a `label_props.jl` **"ignoring unknown columns"** warning + a transient empty
+   plot. Guard: `loadObsCols` stamps `colsFor = (imageUid, valueName)` (and discards a stale in-flight
+   response if the image switched mid-load); `fetchData` **defers** while `!colsReady`
+   (`colsFor ≠ current key`); `colsReady` is a fetch-watch source, so the deferred fetch re-fires the
+   instant the columns land — by which point the measure-reset watch (declared earlier, so it flushes
+   first) has already moved `measure` onto a valid option. Static-measure specs and cross-image mode
+   are unaffected (the guard is `measuresFromData`-only; the no-image path still stamps `colsFor`, so
+   it never deadlocks).
 
 ## 9. Heatmaps (matrix) — DONE; tiled maps — roadmap
 
