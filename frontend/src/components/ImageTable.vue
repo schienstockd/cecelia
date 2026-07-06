@@ -264,7 +264,7 @@ async function openInNapari(imageUid: string) {
         imageUid,
         autoSaveProps: autoProps,
         autoLoadProps: autoProps,
-        show3D:        settings.napariShow3D,
+        show3D:        settings.getShow3D(props.setUid),   // per-set (only applied where a z-axis exists)
         asDask:        settings.napariAsDask,
       }),
     })

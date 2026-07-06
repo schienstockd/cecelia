@@ -28,48 +28,9 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariAutoSaveLayerProps') === 'true'  // default false
   )
 
-  const napariShow3D = ref(
-    localStorage.getItem('cc.napariShow3D') === 'true'   // default false
-  )
-
   const napariAsDask = ref(
     localStorage.getItem('cc.napariAsDask') !== 'false'  // default true
   )
-
-  // size of population centroid points drawn in napari (old GUI default: 6)
-  const napariPointSize = ref(
-    Number(localStorage.getItem('cc.napariPointSize') ?? 6)
-  )
-
-  // remember whether gating populations are shown as points in napari, so opening an image
-  // restores the user's last choice instead of always starting hidden (default true)
-  const napariShowPopulations = ref(
-    localStorage.getItem('cc.napariShowPopulations') !== 'false'
-  )
-
-  // remember whether track populations are shown as napari Tracks layers (default false — tracks
-  // are a heavier, more specialised overlay than population points). Mirrors napariShowPopulations.
-  const napariShowTracks = ref(
-    localStorage.getItem('cc.napariShowTracks') === 'true'
-  )
-
-  // remember the obs column the napari tracks/labels are coloured by ('' = default colouring)
-  const napariColourBy = ref(localStorage.getItem('cc.napariColourBy') ?? '')
-
-  // master "show gated track populations" toggle (TEST/SDGF track-measure gates), like Show
-  // populations but for the Tracks overlay. Default off (heavier). Mirrors napariShowPopulations.
-  const napariShowGatedTracks = ref(localStorage.getItem('cc.napariShowGatedTracks') === 'true')
-
-  // per-pop-type napari overlay visibility: { [popType]: boolean } (flow / clust / track /
-  // trackclust). Each toggles that pop type's populations as coloured centroid points in napari
-  // (bridge namespaces layers by `(popType)`, so they coexist). Default hidden; persisted.
-  const _popVis = ref<Record<string, boolean>>(
-    JSON.parse(localStorage.getItem('cc.napariPopVisibility') ?? '{}'))
-  const popVisible = (popType: string): boolean => _popVis.value[popType] ?? false
-  function setPopVisible(popType: string, v: boolean) {
-    _popVis.value = { ..._popVis.value, [popType]: v }
-    localStorage.setItem('cc.napariPopVisibility', JSON.stringify(_popVis.value))
-  }
 
   // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
   // to free up working space. Both default expanded, both persist across sessions.
@@ -108,20 +69,50 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.setItem('cc.napariTrackVisibility', JSON.stringify(_trackVisStore.value))
   }
 
+  // ── Per-SET napari viewer preferences, keyed by set uid: { [setUid]: {...} } ──────────────────
+  // These are the viewer-level DISPLAY toggles (colour-by, show-3D, point size, per-popType overlay
+  // visibility, show-gated-tracks). They were always MEANT to be per-set (one experiment = consistent
+  // viewing); the old R app made them global only because Shiny bookmarks made that easy. Per-set (not
+  // global) so a choice made in one experiment never bleeds onto another's images (e.g. a colour-by
+  // column that a different set's segmentation doesn't have), and not per-image so you set it ONCE and
+  // it holds as you click through the set's images. Per-image state (which segmentations/tracks are
+  // shown — the per-segmentation rows) stays keyed by image uid above.
+  interface NapariSetPrefs {
+    colourBy?: string                       // obs column to colour labels/tracks by ('' = default)
+    show3D?: boolean                        // open images volumetric (only applied where a z-axis exists)
+    showGatedTracks?: boolean               // overlay gated track populations
+    pointSize?: number                      // population centroid point size in napari
+    popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
+  }
+  const _setPrefs = ref<Record<string, NapariSetPrefs>>(
+    JSON.parse(localStorage.getItem('cc.napariSetPrefs') ?? '{}')
+  )
+  function _patchSet(setUid: string, patch: Partial<NapariSetPrefs>) {
+    _setPrefs.value = { ..._setPrefs.value, [setUid]: { ...(_setPrefs.value[setUid] ?? {}), ...patch } }
+    localStorage.setItem('cc.napariSetPrefs', JSON.stringify(_setPrefs.value))
+  }
+  const getColourBy = (setUid: string): string => _setPrefs.value[setUid]?.colourBy ?? ''
+  const setColourBy = (setUid: string, column: string) => _patchSet(setUid, { colourBy: column })
+  const getShow3D = (setUid: string): boolean => _setPrefs.value[setUid]?.show3D ?? false
+  const setShow3D = (setUid: string, v: boolean) => _patchSet(setUid, { show3D: v })
+  const getShowGatedTracks = (setUid: string): boolean => _setPrefs.value[setUid]?.showGatedTracks ?? false
+  const setShowGatedTracks = (setUid: string, v: boolean) => _patchSet(setUid, { showGatedTracks: v })
+  const getPointSize = (setUid: string): number => _setPrefs.value[setUid]?.pointSize ?? 6   // old GUI default 6
+  const setPointSize = (setUid: string, v: number) => _patchSet(setUid, { pointSize: v })
+  const getPopVisible = (setUid: string, popType: string): boolean =>
+    _setPrefs.value[setUid]?.popVis?.[popType] ?? false                                       // default hidden
+  function setPopVisible(setUid: string, popType: string, v: boolean) {
+    _patchSet(setUid, { popVis: { ...(_setPrefs.value[setUid]?.popVis ?? {}), [popType]: v } })
+  }
+
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
   watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
-  watch(napariShow3D,             v => localStorage.setItem('cc.napariShow3D',             String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
-  watch(napariPointSize,          v => localStorage.setItem('cc.napariPointSize',          String(v)))
-  watch(napariShowPopulations,    v => localStorage.setItem('cc.napariShowPopulations',    String(v)))
-  watch(napariShowTracks,         v => localStorage.setItem('cc.napariShowTracks',         String(v)))
-  watch(napariColourBy,           v => localStorage.setItem('cc.napariColourBy',           String(v)))
-  watch(napariShowGatedTracks,    v => localStorage.setItem('cc.napariShowGatedTracks',    String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariShow3D, napariAsDask, napariPointSize, napariShowPopulations, napariShowTracks, napariShowGatedTracks, napariColourBy, sidebarCollapsed, rightPanelCollapsed, popVisible, setPopVisible, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible }
 })

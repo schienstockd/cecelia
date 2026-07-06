@@ -72,6 +72,11 @@ export const useProjectStore = defineStore('project', () => {
 
   const activeSet = () => sets.value.find(s => s.uid === activeSetUid.value) ?? null
 
+  // Which set an image belongs to (an image lives in exactly one set). Used to key per-set napari
+  // viewer preferences (colour-by / show-3D / point size / overlay toggles) — see settings store.
+  const setUidOfImage = (imageUid: string): string | null =>
+    sets.value.find(s => s.images.some(i => i.uid === imageUid))?.uid ?? null
+
   // Called when a project is opened — replaces the in-memory set/image list.
   function loadFromApi(apiSets: CciaSet[]) {
     sets.value = apiSets
@@ -187,5 +192,5 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, removeLabelSet }
 })
