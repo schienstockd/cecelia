@@ -14,6 +14,7 @@ import queue
 import sys
 import threading
 import urllib.request
+from functools import lru_cache
 
 import dask.array as da
 import napari
@@ -812,7 +813,9 @@ def _set_contrast_from_sample(layer) -> None:
     try:
         raw = layer.data
         if isinstance(raw, list):
-            raw = raw[0]   # first scale level for multiscale
+            raw = raw[-1]  # coarsest scale level — a contrast SAMPLE only, so read the
+                           # smallest pyramid level (orders of magnitude less I/O than the
+                           # full-res level, and per-channel this runs once per visible layer)
         ndim = raw.ndim
         # Build index that selects middle position along all axes except the last two (y, x)
         idx = tuple(
@@ -883,19 +886,37 @@ def _read_axes(path: str):
     return [ax["name"] for ax in axes] if axes else None
 
 
-def _read_unit_from_ome_xml(path: str) -> str:
-    """Read physical pixel unit from OME-XML metadata. Returns 'µm' as default."""
+@lru_cache(maxsize=64)
+def _parse_ome_xml(xml_path: str, _mtime: float):
+    """Parse one OME-XML file. Cached on (path, mtime) — a long-lived bridge parses each store's
+    metadata at most once (mtime in the key invalidates it if the file is rewritten). `ome_types`
+    is imported lazily here so its pydantic model-build cost is paid on first use, not at import."""
+    from ome_types import from_xml
+    with open(xml_path) as f:
+        return from_xml(f.read())
+
+
+def _load_ome_xml(path: str):
+    """Locate and parse a store's OME-XML (OME/METADATA.ome.xml or METADATA.ome.xml), or None.
+    Shared by the readers below so a single open parses the file once instead of two or three times."""
     import os
-    for candidate in [
+    for candidate in (
         os.path.join(path, "OME", "METADATA.ome.xml"),
         os.path.join(path, "METADATA.ome.xml"),
-    ]:
-        if not os.path.isfile(candidate):
-            continue
+    ):
+        if os.path.isfile(candidate):
+            try:
+                return _parse_ome_xml(candidate, os.path.getmtime(candidate))
+            except Exception:
+                return None
+    return None
+
+
+def _read_unit_from_ome_xml(path: str) -> str:
+    """Read physical pixel unit from OME-XML metadata. Returns 'µm' as default."""
+    omexml = _load_ome_xml(path)
+    if omexml is not None:
         try:
-            from ome_types import from_xml
-            with open(candidate) as f:
-                omexml = from_xml(f.read())
             unit = omexml.images[0].pixels.physical_size_x_unit
             if unit is not None:
                 return unit.value  # e.g. 'µm', 'nm', 'mm'
@@ -906,16 +927,10 @@ def _read_unit_from_ome_xml(path: str) -> str:
 
 def _read_scale_from_ome_xml(path: str, axes):
     """Read physical pixel scale from OME-XML metadata, returning values in axis order."""
-    import os
-    ome_xml_path = os.path.join(path, "OME", "METADATA.ome.xml")
-    if not os.path.isfile(ome_xml_path):
-        ome_xml_path = os.path.join(path, "METADATA.ome.xml")
-        if not os.path.isfile(ome_xml_path):
-            return None
+    omexml = _load_ome_xml(path)
+    if omexml is None:
+        return None
     try:
-        from ome_types import from_xml
-        with open(ome_xml_path) as f:
-            omexml = from_xml(f.read())
         pixels = omexml.images[0].pixels
         sizes = {
             'x': pixels.physical_size_x,
@@ -944,16 +959,11 @@ def _read_scale(path: str):
 def _read_time_increment(path: str):
     """Seconds between timepoints from OME-XML `pixels.time_increment` (with its unit), or None.
     Used for the timecourse timestamp overlay. Converts ms/min/h to seconds where the unit says so."""
-    import os
-    ome_xml_path = os.path.join(path, "OME", "METADATA.ome.xml")
-    if not os.path.isfile(ome_xml_path):
-        ome_xml_path = os.path.join(path, "METADATA.ome.xml")
-        if not os.path.isfile(ome_xml_path):
-            return None
+    omexml = _load_ome_xml(path)
+    if omexml is None:
+        return None
     try:
-        from ome_types import from_xml
-        with open(ome_xml_path) as f:
-            pixels = from_xml(f.read()).images[0].pixels
+        pixels = omexml.images[0].pixels
         inc = pixels.time_increment
         if inc is None:
             return None
