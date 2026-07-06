@@ -57,6 +57,13 @@ const varCols = ref<string[]>([])        // var columns (morphology + intensity)
 const channelCols = ref<string[]>([])    // intensity var columns specifically (mean_intensity_* / renamed)
 const obsCols = ref<string[]>([])        // obs columns (live.cell.*, hmm.state, cluster ids, …)
 const temporalCols = ref<string[]>([])   // obsm temporal col(s) (e.g. "t") — groupable but not in obs
+// which (imageUid, valueName) the loaded columns belong to. On an image/segmentation switch the col
+// refs are NOT cleared mid-load (that would reset the user's measure pick and "cycle") — so they still
+// describe the PREVIOUS image until loadObsCols resolves. `colsReady` tells the fetch to wait for the
+// current image's columns, so it never requests the previous image's measure (see fetchData guard).
+const colsKey = () => `${props.imageUid ?? ''}|${props.series[0]?.valueName ?? ''}`
+const colsFor = ref('')
+const colsReady = computed(() => colsFor.value === colsKey())
 const measureOpts = computed(() => {
   const ds = props.spec.dataSource
   // measuresFromData: offer every MORPHOLOGY measurement present — all var columns EXCEPT the
@@ -99,17 +106,24 @@ const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorM
 // empty split), filtered to categorical-looking names; a spec may add explicit hints that exist.
 const CATEGORICAL_OBS = /(\.hmm\.state\.|\.hmm\.transitions\.|\.clusters?\.|track_generation|track_state)/
 async function loadObsCols() {
+  const key = colsKey()
   const vn = props.series[0]?.valueName
-  if (!props.imageUid || !vn) { obsCols.value = []; temporalCols.value = []; return }
+  if (!props.imageUid || !vn) { obsCols.value = []; temporalCols.value = []; colsFor.value = key; return }
   try {
     const q = `projectUid=${props.projectUid}&imageUid=${props.imageUid}&valueName=${encodeURIComponent(vn)}`
     const res = await fetch(`/api/gating/channels?${q}`)
     const j = res.ok ? (await res.json() as { columns?: string[]; channels?: string[]; obsColumns?: string[]; temporalColumns?: string[] }) : {}
+    if (colsKey() !== key) return          // image/segmentation switched mid-load — discard the stale response
     varCols.value = j.columns ?? []
     channelCols.value = j.channels ?? []
     obsCols.value = j.obsColumns ?? []
     temporalCols.value = j.temporalColumns ?? []
-  } catch { varCols.value = []; channelCols.value = []; obsCols.value = []; temporalCols.value = [] }
+    colsFor.value = key
+  } catch {
+    if (colsKey() !== key) return
+    varCols.value = []; channelCols.value = []; obsCols.value = []; temporalCols.value = []
+    colsFor.value = key
+  }
 }
 watch([() => props.imageUid, () => props.series.map(t => t.valueName).join(',')], loadObsCols, { immediate: true })
 const groupByOpts = computed<string[]>(() => {
@@ -258,6 +272,12 @@ async function fetchData() {
   const seq = ++fetchSeq                                   // only this call may write `result` (see below)
   if (!props.series.length) { result.value = null; return }
   if (!crossImage.value && !props.imageUid) { result.value = null; return }
+  // measuresFromData offers measures built from THIS image's columns, so a fetch fired before the new
+  // image's columns have loaded would request the previous image's measure (e.g. 3D-only `euler_number`
+  // against a 2D image) → a backend "ignoring unknown columns" warning + a transient empty plot. Defer
+  // until loadObsCols reports the current (imageUid, valueName)'s columns; the `colsReady` fetch-watch
+  // re-fires this, by which point the measure-reset watch has moved `measure` onto a valid option.
+  if (props.spec.dataSource.measuresFromData && !colsReady.value) return
   loading.value = true; error.value = ''
 
   // matrix/heatmap pools the whole frame into ONE grid, so it's a single request (not the per-popType
@@ -348,7 +368,7 @@ async function fetchData() {
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
 watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'),
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
-       matrixMode, zscore, matrixNormalize, matrixCategory,
+       matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken],
       scheduleFetch)
