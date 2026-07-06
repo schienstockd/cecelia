@@ -286,6 +286,19 @@ Revise reloads function bodies on save. Struct/macro changes still need a restar
 
 ## Testing
 
+**Three test categories — one per layer. All three run in CI on every OS, and each has a `pixi run`
+task. Write AND run the matching category in the same change as the code:**
+
+| You changed… | Write/run | Command |
+|---|---|---|
+| Julia package core (`app/`) — data model, persistence, task dispatch, param validation, scheduler/chain logic | package test (`app/test/runtests.jl`) | `pixi run test-pkg` |
+| An API handler/adapter (`api/src/*.jl`) with logic worth pinning | API test (`api/test/runtests.jl`, loaded with `CECELIA_NO_SERVE=1` — no socket) | `pixi run test-api` |
+| Frontend logic — first **extract it out of the `.vue` SFC into `frontend/src/utils/*.ts`**, then test that | Vitest (`*.test.ts` beside the module) | `pixi run test-frontend` |
+
+Frontend scope is deliberately narrow: **pure logic in `src/utils/*` only — no component mounting,
+no jsdom/DOM/E2E.** Keep testable logic in plain `.ts`, not the component. Full conventions +
+rationale: [`docs/DEV.md`](docs/DEV.md) → *Tests*.
+
 Package tests live in `app/test/runtests.jl` and run fully headless — no API, WS, or Vue:
 ```bash
 cd app && julia --project test/runtests.jl
