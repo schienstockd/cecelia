@@ -202,6 +202,35 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Include/exclude (+ note) round-trip ──────────────────────────────────────
+    # Guards: new images default to included; excluded flag + note survive save!/init_object; and a
+    # legacy ccid.json with neither field loads as included (the accessor never sees a missing field).
+    @testset "Image included/note round-trip" begin
+        proj = create_project!(name="incl-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+        @test image_included(img)                 # default: included
+        @test img.note == ""
+
+        img.included = false
+        img.note = "bad drift reference channel"
+        save!(img)
+        r = init_object(proj.uid, img.uid)
+        @test r isa CciaImage
+        @test !image_included(r)
+        @test r.note == "bad drift reference channel"
+
+        # legacy file (no included/note keys) → defaults to included, empty note
+        ccid = joinpath(r._dir, "ccid.json")
+        raw  = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+        delete!(raw, "included"); delete!(raw, "note")
+        open(ccid, "w") do io; JSON3.write(io, raw); end
+        legacy = init_object(proj.uid, img.uid)
+        @test image_included(legacy)
+        @test legacy.note == ""
+        rm(proj.root; recursive=true)
+    end
+
     # ── Per-task param memory (funParams) — R moduleFunParams parity ─────────────
     # Last-used params are remembered in ccid.json under meta["funParams"][fun], per image and per
     # set. Guards: round-trips through save!/init_object, per-fun keys don't clobber, set-level too.

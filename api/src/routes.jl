@@ -730,6 +730,27 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# Set include/exclude (+ optional note) for one or more images. `values` maps uid → a partial
+# dict {included?, note?}; only the keys present are changed (toggle inclusion without clobbering a
+# note, or edit a note without touching inclusion). First-class CciaImage fields, so this rounds
+# through the model (save! preserves every other field) rather than the meta bag.
+function api_images_inclusion_set(body_bytes::Vector{UInt8})
+    proj_dir, data, err = _parse_meta_request(body_bytes)
+    isnothing(proj_dir) && return 400, JSON3.write((; error=err))
+    project_uid = String(get(data, :projectUid, ""))
+    values_raw  = get(data, :values, nothing)
+    isnothing(values_raw) && return 400, JSON3.write((; error="values required"))
+
+    for (image_uid, fields_raw) in values_raw
+        fields = Dict{String,Any}(String(k) => v for (k, v) in fields_raw)
+        _mutate_images!(project_uid, [String(image_uid)]) do img
+            haskey(fields, "included") && (img.included = Bool(fields["included"]))
+            haskey(fields, "note")     && (img.note     = string(fields["note"]))
+        end
+    end
+    200, JSON3.write((; ok=true))
+end
+
 # Backfill physical-size/timing meta for images imported before this metadata was tracked (or
 # whose ccid.json lost these fields) — re-derives them from the already-converted OME-ZARR (same
 # reader ImportOmezarr uses) without touching the original source file or re-running
@@ -835,6 +856,10 @@ function _image_payload(img::CciaImage)
         filepaths       = fps,
         labels          = img.labels,
         attr            = img.attr,
+        # Include/exclude in further processing (default true). Excluded images are greyed in the
+        # GUI, unselectable for runs, and hard-skipped by the runners; `note` is the optional reason.
+        included        = img.included,
+        note            = img.note,
         # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
         # flags the GUI renders as a badge + tooltip. Empty dict when a task has emitted none.
         qc              = read_all_qc(img),

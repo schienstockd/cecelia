@@ -301,6 +301,40 @@ sidecars* and `docs/todo/QC_PLAN.md`); `qc.ts` only aggregates + formats them. T
 the finding detail (e.g. drift correction's jump / canvas-expansion). It's **advisory** — never blocks.
 `warn` findings tint amber; `info` are neutral. (MetadataPanel + chain-whiteboard surfaces are later phases.)
 
+**Include / exclude an image.** Any image can be excluded from further processing/analysis — the
+systematic successor to the old R app's `Include=Y/N` keyword (`CciaImage.included`, default `true`;
+optional free-text `note`). The rule lives in ONE place — `frontend/src/utils/inclusion.ts`
+(`isExcluded`/`isIncluded`/`includedUids`), so graying, select-all, and run-selection all agree.
+- **Greyed, not hidden.** Excluded rows render dimmed (`.row-excluded`) with a persistent `pi-ban`
+  **Excluded** badge (its tooltip shows the note), an editable note line under the UID, and an
+  always-visible include/exclude toggle (`.incl-toggle`). Every other row shows the toggle on hover.
+- **Unselectable.** Excluded images can't be checkbox-selected — dropped from select-all, "select
+  flagged", and the remembered selection on reseed. Since every run (single task *and* chain) builds
+  from the selection, this makes exclusion honored everywhere. `ChainModule`'s run list mirrors it
+  (greyed, auto-select-all uses the included subset).
+- **Hard-skipped in the backend too.** Belt-and-suspenders for run paths that bypass the checkboxes
+  (chain resume, REPL): `_drop_excluded` (`api/src/sockets.jl`) filters excluded uids before dispatch
+  and logs each skip. Set via `POST /api/images/inclusion/set`; `project.setInclusion` reflects it live.
+- **Hide-excluded toggle.** Next to the **Filter** button, `ModuleLayout` shows an **Excluded N**
+  toggle (`pi-eye`/`pi-eye-slash`) that hides excluded rows entirely (default: show them greyed).
+  Persisted per module like the filter panel.
+
+**Attribute extraction — regex + builder** (`MetadataPanel.vue` → *Extract via regex*). Pulls an
+attr value out of each image's filename (or original path) with a JavaScript regex: the first
+capture group `()` is used if present, else the whole match (`extractWith` in
+`frontend/src/utils/regexBuilder.ts` — the single extractor, so the live preview equals the applied
+result). The field's tooltip carries a brief example for people who don't know regex. There is **one** regex
+input with **one** live preview (`regexSample → regexPreview` against the first target image); a
+collapsible **Builder** with two modes — **Split into fields** (separator × 1st/2nd/3rd/last field ×
+drop-extension, `buildFieldRegex`) and **Around a marker** (extract a token *preceded/followed by*
+context via lookbehind/lookahead, `buildLookaroundRegex`). Each context side is a **literal text +
+a class that varies** (so "M" `+ number` → `(?<=M\d+)` anchors M1b/M2a/M4f without hardcoding the
+mouse number → `b`/`a`/`f`); the extract token is a class or a raw custom pattern. Both modes write
+straight into that same field on any change, so it's a way to construct the visible regex, not a
+second input.
+The user then watches the preview and can hand-edit the pattern. The pure builder/extract logic
+lives in the util (Vitest-covered); the component only wires refs.
+
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
 the 280px `MetadataPanel` sidebar and was unreadable. Built on the shared `BaseModal` shell (see
@@ -329,6 +363,16 @@ metadata at all, see CLAUDE.md → *OME-ZARR dual-format* — rather than asking
 known-good values back in or re-import. Both header buttons operate on `flaggedUids`, not the
 checkbox selection.
 
+**Inline cell editing** (`ImageTable.vue`). Attribute cells, **channel-name** cells, and the
+exclusion **note** are all click-to-edit through ONE generic core (`startEdit`/`commitEdit`/
+`cancelEdit`/`focusEditInput`, keyed `${uid}:${namespacedKey}`) — each field only supplies a
+`save*(val)` persister (`saveAttr` → `attr/set`, `saveChannel` → `channelnames`, `saveNote` →
+`inclusion/set`). Add a new editable cell by reusing the core + a saver, never a second edit
+lifecycle. Channel edits replace one index in the image's name list and re-send the whole list
+(the endpoint is list-valued); a cell is editable only up to the image's channel count
+(`channelEditable`). This is why the metadata panel's channel section has no "copy to all" button —
+naming is done per-cell in the table (bulk-assign-to-selection via the textarea remains).
+
 ---
 
 ## TaskRunner component
@@ -337,6 +381,13 @@ checkbox selection.
 
 Fetches task definitions for a category, renders parameter forms, and submits tasks over WebSocket.
 Always rendered in the `#right` slot of `ModuleLayout`.
+
+**Right-sidebar resize** is a shared composable — `usePanelResize` (`frontend/src/composables/
+usePanelResize.ts`): a left-edge drag handle, min/max clamp, and (with a `storageKey`) width
+persisted to localStorage. Used by both `TaskRunner` (`cc-taskrunner-width`) and `MetadataPanel`
+(`cc-metadata-width`) so the behaviour isn't reimplemented per panel — add a resizable panel by
+calling it, not by copying the drag math. (MetadataPanel wraps a non-scrolling outer element around
+its scrolling body so the handle stays put while the panel scrolls.)
 
 | Prop | Type | Notes |
 |------|------|-------|
