@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { useLogStore } from './log'
 import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
+import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
@@ -255,6 +256,19 @@ export const useWsStore = defineStore('ws', () => {
             if (meta.TimeIncrementUnit !== undefined) patch.timeIncrementUnit = String(meta.TimeIncrementUnit)
           }
           useProjectStore().updateImageMeta(imageUid, patch)
+
+          // QC findings are written to disk during the run but NOT carried in task:result, so pull the
+          // fresh image meta to surface the QC badge live (no full project reload). See docs/todo/QC_PLAN.md.
+          const projectUid = String((data.projectUid as string | undefined) ?? '')
+            || useProjectMetaStore().current?.uid || ''
+          if (projectUid) {
+            fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${imageUid}`)
+              .then(r => (r.ok ? r.json() : null))
+              .then(d => {
+                if (d?.image?.qc !== undefined) useProjectStore().updateImageMeta(imageUid, { qc: d.image.qc })
+              })
+              .catch(() => {})
+          }
         }
       }
 
