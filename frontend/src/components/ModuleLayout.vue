@@ -10,6 +10,8 @@
     allowManage   bool      SetBar: show New/Rename/Delete set controls (default: false).
     allowDelete   bool      ImageTable: show per-image delete button (default: false).
     showAttrs     bool      ImageTable: show attr columns (default: false).
+    editableMeta  bool      ImageTable: allow inline attr/channel-name editing — Metadata page ONLY
+                            (default: false; every other page shows these read-only).
     showFilter    bool      Show the attr-value filter panel (default: true).
     noSetHint     string    Custom empty-state message.
 
@@ -43,6 +45,7 @@ const props = withDefaults(defineProps<{
   allowManage?: boolean
   allowDelete?: boolean
   showAttrs?:   boolean
+  editableMeta?: boolean
   showFilter?:  boolean
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
   noSetHint?:   string
@@ -50,6 +53,7 @@ const props = withDefaults(defineProps<{
   allowManage: false,
   allowDelete: false,
   showAttrs:   false,
+  editableMeta: false,
   showFilter:  true,
   singleSelect: false,
   noSetHint:   'Select a set to get started.',
@@ -275,6 +279,7 @@ function selectUids(uids: string[]) {
               :selection-scope="selScope"
               :allow-delete="allowDelete"
               :show-attrs="showAttrs"
+              :editable-meta="editableMeta"
               :single-select="singleSelect"
               :filter-uids="filteredUids"
               @selectionChange="onSelectionChange"

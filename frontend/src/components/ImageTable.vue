@@ -14,6 +14,7 @@ const props = defineProps<{
   setUid: string
   module?: string      // when provided, shows a per-module status column
   showAttrs?: boolean  // show per-channel + attr columns
+  editableMeta?: boolean // allow inline editing of attr + channel-name cells (Metadata page only)
   allowDelete?: boolean
   filterUids?: string[] // when provided, restricts visible rows to these UIDs
   singleSelect?: boolean // radio-style: at most one image selected (e.g. gating)
@@ -617,33 +618,41 @@ onUnmounted(stopResize)
           </span>
         </td>
 
-        <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize" @click.stop>
-          <template v-if="channelEditable(img, idx)">
+        <!-- channel names: editable only on the Metadata page (editableMeta); read-only elsewhere -->
+        <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize">
+          <template v-if="editableMeta && channelEditable(img, idx)">
             <input v-if="isEditing(img.uid, 'ch:' + idx)"
-              class="attr-edit" v-model="editValue" :ref="focusEditInput"
+              class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
               @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
               @keyup.esc="cancelEdit"
               @blur="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))" />
             <span v-else class="cell-text attr-cell"
               v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Name channel ${idx}`"
-              @click="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
+              @click.stop="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
               {{ img.channelNames?.[idx - 1] || '—' }}
             </span>
           </template>
+          <span v-else-if="img.channelNames?.[idx - 1]" class="cell-text"
+            v-tooltip.right="img.channelNames[idx - 1]">{{ img.channelNames[idx - 1] }}</span>
           <span v-else class="dim">—</span>
         </td>
 
-        <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize" @click.stop>
-          <input v-if="isEditing(img.uid, 'attr:' + key)"
-            class="attr-edit" v-model="editValue" :ref="focusEditInput"
-            @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
-            @keyup.esc="cancelEdit"
-            @blur="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))" />
-          <span v-else class="cell-text attr-cell"
-            v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]} — click to edit` : `Set ${key}`"
-            @click="startEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '')">
-            {{ img.attr?.[key] || '—' }}
-          </span>
+        <!-- attributes: editable only on the Metadata page (editableMeta); read-only elsewhere -->
+        <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize">
+          <template v-if="editableMeta">
+            <input v-if="isEditing(img.uid, 'attr:' + key)"
+              class="attr-edit" v-model="editValue" :ref="focusEditInput" @click.stop
+              @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
+              @keyup.esc="cancelEdit"
+              @blur="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))" />
+            <span v-else class="cell-text attr-cell"
+              v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]} — click to edit` : `Set ${key}`"
+              @click.stop="startEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '')">
+              {{ img.attr?.[key] || '—' }}
+            </span>
+          </template>
+          <span v-else class="cell-text"
+            v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]}` : ''">{{ img.attr?.[key] || '—' }}</span>
         </td>
 
         <td v-if="!showAttrs" class="col-fixed col-ch">
