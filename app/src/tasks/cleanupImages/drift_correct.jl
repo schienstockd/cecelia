@@ -1,4 +1,35 @@
+using Statistics: median
+
 struct DriftCorrect <: CciaTask end
+
+# QC findings from the persisted drift trajectory (docs/todo/QC_PLAN.md). Two checks:
+#  • canvas expansion — XY grew far beyond the ≤~15% typical of a good correction (shape-only fallback)
+#  • drift jump — a single per-frame step dwarfs the trajectory's typical step (the actual cause: the
+#    reference channel briefly locked onto noise, e.g. fHqhyb jumping at T15→T16)
+function _drift_qc_findings(meta)
+    findings = Dict{String,Any}[]
+    src = collect(Int, meta["sourceShape"]); out = collect(Int, meta["outputShape"])
+    ce = qc_canvas_expansion(src, out, String(meta["dimOrder"]); code = "drift.canvas_expansion")
+    isnothing(ce) || push!(findings, ce)
+
+    shifts = meta["shifts"]                      # [T][ndim] per-frame deltas
+    if !isempty(shifts)
+        mags = [sqrt(sum(abs2, Float64.(row))) for row in shifts]
+        med  = median(mags); mx, ti = findmax(mags)
+        # relative (dwarfs the typical step) AND an absolute floor (px) so tiny, jittery trajectories
+        # don't trip it. ti is the 0-based frame index of the jump.
+        if med > 0 && mx > 4 * med && mx > 5
+            push!(findings, qc_finding("warn", "drift.jump",
+                "Large drift jump at T=$(ti - 1)",
+                "The applied drift jumps sharply at timepoint $(ti - 1) ($(round(mx, digits = 1)) px " *
+                "vs a typical $(round(med, digits = 1)) px step) — a sign the reference channel briefly " *
+                "locked onto noise instead of tracking real drift. Check the output / try another channel.";
+                detail = Dict{String,Any}("atT" => ti - 1, "jumpPx" => round(mx, digits = 1),
+                                          "medianPx" => round(med, digits = 1))))
+        end
+    end
+    findings, src, out
+end
 
 function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
@@ -45,11 +76,14 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
     on_log("[INFO] Output:      $im_correction_path")
     on_log("[INFO] Drift ch:    $drift_channel_idx")
 
+    qc_out_path = joinpath(task_run_dir(img._dir), "drift_shifts.json")
+
     ok = run_py("tasks/cleanupImages/drift_correct_run.py",
         (; imPath             = im_path,
            imCorrectionPath   = im_correction_path,
            driftChannel       = drift_channel_idx,
-           driftNormalisation = string(get(params, "driftNormalisation", "none"))),
+           driftNormalisation = string(get(params, "driftNormalisation", "none")),
+           qcOutPath          = qc_out_path),
         task_run_dir(img._dir);
         on_log = on_log, on_progress = on_progress, on_process = on_process)
     ok || return nothing
@@ -58,6 +92,21 @@ function _run_task(task::DriftCorrect, img::CciaImage, params::Dict{String,Any};
 
     out_value_name = _spec_output_value_name(task, "driftCorrected")
     out_filename   = "ccidDriftCorrected.ome.zarr"
+
+    # QC: read the persisted drift trajectory, compute findings, write the qc/ sidecar (advisory).
+    if isfile(qc_out_path)
+        try
+            qmeta = JSON3.read(read(qc_out_path, String))
+            findings, src, out = _drift_qc_findings(qmeta)
+            write_qc(img, "cleanupImages.driftCorrect", out_value_name, findings;
+                     source = Dict{String,Any}("shape" => src),
+                     output = Dict{String,Any}("shape" => out),
+                     trajectory = Dict{String,Any}("axes" => qmeta["shiftAxes"], "shifts" => qmeta["shifts"]))
+            isempty(findings) || on_log("[QC] $(length(findings)) finding(s) — see the image's QC badge.")
+        catch e
+            on_log("[QC] could not compute drift QC: $e")
+        end
+    end
 
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
     versioned_set_field!(raw2, "filepath", out_filename, out_value_name)

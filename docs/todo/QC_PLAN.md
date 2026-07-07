@@ -1,7 +1,7 @@
 # QC framework — plan
 
-Status: **proposed** (design locked with Dom, not yet built). Promote the durable parts into
-`docs/ARCHITECTURE.md` + `docs/UI.md` once Phase 1 lands.
+Status: **Phase 1 landed** (convention + drift producer + image badge). Phases 2–3 open. Durable
+parts summarised in `docs/ARCHITECTURE.md` (QC section) + `docs/UI.md` (QC badge).
 
 ## Motivation
 
