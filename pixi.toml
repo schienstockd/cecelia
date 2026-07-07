@@ -84,11 +84,13 @@ torchvision = ">=0.21"
 dev  = { cmd = "julia --project -t auto -e 'using Revise; includet(\"src/server.jl\")'", cwd = "api" }  # hot-reload (development)
 prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }                                    # plain include (production)
 
-# Tests. Package (headless Cecelia) + API adapters (loaded with CECELIA_NO_SERVE — no socket bound)
-# + frontend (Vitest — pure logic extracted from .vue into src/utils/*; no component/DOM/E2E).
+# Tests — one whole suite per layer. Package (headless Cecelia) + API adapters (loaded with
+# CECELIA_NO_SERVE — no socket bound) + frontend (Vitest, pure logic from src/utils/*) + Python
+# analysis-env (unittest-discovered app/py/tests/*, e.g. the zarr writer). All four run in CI.
 test-pkg      = { cmd = "julia --project test/runtests.jl", cwd = "app" }
 test-api      = { cmd = "julia --project test/runtests.jl", cwd = "api" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
+test-py       = { cmd = "python -m unittest discover -s app/py/tests -p 'test_*.py' -v" }
 
 # Frontend — Vite (port 5173).
 frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload

@@ -68,6 +68,11 @@ jobs:
       - name: API tests
         run: pixi run test-api
 
+      # Python analysis-env tests (unittest-discovered app/py/tests/*) — e.g. the zarr writer
+      # regression. Runs in the Pixi env (needs numpy/dask/zarr); fixture-free.
+      - name: Python tests
+        run: pixi run test-py
+
       - name: Build frontend
         working-directory: frontend
         run: |
