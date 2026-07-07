@@ -1866,6 +1866,16 @@ end
         @test size(d.counts) == (10, 10)
         @test d.counts[1, 10] == 0                 # off-diagonal empty (x==y data)
         @test all(d.counts[i, i] >= 1 for i in 1:10)
+
+        # NaN/Inf (object/morphology measures on degenerate objects) must be skipped, not throw —
+        # extents come from the finite values, and a non-finite point contributes to no bin.
+        xn = [0.0, 0.5, 1.0, NaN, Inf, -Inf]
+        dn = density_2d(xn, xn; bins=10)
+        @test sum(dn.counts) == 3                  # only the 3 finite points counted
+        @test (dn.x_min, dn.x_max) == (0.0, 1.0)   # extents ignore NaN/Inf
+        # all-non-finite → falls back to the default extent and empty counts (no throw)
+        dz = density_2d([NaN, Inf], [NaN, Inf]; bins=4)
+        @test sum(dz.counts) == 0
     end
 
     # ── Population manager: paths, tree, persistence ──────────────────────────

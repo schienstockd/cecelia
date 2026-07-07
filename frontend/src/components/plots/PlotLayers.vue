@@ -45,7 +45,9 @@ function densityGrid(points: Float32Array): Float32Array {
   const g = new Float32Array(G * G)
   const n = points.length / 2
   for (let i = 0; i < n; i++) {
-    let gx = Math.floor(((points[2 * i] - xMin) / xs) * G), gy = Math.floor(((points[2 * i + 1] - yMin) / ys) * G)
+    const px = points[2 * i], py = points[2 * i + 1]
+    if (!Number.isFinite(px) || !Number.isFinite(py)) continue   // NaN/Inf object measure → skip
+    let gx = Math.floor(((px - xMin) / xs) * G), gy = Math.floor(((py - yMin) / ys) * G)
     if (gx < 0 || gx > G - 1 || gy < 0 || gy > G - 1) continue
     g[gy * G + gx] += 1
   }
