@@ -70,12 +70,11 @@ function qc_canvas_expansion(source_shape, output_shape, dim_order::AbstractStri
     pct(i) = source_shape[i] > 0 ? 100 * (output_shape[i] - source_shape[i]) / source_shape[i] : 0.0
     ye, xe = pct(yi), pct(xi); m = max(ye, xe)
     m > threshold_pct || return nothing
+    # Finding text: `short` = the problem (terse); `long` = what to DO (one imperative line). Numbers
+    # live in `detail`, not the prose. See docs/todo/QC_PLAN.md → "Finding text".
     qc_finding("warn", code,
         "Output canvas grew +$(round(Int, m))% in XY",
-        "The processed image's XY canvas grew by +$(round(Int, ye))%/$(round(Int, xe))% (Y/X), well " *
-        "beyond the ≤~15% typical of a good correction. That usually means the estimation went wrong " *
-        "(e.g. drift correction on a reference channel that didn't track) — check the output and " *
-        "consider re-running.";
+        "Larger than a clean correction — check the output and re-run this step if it looks wrong.";
         detail = Dict{String,Any}("yExpansionPct" => round(ye, digits = 1),
                                   "xExpansionPct" => round(xe, digits = 1)))
 end

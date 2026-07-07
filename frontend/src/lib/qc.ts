@@ -40,6 +40,7 @@ export function qcSummary(img: CciaImage): QcSummary | null {
   if (!fs.length) return null
   const level = fs.some(f => f.level === 'warn') ? 'warn' : 'info'
   const short = fs.length === 1 ? fs[0].short : `${fs.length} QC issues — hover for detail`
-  const long = fs.map(f => `• ${f.long}`).join('\n\n')
+  // Tooltip: each finding as problem then the action (→). Brief; text convention in docs/todo/QC_PLAN.md.
+  const long = fs.map(f => `${f.short}\n→ ${f.long}`).join('\n\n')
   return { level, count: fs.length, short, long }
 }

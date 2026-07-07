@@ -19,11 +19,10 @@ function _drift_qc_findings(meta)
         # relative (dwarfs the typical step) AND an absolute floor (px) so tiny, jittery trajectories
         # don't trip it. ti is the 0-based frame index of the jump.
         if med > 0 && mx > 4 * med && mx > 5
+            # short = problem; long = the action. Figures go in detail (see docs/todo/QC_PLAN.md).
             push!(findings, qc_finding("warn", "drift.jump",
-                "Large drift jump at T=$(ti - 1)",
-                "The applied drift jumps sharply at timepoint $(ti - 1) ($(round(mx, digits = 1)) px " *
-                "vs a typical $(round(med, digits = 1)) px step) — a sign the reference channel briefly " *
-                "locked onto noise instead of tracking real drift. Check the output / try another channel.";
+                "Drift jumped sharply at T=$(ti - 1)",
+                "The reference channel likely lost tracking — re-run drift with a clearer/structural channel.";
                 detail = Dict{String,Any}("atT" => ti - 1, "jumpPx" => round(mx, digits = 1),
                                           "medianPx" => round(med, digits = 1))))
         end

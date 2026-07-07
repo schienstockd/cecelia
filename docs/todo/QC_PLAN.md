@@ -69,6 +69,25 @@ generalised across tasks.
 `findings` is the contract the frontend depends on; `trajectory`/`detail` are producer-specific extras.
 `level ∈ info | warn` (reserve `error` — QC never blocks). Worst level on an image drives the badge.
 
+## Finding text — clean, brief, ACTIONABLE (a hard rule)
+
+The user should read a flag and immediately know **what to do**. Every producer's findings follow this:
+
+- **`short`** — the *problem*, one terse line (≤ ~8 words). A single key figure is fine
+  (`"Drift jumped sharply at T=15"`, `"Output canvas grew +42% in XY"`). No mechanism, no paragraphs.
+- **`long`** — the *action*, ONE imperative sentence: what the user should do next
+  (`"Re-run drift with a clearer/structural channel."`). Not an explanation of *why*.
+- **Numbers / mechanism → `detail`** (structured), never prose. The tooltip renders `short` then `→ long`.
+
+Bad (verbose, explains the mechanism, no clear action): *"The applied drift jumps sharply at timepoint 15
+(137 px vs a typical 2 px step) — a sign the reference channel briefly locked onto noise instead of
+tracking real drift. Check the output / try another channel."*
+Good: short `"Drift jumped sharply at T=15"` · long `"The reference channel likely lost tracking — re-run
+drift with a clearer/structural channel."` · detail `{atT:15, jumpPx:137, medianPx:2}`.
+
+This mirrors the app-wide "keep info/warning UI text terse" rule — a flag is only useful if the next
+step is obvious.
+
 ## Architecture
 
 **Producer (Julia task layer).** New `app/src/qc.jl` — image-owned QC accessor (per the image-owned
