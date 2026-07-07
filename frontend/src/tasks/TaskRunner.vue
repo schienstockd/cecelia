@@ -9,6 +9,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
+import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import { useTaskStore } from '../stores/tasks'
@@ -30,6 +31,7 @@ const log          = useLogStore()
 const ws           = useWsStore()
 const projectMeta  = useProjectMetaStore()
 const projectStore = useProjectStore()
+const drafts       = useTaskDraftsStore()
 
 // Selected image objects — looked up from the store so ParamRenderer gets filepath metadata
 const paramContext = computed<ParamContext>(() => ({
@@ -77,6 +79,12 @@ const paramValues = ref<ParamValues>({})
 const drivingImageUid = computed(() => props.selectedUids.length === 1 ? props.selectedUids[0] : '')
 const setUid = computed(() => projectStore.activeSet()?.uid ?? '')
 
+// Draft key mirrors how funParams are scoped (image → set): per driving image when exactly one is
+// selected, else per set. Empty until project/fun/scope are known (→ no draft).
+const currentDraftKey = computed(() => taskDraftKey(
+  projectMeta.current?.uid ?? '', taskDef.value?.fun_name ?? '',
+  taskDraftScope(drivingImageUid.value, setUid.value)))
+
 async function fetchSavedParams(def: TaskDef): Promise<ParamValues> {
   const projectUid = projectMeta.current?.uid ?? ''
   if (!projectUid) return {}
@@ -115,10 +123,21 @@ function buildParamValues(def: TaskDef, saved: ParamValues): ParamValues {
 let paramReqSeq = 0
 async function initParams(def: TaskDef | undefined) {
   if (!def) return
+  // Restore an in-progress draft for this exact scope first; only then fall back to server-saved
+  // params + defaults. (Drafts are written on user edits only, so this never masks a newer save.)
+  const draft = drafts.get(currentDraftKey.value)
+  if (draft) { paramValues.value = draft; return }
   const seq = ++paramReqSeq
   const saved = await fetchSavedParams(def)
   if (seq !== paramReqSeq) return
   paramValues.value = buildParamValues(def, saved)
+}
+
+// Persist a param edit as a draft (USER edits only — never on programmatic init) so navigating away
+// and back keeps it. Keyed to the current image→set scope.
+function onParamEdit(key: string, value: unknown) {
+  paramValues.value[key] = value
+  drafts.set(currentDraftKey.value, paramValues.value)
 }
 
 // Flatten top-level section params before sending — sections are UI containers only.
@@ -169,6 +188,9 @@ function run() {
 
   // params are persisted server-side on run (per image + set); just remember the last-used function
   localStorage.setItem(`cc-fn:${props.module}`, def.task)
+  // the in-progress draft is now the canonical saved value (server-side) — drop it so the next visit
+  // loads the freshly-saved params. Done before the set-scope early-return so both paths clear it.
+  drafts.clear(currentDraftKey.value)
 
   const projectUid = projectMeta.current?.uid ?? ''
 
@@ -346,7 +368,7 @@ onUnmounted(() => {
           :key="p.key"
           :param="p"
           :modelValue="paramValues[p.key]"
-          @update:modelValue="paramValues[p.key] = $event"
+          @update:modelValue="onParamEdit(p.key, $event)"
           :context="paramContext"
         />
       </div>
