@@ -217,13 +217,19 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     if isinstance(im_array, dask.array.core.Array):
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
         # dask array's own chunksize, which for a correction built via `chunks='auto'` spans the whole
-        # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read. `da.store`
-        # writes across the differing source chunking fine.
+        # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read.
         pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
             "0", shape=im_array.shape, chunks=pchunks, dtype=im_array.dtype
         )
-        da.store(im_array, dest, lock=False)
+        # Rechunk the SOURCE to the destination grid before storing. `da.store(lock=False)` is only safe
+        # when each dest chunk has exactly one writer; im_array's own (auto) chunking does NOT align with
+        # the per-plane dest grid, so without this two source blocks can race on a shared dest chunk
+        # (zarr writes are read-modify-write per chunk file) → scrambled planes, worst on EXPANDED
+        # outputs like drift (non-512-aligned canvas). Aligning source→dest keeps it 1-writer-per-chunk,
+        # safe AND parallel (same pattern rechunk_zarr.py already uses). See docs/todo — regression from
+        # the per-plane-chunking change, which kept lock=False after making dest chunks differ from source.
+        da.store(im_array.rechunk(pchunks), dest, lock=False)
         im_chunks = list(pchunks)
     elif isinstance(im_array, zarr.Array):
         dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks, dtype=im_array.dtype)
