@@ -4,6 +4,7 @@ Cecelia is an immunological image analysis tool (Nature Communications 2025).
 Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend) · **Python/Napari** (image viewer)
 
 See also:
+- [`FAQ.md`](FAQ.md) — root-level, reader-facing highlight doc: the *counterintuitive* "why" (AI-written, no Rust, browser-not-Electron, three languages). Punch lines, not prose. Keep it a highlight reel — do NOT expand it into a summary of the `docs/`; add new detail to the relevant `docs/` file and only promote a genuinely surprising one-liner up to the FAQ.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layer boundaries, WS protocol, data model contracts, Napari lifecycle
 - [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
 - [`docs/UI.md`](docs/UI.md) — frontend conventions, component catalog, how to add module pages and plots
@@ -27,6 +28,7 @@ See also:
 
 | Changed area | Update |
 |---|---|
+| A design decision becomes *surprising/counterintuitive* to an outside reader | `FAQ.md` (one punchy Q&A) — but keep detail in the relevant `docs/` file |
 | Layer boundaries, contracts, hidden invariants | `docs/ARCHITECTURE.md` |
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |

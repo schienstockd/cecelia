@@ -14,7 +14,7 @@ data. It is a ground-up reimplementation of the original R/Shiny
 > it has **not yet been independently tested** by other users — treat early releases accordingly.
 > Full methodology and sources are at the [end of this README](#how-this-software-was-built).
 
-- **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- **Developer setup:** [`docs/INSTALL.md`](docs/INSTALL.md) · **Architecture:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · **FAQ (why it's built this way):** [`FAQ.md`](FAQ.md)
 
 ---
 
