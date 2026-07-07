@@ -7,7 +7,6 @@
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
@@ -26,10 +25,8 @@ const { defs: behaviourDefs, reload: reloadDefs } = useTaskDefs('behaviour')
         :selected-names="selectedNames"
       />
     </template>
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Plots" :max-height="'none'">
-        <SummaryCanvas :image-uids="selectedUids" module="behaviourAnalysis" />
-      </CollapsibleSection>
+    <template #plots="{ selectedUids }">
+      <SummaryCanvas :image-uids="selectedUids" module="behaviourAnalysis" />
     </template>
   </ModuleLayout>
 </template>

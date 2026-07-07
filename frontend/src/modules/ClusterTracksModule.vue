@@ -10,7 +10,6 @@
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import ClusterPlots from './cluster/ClusterPlots.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
@@ -19,7 +18,7 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
 </script>
 
 <template>
-  <ModuleLayout module="clustTracks" :show-attrs="true" :show-filter="true">
+  <ModuleLayout module="clustTracks" :show-attrs="true" :show-filter="true" plots-label="Clusters">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="clustDefs"
@@ -29,10 +28,8 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
         :selected-names="selectedNames"
       />
     </template>
-    <template #below-table="{ selectedUids, selectUids }">
-      <CollapsibleSection label="Clusters" :max-height="'none'">
-        <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="trackclust" />
-      </CollapsibleSection>
+    <template #plots="{ selectedUids, selectUids }">
+      <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="trackclust" />
     </template>
   </ModuleLayout>
 </template>

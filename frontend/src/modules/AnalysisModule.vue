@@ -13,7 +13,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ModuleLayout from '../components/ModuleLayout.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TabbedCanvas from '../components/canvas/TabbedCanvas.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 
@@ -23,10 +22,8 @@ const projectUid = computed(() => meta.current?.uid ?? '')
 
 <template>
   <ModuleLayout module="analysis" :show-attrs="true" :show-filter="true">
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Plots" :max-height="'none'">
-        <TabbedCanvas :key="projectUid" :image-uids="selectedUids" />
-      </CollapsibleSection>
+    <template #plots="{ selectedUids }">
+      <TabbedCanvas :key="projectUid" :image-uids="selectedUids" />
     </template>
   </ModuleLayout>
 </template>
