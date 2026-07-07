@@ -373,6 +373,13 @@ lifecycle. Channel edits replace one index in the image's name list and re-send 
 (`channelEditable`). This is why the metadata panel's channel section has no "copy to all" button —
 naming is done per-cell in the table (bulk-assign-to-selection via the textarea remains).
 
+**Attribute + channel editing is Metadata-page-only.** The attr/channel columns are *shown*
+read-only on every page that sets `show-attrs` (so you can see the metadata in context), but they're
+only *editable* where `ModuleLayout` is given `:editable-meta="true"` — i.e. `MetadataModule`. This
+keeps metadata a single place to change (no accidental edits from the segment/track/cluster pages).
+The exclusion note + include/exclude toggle stay editable everywhere (excluding an image from
+processing is a per-page action, not metadata).
+
 ---
 
 ## TaskRunner component
