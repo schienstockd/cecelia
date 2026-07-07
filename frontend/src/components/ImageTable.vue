@@ -7,6 +7,7 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useSettingsStore } from '../stores/settings'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
+import { isExcluded, isIncluded, includedUids } from '../utils/inclusion'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 
 const props = defineProps<{
@@ -73,27 +74,38 @@ async function copyUid(uid: string) {
   setTimeout(() => { copiedUid.value = null }, 1200)
 }
 
-// ── Inline attribute editing (click an attribute cell to edit its value) ────────
+// ── Inline cell editing ─────────────────────────────────────────────────────────
+// One generic core (click a cell → edit → Enter/blur commits, Esc cancels) reused by attributes,
+// channel names, AND the exclusion note. Each field only supplies how to persist its value (`save*`
+// below), so there's no per-field copy of the edit lifecycle. `key` is namespaced per field type.
 const editingCell = ref<string | null>(null)        // `${uid}:${key}` currently being edited
 const editValue = ref('')
 const cellKey = (uid: string, key: string) => `${uid}:${key}`
-function startAttrEdit(img: CciaImage, key: string) {
-  editingCell.value = cellKey(img.uid, key)
-  editValue.value = img.attr?.[key] ?? ''
+const isEditing = (uid: string, key: string) => editingCell.value === cellKey(uid, key)
+function startEdit(uid: string, key: string, current: string) {
+  editingCell.value = cellKey(uid, key)
+  editValue.value = current
 }
-function cancelAttrEdit() { editingCell.value = null }
-// Focus the attr-edit input when it mounts, without stealing focus if it already has it.
+function cancelEdit() { editingCell.value = null }
+// Focus the edit input when it mounts, without stealing focus if it already has it.
 // (Lives here, not in the template, because the template scope doesn't expose `document`.)
-function focusAttrInput(el: unknown) {
+function focusEditInput(el: unknown) {
   const i = el as HTMLInputElement | null
   if (i && i !== document.activeElement) i.focus()
 }
-async function commitAttrEdit(img: CciaImage, key: string) {
-  if (editingCell.value !== cellKey(img.uid, key)) return
+// Generic commit: guard it's still this cell, no-op when unchanged, else delegate to `save(val)`.
+async function commitEdit(uid: string, key: string, current: string, save: (val: string) => Promise<void>) {
+  if (!isEditing(uid, key)) return
   editingCell.value = null
-  const projectUid = projectMeta.current?.uid
   const val = editValue.value.trim()
-  if (!projectUid || (img.attr?.[key] ?? '') === val) return    // nothing to do
+  if ((current ?? '') === val) return
+  await save(val)
+}
+
+// Per-field savers — the only thing that differs between editable cells.
+async function saveAttr(img: CciaImage, key: string, val: string) {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
   try {
     const res = await fetch('/api/images/attr/set', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -103,6 +115,68 @@ async function commitAttrEdit(img: CciaImage, key: string) {
     project.setAttrValues(key, { [img.uid]: val })               // reflect immediately
   } catch (e) {
     log.error(`Failed to set ${key}: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  }
+}
+// Channel names are one list per image; editing a single column replaces that index (1-based) and
+// re-sends the whole list (the /channelnames endpoint is list-valued). Pads if naming a later channel.
+function channelEditable(img: CciaImage, idx: number): boolean {
+  return idx <= Math.max(img.channelNames?.length ?? 0, img.sizeC ?? 0)
+}
+async function saveChannel(img: CciaImage, idx: number, val: string) {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  const names = [...(img.channelNames ?? [])]
+  while (names.length < idx) names.push('')
+  names[idx - 1] = val
+  try {
+    const res = await fetch('/api/images/channelnames', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUids: [img.uid], channelNames: names }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    project.updateImageMeta(img.uid, { channelNames: names })     // reflect immediately
+  } catch (e) {
+    log.error(`Failed to set channel ${idx}: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  }
+}
+async function saveNote(img: CciaImage, val: string) {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  const prev = img.note ?? ''
+  project.setInclusion(img.uid, { note: val })                   // reflect immediately
+  try {
+    const res = await fetch('/api/images/inclusion/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, values: { [img.uid]: { note: val } } }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+  } catch (e) {
+    project.setInclusion(img.uid, { note: prev })                // revert on failure
+    log.error(`Failed to save note: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
+  }
+}
+
+// ── Include / exclude ─────────────────────────────────────────────────────────
+// Excluded images stay visible but greyed, can't be selected, and are skipped by every run.
+const NOTE_KEY = '__note'
+async function setIncluded(img: CciaImage, included: boolean) {
+  const projectUid = projectMeta.current?.uid
+  if (!projectUid) return
+  project.setInclusion(img.uid, { included })                 // reflect immediately
+  if (!included && selected.value.has(img.uid)) {             // drop from selection on exclude
+    selected.value.delete(img.uid)
+    selected.value = new Set(selected.value)
+    commit()
+  }
+  try {
+    const res = await fetch('/api/images/inclusion/set', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, values: { [img.uid]: { included } } }),
+    })
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+  } catch (e) {
+    project.setInclusion(img.uid, { included: !included })     // revert on failure
+    log.error(`Failed to ${included ? 'include' : 'exclude'} image: ${e instanceof Error ? e.message : String(e)}`, { source: 'import' })
   }
 }
 
@@ -126,7 +200,9 @@ function commit() {
 function seed() {
   const stored = project.getImageSelection(scope.value, props.setUid)
   const imgs = images.value
-  let uids = imgs.length ? stored.filter(u => imgs.some(i => i.uid === u)) : stored
+  // keep only stored uids that are still present AND still included (an image excluded while away
+  // shouldn't come back selected)
+  let uids = imgs.length ? stored.filter(u => imgs.some(i => i.uid === u && isIncluded(i))) : stored
   if (props.singleSelect && uids.length > 1) uids = [uids[0]]
   selected.value = new Set(uids)
   emit('selectionChange', [...selected.value])
@@ -142,23 +218,24 @@ watch(() => project.getImageSelection(scope.value, props.setUid).join(','), (csv
   seed()
 })
 
+// Excluded images aren't selectable — select-all and the "all/some" state consider only the
+// included subset (the set that can actually be run).
+const selectableUids = computed(() => includedUids(images.value))
 const allSelected = computed(() =>
-  images.value.length > 0 && selected.value.size === images.value.length
+  selectableUids.value.length > 0 && selectableUids.value.every(u => selected.value.has(u))
 )
 const someSelected = computed(() =>
-  selected.value.size > 0 && selected.value.size < images.value.length
+  selected.value.size > 0 && !allSelected.value
 )
 
 function toggleAll() {
-  selected.value = selected.value.size === images.value.length
-    ? new Set()
-    : new Set(images.value.map(i => i.uid))
+  selected.value = allSelected.value ? new Set() : new Set(selectableUids.value)
   commit()
 }
 
 // Quick way to batch-fix physical-size/timing warnings: select every flagged image in one click,
 // then open a clean reference image's dialog and Copy/Fill flagged onto exactly this selection.
-const flaggedUids = computed(() => images.value.filter(i => metadataWarning(i)).map(i => i.uid))
+const flaggedUids = computed(() => images.value.filter(i => metadataWarning(i) && isIncluded(i)).map(i => i.uid))
 // "Active" = the current selection IS exactly the flagged set — drives both the toggle behaviour
 // and the icon colour (gray = not applied, amber = applied).
 const flaggedActive = computed(() =>
@@ -208,6 +285,8 @@ async function resyncFlagged() {
 }
 
 function toggle(uid: string) {
+  const img = images.value.find(i => i.uid === uid)
+  if (img && isExcluded(img)) return    // excluded images aren't selectable for a run
   if (props.singleSelect) {
     // radio-style: clicking selects only this image (clicking the selected one clears it)
     selected.value = selected.value.has(uid) ? new Set() : new Set([uid])
@@ -468,11 +547,13 @@ onUnmounted(stopResize)
       <tr
         v-for="img in images" :key="img.uid"
         class="image-row"
-        :class="{ 'row-selected': selected.has(img.uid) }"
+        :class="{ 'row-selected': selected.has(img.uid), 'row-excluded': isExcluded(img) }"
         @click="toggle(img.uid)"
       >
         <td class="col-fixed col-check" @click.stop>
-          <input type="checkbox" :checked="selected.has(img.uid)" @change="toggle(img.uid)" />
+          <input type="checkbox" :checked="selected.has(img.uid)" :disabled="isExcluded(img)"
+            @change="toggle(img.uid)"
+            v-tooltip.right="isExcluded(img) ? 'Excluded — include it to select for a run.' : undefined" />
         </td>
 
         <td class="col-fixed col-viewer" @click.stop>
@@ -500,6 +581,10 @@ onUnmounted(stopResize)
               v-tooltip.right="qcFor(img)!.long">
               <i class="pi pi-flag" /> QC
             </span>
+            <span v-if="isExcluded(img)" class="excl-badge"
+              v-tooltip.right="img.note ? `Excluded: ${img.note}` : 'Excluded from processing.'">
+              <i class="pi pi-ban" /> Excluded
+            </span>
             <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
             <button v-if="pageIconFor()" class="row-icon-btn" @click.stop="physSizeDialogUid = img.uid"
               v-tooltip.right="pageIconFor()!.tip">
@@ -509,30 +594,54 @@ onUnmounted(stopResize)
               v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
               <i :class="copiedUid === img.uid ? 'pi pi-check' : 'pi pi-copy'" />
             </button>
+            <button class="row-icon-btn incl-toggle" @click.stop="setIncluded(img, isExcluded(img))"
+              v-tooltip.right="isExcluded(img) ? 'Include in processing.' : 'Exclude from processing (won\'t be run).'">
+              <i :class="isExcluded(img) ? 'pi pi-check-circle' : 'pi pi-ban'" />
+            </button>
           </span>
           <span class="uid-row">
             <span class="img-uid">{{ img.uid }}</span>
           </span>
+          <!-- exclusion note: editable reason, shown only for excluded images -->
+          <span v-if="isExcluded(img)" class="note-row" @click.stop>
+            <input v-if="isEditing(img.uid, NOTE_KEY)"
+              class="attr-edit" v-model="editValue" :ref="focusEditInput"
+              placeholder="reason (optional)"
+              @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
+              @keyup.esc="cancelEdit"
+              @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
+            <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
+              v-tooltip.right="'Click to edit the exclusion note.'">
+              <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
+            </span>
+          </span>
         </td>
 
-        <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize">
-          <span v-if="img.channelNames?.[idx - 1]"
-            class="cell-text"
-            v-tooltip.right="img.channelNames[idx - 1]">
-            {{ img.channelNames[idx - 1] }}
-          </span>
+        <td v-for="idx in channelIndices" :key="'ch-' + idx" class="col-resize" @click.stop>
+          <template v-if="channelEditable(img, idx)">
+            <input v-if="isEditing(img.uid, 'ch:' + idx)"
+              class="attr-edit" v-model="editValue" :ref="focusEditInput"
+              @keyup.enter="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))"
+              @keyup.esc="cancelEdit"
+              @blur="commitEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '', v => saveChannel(img, idx, v))" />
+            <span v-else class="cell-text attr-cell"
+              v-tooltip.right="img.channelNames?.[idx - 1] ? `${img.channelNames[idx - 1]} — click to edit` : `Name channel ${idx}`"
+              @click="startEdit(img.uid, 'ch:' + idx, img.channelNames?.[idx - 1] ?? '')">
+              {{ img.channelNames?.[idx - 1] || '—' }}
+            </span>
+          </template>
           <span v-else class="dim">—</span>
         </td>
 
-        <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize">
-          <input v-if="editingCell === cellKey(img.uid, key)"
-            class="attr-edit" v-model="editValue"
-            :ref="focusAttrInput"
-            @keyup.enter="commitAttrEdit(img, key)" @keyup.esc="cancelAttrEdit"
-            @blur="commitAttrEdit(img, key)" />
+        <td v-for="key in attrKeys" :key="'attr-' + key" class="col-resize" @click.stop>
+          <input v-if="isEditing(img.uid, 'attr:' + key)"
+            class="attr-edit" v-model="editValue" :ref="focusEditInput"
+            @keyup.enter="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))"
+            @keyup.esc="cancelEdit"
+            @blur="commitEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '', v => saveAttr(img, key, v))" />
           <span v-else class="cell-text attr-cell"
             v-tooltip.right="img.attr?.[key] ? `${key}: ${img.attr[key]} — click to edit` : `Set ${key}`"
-            @click="startAttrEdit(img, key)">
+            @click="startEdit(img.uid, 'attr:' + key, img.attr?.[key] ?? '')">
             {{ img.attr?.[key] || '—' }}
           </span>
         </td>
@@ -622,6 +731,10 @@ onUnmounted(stopResize)
 .image-row { border-bottom: 1px solid var(--cc-border); cursor: pointer; transition: background 0.08s; }
 .image-row:hover { background: var(--cc-surface-1); }
 .image-row.row-selected { background: #a78bfa14; }
+/* excluded: greyed but still visible (not hidden) — dim the whole row, un-dim a touch on hover so
+   its note + include toggle stay usable */
+.image-row.row-excluded { opacity: 0.5; cursor: default; }
+.image-row.row-excluded:hover { opacity: 0.8; background: var(--cc-surface-1); }
 .image-row td { padding: 0.4rem 0.75rem; vertical-align: middle; overflow: hidden; }
 
 /* ── Column types ────────────────────────────────────────────────────────────── */
@@ -692,6 +805,30 @@ th:hover .resize-handle::after { opacity: 1; }
 .qc-badge .pi { font-size: 0.62rem; }
 .qc-badge.warn { color: #fbbf24; background: #7c2d1233; border-color: #f59e0b55; }
 .qc-badge.info { color: var(--cc-text-dim); background: var(--cc-surface-2); border-color: var(--cc-border); }
+
+/* excluded badge — persistent "this image is excluded" pill; carries the note as its tooltip */
+.excl-badge {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem; border-radius: 0.25rem; cursor: help;
+  color: #fca5a5; background: #7f1d1d33; border: 1px solid #7f1d1d66;
+}
+.excl-badge .pi { font-size: 0.62rem; }
+
+/* include/exclude toggle: hidden until row hover like the other row actions, but ALWAYS visible on
+   an excluded row so there's an obvious way back */
+.image-row.row-excluded .incl-toggle { opacity: 1; }
+.incl-toggle:hover { color: #fca5a5; }
+
+/* exclusion note — editable reason under the uid, only on excluded rows */
+.note-row { display: flex; align-items: center; margin-top: 0.15rem; }
+.note-text {
+  font-size: 0.68rem; color: var(--cc-text-dim); cursor: text;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  border-radius: 3px; padding: 0 2px;
+}
+.note-text:hover { background: var(--cc-surface-2); outline: 1px dashed var(--cc-border); }
+.note-text .pi { font-size: 0.62rem; }
 
 /* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
 .row-icon-btn {

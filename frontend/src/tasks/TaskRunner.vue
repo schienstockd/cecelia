@@ -7,8 +7,9 @@
     - selectedNames: string[] — matching display names (for task labels)
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import type { TaskDef, ParamValues } from './types'
+import { usePanelResize } from '../composables/usePanelResize'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
@@ -276,46 +277,9 @@ function cancelAll() {
   }
 }
 
-// ── Sidebar resize ────────────────────────────────────────────────────────────
-const MIN_W = 200
-const MAX_W = 600
-const sidebarWidth = ref(280)
-let dragging = false
-let startX = 0
-let startW = 0
-
-function onResizeStart(e: MouseEvent) {
-  dragging = true
-  startX = e.clientX
-  startW = sidebarWidth.value
-  document.body.style.userSelect = 'none'
-  document.body.style.cursor = 'col-resize'
-  e.preventDefault()
-}
-
-function onResizeMove(e: MouseEvent) {
-  if (!dragging) return
-  // handle is on LEFT edge — dragging left makes the panel wider
-  const delta = startX - e.clientX
-  sidebarWidth.value = Math.min(MAX_W, Math.max(MIN_W, startW + delta))
-}
-
-function onResizeEnd() {
-  if (!dragging) return
-  dragging = false
-  document.body.style.userSelect = ''
-  document.body.style.cursor = ''
-}
-
-onMounted(() => {
-  window.addEventListener('mousemove', onResizeMove)
-  window.addEventListener('mouseup', onResizeEnd)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('mousemove', onResizeMove)
-  window.removeEventListener('mouseup', onResizeEnd)
-})
+// ── Sidebar resize (shared composable; width persisted) ────────────────────────
+const { width: sidebarWidth, onResizeStart } =
+  usePanelResize({ min: 200, max: 600, default: 280, storageKey: 'cc-taskrunner-width' })
 </script>
 
 <template>

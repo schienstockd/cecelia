@@ -49,6 +49,25 @@ function handle_message(ws, raw::AbstractString)
     end
 end
 
+# Drop images the user has excluded from further processing (CciaImage.included == false) before a
+# run. This is the backend half of the include/exclude feature — the GUI already makes excluded
+# images unselectable, so this is belt-and-suspenders for run paths that bypass the checkboxes (chain
+# resume from disk, the REPL, a stale selection). Returns the included uids; `on_skip(uid)` is called
+# for each dropped one so the caller can log it (nothing is ever silently dropped). Images that fail
+# to load are kept — let the downstream loader report the real error.
+function _drop_excluded(project_uid::String, uids::Vector{String}, on_skip::Function)
+    keep = String[]
+    for u in uids
+        obj = try init_object(project_uid, u) catch; nothing end
+        if obj isa CciaImage && !image_included(obj)
+            on_skip(u)
+        else
+            push!(keep, u)
+        end
+    end
+    keep
+end
+
 function handle_chain_run(ws, data)
     project_uid = String(get(data, :projectUid, ""))
     chain_name  = String(get(data, :chain, ""))
@@ -78,6 +97,18 @@ function handle_chain_run(ws, data)
     end
 
     proj = load_project(project_uid)
+
+    # Hard-skip excluded images (belt-and-suspenders — the GUI already blocks selecting them).
+    if !resuming
+        image_uids = _drop_excluded(project_uid, image_uids, u ->
+            broadcast_ws(Dict{String,Any}("type" => "chain:log",
+                                          "line" => "[INFO] Skipping excluded image $u")))
+        if isempty(image_uids)
+            HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:failed",
+                                                   error="All selected images are excluded")))
+            return
+        end
+    end
 
     HTTP.WebSockets.send(ws, JSON3.write((; type="chain:run:started",
                                            chain=chain_name,
@@ -138,6 +169,18 @@ function handle_task_run(ws, data)
     proj_root = joinpath(projects_dir(), project_uid)
     if !isdir(proj_root)
         ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
+        ws_status(ws, task_id, "failed")
+        return
+    end
+
+    # Hard-skip excluded images before dispatch (belt-and-suspenders; the GUI already blocks them).
+    _skip(u) = ws_log(ws, task_id, "[INFO] Skipping excluded image $u")
+    isempty(image_uids) || (image_uids = _drop_excluded(project_uid, image_uids, _skip))
+    if !isempty(image_uid) && isempty(_drop_excluded(project_uid, [image_uid], _skip))
+        image_uid = ""
+    end
+    if isempty(image_uids) && isempty(image_uid)
+        ws_log(ws, task_id, "[ERROR] No images to run (all selected images are excluded).")
         ws_status(ws, task_id, "failed")
         return
     end

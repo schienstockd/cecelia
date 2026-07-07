@@ -25,6 +25,7 @@ import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import type { TaskDef, ChainTemplate } from '../tasks/types'
+import { isExcluded, includedUids } from '../utils/inclusion'
 import { START_ID, startTargetsOf, touchesStart, buildStartGraph } from '../utils/startDot'
 
 // ── Stores & composables ─────────────────────────────────────────────────────
@@ -944,6 +945,8 @@ const chainRunning    = ref(false)
 const runImages = computed(() =>
   project.sets.find(s => s.uid === runSetUid.value)?.images ?? []
 )
+// Excluded images aren't runnable — select-all and the default selection use the included subset.
+const includedRunUids = computed(() => includedUids(runImages.value))
 
 // Context for ParamRenderer — use selected run images so channelSelection/valueNameSelection
 // widgets reflect the actual images that will be run.
@@ -963,17 +966,17 @@ const paramContext = computed(() => {
 })
 
 const runAllSelected = computed(() =>
-  runImages.value.length > 0 &&
-  runImages.value.every(i => runSelectedUids.value.includes(i.uid))
+  includedRunUids.value.length > 0 &&
+  includedRunUids.value.every(u => runSelectedUids.value.includes(u))
 )
 
 const runSomeSelected = computed(() =>
   runSelectedUids.value.length > 0 && !runAllSelected.value
 )
 
-// Auto-select all images when set changes
+// Auto-select all INCLUDED images when set changes (excluded ones start unselected)
 watch(runSetUid, () => {
-  runSelectedUids.value = runImages.value.map(i => i.uid)
+  runSelectedUids.value = includedRunUids.value
 })
 
 // Seed runSetUid from first available set
@@ -982,15 +985,15 @@ watch(() => project.sets, (sets) => {
 }, { immediate: true })
 
 function toggleRunImage(uid: string) {
+  const img = runImages.value.find(i => i.uid === uid)
+  if (img && isExcluded(img)) return    // excluded images can't be run
   runSelectedUids.value = runSelectedUids.value.includes(uid)
     ? runSelectedUids.value.filter(u => u !== uid)
     : [...runSelectedUids.value, uid]
 }
 
 function toggleRunAll() {
-  runSelectedUids.value = runAllSelected.value
-    ? []
-    : runImages.value.map(i => i.uid)
+  runSelectedUids.value = runAllSelected.value ? [] : includedRunUids.value
 }
 
 const runChainTip = computed(() =>
@@ -1309,21 +1312,21 @@ onActivated(async () => {
                   runSomeSelected  ? 'pi-minus-circle' : 'pi-stop'
                 ]" />
               </span>
-              <span class="run-all-label">All ({{ runImages.length }})</span>
+              <span class="run-all-label">All ({{ includedRunUids.length }})</span>
               <span class="run-sel-count" v-if="runSomeSelected">{{ runSelectedUids.length }}</span>
             </div>
 
-            <!-- per-image rows -->
+            <!-- per-image rows (excluded images greyed + not selectable) -->
             <div
               v-for="img in runImages"
               :key="img.uid"
               class="run-row"
-              :class="{ active: runSelectedUids.includes(img.uid) }"
+              :class="{ active: runSelectedUids.includes(img.uid), excluded: isExcluded(img) }"
               @click.stop="toggleRunImage(img.uid)"
-              v-tooltip.right="img.uid"
+              v-tooltip.right="isExcluded(img) ? (img.note ? `Excluded: ${img.note}` : 'Excluded from processing') : img.uid"
             >
               <span class="run-check-icon">
-                <i :class="['pi', runSelectedUids.includes(img.uid) ? 'pi-check-square' : 'pi-stop']" />
+                <i :class="['pi', isExcluded(img) ? 'pi-ban' : runSelectedUids.includes(img.uid) ? 'pi-check-square' : 'pi-stop']" />
               </span>
               <span class="run-img-name">{{ img.name }}</span>
             </div>
@@ -1970,6 +1973,10 @@ onActivated(async () => {
 }
 .run-row:hover { background: var(--cc-surface-2); }
 .run-row.active .run-img-name { color: var(--cc-text); }
+/* excluded from processing — greyed, not clickable */
+.run-row.excluded { opacity: 0.45; cursor: default; }
+.run-row.excluded:hover { opacity: 0.7; }
+.run-row.excluded .run-check-icon { color: #fca5a5; }
 
 .run-row-all {
   background: var(--cc-surface-1);

@@ -216,6 +216,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_channelnames(body_bytes)
         elseif path == "/api/images/meta/set"
             api_images_meta_set(body_bytes)
+        elseif path == "/api/images/inclusion/set"
+            api_images_inclusion_set(body_bytes)
         elseif path == "/api/images/meta/resync"
             api_images_meta_resync(body_bytes)
         elseif path == "/api/images/labels/delete"

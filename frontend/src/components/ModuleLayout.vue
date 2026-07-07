@@ -33,6 +33,7 @@
 import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
+import { isExcluded } from '../utils/inclusion'
 import SetBar from './SetBar.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -84,6 +85,14 @@ const filterKey = computed(() => `cc-filters-open:${props.module ?? 'default'}`)
 const filtersOpen = ref(localStorage.getItem(`cc-filters-open:${props.module ?? 'default'}`) === '1')
 watch(filtersOpen, v => { try { localStorage.setItem(filterKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 
+// ── Hide-excluded toggle ────────────────────────────────────────────────────────
+// Excluded images are shown greyed by DEFAULT (not hidden). This toggle — the button next to Filter
+// — hides them entirely when the user wants a clean, run-only list. Persisted per module.
+const hideExcludedKey = computed(() => `cc-hide-excluded:${props.module ?? 'default'}`)
+const hideExcluded = ref(localStorage.getItem(`cc-hide-excluded:${props.module ?? 'default'}`) === '1')
+watch(hideExcluded, v => { try { localStorage.setItem(hideExcludedKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+const excludedCount = computed(() => (activeSet.value?.images ?? []).filter(isExcluded).length)
+
 const attrKeys = computed(() => {
   const imgs = activeSet.value?.images ?? []
   const keys = new Set<string>()
@@ -125,10 +134,14 @@ function resetFilters() {
 }
 
 const filteredUids = computed<string[] | undefined>(() => {
-  if (!props.showFilter || !hasApplied.value) return undefined
+  const attrActive = props.showFilter && hasApplied.value
+  // Nothing narrowing the list → let ImageTable show everything (excluded still render, greyed).
+  if (!attrActive && !hideExcluded.value) return undefined
   const imgs = activeSet.value?.images ?? []
   return imgs
     .filter(img => {
+      if (hideExcluded.value && isExcluded(img)) return false
+      if (!attrActive) return true
       const matches = Object.entries(appliedFilters.value).every(([key, vals]) =>
         vals.includes(String(img.attr?.[key] ?? ''))
       )
@@ -199,14 +212,25 @@ function selectUids(uids: string[]) {
           </span>
           <span class="no-set-hint" v-else>{{ noSetHint }}</span>
 
-          <button v-if="showFilter && activeSet && attrKeys.length > 0"
-            class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
-            @click="filtersOpen = !filtersOpen"
-            v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute'">
-            <i class="pi pi-filter" />
-            <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
-            <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
-          </button>
+          <div class="table-tools" v-if="activeSet && (excludedCount > 0 || (showFilter && attrKeys.length > 0))">
+            <!-- Excluded toggle: excluded images show greyed by default; this hides them entirely -->
+            <button v-if="excludedCount > 0"
+              class="filter-toggle" :class="{ active: hideExcluded }"
+              @click="hideExcluded = !hideExcluded"
+              v-tooltip.left="hideExcluded ? `Show ${excludedCount} excluded image(s) (greyed)` : `Hide ${excludedCount} excluded image(s)`">
+              <i :class="['pi', hideExcluded ? 'pi-eye-slash' : 'pi-eye']" />
+              <span class="filter-label">Excluded {{ excludedCount }}</span>
+            </button>
+
+            <button v-if="showFilter && attrKeys.length > 0"
+              class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
+              @click="filtersOpen = !filtersOpen"
+              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute'">
+              <i class="pi pi-filter" />
+              <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
+              <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
+            </button>
+          </div>
         </div>
 
         <!-- attr filter dropdown — only when open -->
@@ -381,9 +405,16 @@ function selectUids(uids: string[]) {
   background: var(--cc-bg);
 }
 
-/* filter toggle: a small button pushed to the right edge of the action bar */
-.filter-toggle {
+/* filter/excluded toggles: grouped, pushed to the right edge of the action bar */
+.table-tools {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.filter-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;

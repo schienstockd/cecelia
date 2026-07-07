@@ -30,6 +30,12 @@ mutable struct CciaImage
     im_channel_names::Dict{String,Any} # versioned: {value_name => [names], _active => value_name}
     attr::Dict{String,String}         # user-defined metadata attributes
     meta::Dict{String,Any}
+    # Include/exclude an image from further processing & analysis (the systematic successor to the
+    # old R app's Include=Y/N metadata keyword). Excluded images are greyed (not hidden) in the GUI,
+    # can't be checkbox-selected for a run, and are hard-skipped by the task/chain runners even if
+    # somehow selected. `note` is a free-text reason the user can leave (why it was excluded).
+    included::Bool
+    note::String
     _dir::String                      # {proj}/1/{uid}/ — runtime only
     # runtime-only pop_df result cache (keyed by request hash; values are DataFrames).
     # Mirrors R cciaImage `private$filteredPopDT`. Not serialised; cleared via
@@ -42,7 +48,9 @@ function CciaImage(; uid=gen_uid(), name="", kind="static", status="pending", di
     CciaImage(uid, name, kind, status,
               Dict{String,String}(), Dict{String,Vector{String}}(), Dict{String,String}(),
               Dict{String,Any}(),                 # im_channel_names (versioned)
-              Dict{String,String}(), Dict{String,Any}(), dir,
+              Dict{String,String}(), Dict{String,Any}(),
+              true, "",                           # included (default), note
+              dir,
               Dict{String,Any}())                 # _pop_df_cache (runtime only)
 end
 
@@ -56,6 +64,13 @@ function img_filepath(img::CciaImage, name::Union{String,Nothing}=nothing)::Unio
     filename = isnothing(name) ? active(img.filepath) : get(img.filepath, name, nothing)
     isnothing(filename) ? nothing : joinpath(img_zero_dir(img), filename)
 end
+
+"""
+Whether the image is included in further processing & analysis (default `true`). Excluded images
+(`included == false`) are advisory-greyed in the GUI and hard-skipped by the task/chain runners.
+Image-owned accessor so run-dispatch code asks the model, not the raw field.
+"""
+image_included(img::CciaImage)::Bool = img.included
 
 """The image's labelProps directory — `{proj}/1/{uid}/labelProps`."""
 img_label_props_dir(img::CciaImage)::String = joinpath(img._dir, "labelProps")
@@ -137,6 +152,8 @@ function save!(img::CciaImage)
         "imChannelNames" => img.im_channel_names,
         "attr"           => img.attr,
         "meta"           => img.meta,
+        "included"       => img.included,
+        "note"           => img.note,
     )
     open(joinpath(img._dir, "ccid.json"), "w") do f
         JSON3.pretty(f, d)
@@ -238,7 +255,10 @@ function _load_image(dir::String)::CciaImage
         to_spaths("filepath"), to_labels(), to_spaths("label_props"),
         icn,
         to_spaths("attr"),
-        Dict{String,Any}(get(d, "meta", Dict{String,Any}())), dir,
+        Dict{String,Any}(get(d, "meta", Dict{String,Any}())),
+        # Legacy images (pre-inclusion) have neither field → default to included, no note.
+        Bool(get(d, "included", true)), String(get(d, "note", "")),
+        dir,
         Dict{String,Any}(),                 # _pop_df_cache (runtime only)
     )
 end

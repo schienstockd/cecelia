@@ -25,6 +25,8 @@ export interface CciaImage {
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)
   labels?: Record<string, string[]>        // valueName → [filename, …] (segmentation outputs)
   attr?: Record<string, string>           // user-defined metadata attributes
+  included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
+  note?: string                           // optional free-text reason (e.g. why excluded)
   qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
 }
 
@@ -181,6 +183,18 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  // Reflect an include/exclude (+ note) change immediately, no reload. Only the provided keys change.
+  function setInclusion(imageUid: string, patch: { included?: boolean; note?: string }) {
+    for (const set of sets.value) {
+      const img = set.images.find(i => i.uid === imageUid)
+      if (img) {
+        if (patch.included !== undefined) img.included = patch.included
+        if (patch.note !== undefined) img.note = patch.note
+        return
+      }
+    }
+  }
+
   // Set per-image attr values for one key. values = {imageUid: value}
   function setAttrValues(attrName: string, values: Record<string, string>) {
     for (const set of sets.value) {
@@ -193,5 +207,5 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, setInclusion, removeLabelSet }
 })
