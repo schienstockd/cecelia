@@ -25,6 +25,7 @@ export interface CciaImage {
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)
   labels?: Record<string, string[]>        // valueName → [filename, …] (segmentation outputs)
   attr?: Record<string, string>           // user-defined metadata attributes
+  qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
 }
 
 export interface CciaSet {

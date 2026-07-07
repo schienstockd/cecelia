@@ -835,6 +835,9 @@ function _image_payload(img::CciaImage)
         filepaths       = fps,
         labels          = img.labels,
         attr            = img.attr,
+        # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
+        # flags the GUI renders as a badge + tooltip. Empty dict when a task has emitted none.
+        qc              = read_all_qc(img),
     )
 end
 

@@ -111,6 +111,28 @@ See [`docs/OBJECTMODEL.md`](OBJECTMODEL.md) for the full schema, versioned field
 
 ---
 
+## QC (quality-control) sidecars
+
+A task can exit 0 yet produce output that's quietly wrong (e.g. drift correction on a reference channel
+that didn't track → the canvas balloons). The **QC layer** (`app/src/qc.jl`, image-owned) lets any task
+emit **advisory** findings about the output it produced.
+
+- **Convention:** one JSON per (task, output) at `1/{uid}/qc/{funName}/{valueName}.json`
+  (no-value_name tasks → `"default"`). Written via `write_qc(img, fun_name, value_name, findings; …)`,
+  read via `read_qc` / `read_all_qc`.
+- **Contract:** each file has a generic `findings` list — `{level ("info"|"warn"), code, short, long,
+  detail?}`. `"error"` is reserved: **QC never fails or gates a task.**
+- **Boundary:** the **backend computes** findings (thresholds live in Julia — one source of truth); the
+  **GUI only renders** them (badge + tooltip). `api_images_meta`'s `_image_payload` exposes
+  `qc = read_all_qc(img)`; `frontend/src/lib/qc.ts` aggregates into a badge (ImageTable; MetadataPanel +
+  whiteboard are later phases).
+- **First producer:** `cleanupImages.driftCorrect` — persists the applied per-frame drift and flags a
+  large inter-frame jump (`drift.jump`) or abnormal XY canvas growth (`drift.canvas_expansion`).
+
+Full design + phased plan: [`docs/todo/QC_PLAN.md`](todo/QC_PLAN.md).
+
+---
+
 ## Napari
 
 See [`docs/NAPARI.md`](NAPARI.md) for the full bridge design, command protocol, OME-ZARR loading, contrast limits, and layer props.

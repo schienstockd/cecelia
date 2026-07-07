@@ -22,6 +22,7 @@ export active, set_active!, value_names, img_filepath, img_zero_dir, img_physica
 export img_label_props_dir, img_label_props_path, img_track_props_path
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
+export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
@@ -100,6 +101,7 @@ include("py_runner.jl")
 include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
+include("qc.jl")
 include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")

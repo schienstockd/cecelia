@@ -293,6 +293,14 @@ placeholder rather than a real per-slice calibration on real data. Clicking the 
 focused on that image with the current checkbox selection carried in as the target set for
 Apply/Fill-flagged. Shown on every module page — the icon isn't gated behind `showAttrs`/`module`.
 
+**QC badge.** Separate from the metadata warning (which is import-metadata-specific), a row shows a
+`pi-flag` **QC** badge when `qcSummary(img)` (`frontend/src/lib/qc.ts`) finds any QC finding on the
+image. QC is the general "we processed this, but the output looks off" layer: the **backend** computes
+findings per (task, output) into `1/{uid}/qc/{funName}/{valueName}.json` (see ARCHITECTURE → *QC
+sidecars* and `docs/todo/QC_PLAN.md`); `qc.ts` only aggregates + formats them. The badge hover shows
+the finding detail (e.g. drift correction's jump / canvas-expansion). It's **advisory** — never blocks.
+`warn` findings tint amber; `info` are neutral. (MetadataPanel + chain-whiteboard surfaces are later phases.)
+
 **Physical size & timing editor** (`frontend/src/components/PhysicalSizeDialog.vue`) is a modal,
 not a sidebar section — the first version crammed six fields + long explanatory paragraphs into
 the 280px `MetadataPanel` sidebar and was unreadable. Built on the shared `BaseModal` shell (see

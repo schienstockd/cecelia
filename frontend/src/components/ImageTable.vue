@@ -6,6 +6,7 @@ import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { useSettingsStore } from '../stores/settings'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
+import { qcSummary } from '../lib/qc'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 
 const props = defineProps<{
@@ -36,6 +37,11 @@ const physSizeDialogUid = ref<string | null>(null)
 function warnIconFor(img: CciaImage): { tip: string } | null {
   const w = metadataWarning(img)
   return w ? { tip: w.short } : null
+}
+// QC badge — advisory "we processed this but the output looks off" (docs/todo/QC_PLAN.md). Distinct
+// from the metadata warning: any module can emit it, and it's non-blocking (hover for detail).
+function qcFor(img: CciaImage): { short: string; long: string; level: 'info' | 'warn' } | null {
+  return qcSummary(img)
 }
 function pageIconFor(): { tip: string } | null {
   if (props.module === 'metadata' || props.module === 'import')
@@ -490,6 +496,10 @@ onUnmounted(stopResize)
               v-tooltip.right="warnIconFor(img)!.tip">
               <i class="pi pi-exclamation-triangle" />
             </button>
+            <span v-if="qcFor(img)" class="qc-badge" :class="qcFor(img)!.level"
+              v-tooltip.right="qcFor(img)!.long">
+              <i class="pi pi-flag" /> QC
+            </span>
             <span class="cell-text" v-tooltip.right="img.filepath ?? img.name">{{ img.name }}</span>
             <button v-if="pageIconFor()" class="row-icon-btn" @click.stop="physSizeDialogUid = img.uid"
               v-tooltip.right="pageIconFor()!.tip">
@@ -671,6 +681,17 @@ th:hover .resize-handle::after { opacity: 1; }
   color: #fbbf24; font-size: 0.75rem; padding: 0.1rem; line-height: 1;
 }
 .warn-icon-btn:hover { color: #fcd34d; }
+
+/* QC badge — advisory "output looks off" flag; distinct from the metadata warning icon. */
+.qc-badge {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem; border-radius: 0.25rem; cursor: help;
+  border: 1px solid transparent;
+}
+.qc-badge .pi { font-size: 0.62rem; }
+.qc-badge.warn { color: #fbbf24; background: #7c2d1233; border-color: #f59e0b55; }
+.qc-badge.info { color: var(--cc-text-dim); background: var(--cc-surface-2); border-color: var(--cc-border); }
 
 /* row-hover actions after the name: the "open editor" page icon + copy-UID — same look, one class */
 .row-icon-btn {

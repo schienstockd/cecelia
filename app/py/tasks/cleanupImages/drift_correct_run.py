@@ -14,6 +14,8 @@ Parameter contract (JSON written by Julia):
   driftNormalisation - "phase" | "none"  (passed to skimage phase_cross_correlation)
 """
 
+import json
+
 # `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import py.utils.zarr_utils as zarr_utils
 import py.utils.ome_xml_utils as ome_xml_utils
@@ -71,6 +73,23 @@ def run(params):
         changed_shape=drift_image.shape,
         dim_utils=dim_utils,
     )
+
+    # Persist the APPLIED drift so it's inspectable and drives QC (the Julia task reads this, computes
+    # findings, and writes the qc/ sidecar). shifts is [T, ndim] per-frame deltas; axes are Z,Y,X (3D)
+    # or Y,X (2D). See docs/todo/QC_PLAN.md.
+    qc_out_path = params.get('qcOutPath')
+    if qc_out_path:
+        n_axes = int(shifts.shape[1]) if shifts.ndim == 2 else len(shifts)
+        axes = ['Z', 'Y', 'X'] if n_axes == 3 else ['Y', 'X']
+        with open(qc_out_path, 'w') as f:
+            json.dump({
+                'dimOrder':    ''.join(dim_utils.im_dim_order),
+                'sourceShape': [int(x) for x in im_dat[0].shape],
+                'outputShape': [int(x) for x in drift_image.shape],
+                'shiftAxes':   axes,
+                'shifts':      [[float(v) for v in row] for row in shifts],
+            }, f)
+        log.log(f'>> saved drift/QC trajectory: {qc_out_path}')
 
     log.progress(4, 4)
     log.log('>> done')

@@ -3040,4 +3040,59 @@ end
         end
     end
 
+    @testset "QC framework" begin
+        @testset "sidecar round-trip" begin
+            img = CciaImage(; dir = mktempdir())
+            f = qc_finding("warn", "demo.code", "short text", "long text"; detail = Dict("k" => 1))
+            @test f["level"] == "warn" && f["code"] == "demo.code"
+
+            p = write_qc(img, "cleanupImages.driftCorrect", "driftCorrected", [f];
+                         source = Dict("shape" => [1, 2, 3]))
+            @test isfile(p)
+            @test occursin(joinpath("qc", "cleanupImages.driftCorrect", "driftCorrected.json"), p)
+
+            doc = read_qc(img, "cleanupImages.driftCorrect", "driftCorrected")
+            @test length(doc["findings"]) == 1
+            @test doc["findings"][1]["code"] == "demo.code"
+
+            all = read_all_qc(img)
+            @test haskey(all, "cleanupImages.driftCorrect/driftCorrected")
+
+            # no-value_name → falls back to the default key
+            write_qc(img, "some.task", "", Dict{String,Any}[])
+            @test isfile(qc_path(img, "some.task", VERSIONED_DEFAULT_VAL))
+        end
+
+        @testset "canvas-expansion check" begin
+            order = "TCZYX"
+            # fHqhyb: XY +42%/+21% → flagged; Z doubling is ignored
+            bad = qc_canvas_expansion([94, 4, 13, 512, 512], [94, 4, 26, 728, 618], order)
+            @test bad !== nothing && bad["code"] == "output.canvas_expansion"
+            # LUkCpP (normal): XY +6%/+3% → not flagged even though Z grew +46%
+            @test qc_canvas_expansion([64, 4, 13, 512, 512], [64, 4, 19, 541, 527], order) === nothing
+        end
+
+        @testset "drift findings" begin
+            base = Dict{String,Any}("dimOrder" => "TCZYX", "shiftAxes" => ["Z", "Y", "X"])
+            smooth = [[0.0, 1.0, 1.0] for _ in 1:20]
+            spiky  = copy(smooth); spiky[16] = [0.0, 120.0, 90.0]   # jump at frame 16
+
+            # bad ref: canvas ballooned AND a spike → both findings
+            meta_bad = merge(base, Dict("sourceShape" => [20, 4, 13, 512, 512],
+                                        "outputShape" => [20, 4, 26, 728, 618], "shifts" => spiky))
+            fb, _, _ = Cecelia._drift_qc_findings(meta_bad)
+            codes = Set(f["code"] for f in fb)
+            @test "drift.canvas_expansion" in codes
+            @test "drift.jump" in codes
+            jump = first(f for f in fb if f["code"] == "drift.jump")
+            @test jump["detail"]["atT"] == 15                       # 0-based frame index of the spike
+
+            # good ref: modest canvas, smooth trajectory → no findings
+            meta_ok = merge(base, Dict("sourceShape" => [20, 4, 13, 512, 512],
+                                       "outputShape" => [20, 4, 19, 541, 527], "shifts" => smooth))
+            fo, _, _ = Cecelia._drift_qc_findings(meta_ok)
+            @test isempty(fo)
+        end
+    end
+
 end
