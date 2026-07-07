@@ -110,8 +110,10 @@ function density(): Float32Array {
   const fx = new Float32Array(n), fy = new Float32Array(n)        // fractional grid coords
   const clampf = (v: number) => v < 0 ? 0 : v > G - 1 ? G - 1 : v
   for (let i = 0; i < n; i++) {
-    const gx = clampf(((p[2 * i] - xMin) / xs) * (G - 1))
-    const gy = clampf(((p[2 * i + 1] - yMin) / ys) * (G - 1))
+    const px = p[2 * i], py = p[2 * i + 1]
+    if (!Number.isFinite(px) || !Number.isFinite(py)) { fx[i] = 0; fy[i] = 0; continue }  // NaN/Inf → skip binning
+    const gx = clampf(((px - xMin) / xs) * (G - 1))
+    const gy = clampf(((py - yMin) / ys) * (G - 1))
     fx[i] = gx; fy[i] = gy
     grid[Math.floor(gy) * G + Math.floor(gx)] += 1
   }

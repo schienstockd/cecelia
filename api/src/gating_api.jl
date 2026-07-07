@@ -359,6 +359,21 @@ function api_gating_membership(req::HTTP.Request)
     200, JSON3.write((; membership = Dict(String(p) => cells_in_pop(m, p) for p in pops)))
 end
 
+# Extrema over FINITE values only. Object/morphology measurements (volume, convex_hull_area,
+# surface_to_volume, …) carry NaN/Inf for degenerate or border objects; plain `extrema` would
+# propagate a single NaN into the extent, and JSON3 refuses to serialise NaN (→ 500, so the plot
+# never renders). Falls back when the column is empty or all-non-finite.
+function _finite_extrema(v, fallback::Tuple{Float64,Float64} = (0.0, 1.0))::Tuple{Float64,Float64}
+    lo = Inf; hi = -Inf
+    for x in v
+        xf = float(x)
+        isfinite(xf) || continue
+        xf < lo && (lo = xf)
+        xf > hi && (hi = xf)
+    end
+    lo <= hi ? (lo, hi) : fallback
+end
+
 # ── GET /api/gating/plotmeta ──────────────────────────────────────────────────
 # returns n + mode (scatter|density) + transformed extents + axis ticks
 function api_gating_plotmeta(req::HTTP.Request)
@@ -373,13 +388,13 @@ function api_gating_plotmeta(req::HTTP.Request)
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"
-    xext = isempty(xv) ? (0.0, 1.0) : extrema(xv)
-    yext = isempty(yv) ? (0.0, 1.0) : extrema(yv)
+    xext = _finite_extrema(xv)
+    yext = _finite_extrema(yv)
     # ticks use the raw extent (over the WHOLE dataset, not the pop subset) so labels read in data
     # units and selecting a population doesn't rescale the axis — track-aware via _plot_xy_raw.
     rxv, ryv = _plot_xy_raw(img, vn, get(q, "popType", "flow"), x, y, ROOT)
-    rxext = isempty(rxv) ? (0.0, 1.0) : extrema(rxv)
-    ryext = isempty(ryv) ? (0.0, 1.0) : extrema(ryv)
+    rxext = _finite_extrema(rxv)
+    ryext = _finite_extrema(ryv)
     # x0/y0=1 → "whole dataset" axis: origin at raw 0, upper bound = the FULL dataset max (rxext
     # is computed from all cells, not the pop subset), so selecting a population doesn't rescale
     # the axis (FlowJo behaviour). Autoscale (x0=0) fits the displayed population's extent.

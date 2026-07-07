@@ -29,15 +29,24 @@ function density_2d(xt::AbstractVector, yt::AbstractVector; bins::Int=256,
     yspan = ymax > ymin ? ymax - ymin : 1.0
     counts = zeros(Int, bins, bins)
     @inbounds for i in eachindex(xt)
-        bx = clamp(floor(Int, (float(xt[i]) - xmin) / xspan * bins) + 1, 1, bins)
-        by = clamp(floor(Int, (float(yt[i]) - ymin) / yspan * bins) + 1, 1, bins)
+        xi = float(xt[i]); yi = float(yt[i])
+        # object/morphology measures carry NaN/Inf for degenerate objects; skip them (else
+        # `floor(Int, NaN)` throws) — they simply don't contribute to any bin.
+        (isfinite(xi) && isfinite(yi)) || continue
+        bx = clamp(floor(Int, (xi - xmin) / xspan * bins) + 1, 1, bins)
+        by = clamp(floor(Int, (yi - ymin) / yspan * bins) + 1, 1, bins)
         counts[bx, by] += 1
     end
     Density2D(counts, xmin, xmax, ymin, ymax, bins)
 end
 
+# extrema over FINITE values only (NaN/Inf would poison the bin edges); falls back when the vector
+# is empty or all-non-finite.
 function extrema_or(v::AbstractVector, lo_default::Float64, hi_default::Float64)
-    isempty(v) && return (lo_default, hi_default)
-    mn, mx = extrema(v)
-    (float(mn), float(mx))
+    lo = Inf; hi = -Inf
+    for x in v
+        xf = float(x); isfinite(xf) || continue
+        xf < lo && (lo = xf); xf > hi && (hi = xf)
+    end
+    lo <= hi ? (lo, hi) : (lo_default, hi_default)
 end
