@@ -5,20 +5,27 @@
     label       string   Heading text shown in the toggle bar.
     defaultOpen bool     Whether the section starts open (default: true).
     maxHeight   string   CSS max-height for the body div (default: '320px').
+    storageKey  string   When set, the open/closed state is remembered in localStorage under this
+                         key (so it survives navigation — see the "persist every option" rule).
 -->
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
   label:        string
   defaultOpen?: boolean
   maxHeight?:   string
+  storageKey?:  string
 }>(), {
   defaultOpen: true,
   maxHeight:   '320px',
 })
 
-const open = ref(props.defaultOpen)
+const stored = props.storageKey ? localStorage.getItem(props.storageKey) : null
+const open = ref(stored === null ? props.defaultOpen : stored === '1')
+watch(open, v => {
+  if (props.storageKey) { try { localStorage.setItem(props.storageKey, v ? '1' : '0') } catch { /* ignore */ } }
+})
 </script>
 
 <template>

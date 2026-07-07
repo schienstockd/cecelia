@@ -5,16 +5,13 @@
 -->
 <script setup lang="ts">
 import ModuleLayout from '../components/ModuleLayout.vue'
-import CollapsibleSection from '../components/CollapsibleSection.vue'
 import GatingPlots from './gate/GatingPlots.vue'
 </script>
 
 <template>
-  <ModuleLayout module="gate" :show-attrs="true" :show-filter="true" :single-select="true">
-    <template #below-table="{ selectedUids }">
-      <CollapsibleSection label="Gating" :max-height="'none'">
-        <GatingPlots :image-uid="selectedUids[0] ?? null" />
-      </CollapsibleSection>
+  <ModuleLayout module="gate" :show-attrs="true" :show-filter="true" :single-select="true" plots-label="Gating">
+    <template #plots="{ selectedUids }">
+      <GatingPlots :image-uid="selectedUids[0] ?? null" />
     </template>
   </ModuleLayout>
 </template>

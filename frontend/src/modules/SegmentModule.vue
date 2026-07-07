@@ -22,7 +22,7 @@ const { defs: segmentDefs, reload: reloadDefs } = useTaskDefs('segment')
     <!-- Segmentation integrity (QC) plots: the canonical summary canvas, filtered to `segment` plot
          specs (segmentation_qc.json — cell count / morphology over the `labels` popType). One
          selectable population per segmentation value_name, so B/T plot side by side. -->
-    <template #below-table="{ selectedUids }">
+    <template #plots="{ selectedUids }">
       <SummaryCanvas :image-uids="selectedUids" module="segment" />
     </template>
   </ModuleLayout>

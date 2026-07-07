@@ -168,31 +168,30 @@ const defs = useTaskDefs('segmentImages')
 
 - `#actions="{ hasSet }"` — items injected into the action bar before the image count (e.g. "Add images" button). `hasSet` is `true` when a set is active — use it to disable the button.
 - `#right="{ setUid, selectedUids, selectedNames }"` — the right-hand panel. All three slot props are computed inside `ModuleLayout`; the module page does not need its own refs for them.
-- `#below-table="{ setUid, selectedUids, selectedNames }"` — content rendered below the image table in the left column. Each piece should be wrapped in `<CollapsibleSection>` so users can toggle it independently. Multiple sections are supported.
+- `#plots="{ setUid, selectedUids, selectedNames, selectUids }"` — **the module's plot canvas.** `ModuleLayout` wraps it in ONE consistent, collapse-persisted `CollapsibleSection` (label via the `plotsLabel` prop, default `'Plots'`). **Do not wrap it yourself** — this is what makes every module page's plot canvas collapse the same way. This is the canonical place for the summary/gating/cluster canvas.
+- `#below-table="{ setUid, selectedUids, selectedNames, selectUids }"` — extra *custom* content below the plots (rare). Wrap each piece in `<CollapsibleSection>` yourself; multiple sections supported.
 
 If you need the active set in the module page itself (e.g. Import's file-browser guard), import `useProjectStore` and call `project.activeSet()` directly.
 
-### Adding plots below the image table
+### Adding the plot canvas below the image table
 
-Wrap each plot in `<CollapsibleSection>` and place it in the `#below-table` slot:
+Put the canvas in the `#plots` slot — nothing else. `ModuleLayout` gives it a consistent, collapsible, **collapse-persisted** section (per module, under `cc-plots-open:<module>`); pass `plots-label` to rename the header:
 
 ```vue
-<template #below-table>
-  <CollapsibleSection label="Intensity histogram">
-    <IntensityHistogram :before="histBefore" :after="histAfter" x-label="Pixel intensity" />
-  </CollapsibleSection>
-  <CollapsibleSection label="Channel correlation" :default-open="false">
-    <ChannelCorrelation :set-uid="setUid" />
-  </CollapsibleSection>
-</template>
+<ModuleLayout module="behaviourAnalysis" :show-attrs="true" plots-label="Plots">
+  <template #plots="{ selectedUids }">
+    <SummaryCanvas :image-uids="selectedUids" module="behaviourAnalysis" />
+  </template>
+</ModuleLayout>
 ```
 
-The image table itself is already in a `CollapsibleSection` ("Images") managed by `ModuleLayout`. All sections scroll together in the left panel; the panel collapses horizontally with the ‹/› button.
+Every module page uses this same slot, so the plot canvas collapses identically everywhere — don't hand-wrap a `CollapsibleSection` in the module (that's exactly the divergence this replaced: SegmentModule once rendered its canvas un-collapsible). The image table itself is in a `CollapsibleSection` ("Images") managed by `ModuleLayout`; all sections scroll together and the panel collapses horizontally with the ‹/› button.
 
 `CollapsibleSection` props:
 - `label` — section heading (uppercased in the toggle bar)
 - `defaultOpen` — whether open on mount (default: `true`)
 - `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth)
+- `storageKey` — when set, the open/closed state persists in localStorage under this key (the `#plots` wrapper uses this so a collapsed canvas stays collapsed across navigation)
 
 ### 2 — Register the route
 
@@ -429,7 +428,7 @@ deduping so a multi-node chain run only sends one `chain:cancel`).
 
 Plots go either **in the left column** (below the image table, for compact summary visualizations) or **in the right panel** (alongside or instead of `TaskRunner`).
 
-**Left column** — use the `#below-table` slot with `<CollapsibleSection>` wrappers (see above). Best for histograms, intensity plots, and other per-run summaries that sit naturally next to the image list.
+**Left column** — put the plot canvas in the `#plots` slot (ModuleLayout wraps it in the shared collapsible section — see above); reserve `#below-table` for rare extra custom content. Best for summary/gating/cluster canvases that sit naturally next to the image list.
 
 **Right panel** — use the `#right` slot:
 
@@ -933,7 +932,7 @@ plot type = drop in a JSON, no new UI code. Current: `track_measures` (continuou
 ## Gating page (WebGL scatter + gate overlay)
 
 `frontend/src/modules/GatingModule.vue` — route `/gate`. Pick ONE image in the table; the
-gating workspace renders **below the table** (`#below-table` slot, wide left column),
+gating workspace renders **below the table** (`#plots` slot, wide left column),
 mirroring the old `flowPlotManager` layout. `gate/GatingPlots.vue` is the container:
 page-level **segmentation (value_name) select** + a **"+ Plot" button** + **Tile/Cascade** window-
 arrange icons (ImageJ-style: grid vs staggered), and a full-height **`.gp-canvas`** workspace
@@ -948,7 +947,7 @@ real segmentation). API: `docs/API.md` gating routes.
 
 **Track-property gating reuses the SAME canvas (`popType` prop) — no clone.** `GatingPlots` takes a
 `popType` prop (`'flow'` default | `'track'`); `TrackingModule.vue` (route `/track`) renders it in
-its `#below-table` slot as `<GatingPlots :image-uid pop-type="track" />` (active when exactly one
+its `#plots` slot as `<GatingPlots :image-uid pop-type="track" />` (active when exactly one
 image is selected, alongside the task runner in `#right`). `popType` only changes (a) the data source
 the store/API read — flow cells vs the per-track table, handled server-side (`docs/API.md` →
 `popType=track`) — and (b) the napari overlay: flow shows the cell-selection brush (linked brushing)
@@ -983,7 +982,7 @@ Two plot families share the canvas shell; the distinction matters for where a ne
 `modules/ClusterCellsModule.vue` (route `/clust-cells`, popType `clust`) and
 `modules/ClusterTracksModule.vue` (`/clust-tracks`, popType `trackclust`) — one page per granularity,
 mirroring the gate/track split. Each is `ModuleLayout` (multi-select — clustering is set-scope) +
-`TaskRunner` (`clustPops` / `clustTracks`) + a below-table **`modules/cluster/ClusterPlots.vue`**
+`TaskRunner` (`clustPops` / `clustTracks`) + a `#plots`-slot **`modules/cluster/ClusterPlots.vue`**
 canvas (the cluster analogue of `GatingPlots`: `useCanvasPanels` keyed `clust:${popType}` + a "+ Plot"
 picker + Tile/Cascade). The **"+ Plot"** picker lists every interactive view (`INTERACTIVE_VIEWS`) +
 the summary **Heatmap**; each panel is routed by family — interactive → `InteractivePanel` (e.g.
@@ -1015,9 +1014,9 @@ toggleable cluster-number labels at each cluster centroid), summary → **`Clust
     {features, partOf}}`), surfaced as `clusterMembers`. `ClusterPlots` writes only to the selected
     images in `partOf` and shows a banner naming any selected images that aren't in the run (and any
     run images not selected), with a **"Select clustered images"** button that sets the selection to
-    exactly the run's images. That button uses a `selectUids(uids)` callback `ModuleLayout` now exposes
-    on its `#below-table` slot — it writes the shared selection store, and `ImageTable` watches the
-    store and re-seeds its checkboxes (so below-table content can drive the selection generically).
+    exactly the run's images. That button uses a `selectUids(uids)` callback `ModuleLayout` exposes on
+    both the `#plots` and `#below-table` slots — it writes the shared selection store, and `ImageTable`
+    watches the store and re-seeds its checkboxes (so plot-canvas content can drive the selection generically).
   - **Highlight → overlays**: the manager's per-pop **eye** toggles a `highlighted` set (persisted in
     the canvas `shared` bag). `ClusterPlots` resolves it to `shownPops` ({path, name, colour,
     clusterIds}) and feeds it to the views:
@@ -1261,6 +1260,6 @@ These are deliberate shortcuts; know them before changing the plot components.
 
 The left panel has two collapse mechanisms:
 - **Horizontal** (‹/›) — shrinks the entire left panel to a 2.4rem strip. Useful for maximizing the right panel.
-- **Vertical** — each section within the panel (image table, plots) has its own toggle header. The image table is always in a "Images" `CollapsibleSection`; below-table content is whatever the module puts in `#below-table` slot (each wrapped in `<CollapsibleSection>`).
+- **Vertical** — each section within the panel (image table, plots) has its own toggle header. The image table is always in a "Images" `CollapsibleSection`; the plot canvas is the module's `#plots` slot, which `ModuleLayout` wraps in one consistent collapse-persisted `CollapsibleSection` (label via `plotsLabel`). Extra `#below-table` content is wrapped by the module itself.
 
 The whole left panel body scrolls vertically if sections together exceed available height. Collapsed state is local to the component and resets on navigation.

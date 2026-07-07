@@ -1,7 +1,7 @@
 <!--
   Shared two-column module layout.
   Left column: SetBar + count bar + optional attr filter + collapsible ImageTable
-               + optional #below-table slot (module supplies CollapsibleSection wrappers).
+               + a consistent collapsible #plots canvas + optional #below-table slot.
   Right column: slot #right — TaskRunner, MetadataPanel, or a custom panel.
 
   Props
@@ -13,6 +13,7 @@
     editableMeta  bool      ImageTable: allow inline attr/channel-name editing — Metadata page ONLY
                             (default: false; every other page shows these read-only).
     showFilter    bool      Show the attr-value filter panel (default: true).
+    plotsLabel    string    Heading for the #plots section (default: 'Plots').
     noSetHint     string    Custom empty-state message.
 
   Slots
@@ -20,9 +21,15 @@
     #actions  { hasSet }                        — extra items in the action bar.
     #right    { setUid, selectedUids,
                 selectedNames }                 — the right-hand panel.
+    #plots    { setUid, selectedUids,
+                selectedNames, selectUids }     — the module's plot canvas. ModuleLayout wraps it in
+                                                  ONE consistent, collapse-persisted CollapsibleSection
+                                                  (labelled `plotsLabel`) — do NOT wrap it yourself.
+                                                  This is how every module page gets the SAME
+                                                  collapsible plot canvas.
     #below-table { setUid, selectedUids,
-                   selectedNames, selectUids }  — content below the image table.
-                                                  Wrap each piece in <CollapsibleSection>.
+                   selectedNames, selectUids }  — extra custom content below the plots (rare).
+                                                  Wrap each piece in <CollapsibleSection> yourself.
                                                   `selectUids(uids)` drives the image selection.
 
   Emits
@@ -48,6 +55,7 @@ const props = withDefaults(defineProps<{
   editableMeta?: boolean
   showFilter?:  boolean
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
+  plotsLabel?:  string
   noSetHint?:   string
 }>(), {
   allowManage: false,
@@ -56,6 +64,7 @@ const props = withDefaults(defineProps<{
   editableMeta: false,
   showFilter:  true,
   singleSelect: false,
+  plotsLabel:  'Plots',
   noSetHint:   'Select a set to get started.',
 })
 
@@ -283,6 +292,19 @@ function selectUids(uids: string[]) {
               :single-select="singleSelect"
               :filter-uids="filteredUids"
               @selectionChange="onSelectionChange"
+            />
+          </CollapsibleSection>
+
+          <!-- Plot canvas — ONE consistent, collapse-persisted section for every module page.
+               ModuleLayout owns the wrapper so no module can forget it or diverge. -->
+          <CollapsibleSection v-if="$slots.plots && activeSet"
+            :label="plotsLabel" max-height="none"
+            :storage-key="`cc-plots-open:${module ?? 'default'}`">
+            <slot name="plots"
+              :set-uid="activeSet.uid"
+              :selected-uids="selectedUids"
+              :selected-names="selectedNames"
+              :select-uids="selectUids"
             />
           </CollapsibleSection>
 

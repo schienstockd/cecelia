@@ -460,7 +460,7 @@ A set-scope task differs from an image-scope task in three places:
 
 **Composites can be set-scope too.** A composite with `"scope": "set"` (e.g. `behaviour.hmm` = `hmm_states` → `hmm_transitions`) runs each step's set-scope form over the image vector in sequence; `_run_task(::CompositeTask, imgs::Vector{CciaImage}, …)` handles this (no per-image ccid.json rewriting — set-scope behaviour tasks add obs columns rather than creating value_names).
 
-The module page hosts a set-scope task exactly like any other — `ModuleLayout` already allows multi-image selection; `TaskRunner` does the scope-aware submit. `BehaviourModule.vue` is the reference (TaskRunner in `#right`, plot canvas in `#below-table`).
+The module page hosts a set-scope task exactly like any other — `ModuleLayout` already allows multi-image selection; `TaskRunner` does the scope-aware submit. `BehaviourModule.vue` is the reference (TaskRunner in `#right`, plot canvas in the `#plots` slot).
 
 ---
 
@@ -585,10 +585,12 @@ To add a module-page plot:
    chartTypes, dataSource: { popType, granularity, measure, measureOptions }, scopeModes,
    whiteboardCompatible }`. Served via `GET /api/plots/definitions`. Data comes from the existing
    `POST /api/plot_data` (`plot_summary_data`) — no new route.
-2. Host it below the table with `SummaryCanvas` (the reference is `BehaviourModule.vue`):
+2. Host it in the `#plots` slot with `SummaryCanvas` (the reference is `BehaviourModule.vue`).
+   `ModuleLayout` wraps `#plots` in the shared, collapse-persisted section — do NOT add your own
+   `CollapsibleSection` (that's the divergence this replaced):
 
 ```vue
-<template #below-table="{ selectedUids }">
+<template #plots="{ selectedUids }">
   <SummaryCanvas :image-uids="selectedUids" module="<thisModule>" />
 </template>
 ```
@@ -596,7 +598,8 @@ To add a module-page plot:
 `whiteboardCompatible: true` also makes it available on the whiteboard — one definition, both places.
 
 `CollapsibleSection` (from `'../components/CollapsibleSection.vue'`) is only for **non-plot**
-supplementary panels (previews, tables, controls) — never wrap a bespoke chart in it.
+supplementary panels (previews, tables, controls) placed in the rare `#below-table` slot — never wrap
+a bespoke chart in it, and never hand-wrap the `#plots` canvas (ModuleLayout already does).
 
 ### RULE: persist every user-settable option (do NOT use a bare `ref()`)
 
