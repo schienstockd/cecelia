@@ -106,9 +106,12 @@ Juliaup, download the release bundle, provision the env, and create the desktop 
 `.github/workflows/release.yml` runs on a `v*` tag — one `ubuntu-latest` job, because the bundle is
 OS-independent:
 1. `npm ci && npm run build` → prebuilt `frontend/dist`.
-2. `tar` a portable bundle `cecelia.tar.gz` (api, app, app.py, pixi.toml, pixi.lock,
-   napari/napari_bridge.py, frontend/dist, install scripts, README, docs). It excludes
-   `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
+2. `tar` a portable bundle `cecelia.tar.gz` (api, app, **python** (the `cecelia` helper package),
+   app.py, pixi.toml, pixi.lock, napari/napari_bridge.py, frontend/dist, install scripts, README,
+   docs). It excludes `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the
+   user's machine. **Note:** `python/` must ship — `run_py` resolves task scripts under
+   `python/cecelia/` and the editable `cecelia` dep points there; omitting it breaks every Python
+   task on the installed app.
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
@@ -243,6 +246,23 @@ Leiden clustering ships CPU-only via `leidenalg` (cross-platform). The GPU backe
 CUDA-only and lives as a commented `[feature.gpu]` stub in `pixi.toml`; when un-parked it becomes a
 separate env so non-CUDA platforms fall back to `leidenalg`. GPU is auto-detected at runtime, never a
 task param (`CLAUDE.md`). See `docs/todo/CLUSTERING_PLAN.md`.
+
+### Notebook Playground sysimage (`pluto/deps.so`)
+The Notebooks feature (`docs/NOTEBOOKS.md`) runs Pluto in its own Julia env (`pluto/`, separate from
+`app`/`api` — the API server must not carry the Makie plot stack). Makie's time-to-first-plot is
+~20 s cold; a **PackageCompiler sysimage kills it** (measured 32 s → 7.6 s cold-start). Two builds,
+both → `pluto/deps.so` (git-ignored, ~1.4 GB, ~10 min):
+- **Dev** — `pixi run notebooks-sysimage` — deps only (Makie/CairoMakie/AoG/DataFrames/HDF5/HTTP/CSV),
+  deliberately **excluding Cecelia** so Revise still hot-reloads it.
+- **Release** — `pixi run notebooks-sysimage-full` — also bakes in `Cecelia` + `CeceliaNb` (code is
+  frozen) for near-instant first plot AND first `pop_df`. **Wire this into the release bundle build**
+  (the bundle either ships `deps.so` or builds it on first run — it's too large to commit).
+
+The Pluto server keeps its **secret token ON** (Pluto's secure default): it's a browser-reachable
+code-execution surface, so the secret guards against other local sites/processes driving it (CSRF/RCE).
+`launch.jl` writes the session secret to `pluto/.plutosecret` (git-ignored) and the API threads it into
+the URLs. Do not bind it to a public host. Launched/stopped like napari: `pixi run notebooks` (port
+7660) / `pixi run stop-notebooks`, and the app launches it via `POST /api/notebooks/launch`.
 
 ---
 

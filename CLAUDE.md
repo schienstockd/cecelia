@@ -18,6 +18,7 @@ See also:
 - [`docs/API.md`](docs/API.md) — HTTP/WS surface: routing conventions, binary responses, route index, gating routes (popmap/CRUD/plotdata/density/membership/stats)
 - [`docs/PLOTS.md`](docs/PLOTS.md) — summary-plot design: chart types × data source (one/multi/pooled) × measure type (numeric/categorical), encoding model, the agreed renderer spec
 - [`docs/ANALYSIS.md`](docs/ANALYSIS.md) — the Analysis board (`/analysis`): tabs + comic-plate layout + persistence keys, the registry-driven plot families (summary/interactive/cluster/image), the read-only cluster manager, the gating-strategy plot, and PDF/CSV export (light theme, shared hi-res raster path)
+- [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) — the Notebooks Playground (`/notebooks`): pure-Julia Pluto downstream analysis; the `pluto/` engine env, `CeceliaNb` helpers, per-project registry + snapshot/restore versioning, the deps/full sysimage, and the `/api/notebooks/*` routes
 - [`docs/FUTURE.md`](docs/FUTURE.md) — deliberately deferred optimisations (known-better alternatives set aside): what, why deferred, when to revisit
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — temporary forward goals: phases (behaviour/HMM → clustering → freeze v1.0 → packaging/distribution → self-update) + post-v1 backlog. Consult before starting a new phase.
 - [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
@@ -33,6 +34,7 @@ See also:
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |
 | Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
+| Notebooks Playground: Pluto engine, `CeceliaNb`, registry/versioning, sysimage, `/api/notebooks/*` | `docs/NOTEBOOKS.md` |
 | **Adding ANY plot (module page OR board)** — registry + `SummaryCanvas`, never a bespoke panel/route | `docs/PLOTS.md` → *Hosting*, `docs/ANALYSIS.md` |
 | Task JSON, registry, module pages, composite pattern | `docs/MODULES.md` |
 | Napari bridge, commands, OME-ZARR, contrast, layer props | `docs/NAPARI.md` |
@@ -118,7 +120,7 @@ terminal verb. `as_df` reads a label-keyed DataFrame; `add_obs(df).save!`/`.save
 back (aligned by `label`, correct AnnData encoding). You read a labeled DataFrame, you write a
 labeled DataFrame — one idiom, no guessing.
 
-| | Julia (`app/src/label_props.jl`) | Python (`app/py/utils/label_props_utils.py`) |
+| | Julia (`app/src/label_props.jl`) | Python (`python/cecelia/utils/label_props_utils.py`) |
 |---|---|---|
 | **Read**  | `label_props(img\|path) \|> select_cols/view_centroid_cols/filter_rows \|> as_df` | `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()` |
 | **Write** (append obs cols to an existing file) | `label_props(path) \|> v -> add_obs(v, df) \|> save!` | `LabelPropsView(path).add_obs(df).save()` |
@@ -130,7 +132,7 @@ labeled DataFrame — one idiom, no guessing.
   explaining why the view was bypassed. No silent raw access.
 - The only place raw `HDF5.jl` lives is the reader/writer itself (`label_props.jl`).
 - **One sanctioned exception — file *creation*.** Building a *new* `.h5ad` from scratch (the `X`
-  matrix + `var` + `obsm`, e.g. segmentation measurement output in `app/py/utils/measure_utils.py`)
+  matrix + `var` + `obsm`, e.g. segmentation measurement output in `python/cecelia/utils/measure_utils.py`)
   is the producing task's job and uses `anndata` directly — the view wraps an *existing* file
   (read + obs-append), it does not create one. Structural changes to `X`/`var` likewise go through
   the producing Python task, not the view.
@@ -141,8 +143,8 @@ labeled DataFrame — one idiom, no guessing.
 
 **Never spawn a Python subprocess by hand. There is one launcher — `run_py` in `app/src/py_runner.jl`
 — use it for every Python task runner and data-layer writer.** It writes the params JSON to the
-run's task dir (`task_run_dir(<obj>._dir)`, never a temp dir), sets `PYTHONPATH=app/` (so the script
-does `import py.*` with **no `sys.path` bootstrapping**), streams `[PROGRESS] n/total` → `on_progress`
+run's task dir (`task_run_dir(<obj>._dir)`, never a temp dir), sets `PYTHONPATH=python/` (so the script
+does `import cecelia.*` with **no `sys.path` bootstrapping**), streams `[PROGRESS] n/total` → `on_progress`
 and the rest → `on_log`, registers the process for cancellation, and returns clean-exit (checks
 `exitcode` AND `termsignal`). It's the analogue of the old R `self$pyScript`.
 
@@ -155,7 +157,7 @@ ok || return nothing
 - **Do not** write `run(pipeline(\`$python …\`))`, build a params file, or parse `[PROGRESS]`
   inline in a task — that boilerplate (and the bugs that come with hand-rolling exit/signal checks
   and param-file locations) is exactly what `run_py` exists to delete.
-- **Python runners therefore carry NO `sys.path` manipulation** — `import py.*` resolves via the
+- **Python runners therefore carry NO `sys.path` manipulation** — `import cecelia.*` resolves via the
   PYTHONPATH `run_py` sets. A new `sys.path.insert(... __file__ ...)` in a runner is a red flag.
 - This is the same principle as the H5AD rule above: a cross-cutting operation gets **one**
   canonical helper, and reimplementing it inline is the bug. (See `docs/MODULES.md` → *Running a
@@ -170,7 +172,18 @@ interpreter path — launch via `pixi run`, which puts the env's `python3` on PA
 server's subprocesses and the napari bridge find it). See `docs/SHIPPING.md`.  
 **Add a package:** `pixi add --pypi <package>` (PyPI) or `pixi add <package>` (conda-forge), then commit
 the updated `pixi.toml` + `pixi.lock`.  
-**Pin versions in `pixi.toml`** — the single source of truth (the old `napari/requirements.txt` is gone).
+**Where deps are defined (two files, disjoint sets — a dep is listed in exactly one):**
+- **`python/pyproject.toml`** owns the **light IO tier** the `cecelia` package needs to *import*
+  (`numpy`, `zarr>=3`, `dask`, `tifffile`, `ome-types`, `scipy`, `scikit-image`, `tqdm`). These reach
+  an external `pip install cecelia` consumer (e.g. coastal). If importing `cecelia.utils.*` needs it,
+  it goes here.
+- **`pixi.toml`** owns everything else — the **heavy / conda / per-platform** deps only the full app
+  needs (`cellpose`, `torch`, `napari`, `pyqt5`, `anndata`, `scanpy`, `btrack`, `leidenalg`,
+  `trimesh`, `pandas`, `websockets`; conda `python`/`openjdk`/`cvxopt`) — plus the editable
+  `cecelia = { path = "python", editable = true }` dep, which pulls the IO tier transitively so the
+  pixi env has everything. `pixi.toml` remains the single source of truth **for the pins it owns**;
+  the IO pins are `pyproject.toml`'s. (The old `napari/requirements.txt` is gone.)
+  See [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
 
 ### Key version pins
 
@@ -224,13 +237,35 @@ rather than a separate script.
 
 ```
 cecelia-pineapple/
-  app/          Julia package — Cecelia.jl (Revise-tracked)
+  app/          Julia package — Cecelia.jl (Revise-tracked). JULIA ONLY.
   api/          Julia API server scripts — NOT a package, NOT Revise-tracked
   frontend/     Vue 3 (Vite, TypeScript, Pinia, PrimeVue)
-  napari/       Python bridge (napari_bridge.py); the env is the repo-root .pixi/, not here
+  python/       Installable Python package `cecelia` (pyproject.toml here) — the analysis/IO
+                helpers + Python task runners + writers. Top-level, sibling to app/.
+  napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
   pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
   docs/         Extended architecture and design reference
 ```
+
+**What lives where (one language per top-level dir).** Each top-level directory is a single
+ecosystem — do not mix:
+
+| Dir | Language | What it is |
+|---|---|---|
+| `app/` | Julia | The `Cecelia.jl` package: data model, scheduler, tasks (`app/src/tasks/*.jl` + `.json`), gating. `Project.toml`/`Manifest.toml`. **No Python here.** |
+| `api/` | Julia | HTTP/WS server scripts (`include`d, not a package). |
+| `frontend/` | Vue/TS | The browser UI. |
+| `python/` | Python | The installable **`cecelia`** package: `python/cecelia/utils/*` (zarr/OME/dim/label-props/… helpers), `python/cecelia/tasks/<cat>/<name>_run.py` (subprocess entry points), `python/cecelia/writers/*`. `python/pyproject.toml` defines it. |
+| `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
+
+> **⚠️ Structural shift (2026-07): the Python helpers moved `app/py/` → top-level `python/cecelia/`
+> and were made a pip-installable package.** `app/` is now Julia-only. Reason: `app/` is a Julia
+> package, and the Python helpers are a *separately installable* package (import name `cecelia`) so
+> external consumers — e.g. the sibling `coastal` project — can `pip install cecelia` and
+> `import cecelia.utils.zarr_utils` with no `sys.path`/`PYTHONPATH` hack. Two ecosystems, two roots.
+> `run_py` resolves scripts under `python/cecelia/` and sets `PYTHONPATH=python/`. Dependency split:
+> the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
+> `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
 
 **Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
 
@@ -296,7 +331,7 @@ task that runs the whole suite. Write AND run the matching category in the same 
 | Julia package core (`app/`) — data model, persistence, task dispatch, param validation, scheduler/chain logic | package test (`app/test/runtests.jl`) | `pixi run test-pkg` |
 | An API handler/adapter (`api/src/*.jl`) with logic worth pinning | API test (`api/test/runtests.jl`, loaded with `CECELIA_NO_SERVE=1` — no socket) | `pixi run test-api` |
 | Frontend logic — first **extract it out of the `.vue` SFC into `frontend/src/utils/*.ts`**, then test that | Vitest (`*.test.ts` beside the module) | `pixi run test-frontend` |
-| Python analysis-env code (`app/py/**` — zarr/dask writers, correction/measure utils) | `unittest` `TestCase` in `app/py/tests/test_*.py` (stdlib, auto-discovered; no pytest dep) | `pixi run test-py` |
+| Python analysis-env code (`python/cecelia/**` — zarr/dask writers, correction/measure utils) | `unittest` `TestCase` in `python/cecelia/tests/test_*.py` (stdlib, auto-discovered; no pytest dep) | `pixi run test-py` |
 
 Frontend scope is deliberately narrow: **pure logic in `src/utils/*` only — no component mounting,
 no jsdom/DOM/E2E.** Keep testable logic in plain `.ts`, not the component. Full conventions +

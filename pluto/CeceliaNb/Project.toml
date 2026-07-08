@@ -1,0 +1,13 @@
+name = "CeceliaNb"
+uuid = "cec0e11a-0000-4000-8000-000000000001"
+authors = ["Cecelia"]
+version = "0.1.0"
+
+# Thin notebook-side helpers (count/summary aggregation + AlgebraOfGraphics plot shortcuts) so Pluto
+# notebooks don't re-roll boilerplate. Dev-tracked in the pluto/ env. Kept deliberately small — grow
+# from real notebook usage, not speculatively. See docs/NOTEBOOKS.md.
+[deps]
+AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"

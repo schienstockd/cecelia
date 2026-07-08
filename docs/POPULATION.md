@@ -27,7 +27,11 @@ accessor returning a filtered `DataFrame` regardless of type, and membership tha
 - **Julia owns gating** — gate evaluation, logicle transform, tree recompute, `pop_df`.
   **No Rust / no fourth language** (`ARCHITECTURE.md:191`).
 - **Read = Julia** (`HDF5.jl`, native; the fluent reader is `app/src/label_props.jl`).
-  **Write = Python** (a subprocess via `python_bin_path()` → `anndata.write_h5ad`; never write H5AD from Julia).
+  **Write is split** (see `DATAMODEL.md`): Julia writes **numeric `obs` columns** natively via
+  `save!` (`HDF5.jl`), but **cannot write `X`** — the feature matrix, `var`, and any new file are
+  Python's job (a subprocess via `python_bin_path()` → `anndata.write_h5ad`), as are **categorical/
+  string `obs`** columns (`write_categorical_obs`). So: obs measures → Julia; `X`/`var`/new-file +
+  categoricals → Python.
 - **Frontend = UI only**: it never transforms or evaluates gates (see Transforms).
 - **Python** is a *consumer* of membership, not an evaluator (see Membership access).
 
@@ -217,7 +221,7 @@ it. The new design unifies via one engine + one cell table:
    lineage columns into the segmentation's `labelProps/{value_name}.h5ad` `obs`:
    `track_id, track_parent, track_root, track_state, track_generation, cell_id` (cells not
    in a track get `NaN`). See `app/src/tasks/tracking/bayesian_tracking.jl` +
-   `app/py/utils/tracking_utils.py`.
+   `python/cecelia/utils/tracking_utils.py`.
 3. The result is a **live** population (gated cells that now have tracks).
 4. Gate again on **track properties** if desired (deferred — see below).
 
@@ -253,9 +257,9 @@ per-pop CSV.
     inside cells' label IDs to `/api/napari/event` → Julia stores them and broadcasts the tree
     with a **transient selection population** so the flow plots highlight exactly those cells.
 - **Python tasks / notebooks** get membership via a thin HTTP client
-  (`app/py/cecelia_client.py`) → `GET /api/gating/membership` (label IDs only; the
-  bulk measurement columns are read locally from the H5AD via `app/py/utils/label_props_utils.py`).
-  `PopUtils(client=cc).pop_df(…)` (`app/py/utils/pop_utils.py`) keeps its old signature. Same
+  (`python/cecelia/cecelia_client.py`) → `GET /api/gating/membership` (label IDs only; the
+  bulk measurement columns are read locally from the H5AD via `python/cecelia/utils/label_props_utils.py`).
+  `PopUtils(client=cc).pop_df(…)` (`python/cecelia/utils/pop_utils.py`) keeps its old signature. Same
   code path in notebook dev and shipped modules (the API is running in both). No
   `flowutils`/`juliacall` dependency.
 

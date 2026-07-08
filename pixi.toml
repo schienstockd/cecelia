@@ -29,6 +29,13 @@ openjdk = ">=17"
 cvxopt = ">=1.3.1"
 
 [pypi-dependencies]
+# cecelia's own Python helpers (top-level python/, sibling to app/), installed editable. This ALSO
+# pulls the IO tier (numpy, zarr>=3, dask, tifffile, ome-types, scipy, scikit-image, tqdm)
+# transitively — those pins live in python/pyproject.toml, which owns the IO base so an external
+# consumer (coastal) sees them via a plain `pip install cecelia`. This file therefore lists only the
+# HEAVY / conda / per-platform deps; the IO tier is intentionally NOT duplicated here (Decision 2
+# disjoint-sets split — every pin in exactly one file; see docs/todo/PY_PACKAGING_PLAN.md).
+cecelia      = { path = "python", editable = true }
 websockets   = ">=16.0"
 napari       = ">=0.7"
 pyqt5        = ">=5.15"
@@ -36,23 +43,14 @@ pyqt5        = ">=5.15"
 # excised from v3. Do NOT bump to 4.x — it breaks the denoise path. (INSTALL.md's old version
 # table said 4.2.1.1; that was wrong.) See docs/SHIPPING.md.
 cellpose     = "==3.1.1.2"
-zarr         = ">=3.0"
-dask         = ">=2025.0"
 anndata      = ">=0.12"
 scanpy       = ">=1.12"
-numpy        = ">=2.0"
-scipy        = ">=1.17"
-scikit-image = ">=0.24"
 pandas       = ">=2.3"
 trimesh      = ">=4.0"
 btrack       = ">=0.7"
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
-# OME-XML metadata reader (physical pixel sizes, units, time_increment). Imported at module load
-# by app/py/utils/ome_xml_utils.py → pulled in by cleanup/segment/measure tasks and the napari
-# bridge. Was lost in the requirements.txt→pixi switch; missing it breaks those tasks at import.
-ome-types    = ">=0.5"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared
@@ -86,11 +84,11 @@ prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }           
 
 # Tests — one whole suite per layer. Package (headless Cecelia) + API adapters (loaded with
 # CECELIA_NO_SERVE — no socket bound) + frontend (Vitest, pure logic from src/utils/*) + Python
-# analysis-env (unittest-discovered app/py/tests/*, e.g. the zarr writer). All four run in CI.
+# analysis-env (unittest-discovered python/cecelia/tests/*, e.g. the zarr writer). All four run in CI.
 test-pkg      = { cmd = "julia --project test/runtests.jl", cwd = "app" }
 test-api      = { cmd = "julia --project test/runtests.jl", cwd = "api" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
-test-py       = { cmd = "python -m unittest discover -s app/py/tests -p 'test_*.py' -v" }
+test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 
 # Frontend — Vite (port 5173).
 frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload
@@ -102,6 +100,22 @@ napari = { cmd = "python3 napari_bridge.py", cwd = "napari" }
 # Headless task console — read-only live view of scheduler tasks over the server's WebSocket.
 # Reporting only (no run/cancel); safe alongside the GUI. `-- --stream` for append-only log output.
 console = { cmd = "julia --project task_console.jl", cwd = "api" }
+
+# Notebook Playground (Pluto, port 7660) — pure-Julia downstream analysis. Runs its OWN Julia
+# session (the pluto/ env path-sources Cecelia), NOT the API server. Point it at a project's
+# notebooks via CECELIA_NOTEBOOKS_DIR; defaults to the shipped examples in notebooks/. The server
+# launches WITHOUT a sysimage (it's just Pluto); notebook WORKERS pick up pluto/deps.so if built
+# (see notebooks-sysimage) — that's what kills Makie's ~20s time-to-first-plot. See
+# docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
+notebooks = { cmd = "julia --project launch.jl", cwd = "pluto" }
+# Build the deps-only sysimage (Makie/CairoMakie + AoG + DataFrames + HDF5 + HTTP; NOT Cecelia, so
+# Revise still hot-reloads it). ~10 min, ~1.4 GB, one-time; pluto/deps.so is git-ignored. DEV build.
+notebooks-sysimage = { cmd = "julia --project build_sysimage.jl", cwd = "pluto" }
+# RELEASE build: same, but also bakes in Cecelia + CeceliaNb (code frozen) for near-instant first
+# plot AND first pop_df. Wired into the packaging flow — see docs/SHIPPING.md. Also → pluto/deps.so.
+notebooks-sysimage-full = { cmd = "julia --project build_sysimage_full.jl", cwd = "pluto" }
+# Resolve/precompile the pluto env (its own manifest — like julia-instantiate for app/).
+notebooks-instantiate = { cmd = "julia --project -e 'using Pkg; Pkg.instantiate()'", cwd = "pluto" }
 
 # One-click launch (the desktop-shortcut entrypoint): start the prod server, wait for /api/health,
 # open the default browser at :8080. The Julia server serves the built frontend, so run `build` first.
@@ -117,15 +131,17 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.instantiate()'"
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
 # after editing napari_bridge.py (the backend otherwise adopts the running bridge on restart).
-stop         = "kill $(lsof -ti tcp:8080) 2>/dev/null ; kill $(lsof -ti tcp:5173) 2>/dev/null ; kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)'"
-stop-backend = "kill $(lsof -ti tcp:8080) 2>/dev/null ; echo 'stopped backend(8080)'"
-stop-napari  = "kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
+stop           = "kill $(lsof -ti tcp:8080) 2>/dev/null ; kill $(lsof -ti tcp:5173) 2>/dev/null ; kill $(lsof -ti tcp:7655) 2>/dev/null ; kill $(lsof -ti tcp:7660) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)'"
+stop-backend   = "kill $(lsof -ti tcp:8080) 2>/dev/null ; echo 'stopped backend(8080)'"
+stop-napari    = "kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
+stop-notebooks = "kill $(lsof -ti tcp:7660) 2>/dev/null ; echo 'stopped notebooks(7660)'"
 
 # Windows: kill by listening port via PowerShell (lsof is unix-only). Untested on Windows hardware.
 [target.win-64.tasks]
-stop         = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-backend = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
-stop-napari  = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop           = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080,5173,7655,7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-backend   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-napari    = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+stop-notebooks = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 
 # --- GPU acceleration (PARKED) ----------------------------------------------------------------
 # RAPIDS-based GPU clustering is CUDA-only (Linux/Windows + NVIDIA). When un-parked, add it as a

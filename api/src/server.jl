@@ -16,6 +16,7 @@ include("plotting_api.jl")
 include("tracking_api.jl")
 include("update_api.jl")
 include("repl_api.jl")
+include("notebooks_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -156,6 +157,12 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_run(req)
         elseif path == "/api/napari/status"
             api_napari_status(req)
+        elseif path == "/api/notebooks"
+            api_notebooks_list(req)
+        elseif path == "/api/notebooks/status"
+            api_notebooks_status(req)
+        elseif path == "/api/notebooks/snapshots"
+            api_notebooks_snapshots(req)
         elseif path == "/api/gating/channels"
             api_gating_channels(req)
         elseif path == "/api/gating/popmap"
@@ -228,6 +235,24 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_save(body_bytes)
         elseif path == "/api/chains/delete"
             api_chains_delete(body_bytes)
+        elseif path == "/api/notebooks/launch"
+            api_notebooks_launch(body_bytes)
+        elseif path == "/api/notebooks/create"
+            api_notebooks_create(body_bytes)
+        elseif path == "/api/notebooks/describe"
+            api_notebooks_describe(body_bytes)
+        elseif path == "/api/notebooks/delete"
+            api_notebooks_delete(body_bytes)
+        elseif path == "/api/notebooks/duplicate"
+            api_notebooks_duplicate(body_bytes)
+        elseif path == "/api/notebooks/snapshot"
+            api_notebooks_snapshot(body_bytes)
+        elseif path == "/api/notebooks/restore"
+            api_notebooks_restore(body_bytes)
+        elseif path == "/api/notebooks/shutdown"
+            api_notebooks_shutdown(body_bytes)
+        elseif path == "/api/notebooks/restart"
+            api_notebooks_restart(body_bytes)
         elseif path == "/api/napari/open"
             api_napari_open(body_bytes)
         elseif path == "/api/napari/close"

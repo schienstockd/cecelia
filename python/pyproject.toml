@@ -1,0 +1,52 @@
+# Python packaging for cecelia's helpers — see docs/todo/PY_PACKAGING_PLAN.md.
+# Coexists in this dir with the Julia app's Project.toml/Manifest.toml (different ecosystems).
+#
+# This makes the helpers an installable, editable package. Import name and distribution name are
+# both `cecelia` (the `py` -> `cecelia` rename landed in Phase 2).
+#
+# Dependency split (Decision 2/3): the BASE deps below are the state-free IO tier ONLY. Heavy deps
+# (torch/cellpose/scanpy/btrack/anndata/napari/pyqt5/leidenalg/trimesh) are NOT declared here — they
+# live in pixi.toml as cecelia's *environment* requirements. So `pip install cecelia` yields a light
+# IO package (`import cecelia.utils.zarr_utils` with no napari/torch/scanpy), while cecelia's own heavy
+# modules still import fine because pixi provides their deps in the pixi env.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cecelia"
+version = "0.1.0"
+description = "Cecelia image-analysis Python helpers (zarr / OME-XML / dimension IO utilities)"
+requires-python = ">=3.11"   # floor set by zarr>=3 (zarr 3 requires Python 3.11+)
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
+
+# BASE = the state-free IO tier: zarr_utils, ome_xml_utils, dim_utils, slice_utils, math_helpers,
+# correction_utils. These are the modules an external consumer (coastal) imports. Version floors
+# mirror the ones previously in pixi.toml [pypi-dependencies]; `tifffile` and `tqdm` are declared
+# explicitly here (they were only transitive in pixi — correction_utils imports tqdm at load).
+dependencies = [
+    "numpy>=2.0",
+    "zarr>=3.0",
+    "dask>=2025.0",
+    "tifffile",
+    "ome-types>=0.5",
+    "scipy>=1.17",
+    "scikit-image>=0.24",
+    "tqdm",
+]
+
+# The importable library is `cecelia` + `cecelia.utils`. cecelia/writers, cecelia/tests are executed
+# by file path via run_py, never imported, so they stay excluded. `cecelia.tasks` + the
+# `cecelia.tasks.tracking` subpackage ARE packaged — only so the vendored btrack `cell_config.json`
+# (declared as package-data below) ships in the wheel and is locatable via `importlib.resources` by
+# external consumers (e.g. coastal), independent of an editable vs wheel install. The two tracking
+# `*_run.py` runners come along as harmless dead files (external consumers never import them).
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["cecelia", "cecelia.utils", "cecelia.tasks", "cecelia.tasks.tracking"]
+
+[tool.setuptools.package-data]
+"cecelia.tasks.tracking" = ["*.json"]

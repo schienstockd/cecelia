@@ -92,6 +92,70 @@ end
     @test _repl("1+1")[1] == 200                      # enabled again
 end
 
+@testset "API: notebooks registry + versioning" begin
+    # Pure name sanitisation: reject path-like input + dotfiles, accept plain names.
+    @test _safe_nb_file("../evil") === nothing
+    @test _safe_nb_file("a/b")     === nothing
+    @test _safe_nb_file("a\\b")    === nothing
+    @test _safe_nb_file(".hidden") === nothing
+    @test _safe_nb_file("my nb")   == "my nb.jl"
+    @test _safe_nb_file("a.b.jl")  == "a.b.jl"
+
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir()
+    dirs["projects"] = tmp
+    try
+        uid = "TESTNB"
+        mkpath(joinpath(tmp, uid))
+        list()  = JSON3.read(api_notebooks_list(HTTP.Request("GET", "/api/notebooks?projectUid=$uid"))[2]).notebooks
+        find(f) = (ns = filter(n -> n.file == f, list()); isempty(ns) ? nothing : ns[1])
+        snaps() = JSON3.read(api_notebooks_snapshots(HTTP.Request("GET", "/api/notebooks/snapshots?projectUid=$uid&file=nb1.jl"))[2]).snapshots
+
+        # create (+ duplicate-name 409, bad-name 400)
+        @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"nb1", "description"=>"first"))[1] == 200
+        @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"nb1"))[1] == 409
+        @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"../x"))[1] == 400
+        nb = find("nb1.jl")
+        @test nb !== nothing && nb.version == 0 && nb.description == "first"   # fresh → v0
+
+        # snapshot advances the current-version pointer; number derived from disk
+        @test JSON3.read(_post(api_notebooks_snapshot, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[2]).version == 1
+        @test JSON3.read(_post(api_notebooks_snapshot, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[2]).version == 2
+        @test find("nb1.jl").version == 2
+        @test [s.version for s in snaps()] == [2, 1]
+
+        # restore: pointer back to 1, no new snapshot, repeatable (no churn), bad version 404
+        @test JSON3.read(_post(api_notebooks_restore, Dict("projectUid"=>uid,"file"=>"nb1.jl","version"=>1,"force"=>true))[2]).version == 1
+        @test find("nb1.jl").version == 1
+        @test _post(api_notebooks_restore, Dict("projectUid"=>uid,"file"=>"nb1.jl","version"=>1,"force"=>true))[1] == 200
+        @test [s.version for s in snaps()] == [2, 1]
+        @test _post(api_notebooks_restore, Dict("projectUid"=>uid,"file"=>"nb1.jl","version"=>99,"force"=>true))[1] == 404
+
+        # next snapshot after restore = max-on-disk + 1 (→ 3, not "current+1")
+        @test JSON3.read(_post(api_notebooks_snapshot, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[2]).version == 3
+
+        # describe + duplicate
+        @test _post(api_notebooks_describe, Dict("projectUid"=>uid,"file"=>"nb1.jl","description"=>"updated"))[1] == 200
+        @test find("nb1.jl").description == "updated"
+        @test JSON3.read(_post(api_notebooks_duplicate, Dict("projectUid"=>uid,"file"=>"nb1.jl","scope"=>"project"))[2]).file == "nb1-copy.jl"
+        @test find("nb1-copy.jl") !== nothing
+
+        # delete (server not running in tests → guard doesn't require force)
+        @test _post(api_notebooks_delete, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[1] == 200
+        @test find("nb1.jl") === nothing
+
+        # errors
+        @test api_notebooks_list(HTTP.Request("GET", "/api/notebooks?projectUid=NOPE"))[1] == 404
+        @test api_notebooks_list(HTTP.Request("GET", "/api/notebooks"))[1] == 400
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: module-canvas persistence" begin
     # Redirect projects_dir() → temp so we don't touch the dev projects dir.
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())

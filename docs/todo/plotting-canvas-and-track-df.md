@@ -44,7 +44,7 @@ Old-R reference: `plotCharsServer.R`, `plotFlowGatingServer.R`, `clustPopulation
   build a per-track table (one row per `track_id`: measures + lineage). Keep writing per-cell
   `live.cell.speed/angle` to the cell h5ad obs (Julia append, as now). Drop any stale
   broadcast `live.track.*` columns from cell obs (`drop_obs`).
-- New Python writer in `app/py/utils/tracking_utils.py` (mirror `measure_utils.py`):
+- New Python writer in `python/cecelia/utils/tracking_utils.py` (mirror `measure_utils.py`):
   create `{vn}__tracks.h5ad` with `X` = measures matrix, `var/_index` = measure names,
   `obs/_index` = `track_id`, `obs` lineage cols, `uns` as needed. Julia hands it the table
   (intermediate file + subprocess, like other tasks).

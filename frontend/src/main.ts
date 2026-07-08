@@ -27,6 +27,7 @@ const router = createRouter({
     { path: '/clust-cells',  component: () => import('./modules/ClusterCellsModule.vue'),  meta: { label: 'Cluster cells' } },
     { path: '/clust-tracks', component: () => import('./modules/ClusterTracksModule.vue'), meta: { label: 'Cluster tracks' } },
     { path: '/analysis',  component: () => import('./modules/AnalysisModule.vue'),      meta: { label: 'Analysis board' } },
+    { path: '/notebooks', component: () => import('./modules/NotebooksModule.vue'),     meta: { label: 'Notebooks' } },
     { path: '/tasks',     component: () => import('./modules/TasksModule.vue'),         meta: { label: 'Tasks' } },
     { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Whiteboard' } },
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },

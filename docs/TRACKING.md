@@ -41,9 +41,9 @@ ParamRenderer (popSelection) → TaskRunner (task:run)
 |---|---|
 | Julia handler | `app/src/tasks/tracking/bayesian_tracking.jl` (`struct BayesianTracking`) |
 | Param spec | `app/src/tasks/tracking/bayesian_tracking.json` |
-| Python runner | `app/py/tasks/tracking/bayesian_tracking_run.py` |
-| Python utils | `app/py/utils/tracking_utils.py` (`BayesianTrackingUtils`) |
-| Vendored config | `app/py/tasks/tracking/cell_config.json` |
+| Python runner | `python/cecelia/tasks/tracking/bayesian_tracking_run.py` |
+| Python utils | `python/cecelia/utils/tracking_utils.py` (`BayesianTrackingUtils`) |
+| Vendored config | `python/cecelia/tasks/tracking/cell_config.json` |
 | Frontend page | `frontend/src/modules/TrackingModule.vue` (route `/track`, sidebar after Gate) |
 | popSelection widget | `frontend/src/tasks/ParamRenderer.vue` |
 
@@ -89,7 +89,7 @@ just cells with `track_id` present (the old `live` filter `track_id > 0`).
 - **Vendored btrack config.** `btrack.datasets.cell_config()` **downloads from the
   internet** (pooch) — unusable headless. We vendor the proven old-cecelia config
   (`old-R-shiny-version/inst/models/btrackModels/cell_config.json`) at
-  `app/py/tasks/tracking/cell_config.json` and load it from disk. UI params override the
+  `python/cecelia/tasks/tracking/cell_config.json` and load it from disk. UI params override the
   motion/hypothesis fields on top of it (e.g. `accuracy*10`, `P*noiseInital`,
   reversed `prob_to_assign`, `+P_branch` when branching is on).
 - **`minTimepoints` is kept** as a basic tracking cutoff (drop tracks shorter than N) — it

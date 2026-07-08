@@ -285,7 +285,7 @@ the flow plots.
 ```
 
 The bridge owns **only** display: it reads cell **centroids locally** from the H5AD
-(`py.utils.label_props_utils.LabelPropsView`, via `app/` on `sys.path`), maps each
+(`cecelia.utils.label_props_utils.LabelPropsView`, via `app/` on `sys.path`), maps each
 `centroid-i` (skimage z,y,x order) + temporal `t` onto the image's display axes, and renders one
 Points layer per population, coloured by the pop colour (layer `visible` = the pop's `show` flag).
 Ports the old `napari_utils.show_pop_mapping`, minus the per-pop CSV crutch. Two details:
