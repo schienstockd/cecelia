@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { CanvasItem } from '../composables/useCanvasPanels'
 
 // Persisted canvas state, keyed per canvas (e.g. `summary:behaviourAnalysis`, `gate:flow`). Lives in
@@ -31,7 +31,83 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
     delete entries.value[key]
     for (const k of Object.keys(geom.value)) if (k.startsWith(`${key}:`)) delete geom.value[k]
   }
+  // last-persisted JSON per object uid — the dirty-tracking baseline so autosave sends ONLY objects
+  // whose canvas state actually changed since the last save (not every visited object).
+  let _lastSaved: Record<string, string> = {}
+
   // drop all canvases' panels + geometry (e.g. on project close, so stale plots don't carry over)
-  function clear() { entries.value = {}; geom.value = {} }
-  return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, clear }
+  function clear() { entries.value = {}; geom.value = {}; _lastSaved = {} }
+
+  // ── Per-object persistence (debounced autosave → 1/{objUid}/moduleCanvases.json) ────────────────
+  // MODULE-PAGE canvases only — keys embed the object: `summary:{module}:{img}`, `gate:{pt}:{img}:{vn}`,
+  // `clust:{pt}:{set}`. The `/analysis` board (`analysis:*`) persists separately (analysisBoards.json)
+  // and is excluded. One engine → every module page persists per-object, no per-page code.
+  const MODULE_PREFIXES = ['summary:', 'gate:', 'clust:']
+  const isModuleKey = (k: string) => MODULE_PREFIXES.some(p => k.startsWith(p))
+
+  // The object (image/set) a module-canvas key or geom-key is scoped to = the 3rd colon-segment:
+  //   summary:{module}:{img} · gate:{pt}:{img}:{vn} · clust:{pt}:{set}   (geom adds `:{panelId}`)
+  // RULE: a canvas key is colon-delimited, so its segments (module / popType / object uid / value_name)
+  // MUST NOT contain ':'. This holds — object uids are alphanumeric `gen_uid`, popTypes/modules are
+  // fixed identifiers, value_names are simple segmentation labels. Do not introduce a ':' into any of
+  // them (this positional parse, and the persist-keys built as `${ckey}:${panelId}`, depend on it).
+  function objectOf(key: string): string | null {
+    if (!isModuleKey(key)) return null
+    const parts = key.split(':')
+    return parts.length >= 3 ? parts[2] : null
+  }
+
+  // Group module-page canvases BY OBJECT so each is persisted with its object at
+  // 1/{objUid}/moduleCanvases.json (the backend writes one file per object).
+  function serializeByObject() {
+    const out: Record<string, { entries: Record<string, CanvasEntry>; geom: Record<string, PanelGeom> }> = {}
+    const bucket = (o: string) => (out[o] ??= { entries: {}, geom: {} })
+    for (const [k, v] of Object.entries(entries.value)) { const o = objectOf(k); if (o) bucket(o).entries[k] = v }
+    for (const [k, v] of Object.entries(geom.value))    { const o = objectOf(k); if (o) bucket(o).geom[k] = v }
+    return out
+  }
+
+  // Restore from disk. Merges module-page keys (never clobbers the board or in-session non-module keys),
+  // then sets the dirty-tracking baseline so the restored state is NOT re-sent on open.
+  const _restoring = ref(false)
+  function load(data: { entries?: Record<string, CanvasEntry>; geom?: Record<string, PanelGeom> } | null | undefined) {
+    if (!data) return
+    _restoring.value = true
+    try {
+      if (data.entries) for (const [k, v] of Object.entries(data.entries)) if (isModuleKey(k)) entries.value[k] = v
+      if (data.geom)    for (const [k, v] of Object.entries(data.geom))    if (isModuleKey(k)) geom.value[k] = v
+      for (const [obj, d] of Object.entries(serializeByObject())) _lastSaved[obj] = JSON.stringify(d)
+    } finally {
+      // Clear after the debounce window so the restore's own mutations don't trigger a write-back.
+      setTimeout(() => { _restoring.value = false }, 600)
+    }
+  }
+
+  // Debounced autosave: ~400ms after the last edit, send ONLY the objects whose serialization changed
+  // since the last save (dirty-tracking) — off the interaction path (UI already re-rendered), no lag.
+  let _timer: ReturnType<typeof setTimeout> | null = null
+  function _scheduleAutosave() {
+    if (_restoring.value) return
+    // lazy import to avoid a store-init cycle (projectMeta → project → this store)
+    import('./projectMeta').then(({ useProjectMetaStore }) => {
+      const uid = useProjectMetaStore().current?.uid
+      if (!uid) return
+      if (_timer) clearTimeout(_timer)
+      _timer = setTimeout(() => {
+        const changed: Record<string, { entries: Record<string, CanvasEntry>; geom: Record<string, PanelGeom> }> = {}
+        for (const [obj, d] of Object.entries(serializeByObject())) {
+          const s = JSON.stringify(d)
+          if (_lastSaved[obj] !== s) { changed[obj] = d; _lastSaved[obj] = s }
+        }
+        if (Object.keys(changed).length === 0) return   // nothing actually changed → no request
+        fetch('/api/projects/canvases', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectUid: uid, objects: changed }),
+        }).catch(() => {})
+      }, 400)
+    })
+  }
+  watch([entries, geom], _scheduleAutosave, { deep: true })
+
+  return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, clear, load }
 })

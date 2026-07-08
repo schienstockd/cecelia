@@ -1076,7 +1076,26 @@ unchanged:
 
 Every user-settable option MUST live in a persisted bag, or it silently resets on remount (a plain
 `ref()` in a canvas/panel component does NOT survive navigation). There are three scopes, all backed
-by the `canvasPanels` store and keyed per canvas:
+by the `canvasPanels` store and keyed per canvas.
+
+**The canvas key is per-image (module pages).** Module-page canvases embed the active object in their
+key — `summary:{module}:{imageUid}`, `gate:{popType}:{imageUid}:{valueName}` (per segmentation too),
+`clust:{popType}:{setUid}` (clustering is set-scope). `useCanvasPanels` takes a **reactive** key
+(Ref/getter) and rebinds to that object's own entry when the selection changes — so each image keeps
+its own plots/selections instead of the old single shared-per-module entry being pruned. Add
+`imageUid` (or set/value_name) to a NEW canvas's key the same way. The `/analysis` board keeps its own
+`analysis:{projectUid}:tab:{id}` key (persisted separately — see below).
+
+**Persistence is per-image AND survives reload** (debounced autosave). The store groups the
+module-page entries (`summary:`/`gate:`/`clust:` keys) BY OBJECT and writes each with its object at
+**`{proj}/1/{objUid}/moduleCanvases.json`** (like `ccid.json`/`labelProps` — locality, and it's
+removed when the object is deleted), ~400 ms after any change (off the interaction path — no
+perceptible lag). The object is the image (summary/gate) or set (clust) the canvas is scoped to,
+parsed from the canvas key's 3rd segment. `api_projects_load` reassembles the per-object files into
+one keyed map; `projectMeta.openProject` restores it after `loadFromApi`'s clear. The board still
+persists separately to `settings/analysisBoards.json` (manual Save). Nothing to wire per page.
+
+The three scopes:
 
 1. **Per-panel** (chart type, measure, bins, error metric, …) → the panel's own `state` object
    (`CanvasItem.state`). `SummaryPanel` receives it as the `ui` prop and reads/writes it via computed
@@ -1087,10 +1106,12 @@ by the `canvasPanels` store and keyed per canvas:
    (`CanvasPanel` writes it on drag/resize; restored on mount).
 
 **The mechanism: `composables/useViewState.ts` (Shiny-`reactiveValues`-style).** Pass it the `shared`
-bag + a `defaults` literal; it seeds missing keys and returns `toRefs`, so **every option declared in
-`defaults` persists automatically — there is nothing to wire per-field**. The convention is therefore
-forget-proof: *put every option in the `defaults` object*; that single step is all that's needed. Do
-**not** introduce a bare `ref()` for a user option in a canvas component.
+bag `Ref` + a `defaults` literal; it seeds missing keys and returns one ref per option, so **every
+option declared in `defaults` persists automatically — there is nothing to wire per-field**. The
+convention is therefore forget-proof: *put every option in the `defaults` object*; that single step is
+all that's needed. Do **not** introduce a bare `ref()` for a user option in a canvas component. The
+returned refs track the bag's **identity**, so when the per-image key rebinds `shared` to another
+image's entry, global-scope state follows the image too (no remount / per-page code needed).
 
 ```ts
 const { compareMode, scope, sel: gSel, vis: gVis } = useViewState(shared, {

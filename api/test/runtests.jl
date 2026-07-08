@@ -155,3 +155,39 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: module-canvas persistence" begin
+    # Redirect projects_dir() → temp so we don't touch the dev projects dir.
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp = mktempdir(); dirs["projects"] = tmp
+    try
+        uid = "TESTCANVAS"
+        mkpath(joinpath(tmp, uid, "1", "IMG1"))   # the object (image) dir must exist
+        write(joinpath(tmp, uid, "project.json"),
+              JSON3.write((; uid = uid, name = "T", kind = "static", set_uids = String[])))
+        entry = Dict("panels" => [], "activeId" => 0, "nextId" => 0, "arrangeSeq" => 0, "shared" => Dict())
+        payload = Dict("projectUid" => uid, "objects" => Dict(
+            "IMG1" => Dict("entries" => Dict("summary:behaviour:IMG1" => entry), "geom" => Dict())))
+        # save writes 1/IMG1/moduleCanvases.json (with the object), verbatim
+        @test _post(api_projects_canvases, payload)[1] == 200
+        mc_file = joinpath(tmp, uid, "1", "IMG1", "moduleCanvases.json")
+        @test isfile(mc_file)
+        @test haskey(JSON3.read(read(mc_file, String)).entries, Symbol("summary:behaviour:IMG1"))
+        # object dir absent → skipped (no crash, no stray file)
+        @test _post(api_projects_canvases,
+                    Dict("projectUid" => uid, "objects" => Dict("GHOST" => Dict("entries" => Dict(), "geom" => Dict()))))[1] == 200
+        @test !isfile(joinpath(tmp, uid, "1", "GHOST", "moduleCanvases.json"))
+        # load reassembles the per-object files into one keyed map
+        st, body = api_projects_load(Vector{UInt8}(JSON3.write(Dict("uid" => uid))))
+        @test st == 200
+        mc = JSON3.read(body).moduleCanvases
+        @test mc !== nothing && haskey(mc.entries, Symbol("summary:behaviour:IMG1"))
+        # error paths
+        @test _post(api_projects_canvases, Dict("objects" => Dict()))[1] == 400          # no projectUid
+        @test _post(api_projects_canvases, Dict("projectUid" => "NOPE", "objects" => Dict()))[1] == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

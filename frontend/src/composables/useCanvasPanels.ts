@@ -1,4 +1,4 @@
-import { computed, toRef, type Ref } from 'vue'
+import { computed, unref, watch, type Ref } from 'vue'
 import { useCanvasPanelsStore } from '../stores/canvasPanels'
 import type { ArrangeCmd } from './useFloatingPanel'
 
@@ -12,44 +12,60 @@ export interface CanvasItem<S> { id: number; arrange: ArrangeCmd | null; state: 
  * panel CHROME is `CanvasPanel`; what's inside each panel and the per-panel `state` shape are the
  * host's concern. `canvasRef` is the workspace element (used to size the Tile grid).
  *
- * `key` identifies the canvas (e.g. `summary:behaviourAnalysis`, `gate:flow`). State is held in the
- * `canvasPanels` store under that key, so the open plots PERSIST across navigation — leaving a
- * module page and returning re-binds the same panels instead of starting empty.
+ * `key` identifies the canvas. It may be a plain string OR a reactive source (Ref / getter) — pass a
+ * reactive key that embeds the active image (+ segmentation), e.g. `summary:{module}:{imageUid}` or
+ * `gate:{popType}:{imageUid}:{valueName}`, and the canvas rebinds to THAT (image, …)'s own entry when
+ * the selection changes. State is held in the `canvasPanels` store under the current key, so open
+ * plots PERSIST across navigation AND per image, instead of being pruned to a single shared entry.
  */
-export function useCanvasPanels<S>(canvasRef: Ref<HTMLElement | null>, makeState: () => S, key: string) {
+export function useCanvasPanels<S>(
+  canvasRef: Ref<HTMLElement | null>, makeState: () => S,
+  key: string | Ref<string> | (() => string),
+) {
   const store = useCanvasPanelsStore()
-  const e = store.ensure(key)
-  // typed views over the persisted entry; writes propagate back to the store.
-  const panels = toRef(e, 'panels') as unknown as Ref<CanvasItem<S>[]>
-  const activeId = toRef(e, 'activeId')
-  // canvas-level state (e.g. global-scope selection / vis / scope) — persists with the canvas
-  const shared = toRef(e, 'shared') as Ref<Record<string, unknown>>
+  const keyRef = computed(() => (typeof key === 'function' ? key() : unref(key)))
+  // Ensure the entry for the CURRENT key exists; re-ensure when the key changes (image/segmentation
+  // switch) so each gets its own panels. The store watcher persists; nothing is pruned across images.
+  watch(keyRef, k => store.ensure(k), { immediate: true })
+  const cur = () => store.ensure(keyRef.value)
+
+  // Writable views over the CURRENT entry (re-evaluated when the key changes).
+  const panels = computed<CanvasItem<S>[]>({
+    get: () => cur().panels as unknown as CanvasItem<S>[],
+    set: v => { cur().panels = v as unknown as CanvasItem<unknown>[] },
+  })
+  const activeId = computed<number>({ get: () => cur().activeId, set: v => { cur().activeId = v } })
+  const shared = computed<Record<string, unknown>>({ get: () => cur().shared, set: v => { cur().shared = v } })
 
   function add(): number {
+    const e = cur()
     const id = ++e.nextId
-    panels.value.push({ id, arrange: null, state: makeState() })
-    activeId.value = id
+    e.panels.push({ id, arrange: null, state: makeState() })
+    e.activeId = id
     return id
   }
   function remove(id: number) {
-    panels.value = panels.value.filter(p => p.id !== id)
-    if (activeId.value === id) activeId.value = panels.value.at(-1)?.id ?? 0
-    store.delGeom(`${key}:${id}`)        // drop the removed panel's persisted geometry
+    const e = cur()
+    e.panels = e.panels.filter(p => p.id !== id)
+    if (e.activeId === id) e.activeId = e.panels.at(-1)?.id ?? 0
+    store.delGeom(`${keyRef.value}:${id}`)        // drop the removed panel's persisted geometry
   }
   // Cascade ("windowed"): stagger overlapping windows at a default size
   function arrangeCascade() {
-    panels.value = panels.value.map((p, i) =>
+    const e = cur()
+    e.panels = e.panels.map((p, i) =>
       ({ ...p, arrange: { x: 16 + i * 34, y: 16 + i * 34, w: 460, h: 440, seq: ++e.arrangeSeq } }))
   }
   // Tile (grid): fill the workspace with a near-square grid
   function arrangeGrid() {
-    const el = canvasRef.value, n = panels.value.length
+    const e = cur()
+    const el = canvasRef.value, n = e.panels.length
     if (!el || !n) return
     const gap = 8, W = el.clientWidth, H = el.clientHeight
     const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols)
     const w = Math.max(300, Math.floor((W - gap * (cols + 1)) / cols))
     const h = Math.max(260, Math.floor((H - gap * (rows + 1)) / rows))
-    panels.value = panels.value.map((p, i) => {
+    e.panels = e.panels.map((p, i) => {
       const r = Math.floor(i / cols), c = i % cols
       return { ...p, arrange: { x: gap + c * (w + gap), y: gap + r * (h + gap), w, h, seq: ++e.arrangeSeq } }
     })

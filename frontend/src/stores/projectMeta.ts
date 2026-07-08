@@ -4,6 +4,7 @@ import { useLogStore } from './log'
 import { useProjectStore, type CciaSet } from './project'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
+import { useCanvasPanelsStore } from './canvasPanels'
 
 export type ProjectType = 'static' | 'live' | 'flow'
 
@@ -72,17 +73,20 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
         project?: ProjectRecord
         sets?: CciaSet[]
         boards?: { tabs?: unknown; layouts?: Record<string, unknown> } | null
+        moduleCanvases?: { entries?: Record<string, unknown>; geom?: Record<string, unknown> } | null
         error?: string
       }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
       current.value = body.project!
-      projectStore.loadFromApi(body.sets ?? [])   // NB: clears the analysis stores — restore AFTER
+      projectStore.loadFromApi(body.sets ?? [])   // NB: clears the canvas/analysis stores — restore AFTER
       // rehydrate the Analysis-canvas boards saved with the project (analysisBoards.json)
       if (body.boards) {
         const groupKey = `analysis:${body.project!.uid}`
         useAnalysisTabsStore().load(groupKey, body.boards.tabs as never)
         useAnalysisLayoutStore().load(body.boards.layouts as never)
       }
+      // rehydrate per-image module-page canvases (moduleCanvases.json)
+      if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)
       await fetchRecent()
       const nSets   = body.sets?.length ?? 0
       const nImages = body.sets?.reduce((n, s) => n + s.images.length, 0) ?? 0
