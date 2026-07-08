@@ -18,10 +18,10 @@ Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
 import numpy as np
 import pandas as pd
 
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-from py.utils.label_props_utils import LabelPropsView
-import py.utils.script_utils as script_utils
-import py.utils.clustering_utils as clustering_utils
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+from cecelia.utils.label_props_utils import LabelPropsView
+import cecelia.utils.script_utils as script_utils
+import cecelia.utils.clustering_utils as clustering_utils
 
 
 def run(params):

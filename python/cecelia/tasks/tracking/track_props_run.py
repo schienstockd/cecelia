@@ -5,14 +5,14 @@ Called by the Julia `tracking.track_measures` handler as a subprocess. Julia com
 per-track measures (celltrackR port) and passes them here; this script writes the companion
 per-track h5ad `{value_name}__tracks.h5ad` (one row per track, measures in X/var, lineage in
 obs). New-file creation is Python's job (docs/DATAMODEL.md). See
-`py.utils.tracking_utils.write_track_props` for the parameter contract.
+`cecelia.utils.tracking_utils.write_track_props` for the parameter contract.
 """
 
 import sys
 import os
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-import py.utils.script_utils as script_utils
-from py.utils.tracking_utils import write_track_props
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils.tracking_utils import write_track_props
 
 
 def run(params: dict):

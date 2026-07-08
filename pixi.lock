@@ -123,6 +123,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/fonts-conda-forge-1-hc364b38_1.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.12-8_cp312.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/tzdata-2025c-hc9c84f9_1.conda
+      - pypi: ./python
       - pypi: https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-linux_x86_64.whl
       - pypi: https://download-r2.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp312-cp312-linux_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
@@ -343,6 +344,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.3-h46df422_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/suitesparse-7.10.1-h3071b36_7100102.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-h010d191_3.conda
+      - pypi: ./python
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/01/b9/748c3cbcdba20ef01c055a35905cad5c771cc1df29be11b9a82da6fd8e0d/superqt-0.8.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/02/17/b82b537a30be67ba178fc0b0fbda8fcbaeda188fb039d6ad8a84e89353a2/dask-2026.6.0-py3-none-any.whl
@@ -537,6 +539,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/vc14_runtime-14.51.36231-h1b9f54f_39.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vcomp14-14.51.36231-h1b9f54f_39.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/vs2015_runtime-14.51.36231-h84cd919_39.conda
+      - pypi: ./python
       - pypi: https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl
       - pypi: https://download-r2.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/01/72/2067f28fd0ae87978f3b61e8ec30c1d085bbed03f64eb58e43949d526b3a/napari_console-0.1.4-py3-none-any.whl
@@ -3588,6 +3591,18 @@ packages:
   run_exports: {}
   size: 20355
   timestamp: 1781320968804
+- pypi: ./python
+  name: cecelia
+  requires_dist:
+  - numpy>=2.0
+  - zarr>=3.0
+  - dask>=2025.0
+  - tifffile
+  - ome-types>=0.5
+  - scipy>=1.17
+  - scikit-image>=0.24
+  - tqdm
+  requires_python: '>=3.11'
 - pypi: https://download-r2.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-linux_x86_64.whl
   name: torch
   version: 2.6.0+cu124

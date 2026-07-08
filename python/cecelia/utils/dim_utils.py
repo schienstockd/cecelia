@@ -16,8 +16,8 @@ import math
 import numpy as np
 from copy import copy
 
-import py.utils.math_helpers as math_helpers
-import py.utils.ome_xml_utils as ome_xml_utils
+import cecelia.utils.math_helpers as math_helpers
+import cecelia.utils.ome_xml_utils as ome_xml_utils
 
 
 class DimUtils:

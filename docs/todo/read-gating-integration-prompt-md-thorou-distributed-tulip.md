@@ -249,13 +249,13 @@ same way `labelProps/` is resolved on `CciaImage` (`app/src/model/image.jl`).
 
 ### Step 5 — Napari consumer + Python membership handoff (no Python engine)
 **Files**: `napari/napari_bridge.py`, `api/src/napari_api.jl`; light edits to
-`app/py/pop_utils.py` (reduce to a metadata reader of `gating/{value_name}.json`).
+`python/cecelia/utils/pop_utils.py` (reduce to a metadata reader of `gating/{value_name}.json`).
 - **No Python gate evaluation.** Julia is the sole evaluator.
 - **Napari** is a pure consumer (`ARCHITECTURE.md:249`): draws polygon → POST
   `/api/napari/event` → Julia stores + reruns tree → Julia returns per-pop label IDs +
   colours → bridge colours label/points layers (replaces `show_pop_mapping`'s CSV read).
   Reuse the existing bridge command/dispatch pattern + Napari WS channel (7655).
-- **Python membership via a thin HTTP client** (new `app/py/cecelia_client.py`): Python
+- **Python membership via a thin HTTP client** (new `python/cecelia/cecelia_client.py`): Python
   tasks/notebooks get membership from the running Julia API, never evaluating gates.
   `CeceliaClient(base_url, project_uid, image_uid).cells_in_pops(pop_type, pops;
   value_name, invert)` → label IDs (tiny payload). `PopUtils(client=cc).pop_df(task_dir,
@@ -343,8 +343,8 @@ ScatterGL/GateOverlay), `docs/NAPARI.md` (gate event + colour commands),
 - **Julia**: `app/src/label_props.jl`, `app/src/gating/{transforms,gating_engine,population_manager}.jl`;
   edits to `app/Project.toml`, `app/src/Cecelia.jl`, `app/src/model/image.jl`,
   `api/src/{routes,server}.jl`; tests in `app/test/runtests.jl`.
-- **Python**: `app/py/cecelia_client.py` (thin HTTP client for membership),
-  `app/py/pop_utils.py` (`pop_df` resolves membership via the client; metadata reader),
+- **Python**: `python/cecelia/cecelia_client.py` (thin HTTP client for membership),
+  `python/cecelia/utils/pop_utils.py` (`pop_df` resolves membership via the client; metadata reader),
   `napari/napari_bridge.py`, `api/src/napari_api.jl`. No `flowutils`/`FlowKit`/`juliacall`.
 - **Vue**: `frontend/package.json`, `frontend/src/components/plots/{ScatterGL,GateOverlay}.vue`,
   `frontend/src/modules/GateModule.vue` (+`gate/`),

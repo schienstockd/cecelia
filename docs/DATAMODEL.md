@@ -220,9 +220,9 @@ for obs) are handled; sparse (`csr/csc`) raises rather than misreads.
 transparently, so either write round-trips like any obs column.
 
 **Python mirror**: the same surface exists for Python consumers (napari bridge, task modules) as
-`app/py/utils/label_props_utils.py` — `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()`.
+`python/cecelia/utils/label_props_utils.py` — `LabelPropsView(path).view_centroid_cols().filter_by_label(ids).as_df()`.
 Use it rather than reading the H5AD ad hoc (see `POPULATION.md`). The Python file keeps the `_utils`
-suffix (the convention for every file in `app/py/utils/`); the Julia file is `label_props.jl` (Julia
+suffix (the convention for every file in `python/cecelia/utils/`); the Julia file is `label_props.jl` (Julia
 has no such suffix). Different file names, same interface — the type/verb names are what match.
 
 > **Two implementations, one spec — keep them in lock-step.** The Julia reader/writer
@@ -294,7 +294,7 @@ LabelPropsView(path).add_obs(df).save()       # df has a `label` column + value 
 file. It does **not** create files or change `X`/`var` structure (appending a feature to the `X`
 matrix is a full rewrite, not a cheap append). Building a new `.h5ad` from measurement arrays
 (`X` + `var` + `obsm`) is the producing task's job and is done in Python via `anndata`
-(`app/py/utils/measure_utils.py`) — the "Python owns the files it produces" boundary. Gating
+(`python/cecelia/utils/measure_utils.py`) — the "Python owns the files it produces" boundary. Gating
 needs only `:vars` columns to be gateable today, so measures that must be gateable are deferred to
 the phase that settles per-track storage (`docs/TODO.md` #00021), not force-written to `X` here.
 

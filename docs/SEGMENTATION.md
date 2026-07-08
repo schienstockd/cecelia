@@ -11,7 +11,7 @@ Julia (cellpose.jl)
   → resolves input zarr path from ccid.json "filepath"
   → converts channel names → 0-based indices
   → writes JSON params to {task_dir}/tasks/cellposeSegment.{id}.params.json
-  → spawns  app/py/tasks/segment/cellpose.py as subprocess
+  → spawns  python/cecelia/tasks/segment/cellpose.py as subprocess
   → reads [PROGRESS] n/total from stdout
   → on success: writes label file list to ccid.json "labels" field
 
@@ -90,9 +90,9 @@ The OME-ZARR metadata includes `axes` (lowercase, no C) and per-level `coordinat
 ## Python class hierarchy
 
 ```
-app/py/utils/segmentation_utils.py        SegmentationUtils (base)
-app/py/utils/cellpose_utils.py            CellposeUtils(SegmentationUtils)
-app/py/tasks/segment/cellpose_run.py      entry point (named _run to avoid shadowing the cellpose package)
+python/cecelia/utils/segmentation_utils.py        SegmentationUtils (base)
+python/cecelia/utils/cellpose_utils.py            CellposeUtils(SegmentationUtils)
+python/cecelia/tasks/segment/cellpose_run.py      entry point (named _run to avoid shadowing the cellpose package)
 ```
 
 Future algorithms (Stardist, etc.) subclass `SegmentationUtils` and implement `predict_slice`.
@@ -204,7 +204,7 @@ Julia (measure_labels.jl)
   → resolves intensity image path from ccid.json "filepath"
   → reads label zarr paths from ccid.json "labels[outputValueName]"
   → writes JSON params to {task_dir}/tasks/measureLabels.{id}.params.json
-  → spawns  app/py/tasks/segment/measure_run.py as subprocess
+  → spawns  python/cecelia/tasks/segment/measure_run.py as subprocess
   → on success: writes {outputValueName} → "{outputValueName}.h5ad" to ccid.json "label_props"
 
 Python (measure_run.py)

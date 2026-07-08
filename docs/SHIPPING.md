@@ -106,9 +106,12 @@ Juliaup, download the release bundle, provision the env, and create the desktop 
 `.github/workflows/release.yml` runs on a `v*` tag — one `ubuntu-latest` job, because the bundle is
 OS-independent:
 1. `npm ci && npm run build` → prebuilt `frontend/dist`.
-2. `tar` a portable bundle `cecelia.tar.gz` (api, app, app.py, pixi.toml, pixi.lock,
-   napari/napari_bridge.py, frontend/dist, install scripts, README, docs). It excludes
-   `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the user's machine.
+2. `tar` a portable bundle `cecelia.tar.gz` (api, app, **python** (the `cecelia` helper package),
+   app.py, pixi.toml, pixi.lock, napari/napari_bridge.py, frontend/dist, install scripts, README,
+   docs). It excludes `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the
+   user's machine. **Note:** `python/` must ship — `run_py` resolves task scripts under
+   `python/cecelia/` and the editable `cecelia` dep points there; omitting it breaks every Python
+   task on the installed app.
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**

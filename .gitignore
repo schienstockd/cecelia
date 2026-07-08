@@ -13,6 +13,11 @@ frontend/dist/
 **/__pycache__/
 *.py[cod]
 
+# Python packaging build artifacts (app/pyproject.toml — the installable helpers package)
+*.egg-info/
+build/
+dist/
+
 # OS / editor cruft
 .DS_Store
 Thumbs.db

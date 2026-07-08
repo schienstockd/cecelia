@@ -20,8 +20,8 @@ import skimage.filters
 from skimage.registration import phase_cross_correlation
 from tqdm import tqdm
 
-import py.utils.zarr_utils as zarr_utils
-import py.utils.slice_utils as slice_utils
+import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.slice_utils as slice_utils
 
 
 # ── Drift correction ──────────────────────────────────────────────────────────

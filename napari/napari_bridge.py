@@ -36,11 +36,9 @@ _CATEGORICAL_RGBA = [
     (0.800, 0.475, 0.655, 1.0), (0.580, 0.580, 0.580, 1.0),
 ]
 
-# app/ on the path so the shared label-props reader (py.utils.label_props_utils) imports.
-# napari_bridge.py lives in napari/; app/ is its sibling.
-_APP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app")
-if _APP_DIR not in sys.path:
-    sys.path.insert(0, _APP_DIR)
+# The shared label-props reader (cecelia.utils.label_props_utils) resolves via the editable
+# `cecelia` install in the pixi env (python/pyproject.toml + the pixi `cecelia` dep) — no sys.path
+# manipulation needed. Launched via `pixi run napari`.
 
 
 # ── State class (mirrors NapariUtils) ─────────────────────────────────────────
@@ -337,7 +335,7 @@ class NapariState:
         `centroid-i` (skimage z,y,x order) + temporal `t` onto the image's display axes."""
         if value_name in self._centroid_cache:
             return self._centroid_cache[value_name]
-        from py.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.label_props_utils import LabelPropsView
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
         centroid_cols = view.centroid_columns()
@@ -439,7 +437,7 @@ class NapariState:
             self._tracks_cache[value_name] = res
             return res
         # read track_id (cell obs), aligned to the centroid-matrix labels
-        from py.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.label_props_utils import LabelPropsView
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
         tdf = view.view_cols(["track_id"]).as_df()   # label + track_id
@@ -468,7 +466,7 @@ class NapariState:
         if key in self._colcol_cache:
             return self._colcol_cache[key]
         import pandas as pd
-        from py.utils.label_props_utils import LabelPropsView
+        from cecelia.utils.label_props_utils import LabelPropsView
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
         df = view.view_cols([column]).as_df()        # label + column

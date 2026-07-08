@@ -33,7 +33,7 @@ import btrack
 from btrack import config as btrack_config
 from btrack import utils as btrack_utils
 
-import py.utils.label_props_utils as label_props_utils
+import cecelia.utils.label_props_utils as label_props_utils
 
 # vendored, proven base config (old cecelia inst/models/btrackModels/cell_config.json) —
 # loaded from disk so headless/production runs never hit btrack's network download.

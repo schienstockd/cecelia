@@ -23,14 +23,14 @@ Parameter contract (JSON written by Julia):
 
 import sys
 import os
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 
 import zarr
-import py.utils.zarr_utils as zarr_utils
-import py.utils.ome_xml_utils as ome_xml_utils
-import py.utils.script_utils as script_utils
-from py.utils.dim_utils import DimUtils
-from py.utils.measure_utils import MeasureUtils
+import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.ome_xml_utils as ome_xml_utils
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils.dim_utils import DimUtils
+from cecelia.utils.measure_utils import MeasureUtils
 
 
 def _label_type_from_filename(filename: str, output_value_name: str) -> str:

@@ -9,7 +9,7 @@ import torch
 from scipy import ndimage
 from skimage import filters
 
-from py.utils.segmentation_utils import SegmentationUtils
+from cecelia.utils.segmentation_utils import SegmentationUtils
 
 
 class CellposeUtils(SegmentationUtils):

@@ -217,7 +217,7 @@ it. The new design unifies via one engine + one cell table:
    lineage columns into the segmentation's `labelProps/{value_name}.h5ad` `obs`:
    `track_id, track_parent, track_root, track_state, track_generation, cell_id` (cells not
    in a track get `NaN`). See `app/src/tasks/tracking/bayesian_tracking.jl` +
-   `app/py/utils/tracking_utils.py`.
+   `python/cecelia/utils/tracking_utils.py`.
 3. The result is a **live** population (gated cells that now have tracks).
 4. Gate again on **track properties** if desired (deferred — see below).
 
@@ -253,9 +253,9 @@ per-pop CSV.
     inside cells' label IDs to `/api/napari/event` → Julia stores them and broadcasts the tree
     with a **transient selection population** so the flow plots highlight exactly those cells.
 - **Python tasks / notebooks** get membership via a thin HTTP client
-  (`app/py/cecelia_client.py`) → `GET /api/gating/membership` (label IDs only; the
-  bulk measurement columns are read locally from the H5AD via `app/py/utils/label_props_utils.py`).
-  `PopUtils(client=cc).pop_df(…)` (`app/py/utils/pop_utils.py`) keeps its old signature. Same
+  (`python/cecelia/cecelia_client.py`) → `GET /api/gating/membership` (label IDs only; the
+  bulk measurement columns are read locally from the H5AD via `python/cecelia/utils/label_props_utils.py`).
+  `PopUtils(client=cc).pop_df(…)` (`python/cecelia/utils/pop_utils.py`) keeps its old signature. Same
   code path in notebook dev and shipped modules (the API is running in both). No
   `flowutils`/`juliacall` dependency.
 

@@ -20,11 +20,8 @@ import numpy as np
 import dask.array as da
 import zarr
 
-# app/ on the path so `py.utils.*` imports under `unittest discover` (mirrors rechunk_zarr.py).
-_APP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-if _APP_DIR not in sys.path:
-    sys.path.insert(0, _APP_DIR)
-import py.utils.zarr_utils as zu  # noqa: E402
+# `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
+import cecelia.utils.zarr_utils as zu
 
 
 class CreateMultiscalesStoreTest(unittest.TestCase):

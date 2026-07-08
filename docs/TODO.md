@@ -775,12 +775,12 @@ Fixes around showing/selecting populations in napari:
 Napari is wired both ways around the gating engine (Julia stays the sole evaluator).
 *Consumer*: `POST /api/napari/show-populations` → bridge `show_populations` colours per-pop
 centroid Points layers (centroids read locally from the H5AD via the new
-`app/py/utils/label_props_utils.py`). *Producer (linked brushing)*: `POST
+`python/cecelia/utils/label_props_utils.py`). *Producer (linked brushing)*: `POST
 /api/napari/start-selection` adds a `Cell selection` Shapes layer; drawing on it point-in-polygons
 cell centroids and POSTs the inside label IDs to `/api/napari/event`, which mirrors them as a
 **transient** "Napari selection" population (explicit-label membership; `transient` pops broadcast
 but never persisted) so the flow plots highlight exactly those cells. Also added the Python
-membership client `app/py/cecelia_client.py` + reduced `app/py/utils/pop_utils.py` (`pop_df`
+membership client `python/cecelia/cecelia_client.py` + reduced `python/cecelia/utils/pop_utils.py` (`pop_df`
 resolves membership via the API, reads columns locally — no Python gate engine, no CSV).
 Engine: `Population.explicit_labels`/`transient` + `recompute!` branch + `to_tree(include_transient)`.
 Docs: `NAPARI.md`, `POPULATION.md`, `API.md`, `ARCHITECTURE.md`.

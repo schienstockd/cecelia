@@ -1689,7 +1689,7 @@ end
             # Python side dumps a comparable summary as JSON via the LabelPropsView reader.
             pyscript = """
             import sys, json
-            import py.utils.label_props_utils as lpu
+            import cecelia.utils.label_props_utils as lpu
             v = lpu.LabelPropsView(sys.argv[1])
             df  = v.view_cols(["mean_intensity_0"]).as_df().sort_values("label")
             cv  = lpu.LabelPropsView(sys.argv[1]).only_centroid_cols().as_df().sort_values("label")
@@ -1704,10 +1704,10 @@ end
                 "centroid0_5":    [float(x) for x in cv["centroid-0"].to_numpy()[:5]],
             }))
             """
-            # app/ on PYTHONPATH so `import py.utils...` resolves (matches task runners).
-            app_dir = dirname(@__DIR__)
-            penv = copy(ENV); penv["PYTHONPATH"] = app_dir
-            out = read(setenv(`$pybin -c $pyscript $h5`, penv; dir=app_dir), String)
+            # python/ on PYTHONPATH so `import cecelia.utils...` resolves (matches run_py's PYTHONPATH).
+            py_dir = joinpath(dirname(dirname(@__DIR__)), "python")   # app/test → app → repo-root/python
+            penv = copy(ENV); penv["PYTHONPATH"] = py_dir
+            out = read(setenv(`$pybin -c $pyscript $h5`, penv; dir=py_dir), String)
             py = JSON3.read(out)
 
             lp = label_props(h5)
