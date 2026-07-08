@@ -23,6 +23,19 @@ The statistical work — gating, tracking measures, spatial stats, clustering �
 from the original R into Julia, and Julia runs it fast without dropping into C. Keeping Python only
 for imaging and ML means each language stays in the domain where it's strongest.
 
+**Why not finish the job — port the rest of Python to Julia (or Rust) and drop a language?**
+Because the Python that remains isn't there for the *language*, it's there for *libraries* with no
+equivalent in any other ecosystem: Cellpose, btrack, scanpy/Leiden clustering, napari. "Porting"
+those wouldn't mean rewriting glue — it would mean reimplementing published algorithms, the hardest
+work there is, and the ecosystem best at that is Python, then Julia, and (distantly) Rust. The few
+pieces that genuinely *could* move to Julia are numeric image-correction steps, and moving them buys
+tidiness, not a smaller install — the multi-gigabyte weight (PyTorch, Cellpose) is exactly the part
+that can't move. So the remaining Python is a deliberate, permanent rim, not unfinished business. And
+the `.h5ad` files aren't the lock-in people assume: that format is the one both Julia and Python read
+natively, which is *why* it stays — what keeps Python in the loop is the clustering algorithm, not
+the file format. Full breakdown in
+[`docs/todo/python-audit-report.md`](docs/todo/python-audit-report.md).
+
 **Why keep all analysis out of the frontend?**
 So the core package can run and be tested from the Julia REPL with no interface attached. The same
 task code runs identically whether it's called from a test, the REPL, or the GUI. The API is a thin
