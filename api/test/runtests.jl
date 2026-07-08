@@ -144,8 +144,10 @@ end
         @test find("nb1-copy.jl") !== nothing
 
         # delete (server not running in tests → guard doesn't require force)
+        @test !isempty(snaps())    # nb1 has snapshots on disk before delete
         @test _post(api_notebooks_delete, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[1] == 200
         @test find("nb1.jl") === nothing
+        @test isempty(snaps())     # delete also removes the notebook's snapshot history
 
         # errors
         @test api_notebooks_list(HTTP.Request("GET", "/api/notebooks?projectUid=NOPE"))[1] == 404
