@@ -61,9 +61,10 @@ The full call chain for "eye button clicked":
 2. `api_napari_open` in `napari_api.jl`:
    - Resolves `zarr_path` via `versioned_get_field(raw, "filepath", value_name)`
    - Falls back to default channel names if the corrected value has no dedicated `imChannelNames` entry
-   - If auto-save is on, saves layer props for the currently open image before switching
+   - If auto-save is on, saves layer props for the currently open image before switching (a final flush)
    - Calls `_do_open!` → sends `set_task_dir` + `open_image` commands to bridge
    - If auto-load is on, sends `load_layer_props` after
+   - Sends `configure_autosave {path, enabled}` last → the bridge live-saves this image on change (see *Layer props persistence*)
 3. Bridge `open_image`: loads zarr, reads axes/scale/unit from metadata, calls `viewer.add_image`, sets contrast limits, optionally enters 3D mode
 
 ### Pending open
@@ -182,7 +183,7 @@ end
 
 ## Layer props persistence
 
-Auto-save/load stores napari layer visual properties (contrast limits, colormap, opacity, blending, visible, gamma) as a pickle file:
+Auto-save/load stores napari layer visual properties (contrast limits, colormap, opacity, blending, visible, gamma) **plus the viewer's T/Z slider position** (`dims.current_step`) as a pickle file:
 
 ```
 {task_dir}/data/{basename(zarr_path)}.pkl
@@ -190,9 +191,11 @@ Auto-save/load stores napari layer visual properties (contrast limits, colormap,
 
 Example: `projects/NRUBxU/1/KDIeEm/data/ccidImage.ome.zarr.pkl`
 
-The `data/` directory is created by `mkpath` in `_try_save_layer_props!` if it doesn't exist. Saving happens **before** the new image opens; loading happens **after**. Load is a no-op if the `.pkl` doesn't exist yet.
+The `data/` directory is created by `mkpath` if it doesn't exist. Only `Image` layers are saved/loaded (labels/points/tracks are not). On load, the T/Z step is **clamped** to the current image's `dims.nsteps` (a different segmentation/shape may have fewer slices) and only the saved axes are overridden.
 
-Only `Image` layers are saved/loaded. Labels, points, etc. are not included.
+**Saved live, not just on switch (debounced, in the bridge).** When auto-save is on, the bridge itself watches each Image layer's display-prop events and `dims.current_step`, and writes the `.pkl` ~500 ms after the last change (`configure_autosave` → `_schedule_autosave` → `_autosave_flush`). So an adjustment persists the moment you make it — surviving navigation **and** a crash/hard-kill — instead of only when you open another image. The write is **atomic** (tmp + `os.replace`, with `fsync`), so a kill mid-write never leaves a corrupt file. A load-guard (`_autosave_loading`) suppresses the write-back while applying loaded props.
+
+Wiring: the app enables it via `POST /api/napari/open` (`autoSaveProps`), which sends `configure_autosave {path, enabled}` **after** the load (so layers exist to connect to, and the load isn't echoed). Since layers are recreated per open, this reconnects each time. Toggling the viewer-panel button while an image is open takes effect immediately via `POST /api/napari/configure-autosave` (`api_napari_configure_autosave` → the current image's refs). The old on-switch save (`_try_save_layer_props!` before the next open) is kept as a belt-and-braces flush.
 
 ---
 

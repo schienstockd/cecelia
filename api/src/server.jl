@@ -263,6 +263,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_screenshot(body_bytes)
         elseif path == "/api/napari/restart"
             api_napari_restart(body_bytes)
+        elseif path == "/api/napari/configure-autosave"
+            api_napari_configure_autosave(body_bytes)
         elseif path == "/api/napari/show-labels"
             api_napari_show_labels(body_bytes)
         elseif path == "/api/napari/show-populations"

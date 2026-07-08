@@ -54,6 +54,21 @@ function _try_load_layer_props!(v::NapariViewer, task_dir::String, zarr_path::St
     end
 end
 
+# Point the bridge's LIVE (debounced) autosave at the current image's props file and enable/disable it.
+# Sent after each open (layers are recreated per open → the bridge must reconnect to the fresh layers)
+# and on a live toggle. The bridge saves the moment the user changes contrast/colormap/T-Z, so the view
+# survives a crash — not just an image switch. Call after any load so it doesn't echo the load back.
+function _configure_autosave!(v::NapariViewer, task_dir::String, zarr_path::String, enabled::Bool)
+    try
+        props_file = _props_path(task_dir, zarr_path)
+        mkpath(dirname(props_file))
+        send(v, Dict{String,Any}("type" => "configure_autosave",
+                                 "path" => props_file, "enabled" => enabled))
+    catch e
+        @warn "Configure autosave failed" exception = e
+    end
+end
+
 function _viewer()::Union{NapariViewer,Nothing}
     _viewer_ref[]
 end
@@ -136,6 +151,8 @@ function _execute_pending_open()
         if hasproperty(pending, :auto_load_props) && pending.auto_load_props
             _try_load_layer_props!(v, task_dir, zarr_path)
         end
+        _configure_autosave!(v, task_dir, zarr_path,
+                             hasproperty(pending, :auto_save_props) ? pending.auto_save_props : false)
 
         @info "Napari opened image" image_uid=pending.image_uid zarr_path
         broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => pending.image_uid))
@@ -232,6 +249,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
         lock(_viewer_lock) do
             _pending_open[] = (; proj_dir, image_uid,
                                  auto_load_props = auto_load,
+                                 auto_save_props = auto_save,
                                  show_3d, as_dask,
                                  show_labels     = show_labels_req,
                                  all_labels)
@@ -261,6 +279,8 @@ function api_napari_open(body_bytes::Vector{UInt8})
         if auto_load
             _try_load_layer_props!(v, task_dir, zarr_path)
         end
+        # Wire live autosave for this image (after the load, so the load isn't echoed back).
+        _configure_autosave!(v, task_dir, zarr_path, auto_save)
 
         @info "Opened image in Napari" image_uid zarr_path
         broadcast_ws(Dict{String,Any}("type" => "napari:opened", "imageUid" => image_uid))
@@ -284,6 +304,21 @@ function api_napari_close(body_bytes::Vector{UInt8})
         catch e
             500, JSON3.write((; error = sprint(showerror, e)))
         end
+    end
+end
+
+# POST /api/napari/configure-autosave  { enabled }  → toggle live layer-props autosave for the image
+# currently open in napari, without re-opening it. Lets the viewer-panel toggle take effect immediately.
+function api_napari_configure_autosave(body_bytes::Vector{UInt8})
+    data    = JSON3.read(String(body_bytes))
+    enabled = Bool(get(data, :enabled, false))
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 200, JSON3.write((; ok = false, message = "Napari not running"))
+    (isnothing(_current_zarr_path[]) || isnothing(_current_task_dir[])) &&
+        return 200, JSON3.write((; ok = false, message = "No image open"))
+    _with_viewer() do
+        _configure_autosave!(v, _current_task_dir[], _current_zarr_path[], enabled)
+        200, JSON3.write((; ok = true))
     end
 end
 
