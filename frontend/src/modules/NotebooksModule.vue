@@ -15,6 +15,12 @@ const url = ref('http://localhost:7660/')
 const secret = ref('')
 const errorMsg = ref('')
 
+// Fast-plot sysimage (pluto/deps.so): built on first visit, in the background, so notebooks are
+// usable immediately (slow first plot until it lands). See api_notebooks_build_sysimage.
+// 'stale' = an image built for a different Julia/package set (after an update) — rebuilt like 'absent'.
+type SysimageState = 'unknown' | 'absent' | 'stale' | 'building' | 'ready' | 'error'
+const sysimage = ref<SysimageState>('unknown')
+
 // Pluto requires a secret (see launch.jl); append it so the browser is authorized.
 const homeUrl = computed(() => secret.value ? `${url.value}?secret=${encodeURIComponent(secret.value)}` : url.value)
 
@@ -23,8 +29,34 @@ const hasProject = computed(() => projectMeta.hasProject)
 const serverRunning = computed(() => server.value === 'running')
 
 let poll: number | undefined
+let buildPoll: number | undefined
 
 function stopPoll() { if (poll) { clearInterval(poll); poll = undefined } }
+function stopBuildPoll() { if (buildPoll) { clearInterval(buildPoll); buildPoll = undefined } }
+
+// Kick off the background build when the cache is missing ('absent') OR outdated after a package
+// update ('stale'). Non-fatal: if it can't start (env not set up), notebooks still launch — just
+// with a slow first plot.
+async function maybeBuildSysimage() {
+  if (sysimage.value !== 'absent' && sysimage.value !== 'stale') return
+  try {
+    const res = await fetch('/api/notebooks/build-sysimage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    const d = await res.json().catch(() => ({}))
+    if (res.ok) sysimage.value = d.status ?? 'building'
+  } catch { /* silent — the fallback (slow first plot) still works */ }
+  if (sysimage.value === 'building') startBuildPoll()
+}
+
+// Poll until the build finishes (~10 min) — slow cadence, it's a long job.
+function startBuildPoll() {
+  stopBuildPoll()
+  buildPoll = window.setInterval(async () => {
+    await refreshStatus()
+    if (sysimage.value === 'ready' || sysimage.value === 'error') stopBuildPoll()
+  }, 5000)
+}
 
 function startPolling() {
   stopPoll()
@@ -44,6 +76,7 @@ async function refreshStatus() {
     url.value = d.url ?? url.value
     secret.value = d.secret ?? ''
     server.value = d.running ? 'running' : (d.starting ? 'starting' : 'stopped')
+    sysimage.value = d.sysimage ?? 'unknown'
     if (d.error) errorMsg.value = d.error
     else if (d.running) errorMsg.value = ''
   } catch {
@@ -109,8 +142,8 @@ async function shutdown() {
   await refreshStatus()
 }
 
-onMounted(refreshStatus)
-onUnmounted(stopPoll)
+onMounted(async () => { await refreshStatus(); maybeBuildSysimage() })
+onUnmounted(() => { stopPoll(); stopBuildPoll() })
 </script>
 
 <template>
@@ -161,6 +194,21 @@ onUnmounted(stopPoll)
           First launch precompiles — this can take up to a minute.
         </p>
         <p v-if="errorMsg" class="nb-error"><i class="pi pi-exclamation-triangle" /> {{ errorMsg }}</p>
+
+        <!-- Fast-plot cache build (background): first run, or a rebuild after a package update -->
+        <div v-if="sysimage === 'building'" class="nb-note">
+          <i class="pi pi-spin pi-cog" />
+          <span>
+            <strong>Preparing notebooks — building the fast-plot cache (~10 min, in the background).</strong>
+            This runs once after install and again after an update. Keep working — notebooks are usable
+            now; only the <em>first</em> plot is slow until it finishes. The cache is picked up
+            automatically the next time the server launches.
+          </span>
+        </div>
+        <p v-else-if="sysimage === 'error'" class="nb-hint">
+          <i class="pi pi-info-circle" /> Couldn't build the fast-plot cache — notebooks still work,
+          just with a slower first plot.
+        </p>
       </section>
 
       <!-- Notebook registry (Phase 3: manage + version) -->
@@ -185,4 +233,10 @@ onUnmounted(stopPoll)
 .nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-muted, #888); }
 .nb-hint { color: var(--cc-text-muted, #888); font-size: .85rem; margin: .5rem 0 0; }
 .nb-error { color: #f0883e; font-size: .85rem; margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
+.nb-note {
+  display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;
+  font-size: .85rem; line-height: 1.4; border-radius: 6px;
+  color: var(--cc-text, #cdd9e5); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
+}
+.nb-note .pi { margin-top: .1rem; color: #58a6ff; }
 </style>

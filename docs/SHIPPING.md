@@ -255,8 +255,18 @@ both → `pluto/deps.so` (git-ignored, ~1.4 GB, ~10 min):
 - **Dev** — `pixi run notebooks-sysimage` — deps only (Makie/CairoMakie/AoG/DataFrames/HDF5/HTTP/CSV),
   deliberately **excluding Cecelia** so Revise still hot-reloads it.
 - **Release** — `pixi run notebooks-sysimage-full` — also bakes in `Cecelia` + `CeceliaNb` (code is
-  frozen) for near-instant first plot AND first `pop_df`. **Wire this into the release bundle build**
-  (the bundle either ships `deps.so` or builds it on first run — it's too large to commit).
+  frozen) for near-instant first plot AND first `pop_df`.
+
+**End users never run either task.** The app builds `deps.so` in a background process on first open of
+Notebooks (a banner explains the one-time slow-first-plot), so the on-first-run path works with zero
+packaging effort — it's the baseline. A sysimage can't be committed or shipped as one universal
+artifact: it's native code tied to the exact **platform/arch + Julia + package versions**. So each
+build stamps `deps.so.stamp` (`{julia, hash(Manifest.toml)}`, `pluto/sysimage_stamp.jl`); after an
+update the image is detected **stale** and rebuilt automatically, and `launch.jl` refuses to hand a
+stale image to workers (a Julia-version mismatch would break them). *Optional* release optimisation
+(TODO #00070): build the `-full` image per platform in CI and ship it in the bundle so even the first
+open is instant — it falls through to the on-first-run build wherever no prebuilt image is present.
+Because the image is stamped, a shipped one that predates the user's Julia/deps still self-heals.
 
 The Pluto server keeps its **secret token ON** (Pluto's secure default): it's a browser-reachable
 code-execution surface, so the secret guards against other local sites/processes driving it (CSRF/RCE).

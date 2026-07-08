@@ -49,6 +49,17 @@ launcher (done), and the update path (`pixi run update` done; in-app button pend
 the move from commit-as-we-go to **versioned GitHub Releases** (SHIPPING.md Phase 3): once releases
 exist, the README's install section should point at the release installers, not a source checkout.
 
+**#00070** — **Ship a prebuilt Notebooks sysimage in the bundle** (release optimisation)
+(1) **DONE** — auto-build on first run: opening Notebooks builds `pluto/deps.so` in a background
+process, notebooks stay usable (slow-first-plot until it lands), and it's stamped so a package/Julia
+update marks it stale and rebuilds automatically (`build-sysimage` route, `_classify_sysimage`,
+`pluto/sysimage_stamp.jl`, `launch.jl` freshness gate). Self-contained, always correct, no CI needed.
+(2) **Remaining, optional** — once the constructor/pixi packaging pins Julia per platform, build the
+`-full` variant in CI and ship it in the bundle for the primary OSes so even the *first* open is
+instant. It falls through to (1) wherever no prebuilt image is present, and the stamp means a shipped
+image that predates the user's Julia/deps self-heals. Belongs with the packaging phase; not urgent —
+the on-first-run path already gives every user a fast cache after one build.
+
 **#00047** — **Temporal downsampling / overlapping tracklets for behaviour** (deferred)
 The old framework computed track measures on the fly, so HMM could push `skipTimesteps` /
 `subtrackOverlap` into celltrackR: a way to **downsample** tracks (e.g. treat 10s/frame data like

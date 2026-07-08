@@ -3,8 +3,8 @@
 # server runs as its OWN Julia process (the pluto/ env, which path-sources Cecelia) — NOT this API
 # server. Lifecycle mirrors the napari bridge: lazy-launch on first request, adopt an already-running
 # server (e.g. one from `pixi run notebooks` or a survivor of a server restart) instead of spawning a
-# duplicate. Secret auth is disabled in pluto/launch.jl (localhost dev tool), so the URL is a plain
-# http://localhost:7660/. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
+# duplicate. Secret auth stays ON (see launch.jl); launch.jl publishes the session secret to
+# pluto/.plutosecret and the frontend appends it to URLs. See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 
 const NOTEBOOKS_PORT = 7660
 const NOTEBOOKS_URL  = "http://localhost:$(NOTEBOOKS_PORT)/"
@@ -112,7 +112,102 @@ end
 function api_notebooks_status(req::HTTP.Request)
     running = _notebook_server_alive()
     200, JSON3.write((; running = running, starting = _nb_starting[], url = NOTEBOOKS_URL,
-                        secret = _notebook_secret(), error = running ? nothing : _nb_error[]))
+                        secret = _notebook_secret(), sysimage = _sysimage_status(),
+                        error = running ? nothing : _nb_error[]))
+end
+
+# ── Fast-plot sysimage (pluto/deps.so), built on first run ───────────────────────
+# The deps-only sysimage (PackageCompiler) cuts Makie's ~20 s time-to-first-plot to a few seconds. It
+# can't be shipped prebuilt (native code tied to this platform + Julia/package versions), so on first
+# use we build it here in the BACKGROUND while notebooks stay usable (slow first plot until it lands).
+# The freshly-built image is picked up by launch.jl on the NEXT server launch — we don't restart a
+# running server out from under an open session. Mirrors the server lifecycle above (one tracked proc,
+# atexit cleanup). See docs/NOTEBOOKS.md and TODO #00070.
+_sysimage_path()  = joinpath(_pluto_root(), "deps.so")
+_sysimage_stamp() = _sysimage_path() * ".stamp"
+# Fingerprint of the resolved pluto deps — mirrors pluto/sysimage_stamp.jl (`hash(Manifest.toml)`), so
+# a package update that re-resolves the Manifest invalidates the stamp.
+_manifest_hash() = (m = joinpath(_pluto_root(), "Manifest.toml"); isfile(m) ? string(hash(read(m, String))) : "")
+
+const _nb_build_proc  = Ref{Union{Base.Process,Nothing}}(nothing)
+const _nb_build_error = Ref{Union{String,Nothing}}(nothing)
+
+# Does the on-disk stamp match this Julia + the current Manifest? (Same two fields the build writes.)
+function _stamp_matches(stamp::Union{String,Nothing}, julia::AbstractString, manifest::AbstractString)::Bool
+    stamp === nothing && return false
+    try
+        d = JSON3.read(stamp)
+        String(get(d, :julia, "")) == julia && String(get(d, :manifest, "")) == manifest
+    catch
+        false
+    end
+end
+
+# Pure classifier (testable, no IO): given whether deps.so exists, its stamp contents (or nothing),
+# whether a build is running, whether the last build errored, and the current Julia + Manifest hash →
+# one of: "ready" (fresh image), "stale" (image exists but built for a different Julia/package set —
+# rebuild), "building", "error", "absent". The frontend auto-rebuilds on "absent" OR "stale".
+function _classify_sysimage(exists::Bool, stamp::Union{String,Nothing}, building::Bool, errored::Bool,
+                            julia::AbstractString, manifest::AbstractString)::String
+    if exists
+        _stamp_matches(stamp, julia, manifest) && return "ready"
+        return building ? "building" : "stale"
+    end
+    building && return "building"
+    errored  && return "error"
+    "absent"
+end
+
+function _sysimage_status()::String
+    p = _nb_build_proc[]
+    building = p !== nothing && process_running(p)
+    stamp = isfile(_sysimage_stamp()) ? read(_sysimage_stamp(), String) : nothing
+    _classify_sysimage(isfile(_sysimage_path()), stamp, building, _nb_build_error[] !== nothing,
+                       string(VERSION), _manifest_hash())
+end
+
+# Kick off the background build if the image isn't already fresh or being built. Idempotent; returns
+# the resulting status. Rebuilds over a STALE image too (create_sysimage overwrites deps.so). Errors
+# (env not set up / script missing) propagate to the caller as a 500.
+function _ensure_sysimage_build!()::String
+    lock(_nb_lock) do
+        _sysimage_status() == "ready" && return "ready"
+        p = _nb_build_proc[]
+        (p !== nothing && process_running(p)) && return "building"
+
+        pluto_root   = _pluto_root()
+        build_script = joinpath(pluto_root, "build_sysimage.jl")
+        isfile(build_script) || error("pluto/build_sysimage.jl not found at $build_script")
+        _pluto_env_ready() || error("The notebook environment is not set up. $_SETUP_HINT")
+
+        julia_exe = joinpath(Sys.BINDIR, Base.julia_exename())
+        cmd = Cmd(`$julia_exe --project=$pluto_root $build_script`)
+        @info "Building the notebook fast-plot sysimage in the background (first run, ~10 min)..." out = _sysimage_path()
+        _nb_build_error[] = nothing
+        proc = run(pipeline(cmd; stdout = stdout, stderr = stderr), wait = false)
+        _nb_build_proc[] = proc
+        # Watch for completion off the request path: success = the file now exists (PackageCompiler
+        # can exit 0 without writing on some failures, so trust the file, not the code).
+        @async begin
+            wait(proc)
+            lock(_nb_lock) do
+                _nb_build_error[] = isfile(_sysimage_path()) ? nothing :
+                    "The fast-plot sysimage build failed — notebooks still work (slower first plot). Retry, or run `pixi run notebooks-sysimage`."
+            end
+        end
+        "building"
+    end
+end
+
+# POST /api/notebooks/build-sysimage  → { status }   (status as _sysimage_status)
+function api_notebooks_build_sysimage(body_bytes::Vector{UInt8})
+    status = try
+        _ensure_sysimage_build!()
+    catch e
+        @warn "Could not start sysimage build" exception = e
+        return 500, JSON3.write((; error = "Could not start the fast-plot build: $(sprint(showerror, e))"))
+    end
+    200, JSON3.write((; status = status))
 end
 
 # Stop the Pluto server. We can only kill a server THIS process spawned (we hold its handle); killing
@@ -154,10 +249,12 @@ end
 # Best-effort: take a server WE spawned down when this API process exits cleanly (so a normal server
 # shutdown doesn't orphan Pluto on :7660). Won't fire on SIGKILL — `pixi run stop` also kills :7660.
 atexit() do
-    try
-        p = _nb_proc_ref[]
-        p !== nothing && process_running(p) && kill(p)
-    catch
+    for r in (_nb_proc_ref, _nb_build_proc)
+        try
+            p = r[]
+            p !== nothing && process_running(p) && kill(p)
+        catch
+        end
     end
 end
 
