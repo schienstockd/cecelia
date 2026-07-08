@@ -46,7 +46,7 @@ CPU↔GPU ARI, pooled set-wide pop counts in the manager.
 
 ## Progress
 
-- **Step 1 — engine: DONE.** `app/py/utils/clustering_utils.py` `find_populations` (transform →
+- **Step 1 — engine: DONE.** `python/cecelia/utils/clustering_utils.py` `find_populations` (transform →
   normalise → neighbours(use_rep=X) → Leiden(leidenalg) → optional UMAP/PAGA), backend auto-detect
   (GPU parked). Shared per-segment write-back `split_back_and_write` (clusters.{suffix} int codes +
   obsm['X_umap.{suffix}']) — used by BOTH runners (the one canonical writer; CLAUDE.md rule).
@@ -233,7 +233,7 @@ a hand-drawn gate.
 ## Plan (when we resume)
 
 ### Step 1 — Shared engine (Python)
-- `app/py/utils/clustering_utils.py`: one `find_populations(adata, ..., backend="auto",
+- `python/cecelia/utils/clustering_utils.py`: one `find_populations(adata, ..., backend="auto",
   random_state=0)` — normalise/transform → neighbors → leiden(`key_added='clusters'`) →
   optional UMAP/PAGA. Granularity-blind: takes feature matrix `X`, returns `clusters` +
   `X_umap`.
@@ -251,10 +251,10 @@ a hand-drawn gate.
 params)`, copying `behaviour/hmm_states.jl`: pool the set with `pop_df(imgs, uids, "live"/pop_type,
 pops; granularity=…)`, cluster once, then loop per uID writing each image's labelProps. Cluster IDs
 are thus comparable across the set.
-- `app/py/tasks/clust/cluster_cells_run.py` → pooled matrix across the set's `{vn}.h5ad` (channel
+- `python/cecelia/tasks/clust/cluster_cells_run.py` → pooled matrix across the set's `{vn}.h5ad` (channel
   intensities + object measures, optional ref-channel divide) → engine → split + write
   `clusters.{suffix}` + `obsm['X_umap']` back into **each image's** `{vn}.h5ad`.
-- `app/py/tasks/clust/cluster_tracks_run.py` → pooled per-track matrix across the set: motility
+- `python/cecelia/tasks/clust/cluster_tracks_run.py` → pooled per-track matrix across the set: motility
   from `{vn}__tracks.h5ad` ⊕ per-track HMM-state/transition frequencies + selected cell-measure
   aggregates (Decision 9) → same engine → write `clusters.{suffix}` + `X_umap` back into each
   image's `{vn}__tracks.h5ad`.

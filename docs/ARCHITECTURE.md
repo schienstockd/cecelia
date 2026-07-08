@@ -8,10 +8,20 @@ The hard rule: **Cecelia.jl must be usable headless from the Julia REPL with zer
 
 ```
 cecelia-pineapple/
-  app/          Julia package — Cecelia.jl
+  app/          Julia package — Cecelia.jl (JULIA ONLY — no Python here)
   api/          Julia API server — depends on Cecelia.jl as Pkg dependency
   frontend/     Vue 3 — unchanged
+  python/       Installable Python package `cecelia` — analysis/IO helpers, Python task
+                runners, writers. Top-level sibling of app/ (pyproject.toml here).
+  napari/       Python napari bridge process (imports `cecelia`; not part of the package)
 ```
+
+**One language per top-level dir.** `app/` is the Julia package; the Python helpers are a
+*separate*, pip-installable package at `python/cecelia/` (moved there from the old `app/py/` in
+2026-07 so `app/` isn't a dual Julia+Python root, and so external consumers can `pip install
+cecelia`). `run_py` (`app/src/py_runner.jl`) resolves scripts under `python/cecelia/` and sets
+`PYTHONPATH=python/`. Dependency split: light IO deps in `python/pyproject.toml`; heavy/conda/
+per-platform deps in `pixi.toml`. See [`docs/todo/PY_PACKAGING_PLAN.md`](todo/PY_PACKAGING_PLAN.md).
 
 ### Layer ownership
 

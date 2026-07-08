@@ -50,7 +50,7 @@ jobs:
           mkdir -p out
           echo "${{ github.ref_name }}" > VERSION   # so the installed app knows its version
           tar -czf out/cecelia.tar.gz \
-            api app app.py pixi.toml pixi.lock VERSION \
+            api app python app.py pixi.toml pixi.lock VERSION \
             napari/napari_bridge.py frontend/dist bioformats2raw \
             install.sh install.ps1 README.md docs
           ls -lh out/

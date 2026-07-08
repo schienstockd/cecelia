@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import scanpy as sc
 
-from py.utils.label_props_utils import LabelPropsView
+from cecelia.utils.label_props_utils import LabelPropsView
 
 
 # ── backend detection (cached) ───────────────────────────────────────────────────

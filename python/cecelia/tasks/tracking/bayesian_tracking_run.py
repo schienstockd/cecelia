@@ -4,7 +4,7 @@ Bayesian (btrack) tracking task entry point.
 Called by the Julia `tracking.bayesian_tracking` handler as a subprocess. Reads centroids
 from the segmentation's label-props H5AD, runs btrack, and writes the lineage columns
 (track_id, track_parent, track_root, track_state, track_generation, cell_id) back into
-the same H5AD obs. See `py.utils.tracking_utils` for the convention.
+the same H5AD obs. See `cecelia.utils.tracking_utils` for the convention.
 
 Parameter contract (JSON written by Julia):
   taskDir              - metadata directory ({proj}/1/{uid}/)
@@ -18,9 +18,9 @@ Parameter contract (JSON written by Julia):
 
 import sys
 import os
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-import py.utils.script_utils as script_utils
-from py.utils.tracking_utils import BayesianTrackingUtils
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils.tracking_utils import BayesianTrackingUtils
 
 
 def run(params: dict):

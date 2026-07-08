@@ -4,18 +4,16 @@ Called as a subprocess by the label-props layer (`label_props.jl::write_categori
 categorical cell labels — HMM states / transitions today, cluster ids later. Julia computes the
 values and passes them here; this script writes them into the segmentation's labelProps ``.h5ad``
 via anndata's categorical encoding (Julia writes numeric obs directly, but not categoricals). It is
-a data-layer writer, NOT a scheduler task — hence it lives under ``app/py/writers/``, not
-``app/py/tasks/``. See ``py.utils.obs_utils.write_categorical_obs`` for the parameter contract.
+a data-layer writer, NOT a scheduler task — hence it lives under ``python/cecelia/writers/``, not
+``python/cecelia/tasks/``. See ``cecelia.utils.obs_utils.write_categorical_obs`` for the parameter contract.
 """
 
 import sys
 import os
-# app/py/writers/write_categorical_obs_run.py → 3 levels up to app/
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(
-    os.path.abspath(__file__)))))
-
-import py.utils.script_utils as script_utils
-from py.utils.obs_utils import write_categorical_obs
+# `cecelia.*` resolves via run_py's PYTHONPATH=python/ (this is launched through run_py) and the
+# editable cecelia install — no sys.path manipulation needed.
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils.obs_utils import write_categorical_obs
 
 
 def run(params: dict):

@@ -20,7 +20,7 @@ import shutil
 import numpy as np
 from copy import copy
 
-import py.utils.slice_utils as slice_utils
+import cecelia.utils.slice_utils as slice_utils
 
 
 def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):

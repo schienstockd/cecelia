@@ -26,9 +26,9 @@ Invoked by `app/src/tasks/clustTracks/cluster.jl` via a params JSON. Params:
 """
 import numpy as np
 
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-import py.utils.script_utils as script_utils
-import py.utils.clustering_utils as clustering_utils
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+import cecelia.utils.script_utils as script_utils
+import cecelia.utils.clustering_utils as clustering_utils
 
 
 def run(params):

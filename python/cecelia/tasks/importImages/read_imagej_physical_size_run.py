@@ -20,7 +20,7 @@ import json
 
 import tifffile
 
-import py.utils.script_utils as script_utils
+import cecelia.utils.script_utils as script_utils
 
 # ImageJ calibration unit → micrometers
 _UNIT_TO_MICRON = {

@@ -128,8 +128,8 @@ OS in the matrix, and each has a `pixi run` task that runs the whole suite:
   can be unit-tested without mounting Vue.
 - **Python (analysis env):** `pixi run test-py` — the Pixi-env Python code Julia drives via `run_py`
   (segmentation, measurement, corrections, the zarr/dask I/O layer): anywhere logic can silently produce
-  wrong data on disk. stdlib `unittest`, auto-discovered from `app/py/tests/test_*.py`
-  (`python -m unittest discover`) and run as one suite — add a `TestCase` whenever you touch `app/py/**`
+  wrong data on disk. stdlib `unittest`, auto-discovered from `python/cecelia/tests/test_*.py`
+  (`python -m unittest discover`) and run as one suite — add a `TestCase` whenever you touch `python/cecelia/**`
   data logic worth pinning; the suite grows with it. **Deliberately no `pytest` dependency** (it isn't in
   the analysis env and shouldn't ship to users just for tests). Must run via `pixi run` so the env's
   `python` + `numpy`/`dask`/`zarr` resolve. First member: `test_zarr_store.py` (the `create_multiscales`

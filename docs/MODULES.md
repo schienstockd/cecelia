@@ -29,10 +29,10 @@ The filenames must match (`drift_correct.jl` ↔ `drift_correct.json`).
 - Category dirs are camelCase: `cleanupImages`, `clustPops`, `clustTracks`, `tracking`, …
 - `fun_name` is `<category>.<name>` — category camelCase, `<name>` snake_case
   (`clustPops.cluster`, `tracking.bayesian_tracking`, `cleanupImages.afCorrect` (legacy)).
-- The Python **runner** is `app/py/tasks/<category>/<name>_run.py` — the `_run` suffix marks a
-  subprocess entry point; reusable logic lives in `app/py/utils/*.py`.
+- The Python **runner** is `python/cecelia/tasks/<category>/<name>_run.py` — the `_run` suffix marks a
+  subprocess entry point; reusable logic lives in `python/cecelia/utils/*.py`.
 - Python subprocess entry points that are **not** scheduler tasks (data-layer writers invoked by
-  the engine, e.g. the categorical-obs writer) live in `app/py/writers/`, **not** under `tasks/`.
+  the engine, e.g. the categorical-obs writer) live in `python/cecelia/writers/`, **not** under `tasks/`.
 
 ### Struct
 
@@ -117,7 +117,7 @@ thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wi
 
 Spawn the task's Python runner through **`run_py`** (`app/src/py_runner.jl`) — the single place
 Cecelia launches Python (the Julia analogue of the old R `self$pyScript`). It writes the params
-JSON, sets `PYTHONPATH=app/` (so the script does `import py.*` with **no** `sys.path` bootstrap),
+JSON, sets `PYTHONPATH=python/` (so the script does `import cecelia.*` with **no** `sys.path` bootstrap),
 streams stdout (`[PROGRESS] n/total` → `on_progress`, the rest → `on_log`), registers the process
 for cancellation, and returns clean-exit (checks both `exitcode` AND `termsignal` — libuv reports
 `exitcode==0` for killed procs):
@@ -142,22 +142,22 @@ exact params your runner expects as the second arg (a `NamedTuple` or `Dict`).
 
 ## 2. Python script
 
-Location: `app/py/tasks/<category>/<name>_run.py`
+Location: `python/cecelia/tasks/<category>/<name>_run.py`
 
 ### Boilerplate
 
-Launched via `run_py`, which sets `PYTHONPATH=app/`, so `import py.*` resolves directly — **no
+Launched via `run_py`, which sets `PYTHONPATH=python/`, so `import cecelia.*` resolves directly — **no
 `sys.path` manipulation**:
 
 ```python
 """One-line description of what this script does."""
 
-# `py.*` resolves via PYTHONPATH=app/ (set by the Julia launcher, app/src/py_runner.jl::run_py).
-import py.utils.zarr_utils    as zarr_utils
-import py.utils.ome_xml_utils as ome_xml_utils
-import py.utils.script_utils  as script_utils
-from py.utils.dim_utils import DimUtils
-# import other py.utils.* as needed (e.g. correction_utils)
+# `cecelia.*` resolves via PYTHONPATH=python/ (set by the Julia launcher, app/src/py_runner.jl::run_py).
+import cecelia.utils.zarr_utils    as zarr_utils
+import cecelia.utils.ome_xml_utils as ome_xml_utils
+import cecelia.utils.script_utils  as script_utils
+from cecelia.utils.dim_utils import DimUtils
+# import other cecelia.utils.* as needed (e.g. correction_utils)
 
 import json, argparse
 
@@ -194,7 +194,7 @@ class Log:
     def progress(self, n, total): print(f'[PROGRESS] {n}/{total}', flush=True)
 ```
 
-`script_utils.Log` is already implemented this way in `app/py/utils/script_utils.py`.
+`script_utils.Log` is already implemented this way in `python/cecelia/utils/script_utils.py`.
 
 > **Required for every Python task.** The GUI progress bar only moves when `[PROGRESS]` lines are emitted. Without them the bar stays at 0% for the full duration of the task. Call `log.progress(n, total)` at the start (0/total) and after each major step. Three to five steps is typical — open, process, save. Tasks that omit this will silently show no progress.
 

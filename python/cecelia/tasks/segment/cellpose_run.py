@@ -39,12 +39,12 @@ Parameter contract (JSON written by Julia):
 
 import sys
 import os
-# `py.*` resolves via PYTHONPATH=app/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-import py.utils.zarr_utils as zarr_utils
-import py.utils.ome_xml_utils as ome_xml_utils
-import py.utils.script_utils as script_utils
-from py.utils.dim_utils import DimUtils
-from py.utils.cellpose_utils import CellposeUtils
+# `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
+import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.ome_xml_utils as ome_xml_utils
+import cecelia.utils.script_utils as script_utils
+from cecelia.utils.dim_utils import DimUtils
+from cecelia.utils.cellpose_utils import CellposeUtils
 
 
 def run(params):

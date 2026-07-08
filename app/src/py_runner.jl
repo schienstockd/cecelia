@@ -1,13 +1,17 @@
 # ── py_runner.jl — the single place Cecelia spawns Python subprocesses ────────────
 #
 # Every Python task runner and data-layer writer is launched through `run_py`. It sets
-# PYTHONPATH to app/ so the scripts resolve `import py.*` directly (no per-script sys.path
+# PYTHONPATH to python/ so the scripts resolve `import cecelia.*` directly (no per-script sys.path
 # bootstrapping), and centralises the params-file + stdout-stream + exit-check plumbing that used
 # to be copy-pasted into every task. (bioformats2raw — a non-Python binary — is still spawned
 # directly in importImages/omezarr.jl; this helper is Python-only.)
 using JSON3
 
-_app_dir() = dirname(@__DIR__)   # app/src → app/
+_app_dir() = dirname(@__DIR__)                       # app/src → app/
+# The Python helper package (`cecelia`) is a top-level sibling of app/ — repo-root/python/ — not
+# nested under the Julia app. Scripts are invoked by file path here; the editable install (see
+# python/pyproject.toml + the pixi `cecelia` dep) is what makes `import cecelia.*` resolve inside them.
+_python_dir() = joinpath(dirname(_app_dir()), "python")   # app/ → repo-root/python/
 
 """
     task_run_dir(base_dir) -> String
@@ -24,22 +28,22 @@ end
 """
     run_py(script_rel, params, config_dir; on_log, on_progress, on_process) -> Bool
 
-Run `app/py/<script_rel>` as a subprocess with a JSON `params` file written to `config_dir` (the
+Run `python/cecelia/<script_rel>` as a subprocess with a JSON `params` file written to `config_dir` (the
 run's task dir — see `task_run_dir`; never a temp dir) and passed via `--params`, which the script
 reads then deletes (so a clean run leaves nothing behind; a crashed one leaves the params for
 inspection — matching the legacy behaviour). Streams stdout/stderr line-by-line: `[PROGRESS] n/total`
 lines go to `on_progress(n, total)`, the rest to `on_log`. Registers the process with `on_process`
 (so `task:cancel` can kill it) and returns `true` only on a clean exit (`exitcode == 0 &&
 termsignal == 0` — libuv reports 0 exitcode for signal-killed procs, so both are checked). PYTHONPATH
-is set to app/ so the script can `import py.*` with no sys.path manipulation. This is the one place
+is set to python/ so the script can `import cecelia.*` with no sys.path manipulation. This is the one place
 Cecelia spawns a Python subprocess — the Julia analogue of the old R `self\$pyScript(name, params)`.
 """
 function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
                 on_log::Function      = line -> println(line),
                 on_progress::Function = (n, t) -> nothing,
                 on_process::Function  = _ -> nothing)::Bool
-    app = _app_dir()
-    py_script = joinpath(app, "py", script_rel)
+    py_root   = _python_dir()
+    py_script = joinpath(py_root, "cecelia", script_rel)
     isfile(py_script) || (on_log("[ERROR] Python script not found: $py_script"); return false)
 
     mkpath(config_dir)
@@ -49,7 +53,7 @@ function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
         JSON3.write(io, params)
     end
     out_pipe = Pipe()
-    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => app)
+    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => py_root)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

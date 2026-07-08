@@ -7,7 +7,7 @@ multiscale level with per-plane chunks (1 along T/C/Z, ``xy_tile``-capped along 
 unchanged** — only the on-disk chunk layout differs.
 
 Usage (run in the analysis env, e.g. ``pixi run python``):
-    python app/py/utils/rechunk_zarr.py PATH [--replace] [--force] [--xy-tile 512]
+    python python/cecelia/utils/rechunk_zarr.py PATH [--replace] [--force] [--xy-tile 512]
 
     PATH       a single ``*.ome.zarr`` store, or a directory scanned recursively for corrected stores.
     --replace  swap the rechunked copy in place; the original is backed up to ``<name>.bak.ome.zarr``.
@@ -25,11 +25,8 @@ import sys
 import dask.array as da
 import zarr
 
-# app/ on the path so `py.utils.zarr_utils` imports whether run as a script or a module.
-_APP_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
-if _APP_DIR not in sys.path:
-    sys.path.insert(0, _APP_DIR)
-from py.utils.zarr_utils import plane_chunks   # noqa: E402
+# `cecelia.*` resolves via the editable install in the pixi env — no sys.path needed.
+from cecelia.utils.zarr_utils import plane_chunks
 
 
 def _levels(group):
