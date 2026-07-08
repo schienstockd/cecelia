@@ -10,10 +10,12 @@
 import Pkg
 Pkg.activate(@__DIR__)
 using PackageCompiler
+include(joinpath(@__DIR__, "sysimage_stamp.jl"))
 
 create_sysimage(
     ["CairoMakie", "AlgebraOfGraphics", "DataFrames", "HDF5", "HTTP"];
     sysimage_path = joinpath(@__DIR__, "deps.so"),
     precompile_execution_file = joinpath(@__DIR__, "precompile_workload.jl"),
 )
+write_sysimage_stamp(@__DIR__)   # record Julia + Manifest versions so a later update can detect staleness
 @info "sysimage built" path = joinpath(@__DIR__, "deps.so")

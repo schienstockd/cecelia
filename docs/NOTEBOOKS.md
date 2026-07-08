@@ -12,8 +12,9 @@ the work the old R Markdown vignettes did, now versioned and organised. Notebook
 - **From the app:** the **Notebooks** sidebar item (Analysis group). *Launch server* starts Pluto;
   *Open Notebooks* opens it in a new tab. The table below manages this project's notebooks.
 - **From the terminal:** `pixi run notebooks` (Pluto on **:7660**), `pixi run stop-notebooks`.
-- **First plot is slow (~20 s)** unless a sysimage is built — `pixi run notebooks-sysimage` (dev).
-  See *Sysimage* below.
+- **First plot is slow (~20 s)** until the fast-plot sysimage is built. Build it from the Notebooks
+  page — an **Enable fast plots** button (background, ~10 min); after an update it becomes a
+  **Rebuild** prompt. `pixi run notebooks-sysimage` is the manual/dev path. See *Sysimage* below.
 
 ## Where things live
 
@@ -23,6 +24,7 @@ pluto/                       ← the notebook ENGINE (its own Julia env; path-so
   launch.jl                  ← starts Pluto (:7660), wires the sysimage + CECELIA_PLUTO_ENV
   build_sysimage.jl          ← deps-only sysimage (dev)      → pluto/deps.so (git-ignored)
   build_sysimage_full.jl     ← full sysimage (release)       → pluto/deps.so
+  sysimage_stamp.jl          ← writes/checks deps.so.stamp (Julia+Manifest) for update-staleness
   notebook_template.jl       ← starter copied by "Add notebook"
   CeceliaNb/                 ← small notebook-side helper package (aggregation + AoG plot shortcuts)
 notebooks/                   ← shipped EXAMPLE notebooks (UID-free, versioned with the code)
@@ -91,9 +93,28 @@ Provenance without git or file-watching:
 Makie compiles plotting code on first use (~20 s cold). A PackageCompiler sysimage bakes that in
 (measured cold-start 32 s → 7.6 s). Built to `pluto/deps.so` (git-ignored, ~1.4 GB, ~10 min):
 `notebooks-sysimage` (dev, deps only — excludes Cecelia so Revise still hot-reloads it) /
-`notebooks-sysimage-full` (release, bakes Cecelia + CeceliaNb in). `launch.jl` picks up `deps.so`
-automatically and passes it to notebook workers; without it, notebooks still work, just slow-first-plot.
-Release packaging: see `docs/SHIPPING.md`.
+`notebooks-sysimage-full` (release, bakes Cecelia + CeceliaNb in). Both run the same
+`create_sysimage`; the **only** difference is the package list — the `-full` build adds `CSV`,
+`Cecelia`, and `CeceliaNb`, so a release image also skips the first-`pop_df` compile, at the cost of
+being frozen (no Revise). `launch.jl` picks up `deps.so` and passes it to notebook workers; without
+it, notebooks still work, just slow-first-plot.
+
+**Built from a button, not by hand.** An end user never runs the `pixi` task. The Notebooks page shows
+an **Enable fast plots** button (→ `POST /api/notebooks/build-sysimage`) that builds `deps.so` in a
+**background process** while notebooks stay fully usable (a banner explains the slow-first-plot until
+it lands). The fresh image is used from the **next** server launch — we never restart a running server
+out from under an open session. The build is opt-in (a ~10 min, ~1.4 GB job shouldn't start on a
+stray click); `pixi run notebooks-sysimage` remains the manual/dev path.
+
+**Update-safe (the stamp).** A sysimage is native code tied to the exact Julia version + baked package
+versions, so it can't be shipped prebuilt as one universal artifact, and after an update the on-disk
+image goes **stale**. Each build writes a sidecar `deps.so.stamp` (`{julia, hash(Manifest.toml)}`, see
+`pluto/sysimage_stamp.jl`). Freshness = both fields match the current Julia + Manifest. `launch.jl`
+ignores a stale image (falls back to slow-first-plot rather than handing workers an incompatible one),
+and the status endpoint reports `stale` so the page shows a **Rebuild** button — same flow as first-run.
+`_classify_sysimage` (in `notebooks_api.jl`) is the pure, tested classifier: `ready` / `stale` /
+`building` / `error` / `absent`. Release packaging (ship a prebuilt image per platform vs. build on
+first run): see `docs/SHIPPING.md` and TODO #00070.
 
 ## API surface (`api/src/notebooks_api.jl`)
 
@@ -107,7 +128,8 @@ Routes:
 | Route | Purpose |
 |---|---|
 | `POST /api/notebooks/launch` | ensure the server is up (202 while starting) → `{url}` |
-| `GET  /api/notebooks/status` | `{running, starting, url}` |
+| `GET  /api/notebooks/status` | `{running, starting, url, sysimage}` (`sysimage`: ready/stale/building/error/absent) |
+| `POST /api/notebooks/build-sysimage` | start the background fast-plot build (idempotent) → `{status}` |
 | `GET  /api/notebooks?projectUid=` | list notebooks (project + example scopes) with description/version/path |
 | `POST /api/notebooks/create` | new notebook from the template |
 | `POST /api/notebooks/describe` | set a notebook's description |

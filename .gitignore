@@ -27,5 +27,6 @@ Thumbs.db
 
 # Notebook Playground sysimage — a ~1.4 GB build artifact (rebuild with `pixi run notebooks-sysimage`).
 pluto/deps.so
+pluto/deps.so.stamp
 # Runtime Pluto session secret (written by pluto/launch.jl; read by the API to build authorized URLs).
 pluto/.plutosecret

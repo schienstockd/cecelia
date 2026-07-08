@@ -15,6 +15,12 @@ const url = ref('http://localhost:7660/')
 const secret = ref('')
 const errorMsg = ref('')
 
+// Fast-plot sysimage (pluto/deps.so): built on first visit, in the background, so notebooks are
+// usable immediately (slow first plot until it lands). See api_notebooks_build_sysimage.
+// 'stale' = an image built for a different Julia/package set (after an update) — rebuilt like 'absent'.
+type SysimageState = 'unknown' | 'absent' | 'stale' | 'building' | 'ready' | 'error'
+const sysimage = ref<SysimageState>('unknown')
+
 // Pluto requires a secret (see launch.jl); append it so the browser is authorized.
 const homeUrl = computed(() => secret.value ? `${url.value}?secret=${encodeURIComponent(secret.value)}` : url.value)
 
@@ -23,8 +29,33 @@ const hasProject = computed(() => projectMeta.hasProject)
 const serverRunning = computed(() => server.value === 'running')
 
 let poll: number | undefined
+let buildPoll: number | undefined
 
 function stopPoll() { if (poll) { clearInterval(poll); poll = undefined } }
+function stopBuildPoll() { if (buildPoll) { clearInterval(buildPoll); buildPoll = undefined } }
+
+// Build the fast-plot cache on demand (button). Used for a first build ('absent'), a rebuild after a
+// package update ('stale'), or a retry ('error'). Idempotent; notebooks work without it either way.
+async function buildSysimage() {
+  if (sysimage.value === 'building' || sysimage.value === 'ready') return
+  try {
+    const res = await fetch('/api/notebooks/build-sysimage', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    const d = await res.json().catch(() => ({}))
+    if (res.ok) sysimage.value = d.status ?? 'building'
+  } catch { /* silent — the fallback (slow first plot) still works */ }
+  if (sysimage.value === 'building') startBuildPoll()
+}
+
+// Poll until the build finishes (~10 min) — slow cadence, it's a long job.
+function startBuildPoll() {
+  stopBuildPoll()
+  buildPoll = window.setInterval(async () => {
+    await refreshStatus()
+    if (sysimage.value === 'ready' || sysimage.value === 'error') stopBuildPoll()
+  }, 5000)
+}
 
 function startPolling() {
   stopPoll()
@@ -44,6 +75,7 @@ async function refreshStatus() {
     url.value = d.url ?? url.value
     secret.value = d.secret ?? ''
     server.value = d.running ? 'running' : (d.starting ? 'starting' : 'stopped')
+    sysimage.value = d.sysimage ?? 'unknown'
     if (d.error) errorMsg.value = d.error
     else if (d.running) errorMsg.value = ''
   } catch {
@@ -109,8 +141,9 @@ async function shutdown() {
   await refreshStatus()
 }
 
-onMounted(refreshStatus)
-onUnmounted(stopPoll)
+// On open, learn the cache state (for the button) and resume watching a build already in progress.
+onMounted(async () => { await refreshStatus(); if (sysimage.value === 'building') startBuildPoll() })
+onUnmounted(() => { stopPoll(); stopBuildPoll() })
 </script>
 
 <template>
@@ -161,6 +194,37 @@ onUnmounted(stopPoll)
           First launch precompiles — this can take up to a minute.
         </p>
         <p v-if="errorMsg" class="nb-error"><i class="pi pi-exclamation-triangle" /> {{ errorMsg }}</p>
+
+        <!-- Fast-plot cache: an optional compiled sysimage that makes the first plot fast. Built on
+             demand (this button); notebooks work without it, just slow-first-plot. -->
+        <div v-if="sysimage === 'building'" class="nb-note">
+          <i class="pi pi-spin pi-cog" />
+          <span>
+            <strong>Building the fast-plot cache (~10 min, in the background).</strong>
+            Keep working — notebooks are usable now; only the <em>first</em> plot is slow until it
+            finishes. The cache is picked up automatically the next time the server launches.
+          </span>
+        </div>
+        <div v-else-if="sysimage === 'absent' || sysimage === 'stale' || sysimage === 'error'"
+             class="nb-build-row">
+          <button class="cc-btn cc-btn-ghost" @click="buildSysimage"
+                  v-tooltip.top="'Build a compiled image so the first plot renders fast (~10 min, runs in the background)'">
+            <i class="pi pi-bolt" />
+            {{ sysimage === 'stale' ? 'Rebuild fast-plot cache'
+             : sysimage === 'error' ? 'Retry fast-plot build'
+             : 'Enable fast plots' }}
+          </button>
+          <span class="nb-hint">
+            {{ sysimage === 'stale'
+              ? 'A package update outdated the cached image — rebuild to keep the first plot fast.'
+             : sysimage === 'error'
+              ? "Last build didn't finish — notebooks still work, just with a slow first plot."
+              : 'Optional: skip the ~20 s first-plot compile. Notebooks work without it.' }}
+          </span>
+        </div>
+        <p v-else-if="sysimage === 'ready'" class="nb-hint">
+          <i class="pi pi-bolt" /> Fast plots enabled.
+        </p>
       </section>
 
       <!-- Notebook registry (Phase 3: manage + version) -->
@@ -185,4 +249,12 @@ onUnmounted(stopPoll)
 .nb-status.is-stopped .pi, .nb-status.is-unknown .pi { color: var(--cc-text-muted, #888); }
 .nb-hint { color: var(--cc-text-muted, #888); font-size: .85rem; margin: .5rem 0 0; }
 .nb-error { color: #f0883e; font-size: .85rem; margin: .5rem 0 0; display: flex; align-items: center; gap: .4rem; }
+.nb-note {
+  display: flex; align-items: flex-start; gap: .55rem; margin: .75rem 0 0; padding: .65rem .8rem;
+  font-size: .85rem; line-height: 1.4; border-radius: 6px;
+  color: var(--cc-text, #cdd9e5); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
+}
+.nb-note .pi { margin-top: .1rem; color: #58a6ff; }
+.nb-build-row { display: flex; align-items: center; gap: .75rem; margin: .75rem 0 0; flex-wrap: wrap; }
+.nb-build-row .nb-hint { margin: 0; }
 </style>

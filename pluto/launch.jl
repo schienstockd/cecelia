@@ -27,13 +27,19 @@ ENV["CECELIA_PLUTO_ENV"] = @__DIR__
 
 launch_browser = get(ENV, "CECELIA_PLUTO_BROWSER", "true") == "true"
 
-# Deps-only sysimage → worker compiler options (if built).
+# Deps-only sysimage → worker compiler options — but ONLY if it's FRESH. A sysimage left over from a
+# previous Julia/package version is stale: at best slower, at worst a Julia-version mismatch that makes
+# workers reject it. So we use it only when its stamp matches (sysimage_stamp.jl); otherwise fall back
+# to a plain session (slow first plot) and let the app rebuild it. Never hand workers a stale image.
+include(joinpath(@__DIR__, "sysimage_stamp.jl"))
 sysimg = joinpath(@__DIR__, "deps.so")
-compiler = if isfile(sysimg)
+compiler = if sysimage_fresh(@__DIR__)
     @info "Pluto workers will use the deps sysimage (fast first plot)" sysimg
     Pluto.Configuration.CompilerOptions(sysimage = sysimg)
 else
-    @warn "No pluto/deps.so — first plot in each notebook will be slow (~20s). Build it with: pixi run notebooks-sysimage"
+    isfile(sysimg) ?
+        @warn("Ignoring a stale pluto/deps.so (built for a different Julia/package set) — the app will rebuild it. First plot slow (~20s) until then.") :
+        @warn("No pluto/deps.so — first plot in each notebook will be slow (~20s). Build it with: pixi run notebooks-sysimage")
     Pluto.Configuration.CompilerOptions()
 end
 

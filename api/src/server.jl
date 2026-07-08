@@ -253,6 +253,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_notebooks_shutdown(body_bytes)
         elseif path == "/api/notebooks/restart"
             api_notebooks_restart(body_bytes)
+        elseif path == "/api/notebooks/build-sysimage"
+            api_notebooks_build_sysimage(body_bytes)
         elseif path == "/api/napari/open"
             api_napari_open(body_bytes)
         elseif path == "/api/napari/close"
