@@ -1,21 +1,31 @@
-import { toRefs, type ToRefs, type Ref } from 'vue'
+import { computed, watch, type ToRefs, type Ref, type WritableComputedRef } from 'vue'
 
 /**
  * Shiny-`reactiveValues`-style persisted view state.
  *
- * Given a STORE-BACKED reactive bag (e.g. the `canvasPanels` per-canvas `shared` object) and a
- * `defaults` literal, this seeds any missing keys and returns the bag as refs (`toRefs`). Every
- * returned ref reads/writes the bag, so ALL options declared in `defaults` persist across navigation
- * automatically — there is nothing to wire per-field. The convention is therefore simple and
- * forget-proof: **put every user-settable option in the `defaults` object**; adding one there is the
- * only step needed to persist it. (Contrast: a plain `ref()` in the component would silently reset on
- * remount — the bug class this exists to kill.)
+ * Given a STORE-BACKED reactive bag `Ref` (e.g. the `canvasPanels` per-canvas `shared` object) and a
+ * `defaults` literal, this seeds any missing keys and returns one ref per option. Each ref reads/writes
+ * the CURRENT bag, so ALL options declared in `defaults` persist automatically — nothing to wire
+ * per-field. Convention: **put every user-settable option in `defaults`**; that's the only step.
  *
- * The bag must be reactive (it is, when it comes from a Pinia store) so the refs stay live.
+ * The refs track the bag's IDENTITY, not just its contents: when `bag.value` becomes a different object
+ * (e.g. a per-image canvas key rebinds `shared` to another image's entry — see `useCanvasPanels`), the
+ * refs re-seed defaults into and read/write the new bag. This is what makes global-scope canvas state
+ * (highlights, line width, scope, styling) per-image across every module page from one place, with no
+ * per-page code. (Contrast: a plain `ref()` would silently reset on remount — the bug this kills.)
  */
 export function useViewState<T extends object>(bag: Ref<Record<string, unknown>>, defaults: T): ToRefs<T> {
-  for (const k in defaults) {
-    if (bag.value[k] === undefined) (bag.value as Record<string, unknown>)[k] = (defaults as Record<string, unknown>)[k]
+  const seed = (b: Record<string, unknown>) => {
+    for (const k in defaults) if (b[k] === undefined) b[k] = (defaults as Record<string, unknown>)[k]
   }
-  return toRefs(bag.value as T)
+  // Re-seed whenever the bag identity changes (immediate covers the initial bag).
+  watch(bag, seed, { immediate: true })
+  const out = {} as Record<string, WritableComputedRef<unknown>>
+  for (const k in defaults) {
+    out[k] = computed({
+      get: () => { const v = bag.value[k]; return v === undefined ? (defaults as Record<string, unknown>)[k] : v },
+      set: v => { bag.value[k] = v },
+    })
+  }
+  return out as unknown as ToRefs<T>
 }

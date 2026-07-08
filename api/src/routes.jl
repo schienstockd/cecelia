@@ -359,8 +359,30 @@ function api_projects_load(body_bytes::Vector{UInt8})
         end
     end
 
+    # Per-object module-page canvas layouts, stored WITH each object at 1/{uid}/moduleCanvases.json
+    # (like ccid.json / labelProps — locality + auto-cleanup on delete). Reassemble the per-canvas-key
+    # map by merging every object's file; null when none saved.
+    moduleCanvases = nothing
+    onedir = joinpath(proj_dir, "1")
+    if isdir(onedir)
+        merged_entries = Dict{String,Any}(); merged_geom = Dict{String,Any}()
+        for obj in readdir(onedir)
+            f = joinpath(onedir, obj, "moduleCanvases.json")
+            isfile(f) || continue
+            try
+                d = JSON3.read(read(f, String))
+                for (k, v) in pairs(get(d, :entries, Dict{Symbol,Any}())); merged_entries[String(k)] = v; end
+                for (k, v) in pairs(get(d, :geom, Dict{Symbol,Any}()));    merged_geom[String(k)] = v;    end
+            catch e
+                @warn "Could not read module canvases" obj exception=e
+            end
+        end
+        (isempty(merged_entries) && isempty(merged_geom)) ||
+            (moduleCanvases = Dict("entries" => merged_entries, "geom" => merged_geom))
+    end
+
     @info "Opened project" name=get(project, "name", "?") uid sets=length(sets)
-    200, JSON3.write((; project, sets, boards))
+    200, JSON3.write((; project, sets, boards, moduleCanvases))
 end
 
 function api_projects_save(body_bytes::Vector{UInt8})
@@ -390,6 +412,33 @@ function api_projects_save(body_bytes::Vector{UInt8})
             open(joinpath(settings, "analysisBoards.json"), "w") do io; JSON3.write(io, boards); end
         catch e
             @warn "Could not save analysis boards" uid exception=e
+        end
+    end
+    200, JSON3.write((; ok=true))
+end
+
+# POST /api/projects/canvases  { projectUid, objects: { <objUid>: {entries, geom} } }
+# Autosaved module-page canvas layouts, written PER OBJECT to 1/{objUid}/moduleCanvases.json (the
+# object = the image or set the canvas is scoped to; frontend groups by canvas key). Stored with the
+# object → survives with it and is removed when it's deleted; the debounced autosave rewrites only the
+# object(s) that changed, never a global blob. Opaque frontend JSON, stored verbatim.
+function api_projects_canvases(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    objects = get(body, :objects, nothing)
+    if objects !== nothing
+        for (objUid, data) in pairs(objects)
+            objdir = joinpath(projects_dir(), uid, "1", String(objUid))
+            isdir(objdir) || continue   # object deleted/unknown → skip (no stray files)
+            try
+                open(joinpath(objdir, "moduleCanvases.json"), "w") do io; JSON3.write(io, data); end
+            catch e
+                @warn "Could not save module canvases" uid obj=String(objUid) exception=e
+            end
         end
     end
     200, JSON3.write((; ok=true))

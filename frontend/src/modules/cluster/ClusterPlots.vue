@@ -15,7 +15,7 @@
   cluster numbering; the heatmap pools via setUid).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useProjectStore } from '../../stores/project'
 import { useGatingStore } from '../../stores/gating'
@@ -45,12 +45,14 @@ const projectUid = computed(() => meta.current?.uid ?? '')
 const setUid = computed(() => project.activeSetUid)
 
 const canvasRef = ref<HTMLElement | null>(null)
+// Clustering is SET-scope (plots pool across the set's images), so persist per-set — rebinds when the
+// active set changes. (Gating/summary key per-image; cluster per-set is the "where it makes sense".)
+const ckey = computed(() => `clust:${props.popType}:${setUid.value ?? 'none'}`)
 // NB: no `features: []` default — leave it undefined so the heatmap panel self-seeds its features
 // from the run (its seed watch only fires when `features === undefined`, to avoid clobbering a
 // deliberate empty pick). Seeding `[]` here silently blocked that → heatmap never rendered on the page.
 const { panels, activeId, shared, add, remove, arrangeGrid, arrangeCascade } =
-  useCanvasPanels<ClusterPanelState>(canvasRef, () => ({ kind: 'umap', labels: true, hl: [] }),
-    `clust:${props.popType}`)
+  useCanvasPanels<ClusterPanelState>(canvasRef, () => ({ kind: 'umap', labels: true, hl: [] }), ckey)
 const activePanel = computed(() => panels.value.find(p => p.id === activeId.value) ?? null)
 
 // migrate persisted panel kinds to the CLUSTER_PANELS registry keys (legacy hyphenated → camelCase),
@@ -165,11 +167,10 @@ const ctxFor = (s: ClusterPanelState) => ({
 // so this is just for the highlight affordance — kept local and unused by the cluster plots for now.
 const selectedPop = ref('')
 
-onMounted(() => {
-  // seed a UMAP + a heatmap ONLY when this canvas is empty (panels persist per `clust:${popType}`
-  // across navigation — an unconditional add() would stack more on every remount).
-  if (panels.value.length === 0) { addKind('umap'); addKind('heatmap') }
-})
+// Seed a UMAP + a heatmap for any set that has none yet — on first bind AND after a set switch (the
+// reactive per-set key rebinds to a fresh entry; the component doesn't remount). Restored canvases
+// come back non-empty, so they're left as-is; persisted per set, so no stacking on remount.
+watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('heatmap') } }, { immediate: true })
 </script>
 
 <template>
@@ -223,19 +224,19 @@ onMounted(() => {
                            :vis="activeVis"
                            @update:selected="selectedPop = $event" @update:scope="scope = $event"
                            @update:vis="setVis" @toggle-highlight="toggleHighlight" />
-        <template v-for="(p, i) in panels" :key="p.id">
+        <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
                             :active="p.id === activeId" :view="p.state.kind"
                             :context="ctxFor(p.state)" :state="p.state" :duplicable="true"
-                            :persist-key="`clust:${popType}:${p.id}`"
+                            :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
           <!-- cluster panels (heatmap / HMM behaviour) → GENERIC render from the CLUSTER_PANELS
                registry — the SAME mechanism the Analysis board uses (LayoutCanvas). Adding a cluster
                plot is one registry line; no per-plot branch here. -->
           <component v-else-if="isClusterPanel(p.state.kind)" :is="CLUSTER_PANELS[p.state.kind].component"
                             :index="i" :arrange="p.arrange" :active="p.id === activeId"
-                            v-bind="clusterPanelProps(p)" :persist-key="`clust:${popType}:${p.id}`"
+                            v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
       </div>

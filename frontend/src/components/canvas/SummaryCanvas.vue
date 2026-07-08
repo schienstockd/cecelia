@@ -29,13 +29,16 @@ import type { SeriesTarget, ChartType } from '../../plots/types'
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
 // independently; parents that switch the key MUST also `:key` this component by it so setup re-runs.
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey?: string }>()
-const ckey = props.canvasKey ?? `summary:${props.module ?? 'universal'}`
 const project = useProjectStore()
 const meta = useProjectMetaStore()
 
 const projectUid = computed(() => meta.current?.uid ?? '')
 const imageUid = computed(() => props.imageUids[0] ?? null)   // drives "this image" plots
 const setUid = computed(() => project.activeSetUid)
+
+// Persistence key: an explicit override (the Analysis board) wins; otherwise per-module + per-image so
+// each image keeps its own plots/selections and the canvas rebinds when the selected image changes.
+const ckey = computed(() => props.canvasKey ?? `summary:${props.module ?? 'universal'}:${imageUid.value ?? 'none'}`)
 
 // per-plot state (edited inside SummaryPanel; persists in the panel objects). Canvas-level view state
 // + all shared data (specs/pops/attrs, compare/scope/global sel+vis) come from useSummaryData below.
@@ -133,7 +136,7 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
         <span v-else class="sc-hint">eye-select populations to plot · drag plots by their title</span>
       </div>
       <div ref="canvasRef" class="sc-canvas">
-        <template v-for="(p, i) in panels" :key="p.id">
+        <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <SummaryPanel v-if="specById[p.state.specId]" :index="i" :arrange="p.arrange"
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
                         :project-uid="projectUid" :image-uid="imageUid"

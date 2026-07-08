@@ -34,10 +34,13 @@ const ws = useWsStore()
 // per-plot copies of every scoped option (used when scope = 'local')
 interface PlotState { parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
+// Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
+// its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
+// (g.valueName) changes.
+const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
 const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
   useCanvasPanels<PlotState>(canvasRef, () =>
-    ({ parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true }),
-    `gate:${props.popType}`)
+    ({ parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true }), ckey)
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
@@ -100,13 +103,16 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
     if (p.state.parent !== 'root' && !exist.has(p.state.parent)) p.state.parent = 'root'
   }
 })
-onMounted(() => {
-  ws.on('gating:popmap', onBroadcast); load()
-  // seed two plots ONLY when this canvas is empty — panels persist per `gate:${popType}` across
-  // navigation, so an unconditional add() stacks two more every time the page re-mounts (switching
-  // Gate↔Tracking: 2→4→6…).
-  if (panels.value.length === 0) { add(); add() }
-})
+onMounted(() => { ws.on('gating:popmap', onBroadcast); load() })
+// Seed two starter plots for any (image, segmentation) that has none yet — on first bind AND after an
+// image/segmentation switch (the reactive key rebinds to a fresh entry; the component doesn't remount).
+// Gated on valueNames being loaded so we don't seed a transient placeholder key, and skipped for
+// restored canvases (they come back non-empty). Persisted per (image, value_name), so no 2→4→6 stacking.
+watch([ckey, () => g.valueNames.length], () => {
+  if (props.imageUid && g.valueName && g.valueNames.includes(g.valueName) && panels.value.length === 0) {
+    add(); add()
+  }
+}, { immediate: true })
 onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 </script>
 
@@ -155,10 +161,10 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <span class="gp-hint">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
-        <GatePlotPanel v-for="(p, i) in panels" :key="p.id" :index="i" :arrange="p.arrange"
+        <GatePlotPanel v-for="(p, i) in panels" :key="`${ckey}:${p.id}`" :index="i" :arrange="p.arrange"
                        :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                        :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                       :persist-key="`gate:${props.popType}:${p.id}`"
+                       :persist-key="`${ckey}:${p.id}`"
                        @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         <PopulationManager :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
