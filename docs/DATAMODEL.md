@@ -216,7 +216,7 @@ for obs) are handled; sparse (`csr/csc`) raises rather than misreads.
 `HDF5.jl`). Categorical/string obs columns (HMM states are written numeric, but transitions like
 `"1_2"` and cluster ids are strings) need anndata's categorical encoding, so they go through
 `write_categorical_obs(path, columns; drop=…)` — a Python subprocess
-(`app/py/writers/write_categorical_obs_run.py`), the same "new encodings are Python's job" split as
+(`python/cecelia/writers/write_categorical_obs_run.py`), the same "new encodings are Python's job" split as
 new-file creation. The reader decodes categoricals
 transparently, so either write round-trips like any obs column.
 
