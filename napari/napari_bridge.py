@@ -66,6 +66,19 @@ class NapariState:
         self._colcol_cache = {}       # (value_name, column) → (labels, vals, is_cat) obs column read
         self._ts_handler = None       # timestamp slider callback, disconnected before reconnecting
 
+        # ── layer-props autosave (debounced, atomic) ────────────────────────────
+        # Save brightness/contrast/colormap + the T/Z slider position the moment the user changes
+        # them (coalesced ~500ms), so the view survives navigation AND a crash/hard-kill — the file
+        # is only ever written atomically. Off unless the app enables it per open (configure_autosave).
+        self._autosave_path = None     # target .pkl for the currently open image, or None
+        self._autosave_enabled = False
+        self._autosave_loading = False # True while applying loaded props → suppress the write-back
+        self._autosave_conns = []      # [(emitter, cb)] connected for the current image; dropped on reconnect
+        self._autosave_timer = QTimer()
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(500)   # debounce window: one write ~500ms after the last change
+        self._autosave_timer.timeout.connect(self._autosave_flush)
+
     # ── Viewer lifecycle ───────────────────────────────────────────────────────
 
     def clear(self):
@@ -763,6 +776,57 @@ class NapariState:
 
     # ── Persistence ───────────────────────────────────────────────────────────
 
+    # ── Live autosave (debounced) ───────────────────────────────────────────────
+
+    def configure_autosave(self, path: str, enabled: bool):
+        """Point live autosave at `path` for the currently open image and (re)wire the change events.
+        Called by the app AFTER each open (layers are recreated per open, so we must reconnect to the
+        fresh layers), and again when the user toggles the setting while an image is open."""
+        self._autosave_path = path
+        self._autosave_enabled = bool(enabled)
+        self._reconnect_autosave()
+
+    def _reconnect_autosave(self):
+        # drop connections to the previous image's (now-destroyed) layers
+        for emitter, cb in self._autosave_conns:
+            try:
+                emitter.disconnect(cb)
+            except Exception:
+                pass
+        self._autosave_conns = []
+        self._autosave_timer.stop()
+        if not self._autosave_enabled:
+            return
+        cb = self._schedule_autosave
+        # per Image-layer display props …
+        for layer in self._viewer.layers:
+            if type(layer).__name__ == "Image":
+                for ev in (layer.events.contrast_limits, layer.events.gamma,
+                           layer.events.colormap, layer.events.opacity,
+                           layer.events.blending, layer.events.visible):
+                    ev.connect(cb)
+                    self._autosave_conns.append((ev, cb))
+        # … and the viewer's T/Z slider position
+        ev = self._viewer.dims.events.current_step
+        ev.connect(cb)
+        self._autosave_conns.append((ev, cb))
+
+    def _schedule_autosave(self, event=None):
+        # ignore changes we cause ourselves while applying loaded props
+        if not self._autosave_enabled or self._autosave_loading or not self._autosave_path:
+            return
+        self._autosave_timer.start()   # single-shot restart → coalesces a burst into one write
+
+    def _autosave_flush(self):
+        if not self._autosave_enabled or not self._autosave_path:
+            return
+        try:
+            self.save_layer_props(self._autosave_path)
+        except Exception:
+            pass
+
+    # ── Persistence (also used for the on-switch save/load) ──────────────────────
+
     def save_layer_props(self, filepath: str):
         props = {"Image": []}
         _keys = [
@@ -775,17 +839,46 @@ class NapariState:
                     k: getattr(layer, k).name if k == "colormap" else getattr(layer, k)
                     for k in _keys
                 })
-        with open(filepath, "wb") as f:
+        # viewer dims position (the T/Z slider) so the image reopens on the same frame/slice
+        try:
+            props["dims"] = {"current_step": list(self._viewer.dims.current_step)}
+        except Exception:
+            pass
+        # atomic write (tmp + os.replace) so a crash/kill never leaves a half-written props file —
+        # the image always reopens in a valid remembered state.
+        tmp = filepath + ".tmp"
+        with open(tmp, "wb") as f:
             pickle.dump(props, f, pickle.HIGHEST_PROTOCOL)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, filepath)
 
     def load_layer_props(self, filepath: str):
         with open(filepath, "rb") as f:
             data = pickle.load(f)
-        entries = list(reversed(data.get("Image", [])))
-        for layer in self._viewer.layers:
-            if type(layer).__name__ == "Image" and entries:
-                for k, v in entries.pop().items():
-                    setattr(layer, k, v)
+        self._autosave_loading = True   # applying these must not trigger a write-back
+        try:
+            entries = list(reversed(data.get("Image", [])))
+            for layer in self._viewer.layers:
+                if type(layer).__name__ == "Image" and entries:
+                    for k, v in entries.pop().items():
+                        setattr(layer, k, v)
+            # restore the T/Z slider, clamped to this image's dims (a different segmentation/shape
+            # may have fewer steps) — preserve current_step length, only override saved axes.
+            dims = data.get("dims") or {}
+            saved = dims.get("current_step")
+            if saved is not None:
+                try:
+                    cur = list(self._viewer.dims.current_step)
+                    nsteps = self._viewer.dims.nsteps
+                    for i in range(len(cur)):
+                        if i < len(saved) and i < len(nsteps):
+                            cur[i] = max(0, min(int(saved[i]), int(nsteps[i]) - 1))
+                    self._viewer.dims.current_step = tuple(cur)
+                except Exception:
+                    pass
+        finally:
+            self._autosave_loading = False
 
     # ── Screenshot ────────────────────────────────────────────────────────────
 
@@ -1081,6 +1174,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
 
         elif t == "load_layer_props":
             state.load_layer_props(cmd["path"])
+
+        elif t == "configure_autosave":
+            state.configure_autosave(cmd.get("path"), bool(cmd.get("enabled", False)))
 
         elif t == "save_screenshot":
             state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True))

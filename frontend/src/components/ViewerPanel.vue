@@ -126,6 +126,18 @@ async function openInNapari(valueName: string) {
   }
 }
 
+// Toggling auto-save while an image is already open should take effect immediately (not only on the
+// next open), so tell the bridge to start/stop live-saving the current image. No-op if napari isn't
+// running — the flag still applies on the next open via /api/napari/open.
+watch(() => settings.napariAutoSaveLayerProps, async enabled => {
+  try {
+    await fetch('/api/napari/configure-autosave', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    })
+  } catch { /* napari not running */ }
+})
+
 // Push a pop type's populations to napari as centroid points. When no `valueName` is given we send
 // BLANK so the server resolves the image's ACTIVE segmentation — the same one gating/clustering
 // (and the population manager's own napari toggle) write to. Defaulting to `labelNames[0]` was the
@@ -501,7 +513,7 @@ onUnmounted(() => {
       <button
         class="opt-btn" :class="{ active: settings.napariAutoSaveLayerProps }"
         @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
-        v-tooltip.bottom="'Auto-save layer props: save brightness/contrast and colormap when switching images, reload on next open'"
+        v-tooltip.bottom="'Auto-save layer props: save brightness/contrast, colormap and the T/Z slider the moment you change them (survives navigation and crashes); reload on next open'"
       ><i class="pi pi-bookmark" /></button>
 
       <button
