@@ -47,6 +47,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap',      tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
       { to: '/spatial', label: 'Spatial', icon: 'pi-map',          tip: 'Spatial neighbourhood and proximity analysis.', disabled: true, soon: true },
       { to: '/analysis', label: 'Analysis board', icon: 'pi-clone', tip: 'Free-form canvas combining plots across modules, images and segmentations.', requiresProject: true },
+      { to: '/notebooks', label: 'Notebooks', icon: 'pi-book', tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
     ],
   },
   {
