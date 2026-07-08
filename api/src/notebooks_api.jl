@@ -298,6 +298,17 @@ function api_notebooks_delete(body_bytes::Vector{UInt8})
     end
     dest = joinpath(_project_notebooks_dir(uid), file)
     isfile(dest) && rm(dest)
+    # Also drop this notebook's snapshots (.snapshots/<stem>@v<N>.jl) — otherwise deleting the
+    # notebook orphans its whole version history on disk.
+    snapdir = joinpath(_project_notebooks_dir(uid), ".snapshots")
+    prefix  = "$(splitext(file)[1])@v"
+    if isdir(snapdir)
+        for f in readdir(snapdir)
+            (startswith(f, prefix) && endswith(f, ".jl")) || continue
+            tryparse(Int, f[(length(prefix) + 1):(length(f) - 3)]) === nothing && continue
+            rm(joinpath(snapdir, f))
+        end
+    end
     reg = _read_registry(uid)
     delete!(reg, file)
     _write_registry!(uid, reg)
