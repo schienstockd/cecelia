@@ -18,6 +18,7 @@ See also:
 - [`docs/API.md`](docs/API.md) — HTTP/WS surface: routing conventions, binary responses, route index, gating routes (popmap/CRUD/plotdata/density/membership/stats)
 - [`docs/PLOTS.md`](docs/PLOTS.md) — summary-plot design: chart types × data source (one/multi/pooled) × measure type (numeric/categorical), encoding model, the agreed renderer spec
 - [`docs/ANALYSIS.md`](docs/ANALYSIS.md) — the Analysis board (`/analysis`): tabs + comic-plate layout + persistence keys, the registry-driven plot families (summary/interactive/cluster/image), the read-only cluster manager, the gating-strategy plot, and PDF/CSV export (light theme, shared hi-res raster path)
+- [`docs/NOTEBOOKS.md`](docs/NOTEBOOKS.md) — the Notebooks Playground (`/notebooks`): pure-Julia Pluto downstream analysis; the `pluto/` engine env, `CeceliaNb` helpers, per-project registry + snapshot/restore versioning, the deps/full sysimage, and the `/api/notebooks/*` routes
 - [`docs/FUTURE.md`](docs/FUTURE.md) — deliberately deferred optimisations (known-better alternatives set aside): what, why deferred, when to revisit
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — temporary forward goals: phases (behaviour/HMM → clustering → freeze v1.0 → packaging/distribution → self-update) + post-v1 backlog. Consult before starting a new phase.
 - [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
@@ -33,6 +34,7 @@ See also:
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |
 | Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
+| Notebooks Playground: Pluto engine, `CeceliaNb`, registry/versioning, sysimage, `/api/notebooks/*` | `docs/NOTEBOOKS.md` |
 | **Adding ANY plot (module page OR board)** — registry + `SummaryCanvas`, never a bespoke panel/route | `docs/PLOTS.md` → *Hosting*, `docs/ANALYSIS.md` |
 | Task JSON, registry, module pages, composite pattern | `docs/MODULES.md` |
 | Napari bridge, commands, OME-ZARR, contrast, layer props | `docs/NAPARI.md` |

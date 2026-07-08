@@ -1,0 +1,19 @@
+# Pluto notebook engine environment (Playground). Its own Julia env — deliberately separate from
+# `app/` (the Cecelia package) and `api/` (the WS server): the server must NOT carry the Makie
+# plotting stack. Cecelia is path-sourced from ../app (same pattern as api/), so notebooks call the
+# real headless REPL contract (init_object/pop_df/label_props). See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
+[deps]
+AlgebraOfGraphics = "cbdf2221-f076-402e-a563-3d30da359d67"
+CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+Cecelia = "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+CeceliaNb = "cec0e11a-0000-4000-8000-000000000001"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+HDF5 = "f67ccb44-e63f-5c2f-98bd-6dc0ccc4ba2f"
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+PackageCompiler = "9b87118b-4619-50d2-8e1e-99f35a4d4d9d"
+Pluto = "c3e4b0f8-55cb-11ea-2926-15256bba5781"
+
+[sources]
+Cecelia = {path = "../app"}
+CeceliaNb = {path = "CeceliaNb"}
