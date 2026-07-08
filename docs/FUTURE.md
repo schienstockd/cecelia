@@ -67,6 +67,58 @@ identifies a specific bottleneck that InMemoryDatasets.jl addresses.
 
 ---
 
+## Julia-native image viewer (napari replacement)
+
+**What:** Replace the Python/Napari viewer with a Julia-native, Qt-based viewer so Napari becomes
+the *last* Python dependency to fall away. Target stack discussed: `GLMakie.jl` (rendering),
+`Mousetrap.jl` (GTK/Qt shell), `Zarr.jl` (data). It must match what the current bridge actually
+uses (`napari_bridge.py` / `api/src/napari_api.jl`): multiscale **OME-Zarr pyramid** display (both
+bioformats2raw `zarr/0/[level]` and flat layouts, lazy dask/zarr, v2 **and** v3), per-layer
+physical **scale + units** (µm/nm — inconsistent units disable unit rendering for all layers),
+t/z navigation with a 2D↔3D volumetric toggle (orthogonal slicing is sufficient — no Blender-style
+raycast needed), the layer set **image / labels / points / tracks / shapes**, categorical
+(Okabe–Ito) + continuous (viridis) label colourmaps, and — the hardest interactive piece — the
+**bidirectional linked-brushing round-trip** (draw polygon → resolve enclosed centroids → POST IDs
+back to Julia; render Julia-owned populations/tracks as overlays with per-pop reconciliation).
+
+**Why deferred:** The hard gap is not rendering — it is the microscopy scaffolding Napari built over
+years: **pyramidal LOD tile scheduling** (no LOD/tile scheduler exists in GLMakie), the label
+colourmap shader, and linked cursor planes. A ground-up build is a *months* effort for something
+merely usable. Crucially, the footprint audit shows the payoff is **process/system complexity, not
+disk**: the Napari-only closure (napari, pyqt5, pyqt5-qt5, vispy, qtpy, magicgui, superqt, npe2,
+psygnal, the bundled plugins, and the `websockets` bridge transport) is only ~80–130 MB — <5% of the
+env once the torch-CUDA wheel (~2.5 GB) is counted. Dropping Napari removes the Qt/display-server
+requirement, the `:7655` bridge process, and a WS hop — but frees little space. The disk savings live
+in the *compute* ports (torch/cellpose/btrack/scanpy), which are independent of the viewer. So a
+Julia-native viewer is worth doing for architectural cleanliness (one language, no second process),
+not to shrink the environment — which lowers its urgency.
+
+**Independent recommendation (the more direct path):** Before committing to a ground-up GLMakie
+build, evaluate **embedding Napari as a stripped pure-display component** — disable the `npe2`
+plugin system (Cecelia owns the full stack, so the plugin surface is dead weight) and drive the
+viewer purely through the existing bridge commands. This keeps the battle-hardened pyramid LOD
+scheduler and label shader that are the *actual* multi-month gap, while shedding the plugin
+complexity that is the only part we don't want. The GLMakie + `Zarr.jl` + **custom tile scheduler**
+route is the real Julia-native answer, but the tile scheduler is precisely the piece Napari already
+solved — rebuilding it is the bulk of the cost. Recommended sequencing: (1) strip Napari to a
+display-only embed as the near-term simplification; (2) treat the full GLMakie viewer as a genuine
+multi-month project taken on only once every compute task is Julia and Napari is the sole remaining
+Python dependency. Do not start the ground-up viewer to "save the environment" — that reason does
+not hold.
+
+**Adopt when:**
+- Every compute task has ported to Julia and Napari is demonstrably the *only* remaining Python
+  dependency (until then the Pixi Python env exists regardless, so the viewer buys no env removal)
+- A GLMakie pyramidal-LOD tile scheduler exists (prototype it in isolation first — it is the
+  load-bearing unknown; everything else is comparatively mechanical)
+- There is appetite for a multi-month focused build, not an incremental side-task
+
+**Reference:** `docs/NAPARI.md` (bridge process model, layer props, OME-Zarr layouts),
+`napari/napari_bridge.py`, `api/src/napari_api.jl`; footprint + shrinkage buckets in
+`docs/todo/python-audit-report.md`. Julia candidates: `GLMakie.jl`, `Mousetrap.jl`, `Zarr.jl`.
+
+---
+
 ## Adding entries
 
 When deferring a known-better approach during implementation, add an entry here with:
