@@ -38,10 +38,15 @@ dependencies = [
     "tqdm",
 ]
 
-# Only the importable library is packaged (`cecelia` + `cecelia.utils`). cecelia/tasks,
-# cecelia/writers, cecelia/tests are executed by file path via run_py, never imported as modules, so
-# they are intentionally excluded. (Packaging the tracking cell_config.json as package data for
-# external consumers is a Phase 3 item.)
+# The importable library is `cecelia` + `cecelia.utils`. cecelia/writers, cecelia/tests are executed
+# by file path via run_py, never imported, so they stay excluded. `cecelia.tasks` + the
+# `cecelia.tasks.tracking` subpackage ARE packaged — only so the vendored btrack `cell_config.json`
+# (declared as package-data below) ships in the wheel and is locatable via `importlib.resources` by
+# external consumers (e.g. coastal), independent of an editable vs wheel install. The two tracking
+# `*_run.py` runners come along as harmless dead files (external consumers never import them).
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cecelia", "cecelia.utils"]
+include = ["cecelia", "cecelia.utils", "cecelia.tasks", "cecelia.tasks.tracking"]
+
+[tool.setuptools.package-data]
+"cecelia.tasks.tracking" = ["*.json"]
