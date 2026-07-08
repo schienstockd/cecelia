@@ -108,7 +108,8 @@ function api_notebooks_launch(body_bytes::Vector{UInt8})
     (ready ? 200 : 202), JSON3.write((; url = NOTEBOOKS_URL, secret = _notebook_secret(), starting = !ready))
 end
 
-# GET /api/notebooks/status  → { running, starting, url, error }
+# GET /api/notebooks/status  → { running, starting, url, secret, sysimage, error }
+# sysimage: "ready" | "stale" | "building" | "error" | "absent" (see _classify_sysimage below).
 function api_notebooks_status(req::HTTP.Request)
     running = _notebook_server_alive()
     200, JSON3.write((; running = running, starting = _nb_starting[], url = NOTEBOOKS_URL,
