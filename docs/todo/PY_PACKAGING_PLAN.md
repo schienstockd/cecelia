@@ -168,17 +168,21 @@ Each phase is independently shippable and CI-gated (all four suites: `test-pkg`,
   deleted outright (the install makes `import cecelia.*` resolve); update the imports either way.
 - Run all four CI suites. Checkpoint: full pipeline green (import a movie, segment, track, cluster).
 
-### Phase 3 — expose to consumers + document
-- Document install for external users: `pip install -e <cecelia>/python` (or a published wheel) —
-  the light IO base, `import cecelia.utils.zarr_utils`.
-- `coastal`: drop the `CECELIA_APP` `sys.path` bootstrap in the three notebooks; add a plain
-  `cecelia` dependency (the IO base — no extra needed); repoint `BTRACK_CONFIG` to the installed
-  package's data file (or expose `cell_config.json` via `importlib.resources`). Note btrack itself
-  is coastal's *own* dep (its tracking notebook drives btrack) — from cecelia it needs only the
-  config file, not the btrack package. Update coastal `docs/DATA.md` + close its `docs/TODO.md`
-  integration item. (License is a non-issue — coastal will be GPL like cecelia.)
-- Promote the durable "how cecelia exposes Python" content into a permanent cecelia doc
-  (`docs/SHIPPING.md` — it already records packaging decisions like "dropped coastal") and mark
+### Phase 3 — expose to consumers + document — mostly DONE (2026-07)
+- External install: `pip install <cecelia>/python` (frozen wheel copy) or `pip install -e
+  <cecelia>/python` (editable, live) — the light IO base, `import cecelia.utils.zarr_utils`.
+- **DONE — `cell_config.json` now ships as package-data** (`[tool.setuptools.package-data]` on
+  `cecelia.tasks.tracking`; `cecelia.tasks`/`cecelia.tasks.tracking` added to the packaged set), so
+  it's locatable via `importlib.resources` on a **wheel OR editable** install — not just a source
+  tree. Pinned by `python/cecelia/tests/test_package_data.py`.
+- **DONE — `coastal` cut over**: dropped the `CECELIA_APP`/`sys.path` bootstrap in the three
+  notebooks, switched to `import cecelia.utils.*`, resolves `BTRACK_CONFIG` via `importlib.resources`,
+  added a `notebooks` extra (`btrack`), relicensed to GPL, and installs cecelia via
+  `scripts/link_cecelia.sh` (editable = live). btrack is coastal's own dep; from cecelia it needs
+  only the config file. coastal `docs/DATA.md` updated + its integration TODO closed.
+- **Remaining:** publish cecelia to PyPI (gated on the Decision-1 dist-name check) so consumers can
+  drop the path/editable bridge for a pinned `cecelia>=x.y` dep (coastal has a TODO for the switch);
+  and promote the durable "how cecelia exposes Python" content into `docs/SHIPPING.md`, then mark
   this plan DONE.
 
 ## Risks / watch
@@ -190,8 +194,9 @@ Each phase is independently shippable and CI-gated (all four suites: `test-pkg`,
   inside them resolve. **`PYTHONPATH=python/` is kept** in `run_py` as the canonical mechanism (Decision 2); the
   redundant per-file `sys.path` bootstraps were removed. The editable install covers the non-`run_py`
   contexts (`pip install`, `pixi run`, napari, REPL).
-- **Data files** (`cell_config.json`, any models) — include as package data so
-  `importlib.resources` can locate them; otherwise external consumers still hardcode paths.
+- **Data files** — **addressed for `cell_config.json`**: declared as package-data on
+  `cecelia.tasks.tracking`, so `importlib.resources` locates it on any install (test-pinned). Any
+  *future* bundled data (e.g. models) must be added the same way, or external consumers hardcode paths.
 - **Name check** — confirm `cecelia`/`cecelia-py` dist name before publishing (Decision 1).
 
 ## References
