@@ -50,10 +50,11 @@ the move from commit-as-we-go to **versioned GitHub Releases** (SHIPPING.md Phas
 exist, the README's install section should point at the release installers, not a source checkout.
 
 **#00070** — **Ship a prebuilt Notebooks sysimage in the bundle** (release optimisation)
-(1) **DONE** — auto-build on first run: opening Notebooks builds `pluto/deps.so` in a background
-process, notebooks stay usable (slow-first-plot until it lands), and it's stamped so a package/Julia
-update marks it stale and rebuilds automatically (`build-sysimage` route, `_classify_sysimage`,
-`pluto/sysimage_stamp.jl`, `launch.jl` freshness gate). Self-contained, always correct, no CI needed.
+(1) **DONE** — build-on-demand: an **Enable fast plots** button on the Notebooks page builds
+`pluto/deps.so` in a background process, notebooks stay usable (slow-first-plot until it lands), and
+it's stamped so a package/Julia update marks it stale and surfaces a **Rebuild** button
+(`build-sysimage` route, `_classify_sysimage`, `pluto/sysimage_stamp.jl`, `launch.jl` freshness gate).
+Opt-in (a ~10 min build shouldn't auto-start). Self-contained, always correct, no CI needed.
 (2) **Remaining, optional** — once the constructor/pixi packaging pins Julia per platform, build the
 `-full` variant in CI and ship it in the bundle for the primary OSes so even the *first* open is
 instant. It falls through to (1) wherever no prebuilt image is present, and the stamp means a shipped

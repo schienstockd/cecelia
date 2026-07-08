@@ -257,9 +257,10 @@ both → `pluto/deps.so` (git-ignored, ~1.4 GB, ~10 min):
 - **Release** — `pixi run notebooks-sysimage-full` — also bakes in `Cecelia` + `CeceliaNb` (code is
   frozen) for near-instant first plot AND first `pop_df`.
 
-**End users never run either task.** The app builds `deps.so` in a background process on first open of
-Notebooks (a banner explains the one-time slow-first-plot), so the on-first-run path works with zero
-packaging effort — it's the baseline. A sysimage can't be committed or shipped as one universal
+**End users never run either task.** An **Enable fast plots** button on the Notebooks page builds
+`deps.so` in a background process (a banner explains the one-time slow-first-plot), so the
+build-on-demand path works with zero packaging effort — it's the baseline. A sysimage can't be
+committed or shipped as one universal
 artifact: it's native code tied to the exact **platform/arch + Julia + package versions**. So each
 build stamps `deps.so.stamp` (`{julia, hash(Manifest.toml)}`, `pluto/sysimage_stamp.jl`); after an
 update the image is detected **stale** and rebuilt automatically, and `launch.jl` refuses to hand a

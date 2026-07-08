@@ -12,9 +12,9 @@ the work the old R Markdown vignettes did, now versioned and organised. Notebook
 - **From the app:** the **Notebooks** sidebar item (Analysis group). *Launch server* starts Pluto;
   *Open Notebooks* opens it in a new tab. The table below manages this project's notebooks.
 - **From the terminal:** `pixi run notebooks` (Pluto on **:7660**), `pixi run stop-notebooks`.
-- **First plot is slow (~20 s)** until the fast-plot sysimage is built. The app builds it
-  automatically in the background on first open (and rebuilds after an update); `pixi run
-  notebooks-sysimage` is the manual/dev path. See *Sysimage* below.
+- **First plot is slow (~20 s)** until the fast-plot sysimage is built. Build it from the Notebooks
+  page — an **Enable fast plots** button (background, ~10 min); after an update it becomes a
+  **Rebuild** prompt. `pixi run notebooks-sysimage` is the manual/dev path. See *Sysimage* below.
 
 ## Where things live
 
@@ -99,18 +99,19 @@ Makie compiles plotting code on first use (~20 s cold). A PackageCompiler sysima
 being frozen (no Revise). `launch.jl` picks up `deps.so` and passes it to notebook workers; without
 it, notebooks still work, just slow-first-plot.
 
-**Built on first run, not by hand.** An end user never runs the `pixi` task. On first open of the
-Notebooks page the app POSTs `/api/notebooks/build-sysimage`, which builds `deps.so` in a **background
-process** while notebooks stay fully usable (a one-time banner explains the slow-first-plot until it
-lands). The fresh image is used from the **next** server launch — we never restart a running server
-out from under an open session. `pixi run notebooks-sysimage` remains the manual/dev path.
+**Built from a button, not by hand.** An end user never runs the `pixi` task. The Notebooks page shows
+an **Enable fast plots** button (→ `POST /api/notebooks/build-sysimage`) that builds `deps.so` in a
+**background process** while notebooks stay fully usable (a banner explains the slow-first-plot until
+it lands). The fresh image is used from the **next** server launch — we never restart a running server
+out from under an open session. The build is opt-in (a ~10 min, ~1.4 GB job shouldn't start on a
+stray click); `pixi run notebooks-sysimage` remains the manual/dev path.
 
 **Update-safe (the stamp).** A sysimage is native code tied to the exact Julia version + baked package
 versions, so it can't be shipped prebuilt as one universal artifact, and after an update the on-disk
 image goes **stale**. Each build writes a sidecar `deps.so.stamp` (`{julia, hash(Manifest.toml)}`, see
 `pluto/sysimage_stamp.jl`). Freshness = both fields match the current Julia + Manifest. `launch.jl`
 ignores a stale image (falls back to slow-first-plot rather than handing workers an incompatible one),
-and the status endpoint reports `stale` so the app rebuilds it automatically — same flow as first-run.
+and the status endpoint reports `stale` so the page shows a **Rebuild** button — same flow as first-run.
 `_classify_sysimage` (in `notebooks_api.jl`) is the pure, tested classifier: `ready` / `stale` /
 `building` / `error` / `absent`. Release packaging (ship a prebuilt image per platform vs. build on
 first run): see `docs/SHIPPING.md` and TODO #00070.

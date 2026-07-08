@@ -34,11 +34,10 @@ let buildPoll: number | undefined
 function stopPoll() { if (poll) { clearInterval(poll); poll = undefined } }
 function stopBuildPoll() { if (buildPoll) { clearInterval(buildPoll); buildPoll = undefined } }
 
-// Kick off the background build when the cache is missing ('absent') OR outdated after a package
-// update ('stale'). Non-fatal: if it can't start (env not set up), notebooks still launch — just
-// with a slow first plot.
-async function maybeBuildSysimage() {
-  if (sysimage.value !== 'absent' && sysimage.value !== 'stale') return
+// Build the fast-plot cache on demand (button). Used for a first build ('absent'), a rebuild after a
+// package update ('stale'), or a retry ('error'). Idempotent; notebooks work without it either way.
+async function buildSysimage() {
+  if (sysimage.value === 'building' || sysimage.value === 'ready') return
   try {
     const res = await fetch('/api/notebooks/build-sysimage', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
@@ -142,7 +141,8 @@ async function shutdown() {
   await refreshStatus()
 }
 
-onMounted(async () => { await refreshStatus(); maybeBuildSysimage() })
+// On open, learn the cache state (for the button) and resume watching a build already in progress.
+onMounted(async () => { await refreshStatus(); if (sysimage.value === 'building') startBuildPoll() })
 onUnmounted(() => { stopPoll(); stopBuildPoll() })
 </script>
 
@@ -195,19 +195,35 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
         </p>
         <p v-if="errorMsg" class="nb-error"><i class="pi pi-exclamation-triangle" /> {{ errorMsg }}</p>
 
-        <!-- Fast-plot cache build (background): first run, or a rebuild after a package update -->
+        <!-- Fast-plot cache: an optional compiled sysimage that makes the first plot fast. Built on
+             demand (this button); notebooks work without it, just slow-first-plot. -->
         <div v-if="sysimage === 'building'" class="nb-note">
           <i class="pi pi-spin pi-cog" />
           <span>
-            <strong>Preparing notebooks — building the fast-plot cache (~10 min, in the background).</strong>
-            This runs once after install and again after an update. Keep working — notebooks are usable
-            now; only the <em>first</em> plot is slow until it finishes. The cache is picked up
-            automatically the next time the server launches.
+            <strong>Building the fast-plot cache (~10 min, in the background).</strong>
+            Keep working — notebooks are usable now; only the <em>first</em> plot is slow until it
+            finishes. The cache is picked up automatically the next time the server launches.
           </span>
         </div>
-        <p v-else-if="sysimage === 'error'" class="nb-hint">
-          <i class="pi pi-info-circle" /> Couldn't build the fast-plot cache — notebooks still work,
-          just with a slower first plot.
+        <div v-else-if="sysimage === 'absent' || sysimage === 'stale' || sysimage === 'error'"
+             class="nb-build-row">
+          <button class="cc-btn cc-btn-ghost" @click="buildSysimage"
+                  v-tooltip.top="'Build a compiled image so the first plot renders fast (~10 min, runs in the background)'">
+            <i class="pi pi-bolt" />
+            {{ sysimage === 'stale' ? 'Rebuild fast-plot cache'
+             : sysimage === 'error' ? 'Retry fast-plot build'
+             : 'Enable fast plots' }}
+          </button>
+          <span class="nb-hint">
+            {{ sysimage === 'stale'
+              ? 'A package update outdated the cached image — rebuild to keep the first plot fast.'
+             : sysimage === 'error'
+              ? "Last build didn't finish — notebooks still work, just with a slow first plot."
+              : 'Optional: skip the ~20 s first-plot compile. Notebooks work without it.' }}
+          </span>
+        </div>
+        <p v-else-if="sysimage === 'ready'" class="nb-hint">
+          <i class="pi pi-bolt" /> Fast plots enabled.
         </p>
       </section>
 
@@ -239,4 +255,6 @@ onUnmounted(() => { stopPoll(); stopBuildPoll() })
   color: var(--cc-text, #cdd9e5); background: rgba(88, 166, 255, .08); border: 1px solid rgba(88, 166, 255, .25);
 }
 .nb-note .pi { margin-top: .1rem; color: #58a6ff; }
+.nb-build-row { display: flex; align-items: center; gap: .75rem; margin: .75rem 0 0; flex-wrap: wrap; }
+.nb-build-row .nb-hint { margin: 0; }
 </style>
