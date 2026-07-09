@@ -25,6 +25,10 @@ import { downloadDataUrl } from '../../plots/export'
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
   gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
+  // persisted per-plot axis config (owned by GatingPlots' PlotState) — channels, transforms, render
+  // mode. Read/written directly like the summary panels' `ui` bag so these survive navigation.
+  ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
+        yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: 'points' | 'contour' }
   // window-arrangement command (Tile/Cascade); seq bumps to force re-apply
   arrange?: ArrangeCmd | null
   persistKey?: string        // CanvasPanel geometry persistence key
@@ -37,15 +41,19 @@ const log = useLogStore()
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
-const xChan = ref(''); const yChan = ref('')
 // track properties (motility, per-track aggregates) are plain continuous values → linear by
 // default; flow intensities default to logicle (FlowJo). User can switch either per axis.
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-const xt = ref<Kind>(defaultTransform); const yt = ref<Kind>(defaultTransform)
+// axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
+const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v } })
+const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v } })
+const xt = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
+const yt = computed<Kind>({ get: () => props.ui.yt ?? defaultTransform, set: v => { props.ui.yt = v } })
+const renderMode = computed<'points' | 'contour'>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
+// draw tool is transient interaction state (not persisted): reopening a plot shouldn't leave a tool armed
 const mode = ref<'off' | 'rectangle' | 'polygon'>('off')
-const renderMode = ref<'points' | 'contour'>('points')
 // pop-colour overlay is driven by the populations checked for THIS panel in the manager
 const showPops = computed(() => (props.highlight?.length ?? 0) > 0)
 
@@ -140,8 +148,9 @@ async function loadPopLayers() {
 function onDraw(geom: Partial<GateSpec>) {
   pending.value = { ...geom, x_channel: xChan.value, y_channel: yChan.value,
                     x_transform: tspec(xt.value), y_transform: tspec(yt.value) }
-  // keep the draw tool armed (rectangle/polygon) so you can gate repeatedly without re-selecting it;
-  // it's only turned off explicitly (toggle the tool button, or cancel/Esc).
+  // keep the draw tool armed (rectangle/polygon) so you can gate repeatedly without re-selecting it.
+  // To adjust a gate without disarming, hold Shift over the plot — GateOverlay grabs/moves/resizes the
+  // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
   newName.value = ''
 }
 const nameReserved = computed(() => isReservedPopName(newName.value))
@@ -233,6 +242,8 @@ watch(hlVersion, loadPopLayers)
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
+      <!-- brief affordance: the draw tool stays armed, hold Shift to grab/move/resize a gate -->
+      <div v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</div>
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus
@@ -278,4 +289,10 @@ watch(hlVersion, loadPopLayers)
 .panel-name input { background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-border); border-radius: 3px; padding: 1px 5px; width: 90px; }
 .panel-name input.name-invalid { border-color: var(--cc-danger, #ef4444); }
 .name-hint { color: var(--cc-danger, #ef4444); font-size: 10px; max-width: 150px; line-height: 1.2; }
+/* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
+.gate-hint { position: absolute; top: 4px; right: 4px; pointer-events: none; display: flex; align-items: center; gap: 4px;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 4px; padding: 2px 6px;
+  font-size: 10px; color: var(--cc-text-dim); }
+.gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: 3px;
+  padding: 0 3px; color: var(--cc-text); }
 </style>

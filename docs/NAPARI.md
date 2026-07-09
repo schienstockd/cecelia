@@ -450,8 +450,9 @@ depth (`_z_axis_len() > 1`), so a 2D image opened with the set's 3D toggle on st
 `dims.ndisplay = 2` (you can't draw on a 3-D render). The layer carries the image's `scale` +
 `units` — so the polygon aligns with the cells and napari doesn't warn *"Inconsistent units
 across layers"*. When the user **closes a polygon**, the bridge automatically point-in-polygons
-the cell centroids (in the **currently displayed** dims — other dims like z/t are ignored, so it
-selects across slices) and POSTs the inside label IDs back (no key press / polling). The polygon
+the cell centroids (in the **currently displayed** dims; z scope is configurable below, and t —
+if present — is pinned to the current frame) and POSTs the inside label IDs back (no key press /
+polling). The polygon
 vertices are 2-D (in-plane) even on an N-D image, so they're indexed by their own columns, not the
 viewer dim indices (which would overflow). Mid-draw events (a polygon with <3 vertices) are ignored
 so the API isn't spammed with empty selections while clicking; clearing all shapes clears it.
@@ -464,8 +465,13 @@ when the polygon closes, so scrolling to a different slice before finishing sele
 toggle/stepper **re-evaluates the already-drawn polygon immediately** via `POST
 /api/napari/selection-scope` → `update_selection_scope` (updates `_sel_ctx` then re-runs
 `_on_selection_changed`), and the value is also picked up by the next `start_cell_selection`. No-op
-on images without a z axis, and when no selection is active. `t` is always ignored (selects across
-timepoints).
+on images without a z axis, and when no selection is active.
+
+**t scope.** On a timelapse the selection is **always** restricted to the currently displayed
+timepoint (read live, like z). A region drawn on the image means "these cells, at the frame you're
+looking at" — not every frame's detections in that XY tube. Ignoring t previously over-selected by
+the frame count (e.g. 64× on a 64-frame movie). No toggle: a whole-movie selection from one 2-D
+polygon isn't a meaningful linked-brushing target (each timepoint's detection is its own cell row).
 
 On `open_image` the viewer's **axis labels** are set to the dimension names (`t`/`z`/`y`/`x`, channel
 excluded) so the sliders read meaningfully instead of `-1`/`-2`.
