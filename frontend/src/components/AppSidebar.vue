@@ -9,8 +9,8 @@ const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
 const showPanel = ref(false)
 
-// Track which groups are collapsed (all open by default, except Dev)
-const collapsed = ref<Set<string>>(new Set(['Dev']))
+// Track which groups are collapsed (all open by default)
+const collapsed = ref<Set<string>>(new Set())
 function toggleGroup(key: string) {
   collapsed.value.has(key) ? collapsed.value.delete(key) : collapsed.value.add(key)
   collapsed.value = new Set(collapsed.value)
@@ -56,12 +56,6 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/tasks',    label: 'Tasks',      icon: 'pi-list-check', tip: 'View and manage all running and completed analysis tasks.' },
       { to: '/chain',    label: 'Whiteboard', icon: 'pi-cog',        tip: 'Visual chain editor — drag tasks, connect nodes, build pipelines.', requiresProject: true },
       { to: '/settings', label: 'Settings',   icon: 'pi-sliders-h',  tip: 'Project name, ID, and interface preferences.' },
-    ],
-  },
-  {
-    heading: 'Dev',
-    items: [
-      { to: '/test', label: 'Test Tasks', icon: 'pi-flask', tip: 'Run lightweight mock tasks to debug the task system.', requiresProject: true },
     ],
   },
 ]
