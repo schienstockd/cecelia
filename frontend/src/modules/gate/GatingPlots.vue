@@ -156,9 +156,9 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a plot'" @click="add">
           <i class="pi pi-plus" /> Plot
         </button>
-        <button class="cc-btn cc-btn-ghost" v-tooltip.bottom="'Add a read-only channel-pairs matrix (R pairs): compare a set of channels against each other'"
+        <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a read-only channel-pairs matrix (ggpairs): compare a set of channels against each other'"
                 @click="addPairs">
-          <i class="pi pi-th-large" /> Pairs
+          <i class="pi pi-plus" /> Pairs
         </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
         <div v-if="!isTrack" class="seg" v-tooltip.bottom="'Napari linked brushing'">
