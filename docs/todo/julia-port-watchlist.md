@@ -59,7 +59,7 @@ Recheck these periodically. When one lands (and is mature), the linked item(s) a
   implemented. cecelia doesn't use sharding either (it's deferred in `docs/FUTURE.md`; the `zarr>=3`
   pin is for the v3 API, not sharding), so this does not block the port — plain `Zarr.jl` covers the
   need. (`Zarrs.jl` has sharding but is a Rust crate wrapped via `zarrs_ffi`. Whether a precompiled
-  Rust dep behind a C FFI is acceptable is a *decision for Dom / ARCHITECTURE.md* — it's a transitive
+  Rust dep behind a C FFI is acceptable is a *decision for Dominik / ARCHITECTURE.md* — it's a transitive
   binary dep like the existing torch/HDF5/JVM deps, not "Rust in the maintained stack," and Rust has
   an existing carve-out (Tauri). Not needed here regardless, since we don't use sharding.)
 - **Decision note:** this is a real, non-trivial build (multiscale write + chunking + layout +

@@ -123,7 +123,7 @@ flag per (image, fun_name) so a produced node shows a QC dot + tooltip. Reuses t
 
 ## Resolved
 
-- **Storage root:** `1/{uid}/qc/{funName}/{valueName}.json` (the image metadata dir — Dom's "task
+- **Storage root:** `1/{uid}/qc/{funName}/{valueName}.json` (the image metadata dir — Dominik's "task
   dir"). Durable, per-image, queryable on reload without run context.
 - **No-value_name tasks:** fall back to `VERSIONED_DEFAULT_VAL` (`"default"`) as the key.
 

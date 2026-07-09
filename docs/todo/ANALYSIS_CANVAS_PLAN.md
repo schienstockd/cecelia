@@ -315,7 +315,7 @@ pops it can't consume. (`useSummaryData`'s current single global `sel` becomes t
    run's cluster pops. Map cluster pops into the picker's group model (or generalise it); do not clone it.
 3. **Cluster heatmap is SVG (summary-family)** → crisp export via the SVG path (`SummaryPanel.exportImage`
    style), NOT the WebGL montage hi-res path. Only the UMAP is WebGL.
-4. **Migrate saved boards** — SKIPPED (no real boards exist yet, per Dom). The per-family bag
+4. **Migrate saved boards** — SKIPPED (no real boards exist yet, per Dominik). The per-family bag
    (`selByFamily`) can replace the flat `shared.sel` outright; no load-time shim needed.
 5. **No regression to summary toggling** — flow/live becomes one family; existing `useSummaryData`
    `gSel`/`toggleTarget` behaviour must be preserved exactly.
@@ -326,7 +326,7 @@ pops it can't consume. (`useSummaryData`'s current single global `sel` becomes t
 Investigation found cluster pops live in the **singleton `useGatingStore`** (loaded via
 `g.selectImage(uid, vn, popType)`) and are toggled through **`PopulationManager`** (tickable cluster IDs),
 not `SeriesPicker`. The store holds ONE active (popType, suffix) at a time — so independent per-slot
-cluster runs can't coexist. **Decision (Dom): enforce a single cluster run per board.**
+cluster runs can't coexist. **Decision (Dominik): enforce a single cluster run per board.**
 
 Consequences (keeps model C working for clusters):
 - The board carries a **board-level cluster context**: `clustPopType` + `clustSuffix`, stored in the
