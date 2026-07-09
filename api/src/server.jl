@@ -1,6 +1,7 @@
 using Cecelia
 using HTTP
 using JSON3
+using Logging
 
 # ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ include("tracking_api.jl")
 include("update_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
+include("app_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -57,6 +59,53 @@ function broadcast_ws(msg::Dict)
         isopen(q) && Base.n_avail(q) < _WS_OUT_CAP && try; put!(q, json); catch; end
     end
     nothing
+end
+
+# ── Server-log tee → WS (the "pixi console" in the browser) ─────────────────────
+# The Settings console window streams the backend's OWN @info/@warn/@error (startup banner, napari
+# warnings, …), not just task logs. A global AbstractLogger forwards each record to the real console
+# logger AND broadcasts it as {type:"server:log"}, keeping a small ring buffer so a freshly-opened
+# console backfills recent lines via GET /api/logs/recent. Installed in `start()` only (never under
+# CECELIA_NO_SERVE) so the test harness keeps the plain logger.
+const _LOG_RING_CAP  = 500
+const _log_ring      = Vector{Dict{String,Any}}()
+const _log_ring_lock = ReentrantLock()
+
+function _push_log_ring(rec::Dict{String,Any})
+    lock(_log_ring_lock) do
+        push!(_log_ring, rec)
+        length(_log_ring) > _LOG_RING_CAP && popfirst!(_log_ring)
+    end
+end
+
+struct BroadcastLogger <: Logging.AbstractLogger
+    inner::Logging.AbstractLogger
+end
+Logging.min_enabled_level(l::BroadcastLogger) = Logging.min_enabled_level(l.inner)
+Logging.shouldlog(l::BroadcastLogger, level, _module, group, id) =
+    Logging.shouldlog(l.inner, level, _module, group, id)
+Logging.catch_exceptions(l::BroadcastLogger) = Logging.catch_exceptions(l.inner)
+function Logging.handle_message(l::BroadcastLogger, level, message, _module, group, id, file, line; kwargs...)
+    Logging.handle_message(l.inner, level, message, _module, group, id, file, line; kwargs...)
+    try
+        lvl = level >= Logging.Error ? "error" : level >= Logging.Warn ? "warn" : "info"
+        msg = string(message)
+        isempty(kwargs) || (msg *= "  " * join(("$k = $v" for (k, v) in kwargs), "  "))
+        rec = Dict{String,Any}("level" => lvl, "message" => msg)
+        _push_log_ring(rec)
+        broadcast_ws(Dict{String,Any}("type" => "server:log", "level" => lvl, "message" => msg))
+    catch
+        # a logging failure must never escape the logger
+    end
+    nothing
+end
+
+_install_log_tee!() = global_logger(BroadcastLogger(global_logger()))
+
+# GET /api/logs/recent → { logs: [{level,message}, …] } — backfill a freshly-opened console window
+function api_logs_recent()
+    logs = lock(_log_ring_lock) do; copy(_log_ring); end
+    200, JSON3.write((; logs = logs))
 end
 
 # ── Chain event → WS bridge ───────────────────────────────────────────────────
@@ -155,6 +204,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_runs(req)
         elseif path == "/api/chains/run"
             api_chains_run(req)
+        elseif path == "/api/logs/recent"
+            api_logs_recent()
         elseif path == "/api/napari/status"
             api_napari_status(req)
         elseif path == "/api/notebooks"
@@ -255,6 +306,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_notebooks_restart(body_bytes)
         elseif path == "/api/notebooks/build-sysimage"
             api_notebooks_build_sysimage(body_bytes)
+        elseif path == "/api/app/shutdown"
+            api_app_shutdown(body_bytes)
+        elseif path == "/api/app/restart"
+            api_app_restart(body_bytes)
         elseif path == "/api/napari/open"
             api_napari_open(body_bytes)
         elseif path == "/api/napari/close"
@@ -451,6 +506,7 @@ const _BOUND_HOST = Ref{String}("")
 
 function start(; host=HOST, port=PORT)
     _BOUND_HOST[] = string(host)
+    _install_log_tee!()   # tee server logs to the WS console (only when actually serving)
     @info "CeceliaAPI starting" host port threads=Threads.nthreads() projects_dir=projects_dir()
     HTTP.listen(handle_stream, host, port)
 end

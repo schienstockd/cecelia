@@ -1,13 +1,16 @@
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import PackagesDialog from '../components/PackagesDialog.vue'
+import { napariState, notebooksState, stateInfo, type ServiceState } from '../utils/serviceStatus'
+import { useAppControlStore } from '../stores/appControl'
 
 const showPackages = ref(false)
 
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
+const appCtl      = useAppControlStore()
 
 const editName = ref(projectMeta.current?.name ?? '')
 const saving   = ref(false)
@@ -85,7 +88,8 @@ interface Diag {
   threads: number; julia: string; version: string; projectsDir: string
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
-  replEnabled: boolean; replAvailable: boolean
+  replEnabled: boolean; replAvailable: boolean; dev: boolean
+  napariPort: number; notebooksPort: number
 }
 const diag = ref<Diag | null>(null)
 const diagBusy = ref(false)
@@ -134,6 +138,71 @@ function replKeydown(e: KeyboardEvent) {
   if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); runRepl() }
 }
 onMounted(loadDiag)
+
+// ── System: service control panel ─────────────────────────────────────────────
+// Live status of the backend's child processes + per-component and global controls. Status is
+// ephemeral UI state (polled) → plain refs, not persisted view state. Pure status→state mapping
+// lives in utils/serviceStatus.ts (unit-tested); here we only poll, act, and pick which buttons show.
+const napariRaw = ref<{ alive?: boolean; starting?: boolean } | null>(null)
+const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
+const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
+const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
+const projectUid = computed(() => projectMeta.current?.uid ?? '')
+// the port serving THIS window (Vite :5173 in dev; the backend :8080 in prod) — the GUI isn't a
+// controllable service, we just show it so the full picture of occupied ports is visible.
+const guiPort = computed(() => location.port || (location.protocol === 'https:' ? '443' : '80'))
+
+const svcBusy = ref('')     // which row's action is in flight ('napari' | 'notebooks' | 'app')
+const svcMsg = ref('')
+const showQuitConfirm = ref(false)
+
+async function pollServices() {
+  try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
+  try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
+}
+let svcTimer: number | undefined
+onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
+onUnmounted(() => { if (svcTimer) window.clearInterval(svcTimer) })
+
+const svcPost = (url: string, body?: object) =>
+  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })
+
+async function napariAction(kind: 'restart' | 'stop') {
+  svcBusy.value = 'napari'; svcMsg.value = ''
+  try {
+    await svcPost(kind === 'restart' ? '/api/napari/restart' : '/api/napari/close')
+    svcMsg.value = kind === 'restart' ? 'Napari restarting — reopen the image to reload its layers.' : 'Napari stopped.'
+  } catch { svcMsg.value = 'Napari action failed.' }
+  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
+}
+async function notebooksAction(kind: 'start' | 'stop' | 'restart') {
+  svcBusy.value = 'notebooks'; svcMsg.value = ''
+  try {
+    if (kind === 'stop') await svcPost('/api/notebooks/shutdown')
+    else await svcPost(kind === 'start' ? '/api/notebooks/launch' : '/api/notebooks/restart', { projectUid: projectUid.value })
+    svcMsg.value = kind === 'stop' ? 'Notebooks stopped.' : kind === 'start' ? 'Notebooks starting…' : 'Notebooks restarting…'
+  } catch { svcMsg.value = 'Notebooks action failed.' }
+  finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
+}
+// app-level actions (Quit / dev Restart) live in the shared appControl store — same logic the sidebar
+// footer uses. We mirror its status into svcMsg and refresh the pills once the backend is back.
+async function appRestart() {
+  svcMsg.value = 'Backend restarting…'
+  await appCtl.restartBackend()
+  svcMsg.value = appCtl.message
+  pollServices()
+}
+function openConsole() {
+  // hash-history route → the popup boots the same SPA, sees #/console, and renders the console
+  // full-window (App.vue bare mode) with its own WS connection.
+  const url = location.origin + location.pathname + '#/console'
+  window.open(url, 'cecelia-console', 'width=980,height=600')
+}
+async function quitApp() {
+  showQuitConfirm.value = false
+  await appCtl.quit()
+  svcMsg.value = appCtl.message
+}
 </script>
 
 <template>
@@ -243,6 +312,93 @@ onMounted(loadDiag)
 
     </div>
     <div class="settings-col">
+
+    <!-- ── System (service control panel) ──────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">System
+        <span v-if="diag?.dev" class="svc-tag" v-tooltip.top="'Development server (pixi run dev, Revise hot-reload)'">dev</span>
+      </h2>
+
+      <div class="svc-row">
+        <span class="svc-name">Application</span>
+        <span class="svc-pill ok"><span class="dot" /> Running</span>
+        <span class="svc-port" v-tooltip.top="'Backend HTTP/WS server'">:{{ diag?.port ?? '8080' }}</span>
+        <span class="svc-actions">
+          <button v-if="diag?.dev" class="save-btn" :disabled="appCtl.busy" @click="appRestart"
+                  v-tooltip.top="'Restart the backend server (dev): the supervisor relaunches it, page reconnects when it is back'">
+            <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+          </button>
+          <button class="save-btn danger" :disabled="appCtl.busy" @click="showQuitConfirm = true"
+                  v-tooltip.top="'Stop napari, notebooks and the backend, then exit Cecelia'">
+            <i class="pi pi-power-off" /> Quit
+          </button>
+        </span>
+      </div>
+
+      <div class="svc-row">
+        <span class="svc-name">Napari viewer</span>
+        <span class="svc-pill" :class="stateInfo(napariSt).tone"><span class="dot" /> {{ stateInfo(napariSt).label }}</span>
+        <span class="svc-port" v-tooltip.top="'Napari bridge WebSocket'">:{{ diag?.napariPort ?? '7655' }}</span>
+        <span class="svc-actions">
+          <button class="save-btn" :disabled="svcBusy === 'napari'" @click="napariAction('restart')"
+                  v-tooltip.top="'Close and relaunch the napari bridge (picks up bridge code changes)'">
+            <i :class="['pi', svcBusy === 'napari' ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            {{ napariSt === 'stopped' ? 'Start' : 'Restart' }}
+          </button>
+          <button v-if="napariSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'napari'"
+                  @click="napariAction('stop')"><i class="pi pi-stop" /> Stop</button>
+        </span>
+      </div>
+
+      <div class="svc-row">
+        <span class="svc-name">Notebooks</span>
+        <span class="svc-pill" :class="stateInfo(notebooksSt).tone"><span class="dot" /> {{ stateInfo(notebooksSt).label }}</span>
+        <span class="svc-port" v-tooltip.top="'Pluto notebook server'">:{{ diag?.notebooksPort ?? '7660' }}</span>
+        <span class="svc-actions">
+          <button v-if="notebooksSt === 'stopped'" class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid"
+                  @click="notebooksAction('start')"
+                  v-tooltip.top="projectUid ? 'Launch the Pluto notebook server' : 'Open a project first'">
+            <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-cog' : 'pi-play']" /> Start
+          </button>
+          <template v-else>
+            <button class="save-btn" :disabled="svcBusy === 'notebooks' || !projectUid" @click="notebooksAction('restart')">
+              <i :class="['pi', svcBusy === 'notebooks' ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
+            </button>
+            <button class="save-btn ghost" :disabled="svcBusy === 'notebooks'" @click="notebooksAction('stop')">
+              <i class="pi pi-stop" /> Stop
+            </button>
+          </template>
+        </span>
+      </div>
+
+      <div class="svc-row">
+        <span class="svc-name">Console</span>
+        <span class="svc-pill idle"><span class="dot" /> Log stream</span>
+        <span class="svc-port" />
+        <span class="svc-actions">
+          <button class="save-btn ghost" @click="openConsole"
+                  v-tooltip.top="'Open the live backend/task console in a separate window'">
+            <i class="pi pi-external-link" /> Open console
+          </button>
+        </span>
+      </div>
+
+      <!-- read-only: not a service you control, shown so the full port picture is visible -->
+      <div class="svc-row">
+        <span class="svc-name">Frontend (GUI)</span>
+        <span class="svc-pill ok"><span class="dot" /> This window</span>
+        <span class="svc-port" v-tooltip.top="diag?.dev ? 'Vite dev server (proxies to the backend)' : 'served by the backend'">:{{ guiPort }}</span>
+      </div>
+
+      <span class="field-hint">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
+      <span v-if="svcMsg" class="field-hint">{{ svcMsg }}</span>
+
+      <div v-if="showQuitConfirm" class="svc-confirm">
+        <span>Quit Cecelia — stop napari, notebooks and the backend?</span>
+        <button class="save-btn danger" @click="quitApp"><i class="pi pi-power-off" /> Quit everything</button>
+        <button class="save-btn ghost" @click="showQuitConfirm = false">Cancel</button>
+      </div>
+    </section>
 
     <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
     <section class="settings-section">
@@ -441,6 +597,27 @@ onMounted(loadDiag)
   font-size: 0.8rem;
   color: var(--cc-text-dim);
 }
+
+/* system control panel: aligned grid — name · status pill · port · actions */
+.svc-row { display: grid; grid-template-columns: 8rem 7rem 3.5rem 1fr; align-items: center;
+  column-gap: 0.6rem; margin-bottom: 0.55rem; }
+.svc-name { font-size: 0.8rem; color: var(--cc-text); }
+.svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem;
+  color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: 999px;
+  white-space: nowrap; }
+.svc-pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cc-text-dim); }
+.svc-pill.ok .dot   { background: #22c55e; }
+.svc-pill.warn .dot { background: #f59e0b; }
+.svc-pill.idle .dot { background: var(--cc-text-dim); }
+.svc-tag { font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--cc-accent); border: 1px solid var(--cc-accent); border-radius: 3px; padding: 0 0.3rem; }
+.svc-port { justify-self: start; font-family: var(--cc-mono); font-size: 0.68rem; color: var(--cc-text-dim); }
+.svc-actions { display: flex; gap: 0.4rem; justify-content: flex-end; }
+.save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
+.save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
+.save-btn.danger { background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
+.svc-confirm { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; font-size: 0.78rem; color: var(--cc-text);
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.35rem; padding: 0.5rem 0.6rem; }
 
 /* diagnostics key/value grid */
 .diag-grid {

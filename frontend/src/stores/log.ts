@@ -28,6 +28,8 @@ export const useLogStore = defineStore('log', () => {
       source: opts?.source,
       timestamp: new Date(),
     })
+    // cap history so the teed server-log stream can't grow the store unbounded over a long session
+    if (entries.value.length > 3000) entries.value.splice(0, entries.value.length - 3000)
     if (level === 'error' && !consoleOpen.value) unreadErrors.value++
   }
 

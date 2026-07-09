@@ -2,6 +2,10 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useLogStore, type LogLevel } from '../stores/log'
 
+// `fill`: render just the open panel filling its container (no docked collapse bar / toggle). Used by
+// the standalone console window (ConsoleView) so the docked bar and the window are the SAME component.
+const props = defineProps<{ fill?: boolean }>()
+
 const log = useLogStore()
 
 type Filter = LogLevel | 'all'
@@ -37,8 +41,8 @@ const filterCounts = computed(() => ({
 </script>
 
 <template>
-  <!-- collapsed bar -->
-  <div v-if="!log.consoleOpen" class="console-bar" @click="log.openConsole()">
+  <!-- collapsed bar (never in fill/window mode) -->
+  <div v-if="!fill && !log.consoleOpen" class="console-bar" @click="log.openConsole()">
     <span class="bar-toggle" v-tooltip.top="'Open error console'">
       <i class="pi pi-angle-up" />
       Console
@@ -55,16 +59,18 @@ const filterCounts = computed(() => ({
     </span>
   </div>
 
-  <!-- open panel -->
-  <div v-else class="console-panel">
+  <!-- open panel (always shown in fill/window mode) -->
+  <div v-if="fill || log.consoleOpen" class="console-panel" :class="{ fill }">
     <div class="console-toolbar">
       <button
+        v-if="!fill"
         class="bar-toggle"
         @click="log.closeConsole()"
         v-tooltip.top="'Collapse console'"
       >
         <i class="pi pi-angle-down" /> Console
       </button>
+      <span v-else class="bar-toggle"><i class="pi pi-desktop" /> Console</span>
 
       <div class="filter-tabs">
         <button
@@ -191,6 +197,8 @@ const filterCounts = computed(() => ({
   background: var(--cc-console-bg);
   flex-shrink: 0;
 }
+/* window/standalone mode: fill the whole container instead of the docked open-height */
+.console-panel.fill { height: 100%; border-top: none; }
 
 .console-toolbar {
   display: flex;

@@ -20,9 +20,33 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test d.threads >= 1
     @test !isempty(String(d.julia))
     @test haskey(d, :replAvailable) && haskey(d, :loopback) && haskey(d, :replEnabled)
+    # service ports surfaced for the System panel
+    @test d.port > 0 && d.napariPort == 7655 && d.notebooksPort == 7660
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
+end
+
+@testset "API: app lifecycle" begin
+    # dev detection + restart availability are pure env readers
+    withenv("CECELIA_DEV" => nothing) do; @test _is_dev() == false; end
+    withenv("CECELIA_DEV" => "1")     do; @test _is_dev() == true;  end
+    withenv("CECELIA_DEV" => "0")     do; @test _is_dev() == false; end
+    withenv("CECELIA_SUPERVISED" => nothing) do; @test _can_restart() == false; end
+    withenv("CECELIA_SUPERVISED" => "1")     do; @test _can_restart() == true;  end
+
+    # restart when NOT supervised → 409, and (crucially) must NOT exit the process.
+    # (We never call api_app_shutdown, nor restart while supervised — those call exit().)
+    st, body = withenv("CECELIA_SUPERVISED" => nothing) do
+        api_app_restart(Vector{UInt8}("{}"))
+    end
+    @test st == 409
+    @test haskey(JSON3.read(body), :error)
+
+    # the console backfill endpoint is a safe read
+    st2, body2 = api_logs_recent()
+    @test st2 == 200
+    @test haskey(JSON3.read(body2), :logs)
 end
 
 @testset "API: packages" begin

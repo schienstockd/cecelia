@@ -1,0 +1,58 @@
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+
+// App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
+// panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
+// re-implementation). Per-service (napari/notebooks) controls stay local to the Settings panel.
+export const useAppControlStore = defineStore('appControl', () => {
+  const dev = ref(false)        // dev server → the backend Restart control is offered (prod hides it)
+  const busy = ref(false)       // a quit/restart is in flight (drives spinners in both places)
+  const message = ref('')
+
+  const _post = (url: string) =>
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+
+  // read the dev flag from diagnostics (prod never sets CECELIA_DEV → false)
+  async function refreshDev() {
+    try { dev.value = !!(await (await fetch('/api/diagnostics')).json()).dev } catch { /* leave as-is */ }
+  }
+
+  // global Quit: stop everything + exit the backend. The connection drops as the server exits (expected);
+  // stays busy because the app is gone.
+  async function quit() {
+    busy.value = true; message.value = 'Shutting down…'
+    try { await _post('/api/app/shutdown') } catch { /* connection dropped on exit */ }
+    message.value = 'Cecelia is shutting down — you can close this window.'
+  }
+
+  // dev-only backend restart: the supervisor relaunches; poll /api/health until it's back, then clear.
+  // Returns an error string if the server refused (e.g. not supervised), else null.
+  async function restartBackend(): Promise<string | null> {
+    busy.value = true; message.value = 'Backend restarting…'
+    try {
+      const res = await _post('/api/app/restart')
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        busy.value = false; message.value = d.error ?? 'Restart failed.'
+        return message.value
+      }
+    } catch { /* connection dropped as it exits — expected */ }
+    message.value = 'Backend restarting — reconnecting…'
+    await _waitForBackend()
+    busy.value = false; message.value = 'Backend restarted.'
+    return null
+  }
+
+  // wait for the restarted server to answer /api/health again. The initial delay lets the old process
+  // actually exit first (it exits ~0.4s after responding) so we don't catch it still up.
+  async function _waitForBackend(timeoutMs = 60000) {
+    await new Promise(r => setTimeout(r, 1500))
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      try { if ((await fetch('/api/health', { cache: 'no-store' })).ok) return } catch { /* not up yet */ }
+      await new Promise(r => setTimeout(r, 800))
+    }
+  }
+
+  return { dev, busy, message, refreshDev, quit, restartBackend }
+})

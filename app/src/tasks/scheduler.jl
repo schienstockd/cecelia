@@ -189,6 +189,28 @@ function _kill_tree(pid::Int)
     end
 end
 
+# Kill whatever process is LISTENING on a TCP port (+ its tree). Cross-platform, best-effort. Used to
+# guarantee a clean app shutdown even for a child we only ADOPTED or that outlived a crash (no process
+# handle to `kill`) — napari :7655, notebooks :7660 — mirroring `pixi run stop`. There is no libuv API
+# for port→pid, so we shell out per-OS; this is the one sanctioned place, alongside `_kill_tree`.
+function _kill_listeners_on_port(port::Integer)
+    pids = Int[]
+    try
+        out = Sys.iswindows() ?
+            readchomp(`powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess"`) :
+            readchomp(`lsof -ti tcp:$port`)   # exits non-zero (throws) when nothing is listening → caught
+        for line in split(out, '\n'; keepempty=false)
+            p = tryparse(Int, strip(line))
+            isnothing(p) || push!(pids, p)
+        end
+    catch; end
+    for p in unique(pids)
+        p == getpid() && continue   # never kill ourselves
+        _kill_tree(p)
+    end
+    nothing
+end
+
 """
 Cancel a running task: marks it cancelled and kills any active subprocess.
 Safe to call multiple times or for an already-completed task.
