@@ -256,7 +256,19 @@ batch it rather than churn standalone.
 The ggpairs matrix (#00077) packs small tiles, but `GateScatterCell`'s inner `.panel-plot` kept a
 `min-height: 150px` floor in compact mode, so in tiles smaller than that the plot overflowed the square
 and was clipped by the cell (`overflow:hidden`). Lifted the floor in compact mode
-(`.plot-capture.compact .panel-plot { min-height: 0 }`) so the plot shrinks to the tile. CSS-only.
+(`.plot-capture.compact .panel-plot { min-height: 0 }`) so the plot shrinks to the tile — general to
+every `GateMontage` tile (pairs matrix + gating-strategy montage). CSS-only.
+
+**#00078** — **Napari cell-selection lingered (grey plot) after a server restart** (2026-07-09)
+Draw a napari cell selection → transient pop highlighted; restart the Julia server; reopen the same
+image → the selection still showed as active but had no members, so the plot rendered grey. The
+transient pop is never persisted server-side (correct), but the browser kept the stale tree + the
+persisted highlight referencing it, and there was **no WS-reconnect resync** — so the same-image case
+never refetched. Fix (client-side): `GatingPlots` now refetches the popmap on WS reconnect (guarded to
+skip the first connect); the fresh tree drops the transient pop and the existing stale-highlight prune
+clears the dangling reference. See `docs/POPULATION.md` → *Transient populations → Reconnect resync*.
+Reservation: verified by typecheck/reasoning, not yet driven in a browser (a WS-lifecycle watch — no
+unit-test surface under the frontend test scope).
 
 **#00077** — **Pairs matrix → `ggpairs` layout (lower scatter / diagonal names / upper correlation)** (2026-07-09)
 Reworked the channel-pairs matrix to GGally `ggpairs` style, halving the load and de-cluttering:
