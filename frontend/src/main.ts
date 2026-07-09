@@ -31,7 +31,6 @@ const router = createRouter({
     { path: '/tasks',     component: () => import('./modules/TasksModule.vue'),         meta: { label: 'Tasks' } },
     { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Whiteboard' } },
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },
-    { path: '/test',      component: () => import('./modules/TestModule.vue'),          meta: { label: 'Test Tasks' } },
   ],
 })
 
