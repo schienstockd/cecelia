@@ -321,11 +321,16 @@ async function quitApp() {
                   v-tooltip.top="'Restart the backend server (dev): the supervisor relaunches it, page reconnects when it is back'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
           </button>
-          <ConfirmButton trigger-class="save-btn danger" confirm-class="save-btn danger" cancel-class="save-btn ghost"
-                         :disabled="appCtl.busy" @confirm="quitApp" confirm-label="Quit everything"
-                         trigger-tooltip="Stop napari, notebooks and the backend, then exit Cecelia"
-                         confirm-tooltip="Confirm — stop napari, notebooks and the backend">
-            <i class="pi pi-power-off" /> Quit
+          <ConfirmButton @confirm="quitApp" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn danger" :disabled="appCtl.busy" @click="arm"
+                    v-tooltip.top="'Stop napari, notebooks and the backend, then exit Cecelia'">
+              <i class="pi pi-power-off" /> Quit
+            </button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm"
+                      v-tooltip.top="'Confirm — stop napari, notebooks and the backend'"><i class="pi pi-power-off" /> Quit everything</button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
           </ConfirmButton>
         </span>
       </div>

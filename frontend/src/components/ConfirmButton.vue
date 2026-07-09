@@ -1,65 +1,58 @@
 <!--
-  Inline "arm → confirm" button — the ONE destructive-action confirm for the app. Replaces native
-  browser dialogs (`window.confirm`), which are discouraged: they look out of place, block the thread,
-  and can't be styled (see docs/UI.md → "No native browser dialogs"). First click arms (the button
-  morphs to Confirm + Cancel in place); the `confirm` event only fires on the second click. Auto-disarms
-  on an outside click or after a timeout, so a stray arm doesn't linger.
+  Logic-only "arm → confirm" wrapper for destructive actions — the one replacement for native browser
+  dialogs (`window.confirm`), which are discouraged (out of place, unstyleable; see docs/UI.md → "No
+  native browser dialogs"). It renders NONE of its own chrome: the HOST provides the buttons via the
+  default scoped slot, so the host's own (scoped) CSS styles them. This matters — a child component's
+  rendered DOM can't receive a parent's scoped styles, so passing host classes into a child that renders
+  the button leaves it unstyled. Here the buttons live in the host template, styled by the host.
 
-  Styling is passed through (`triggerClass`/`confirmClass`/`cancelClass`) so each host keeps its own
-  look; trigger/confirm inner content can be a slot (icon-only buttons) or the icon/label props. Set
-  `needsConfirm=false` to fire immediately with no arm step (e.g. closing an already-empty board).
+  Slot props: `{ armed, arm, confirm, cancel }`. Show the trigger button when `!armed` (calls `arm`);
+  when `armed`, show Confirm (calls `confirm`) + Cancel (calls `cancel`). `arm` fires `@confirm`
+  immediately when `needsConfirm=false` (e.g. an already-empty board). Auto-disarms on an outside click
+  or after `autoDismissMs`. The wrapper span is `display:contents` so it doesn't disturb the host's
+  layout (the buttons lay out as if direct children); it stays in the DOM for outside-click detection.
+
+  <ConfirmButton @confirm="doQuit" v-slot="{ armed, arm, confirm, cancel }">
+    <button v-if="!armed" class="footer-btn danger" @click="arm"><i class="pi pi-power-off" /></button>
+    <template v-else>
+      <button class="footer-btn danger" @click="confirm"><i class="pi pi-check" /></button>
+      <button class="footer-btn" @click="cancel"><i class="pi pi-times" /></button>
+    </template>
+  </ConfirmButton>
 -->
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 
 const props = withDefaults(defineProps<{
-  triggerClass?: string; triggerIcon?: string; triggerLabel?: string; triggerTooltip?: string
-  confirmClass?: string; confirmLabel?: string; confirmTooltip?: string
-  cancelClass?: string; cancelLabel?: string
-  disabled?: boolean
-  needsConfirm?: boolean          // false → click fires `confirm` immediately (no arm step)
+  needsConfirm?: boolean          // false → arm() fires `confirm` immediately (no arm step)
   autoDismissMs?: number          // armed state auto-cancels after this (0 = never)
-}>(), { confirmLabel: 'Confirm', cancelLabel: 'Cancel', needsConfirm: true, autoDismissMs: 4000 })
+}>(), { needsConfirm: true, autoDismissMs: 4000 })
 const emit = defineEmits<{ confirm: [] }>()
 
 const armed = ref(false)
 const rootEl = useTemplateRef<HTMLElement>('rootEl')
 let timer: ReturnType<typeof setTimeout> | null = null
 const clearTimer = () => { if (timer) { clearTimeout(timer); timer = null } }
-function disarm() { armed.value = false; clearTimer() }
-function onTrigger() {
-  if (props.disabled) return
+function cancel() { armed.value = false; clearTimer() }
+function arm() {
   if (!props.needsConfirm) { emit('confirm'); return }
   armed.value = true
   clearTimer()
-  if (props.autoDismissMs > 0) timer = setTimeout(disarm, props.autoDismissMs)
+  if (props.autoDismissMs > 0) timer = setTimeout(cancel, props.autoDismissMs)
 }
-function doConfirm() { emit('confirm'); disarm() }
-// clicking anywhere outside disarms (so an armed button doesn't stay hot across the UI)
-function onDocClick(e: MouseEvent) { if (armed.value && rootEl.value && !rootEl.value.contains(e.target as Node)) disarm() }
+function confirm() { emit('confirm'); cancel() }
+// clicking anywhere outside disarms (so an armed control doesn't stay hot across the UI)
+function onDocClick(e: MouseEvent) { if (armed.value && rootEl.value && !rootEl.value.contains(e.target as Node)) cancel() }
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onBeforeUnmount(() => { document.removeEventListener('mousedown', onDocClick); clearTimer() })
 </script>
 
 <template>
-  <span ref="rootEl" class="confirm-btn">
-    <button v-if="!armed" :class="triggerClass" :disabled="disabled" type="button"
-            v-tooltip.bottom="triggerTooltip" @click="onTrigger">
-      <slot><i v-if="triggerIcon" :class="triggerIcon" /><span v-if="triggerLabel">{{ triggerLabel }}</span></slot>
-    </button>
-    <template v-else>
-      <button :class="confirmClass ?? triggerClass" type="button" v-tooltip.bottom="confirmTooltip" @click="doConfirm">
-        <slot name="confirm">{{ confirmLabel }}</slot>
-      </button>
-      <button :class="cancelClass ?? 'cb-cancel'" type="button" @click="disarm"><slot name="cancel">{{ cancelLabel }}</slot></button>
-    </template>
-  </span>
+  <span ref="rootEl" class="confirm-btn"><slot :armed="armed" :arm="arm" :confirm="confirm" :cancel="cancel" /></span>
 </template>
 
 <style scoped>
-.confirm-btn { display: inline-flex; align-items: center; gap: 6px; }
-/* fallback cancel look when the host doesn't pass a cancelClass */
-.cb-cancel { background: var(--cc-surface-2); color: var(--cc-text-dim); border: 1px solid var(--cc-border);
-  border-radius: 5px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
-.cb-cancel:hover { color: var(--cc-text); }
+/* layout-transparent: the host's buttons lay out as if direct children (so a footer/toolbar flex treats
+   them exactly like sibling buttons). Still a real DOM node for outside-click detection. */
+.confirm-btn { display: contents; }
 </style>

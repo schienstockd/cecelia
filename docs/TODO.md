@@ -252,6 +252,15 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00083** — **ConfirmButton lost host styling (Quit button unstyled)** (2026-07-09)
+`ConfirmButton` (#00081) rendered the buttons itself and took host classes (`footer-btn`, `save-btn`,
+…) as props — but a child component's rendered DOM doesn't receive the parent's *scoped* CSS, so those
+buttons came out unstyled (the sidebar + Settings Quit looked wrong; all four sites were affected).
+Redesigned it as a logic-only wrapper with a scoped slot (`{ armed, arm, confirm, cancel }`): the HOST
+renders the buttons, so host scoped styles apply. Wrapper is `display:contents` (layout-transparent).
+Rewired all four call sites (sidebar/Settings Quit, `TabbedCanvas` close, metadata delete). See
+`docs/UI.md` → *No native browser dialogs*.
+
 **#00082** — **Contour + outliers dots too strong** (2026-07-09)
 The outlier dots in the contour+outliers mode (#00080) rendered too heavily. Made them subtler in
 `PlotLayers.drawOutliers` — opacity 0.55 → 0.3, dot radius 1 → 0.6px — so the contours stay the main

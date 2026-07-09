@@ -148,13 +148,16 @@ function isNavDisabled(item: NavItem): boolean {
 
     <!-- ── Footer: quick app controls (bottom-left) ────────────────────────── -->
     <div class="sidebar-footer">
-      <ConfirmButton trigger-class="footer-btn danger" confirm-class="footer-btn danger" cancel-class="footer-btn"
-                     :disabled="appCtl.busy" @confirm="appCtl.quit()"
-                     trigger-tooltip="Quit Cecelia — stop napari, notebooks and the backend"
-                     confirm-tooltip="Confirm quit — stops napari, notebooks and the backend">
-        <i class="pi pi-power-off" />
-        <template #confirm><i class="pi pi-check" /></template>
-        <template #cancel><i class="pi pi-times" /></template>
+      <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
+        <button v-if="!armed" class="footer-btn danger" :disabled="appCtl.busy" @click="arm"
+                v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
+          <i class="pi pi-power-off" />
+        </button>
+        <template v-else>
+          <button class="footer-btn danger" @click="confirm"
+                  v-tooltip.right="'Confirm quit — stops napari, notebooks and the backend'"><i class="pi pi-check" /></button>
+          <button class="footer-btn" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
+        </template>
       </ConfirmButton>
       <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
               v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">

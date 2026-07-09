@@ -135,23 +135,31 @@ different thing — that's `position:absolute` inside a plot, not a modal.)*
 
 **Never use `window.confirm` / `alert` / `prompt`.** Native dialogs look out of place (OS-styled, not
 our theme), block the JS thread, and can't be positioned or styled. For a destructive-action confirm,
-use **`frontend/src/components/ConfirmButton.vue`** — the shared arm-then-confirm button: the first
-click morphs the button in place into **Confirm + Cancel**, and the `@confirm` event only fires on the
-second click (auto-disarms on an outside click / timeout). This is the two-click pattern the app
-already used inline (segmentation-attribute delete); `ConfirmButton` is the one canonical version.
+use **`frontend/src/components/ConfirmButton.vue`** — a logic-only wrapper with a **scoped slot**: the
+first click arms it, showing **Confirm + Cancel** in place; `@confirm` fires only on the second click
+(auto-disarms on an outside click / timeout).
+
+**The host renders the buttons** (via the slot props `{ armed, arm, confirm, cancel }`), NOT the
+component — this is deliberate: a child component's rendered DOM does **not** receive a parent's
+*scoped* CSS, so if `ConfirmButton` rendered the button, host `.footer-btn` / `.btn-danger` styling
+wouldn't reach it (this bit us once — the Quit button rendered unstyled). Rendering the buttons in the
+host keeps them in the host's style scope. The wrapper is `display:contents`, so the buttons lay out as
+if direct children of the host.
 
 ```vue
-<ConfirmButton trigger-class="btn-danger btn-sm" confirm-class="btn-danger btn-sm" cancel-class="btn-ghost btn-sm"
-               :disabled="!selected" @confirm="doDelete"
-               trigger-tooltip="Delete…" confirm-tooltip="Permanently delete — this can't be undone">
-  <i class="pi pi-trash" />          <!-- trigger content; #confirm / #cancel slots for icon-only buttons -->
+<ConfirmButton @confirm="doDelete" v-slot="{ armed, arm, confirm, cancel }">
+  <button v-if="!armed" class="btn-danger btn-sm" :disabled="!selected" @click="arm"
+          v-tooltip.bottom="'Delete…'"><i class="pi pi-trash" /></button>
+  <template v-else>
+    <button class="btn-danger btn-sm" @click="confirm">Confirm</button>
+    <button class="btn-ghost btn-sm" @click="cancel">Cancel</button>
+  </template>
 </ConfirmButton>
 ```
 
-Style is passed through (`triggerClass`/`confirmClass`/`cancelClass`) so each host keeps its look;
-`needsConfirm=false` fires immediately with no arm step (e.g. closing an already-empty board). Used by
-the sidebar/Settings **Quit**, the board close in `TabbedCanvas`, and the metadata-attribute delete.
-For a bigger modal decision (not a single button), use `BaseModal`.
+`needsConfirm=false` makes `arm` fire immediately with no arm step (e.g. closing an already-empty
+board). Used by the sidebar/Settings **Quit**, the board close in `TabbedCanvas`, and the
+metadata-attribute delete. For a bigger modal decision (not a single button), use `BaseModal`.
 
 ---
 
