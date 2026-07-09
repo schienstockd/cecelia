@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import ProjectPanel from './ProjectPanel.vue'
 import ViewerPanel from './ViewerPanel.vue'
+import ConfirmButton from './ConfirmButton.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -12,11 +13,8 @@ const appCtl = useAppControlStore()
 const showPanel = ref(false)
 
 // quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
-// the Settings → System panel uses. Quit is destructive → confirm first.
+// the Settings → System panel uses. Quit is destructive → two-click ConfirmButton (no native dialog).
 onMounted(() => appCtl.refreshDev())
-function onQuit() {
-  if (window.confirm('Quit Cecelia? This stops napari, notebooks and the backend.')) appCtl.quit()
-}
 
 // Track which groups are collapsed (all open by default)
 const collapsed = ref<Set<string>>(new Set())
@@ -150,10 +148,14 @@ function isNavDisabled(item: NavItem): boolean {
 
     <!-- ── Footer: quick app controls (bottom-left) ────────────────────────── -->
     <div class="sidebar-footer">
-      <button class="footer-btn danger" :disabled="appCtl.busy" @click="onQuit"
-              v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
+      <ConfirmButton trigger-class="footer-btn danger" confirm-class="footer-btn danger" cancel-class="footer-btn"
+                     :disabled="appCtl.busy" @confirm="appCtl.quit()"
+                     trigger-tooltip="Quit Cecelia — stop napari, notebooks and the backend"
+                     confirm-tooltip="Confirm quit — stops napari, notebooks and the backend">
         <i class="pi pi-power-off" />
-      </button>
+        <template #confirm><i class="pi pi-check" /></template>
+        <template #cancel><i class="pi pi-times" /></template>
+      </ConfirmButton>
       <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
               v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
         <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />

@@ -252,6 +252,15 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00081** — **No native browser dialogs — shared `ConfirmButton`** (2026-07-09)
+The Quit control used `window.confirm` (and board-close in `TabbedCanvas` too) — native dialogs look
+out of place and can't be styled. Extracted `components/ConfirmButton.vue` (arm → Confirm/Cancel in
+place, auto-disarm on outside click/timeout, style passthrough, `needsConfirm` for the empty-board
+case) and converged **all** the destructive confirms onto it: sidebar Quit, Settings → System Quit
+(dropped the separate `showQuitConfirm` row), `TabbedCanvas` board close (dropped the native
+`confirm`), and the metadata-attribute delete (dropped its hand-rolled `confirmDelete`). Documented the
+convention in `docs/UI.md` → *No native browser dialogs*.
+
 **#00080** — **Gate scatter render modes: contour-only + contour-with-outliers** (2026-07-09)
 Old `contour` mode always drew the full point cloud faintly under the contours — slow, especially in
 the pairs matrix. Split into three modes via the shared `RenderModeToggle` (Gate panel + pairs matrix +

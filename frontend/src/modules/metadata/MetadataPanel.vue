@@ -8,6 +8,7 @@ import { buildFieldRegex, buildLookaroundRegex, extractWith,
          type FieldPos, type CtxClass, type ExtractKind } from '../../utils/regexBuilder'
 import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
+import ConfirmButton from '../../components/ConfirmButton.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 const { width: panelWidth, onResizeStart } =
@@ -48,7 +49,6 @@ const attrNames = computed(() => {
 
 const newAttrName   = ref('')
 const selectedAttr  = ref('')
-const confirmDelete = ref(false)
 
 async function createAttr() {
   const name = newAttrName.value.trim()
@@ -78,7 +78,6 @@ async function deleteAttr() {
   if (!name) return
   const projectUid = projectMeta.current?.uid
   if (!projectUid || !props.setUid) return
-  confirmDelete.value = false
 
   const res = await fetch('/api/images/attr/delete', {
     method: 'POST',
@@ -315,18 +314,12 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <option value="">— select attribute —</option>
           <option v-for="n in attrNames" :key="n" :value="n">{{ n }}</option>
         </select>
-        <template v-if="!confirmDelete">
-          <button class="btn-danger btn-sm" :disabled="!selectedAttr"
-            @click="confirmDelete = true"
-            v-tooltip.bottom="'Delete this attribute from all images.'">
-            <i class="pi pi-trash" />
-          </button>
-        </template>
-        <template v-else>
-          <button class="btn-danger btn-sm" @click="deleteAttr"
-            v-tooltip.bottom="`Permanently delete '${selectedAttr}' from every image.`">Confirm</button>
-          <button class="btn-ghost btn-sm" @click="confirmDelete = false">Cancel</button>
-        </template>
+        <ConfirmButton trigger-class="btn-danger btn-sm" confirm-class="btn-danger btn-sm" cancel-class="btn-ghost btn-sm"
+          :disabled="!selectedAttr" @confirm="deleteAttr"
+          trigger-tooltip="Delete this attribute from all images."
+          :confirm-tooltip="`Permanently delete '${selectedAttr}' from every image.`">
+          <i class="pi pi-trash" />
+        </ConfirmButton>
       </div>
     </section>
 
