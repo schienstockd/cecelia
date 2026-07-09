@@ -6,6 +6,8 @@
       drag / insert (dbl-click edge) / delete (right-click vertex) polygon vertices. Live local
       redraw while dragging; emits `edit` with the new spec only on release (server recomputes +
       broadcasts → smooth cross-plot propagation). See docs/UI.md "rendering & UX hacks".
+      Holding Shift while a draw tool is armed enters this edit path too (grab the gate under the
+      cursor) without disarming the tool — release Shift to keep drawing.
 
   Everything is mapped data→px through the LIVE (zoom-synced) extents, so gates track pan/zoom.
 
@@ -129,6 +131,13 @@ let start: [number, number] | null = null
 let cur: [number, number] | null = null
 const polyPts = ref<[number, number][]>([])
 
+// while a draw tool is armed, holding Shift temporarily switches to edit: grab/move/resize any gate
+// under the cursor without disarming the tool. (Shift, not Alt — Alt opens the menu bar in Firefox
+// and is the menu-access key in other browsers.) `shiftEdit` = Shift held over the plot while armed →
+// show handles + edit cursors. An `editHandle` (mid-drag) counts too, so handles stay while resizing.
+const shiftEdit = ref(false)
+const editIntent = (e: MouseEvent) => props.mode !== 'off' && e.shiftKey && !props.readonly
+
 // ── render ──
 function strokeShape(g: GateSpec, colour: string, lw = props.lineWidth) {
   const c = ctx!; c.strokeStyle = colour; c.lineWidth = lw; c.beginPath()
@@ -197,7 +206,7 @@ function draw() {
   paintGates()
   // handles on the hovered / edited gate
   const active = editPath ? gateOf(editPath) : hover.value ? gateOf(hover.value.path) : undefined
-  if (active && props.mode === 'off') {
+  if (active && (props.mode === 'off' || shiftEdit.value || editHandle)) {
     const spec = active.path === editPath && draft.value ? draft.value : active.gate
     drawHandles(spec, active.colour || '#a78bfa')
   }
@@ -292,16 +301,27 @@ function onParentMove(e: MouseEvent) {
 
 // ── canvas handlers ──
 function onDown(e: MouseEvent) {
+  if (editIntent(e)) {                            // armed + Shift → edit the gate under the cursor, never draw
+    const h = hitTest(evtPx(e)); if (h) startEdit(h, evtPx(e))
+    return
+  }
   if (props.mode === 'rectangle') { dragging = true; start = evtPx(e); cur = start; return }
   if (props.mode === 'polygon') return
   const h = hover.value ?? hitTest(evtPx(e))      // off mode → begin editing
   if (h) startEdit(h, evtPx(e))
 }
 function onMove(e: MouseEvent) {
-  if (props.mode === 'off') return
-  cur = evtPx(e)
-  if (props.mode === 'rectangle' && !dragging) return
-  draw()
+  if (props.mode !== 'off') {                     // armed: Shift gives edit-hover feedback, else draw
+    if (editIntent(e) && !dragging && !editHandle) {   // (mid Shift-drag is driven by onEditMove)
+      shiftEdit.value = true
+      const h = hitTest(evtPx(e)); hover.value = h; cursor.value = h ? cursorFor(h) : 'crosshair'
+      return draw()
+    }
+    if (shiftEdit.value) { shiftEdit.value = false; hover.value = null; cursor.value = 'crosshair'; draw() }
+    cur = evtPx(e)
+    if (props.mode === 'rectangle' && !dragging) return
+    return draw()
+  }
 }
 function onUp() {
   if (props.mode === 'rectangle' && dragging && start && cur) {
@@ -312,7 +332,7 @@ function onUp() {
   }
 }
 function onClick(e: MouseEvent) {
-  if (props.mode !== 'polygon') return
+  if (props.mode !== 'polygon' || e.shiftKey) return   // Shift+click is an edit grab (onDown), not a vertex
   const p = evtPx(e)
   if (polyPts.value.length >= 3) {
     const [fx, fy] = polyPts.value[0]
@@ -350,7 +370,7 @@ function onKey(e: KeyboardEvent) {
 }
 
 // drawing modes always capture; off mode toggles via proximity
-watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' ? 'default' : 'crosshair' })
+watch(() => props.mode, m => { pe.value = m === 'off' ? 'none' : 'auto'; cursor.value = m === 'off' ? 'default' : 'crosshair'; shiftEdit.value = false })
 // authoritative gates arrived → drop the local draft (unless mid-drag)
 watch(() => props.gates, () => { if (!editHandle) { draft.value = null; editPath = null } draw() }, { deep: true })
 watch(() => [props.extents, props.viewTick, props.lineWidth, props.showLabels], draw, { deep: true })

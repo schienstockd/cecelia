@@ -32,15 +32,23 @@ const ws = useWsStore()
 // EVERY manager option (highlighted pops, gate labels, line width, axis) obeys this:
 // GLOBAL → one shared value applied to all plots; LOCAL → the active plot's own value.
 // per-plot copies of every scoped option (used when scope = 'local')
-interface PlotState { parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean }
+// per-plot copies also carry the axis config (channels/transforms/render mode) so those persist per
+// plot across navigation — like the summary panels' `ui` bag. Bare refs in the panel reset on remount.
+type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
+interface PlotState { parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
+  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour' }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
 const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
+// track properties → linear by default; flow intensities → logicle (FlowJo). Channels (x/y) start
+// empty and the panel picks index-based defaults once the store's columns load (see ensureChannels).
+const defT: GateKind = props.popType === 'track' ? 'linear' : 'logicle'
 const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
   useCanvasPanels<PlotState>(canvasRef, () =>
-    ({ parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true }), ckey)
+    ({ parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
+       x: '', y: '', xt: defT, yt: defT, renderMode: 'points' }), ckey)
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
@@ -164,7 +172,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <GatePlotPanel v-for="(p, i) in panels" :key="`${ckey}:${p.id}`" :index="i" :arrange="p.arrange"
                        :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
                        :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                       :persist-key="`${ckey}:${p.id}`"
+                       :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                        @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         <PopulationManager :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
