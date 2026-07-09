@@ -14,6 +14,7 @@ import { useGatingStore } from '../../stores/gating'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateMontage from '../../components/plots/GateMontage.vue'
+import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
 import { downloadDataUrl } from '../../plots/export'
 
@@ -26,7 +27,7 @@ const props = defineProps<{
   gateLineWidth: number; gateLabels: boolean; axisFromZero: boolean
   // persisted per-plot config (owned by GatingPlots' PlotState): the channel list, the one shared
   // transform, and the render mode. Read/written directly so they survive navigation.
-  ui: { channels?: string[]; xt?: Kind; renderMode?: 'points' | 'contour' }
+  ui: { channels?: string[]; xt?: Kind; renderMode?: RenderMode }
   arrange?: ArrangeCmd | null
   persistKey?: string
 }>()
@@ -37,7 +38,7 @@ const g = useGatingStore()
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
 const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v } })
 const transform = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
-const renderMode = computed<'points' | 'contour'>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
+const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
 
@@ -108,10 +109,7 @@ function exportPng() {
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>
       <span class="ctrl-sep" />
-      <div class="seg" v-tooltip.bottom="'Render: pseudocolour points / density contour'">
-        <button :class="{ on: renderMode === 'points' }" @click="renderMode = 'points'"><i class="pi pi-circle-fill" /></button>
-        <button :class="{ on: renderMode === 'contour' }" @click="renderMode = 'contour'"><i class="pi pi-chart-line" /></button>
-      </div>
+      <RenderModeToggle v-model="renderMode" />
     </template>
     <template #footer>
       <select class="gp-export" v-tooltip.top="'Export the matrix'" :disabled="!channels.length"

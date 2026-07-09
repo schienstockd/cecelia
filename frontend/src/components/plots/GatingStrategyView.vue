@@ -18,12 +18,13 @@ import { orientGate } from '../../plots/gateGeometry'
 import type { PanelDef } from '../../plots/montage'
 import type { VisProps } from '../../plots/plot'
 import GateMontage from './GateMontage.vue'
+import RenderModeToggle, { type RenderMode } from './RenderModeToggle.vue'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   vis?: VisProps
   state: { imageUid?: string; valueName?: string; popType?: string; rootPop?: string
-    renderMode?: 'points' | 'contour'; showHierarchy?: boolean }
+    renderMode?: RenderMode; showHierarchy?: boolean }
 }>()
 
 // ── selectors (persisted in the panel state) ─────────────────────────────────────────────────────
@@ -196,10 +197,7 @@ defineExpose({ exportImage })
         <option value="root">root</option>
         <option v-for="p in flatPaths" :key="p" :value="p">{{ p }}</option>
       </select>
-      <div class="seg" v-tooltip.bottom="'Render: points / density contour'">
-        <button :class="{ on: renderMode === 'points' }" @click="renderMode = 'points'"><i class="pi pi-circle-fill" /></button>
-        <button :class="{ on: renderMode === 'contour' }" @click="renderMode = 'contour'"><i class="pi pi-chart-line" /></button>
-      </div>
+      <RenderModeToggle v-model="renderMode" />
       <div ref="optsRef" class="gs-opts">
         <button class="gs-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>

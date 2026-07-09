@@ -500,7 +500,12 @@ these two primitives.
 **Gate scatters — one renderer, three hosts.** `components/plots/GateScatterCell.vue` is the ONE
 scatter+gate body (WebGL points + contour/pop-colour layer + canvas2D gate overlay). The interactive
 Gate page (`GatePlotPanel`, `mode` = rectangle/polygon) and every read-only montage tile (`mode="off"`)
-share it. Montages of tiles go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell`
+share it. **Render modes** (`points` | `contour` | `outliers`, chosen via the shared
+`components/plots/RenderModeToggle.vue`): `points` = WebGL pseudocolour cloud; `contour` = density
+contours only, with the WebGL cloud SKIPPED (`GateScatterCell` passes `null` points to `ScatterGL`) so
+it's the fast path; `outliers` = contours + individual dots for the sparse tail (FlowJo / old-R
+"contour ± outliers"). The contour/outlier maths (density grid + low-density subset) is the pure,
+unit-tested `plots/density.ts`, shared by `PlotLayers`. Montages of tiles go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell`
 tiles that owns the per-tile fetch (`plotmeta`/`plotdata`/`stats`), transpose reuse, optional coloured
 population overlays (`highlight`), and PNG/PDF export. It has two tile producers: `GatingStrategyView`
 (tree-derived, responsive wrap) and `GatePairsPanel` (a `ggpairs` matrix, `cols` set). A tile carries a

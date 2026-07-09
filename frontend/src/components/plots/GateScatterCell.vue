@@ -34,7 +34,7 @@ const props = withDefaults(defineProps<{
   xLabel: string
   yLabel: string
   popLayers?: PopLayer[]                         // coloured child-pop overlays
-  renderMode?: 'points' | 'contour'
+  renderMode?: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = + tail dots
   showPops?: boolean
   mode?: 'off' | 'rectangle' | 'polygon'         // 'off' = read-only (no draw/edit)
   gateLineWidth?: number
@@ -99,19 +99,16 @@ async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null
 // montage would composite every subplot at screen resolution.
 defineExpose({ exportImage, hiRes })
 
-// base render look: density for plain points; dim/flat backdrop for contour or pop-colour modes
-function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat' {
-  return renderMode === 'points' && !showPops ? 'density' : 'flat'
-}
 </script>
 
 <template>
   <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }">
     <div class="panel-plot">
-      <ScatterGL ref="scatterRef" :points="points" :extents="extents"
-                 :color-mode="baseColorMode(renderMode, showPops)"
-                 :opacity="renderMode === 'contour' ? 0.22 : showPops ? 0.35 : 1"
-                 :point-size="renderMode === 'contour' ? 2 : 3" />
+      <!-- WebGL base cloud only in 'points' mode; contour/outliers draw from PlotLayers instead, so we
+           skip the point upload entirely (contour-only is the fast path the user asked for). -->
+      <ScatterGL ref="scatterRef" :points="renderMode === 'points' ? points : null" :extents="extents"
+                 :color-mode="showPops ? 'flat' : 'density'"
+                 :opacity="showPops ? 0.35 : 1" :point-size="3" />
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"

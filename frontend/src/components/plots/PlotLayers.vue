@@ -11,25 +11,27 @@
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { densityGrid as computeDensityGrid, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
 
-type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
 const props = defineProps<{
   viewExtents: Ext                          // live (zoom-synced) data extents
-  renderMode: 'points' | 'contour'
+  renderMode: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = contours + tail dots
   basePoints: Float32Array | null           // base population points (for base contour)
   popLayers: PopLayer[]                      // visible child pops to colour
   showPops: boolean
   viewTick: number                           // bump → redraw (camera moved)
 }>()
+// contour-family modes (contours drawn, no full WebGL point cloud); `outliers` adds the sparse-tail dots
+const isContour = () => props.renderMode === 'contour' || props.renderMode === 'outliers'
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
 let ctx: CanvasRenderingContext2D | null = null
 let ro: ResizeObserver | null = null
 
-const G = 64                                 // contour grid resolution (R kde2d n≈25; finer here)
-const LEVELS = [0.05, 0.10, 0.25, 0.50]      // 1 − confidence levels
+const G = DENSITY_GRID                       // contour grid resolution (shared with density.ts)
+const LEVELS = CONTOUR_LEVELS                // 1 − confidence levels (outer→inner)
 
 function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.clientHeight } }
 function toPx(vx: number, vy: number): [number, number] {
@@ -38,32 +40,8 @@ function toPx(vx: number, vy: number): [number, number] {
   return [((vx - xMin) / xs) * w, (1 - (vy - yMin) / ys) * h]
 }
 
-// density grid (normalised 0..1) over the current view, lightly blurred to mimic a KDE
-function densityGrid(points: Float32Array): Float32Array {
-  const { xMin, xMax, yMin, yMax } = props.viewExtents
-  const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
-  const g = new Float32Array(G * G)
-  const n = points.length / 2
-  for (let i = 0; i < n; i++) {
-    const px = points[2 * i], py = points[2 * i + 1]
-    if (!Number.isFinite(px) || !Number.isFinite(py)) continue   // NaN/Inf object measure → skip
-    let gx = Math.floor(((px - xMin) / xs) * G), gy = Math.floor(((py - yMin) / ys) * G)
-    if (gx < 0 || gx > G - 1 || gy < 0 || gy > G - 1) continue
-    g[gy * G + gx] += 1
-  }
-  const blurred = new Float32Array(G * G)
-  let max = 0
-  for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
-    let s = 0, c = 0
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const nx = x + dx, ny = y + dy
-      if (nx >= 0 && nx < G && ny >= 0 && ny < G) { s += g[ny * G + nx]; c++ }
-    }
-    const v = s / c; blurred[y * G + x] = v; if (v > max) max = v
-  }
-  if (max > 0) for (let i = 0; i < blurred.length; i++) blurred[i] /= max
-  return blurred
-}
+// density grid (normalised 0..1) over the current view — shared pure helper (plots/density.ts)
+const densityGrid = (points: Float32Array) => computeDensityGrid(points, props.viewExtents, G)
 
 // grid cell coords → data coords. Samples sit at bin CENTRES ((i+0.5)/G), matching the
 // binning above (floor((v-min)/range*G)); using /(G-1) here mis-scaled contours vs the points.
@@ -116,24 +94,41 @@ function drawContours(points: Float32Array, colour: string) {
   ctx!.globalAlpha = 1
 }
 
-function drawDots(points: Float32Array, colour: string) {
+function drawDots(points: Float32Array, colour: string, r = 1.5) {
   const c = ctx!; c.fillStyle = colour
   const n = points.length / 2
+  const s = r * 2
   for (let i = 0; i < n; i++) {
     const [px, py] = toPx(points[2 * i], points[2 * i + 1])
-    c.fillRect(px - 1.5, py - 1.5, 3, 3)
+    c.fillRect(px - r, py - r, s, s)
   }
+}
+// "contour + outliers": individual dots for the sparse-tail points the contours don't enclose (R:
+// contour ± outliers). Small + semi-transparent so the contours stay the main read.
+function drawOutliers(points: Float32Array, colour: string) {
+  const pts = outlierPoints(points, props.viewExtents, G)
+  ctx!.globalAlpha = 0.55
+  drawDots(pts, colour, 1)
+  ctx!.globalAlpha = 1
 }
 
 // paint the layer content (contours + pop overlay) with the current `ctx`; toPx uses size() (CSS px)
 // so it's resolution-independent — the transform on the target ctx sets the actual pixel density.
 function paintContent() {
   ctx!.lineJoin = 'round'
-  if (props.renderMode === 'contour' && props.basePoints?.length) drawContours(props.basePoints, '#cbd5e1')
+  if (isContour() && props.basePoints?.length) {
+    drawContours(props.basePoints, '#cbd5e1')
+    if (props.renderMode === 'outliers') drawOutliers(props.basePoints, '#cbd5e1')
+  }
   if (props.showPops) {
     for (const pop of props.popLayers) {
       if (!pop.points?.length) continue
-      props.renderMode === 'contour' ? drawContours(pop.points, pop.colour) : drawDots(pop.points, pop.colour)
+      if (isContour()) {
+        drawContours(pop.points, pop.colour)
+        if (props.renderMode === 'outliers') drawOutliers(pop.points, pop.colour)
+      } else {
+        drawDots(pop.points, pop.colour)
+      }
     }
   }
 }
