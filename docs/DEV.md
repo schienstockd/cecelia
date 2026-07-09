@@ -122,7 +122,10 @@ Cut **off `main`** after the relevant PRs have merged, by pushing a tag:
 - **Hyphenated tags are prereleases** (`v0.1.0-rc1`); a clean `vX.Y.Z` is the public release that
   makes the `releases/latest` install one-liner resolve.
 
-Rationale and the full packaging/update model live in [`docs/SHIPPING.md`](SHIPPING.md).
+*When* to cut one and *what the version means* — the cadence (a ~2-week heartbeat + event triggers),
+the rc-vs-release distinction, and the pre-1.0 versioning rules — live in
+[`docs/RELEASING.md`](RELEASING.md). Rationale and the full packaging/update model live in
+[`docs/SHIPPING.md`](SHIPPING.md).
 
 ## Tests
 

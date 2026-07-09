@@ -24,6 +24,7 @@ See also:
 - [`docs/MILESTONES.md`](docs/MILESTONES.md) — durable, append-only ledger of what landed and how it was packaged (the counterpart to the throwaway roadmap). Add an entry at each freeze/release.
 - [`docs/SHIPPING.md`](docs/SHIPPING.md) — distribution architecture & rationale: Pixi/constructor + browser stack (Julia serves the built frontend; no Tauri/Electron), packaging/update model, and non-obvious env decisions (cellpose-v3 pin, dropped coastal, GPU/RAPIDS parked, run-via-`pixi run`). The *why*, paired with INSTALL.md's *how*.
 - [`docs/DEV.md`](docs/DEV.md) — development workflow: branch + PR conventions (never commit/push to `main`), commit style, how PRs are opened/merged (gh not in the agent env → relay the PR URL), and how releases are tagged off `main`.
+- [`docs/RELEASING.md`](docs/RELEASING.md) — release *policy*: when to cut a tag (a ~2-week heartbeat + event triggers), rc-vs-release-vs-milestone, pre-1.0 versioning, and the cutting checklist. (DEV.md = tag mechanics; SHIPPING.md = build pipeline; this = the "when/what".)
 
 **Keep the docs current — update the relevant file in the same change, not after.**
 
@@ -47,6 +48,7 @@ See also:
 | Deferring a known-better approach (ecosystem/scale not ready) | `docs/FUTURE.md` |
 | Packaging, distribution, env rationale (Pixi/constructor, why) | `docs/SHIPPING.md` |
 | Branching, commits, PRs, release tagging (dev workflow) | `docs/DEV.md` |
+| Release cadence/policy — when to tag, versioning, rc-vs-release | `docs/RELEASING.md` |
 
 > **Watch for divergent re-implementation — flag it, don't add another variant.** The most
 > expensive mistakes here are doing the same *cross-cutting* thing more than one way — e.g. touching
