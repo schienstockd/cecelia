@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import PackagesDialog from '../components/PackagesDialog.vue'
+import ConfirmButton from '../components/ConfirmButton.vue'
 import { napariState, notebooksState, stateInfo, type ServiceState } from '../utils/serviceStatus'
 import { useAppControlStore } from '../stores/appControl'
 
@@ -154,7 +155,6 @@ const guiPort = computed(() => location.port || (location.protocol === 'https:' 
 
 const svcBusy = ref('')     // which row's action is in flight ('napari' | 'notebooks' | 'app')
 const svcMsg = ref('')
-const showQuitConfirm = ref(false)
 
 async function pollServices() {
   try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
@@ -193,7 +193,6 @@ async function appRestart() {
   pollServices()
 }
 async function quitApp() {
-  showQuitConfirm.value = false
   await appCtl.quit()
   svcMsg.value = appCtl.message
 }
@@ -322,10 +321,12 @@ async function quitApp() {
                   v-tooltip.top="'Restart the backend server (dev): the supervisor relaunches it, page reconnects when it is back'">
             <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" /> Restart
           </button>
-          <button class="save-btn danger" :disabled="appCtl.busy" @click="showQuitConfirm = true"
-                  v-tooltip.top="'Stop napari, notebooks and the backend, then exit Cecelia'">
+          <ConfirmButton trigger-class="save-btn danger" confirm-class="save-btn danger" cancel-class="save-btn ghost"
+                         :disabled="appCtl.busy" @confirm="quitApp" confirm-label="Quit everything"
+                         trigger-tooltip="Stop napari, notebooks and the backend, then exit Cecelia"
+                         confirm-tooltip="Confirm — stop napari, notebooks and the backend">
             <i class="pi pi-power-off" /> Quit
-          </button>
+          </ConfirmButton>
         </span>
       </div>
 
@@ -374,12 +375,6 @@ async function quitApp() {
 
       <span class="field-hint">Cecelia occupies these ports — don't bind other services (e.g. a Jupyter kernel) to them.</span>
       <span v-if="svcMsg" class="field-hint">{{ svcMsg }}</span>
-
-      <div v-if="showQuitConfirm" class="svc-confirm">
-        <span>Quit Cecelia — stop napari, notebooks and the backend?</span>
-        <button class="save-btn danger" @click="quitApp"><i class="pi pi-power-off" /> Quit everything</button>
-        <button class="save-btn ghost" @click="showQuitConfirm = false">Cancel</button>
-      </div>
     </section>
 
     <!-- ── Diagnostics ─────────────────────────────────────────────────── -->
@@ -598,8 +593,6 @@ async function quitApp() {
 .save-btn.ghost { background: transparent; color: var(--cc-text-dim); border-color: var(--cc-border); }
 .save-btn.ghost:not(:disabled):hover { color: var(--cc-text); }
 .save-btn.danger { background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
-.svc-confirm { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.6rem; font-size: 0.78rem; color: var(--cc-text);
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.35rem; padding: 0.5rem 0.6rem; }
 
 /* diagnostics key/value grid */
 .diag-grid {

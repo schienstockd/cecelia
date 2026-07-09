@@ -17,6 +17,7 @@ import { exportTabsToPdf } from '../../plots/pdf'
 import { downloadBlob } from '../../plots/export'
 import { useLogStore } from '../../stores/log'
 import LayoutCanvas from './LayoutCanvas.vue'
+import ConfirmButton from '../ConfirmButton.vue'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null }>()
 
@@ -47,9 +48,9 @@ function commitRename() {
 
 function addTab() { tabsStore.addTab(groupKey) }
 
+const plotCount = (id: number) => panelsStore.entries[canvasKey(id)]?.panels.length ?? 0
+// no native confirm — the close button is a ConfirmButton that arms only when the board has plots
 function closeTab(id: number) {
-  const n = panelsStore.entries[canvasKey(id)]?.panels.length ?? 0
-  if (n > 0 && !confirm(`Close this board and its ${n} plot${n === 1 ? '' : 's'}?`)) return
   panelsStore.drop(canvasKey(id))
   tabsStore.removeTab(groupKey, id)
 }
@@ -145,10 +146,16 @@ async function exportCsv() {
         />
         <template v-else>
           <span class="tab-name">{{ t.name }}</span>
-          <button
-            v-if="tabs.length > 1" class="tab-close" type="button"
-            @click.stop="closeTab(t.id)" v-tooltip.bottom="'Close board'" aria-label="Close board"
-          ><i class="pi pi-times" /></button>
+          <span v-if="tabs.length > 1" @click.stop>
+            <ConfirmButton trigger-class="tab-close" confirm-class="tab-close" cancel-class="tab-close"
+                           :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
+                           trigger-tooltip="Close board"
+                           :confirm-tooltip="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`">
+              <i class="pi pi-times" />
+              <template #confirm><i class="pi pi-check" /></template>
+              <template #cancel><i class="pi pi-replay" /></template>
+            </ConfirmButton>
+          </span>
         </template>
       </div>
       <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
