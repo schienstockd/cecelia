@@ -99,8 +99,16 @@ function api_diagnostics(::HTTP.Request)
         loopback    = _host_is_loopback(),
         replEnabled = _repl_on[],           # runtime toggle state
         replAvailable = _repl_available(),  # toggle on AND loopback-bound → console usable
+        dev         = _is_dev(),            # dev server (pixi run dev sets CECELIA_DEV); prod/app.py never does
+        napariPort    = Cecelia.NAPARI_PORT,  # child-service ports, surfaced so the panel shows which
+        notebooksPort = NOTEBOOKS_PORT,       # ports Cecelia occupies (backend `port` is above)
     ))
 end
+
+# Dev vs prod: the `dev` pixi task sets CECELIA_DEV=1; the packaged app (app.py / `pixi run app`) and
+# `pixi run prod` never do — so absence means prod, auto-detected with no installer involvement. Gates
+# dev-only controls (e.g. the planned backend restart) in Settings → System.
+_is_dev() = get(ENV, "CECELIA_DEV", "") ∉ ("", "0", "false")
 
 # Render a value the way the REPL would (text/plain), length-capped so a huge object can't flood the UI.
 function _repl_show(x)::String

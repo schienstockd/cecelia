@@ -79,7 +79,7 @@ torchvision = ">=0.21"
 # longer stalls the accept loop / a napari open, and the scheduler's per-image task functions
 # (Threads.@spawn) actually parallelise. Julia HDF5 is serialised via `_with_h5`; shared API state is
 # lock-guarded. Override with JULIA_NUM_THREADS if you want a fixed count.
-dev  = { cmd = "julia --project -t auto -e 'using Revise; includet(\"src/server.jl\")'", cwd = "api" }  # hot-reload (development)
+dev  = { cmd = "julia --project dev.jl", cwd = "api", env = { CECELIA_DEV = "1", CECELIA_SUPERVISED = "1" } }  # dev.jl supervises the Revise hot-reload server + relaunches it on Settings→System Restart. CECELIA_DEV marks a dev server (prod/app.py never sets it → auto-detected); CECELIA_SUPERVISED enables the backend Restart button
 prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }                                    # plain include (production)
 
 # Tests — one whole suite per layer. Package (headless Cecelia) + API adapters (loaded with

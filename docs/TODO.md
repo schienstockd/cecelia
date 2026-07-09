@@ -252,6 +252,22 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00076** — **Settings → System: service control panel + sidebar Quit/Restart + console window** (2026-07-09)
+Made the runtime legible/controllable from the UI (was: no way to see or manage the moving parts; a
+stale napari bridge needed a terminal). New **System** section in `SettingsModule.vue` (aligned grid
+name·status·port·actions): live status pills for Application / Napari / Notebooks (polled ~4s) + their
+ports, a read-only Frontend (GUI) row so the full port picture (8080/5173/7655/7660) is visible,
+per-component start/stop/restart (reusing `/api/{napari,notebooks}/*`), a global **Quit** (`POST
+/api/app/shutdown`), and **Open console** — the existing `ErrorConsole` (`fill` prop) mounted
+full-window in a separate window (`bare` `/console` + `window.open('#/console')`), fed by a `server:log`
+WS logger tee + 500-line ring buffer (`GET /api/logs/recent`) → a real "pixi console". A sidebar footer
+mirrors Quit + (dev) Restart via the shared `appControl` store (one implementation). Backend **Restart**
+is dev-only: `POST /api/app/restart` → `exit(42)` + a supervisor (`api/dev.jl` in dev, `app.py` loop in
+prod) relaunches in place; Quit/Restart also free child ports by force (`_kill_listeners_on_port`) so no
+zombie napari/pluto survives an adopted/crashed bridge. Dev vs prod auto-detected via `CECELIA_DEV` (dev
+task only) → `diag.dev`. Tests: `serviceStatus` (Vitest), api app-lifecycle + diagnostics ports. See
+`docs/todo/SERVICE_PANEL_PLAN.md`.
+
 **#00075** — **Channel-pairs matrix follow-ups (reservations from #00074)** (2026-07-09)
 Three refinements to the pairs plot flagged as reservations when #00074 merged:
 - **Heavy-load warning** — a brief amber strip on `GatePairsPanel` when the estimated point load

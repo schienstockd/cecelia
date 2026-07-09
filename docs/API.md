@@ -85,6 +85,9 @@ Settings → Debug console UI shows a note to this effect.
 | GET | `/api/chains/runs?projectUid` · `/api/chains/run?projectUid&runId` | list persisted run records / load one run's frozen template + per-node status (Live view run history; see `docs/SCHEDULER.md` → *Loading past runs*) |
 | GET | `/api/napari/status`, POST `/api/napari/{open,close,restart,show-labels,show-populations,start-selection,stop-selection,event}` | napari bridge + gating linked brushing |
 | POST | `/api/napari/screenshot` | `projectUid` | **binary** PNG of the current napari canvas (`canvas_only`) — `save_screenshot!` to a temp file → stream the bytes → delete. `400` if napari not running. Feeds the Analysis-canvas image / filmstrip slots. |
+| POST | `/api/app/shutdown` | the global "Quit everything" (Settings → System). Best-effort stops children (napari `close!`, notebook server) then `exit(0)` from a detached task so the response flushes first. Dev: ends `pixi run dev`; packaged: server exit ends `app.py`. (`api/src/app_api.jl`) |
+| POST | `/api/app/restart` | **dev-only** backend restart (button gated on `diag.dev`). Stops children then `exit(42)` (`RESTART_EXIT_CODE`); the **supervisor** relaunches in place — `api/dev.jl` in dev, `app.py`'s loop in prod. `409` when not supervised (no `CECELIA_SUPERVISED` — a bare `julia src/server.jl`). Replaced the old detached-relauncher, which couldn't reattach to a foreground terminal. |
+| GET | `/api/logs/recent` | `{logs: [{level,message}]}` — the server-log ring buffer (last 500), so a freshly-opened console **window** backfills recent lines. Fed by the `BroadcastLogger` tee that also emits the `server:log` WS event (see below). |
 | — | **Gating** (below) | population manager + gating |
 
 Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTTP — see
@@ -92,7 +95,11 @@ Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTT
 are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
 to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,
 `pixi run console`) both see live progress. (They're keyed by `taskId`, so clients filter to what they
-care about. Chain events already broadcast.) Broadcast is **decoupled from the caller, per client**:
+care about. Chain events already broadcast.) The server also tees its **own** logs (`@info`/`@warn`/
+`@error` — startup banner, napari warnings, …) to WS as **`server:log`** `{level, message}` via a global
+`BroadcastLogger` installed in `start()` (never under `CECELIA_NO_SERVE`), keeping a 500-line ring
+buffer (`GET /api/logs/recent`). This is what makes the Settings console window a real "pixi console",
+not just a task log. Broadcast is **decoupled from the caller, per client**:
 each connected socket has its own bounded, drop-on-full queue drained by its own background task, and
 `broadcast_ws` enqueues a pre-serialised frame onto every client's queue (non-blocking; it skips a
 client whose queue is full). This is deliberate — task events fan out on every log/progress line from

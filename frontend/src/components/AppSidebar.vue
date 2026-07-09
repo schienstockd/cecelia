@@ -1,13 +1,22 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import { useAppControlStore } from '../stores/appControl'
 import ProjectPanel from './ProjectPanel.vue'
 import ViewerPanel from './ViewerPanel.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
+const appCtl = useAppControlStore()
 const showPanel = ref(false)
+
+// quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
+// the Settings → System panel uses. Quit is destructive → confirm first.
+onMounted(() => appCtl.refreshDev())
+function onQuit() {
+  if (window.confirm('Quit Cecelia? This stops napari, notebooks and the backend.')) appCtl.quit()
+}
 
 // Track which groups are collapsed (all open by default)
 const collapsed = ref<Set<string>>(new Set())
@@ -138,6 +147,18 @@ function isNavDisabled(item: NavItem): boolean {
       <i :class="['pi', isOpen('Viewer') ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
     </button>
     <ViewerPanel v-if="isOpen('Viewer')" />
+
+    <!-- ── Footer: quick app controls (bottom-left) ────────────────────────── -->
+    <div class="sidebar-footer">
+      <button class="footer-btn danger" :disabled="appCtl.busy" @click="onQuit"
+              v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
+        <i class="pi pi-power-off" />
+      </button>
+      <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
+              v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
+        <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />
+      </button>
+    </div>
 
   </nav>
 
@@ -277,5 +298,27 @@ function isNavDisabled(item: NavItem): boolean {
   letter-spacing: 0.05em;
 }
 .lock-badge { font-size: 0.68rem; color: var(--cc-text-dim); opacity: 0.7; }
+
+/* ── Footer: quick app controls, pinned to the bottom ──────────────────────── */
+.sidebar-footer {
+  margin-top: auto;                 /* push to the bottom of the flex column */
+  display: flex;
+  gap: 0.4rem;
+  padding: 0.5rem 0.6rem 0.2rem;
+  border-top: 1px solid var(--cc-border);
+}
+.footer-btn {
+  background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border);
+  color: var(--cc-text-dim);
+  border-radius: 0.35rem;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.12s, color 0.12s;
+}
+.footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
+.footer-btn.danger:hover:not(:disabled) { color: #fff; background: var(--cc-danger, #ef4444); border-color: var(--cc-danger, #ef4444); }
+.footer-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
 </style>

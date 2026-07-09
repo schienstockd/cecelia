@@ -71,6 +71,13 @@ export const useWsStore = defineStore('ws', () => {
         )
       }
 
+      // backend's own @info/@warn/@error (startup, napari warnings, …), teed by the server so the
+      // console window is a real "pixi console" — not just task logs. See server.jl BroadcastLogger.
+      if (type === 'server:log') {
+        const level = (data.level === 'error' || data.level === 'warn') ? data.level : 'info'
+        useLogStore().push(level as any, String(data.message ?? ''), { source: 'server' })
+      }
+
       if (type === 'task:progress') {
         const taskId   = String(data.taskId ?? '')
         const progress = Number(data.progress ?? 0)

@@ -80,34 +80,49 @@ def _apply_pending_update() -> None:
               file=sys.stderr)
 
 
+# The server exits with this code to ask its supervisor (us) to relaunch it — Settings → System →
+# Restart (POST /api/app/restart). Mirrors the dev.jl supervisor loop. Any other exit → we stop.
+RESTART_EXIT_CODE = 42
+
+
 def main() -> int:
     _apply_pending_update()
     # Production mode: plain include, no Revise. Inherits PATH from the activated env so the
-    # server's Python subprocesses use the same env.
-    proc = subprocess.Popen(
-        [_find_julia(), "--project", "src/server.jl"],
-        cwd=os.path.join(ROOT, "api"),
-    )
-    try:
-        print(f"Starting Cecelia… (waiting for {HEALTH})")
-        if _server_ready():
-            webbrowser.open(URL)
-            print(f"Cecelia is running at {URL} — close this window to stop.")
-        else:
-            print("Cecelia server did not become ready in time.", file=sys.stderr)
-            proc.terminate()
-            return 1
-        proc.wait()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        if proc.poll() is None:
-            proc.terminate()
-            try:
-                proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-    return 0
+    # server's Python subprocesses use the same env. CECELIA_SUPERVISED tells the server that
+    # backend restart is available (we relaunch it on RESTART_EXIT_CODE).
+    env = {**os.environ, "CECELIA_SUPERVISED": "1"}
+    first = True
+    while True:
+        proc = subprocess.Popen(
+            [_find_julia(), "--project", "src/server.jl"],
+            cwd=os.path.join(ROOT, "api"),
+            env=env,
+        )
+        try:
+            print(f"Starting Cecelia… (waiting for {HEALTH})")
+            if _server_ready():
+                if first:
+                    webbrowser.open(URL)   # only pop a browser on the initial launch, not each restart
+                    first = False
+                print(f"Cecelia is running at {URL} — close this window to stop.")
+            else:
+                print("Cecelia server did not become ready in time.", file=sys.stderr)
+                proc.terminate()
+                return 1
+            rc = proc.wait()
+            if rc == RESTART_EXIT_CODE:
+                print("Restarting Cecelia…")
+                continue
+            return 0
+        except KeyboardInterrupt:
+            return 0
+        finally:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
 
 
 if __name__ == "__main__":

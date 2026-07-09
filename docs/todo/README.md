@@ -44,6 +44,9 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
   `pixi.toml`, `clustering_utils.py`, `clustPops`/`clustTracks` `cluster.jl`, `docs/SHIPPING.md`.
 - `ANALYSIS_CANVAS_PLAN.md` — multipage tabbed analysis board + gating-strategy plot + PDF export
   (branch `feat/multipage-analysis-canvas`).
+- `SERVICE_PANEL_PLAN.md` — Settings control panel: live status + start/stop/restart for backend /
+  napari / notebooks, global Quit, and a separate-window "pixi console" (reuses the existing log
+  console). Branch `feat/settings-service-panel`; phased (panel → console → backend restart).
 - `PY_PACKAGING_PLAN.md` — make `app/py` an installable package (rename `py` → `cecelia`,
   `pyproject.toml` + extras, editable pixi install) so external consumers (`coastal`) can
   `import cecelia.utils.*` without a `sys.path` hack. Touches `app/src/py_runner.jl` (1 line),

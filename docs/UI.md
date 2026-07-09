@@ -37,6 +37,25 @@ CellProfiler is the reference for tooltip density — if a button does something
 All errors go to `useLogStore().error(msg, { source, detail })`.
 Task failures must never be silent — errors must reach the console bar visible to the user.
 
+The **console** is one component — `components/ErrorConsole.vue` over the `log` store — mounted in two
+places: the docked bar at the bottom of the app shell, and (with the `fill` prop) full-window in the
+standalone **console window**. Do not build a second console. The window is a `bare` route
+(`/console`, `meta.bare` → `App.vue` renders it without the shell) opened via
+`window.open(origin + pathname + '#/console', …)` from Settings → System → **Open console**; being a
+separate browser window it's a fresh app instance with its own WS, and it backfills recent lines from
+`GET /api/logs/recent` on open. The stream includes the backend's own logs (WS `server:log`, see
+`docs/API.md`), so it's a real "pixi console", not just task logs.
+
+## Settings → System (service control panel)
+
+`SettingsModule.vue` has a **System** section: one row per runtime component (Application / Napari /
+Notebooks) with a status pill (Running / Starting… / Stopped, polled every ~4 s from the existing
+`/api/{napari,notebooks}/status` endpoints — ephemeral UI state, a plain `ref`, NOT persisted) and
+start/stop/restart buttons that reuse the existing control endpoints, plus **Open console** and a
+global **Quit** (`POST /api/app/shutdown`, behind a confirm). Status→verb/label mapping is the pure,
+unit-tested `utils/serviceStatus.ts`. Backend self-restart is planned (see
+`docs/todo/SERVICE_PANEL_PLAN.md`, Phase 3).
+
 ---
 
 ## Button utilities
