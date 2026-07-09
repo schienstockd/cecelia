@@ -283,6 +283,15 @@ update the manager's cell count (stats always refetch) but **not** the plots —
 per-pop version (`gateSignatures` → `popVersion`) only bumps on a signature change. The signature
 now includes `membership_sig`, so resizing the selection shape refreshes the highlighted overlay.
 
+**Reconnect resync (server restart).** Because the selection lives only in the server's in-memory
+registry, a backend restart wipes it — but the browser keeps the old tree AND the persisted highlight
+that referenced it (`shared.hl` in `moduleCanvases.json`), so on the same image the plot stayed greyed
+(highlight → `showPops` on, but the membership fetch returns 0 points). `GatingPlots` now resyncs on WS
+**reconnect** (`ws.status` → `connected` after a drop, guarded so it skips the first connect): it
+refetches the popmap, the fresh tree drops the transient pop, and the existing stale-highlight prune
+watch clears the dangling reference (which then autosaves the cleaned `hl` back). The fix is
+client-side; the server persistence was already correct.
+
 ## API & frontend
 
 - **Routes** (synchronous, in-process): `GET /api/gating/popmap`; `POST/PUT/DELETE

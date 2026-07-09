@@ -116,6 +116,19 @@ watch(() => g.flat.map(p => p.path).join('\n'), () => {
     if (p.state.parent !== 'root' && !exist.has(p.state.parent)) p.state.parent = 'root'
   }
 })
+// WS (re)connect resync: the transient napari-selection pop lives ONLY in the server's in-memory
+// registry (never persisted — see docs/POPULATION.md), so a backend restart wipes it. But the client's
+// tree (and the persisted highlight referencing it) survive, so without a resync the stale selection
+// keeps a plot greyed on the same image. On a RECONNECT (not the first connect — onMounted already
+// loaded) refetch the popmap; the fresh tree drops the transient pop and the prune watch above clears
+// the dangling highlight. `everConnected` seeded from the current status so a reconnect is detected even
+// when the page mounts already-connected.
+let everConnected = ws.status === 'connected'
+watch(() => ws.status, (s) => {
+  if (s !== 'connected') return
+  if (everConnected && props.imageUid) load()
+  everConnected = true
+})
 onMounted(() => { ws.on('gating:popmap', onBroadcast); load() })
 // Seed two starter plots for any (image, segmentation) that has none yet — on first bind AND after an
 // image/segmentation switch (the reactive key rebinds to a fresh entry; the component doesn't remount).
