@@ -32,6 +32,13 @@ function toggleExpand(id: number) {
   expandedId.value = expandedId.value === id ? null : id
 }
 
+// Pop the console out into its own browser window: a hash-history route → the popup boots the same
+// SPA, sees #/console, and renders this component full-window (App.vue bare mode) with its own WS.
+function openConsoleWindow() {
+  const url = location.origin + location.pathname + '#/console'
+  window.open(url, 'cecelia-console', 'width=980,height=600')
+}
+
 const filterCounts = computed(() => ({
   all:   log.entries.length,
   info:  log.entries.filter(e => e.level === 'info').length,
@@ -57,6 +64,14 @@ const filterCounts = computed(() => ({
       v-tooltip.top="`${log.unreadErrors} unread error(s)`">
       {{ log.unreadErrors }}
     </span>
+
+    <button
+      class="icon-btn bar-window-btn"
+      @click.stop="openConsoleWindow"
+      v-tooltip.top="'Open the console in a separate window'"
+    >
+      <i class="pi pi-external-link" />
+    </button>
   </div>
 
   <!-- open panel (always shown in fill/window mode) -->
@@ -92,6 +107,15 @@ const filterCounts = computed(() => ({
         :disabled="log.entries.length === 0"
       >
         <i class="pi pi-trash" />
+      </button>
+
+      <button
+        v-if="!fill"
+        class="icon-btn"
+        @click="openConsoleWindow"
+        v-tooltip.top="'Open the console in a separate window'"
+      >
+        <i class="pi pi-external-link" />
       </button>
     </div>
 
@@ -176,6 +200,9 @@ const filterCounts = computed(() => ({
 .bar-last.error .lvl-dot { background: #ef4444; }
 .bar-last.warn  .lvl-dot { background: #f59e0b; }
 .bar-last.info  .lvl-dot { background: #3b82f6; }
+
+/* pop-out button on the collapsed bar — pin to the right edge, don't shrink */
+.bar-window-btn { margin-left: auto; flex-shrink: 0; }
 
 .unread-badge {
   background: #7f1d1d;
