@@ -314,11 +314,14 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <option value="">— select attribute —</option>
           <option v-for="n in attrNames" :key="n" :value="n">{{ n }}</option>
         </select>
-        <ConfirmButton trigger-class="btn-danger btn-sm" confirm-class="btn-danger btn-sm" cancel-class="btn-ghost btn-sm"
-          :disabled="!selectedAttr" @confirm="deleteAttr"
-          trigger-tooltip="Delete this attribute from all images."
-          :confirm-tooltip="`Permanently delete '${selectedAttr}' from every image.`">
-          <i class="pi pi-trash" />
+        <ConfirmButton @confirm="deleteAttr" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="btn-danger btn-sm" :disabled="!selectedAttr" @click="arm"
+            v-tooltip.bottom="'Delete this attribute from all images.'"><i class="pi pi-trash" /></button>
+          <template v-else>
+            <button class="btn-danger btn-sm" @click="confirm"
+              v-tooltip.bottom="`Permanently delete '${selectedAttr}' from every image.`">Confirm</button>
+            <button class="btn-ghost btn-sm" @click="cancel">Cancel</button>
+          </template>
         </ConfirmButton>
       </div>
     </section>

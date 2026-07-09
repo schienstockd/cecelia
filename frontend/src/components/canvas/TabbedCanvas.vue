@@ -146,16 +146,18 @@ async function exportCsv() {
         />
         <template v-else>
           <span class="tab-name">{{ t.name }}</span>
-          <span v-if="tabs.length > 1" @click.stop>
-            <ConfirmButton trigger-class="tab-close" confirm-class="tab-close" cancel-class="tab-close"
-                           :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
-                           trigger-tooltip="Close board"
-                           :confirm-tooltip="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`">
-              <i class="pi pi-times" />
-              <template #confirm><i class="pi pi-check" /></template>
-              <template #cancel><i class="pi pi-replay" /></template>
-            </ConfirmButton>
-          </span>
+          <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
+                         v-slot="{ armed, arm, confirm, cancel }">
+            <span @click.stop>
+              <button v-if="!armed" class="tab-close" type="button" @click="arm"
+                      v-tooltip.bottom="'Close board'" aria-label="Close board"><i class="pi pi-times" /></button>
+              <template v-else>
+                <button class="tab-close" type="button" @click="confirm"
+                        v-tooltip.bottom="`Confirm — close board and its ${plotCount(t.id)} plot${plotCount(t.id) === 1 ? '' : 's'}`"><i class="pi pi-check" /></button>
+                <button class="tab-close" type="button" @click="cancel" v-tooltip.bottom="'Keep board'"><i class="pi pi-replay" /></button>
+              </template>
+            </span>
+          </ConfirmButton>
         </template>
       </div>
       <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
