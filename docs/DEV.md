@@ -59,6 +59,24 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 Ship the test in the same commit as the code (see `CLAUDE.md` → **Testing**), and update the
 relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current* table).
 
+### State reservations before committing (agents)
+
+Every time you're told to commit or push — **including** when Dom asks *"what's the PR url?"* (that
+request itself is the go-ahead to commit + push, so don't stall on extra `git status` round-trips) —
+**first volunteer your honest reservations about the change**, in the same turn, before running the
+commit. Not a reassurance; a short, prioritized list that separates:
+
+- **Unverified — "go look"**: what you did *not* actually exercise. The most common one: the change
+  was typechecked/tested/built but **never run in a browser / driven end-to-end**; also any shipped
+  component you refactored and didn't re-verify (a regression surface).
+- **Real limitations**: perf/fetch-volume concerns, edge cases you didn't handle, options that are
+  silent no-ops, stale-state paths.
+
+If any reservation is material, pause for Dom's call; if there are genuinely none, say "no
+reservations" and proceed. This is not the same as re-asking permission every turn — state the risk
+once, then act on the go-ahead. Dom added this rule after reservations surfaced only when he asked
+"any reservations?" *after* a merge — they belong at the decision point instead.
+
 ## Pull requests
 
 Open a PR against `main` for review; **Dom reviews and merges** (PR #1 merged this way). An agent
