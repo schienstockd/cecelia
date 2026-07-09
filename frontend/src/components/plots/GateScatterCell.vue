@@ -148,6 +148,9 @@ function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat
 .plot-capture.compact .axis-x { bottom: -15px; font-size: 10px; }
 .plot-capture.compact .axis-y { left: -24px; font-size: 10px; }
 .plot-capture.compact .xtick-lbl, .plot-capture.compact .ytick-lbl { display: none; }
+/* compact tiles can be smaller than the full-size 150px plot floor — lift it so the plot shrinks to the
+   (square) tile instead of overflowing and being clipped by the cell (the pairs matrix packs small tiles). */
+.plot-capture.compact .panel-plot { min-height: 0; }
 /* no-axis (pairs matrix): no axis-name labels → drop the padding they lived in so the scatter fills
    the tile. Small uniform inset just for the axis lines / tick marks. */
 .plot-capture.no-axis { padding: 6px 6px 10px 12px; }
