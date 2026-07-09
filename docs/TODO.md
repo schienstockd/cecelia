@@ -252,6 +252,12 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00079** — **Pairs-matrix scatter tiles clipped** (2026-07-09)
+The ggpairs matrix (#00077) packs small tiles, but `GateScatterCell`'s inner `.panel-plot` kept a
+`min-height: 150px` floor in compact mode, so in tiles smaller than that the plot overflowed the square
+and was clipped by the cell (`overflow:hidden`). Lifted the floor in compact mode
+(`.plot-capture.compact .panel-plot { min-height: 0 }`) so the plot shrinks to the tile. CSS-only.
+
 **#00077** — **Pairs matrix → `ggpairs` layout (lower scatter / diagonal names / upper correlation)** (2026-07-09)
 Reworked the channel-pairs matrix to GGally `ggpairs` style, halving the load and de-cluttering:
 - **Only the lower triangle** renders scatters (N(N-1)/2), not the full N² — drops the mirror
