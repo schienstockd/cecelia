@@ -104,11 +104,11 @@ function drawDots(points: Float32Array, colour: string, r = 1.5) {
   }
 }
 // "contour + outliers": individual dots for the sparse-tail points the contours don't enclose (R:
-// contour ± outliers). Small + semi-transparent so the contours stay the main read.
+// contour ± outliers). Kept subtle — small, faint sub-pixel dots — so the contours stay the main read.
 function drawOutliers(points: Float32Array, colour: string) {
   const pts = outlierPoints(points, props.viewExtents, G)
-  ctx!.globalAlpha = 0.55
-  drawDots(pts, colour, 1)
+  ctx!.globalAlpha = 0.3
+  drawDots(pts, colour, 0.6)
   ctx!.globalAlpha = 1
 }
 

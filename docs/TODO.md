@@ -252,6 +252,11 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00082** — **Contour + outliers dots too strong** (2026-07-09)
+The outlier dots in the contour+outliers mode (#00080) rendered too heavily. Made them subtler in
+`PlotLayers.drawOutliers` — opacity 0.55 → 0.3, dot radius 1 → 0.6px — so the contours stay the main
+read. Render-only tweak.
+
 **#00081** — **No native browser dialogs — shared `ConfirmButton`** (2026-07-09)
 The Quit control used `window.confirm` (and board-close in `TabbedCanvas` too) — native dialogs look
 out of place and can't be styled. Extracted `components/ConfirmButton.vue` (arm → Confirm/Cancel in
