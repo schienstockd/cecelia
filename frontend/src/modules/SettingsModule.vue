@@ -192,12 +192,6 @@ async function appRestart() {
   svcMsg.value = appCtl.message
   pollServices()
 }
-function openConsole() {
-  // hash-history route → the popup boots the same SPA, sees #/console, and renders the console
-  // full-window (App.vue bare mode) with its own WS connection.
-  const url = location.origin + location.pathname + '#/console'
-  window.open(url, 'cecelia-console', 'width=980,height=600')
-}
 async function quitApp() {
   showQuitConfirm.value = false
   await appCtl.quit()
@@ -368,18 +362,6 @@ async function quitApp() {
               <i class="pi pi-stop" /> Stop
             </button>
           </template>
-        </span>
-      </div>
-
-      <div class="svc-row">
-        <span class="svc-name">Console</span>
-        <span class="svc-pill idle"><span class="dot" /> Log stream</span>
-        <span class="svc-port" />
-        <span class="svc-actions">
-          <button class="save-btn ghost" @click="openConsole"
-                  v-tooltip.top="'Open the live backend/task console in a separate window'">
-            <i class="pi pi-external-link" /> Open console
-          </button>
         </span>
       </div>
 

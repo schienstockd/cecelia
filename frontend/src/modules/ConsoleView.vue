@@ -1,5 +1,5 @@
 <!--
-  Standalone console window (opened from Settings → System → Open console via window.open('#/console')).
+  Standalone console window (opened from the docked console bar's pop-out button via window.open('#/console')).
   It's a bare, full-window mount of the SAME ErrorConsole component the docked bar uses (one console
   implementation, no second task-tracking path) — this popup is just a second mount point. Being a
   separate browser window it's a fresh app instance with its own WS connection, so it streams

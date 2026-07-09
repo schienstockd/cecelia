@@ -41,8 +41,8 @@ The **console** is one component — `components/ErrorConsole.vue` over the `log
 places: the docked bar at the bottom of the app shell, and (with the `fill` prop) full-window in the
 standalone **console window**. Do not build a second console. The window is a `bare` route
 (`/console`, `meta.bare` → `App.vue` renders it without the shell) opened via
-`window.open(origin + pathname + '#/console', …)` from Settings → System → **Open console**; being a
-separate browser window it's a fresh app instance with its own WS, and it backfills recent lines from
+`window.open(origin + pathname + '#/console', …)` from the docked console bar's pop-out (↗) button;
+being a separate browser window it's a fresh app instance with its own WS, and it backfills recent lines from
 `GET /api/logs/recent` on open. The stream includes the backend's own logs (WS `server:log`, see
 `docs/API.md`), so it's a real "pixi console", not just task logs.
 
@@ -51,8 +51,9 @@ separate browser window it's a fresh app instance with its own WS, and it backfi
 `SettingsModule.vue` has a **System** section: one row per runtime component (Application / Napari /
 Notebooks) with a status pill (Running / Starting… / Stopped, polled every ~4 s from the existing
 `/api/{napari,notebooks}/status` endpoints — ephemeral UI state, a plain `ref`, NOT persisted) and
-start/stop/restart buttons that reuse the existing control endpoints, plus **Open console** and a
-global **Quit** (`POST /api/app/shutdown`, behind a confirm). Status→verb/label mapping is the pure,
+start/stop/restart buttons that reuse the existing control endpoints, plus a
+global **Quit** (`POST /api/app/shutdown`, behind a confirm). (The pop-out **console window** is
+launched from the docked console bar, not this panel.) Status→verb/label mapping is the pure,
 unit-tested `utils/serviceStatus.ts`. Backend self-restart is planned (see
 `docs/todo/SERVICE_PANEL_PLAN.md`, Phase 3).
 
