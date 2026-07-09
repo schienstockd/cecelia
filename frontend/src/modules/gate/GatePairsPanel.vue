@@ -14,7 +14,7 @@ import { useGatingStore } from '../../stores/gating'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateMontage from '../../components/plots/GateMontage.vue'
-import { buildPairDefs } from '../../plots/pairsMatrix'
+import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
 import { downloadDataUrl } from '../../plots/export'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
@@ -69,14 +69,31 @@ function toggleChannel(c: string) {
 }
 function clearChannels() { channels.value = [] }
 
-// seed a sensible default selection the first time (like GatePlotPanel.ensureChannels): the first few
-// intensity channels for flow, else the first gateable columns for track.
-function ensureChannels() {
-  if (channels.value.length || !g.columns.length) return
-  const src = g.channels.length ? g.channels : g.columns
-  channels.value = src.slice(0, Math.min(4, src.length))
+// Keep the selection valid for the current segmentation: a value_name switch changes the columns, so
+// prune any channel that no longer exists (reseeding if that empties it) — the pure reconcileChannels,
+// same intent as the single plot's ensureChannels. Only assign on a real content change (a bare filter
+// returns a new array each time → would loop). Flow → intensity channels; track → gateable columns.
+function syncChannels() {
+  const defaults = g.channels.length ? g.channels : g.columns
+  const next = reconcileChannels(channels.value, g.columns, defaults)
+  const changed = next.length !== channels.value.length || next.some((c, i) => c !== channels.value[i])
+  if (changed) channels.value = next
 }
-watch([() => g.columns, () => g.imageUid, () => g.valueName], ensureChannels, { immediate: true })
+watch([() => g.columns, () => g.imageUid, () => g.valueName], syncChannels, { immediate: true })
+
+// ── heavy-matrix warning ────────────────────────────────────────────────────────────────────────
+// N×N grows fast, and every off-diagonal pair fetches the population's cells. Warn (before loading)
+// when the estimated point load is large — tiles alone don't tell the story (a few channels on a
+// millions-of-cells root is still heavy), so fold in the population's cell count when we know it.
+const parentCount = computed(() => g.stats[parent.value]?.count ?? null)
+const load = computed(() => estimateMatrixLoad(channels.value.length, parentCount.value))
+const heavy = computed(() => load.value.heavy)
+const fmtN = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`
+const heavyTip = computed(() => {
+  const n = channels.value.length
+  const pts = load.value.estPoints != null ? `, ~${fmtN(load.value.estPoints)} points` : ''
+  return `${n}×${n} = ${load.value.tiles} plots (${load.value.fetches} fetches${pts}). Pick fewer channels or a smaller population to speed up.`
+})
 
 const montageRef = useTemplateRef<{ exportImage(bg?: string, light?: boolean): Promise<string | null> }>('montageRef')
 function exportPng() {
@@ -139,10 +156,15 @@ function exportPng() {
       </div>
     </div>
 
+    <div v-if="heavy" class="pairs-warn" v-tooltip.bottom="heavyTip">
+      <i class="pi pi-exclamation-triangle" /> Large matrix — may be slow to load
+    </div>
+
     <GateMontage ref="montageRef" :project-uid="g.projectUid()" :image-uid="g.imageUid ?? ''"
                  :value-name="g.valueName" :pop-type="g.popType" :defs="defs" :col-label="g.colLabel"
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
-                 :highlight="highlightPops" :cols="channels.length || 1" :reload-key="reloadKey">
+                 :highlight="highlightPops" :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
+                 :reload-key="reloadKey">
       <template #empty>Pick channels above to compare them against each other.</template>
     </GateMontage>
   </CanvasPanel>
@@ -151,6 +173,10 @@ function exportPng() {
 <style scoped>
 .ro-tag { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: 3px; padding: 1px 5px; }
+/* heavy-matrix warning strip (brief; numbers + the fix live in the tooltip) */
+.pairs-warn { display: flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 11px;
+  color: var(--cc-warn, #f59e0b); background: color-mix(in srgb, var(--cc-warn, #f59e0b) 12%, transparent);
+  border-bottom: 1px solid var(--cc-border); cursor: help; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .panel-ctrl { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px;
   border-bottom: 1px solid var(--cc-border); font-size: 12px; }

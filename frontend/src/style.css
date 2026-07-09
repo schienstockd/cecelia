@@ -16,6 +16,10 @@
   --cc-border:     #30363d;
   --cc-accent:     #a78bfa;
 
+  /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
+  --cc-warn:       #f59e0b;
+  --cc-danger:     #ef4444;
+
   /* monospace */
   --cc-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;
 

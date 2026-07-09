@@ -32,9 +32,15 @@ export function axisQ(p: 'x' | 'y', ts: TransformSpec): string {
 export function idQ(id: MontageId): string {
   return `projectUid=${id.projectUid}&imageUid=${id.imageUid}&valueName=${encodeURIComponent(id.valueName)}&popType=${id.popType}`
 }
-// x0=1&y0=1 → fixed whole-dataset axis per side, so the parent density + child gates align across tiles
-export function plotQ(id: MontageId, pop: string, xc: string, yc: string, xt: TransformSpec, yt: TransformSpec): string {
-  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=1&y0=1`
+// fromZero (default true) → x0=1/y0=1: fixed whole-dataset axis per side, so the parent density + child
+// gates align across tiles. false → x0=0/y0=0: autoscale each axis to the population. Alignment holds
+// either way because a tile's x-range depends only on (x-channel, pop) and its y-range only on
+// (y-channel, pop) — never on the OTHER axis — so a matrix column (shared x) and row (shared y) still
+// line up when autoscaled. Mirrors GatePlotPanel's axisFromZero → x0/y0 flag.
+export function plotQ(id: MontageId, pop: string, xc: string, yc: string, xt: TransformSpec, yt: TransformSpec,
+                      fromZero = true): string {
+  const z = fromZero ? 1 : 0
+  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=${z}&y0=${z}`
 }
 
 // ── Transpose reuse ─────────────────────────────────────────────────────────────────────────────

@@ -252,6 +252,20 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00075** — **Channel-pairs matrix follow-ups (reservations from #00074)** (2026-07-09)
+Three refinements to the pairs plot flagged as reservations when #00074 merged:
+- **Heavy-load warning** — a brief amber strip on `GatePairsPanel` when the estimated point load
+  (off-diagonal pairs × population cell-count) is large, so a user selecting many channels / a huge
+  population is warned before the fetch burst. Numbers + the fix live in the tooltip. Pure
+  `estimateMatrixLoad` (unit-tested).
+- **Axis toggle no longer a no-op** — the manager's Axis (whole-dataset vs autoscale) toggle now
+  works on pairs panels: `axisFromZero` is threaded through `GateMontage` → `plotQ` (`x0`/`y0`).
+  Alignment still holds (a tile's x-range depends only on its x-channel + pop, not the other axis).
+- **Stale-channel pruning** — on a segmentation (value_name) switch, the persisted channel selection
+  is pruned to the new columns (reseeding defaults if empty), mirroring the single plot; previously a
+  stale channel produced broken/empty tiles. Pure `reconcileChannels` (unit-tested). Also centralised
+  `--cc-warn`/`--cc-danger` as real design tokens (were only inlined as `var()` fallbacks).
+
 **#00074** — **Channel-pairs matrix on the gating pages (R `pairs()`)** (2026-07-09)
 A `+ Pairs` button on the gating workspace (`GatingPlots`, so both flow AND track gating) adds a
 read-only `GatePairsPanel`: the single plot's X/Y generalised to a *list* of channels, rendered as the
