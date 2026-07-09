@@ -303,8 +303,13 @@ now includes `membership_sig`, so resizing the selection shape refreshes the hig
   the matching tiles and honours the SAME highlight pipeline as a normal plot (manager "eye" pops +
   transient napari cell-selection light up every tile). Shared with both flow and track gating (one
   `GatingPlots` host, keyed by `popType`). It reuses the shared `GateMontage` renderer (see
-  [`docs/UI.md`](UI.md) → *Gate scatters*); the pure tile builder is `plots/pairsMatrix.ts`
-  (`buildPairDefs`, unit-tested). Channel count is capped (8 → 64 tiles) with a visible hint.
+  [`docs/UI.md`](UI.md) → *Gate scatters*); the pure tile builders are `plots/pairsMatrix.ts`
+  (`buildPairDefs` / `reconcileChannels` / `estimateMatrixLoad`, unit-tested). It honours the manager's
+  **Axis** toggle (whole-dataset origin-0 vs autoscale-to-population) — alignment holds because a tile's
+  x-range depends only on (x-channel, pop) and its y-range only on (y-channel, pop). Channel count is
+  capped (8 → 64 tiles); above an estimated point-load threshold (pairs × population cell-count) a
+  brief amber warning shows, with the numbers + the fix in its tooltip. The selection is pruned to the
+  current segmentation's columns on a value_name switch (reseeding defaults if it empties).
 
 ## Scale
 

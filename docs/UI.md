@@ -18,6 +18,8 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-text-dim` | `#7d8590` | Secondary text, labels |
 | `--cc-border` | `#30363d` | All borders |
 | `--cc-accent` | `#a78bfa` | Active elements, buttons, links |
+| `--cc-warn` | `#f59e0b` | Amber warnings (e.g. heavy-load hints) |
+| `--cc-danger` | `#ef4444` | Destructive / error state (delete, invalid) |
 | `--cc-mono` | system monospace stack | Log output, code |
 | `--cc-header-h` | `40px` | Fixed header height |
 | `--cc-sidebar-w` | `190px` | Fixed sidebar width |

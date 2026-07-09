@@ -34,12 +34,16 @@ const props = withDefaults(defineProps<{
   highlight?: { path: string; colour: string }[]
   // null → responsive wrap (gating-strategy montage); N → strict N-column matrix (channel pairs)
   cols?: number | null
+  // true (default) → whole-dataset axis (x0=1), tiles align on a fixed scale; false → autoscale each
+  // axis to the population. The gating-strategy montage always wants the fixed scale (tiles have
+  // different parents), so it leaves this at the default; the pairs matrix honours the page's toggle.
+  axisFromZero?: boolean
   // bump to force a data refresh when tiles are unchanged but membership moved (ancestor gate edit,
   // napari selection) — the parent's point cloud can change without any def changing.
   reloadKey?: string | number
 }>(), {
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
-  highlight: () => [], cols: null, reloadKey: 0,
+  highlight: () => [], cols: null, axisFromZero: true, reloadKey: 0,
 })
 
 const montageId = computed<MontageId>(() => ({
@@ -71,7 +75,7 @@ async function loadPanels() {
   // meta uses the whole-dataset axis (x0=1 in plotQ) → pop-independent range; cache by canonical pair.
   const metaFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
     if (!metaCache.has(o.groupKey)) metaCache.set(o.groupKey, (async () => {
-      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb)}`)).json() as {
+      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero)}`)).json() as {
         xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[] }
       return { extents: { xMin: m.xExtent[0], xMax: m.xExtent[1], yMin: m.yExtent[0], yMax: m.yExtent[1] },
                xTicks: m.xTicks, yTicks: m.yTicks }
@@ -81,7 +85,7 @@ async function loadPanels() {
   const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
     const key = `${pop}|${o.groupKey}`
     if (!ptsCache.has(key)) ptsCache.set(key, (async () =>
-      new Float32Array(await (await fetch(`/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, o.ta, o.tb)}`)).arrayBuffer()))())
+      new Float32Array(await (await fetch(`/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero)}`)).arrayBuffer()))())
     return ptsCache.get(key)!
   }
   const labelFor = async (c: PanelChild): Promise<string> => {
@@ -127,7 +131,7 @@ const sig = computed(() => JSON.stringify({
   id: montageId.value,
   defs: props.defs.filter(d => !d.diagonal).map(d =>
     ({ k: d.key, p: d.parentPath, x: d.xChan, y: d.yChan, xt: d.xt, yt: d.yt, c: d.children.map(c => [c.path, c.gate]) })),
-  hl: props.highlight, rk: props.reloadKey,
+  hl: props.highlight, rk: props.reloadKey, fz: props.axisFromZero,
 }))
 watch(sig, loadPanels, { immediate: true })
 

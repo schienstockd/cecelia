@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { buildPairDefs, pairTransform } from './pairsMatrix'
-import { canonicalOrient, transposePoints, transposeExt } from './montage'
+import { buildPairDefs, pairTransform, reconcileChannels, estimateMatrixLoad } from './pairsMatrix'
+import { canonicalOrient, transposePoints, transposeExt, plotQ } from './montage'
 import type { FlatPop, GateSpec } from '../stores/gating'
 
 const rect = (xc: string, yc: string): GateSpec => ({
@@ -78,5 +78,52 @@ describe('transpose reuse (mirror tiles share one fetch)', () => {
 
   it('transposeExt swaps the x and y ranges', () => {
     expect(transposeExt({ xMin: 0, xMax: 1, yMin: 2, yMax: 3 })).toEqual({ xMin: 2, xMax: 3, yMin: 0, yMax: 1 })
+  })
+})
+
+describe('reconcileChannels (segmentation switch)', () => {
+  it('drops channels missing from the new columns', () => {
+    expect(reconcileChannels(['A', 'X', 'B'], ['A', 'B', 'C'], ['A'])).toEqual(['A', 'B'])
+  })
+  it('reseeds defaults when the prune empties the selection', () => {
+    expect(reconcileChannels(['X', 'Y'], ['A', 'B', 'C'], ['A', 'B', 'C'])).toEqual(['A', 'B', 'C'])
+  })
+  it('caps the reseed at max', () => {
+    expect(reconcileChannels([], ['A', 'B', 'C', 'D', 'E'], ['A', 'B', 'C', 'D', 'E'], 4)).toEqual(['A', 'B', 'C', 'D'])
+  })
+  it('returns the selection untouched while columns are still loading', () => {
+    expect(reconcileChannels(['A', 'X'], [], ['A'])).toEqual(['A', 'X'])
+  })
+})
+
+describe('estimateMatrixLoad (heavy warning)', () => {
+  it('counts tiles (N²) and off-diagonal fetches (N(N-1)/2)', () => {
+    const l = estimateMatrixLoad(4, 1000)
+    expect(l.tiles).toBe(16)
+    expect(l.fetches).toBe(6)
+    expect(l.estPoints).toBe(6000)
+  })
+  it('never flags a tiny matrix (<2 channels)', () => {
+    expect(estimateMatrixLoad(1, 10_000_000).heavy).toBe(false)
+  })
+  it('flags on estimated points when the count is known', () => {
+    expect(estimateMatrixLoad(3, 500_000).heavy).toBe(true)    // 3 fetches × 500k = 1.5M ≥ 1M
+    expect(estimateMatrixLoad(3, 100_000).heavy).toBe(false)   // 300k < 1M
+  })
+  it('falls back to a channel-count heuristic when the count is unknown (root)', () => {
+    expect(estimateMatrixLoad(5, null).heavy).toBe(true)
+    expect(estimateMatrixLoad(4, null).heavy).toBe(false)
+    expect(estimateMatrixLoad(5, null).estPoints).toBeNull()
+  })
+})
+
+describe('plotQ axis origin (from-zero toggle)', () => {
+  const id = { projectUid: 'p', imageUid: 'i', valueName: 'v', popType: 'flow' }
+  const t = { kind: 'linear' as const }
+  it('defaults to whole-dataset axes (x0=1,y0=1)', () => {
+    expect(plotQ(id, 'root', 'A', 'B', t, t)).toContain('&x0=1&y0=1')
+  })
+  it('autoscales to the population when fromZero is false (x0=0,y0=0)', () => {
+    expect(plotQ(id, 'root', 'A', 'B', t, t, false)).toContain('&x0=0&y0=0')
   })
 })
