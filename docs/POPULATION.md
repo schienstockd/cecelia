@@ -296,6 +296,15 @@ now includes `membership_sig`, so resizing the selection shape refreshes the hig
   (`listeningToGating`) so server pushes don't re-emit gate mutations; multiple
   simultaneous panels; hierarchical population tree (generic for all 3 types). **No
   Plotly** for gating.
+- **Channel-pairs matrix (read-only)**: the gating page's `+ Pairs` button (`GatingPlots`) adds a
+  `GatePairsPanel` — the single plot's X/Y generalised to a *list* of channels, rendered as the full
+  N×N matrix of every channel-vs-channel scatter (R `pairs()`), for choosing the best two channels to
+  gate a population on. It draws NO gates, but shows the displayed population's child gate outlines on
+  the matching tiles and honours the SAME highlight pipeline as a normal plot (manager "eye" pops +
+  transient napari cell-selection light up every tile). Shared with both flow and track gating (one
+  `GatingPlots` host, keyed by `popType`). It reuses the shared `GateMontage` renderer (see
+  [`docs/UI.md`](UI.md) → *Gate scatters*); the pure tile builder is `plots/pairsMatrix.ts`
+  (`buildPairDefs`, unit-tested). Channel count is capped (8 → 64 tiles) with a visible hint.
 
 ## Scale
 

@@ -68,6 +68,13 @@ montage (⚙ toggle) from `popmap` + gate stats — the read-only counterpart of
 `GatePlotPanel`. Ports the old R `plot_gating` lineage. **The gating page itself is intentionally NOT
 registry-hosted** (it is a write-capable gate-drawing workspace, the opposite of this contract).
 
+It owns ONLY the selectors and the tree→tiles logic (`PanelDef[]`); the fetch + render + export of
+those tiles is the shared **`components/plots/GateMontage.vue`** (a grid of read-only `GateScatterCell`
+tiles, `mode="off"`). The channel-pairs matrix on the gating page (`GatePairsPanel`, see
+[`docs/POPULATION.md`](POPULATION.md)) feeds the SAME `GateMontage` with channel-product tiles — one
+montage renderer, two tile producers (`feedback_use_existing_framework`). `GateMontage` also carries
+the transpose reuse (mirror tiles share one fetch) and the optional coloured population overlays.
+
 ### Image / napari-screenshot slot
 `ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Napari-screenshot
 slots capture the live viewer via `/api/napari/screenshot` (backend restart to activate).

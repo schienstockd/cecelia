@@ -20,6 +20,7 @@ import { useWsStore } from '../../stores/ws'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
 import GatePlotPanel from './GatePlotPanel.vue'
+import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
 
 const props = withDefaults(defineProps<{ imageUid: string | null; popType?: string }>(),
@@ -35,8 +36,10 @@ const ws = useWsStore()
 // per-plot copies also carry the axis config (channels/transforms/render mode) so those persist per
 // plot across navigation — like the summary panels' `ui` bag. Bare refs in the panel reset on remount.
 type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
-interface PlotState { parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
-  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour' }
+// A panel is either a single gate scatter (default, drawable) or a read-only channel-pairs matrix.
+// `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
+interface PlotState { kind: 'single' | 'pairs'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
+  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour'; channels: string[] }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
@@ -47,8 +50,10 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 const defT: GateKind = props.popType === 'track' ? 'linear' : 'logicle'
 const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
   useCanvasPanels<PlotState>(canvasRef, () =>
-    ({ parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
-       x: '', y: '', xt: defT, yt: defT, renderMode: 'points' }), ckey)
+    ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
+       x: '', y: '', xt: defT, yt: defT, renderMode: 'points', channels: [] }), ckey)
+// add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
+function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
 
 // global-scope values live in the canvas `shared` bag via useViewState, so they PERSIST across
 // navigation with no per-field wiring (the highlighted pops were resetting on remount). Add an
@@ -138,6 +143,10 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <button class="cc-btn cc-btn-primary" v-tooltip.bottom="'Add a plot'" @click="add">
           <i class="pi pi-plus" /> Plot
         </button>
+        <button class="cc-btn cc-btn-ghost" v-tooltip.bottom="'Add a read-only channel-pairs matrix (R pairs): compare a set of channels against each other'"
+                @click="addPairs">
+          <i class="pi pi-th-large" /> Pairs
+        </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
         <div v-if="!isTrack" class="seg" v-tooltip.bottom="'Napari linked brushing'">
           <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
@@ -169,11 +178,18 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
         <span class="gp-hint">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
-        <GatePlotPanel v-for="(p, i) in panels" :key="`${ckey}:${p.id}`" :index="i" :arrange="p.arrange"
-                       :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
-                       :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
-                       :ui="p.state" :persist-key="`${ckey}:${p.id}`"
-                       @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
+        <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
+          <GatePairsPanel v-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
+                          :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
+                          :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
+                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
+                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
+          <GatePlotPanel v-else :index="i" :arrange="p.arrange"
+                         :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
+                         :gate-line-width="panelLineWidth(p.state)" :gate-labels="panelLabels(p.state)" :axis-from-zero="panelFromZero(p.state)"
+                         :ui="p.state" :persist-key="`${ckey}:${p.id}`"
+                         @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
+        </template>
         <PopulationManager :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                            @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
