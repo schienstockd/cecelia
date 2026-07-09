@@ -252,6 +252,18 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00084** — **Windows CI frontend build: "Cannot find native binding" (rolldown)** (2026-07-09)
+The `windows-latest` CI leg intermittently failed at `npm run build` with `Cannot find module
+'@rolldown/binding-win32-x64-msvc'`. vite 8 bundles with rolldown, whose per-platform native binding is
+an *optional* dep; npm treats a bad optional download/cache as non-fatal (npm/cli#4828) and exits 0 with
+it missing, so the build dies later. Made the CI build install platform-conditional:
+`if [ "$RUNNER_OS" = "Linux" ]; then npm ci; else npm install; fi` — `npm ci` stays on Linux (the
+lockfile's authoring platform: reliable there AND keeps the lockfile-drift guard), `npm install`
+re-resolves optional deps for the host on Windows/macOS. Both dev-channel installers (`install.sh`,
+`install.ps1`) use `npm install`; `release.yml` stays on `npm ci` (ubuntu-latest only). Not a hard
+guarantee — a flaky optional download can still be skipped; re-run on the rare miss. Docs:
+`docs/SHIPPING.md`.
+
 **#00083** — **ConfirmButton lost host styling (Quit button unstyled)** (2026-07-09)
 `ConfirmButton` (#00081) rendered the buttons itself and took host classes (`footer-btn`, `save-btn`,
 …) as props — but a child component's rendered DOM doesn't receive the parent's *scoped* CSS, so those

@@ -136,7 +136,13 @@ launcher.
 | `CECELIA_CHANNEL` | Source | Frontend | To update |
 |---|---|---|---|
 | `stable` (default) | newest tagged Release's `cecelia.tar.gz` | prebuilt (shipped in the bundle) | re-run installer / `pixi run update` / in-app Update |
-| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm ci && npm run build`) | re-run installer (re-downloads current `main`) |
+| `dev` | `main` branch tarball (`archive/refs/heads/<branch>.tar.gz`) | **built locally** (`npm install && npm run build`) | re-run installer (re-downloads current `main`) |
+
+> The dev-channel local build uses `npm install`, **not** `npm ci`: the rolldown native binding vite 8
+> bundles with is an *optional* dep, and npm can silently skip it on Windows/macOS (a non-fatal optional
+> download/cache miss, npm/cli#4828), leaving the build with "Cannot find native binding". `npm install`
+> re-resolves optional deps for the host and is far less prone to it. `release.yml` keeps `npm ci`
+> because it only ever runs on `ubuntu-latest`, where the current-platform binding installs reliably.
 
 **Why a dev channel.** So testers can track HEAD without a tag being cut every couple of days. GitHub
 serves any branch as a tarball at `archive/refs/heads/<branch>.tar.gz` — no release, no asset upload —

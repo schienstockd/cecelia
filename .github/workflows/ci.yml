@@ -76,12 +76,20 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: |
-          npm ci
+          # npm intermittently fails to install a platform-specific OPTIONAL native dep on Windows/macOS
+          # (npm/cli#4828): here @rolldown/binding-<os> (vite 8 bundles with rolldown). Because the
+          # binding is optional, a bad download/cache is non-fatal — npm exits 0 with it missing, then
+          # `vite build` dies "Cannot find native binding". On Linux (the lockfile's authoring platform)
+          # `npm ci` is reliable AND trips on lockfile drift, so keep it there as the reproducibility
+          # guard; elsewhere `npm install` re-resolves optional deps for the host, which is far less
+          # prone to the skip. (Not a hard guarantee — a flaky optional download can still be skipped;
+          # re-run on the rare miss.)
+          if [ "$RUNNER_OS" = "Linux" ]; then npm ci; else npm install; fi
           npm run build
 
       # Frontend unit tests (Vitest): pure logic extracted from .vue SFCs into src/utils/*
       # (e.g. the chain start-dot save/reload round-trip). node_modules is already installed by the
-      # build step's `npm ci`. Fast + fixture-free, so it runs on every OS in the matrix.
+      # build step's install. Fast + fixture-free, so it runs on every OS in the matrix.
       - name: Frontend tests
         working-directory: frontend
         run: npm test
