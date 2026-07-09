@@ -502,8 +502,12 @@ Gate page (`GatePlotPanel`, `mode` = rectangle/polygon) and every read-only mont
 share it. Montages of tiles go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell`
 tiles that owns the per-tile fetch (`plotmeta`/`plotdata`/`stats`), transpose reuse, optional coloured
 population overlays (`highlight`), and PNG/PDF export. It has two tile producers: `GatingStrategyView`
-(tree-derived, responsive wrap) and `GatePairsPanel` (channel-product N×N matrix, `cols` set). Add a new
-gate-montage view by building `PanelDef[]` and rendering `<GateMontage>` — never a second gate renderer.
+(tree-derived, responsive wrap) and `GatePairsPanel` (a `ggpairs` matrix, `cols` set). A tile carries a
+`role`: `scatter` (fetches + renders — the default, so tree-derived defs need no role), `diagonal` (a
+labelled name cell, no fetch), or `corr` (an upper-triangle Pearson-r cell reusing its mirror scatter's
+points, no fetch). In matrix mode `GateScatterCell` gets `hideAxisLabels` (the diagonal names each
+channel, so per-tile axis labels only clutter/clip). Add a new gate-montage view by building `PanelDef[]`
+and rendering `<GateMontage>` — never a second gate renderer.
 
 ### Generic plot-integration interface (reuse across surfaces)
 

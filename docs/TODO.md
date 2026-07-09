@@ -252,6 +252,18 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00077** — **Pairs matrix → `ggpairs` layout (lower scatter / diagonal names / upper correlation)** (2026-07-09)
+Reworked the channel-pairs matrix to GGally `ggpairs` style, halving the load and de-cluttering:
+- **Only the lower triangle** renders scatters (N(N-1)/2), not the full N² — drops the mirror
+  duplicates. `buildPairDefs` tags each tile with a `role` (`scatter`/`diagonal`/`corr`).
+- **Diagonal** = the channel name (labels its row + column); **upper triangle** = each pair's Pearson
+  correlation, reused from the mirror scatter's already-fetched points (pure `pearson`, no extra fetch,
+  text scaled by |r|).
+- **Per-tile axis labels dropped** in matrix mode (`GateScatterCell` `hideAxisLabels`) — they were
+  clipping and are redundant with the diagonal; reclaims their padding for the plot.
+Contour-only + contour-with-outliers render modes are the NEXT change; the napari transient-pop-persists
+bug is a separate branch. Tests: `pearson` + role assignment (56 frontend tests pass).
+
 **#00076** — **Settings → System: service control panel + sidebar Quit/Restart + console window** (2026-07-09)
 Made the runtime legible/controllable from the UI (was: no way to see or manage the moving parts; a
 stale napari bridge needed a terminal). New **System** section in `SettingsModule.vue` (aligned grid

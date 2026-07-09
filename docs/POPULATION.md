@@ -297,17 +297,21 @@ now includes `membership_sig`, so resizing the selection shape refreshes the hig
   simultaneous panels; hierarchical population tree (generic for all 3 types). **No
   Plotly** for gating.
 - **Channel-pairs matrix (read-only)**: the gating page's `+ Pairs` button (`GatingPlots`) adds a
-  `GatePairsPanel` — the single plot's X/Y generalised to a *list* of channels, rendered as the full
-  N×N matrix of every channel-vs-channel scatter (R `pairs()`), for choosing the best two channels to
-  gate a population on. It draws NO gates, but shows the displayed population's child gate outlines on
-  the matching tiles and honours the SAME highlight pipeline as a normal plot (manager "eye" pops +
-  transient napari cell-selection light up every tile). Shared with both flow and track gating (one
-  `GatingPlots` host, keyed by `popType`). It reuses the shared `GateMontage` renderer (see
-  [`docs/UI.md`](UI.md) → *Gate scatters*); the pure tile builders are `plots/pairsMatrix.ts`
-  (`buildPairDefs` / `reconcileChannels` / `estimateMatrixLoad`, unit-tested). It honours the manager's
+  `GatePairsPanel` — the single plot's X/Y generalised to a *list* of channels, rendered as a
+  scatter-plot matrix (GGally `ggpairs` layout) for choosing the best two channels to gate a population
+  on: **lower triangle** = the scatters, **diagonal** = each channel's name (labels its row + column, so
+  per-tile axis labels are dropped), **upper triangle** = each pair's Pearson correlation (reused from
+  the mirror scatter's points — no extra fetch, text scaled by |r|). Only the lower triangle fetches, so
+  it's N(N-1)/2 point clouds, not N². It draws NO gates, but shows the displayed population's child gate
+  outlines on the matching scatter tiles and honours the SAME highlight pipeline as a normal plot
+  (manager "eye" pops + transient napari cell-selection light up every tile). Shared with both flow and
+  track gating (one `GatingPlots` host, keyed by `popType`). It reuses the shared `GateMontage` renderer
+  (see [`docs/UI.md`](UI.md) → *Gate scatters*); the pure helpers are `plots/pairsMatrix.ts`
+  (`buildPairDefs` / `reconcileChannels` / `estimateMatrixLoad`) + `plots/montage.ts` (`pearson`), all
+  unit-tested. It honours the manager's
   **Axis** toggle (whole-dataset origin-0 vs autoscale-to-population) — alignment holds because a tile's
   x-range depends only on (x-channel, pop) and its y-range only on (y-channel, pop). Channel count is
-  capped (8 → 64 tiles); above an estimated point-load threshold (pairs × population cell-count) a
+  capped (8 → 28 scatter plots); above an estimated point-load threshold (pairs × population cell-count) a
   brief amber warning shows, with the numbers + the fix in its tooltip. The selection is pruned to the
   current segmentation's columns on a value_name switch (reseeding defaults if it empties).
 

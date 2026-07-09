@@ -1,15 +1,15 @@
 import type { FlatPop, GateSpec, TransformSpec } from '../stores/gating'
 import { orientGate } from './gateGeometry'
-import type { PanelDef, PanelChild } from './montage'
+import type { PanelDef, PanelChild, TileRole } from './montage'
 
-// ── Channel-pairs matrix (R pairs()) ────────────────────────────────────────────────────────────
-// Turn a set of channels into the full N×N montage of every channel-vs-channel scatter for ONE
-// displayed population — the single gate plot's X/Y generalised to a list (the user's ask). Columns =
-// X channel, rows = Y channel. The diagonal (channel vs itself) is a labelled cell, not a scatter. On
-// each off-diagonal tile the displayed population's child gates whose channel-pair matches that tile —
-// in EITHER order (orientGate) — are attached as outlines, so the gates that define the populations
-// show, exactly as on the normal gating plot (but read-only). Pure + unit-tested (docs/DEV.md); the
-// tiles it returns feed the shared GateMontage renderer.
+// ── Channel-pairs matrix (R ggpairs()) ───────────────────────────────────────────────────────────
+// Turn a set of channels into a scatter-plot MATRIX for ONE displayed population — the single gate
+// plot's X/Y generalised to a list (the user's ask). Columns = X channel, rows = Y channel. Laid out
+// like GGally::ggpairs: the LOWER triangle holds the scatters, the DIAGONAL names each channel, and the
+// UPPER triangle shows each pair's correlation (reused from its mirror scatter — no extra fetch). Only
+// the lower triangle fetches, so it's N(N-1)/2 point clouds, not N². On each scatter the displayed
+// population's child gates whose channel-pair matches that tile — in EITHER order (orientGate) — are
+// attached as outlines, so the gates that define the populations show (read-only). Pure + unit-tested.
 
 // one transform applied to every axis (default logicle for flow, linear for track). Logicle carries its
 // FlowJo shape (matches GatePlotPanel.tspec) so the axis reads identically to the single plot.
@@ -46,10 +46,13 @@ export function buildPairDefs(
   const parentName = parentPath === 'root' ? 'all events' : parentPath
   const gated = children.filter(c => c.gate)
   const defs: PanelDef[] = []
-  for (const yc of channels) {               // rows
-    for (const xc of channels) {             // columns
-      const diagonal = xc === yc
-      const tileChildren: PanelChild[] = diagonal ? [] : gated
+  // ggpairs layout: LOWER triangle (row > col) = scatter; DIAGONAL = channel name; UPPER triangle
+  // (row < col) = the correlation of its mirror. Only scatter tiles fetch, so we render N(N-1)/2 point
+  // clouds instead of N² — half the load, no duplicate (a,b)/(b,a) plots.
+  channels.forEach((yc, ri) => {             // rows (y channel)
+    channels.forEach((xc, ci) => {           // columns (x channel)
+      const role: TileRole = ri === ci ? 'diagonal' : ri > ci ? 'scatter' : 'corr'
+      const tileChildren: PanelChild[] = role !== 'scatter' ? [] : gated
         .map(c => {
           const g = orientGate(c.gate as GateSpec, xc, yc)
           return g ? { path: c.path, name: c.name, colour: c.colour, gate: g } : null
@@ -58,9 +61,9 @@ export function buildPairDefs(
       defs.push({
         key: `${parentPath}::${xc}~~${yc}`,
         parentPath, parentName, xChan: xc, yChan: yc, xt: ts, yt: ts,
-        children: tileChildren, diagonal,
+        children: tileChildren, role,
       })
-    }
-  }
+    })
+  })
   return defs
 }

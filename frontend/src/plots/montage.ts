@@ -9,6 +9,10 @@ import type { GateSpec, TransformSpec } from '../stores/gating'
 // plain .ts (no Vue) so the pure logic — orientation/transpose reuse — is unit-tested (docs/DEV.md).
 
 export interface PanelChild { path: string; name: string; colour: string; gate: GateSpec }
+// A tile is a scatter (fetches + renders the point cloud), the matrix diagonal (a labelled cell, no
+// fetch), or a correlation cell (upper triangle of the pairs matrix — shows Pearson r reused from its
+// mirror scatter's points, no fetch). Tree-derived montages (gating strategy) leave it unset → scatter.
+export type TileRole = 'scatter' | 'diagonal' | 'corr'
 export interface PanelDef {
   key: string                    // stable tile id (unique within a montage)
   parentPath: string             // population whose cells are the density backdrop ('root' = all events)
@@ -16,7 +20,7 @@ export interface PanelDef {
   xChan: string; yChan: string   // the tile's axes (raw column names)
   xt: TransformSpec; yt: TransformSpec
   children: PanelChild[]         // gate outlines already oriented to (xChan,yChan)
-  diagonal?: boolean             // xChan===yChan (pairs matrix): a labelled cell, no scatter fetch
+  role?: TileRole                // default 'scatter'
 }
 
 export interface MontageId { projectUid: string; imageUid: string; valueName: string; popType: string }
@@ -56,6 +60,25 @@ export function transposePoints(pts: Float32Array): Float32Array {
   return out
 }
 export const transposeExt = (e: Ext): Ext => ({ xMin: e.yMin, xMax: e.yMax, yMin: e.xMin, yMax: e.xMax })
+
+// Pearson correlation of an interleaved [x0,y0,x1,y1,…] point cloud (the pairs matrix shows this in the
+// upper triangle, ggpairs-style). Computed on the PLOTTED coords (post-transform) since that's what the
+// user sees; orientation-invariant so it doesn't matter which tile of a mirror pair supplies the points.
+// null when undefined (fewer than 2 points, or a degenerate axis with zero variance).
+export function pearson(points: Float32Array): number | null {
+  const n = Math.floor(points.length / 2)
+  if (n < 2) return null
+  let sx = 0, sy = 0
+  for (let i = 0; i < n; i++) { sx += points[2 * i]; sy += points[2 * i + 1] }
+  const mx = sx / n, my = sy / n
+  let cxy = 0, cxx = 0, cyy = 0
+  for (let i = 0; i < n; i++) {
+    const dx = points[2 * i] - mx, dy = points[2 * i + 1] - my
+    cxy += dx * dy; cxx += dx * dx; cyy += dy * dy
+  }
+  const d = Math.sqrt(cxx * cyy)
+  return d > 0 ? cxy / d : null
+}
 
 export interface Orient { a: string; b: string; ta: TransformSpec; tb: TransformSpec; swap: boolean; groupKey: string }
 // Canonical (sorted-channel) orientation for a tile + whether the tile is the mirror of it. `groupKey`

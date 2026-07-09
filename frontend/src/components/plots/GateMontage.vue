@@ -19,8 +19,10 @@ import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
   type PanelDef, type PanelChild, type MontageId, type Ext, type Tick,
-  idQ, plotQ, canonicalOrient, transposePoints, transposeExt,
+  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson,
 } from '../../plots/montage'
+
+const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
 
 const props = withDefaults(defineProps<{
   projectUid: string; imageUid: string; valueName: string; popType: string
@@ -57,14 +59,18 @@ interface PanelData {
   popLayers: PopLayer[]
 }
 const panelData = ref<Record<string, PanelData>>({})
+// Pearson r per canonical pair (groupKey) — computed once from each scatter tile's points and reused by
+// its upper-triangle mirror (the corr cell), so the whole matrix costs nothing extra.
+const corrByGroup = ref<Record<string, number | null>>({})
+const corrFor = (d: PanelDef) => corrByGroup.value[canonicalOrient(d).groupKey]
 const loading = ref(false)
 const err = ref('')
 let loadTok = 0
 
 // per-run fetch memo → mirror tiles (a,b)/(b,a) and repeated highlight/stat lookups hit the network once.
 async function loadPanels() {
-  const defs = props.defs.filter(d => !d.diagonal)
-  if (!props.imageUid || !defs.length) { panelData.value = {}; err.value = ''; return }
+  const defs = props.defs.filter(isScatter)
+  if (!props.imageUid || !defs.length) { panelData.value = {}; corrByGroup.value = {}; err.value = ''; return }
   const tok = ++loadTok
   loading.value = true; err.value = ''
   const id = montageId.value
@@ -99,10 +105,12 @@ async function loadPanels() {
     return pct == null ? c.name : `${c.name}  ${pct.toFixed(1)}%`
   }
 
+  const corrMap: Record<string, number | null> = {}
   try {
     const entries = await Promise.all(defs.map(async d => {
       const o = canonicalOrient(d)
       const [m, ptsRaw] = await Promise.all([metaFor(o, d.parentPath), ptsFor(o, d.parentPath)])
+      corrMap[o.groupKey] = pearson(ptsRaw)   // r is orientation-invariant → compute on the canonical cloud
       const gates = await Promise.all(d.children.map(async c =>
         ({ path: c.path, colour: c.colour, gate: c.gate, label: await labelFor(c) })))
       const popLayers = await Promise.all((props.highlight ?? []).map(async h => {
@@ -118,9 +126,9 @@ async function loadPanels() {
       }
       return [d.key, data] as const
     }))
-    if (tok === loadTok) panelData.value = Object.fromEntries(entries)
+    if (tok === loadTok) { panelData.value = Object.fromEntries(entries); corrByGroup.value = corrMap }
   } catch (e) {
-    if (tok === loadTok) { err.value = e instanceof Error ? e.message : String(e); panelData.value = {} }
+    if (tok === loadTok) { err.value = e instanceof Error ? e.message : String(e); panelData.value = {}; corrByGroup.value = {} }
   } finally { if (tok === loadTok) loading.value = false }
 }
 
@@ -129,7 +137,7 @@ async function loadPanels() {
 // material fields — cheap for the tile counts a montage holds.
 const sig = computed(() => JSON.stringify({
   id: montageId.value,
-  defs: props.defs.filter(d => !d.diagonal).map(d =>
+  defs: props.defs.filter(isScatter).map(d =>
     ({ k: d.key, p: d.parentPath, x: d.xChan, y: d.yChan, xt: d.xt, yt: d.yt, c: d.children.map(c => [c.path, c.gate]) })),
   hl: props.highlight, rk: props.reloadKey, fz: props.axisFromZero,
 }))
@@ -144,7 +152,7 @@ type CellExport = {
 const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
 async function exportImage(bg = '#ffffff', light = true): Promise<string | null> {
-  const defs = props.defs.filter(d => !d.diagonal)
+  const defs = props.defs.filter(isScatter)
   if (defs.length === 1) return (await cellRefs.get(defs[0].key)?.exportImage(bg, light)) ?? null
   const el = gridRef.value
   if (!el) return null
@@ -160,6 +168,9 @@ async function exportImage(bg = '#ffffff', light = true): Promise<string | null>
 defineExpose({ exportImage })
 
 const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (root)' : parentPath)
+// upper-triangle correlation cell (ggpairs): show r, scaling the text with |r| so strong pairs stand out
+const fmtCorr = (r: number | null | undefined) => (r == null ? '–' : (r >= 0 ? '' : '−') + Math.abs(r).toFixed(2))
+const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r ?? 0) * 13)}px`
 </script>
 
 <template>
@@ -167,8 +178,14 @@ const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (r
     <div v-if="err" class="gm-msg">{{ err }}</div>
     <div v-else-if="!defs.length" class="gm-msg"><slot name="empty">Nothing to show.</slot></div>
     <template v-for="d in defs" :key="d.key">
-      <!-- diagonal (channel vs itself, pairs matrix): a labelled cell, R pairs()-style -->
-      <div v-if="d.diagonal" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
+      <!-- DIAGONAL (ggpairs): the channel name — labels its whole row and column -->
+      <div v-if="d.role === 'diagonal'" class="gm-cell gm-diag"><span>{{ colLabel(d.xChan) }}</span></div>
+      <!-- UPPER triangle (ggpairs): the pair's correlation, reused from its mirror scatter -->
+      <div v-else-if="d.role === 'corr'" class="gm-cell gm-corr"
+           v-tooltip.top="`corr(${colLabel(d.xChan)}, ${colLabel(d.yChan)})`">
+        <span class="gm-corr-k">Corr</span>
+        <span class="gm-corr-v" :style="{ fontSize: corrFont(corrFor(d)) }">{{ fmtCorr(corrFor(d)) }}</span>
+      </div>
       <div v-else class="gm-cell">
         <div v-if="cols == null" class="gm-title" v-tooltip.top="`derived from ${titleFor(d.parentPath)}`">{{ titleFor(d.parentPath) }}</div>
         <GateScatterCell v-if="panelData[d.key]" class="gm-plot" :ref="el => setCellRef(d.key, el)"
@@ -178,7 +195,8 @@ const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (r
                          :gates="panelData[d.key].gates" :x-label="colLabel(d.xChan)" :y-label="colLabel(d.yChan)"
                          :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
                          :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
-                         :gate-line-width="gateLineWidth" :compact="!single" :readonly="true" />
+                         :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
+                         :hide-axis-labels="cols != null" />
         <div v-else class="gm-loading">…</div>
       </div>
     </template>
@@ -206,6 +224,10 @@ const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (r
 /* diagonal label cell (matrix): channel name centred, matches the tile square */
 .gm-diag { align-items: center; justify-content: center; aspect-ratio: 1; background: var(--cc-surface-2);
   color: var(--cc-text); font-weight: 700; font-size: 12px; padding: 4px; text-align: center; word-break: break-word; }
+/* upper-triangle correlation cell (ggpairs): "Corr" label + the value, text scaled by |r| */
+.gm-corr { align-items: center; justify-content: center; aspect-ratio: 1; gap: 2px; border-color: var(--cc-border); }
+.gm-corr-k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); }
+.gm-corr-v { font-weight: 700; color: var(--cc-text); font-variant-numeric: tabular-nums; line-height: 1; }
 .gm-title { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 6px; color: var(--cc-text-dim);
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .gm-loading { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--cc-text-dim); aspect-ratio: 1; }
