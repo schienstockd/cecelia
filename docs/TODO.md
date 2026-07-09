@@ -252,6 +252,32 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00073** — **Napari region cell-selection over-selected on timelapses (ignored the t axis)** (2026-07-09)
+`_on_selection_changed` (`napari/napari_bridge.py`) point-in-polygons cell centroids in the displayed
+XY dims and filtered z (in slice mode) but never filtered **t** — so on a timelapse a drawn region
+selected every detection in that XY tube across *all* frames (e.g. 64× on the 64-frame `LUkCpP`), the
+"way too many cells" symptom. Now always restrict to the currently displayed timepoint (read live,
+like z), since each timepoint's detection is its own cell row and a whole-movie selection from one
+2-D polygon isn't a meaningful brushing target. Requires restarting the napari bridge (not
+Revise-tracked). See `docs/NAPARI.md` → *t scope*.
+
+**#00072** — **Gating plots didn't remember their axis config (channels / transforms / render mode)** (2026-07-09)
+The per-plot channels (`x`/`y`), transforms (`xt`/`yt`) and render mode were bare `ref()`s in
+`GatePlotPanel.vue`, so they reset to index-based defaults on every remount even though the canvas
+otherwise persists (parent/highlights/geometry already survived). Moved them into the persisted
+per-plot `PlotState` (`GatingPlots.vue`) and passed the bag down as `:ui`, read/written via
+`computed` get/set — the same pattern the summary panels use for their `ui` bag. The draw-tool
+`mode` stays a transient `ref` on purpose (reopening a plot shouldn't leave a tool armed).
+
+**#00071** — **Gate plot stayed in draw mode after drawing, so the new gate couldn't be adjusted** (2026-07-09)
+After drawing a rectangle/polygon the panel kept the draw tool armed, and since move/resize/vertex-edit
+only work in select (`off`) mode, the gate you'd just made couldn't be adjusted without toggling the
+tool button off. Kept the tool armed (so you can gate repeatedly) but added a **Shift-to-edit** modifier:
+holding Shift over the plot while a draw tool is armed grabs/moves/resizes the gate under the cursor
+(`GateOverlay.vue` `onDown`/`onMove` take the existing edit path when `e.shiftKey`; release Shift to keep
+drawing). Shift, not Alt — Alt reveals the menu bar in Firefox / is the menu-access key elsewhere. A
+brief muted hint ("hold Shift to adjust gates") shows top-right while a tool is armed.
+
 **#00069** — **Metadata resync silently reverted corrections; meta-edits missed napari's source of truth** (2026-07-04)
 Audit-driven cleanup of the physical-size/timing feature (#00064/#00065). Three coherence bugs, one
 root cause — the writer (`meta/set`) and the re-reader (`resync_ome_meta!`) disagreed about where
