@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildPairDefs, pairTransform, reconcileChannels, estimateMatrixLoad } from './pairsMatrix'
-import { canonicalOrient, transposePoints, transposeExt, plotQ } from './montage'
+import { canonicalOrient, transposePoints, transposeExt, plotQ, pearson } from './montage'
 import type { FlatPop, GateSpec } from '../stores/gating'
 
 const rect = (xc: string, yc: string): GateSpec => ({
@@ -12,33 +12,35 @@ const child = (name: string, gate?: GateSpec): FlatPop => ({
   path: `/${name}`, name, parent: 'root', colour: '#fff', show: true, depth: 0, gate,
 })
 
-describe('buildPairDefs (channel-pairs matrix)', () => {
+describe('buildPairDefs (ggpairs matrix)', () => {
   const chans = ['A', 'B', 'C']
+  const roleAt = (defs: ReturnType<typeof buildPairDefs>, xc: string, yc: string) =>
+    defs.find(d => d.xChan === xc && d.yChan === yc)!.role
 
-  it('produces the full N×N matrix (columns = X, rows = Y)', () => {
+  it('produces an N×N grid (columns = X, rows = Y)', () => {
     const defs = buildPairDefs(chans, 'root', 'linear', [])
     expect(defs).toHaveLength(9)
-    // row-major: first row is y=A across x=A,B,C
     expect(defs.slice(0, 3).map(d => [d.xChan, d.yChan])).toEqual([['A', 'A'], ['B', 'A'], ['C', 'A']])
     expect(defs.every(d => d.parentPath === 'root' && d.parentName === 'all events')).toBe(true)
   })
 
-  it('marks the diagonal (channel vs itself) and gives it no gate outlines', () => {
-    const defs = buildPairDefs(chans, 'root', 'linear', [child('P', rect('A', 'B'))])
-    const diag = defs.filter(d => d.diagonal)
-    expect(diag.map(d => d.xChan)).toEqual(['A', 'B', 'C'])
-    expect(diag.every(d => d.xChan === d.yChan && d.children.length === 0)).toBe(true)
+  it('assigns ggpairs roles: diagonal = name, lower triangle = scatter, upper = corr', () => {
+    const defs = buildPairDefs(chans, 'root', 'linear', [])
+    expect(roleAt(defs, 'A', 'A')).toBe('diagonal')
+    expect(roleAt(defs, 'A', 'B')).toBe('scatter')   // col A (0) < row B (1) → lower
+    expect(roleAt(defs, 'B', 'A')).toBe('corr')       // col B (1) > row A (0) → upper
+    const counts = defs.reduce((m, d) => (m[d.role!] = (m[d.role!] ?? 0) + 1, m), {} as Record<string, number>)
+    expect(counts).toEqual({ diagonal: 3, scatter: 3, corr: 3 })   // N(N-1)/2 = 3 scatters (the fetches)
   })
 
-  it('attaches a child gate to its tile in EITHER channel order (orientGate)', () => {
-    const defs = buildPairDefs(chans, 'root', 'linear', [child('P', rect('A', 'B'))])
-    const ab = defs.find(d => d.xChan === 'A' && d.yChan === 'B')!
-    const ba = defs.find(d => d.xChan === 'B' && d.yChan === 'A')!
-    const ac = defs.find(d => d.xChan === 'A' && d.yChan === 'C')!
-    expect(ab.children.map(c => c.name)).toEqual(['P'])          // same order
-    expect(ba.children.map(c => c.name)).toEqual(['P'])          // swapped order — still matches
-    expect(ba.children[0].gate.x_channel).toBe('B')             // oriented to the tile's axes
-    expect(ac.children).toHaveLength(0)                         // unrelated pair → no gate
+  it('attaches a gate only to its SCATTER tile, oriented to that tile (either channel order)', () => {
+    const defs = buildPairDefs(chans, 'root', 'linear', [child('P', rect('B', 'A'))])  // gate defined B,A
+    const scatter = defs.find(d => d.xChan === 'A' && d.yChan === 'B')!                 // lower-triangle tile
+    const corr = defs.find(d => d.xChan === 'B' && d.yChan === 'A')!                     // upper mirror
+    expect(scatter.role).toBe('scatter')
+    expect(scatter.children.map(c => c.name)).toEqual(['P'])
+    expect(scatter.children[0].gate.x_channel).toBe('A')   // oriented to the tile's axes
+    expect(corr.children).toHaveLength(0)                  // corr tiles carry no outlines
   })
 
   it('skips ungated children entirely', () => {
@@ -50,6 +52,19 @@ describe('buildPairDefs (channel-pairs matrix)', () => {
     expect(pairTransform('logicle')).toMatchObject({ kind: 'logicle', T: 262144, W: 0.5, M: 4.5, A: 0 })
     expect(pairTransform('linear')).toEqual({ kind: 'linear' })
     expect(buildPairDefs(['A'], 'root', 'logicle', [])[0].xt.kind).toBe('logicle')
+  })
+})
+
+describe('pearson (upper-triangle correlation)', () => {
+  it('is +1 for a perfectly increasing line', () => {
+    expect(pearson(new Float32Array([0, 0, 1, 1, 2, 2, 3, 3]))).toBeCloseTo(1, 6)
+  })
+  it('is -1 for a perfectly decreasing line', () => {
+    expect(pearson(new Float32Array([0, 3, 1, 2, 2, 1, 3, 0]))).toBeCloseTo(-1, 6)
+  })
+  it('is null for <2 points or a zero-variance axis', () => {
+    expect(pearson(new Float32Array([1, 2]))).toBeNull()
+    expect(pearson(new Float32Array([1, 5, 1, 9, 1, 3]))).toBeNull()   // constant x
   })
 })
 

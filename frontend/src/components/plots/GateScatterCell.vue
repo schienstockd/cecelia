@@ -43,9 +43,13 @@ const props = withDefaults(defineProps<{
   loading?: boolean
   compact?: boolean                              // tight chrome for small montage panels (gating strategy)
   readonly?: boolean                             // static gates — no move/resize (read-only Analysis board)
+  hideAxisLabels?: boolean                       // drop the x/y axis-name labels (pairs matrix — the
+                                                 // diagonal names each channel, so per-tile labels only
+                                                 // clutter/clip); also reclaims their padding
 }>(), {
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
+  hideAxisLabels: false,
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -102,7 +106,7 @@ function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat
 </script>
 
 <template>
-  <div ref="hostEl" class="plot-capture" :class="{ compact }">
+  <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }">
     <div class="panel-plot">
       <ScatterGL ref="scatterRef" :points="points" :extents="extents"
                  :color-mode="baseColorMode(renderMode, showPops)"
@@ -121,8 +125,8 @@ function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat
       <span v-for="t in yTicks" :key="'y'+t.pos" class="ytick" :style="{ top: tickY(t.pos, viewExtents) }">
         <span class="ytick-lbl">{{ fmtTick(t.label) }}</span><span class="ytick-mark" />
       </span>
-      <span class="axis-x">{{ xLabel }}</span>
-      <span class="axis-y">{{ yLabel }}</span>
+      <span v-if="!hideAxisLabels" class="axis-x">{{ xLabel }}</span>
+      <span v-if="!hideAxisLabels" class="axis-y">{{ yLabel }}</span>
       <PlotSpinner v-if="showSpinner && !compact" label="Loading…" />
       <div v-else-if="loading && compact" class="panel-loading">…</div>
       <slot />
@@ -144,6 +148,9 @@ function baseColorMode(renderMode: string, showPops: boolean): 'density' | 'flat
 .plot-capture.compact .axis-x { bottom: -15px; font-size: 10px; }
 .plot-capture.compact .axis-y { left: -24px; font-size: 10px; }
 .plot-capture.compact .xtick-lbl, .plot-capture.compact .ytick-lbl { display: none; }
+/* no-axis (pairs matrix): no axis-name labels → drop the padding they lived in so the scatter fills
+   the tile. Small uniform inset just for the axis lines / tick marks. */
+.plot-capture.no-axis { padding: 6px 6px 10px 12px; }
 /* min-width:0 so this flex-row item can shrink below the scatter canvas's intrinsic width. */
 .panel-plot { position: relative; flex: 1; min-height: 150px; min-width: 0; }
 .axisline { position: absolute; background: var(--cc-border); pointer-events: none; }

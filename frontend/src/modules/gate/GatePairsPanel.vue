@@ -90,9 +90,8 @@ const load = computed(() => estimateMatrixLoad(channels.value.length, parentCoun
 const heavy = computed(() => load.value.heavy)
 const fmtN = (n: number) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`
 const heavyTip = computed(() => {
-  const n = channels.value.length
   const pts = load.value.estPoints != null ? `, ~${fmtN(load.value.estPoints)} points` : ''
-  return `${n}×${n} = ${load.value.tiles} plots (${load.value.fetches} fetches${pts}). Pick fewer channels or a smaller population to speed up.`
+  return `${load.value.fetches} scatter plots${pts}. Pick fewer channels or a smaller population to speed up.`
 })
 
 const montageRef = useTemplateRef<{ exportImage(bg?: string, light?: boolean): Promise<string | null> }>('montageRef')
@@ -147,7 +146,7 @@ function exportPng() {
                 <span>{{ g.colLabel(c) }}</span>
               </label>
             </div>
-            <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * MAX_CHANNELS }} tiles). Clear one to swap.</div>
+            <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * (MAX_CHANNELS - 1) / 2 }} scatter plots). Clear one to swap.</div>
           </div>
         </div>
         <select class="tsel" v-model="transform" v-tooltip.bottom="'Axis transform (applied to every channel)'">
