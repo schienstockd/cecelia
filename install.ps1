@@ -99,7 +99,10 @@ Say 'Precompiling Julia (a few minutes on first run)...'
 if ($Channel -eq 'dev') {
   Say 'Building the frontend (dev channel)...'
   Push-Location (Join-Path $InstallDir 'frontend')
-  npm ci
+  # `npm install`, not `npm ci`: npm silently skips a platform-specific optional native dep
+  # (@rolldown/binding-win32-x64-msvc, vite 8's bundler) when the lockfile was made on another OS
+  # (npm/cli#4828) — `npm ci` would leave the Windows build without its native binding. See ci.yml.
+  npm install
   npm run build
   Pop-Location
 }
