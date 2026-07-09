@@ -63,7 +63,7 @@ contract. coastal has an interim `CECELIA_APP` env-var bootstrap
 1. **Rename the top-level import name away from `py`.** Recommended: **`cecelia`** (dist name
    `cecelia` or `cecelia-py`; import `cecelia`). Alternatives considered: `ccia` (matches the
    internal `Ccia*`/`ccid` naming but cryptic), `cecelia_py`. `py` is rejected outright (PyPI
-   collision). *Open sub-decision for Dom:* confirm the exact dist name + check PyPI availability
+   collision). *Open sub-decision for Dominik:* confirm the exact dist name + check PyPI availability
    before any publish; for a local editable install the name only needs to be unique in-env.
    The Julia module is also `Cecelia` — cross-language namespaces don't collide, but note it.
 2. **Ship as an installable package via `pyproject.toml`, installed editable into the pixi env.**

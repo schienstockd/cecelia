@@ -61,7 +61,7 @@ relevant doc in the same change (see `CLAUDE.md` → the *Keep the docs current*
 
 ### State reservations before committing (agents)
 
-Every time you're told to commit or push — **including** when Dom asks *"what's the PR url?"* (that
+Every time you're told to commit or push — **including** when Dominik asks *"what's the PR url?"* (that
 request itself is the go-ahead to commit + push, so don't stall on extra `git status` round-trips) —
 **first volunteer your honest reservations about the change**, in the same turn, before running the
 commit. Not a reassurance; a short, prioritized list that separates:
@@ -72,21 +72,21 @@ commit. Not a reassurance; a short, prioritized list that separates:
 - **Real limitations**: perf/fetch-volume concerns, edge cases you didn't handle, options that are
   silent no-ops, stale-state paths.
 
-If any reservation is material, pause for Dom's call; if there are genuinely none, say "no
+If any reservation is material, pause for Dominik's call; if there are genuinely none, say "no
 reservations" and proceed. This is not the same as re-asking permission every turn — state the risk
-once, then act on the go-ahead. Dom added this rule after reservations surfaced only when he asked
+once, then act on the go-ahead. Dominik added this rule after reservations surfaced only when he asked
 "any reservations?" *after* a merge — they belong at the decision point instead.
 
 ## Pull requests
 
-Open a PR against `main` for review; **Dom reviews and merges** (PR #1 merged this way). An agent
+Open a PR against `main` for review; **Dominik reviews and merges** (PR #1 merged this way). An agent
 **asks first** (see the golden rule) before pushing the branch or opening the PR.
 
 - The `gh` CLI is **not installed in the agent environment**. An agent therefore **pushes the
   branch and relays the PR-creation URL** (the `https://github.com/schienstockd/cecelia/pull/new/<branch>`
-  link printed by `git push`) for Dom to open — it does not attempt `gh pr create`.
+  link printed by `git push`) for Dominik to open — it does not attempt `gh pr create`.
 - **Always relay a complete, paste-ready PR body** — for *every* branch, not just large ones.
-  Because `gh` is absent, GitHub receives **no** description automatically; the body is text Dom
+  Because `gh` is absent, GitHub receives **no** description automatically; the body is text Dominik
   pastes into the PR form. The commit message and the PR body serve different readers (reviewers
   skim the PR on GitHub), so a body is always worth giving — short for small branches, but never
   omitted. (Don't leave it to a per-branch judgement call; that produced inconsistent PRs.)
