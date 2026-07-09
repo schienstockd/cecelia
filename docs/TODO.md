@@ -252,6 +252,19 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00074** — **Channel-pairs matrix on the gating pages (R `pairs()`)** (2026-07-09)
+A `+ Pairs` button on the gating workspace (`GatingPlots`, so both flow AND track gating) adds a
+read-only `GatePairsPanel`: the single plot's X/Y generalised to a *list* of channels, rendered as the
+full N×N matrix of every channel-vs-channel scatter — for picking the best two channels to gate a
+population on. No gate drawing, but it shows the displayed population's child-gate outlines on the
+matching tiles and honours the same highlight pipeline as a normal plot (manager "eye" pops + transient
+napari cell-selection). Generalised, not duplicated: extracted the montage renderer/fetcher out of
+`GatingStrategyView` into the shared `components/plots/GateMontage.vue` (transpose reuse for mirror
+tiles, optional coloured pop overlays, PNG/PDF export); the strategy plot now consumes it too. Pure tile
+builder `plots/pairsMatrix.ts` (`buildPairDefs`) + `plots/montage.ts` are unit-tested; channel count
+capped at 8 (64 tiles) with a visible hint. See `docs/POPULATION.md` → *Channel-pairs matrix* and
+`docs/UI.md` → *Gate scatters*.
+
 **#00073** — **Napari region cell-selection over-selected on timelapses (ignored the t axis)** (2026-07-09)
 `_on_selection_changed` (`napari/napari_bridge.py`) point-in-polygons cell centroids in the displayed
 XY dims and filtered z (in slice mode) but never filtered **t** — so on a timelapse a drawn region

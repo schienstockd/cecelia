@@ -470,10 +470,19 @@ panel reads as "frozen". But a spinner that flashes on every quick plot is worse
   never blocks the plot underneath, and honours `prefers-reduced-motion`.
 
 Do **not** hand-roll per-plot "…" text or an immediate spinner. **Small/embedded plots stay out**: the
-gating-strategy montage tiles (compact `GateScatterCell`) keep an unobtrusive dot, not a wheel per tile
-— gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel` and the full-size
-`GateScatterCell` (Gate page); `UmapView` has its own empty-state wheel. New heavy plots: reuse these
-two primitives.
+gate montage tiles (compact `GateScatterCell`, rendered by `GateMontage`) keep an unobtrusive dot, not a
+wheel per tile — gate the overlay on `!compact` (or equivalent). Wired today in `SummaryPanel` and the
+full-size `GateScatterCell` (Gate page); `UmapView` has its own empty-state wheel. New heavy plots: reuse
+these two primitives.
+
+**Gate scatters — one renderer, three hosts.** `components/plots/GateScatterCell.vue` is the ONE
+scatter+gate body (WebGL points + contour/pop-colour layer + canvas2D gate overlay). The interactive
+Gate page (`GatePlotPanel`, `mode` = rectangle/polygon) and every read-only montage tile (`mode="off"`)
+share it. Montages of tiles go through `components/plots/GateMontage.vue` — a grid of `GateScatterCell`
+tiles that owns the per-tile fetch (`plotmeta`/`plotdata`/`stats`), transpose reuse, optional coloured
+population overlays (`highlight`), and PNG/PDF export. It has two tile producers: `GatingStrategyView`
+(tree-derived, responsive wrap) and `GatePairsPanel` (channel-product N×N matrix, `cols` set). Add a new
+gate-montage view by building `PanelDef[]` and rendering `<GateMontage>` — never a second gate renderer.
 
 ### Generic plot-integration interface (reuse across surfaces)
 
