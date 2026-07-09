@@ -252,6 +252,16 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00080** — **Gate scatter render modes: contour-only + contour-with-outliers** (2026-07-09)
+Old `contour` mode always drew the full point cloud faintly under the contours — slow, especially in
+the pairs matrix. Split into three modes via the shared `RenderModeToggle` (Gate panel + pairs matrix +
+gating-strategy montage): `points` (WebGL pseudocolour), `contour` (density contours ONLY — the WebGL
+cloud is skipped, `null` points to `ScatterGL`, the fast path the user asked for), and `outliers`
+(contours + individual dots for the sparse tail the contours don't enclose — FlowJo / old-R "contour ±
+outliers"). Density grid + outlier subset extracted to the pure, unit-tested `plots/density.ts` (shared
+by `PlotLayers`); outlier threshold = the outermost contour level. 3 hand-rolled seg controls replaced
+by the one `RenderModeToggle`. See `docs/UI.md` → *Gate scatters*.
+
 **#00079** — **Pairs-matrix scatter tiles clipped** (2026-07-09)
 The ggpairs matrix (#00077) packs small tiles, but `GateScatterCell`'s inner `.panel-plot` kept a
 `min-height: 150px` floor in compact mode, so in tiles smaller than that the plot overflowed the square

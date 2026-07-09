@@ -28,7 +28,7 @@ const props = withDefaults(defineProps<{
   projectUid: string; imageUid: string; valueName: string; popType: string
   defs: PanelDef[]
   colLabel: (col: string) => string
-  renderMode?: 'points' | 'contour'
+  renderMode?: 'points' | 'contour' | 'outliers'
   gateLabels?: boolean
   gateLineWidth?: number
   // coloured population overlays drawn on every tile (the manager's "eye" pops + transient napari

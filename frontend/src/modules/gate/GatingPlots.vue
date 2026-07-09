@@ -39,7 +39,7 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // A panel is either a single gate scatter (default, drawable) or a read-only channel-pairs matrix.
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
 interface PlotState { kind: 'single' | 'pairs'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
-  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour'; channels: string[] }
+  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation

@@ -18,6 +18,7 @@ import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateScatterCell from '../../components/plots/GateScatterCell.vue'
+import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { orientGate } from '../../plots/gateGeometry'
 import { downloadDataUrl } from '../../plots/export'
@@ -28,7 +29,7 @@ const props = defineProps<{
   // persisted per-plot axis config (owned by GatingPlots' PlotState) — channels, transforms, render
   // mode. Read/written directly like the summary panels' `ui` bag so these survive navigation.
   ui: { x?: string; y?: string; xt?: 'linear' | 'log' | 'asinh' | 'logicle'
-        yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: 'points' | 'contour' }
+        yt?: 'linear' | 'log' | 'asinh' | 'logicle'; renderMode?: RenderMode }
   // window-arrangement command (Tile/Cascade); seq bumps to force re-apply
   arrange?: ArrangeCmd | null
   persistKey?: string        // CanvasPanel geometry persistence key
@@ -49,7 +50,7 @@ const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v
 const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v } })
 const xt = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
 const yt = computed<Kind>({ get: () => props.ui.yt ?? defaultTransform, set: v => { props.ui.yt = v } })
-const renderMode = computed<'points' | 'contour'>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
+const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 // draw tool is transient interaction state (not persisted): reopening a plot shouldn't leave a tool armed
@@ -204,10 +205,7 @@ watch(hlVersion, loadPopLayers)
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <!-- header tools (render mode + gate-draw tools) sit in the panel title bar -->
     <template #actions>
-      <div class="seg" v-tooltip.bottom="'Render: pseudocolour points / density contour'">
-        <button :class="{ on: renderMode === 'points' }" @click="renderMode = 'points'"><i class="pi pi-circle-fill" /></button>
-        <button :class="{ on: renderMode === 'contour' }" @click="renderMode = 'contour'"><i class="pi pi-chart-line" /></button>
-      </div>
+      <RenderModeToggle v-model="renderMode" />
       <span class="ctrl-sep" />
       <button class="cc-btn cc-btn-ghost" :class="{ on: mode === 'rectangle' }" v-tooltip.bottom="'Rectangle gate'"
               @click="mode = mode === 'rectangle' ? 'off' : 'rectangle'"><i class="pi pi-stop" /></button>
