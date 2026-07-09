@@ -617,7 +617,11 @@ class NapariState:
 
         `z_mode="slice"` restricts the selection to cells whose z-centroid is within `z_window`
         slices of the **currently displayed** z (read live when the polygon is closed); `"stack"`
-        (default) ignores z and selects across the whole stack. No-op on images without a z axis."""
+        (default) ignores z and selects across the whole stack. No-op on images without a z axis.
+
+        On a timelapse (t axis) the selection is ALWAYS restricted to the currently displayed
+        timepoint — a drawn region means "these cells, at this frame", not every frame's cells in
+        that XY tube (which would over-select by the frame count)."""
         if self._task_dir is None:
             raise RuntimeError("call set_task_dir before start_cell_selection")
         self._sel_ctx = {"project_uid": project_uid, "image_uid": image_uid,
@@ -700,6 +704,20 @@ class NapariState:
             if z_now is not None:
                 win = int(self._sel_ctx.get("z_window", 0))
                 inside &= np.abs(np.round(C[:, axes.index("z")]) - z_now) <= win
+
+        # timelapse scope: a region drawn on the image means "these cells, at the frame you're
+        # looking at". The polygon test is in-plane only and ignores t, so WITHOUT this every
+        # detection in the XY tube across ALL timepoints is selected (e.g. 64× on a 64-frame movie)
+        # — the "way too many cells" symptom. Always restrict to the currently displayed timepoint
+        # (read live, like z above, so scrolling to another frame before closing selects on it).
+        if "t" in axes:
+            display_axes = self._display_axes()
+            try:
+                t_now = self._viewer.dims.current_step[display_axes.index("t")]
+            except (ValueError, IndexError):
+                t_now = None
+            if t_now is not None:
+                inside &= np.round(C[:, axes.index("t")]).astype(int) == int(t_now)
 
         self._post_selection([int(x) for x in labels[inside]])
 
