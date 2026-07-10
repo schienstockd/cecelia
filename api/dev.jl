@@ -51,7 +51,12 @@ function _start_frontend(root::AbstractString)
     isdir(joinpath(fe, "node_modules")) || @warn "[dev] $fe/node_modules missing — run `npm install` there"
     cmd = Sys.iswindows() ? `cmd /c npm run dev` : `npm run dev`
     try
-        return run(Cmd(cmd; dir = fe); wait = false)   # inherits stdio → Vite logs into this terminal
+        p = run(Cmd(cmd; dir = fe); wait = false)   # inherits stdio → Vite logs into this terminal
+        # Julia-flushed confirmation: Vite's own "ready" banner is block-buffered when its stdout is a
+        # pipe (under this supervisor, not a TTY), so it can appear late or not at all — this line always
+        # shows that the frontend was launched, and where.
+        @info "[dev] frontend (Vite) starting → http://localhost:$FRONTEND_PORT" dir = fe
+        return p
     catch e
         @warn "[dev] frontend (Vite) failed to start" exception = e
         return nothing
