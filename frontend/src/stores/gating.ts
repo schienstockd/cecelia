@@ -306,7 +306,7 @@ export const useGatingStore = defineStore('gating', () => {
     imageUid, valueName, popType, mirrorUids, tree, columns, channels, channelNames, valueNames,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
-    projectUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
+    projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
