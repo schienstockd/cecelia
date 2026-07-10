@@ -79,7 +79,7 @@ torchvision = ">=0.21"
 # longer stalls the accept loop / a napari open, and the scheduler's per-image task functions
 # (Threads.@spawn) actually parallelise. Julia HDF5 is serialised via `_with_h5`; shared API state is
 # lock-guarded. Override with JULIA_NUM_THREADS if you want a fixed count.
-dev  = { cmd = "julia --project dev.jl", cwd = "api", env = { CECELIA_DEV = "1", CECELIA_SUPERVISED = "1" } }  # dev.jl supervises the Revise hot-reload server + relaunches it on Settings→System Restart. CECELIA_DEV marks a dev server (prod/app.py never sets it → auto-detected); CECELIA_SUPERVISED enables the backend Restart button
+dev  = { cmd = "julia --project dev.jl", cwd = "api", env = { CECELIA_DEV = "1", CECELIA_SUPERVISED = "1" } }  # dev.jl supervises BOTH the Revise hot-reload backend AND the frontend (Vite) — relaunches them on Settings→System Restart/worktree-switch. So `pixi run dev` now starts the frontend too; don't also run `pixi run frontend` alongside it. CECELIA_DEV marks a dev server (prod/app.py never sets it → auto-detected); CECELIA_SUPERVISED enables the backend Restart button
 prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }                                    # plain include (production)
 
 # Tests — one whole suite per layer. Package (headless Cecelia) + API adapters (loaded with
@@ -90,7 +90,8 @@ test-api      = { cmd = "julia --project test/runtests.jl", cwd = "api" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
 
-# Frontend — Vite (port 5173).
+# Frontend — Vite (port 5173). NOTE: `pixi run dev` already starts this; run it standalone ONLY when
+# not using `pixi run dev` (e.g. previewing another worktree on a spare port), else two Vites clash.
 frontend = { cmd = "npm run dev", cwd = "frontend" }    # dev server, hot reload
 build    = { cmd = "npm run build", cwd = "frontend" }  # static production build
 
