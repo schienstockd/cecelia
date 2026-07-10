@@ -25,6 +25,50 @@ Browser ──HTTP──▶ Julia server (8080)
 
 **Consequence:** every napari API call must happen on the Qt main thread. The QTimer drain is the only safe path. Never call napari APIs from the asyncio thread.
 
+### Discrete-GPU rendering (hybrid graphics)
+
+On a Linux machine with hybrid graphics (NVIDIA "on-demand" / PRIME, or AMD/Intel), apps render on
+the **integrated** GPU unless launched with offload env vars. `launch!(v; discrete_gpu=true)`
+(`app/src/napari.jl`) adds them, in two safety tiers (`_bridge_cmd`):
+- **`DRI_PRIME=1`** (Mesa, AMD/Intel) — always applied when the flag is on. Safe everywhere: a no-op
+  on a single-GPU box, ignored by the NVIDIA driver.
+- **NVIDIA PRIME** (`__NV_PRIME_RENDER_OFFLOAD`, `__GLX_VENDOR_LIBRARY_NAME=nvidia`, the `__VK_*`
+  pair) — applied **only when an NVIDIA GPU is present** (`_nvidia_present()`: `nvidia-smi` on PATH or
+  `/proc/driver/nvidia`). `__GLX_VENDOR_LIBRARY_NAME=nvidia` forces glvnd to load libGLX_nvidia; on a
+  machine without that vendor lib it would *break* GL, so it must be gated. (Offload also *needs* this
+  var — `__NV_PRIME_RENDER_OFFLOAD` alone does nothing.)
+
+**Default: OFF** (`[napari].discreteGpu = false`) — opt in via the Settings toggle or `custom.toml`.
+The two-tier gating above means it's *safe* to turn on anywhere (non-hybrid/non-NVIDIA included), but
+it's off by default so nothing changes GPU behaviour unless the user asks. **No-op on Windows/macOS**
+(GPU choice is an OS/driver setting there) — gated on `Sys.islinux()`. GPU is fixed at process
+launch, so **switching requires a bridge restart**.
+
+> **Wayland note:** the `__GLX_*`/`__NV_PRIME_*` vars are the **GLX** (X11) offload path. That's the
+> right path here because **PyQt5 defaults to the `xcb` platform (XWayland) even in a Wayland session**
+> — napari's GL runs through XWayland/GLX, not native Wayland/EGL (Qt even logs *"Ignoring
+> XDG_SESSION_TYPE=wayland … Use QT_QPA_PLATFORM=wayland to run on Wayland anyway"*). The GL readback
+> below uses an `xcb` offscreen context too, so it goes through the same GLX stack as the canvas and
+> reports the same GPU. The **only** case this misses is forcing `QT_QPA_PLATFORM=wayland` (native
+> Wayland/EGL), where GLX vendor selection no longer applies and an EGL offload path would be needed.
+
+- **Backend flag** (authoritative at launch): a runtime `Ref` in `napari_api.jl`, seeded from
+  `CECELIA_NAPARI_DISCRETE_GPU` → `[napari].discreteGpu` (config.toml/custom.toml). `_ensure_viewer!`
+  and `restart!` read it.
+- **Endpoints:** `GET /api/napari/gpu` → `{discreteGpu, supported}`; `POST /api/napari/gpu {enabled}`
+  sets the Ref and returns `needsRestart` (true if a bridge is alive → caller then hits
+  `/api/napari/restart`, which relaunches with the new flag).
+- **Frontend:** persisted in the settings store (localStorage), surfaced as the *Use discrete GPU for
+  napari* toggle in Settings, and re-asserted to the backend on app mount (App.vue) so the bridge
+  launches on the right GPU before the first lazy open.
+- **Verify it worked:** the Julia side queries the bridge (`gl_info` command → `_gl_info` in
+  `napari_bridge.py`, a throwaway offscreen GL context — process-wide GPU selection, so it matches
+  napari's canvas) right after connecting and logs `┌ Info: Napari GL renderer / renderer=… vendor=…
+  gl=…`. This is an `@info`, so it appears in the **app's server-log console** (which tees Julia
+  `@info/@warn`) next to "Launching Napari on the discrete GPU". The bridge *also* prints
+  `[napari] GL renderer: …` to its stdout (raw `pixi run dev` terminal) as a fallback. The line names
+  the iGPU with the toggle off and the NVIDIA/AMD dGPU with it on.
+
 ---
 
 ## What needs restarting

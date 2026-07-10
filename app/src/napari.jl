@@ -29,17 +29,55 @@ end
 
 # ── Lifecycle ──────────────────────────────────────────────────────────────────
 
+# Environment that steers a process onto the discrete GPU on a Linux hybrid-graphics machine.
+# Two groups, because they differ in safety on non-NVIDIA hardware:
+#   • _MESA_GPU_ENV  — `DRI_PRIME=1` selects the non-default DRI device (AMD/Intel hybrid). Safe
+#     everywhere: a no-op on a single-GPU box, ignored by the NVIDIA driver. Always applied.
+#   • _NVIDIA_GPU_ENV — NVIDIA PRIME render offload. `__GLX_VENDOR_LIBRARY_NAME=nvidia` routes GLX to
+#     libGLX_nvidia; if that vendor lib is ABSENT (Intel/AMD-only machine) glvnd fails to load it and
+#     GL breaks. So these are applied ONLY when an NVIDIA GPU is present. (Offload also *needs* the
+#     GLX vendor var — `__NV_PRIME_RENDER_OFFLOAD` alone does nothing without it.) `__VK*` covers Vulkan.
+# Refs: https://download.nvidia.com/XFree86/Linux-x86_64/latest/README/primerenderoffload.html
+const _MESA_GPU_ENV = ("DRI_PRIME" => "1",)
+const _NVIDIA_GPU_ENV = (
+    "__NV_PRIME_RENDER_OFFLOAD"          => "1",
+    "__NV_PRIME_RENDER_OFFLOAD_PROVIDER" => "NVIDIA-0",
+    "__GLX_VENDOR_LIBRARY_NAME"          => "nvidia",
+    "__VK_LAYER_NV_optimus"              => "NVIDIA_only",
+)
+
+# Is an NVIDIA GPU + userspace present? If `nvidia-smi` is on PATH or the kernel module is loaded,
+# the NVIDIA GLX vendor lib is installed too, so forcing it won't break GL.
+_nvidia_present()::Bool = Sys.which("nvidia-smi") !== nothing || isdir("/proc/driver/nvidia")
+
+# Build the bridge launch command, adding the discrete-GPU env on Linux when requested. Split out
+# from launch! so the env selection is unit-testable without spawning a process. DRI_PRIME is always
+# safe; the NVIDIA offload vars are added only when an NVIDIA GPU is present (see _NVIDIA_GPU_ENV).
+function _bridge_cmd(discrete_gpu::Bool)::Base.AbstractCmd
+    cmd = `$(python_bin_path()) $NAPARI_BRIDGE`
+    (discrete_gpu && Sys.islinux()) || return cmd
+    env = collect(_MESA_GPU_ENV)
+    _nvidia_present() && append!(env, collect(_NVIDIA_GPU_ENV))
+    addenv(cmd, env...)
+end
+
 """
 Start the napari bridge process and wait until it accepts connections.
 Returns the viewer so calls can be chained.
+
+`discrete_gpu = true` launches the bridge on the discrete GPU (Linux hybrid graphics only; see
+`_bridge_cmd`). Ignored on other platforms.
 """
-function launch!(v::NapariViewer)::NapariViewer
-    v.proc = run(`$(python_bin_path()) $NAPARI_BRIDGE`, wait=false)
+function launch!(v::NapariViewer; discrete_gpu::Bool = false)::NapariViewer
+    discrete_gpu && Sys.islinux() &&
+        @info "Launching Napari on the discrete GPU (PRIME/DRI offload)"
+    v.proc = run(_bridge_cmd(discrete_gpu), wait=false)
     deadline = time() + 30
     while time() < deadline
         try
             send(v, Dict("type" => "ping"))
             @info "Napari bridge connected"
+            _log_gl_info(v)
             return v
         catch
             sleep(0.5)
@@ -48,14 +86,26 @@ function launch!(v::NapariViewer)::NapariViewer
     error("Napari bridge did not start within 30 seconds")
 end
 
+# Query the bridge's OpenGL renderer and log it as @info — this surfaces in the app's server-log
+# console (which tees Julia @info/@warn), unlike the bridge's own stdout print. Confirms which GPU
+# napari is on (see discrete_gpu / _DISCRETE_GPU_ENV). Best-effort: never breaks launch.
+function _log_gl_info(v::NapariViewer)
+    try
+        info = send(v, Dict("type" => "gl_info"))
+        @info "Napari GL renderer" renderer = get(info, "renderer", "?") vendor = get(info, "vendor", "?") gl = get(info, "version", "?")
+    catch e
+        @warn "Could not query Napari GL renderer" exception = e
+    end
+end
+
 function close!(v::NapariViewer)
     v.proc !== nothing && kill(v.proc)
     v.proc = nothing
 end
 
-function restart!(v::NapariViewer)::NapariViewer
+function restart!(v::NapariViewer; discrete_gpu::Bool = false)::NapariViewer
     close!(v)
-    launch!(v)
+    launch!(v; discrete_gpu = discrete_gpu)
 end
 
 # ── Image ──────────────────────────────────────────────────────────────────────

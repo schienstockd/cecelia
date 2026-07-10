@@ -2,7 +2,7 @@ module Cecelia
 
 # ── Config ────────────────────────────────────────────────────────────────────
 export init_cecelia!, cecelia_conf
-export projects_dir, bioformats2raw_bin, python_bin_path, tasks_concurrent_limit
+export projects_dir, bioformats2raw_bin, python_bin_path, tasks_concurrent_limit, napari_discrete_gpu
 
 # ── Utils ─────────────────────────────────────────────────────────────────────
 export gen_uid, UID_LENGTH

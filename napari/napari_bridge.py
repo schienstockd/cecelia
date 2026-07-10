@@ -1113,6 +1113,9 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
         if t == "ping":
             return {"type": "pong"}
 
+        elif t == "gl_info":
+            return {"type": "gl_info", **_gl_info()}
+
         elif t == "open_image":
             state.open_image(
                 path=cmd["path"],
@@ -1262,6 +1265,45 @@ def _port_available(host: str, port: int) -> bool:
         s.close()
 
 
+def _gl_info() -> dict:
+    """Query the OpenGL renderer/vendor/version the process is using, so discrete-GPU offload is
+    self-evident. GPU selection (the __NV_PRIME_*/__GLX_*/DRI_PRIME env the Julia side sets when 'Use
+    discrete GPU' is on) is process-wide, so a throwaway offscreen context reports the same GPU
+    napari's canvas renders on — and this avoids reaching into napari's private canvas internals.
+    Returns a dict; on failure it carries an 'error' key rather than raising (never fatal). Must run
+    on the Qt main thread (GL context creation) — the WS command dispatcher already does."""
+    try:
+        from qtpy.QtGui import QOffscreenSurface, QOpenGLContext
+        surface = QOffscreenSurface()
+        surface.create()
+        ctx = QOpenGLContext()
+        if not ctx.create() or not ctx.makeCurrent(surface):
+            return {"renderer": "unavailable", "vendor": "", "version": "",
+                    "error": "could not create a GL context"}
+        try:
+            from OpenGL.GL import (GL_RENDERER, GL_VENDOR, GL_VERSION, glGetString)
+            info = {"renderer": glGetString(GL_RENDERER).decode(errors="replace"),
+                    "vendor":   glGetString(GL_VENDOR).decode(errors="replace"),
+                    "version":  glGetString(GL_VERSION).decode(errors="replace")}
+        finally:
+            ctx.doneCurrent()
+        return info
+    except Exception as e:
+        return {"renderer": "unavailable", "vendor": "", "version": "", "error": str(e)}
+
+
+def _log_gl_renderer():
+    """Also print the renderer to stdout (belt-and-braces for anyone watching the raw terminal; the
+    Julia side additionally logs it as @info via the gl_info command, which is where the app console
+    surfaces it)."""
+    info = _gl_info()
+    if info.get("error"):
+        print(f"[napari] GL renderer: {info['renderer']} ({info['error']})", flush=True)
+    else:
+        print(f"[napari] GL renderer: {info['renderer']}  |  vendor: {info['vendor']}"
+              f"  |  {info['version']}", flush=True)
+
+
 def main():
     global _state
 
@@ -1279,6 +1321,7 @@ def main():
     timer.timeout.connect(drain_queue)
     timer.start(100)
 
+    _log_gl_renderer()
     print("napari viewer started", flush=True)
     napari.run()
 
