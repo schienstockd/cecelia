@@ -9,12 +9,25 @@ export const useAppControlStore = defineStore('appControl', () => {
   const busy = ref(false)       // a quit/restart is in flight (drives spinners in both places)
   const message = ref('')
 
-  const _post = (url: string) =>
-    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  const _post = (url: string, body: unknown = {}) =>
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+  // dev-only: the repo's git worktrees, so the System panel can relaunch the backend from another
+  // checkout without the console (backend/:8080 only — a frontend branch still needs its own Vite).
+  const worktrees = ref<{ path: string; branch: string; current: boolean }[]>([])
+  const canSwitch = ref(false)   // server supervised → a switch can actually relaunch
 
   // read the dev flag from diagnostics (prod never sets CECELIA_DEV → false)
   async function refreshDev() {
     try { dev.value = !!(await (await fetch('/api/diagnostics')).json()).dev } catch { /* leave as-is */ }
+  }
+  async function refreshWorktrees() {
+    try {
+      const d = await (await fetch('/api/app/worktrees')).json() as {
+        worktrees?: { path: string; branch: string; current: boolean }[]; canSwitch?: boolean }
+      worktrees.value = d.worktrees ?? []
+      canSwitch.value = !!d.canSwitch
+    } catch { /* leave as-is */ }
   }
 
   // global Quit: stop everything + exit the backend. The connection drops as the server exits (expected);
@@ -54,5 +67,24 @@ export const useAppControlStore = defineStore('appControl', () => {
     }
   }
 
-  return { dev, busy, message, refreshDev, quit, restartBackend }
+  // dev-only: relaunch the backend from another worktree. Same lifecycle as restartBackend — the
+  // supervisor exits the current server and relaunches in the target checkout; we poll /api/health.
+  async function switchWorktree(path: string): Promise<string | null> {
+    busy.value = true; message.value = 'Switching worktree…'
+    try {
+      const res = await _post('/api/app/switch-worktree', { path })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({} as { error?: string }))
+        busy.value = false; message.value = d.error ?? 'Worktree switch failed.'
+        return message.value
+      }
+    } catch { /* connection dropped as it exits — expected */ }
+    message.value = 'Backend switching worktree — reconnecting…'
+    await _waitForBackend()
+    busy.value = false; message.value = 'Switched worktree.'
+    await refreshWorktrees()
+    return null
+  }
+
+  return { dev, busy, message, worktrees, canSwitch, refreshDev, refreshWorktrees, quit, restartBackend, switchWorktree }
 })

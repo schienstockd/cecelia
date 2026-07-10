@@ -59,3 +59,64 @@ function api_app_restart(body_bytes::Vector{UInt8})
     end
     200, JSON3.write((; ok = true, message = "Restarting Cecelia"))
 end
+
+# ── Dev worktree switch (Settings → System) ─────────────────────────────────────
+# A dev convenience: relaunch the BACKEND from another git worktree without dropping to the console.
+# The supervisor (`dev.jl`) does the actual relaunch — this endpoint just records the target and exits
+# with the restart sentinel (same mechanism as restart). DEV + supervised only. NOTE: this switches the
+# server on :8080 only; a frontend-only branch still needs its own Vite (see docs/DEV.md branch preview).
+_git_toplevel(dir::AbstractString) =
+    try; strip(readchomp(`git -C $dir rev-parse --show-toplevel`)); catch; ""; end
+
+# GET /api/app/worktrees → { worktrees: [{path, branch, current}], current, canSwitch }
+function api_app_worktrees(::HTTP.Request)
+    here = _git_toplevel(pwd())
+    out = Any[]
+    try
+        text = readchomp(`git -C $(pwd()) worktree list --porcelain`)
+        for block in split(text, "\n\n")
+            isempty(strip(block)) && continue
+            path = ""; branch = "(detached)"
+            for l in split(block, "\n")
+                startswith(l, "worktree ") && (path = String(l[10:end]))
+                startswith(l, "branch ")   && (branch = replace(String(l[8:end]), "refs/heads/" => ""))
+            end
+            isempty(path) && continue
+            push!(out, (; path, branch, current = path == here))
+        end
+    catch e
+        return 200, JSON3.write((; worktrees = Any[], current = here, canSwitch = false,
+                                   error = "git worktree list failed: $(sprint(showerror, e))"))
+    end
+    200, JSON3.write((; worktrees = out, current = here, canSwitch = _can_restart()))
+end
+
+# POST /api/app/switch-worktree { path } → { ok } | 4xx  — relaunch the backend from `path`'s api/ dir.
+function api_app_switch_worktree(body_bytes::Vector{UInt8})
+    _can_restart() || return 409, JSON3.write((;
+        error = "Worktree switch unavailable — the server isn't running under a supervisor."))
+    sf = get(ENV, "CECELIA_SWITCH_FILE", "")
+    isempty(sf) && return 409, JSON3.write((; error = "Supervisor didn't provide a switch channel."))
+    body = JSON3.read(body_bytes, Dict{String,Any})
+    target = String(get(body, "path", ""))
+    isempty(target) && return 400, JSON3.write((; error = "path required"))
+    here = _git_toplevel(pwd())
+    known = Set{String}()
+    try
+        for l in eachline(`git -C $(pwd()) worktree list --porcelain`)
+            startswith(l, "worktree ") && push!(known, String(l[10:end]))
+        end
+    catch; end
+    (target in known) || return 400, JSON3.write((; error = "Not a known worktree: $target"))
+    target == here && return 200, JSON3.write((; ok = true, message = "Already on this worktree"))
+    apidir = joinpath(target, "api")
+    isdir(apidir) || return 400, JSON3.write((; error = "No api/ directory in $target"))
+    write(sf, apidir)                    # the supervisor relaunches the child here on the next loop
+    @info "Worktree switch requested via /api/app/switch-worktree" target apidir
+    _stop_children_for_exit()
+    @async begin
+        sleep(0.4)
+        exit(RESTART_EXIT_CODE)
+    end
+    200, JSON3.write((; ok = true, message = "Switching to $(basename(target))"))
+end

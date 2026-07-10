@@ -156,6 +156,19 @@ OS in the matrix, and each has a `pixi run` task that runs the whole suite:
   `python` + `numpy`/`dask`/`zarr` resolve. First member: `test_zarr_store.py` (the `create_multiscales`
   chunk-aligned store round-trip).
 
+## Dev worktree switch (Settings → System)
+
+When several git worktrees exist (the branch-preview workflow), **Settings → System → Worktree** lists
+them and lets you relaunch the backend from another checkout **without the console**. Dev + supervised
+only (`pixi run dev`, which sets `CECELIA_SUPERVISED`). Mechanism: `POST /api/app/switch-worktree`
+records the target's `api/` dir in a sentinel file and exits with the restart code; the `api/dev.jl`
+supervisor relaunches the child *from that dir* (so it loads the other worktree's project + code), and
+the page reconnects when `/api/health` is back — same lifecycle as Restart.
+
+**Scope:** this switches the **backend on :8080 only**. A frontend-only branch still needs its own Vite
+(`cd <worktree>/frontend && npx vite --port 5174`) — the served frontend doesn't change when the backend
+worktree does. Prod (`app.py`) doesn't offer it (the control is hidden when not dev/supervised).
+
 ## Diagnostics & debug console
 
 **Settings → Diagnostics** (always on) shows server threads, Julia version, memory, the bound

@@ -12,16 +12,36 @@
 
 const RESTART_EXIT_CODE = 42
 
+# Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
+# with the restart sentinel; we relaunch the child FROM THAT DIR so it loads the other worktree's project
+# + code. The path is fixed in THIS (the launching) worktree's api dir and exported to the child via env,
+# so wherever the child currently runs it always writes the request to the one place this loop reads.
+const SWITCH_FILE = abspath(joinpath(@__DIR__, ".switch-worktree"))
+ENV["CECELIA_SWITCH_FILE"] = SWITCH_FILE
+isfile(SWITCH_FILE) && rm(SWITCH_FILE; force = true)     # clear a stale request left by a crash
+
 julia = Base.julia_cmd().exec[1]   # this julia's executable; child gets its own flags (-t auto, Revise)
-child = `$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`
+workdir = @__DIR__                  # api/ of the worktree the server currently runs from
 
 while true
+    # `--project` (no path) + relative `includet` resolve against the child's cwd → running it in
+    # `workdir` loads that worktree's environment and server.
+    child = Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`; dir = workdir)
     proc = try
-        run(ignorestatus(child); wait = true)      # inherits stdio + env (CECELIA_DEV/SUPERVISED)
+        run(ignorestatus(child); wait = true)      # inherits stdio + env (CECELIA_DEV/SUPERVISED/SWITCH_FILE)
     catch e
         e isa InterruptException && break           # Ctrl-C → stop supervising
         rethrow()
     end
     proc.exitcode == RESTART_EXIT_CODE || break     # 0 / crash / signal → done
-    @info "[dev] restart requested — relaunching server…"
+    if isfile(SWITCH_FILE)                          # worktree switch requested → relaunch from the target
+        target = strip(read(SWITCH_FILE, String)); rm(SWITCH_FILE; force = true)
+        if !isempty(target) && isdir(target)
+            workdir = target
+            @info "[dev] switching worktree" workdir
+        else
+            @warn "[dev] ignoring invalid worktree-switch target" target
+        end
+    end
+    @info "[dev] relaunching server…" workdir
 end

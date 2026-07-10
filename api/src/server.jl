@@ -176,6 +176,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             200, JSON3.write((; ok=true, version="CeceliaAPI"))
         elseif path == "/api/diagnostics"
             api_diagnostics(req)
+        elseif path == "/api/app/worktrees"
+            api_app_worktrees(req)
         elseif path == "/api/diagnostics/packages"
             api_packages(req)
         elseif path == "/api/version"
@@ -310,6 +312,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_app_shutdown(body_bytes)
         elseif path == "/api/app/restart"
             api_app_restart(body_bytes)
+        elseif path == "/api/app/switch-worktree"
+            api_app_switch_worktree(body_bytes)
         elseif path == "/api/napari/open"
             api_napari_open(body_bytes)
         elseif path == "/api/napari/close"
