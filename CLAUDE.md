@@ -68,9 +68,11 @@ Completed prompt files are kept in a `previous-prompts/` folder in the **workspa
 
 ## TODO.md
 
-`docs/TODO.md` tracks open work and fixed items.
-- When fixing something from the list, move it to the `## Fixed` section with a date — don't delete it.
-- Backfill any significant fixes made outside the TODO flow so the history stays complete.
+`docs/TODO.md` tracks **open work only**.
+- When an item is done, **delete it** — don't keep a "Fixed" log. What changed is recorded in git
+  history, merged PRs, and the GitHub Releases notes (auto-generated from PRs at each tag). Keeping a
+  hand-maintained fixed list duplicated that and caused recurring merge conflicts.
+- IDs are permanent — never renumber; add new items by incrementing the highest existing ID.
 
 ## Parked plans (`docs/todo/`)
 
