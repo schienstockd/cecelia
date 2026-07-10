@@ -42,9 +42,28 @@ export function idQ(id: MontageId): string {
 // (y-channel, pop) — never on the OTHER axis — so a matrix column (shared x) and row (shared y) still
 // line up when autoscaled. Mirrors GatePlotPanel's axisFromZero → x0/y0 flag.
 export function plotQ(id: MontageId, pop: string, xc: string, yc: string, xt: TransformSpec, yt: TransformSpec,
-                      fromZero = true): string {
+                      fromZero = true, autoLinear = false): string {
   const z = fromZero ? 1 : 0
-  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=${z}&y0=${z}`
+  return `${idQ(id)}&x=${encodeURIComponent(xc)}&y=${encodeURIComponent(yc)}&pop=${encodeURIComponent(pop)}${axisQ('x', xt)}${axisQ('y', yt)}&x0=${z}&y0=${z}${autoLinear ? '&autoLinear=1' : ''}`
+}
+
+// ── Auto-linearise + server-projected gates (montage side) ──────────────────────────────────────────
+// plotmeta (with autoLinear=1) may substitute linear for a transform that would collapse a bounded
+// measure, reporting the transform it actually USED. effSpec turns that report back into a spec for the
+// plotdata fetch (keeping logicle's params when uncoerced) so points + extent + gates all agree.
+export function effSpec(used: string | undefined, requested: TransformSpec): TransformSpec {
+  return !used || used === requested.kind ? requested : { kind: used as TransformSpec['kind'] }
+}
+// A gate outline the server projected into the current display transform (display coords), canonical
+// orientation. Transposed for the mirror tile like points/extents.
+export interface SrvGate {
+  path: string; colour: string; kind: 'rectangle' | 'polygon'
+  x_min?: number; x_max?: number; y_min?: number; y_max?: number; vertices?: [number, number][]
+}
+export function transposeGate(g: SrvGate): SrvGate {
+  return g.kind === 'rectangle'
+    ? { ...g, x_min: g.y_min, x_max: g.y_max, y_min: g.x_min, y_max: g.x_max }
+    : { ...g, vertices: (g.vertices ?? []).map(([x, y]) => [y, x] as [number, number]) }
 }
 
 // ── Transpose reuse ─────────────────────────────────────────────────────────────────────────────

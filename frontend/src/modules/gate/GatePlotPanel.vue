@@ -20,7 +20,6 @@ import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateScatterCell from '../../components/plots/GateScatterCell.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
-import { orientGate } from '../../plots/gateGeometry'
 import { downloadDataUrl } from '../../plots/export'
 
 const props = defineProps<{
@@ -74,40 +73,73 @@ const tspec = (k: Kind): TransformSpec => k === 'logicle' ? { kind: k, T: 262144
 const axisQ = (p: string, k: Kind) => k === 'logicle'
   ? `&${p}t=logicle&${p}T=262144&${p}W=0.5&${p}M=4.5&${p}A=0` : `&${p}t=${k}`
 
-// query for a given population on the current axes
-function plotQ(pop: string) {
+// query for a given population on given axis transforms
+function plotQ(pop: string, xk: Kind, yk: Kind) {
   const z = props.axisFromZero ? 1 : 0
   return `projectUid=${g.projectUid()}&imageUid=${g.imageUid}&valueName=${g.valueName}&popType=${g.popType}` +
     `&x=${encodeURIComponent(xChan.value)}&y=${encodeURIComponent(yChan.value)}` +
-    `&pop=${encodeURIComponent(pop)}${axisQ('x', xt.value)}${axisQ('y', yt.value)}&x0=${z}&y0=${z}`
+    `&pop=${encodeURIComponent(pop)}${axisQ('x', xk)}${axisQ('y', yk)}&x0=${z}&y0=${z}&autoLinear=1`
 }
-const baseQ = computed(() => plotQ(parent.value))
+// meta is fetched with the PREFERRED transforms (xt/yt); the server decides what's actually usable and
+// reports it as usedX/usedY (a non-linear transform that would collapse a bounded/0–1 measure → linear).
+const metaQ = computed(() => plotQ(parent.value, xt.value, yt.value))
 
-// child gates of this panel's parent that live on the current axis pair → outlines (for edit).
-// orientGate is shared with the read-only gating-strategy plot (plots/gateGeometry.ts).
-const currentGates = computed(() =>
-  g.flat.filter(p => p.parent === parent.value && p.gate)
-        .map(p => ({ path: p.path, colour: p.colour, gate: orientGate(p.gate!, xChan.value, yChan.value) }))
-        .filter((p): p is { path: string; colour: string; gate: GateSpec } => p.gate !== null))
+// The transform the server actually USED for each axis (from plotmeta). It differs from the preferred
+// xt/yt when the measure's range can't use it (auto-linearised): the axis select then shows this and
+// goes amber. It reverts to the preference automatically on a compatible measure (server re-decides).
+const effXt = ref<Kind>(xt.value)
+const effYt = ref<Kind>(yt.value)
+const xCoerced = computed(() => effXt.value !== xt.value)
+const yCoerced = computed(() => effYt.value !== yt.value)
+// the axis dropdown DISPLAYS the effective transform; changing it sets the user's PREFERENCE (persisted)
+const xtSel = computed<Kind>({ get: () => effXt.value, set: v => { xt.value = v } })
+const ytSel = computed<Kind>({ get: () => effYt.value, set: v => { yt.value = v } })
+
+// child-gate outlines for the current axes, already projected into the effective display transform by
+// the server (plotmeta) — the client has no transform math, so it can't re-project a gate drawn under a
+// different transform onto these axes. Colour/path arrive with them; we attach the current channels +
+// effective transforms so a drag-edit round-trips (a moved gate is re-stored in the displayed transform).
+interface SrvGate { path: string; colour: string; kind: 'rectangle' | 'polygon'
+  x_min?: number; x_max?: number; y_min?: number; y_max?: number; vertices?: [number, number][] }
+const serverGates = ref<SrvGate[]>([])
+const currentGates = computed(() => serverGates.value.map(s => ({
+  path: s.path, colour: s.colour,
+  gate: { kind: s.kind, x_channel: xChan.value, y_channel: yChan.value,
+          x_transform: tspec(effXt.value), y_transform: tspec(effYt.value),
+          x_min: s.x_min, x_max: s.x_max, y_min: s.y_min, y_max: s.y_max, vertices: s.vertices } as GateSpec })))
 
 async function fetchBuf(q: string): Promise<Float32Array> {
   const buf = await (await fetch(`/api/gating/plotdata?${q}`)).arrayBuffer()
   return new Float32Array(buf)
 }
 
-// axes/extents/ticks — only when X/Y/transform/parent change (NOT on membership change)
+// axes/extents/ticks + effective transforms + projected gate outlines — only when X/Y/transform/parent
+// change (NOT on membership change). Sends the PREFERRED transform; adopts what the server used.
 async function fetchMeta() {
-  const meta = await (await fetch(`/api/gating/plotmeta?${baseQ.value}`)).json() as {
+  const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as {
     xExtent: [number, number]; yExtent: [number, number]
-    xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[] }
+    xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
+    usedX?: Kind; usedY?: Kind; gates?: SrvGate[] }
   extents.value = { xMin: meta.xExtent[0], xMax: meta.xExtent[1], yMin: meta.yExtent[0], yMax: meta.yExtent[1] }
   viewExtents.value = { ...extents.value }
   xTicks.value = meta.xTicks; yTicks.value = meta.yTicks
+  effXt.value = meta.usedX ?? xt.value
+  effYt.value = meta.usedY ?? yt.value
+  serverGates.value = meta.gates ?? []
 }
-// just the base population points (cheap; regl redraw is instant → smooth membership updates)
+// refresh ONLY the server-projected child-gate outlines — gates come from plotmeta now, so a gate
+// added/edited/deleted (here or on another plot) needs a re-fetch to appear. Keeps the current axes
+// (no extent/tick reset), so it's cheap enough to run on every membership change.
+async function fetchGates() {
+  if (!g.imageUid || !xChan.value || !yChan.value) return
+  const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as { gates?: SrvGate[] }
+  serverGates.value = meta.gates ?? []
+}
+// just the base population points (cheap; regl redraw is instant → smooth membership updates). Uses the
+// EFFECTIVE transforms so the cloud matches the extent + projected gates fetchMeta set.
 async function fetchPoints() {
   if (!g.imageUid || !xChan.value || !yChan.value) return
-  points.value = await fetchBuf(baseQ.value)
+  points.value = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value))
 }
 
 // full reload: axes + points + layers (axes / parent / image / value-name change)
@@ -126,6 +158,7 @@ async function fetchPlot() {
 // membership refresh (another plot changed a gate on the pop we're showing) — no axis reload
 async function refreshMembership() {
   try {
+    await fetchGates()                    // outlines are server-projected → refresh them on any gate change
     if (parent.value !== 'root') await fetchPoints()
     await loadPopLayers()
   } catch (e) {
@@ -140,15 +173,18 @@ async function loadPopLayers() {
   if (!hl.length) { popLayers.value = []; return }
   try {
     popLayers.value = await Promise.all(hl.map(async path =>
-      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee', points: await fetchBuf(plotQ(path)) })))
+      ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee',
+         points: await fetchBuf(plotQ(path, effXt.value, effYt.value)) })))
   } catch (e) {
     log.error(`Gating pop layers: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
   }
 }
 
 function onDraw(geom: Partial<GateSpec>) {
+  // stamp the EFFECTIVE transform (what the axis is actually displayed in), not the preference — the
+  // geometry was drawn in that space, so this is what membership must test against.
   pending.value = { ...geom, x_channel: xChan.value, y_channel: yChan.value,
-                    x_transform: tspec(xt.value), y_transform: tspec(yt.value) }
+                    x_transform: tspec(effXt.value), y_transform: tspec(effYt.value) }
   // keep the draw tool armed (rectangle/polygon) so you can gate repeatedly without re-selecting it.
   // To adjust a gate without disarming, hold Shift over the plot — GateOverlay grabs/moves/resizes the
   // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
@@ -160,7 +196,8 @@ async function confirmGate() {
   const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
   const ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
   pending.value = null
-  if (ok) loadPopLayers()   // new child → its outline is reactive; refresh its colour layer
+  if (ok) { await fetchGates(); loadPopLayers() }   // pull the new server-projected outline + its colour layer
+
 }
 
 // existing gate moved/resized/vertex-edited on the canvas → persist (server recomputes + broadcasts)
@@ -225,10 +262,16 @@ watch(hlVersion, loadPopLayers)
     <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">X</span>
         <select class="ax-chan" v-model="xChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
-        <select class="tsel" v-model="xt"><option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select></label>
+        <select class="tsel" :class="{ 'tsel-amber': xCoerced }" v-model="xtSel" v-tooltip.bottom="'Axis transform'">
+          <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+        <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
+           v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
       <label class="ax-row"><span class="ax-lbl">Y</span>
         <select class="ax-chan" v-model="yChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
-        <select class="tsel" v-model="yt"><option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select></label>
+        <select class="tsel" :class="{ 'tsel-amber': yCoerced }" v-model="ytSel" v-tooltip.bottom="'Axis transform'">
+          <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+        <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
+           v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
       <label class="ax-row"><span class="ax-lbl">pop</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
         <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select></label>
@@ -273,6 +316,9 @@ watch(hlVersion, loadPopLayers)
    (background, border, chevron, focus) comes from the global form base in style.css */
 .panel-ctrl select { width: 8rem; font-size: 12px; padding-top: 2px; padding-bottom: 2px; }
 .panel-ctrl select.tsel { width: 5.5rem; }
+/* amber: this axis' preferred transform was auto-linearised because the measure's range can't use it */
+.panel-ctrl select.tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
+.ax-warn { color: #f59e0b; font-size: 0.7rem; flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { outline: none; border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
 .seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }

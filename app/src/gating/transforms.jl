@@ -183,3 +183,30 @@ transform_spec(::LinearTransform) = Dict("kind" => "linear")
 transform_spec(t::LogTransform)   = Dict("kind" => "log", "floor" => t.floor)
 transform_spec(t::AsinhTransform) = Dict("kind" => "asinh", "cofactor" => t.cofactor)
 transform_spec(t::LogicleTransform) = Dict("kind" => "logicle", "T" => t.T, "W" => t.W, "M" => t.M, "A" => t.A)
+
+transform_kind(t::AxisTransform)::String = transform_spec(t)["kind"]
+
+# ── Range-based auto-linearisation ──────────────────────────────────────────────
+# A non-linear axis transform (logicle/log/asinh) exists to SPREAD a wide dynamic range across the
+# display. On a bounded / small-range measure — e.g. morphology `solidity` ∈ [0,1] — it does the
+# opposite: it compresses every value into a sliver, so the axis and the point cloud collapse to a
+# line/blank (logicle is calibrated to T≈262144, so a value of 1 lands a hair above logicle(0)). So when
+# the chosen transform would map the data's whole raw extent into only a tiny fraction of the span it can
+# occupy, `effective_transform` substitutes `LinearTransform`. Decided on the WHOLE-dataset extent so the
+# choice is stable across populations. Membership is unaffected — gates keep their own stored transform.
+const COERCE_MIN_FRAC = 0.05          # data must occupy ≥ this fraction of the transform's display span
+
+transform_collapses(::LinearTransform, lo::Real, hi::Real) = false
+function transform_collapses(t::LogicleTransform, lo::Real, hi::Real)
+    full = 1.0 - apply_transform(t, 0.0)                                  # logicle display span [logicle(0), 1]
+    span = apply_transform(t, float(hi)) - apply_transform(t, max(float(lo), 0.0))
+    full > 0 && span < COERCE_MIN_FRAC * full
+end
+transform_collapses(t::LogTransform, lo::Real, hi::Real)   = float(hi) < 10 * t.floor    # < 1 decade above floor
+transform_collapses(t::AsinhTransform, lo::Real, hi::Real) = float(hi) < t.cofactor       # all within the ~linear core
+
+# The transform actually usable for the data extent [lo, hi]: the requested one, or linear if it collapses.
+function effective_transform(t::AxisTransform, lo::Real, hi::Real)::AxisTransform
+    (isfinite(float(lo)) && isfinite(float(hi)) && float(hi) > float(lo) &&
+        transform_collapses(t, lo, hi)) ? LinearTransform() : t
+end
