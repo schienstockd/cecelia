@@ -94,9 +94,13 @@ function supervise()
     try
         while true
             # `--project` (no path) + relative `includet` resolve against the child's cwd → running it in
-            # `workdir` loads that worktree's environment and server.
-            backend[] = run(ignorestatus(Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`;
-                                              dir = workdir)); wait = false)  # inherits stdio + env
+            # `workdir` loads that worktree's environment and server. `wait=false` (so we capture the
+            # handle for teardown before blocking) does NOT inherit stdio by default — unlike the old
+            # blocking `run` — so connect the parent's streams explicitly via `pipeline`, else the
+            # backend's server logs vanish. env is inherited regardless.
+            bcmd = ignorestatus(Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`;
+                                    dir = workdir))
+            backend[] = run(pipeline(bcmd; stdin = stdin, stdout = stdout, stderr = stderr); wait = false)
             try
                 wait(backend[])                           # block until it exits; Ctrl-C interrupts HERE
             catch e
