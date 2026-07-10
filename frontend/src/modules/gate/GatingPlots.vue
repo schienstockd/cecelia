@@ -22,6 +22,8 @@ import { useViewState } from '../../composables/useViewState'
 import GatePlotPanel from './GatePlotPanel.vue'
 import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
+import GatingCopyDialog from './GatingCopyDialog.vue'
+import type { FlatPop } from '../../stores/gating'
 
 const props = withDefaults(defineProps<{ imageUid: string | null; popType?: string }>(),
   { popType: 'flow' })
@@ -94,6 +96,26 @@ function onPickPop(path: string) {
   if (s) s.parent = s.parent === path ? 'root' : path
 }
 
+// "Copy gating strategy to other images" dialog (per current pop type; see GatingCopyDialog).
+const showCopy = ref(false)
+const setUid = computed(() => g.napariSetUid())   // the set the gated image belongs to
+
+// Defining-plot: open the plot where a pop's gate was drawn — a new single panel showing the pop's
+// PARENT (the cloud the gate was drawn on) on the gate's own channels + transforms. The gate outline
+// appears automatically (it's a child of that parent, server-projected). Works for flow or track.
+function showDefiningPlot(pop: FlatPop) {
+  if (!pop.gate) return
+  const id = add()
+  const p = panels.value.find(x => x.id === id)
+  if (!p) return
+  p.state.kind = 'single'
+  p.state.parent = pop.parent
+  p.state.x = pop.gate.x_channel
+  p.state.y = pop.gate.y_channel
+  p.state.xt = pop.gate.x_transform.kind
+  p.state.yt = pop.gate.y_transform.kind
+}
+
 async function load() {
   if (props.imageUid) await g.selectImage(props.imageUid, g.valueName, props.popType)
 }
@@ -161,7 +183,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <i class="pi pi-plus" /> Pairs
         </button>
         <!-- FLOW: spatial cell-selection brush (linked brushing → transient cell pop). -->
-        <div v-if="!isTrack" class="seg" v-tooltip.bottom="'Napari linked brushing'">
+        <div v-if="!isTrack" class="seg">
           <!-- showing populations in napari is the ViewerPanel's palette toggle (remembered);
                here we only offer the spatial cell-selection brush. -->
           <button v-tooltip.bottom="'Draw a region on the napari image to highlight those cells here'"
@@ -180,14 +202,12 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                v-tooltip.bottom="'z-slice window: include cells within ± this many slices of the current z (0 = current slice only)'">
           ±<input type="number" min="0" max="50" step="1" v-model.number="g.napariZWindow" />
         </label>
-        <!-- TRACK: push the gated tracks to napari as Tracks layers (needs a running napari + timecourse). -->
-        <button v-if="isTrack" class="cc-btn cc-btn-ghost"
-                v-tooltip.bottom="'Show the gated tracks in napari (Tracks layers)'"
-                @click="g.showTracks()"><i class="pi pi-share-alt" /> Tracks</button>
-        <div class="seg" v-tooltip.bottom="'Arrange windows'">
+        <div class="seg">
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
+                @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <span class="gp-hint">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
@@ -207,9 +227,11 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                            @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
                            @update:line-width="setLineWidth" @update:gate-labels="setLabels"
-                           @update:axis-from-zero="setFromZero" />
+                           @update:axis-from-zero="setFromZero" @show-defining-plot="showDefiningPlot" />
       </div>
     </template>
+    <GatingCopyDialog v-if="showCopy" :set-uid="setUid" :source-uid="props.imageUid!"
+                      :value-name="g.valueName" :pop-type="props.popType" @close="showCopy = false" />
   </div>
 </template>
 

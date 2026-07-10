@@ -1597,6 +1597,13 @@ end
             @test [df[1, "bbox-$j"] for j in 0:4] == Float32[0, 0, 71, 2, 29]
             @test [df[2, "bbox-$j"] for j in 0:4] == Float32[0, 7, 368, 4, 38]
 
+            # is_tracked's signal: a tracked segmentation carries a track_id obs column (KDIeEm/B is
+            # tracked). track_props / the track-grained gating plots key off this to say "track first"
+            # (empty) instead of erroring when it's absent.
+            obs = col_names(label_props(h5); data_type=:obs)
+            @test "track_id" in obs
+            @test !("not_a_column" in obs)
+
             # lazy column selection — only requested columns (+ label) are returned
             @test names(label_props(h5) |> select_cols(["area"]) |> as_df) == ["label", "area"]
 
@@ -1992,6 +1999,27 @@ end
     # A cluster pop is a filter on the `clusters.{suffix}` column (clustPops/clustTracks output):
     # filter_fun="in", filter_values=[ticked cluster ids]. Stored in its own sidecar so it never
     # collides with flow gates. Headless — membership via a recompute! closure (no fixture).
+    # gating pop types = the hand-drawn ones (flow=cells, track=tracks); clust/trackclust are filters.
+    # Drives copy-to-images + the defining-plot view (one abstraction over both, no flow special-casing).
+    @testset "GATING_POP_TYPES" begin
+        @test GATING_POP_TYPES == ("flow", "track")
+        @test is_gating_pop_type("flow") && is_gating_pop_type("track")
+        @test !is_gating_pop_type("clust") && !is_gating_pop_type("trackclust") && !is_gating_pop_type("live")
+    end
+
+    # generic value_name presence check on an image (drives copy-to-images target filtering).
+    # `_active` is a bookkeeping key, not a value_name → excluded by versioned_keys.
+    @testset "img_has_value_name" begin
+        proj = create_project!(name="vn-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="i")
+        img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad", "_active" => "A")
+        @test Set(img_value_names(img)) == Set(["A", "B"])
+        @test img_has_value_name(img, "A") && img_has_value_name(img, "B")
+        @test !img_has_value_name(img, "C") && !img_has_value_name(img, "_active")
+        rm(proj.root; recursive=true)
+    end
+
     @testset "clust / trackclust pop types" begin
         td = mktempdir()
         # each clustering pop_type routes to its OWN gating sidecar (no collision with flow's {vn}.json)
@@ -2067,6 +2095,15 @@ end
         @test test_pop.pop_type == "track" && test_pop.colour == "#f59e0b"
         @test only(p for p in tp if p.path == "/qc").pop_type == "live"
         @test !any(p.path == "/TEST/_tracked" for p in tp)          # no track-derived pop registered
+
+        # root_derived_ok predicate: hide the root-level /_tracked (the API passes false when tracking
+        # was gated → root is a redundant duplicate of /qc/_tracked) while KEEPING the per-pop derived
+        # children. Default (no predicate) still offers root /_tracked — asserted by `cell` above.
+        gated = plot_population_groups([:img1], names_for, load, plot_pop_types("live", "cell");
+                                       root_derived_ok = (_v, _pt, dpath) -> dpath != "/_tracked")
+        gpaths = [p.path for p in gated[1].populations]
+        @test !("/_tracked" in gpaths)                              # root hidden
+        @test "/qc/_tracked" in gpaths && "/qc/sub/_tracked" in gpaths   # per-gate derived kept
 
         # cross-image UNION + dedup: two images both expose "C" → each (pop_type, path) appears once
         dedup = plot_population_groups([:img1, :img2], names_for, load, ["live"])

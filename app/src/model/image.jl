@@ -86,6 +86,14 @@ function img_label_props_path(img::CciaImage, value_name::AbstractString="defaul
     joinpath(img_label_props_dir(img), filename)
 end
 
+# Generic value_name checks over a versioned property field (default `label_props` = the segmentations).
+# It's just "does this versioned field carry this value_name" — reusable wherever a feature must know
+# whether an image has a given value_name before acting on it (e.g. copying gating across images).
+img_value_names(img::CciaImage; field::Symbol = :label_props)::Vector{String} =
+    versioned_keys(getfield(img, field))
+img_has_value_name(img::CciaImage, value_name::AbstractString; field::Symbol = :label_props)::Bool =
+    String(value_name) in img_value_names(img; field = field)
+
 # Per-track table suffix. A tracked segmentation gets a companion `.h5ad` holding ONE row per
 # track (track measures in X/var, lineage in obs) alongside the per-cell labelProps. The double
 # underscore keeps it distinct from a segmentation literally named "{x}_tracks" and marks the

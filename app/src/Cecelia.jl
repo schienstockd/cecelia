@@ -19,7 +19,7 @@ export load_project, init_object
 export create_project!, add_image!, add_set!, images, sets
 export delete_image!, delete_set!
 export active, set_active!, value_names, img_filepath, img_zero_dir, img_physical_sizes, image_included
-export img_label_props_dir, img_label_props_path, img_track_props_path
+export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path
@@ -47,13 +47,14 @@ export Density2D, density_2d
 export Population, PopulationMap, ROOT
 export pop_parent, pop_name, pop_path, is_root
 export add_pop!, set_gate!, rename_pop!, del_pop!
-export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths
+export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, has_ungated_tracks
+export GATING_POP_TYPES, is_gating_pop_type
 export flatten_pop_tree, plot_pop_types, plot_population_groups
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df
 export plot_summary_data
-export track_props, track_cell_measures
+export track_props, track_cell_measures, is_tracked
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
 
 # ── Task system ───────────────────────────────────────────────────────────────

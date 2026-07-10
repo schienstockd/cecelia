@@ -170,6 +170,10 @@ coordinates live in **transformed** space; `xTicks`/`yTicks` give `{pos, label}`
 | `/api/gating/pop/delete` | `path` (cascades to descendants) |
 | `/api/gating/pop/rename` | `path`, `newName` (cascades child paths) → also returns `path` (new) |
 
+**Copy gating across images** (does NOT return `{tree}`): `POST /api/gating/copy` `{projectUid, imageUid (source), valueName, popType, toImageUids:[…]}` → `{copied:[uid], skipped:{uid→why}}`. Replaces each target's gating sidecar for the ONE gating pop_type (`flow`/`track`; validated via `is_gating_pop_type`) with the source's — membership recomputes per image on read, so gates alone suffice (no per-image recompute). Targets lacking the `valueName` segmentation are skipped. Broadcasts `gating:popmap` per target. Plot layout is copied client-side (canvas store), not here. Ports R "Propagate to Selected".
+
+`POST /api/images/value-name-check` `{projectUid, valueName, imageUids:[…]}` → `{available:[uid], missing:[uid]}` — generic value_name-presence check per image (`img_has_value_name`), NOT gating-specific; the copy dialog uses it (`imagesWithValueName`) to flag/exclude targets without the segmentation up front.
+
 **Gate spec** (JSON, readable by Julia + Python):
 ```json
 { "kind": "rectangle", "x_channel": "mean_intensity_0", "y_channel": "mean_intensity_1",

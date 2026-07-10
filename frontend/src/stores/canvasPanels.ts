@@ -31,6 +31,18 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
     delete entries.value[key]
     for (const k of Object.keys(geom.value)) if (k.startsWith(`${key}:`)) delete geom.value[k]
   }
+  // Deep-copy one canvas's full layout (entry + all panel geometry) to another key. Used by "copy
+  // gating strategy → other images" with the plot-layout option: clones gate:{pt}:{src}:{vn} onto
+  // gate:{pt}:{tgt}:{vn}. Autosave then persists the new key to the TARGET object's file (the key's
+  // 3rd colon-segment). No-op if the source has no saved layout.
+  function copyEntry(srcKey: string, tgtKey: string) {
+    const src = entries.value[srcKey]
+    if (!src) return
+    entries.value[tgtKey] = JSON.parse(JSON.stringify(src))
+    for (const [k, v] of Object.entries(geom.value)) {
+      if (k.startsWith(`${srcKey}:`)) geom.value[`${tgtKey}${k.slice(srcKey.length)}`] = { ...v }
+    }
+  }
   // last-persisted JSON per object uid — the dirty-tracking baseline so autosave sends ONLY objects
   // whose canvas state actually changed since the last save (not every visited object).
   let _lastSaved: Record<string, string> = {}
@@ -109,5 +121,5 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
   }
   watch([entries, geom], _scheduleAutosave, { deep: true })
 
-  return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, clear, load }
+  return { entries, geom, ensure, getGeom, setGeom, delGeom, drop, copyEntry, clear, load }
 })

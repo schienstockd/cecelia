@@ -246,6 +246,13 @@ const POP_MAP_SUFFIX = Dict{String,String}(
     "clust"      => "__clust",
     "trackclust" => "__trackclust",
 )
+
+# The pop types that are hand-drawn *gating* (a gate geometry per pop), as opposed to the
+# filter/membership pop types (clust/trackclust) and the derived `live`. `flow` gates cells, `track`
+# gates tracks — one abstraction over both so gating features (e.g. copy-to-images, the defining-plot
+# view) treat them uniformly instead of special-casing flow. Single source of truth.
+const GATING_POP_TYPES = ("flow", "track")
+is_gating_pop_type(pop_type) = String(pop_type) in GATING_POP_TYPES
 gating_dir(task_dir::AbstractString) = joinpath(task_dir, "gating")
 gating_path(task_dir::AbstractString, value_name::AbstractString; pop_type::AbstractString="flow") =
     joinpath(gating_dir(task_dir), value_name * get(POP_MAP_SUFFIX, pop_type, "") * ".json")
@@ -543,6 +550,37 @@ surface them. Generic over `_DERIVED_POPS`, so future reserved pops appear autom
 derived_pop_paths(pop_type::AbstractString)::Vector{String} =
     ["/" * name for (name, spec) in _DERIVED_POPS if spec.pop_type == String(pop_type)]
 
+"""
+    has_ungated_tracks(img; value_name) -> Bool
+
+True when the segmentation has tracked cells (`track_id > 0`) that fall OUTSIDE every stored (flow)
+gate — i.e. tracking was run ungated on the whole segmentation, so a root-level `/_tracked` pop is
+real. False when every tracked cell sits within a gate (tracking was gated, e.g. to `/qc`), which
+makes a root `/_tracked` a redundant duplicate of the per-gate `/<gate>/_tracked`; false too when the
+segmentation isn't tracked. The pop picker uses this to decide whether to offer the root `/_tracked`.
+"""
+function has_ungated_tracks(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing)::Bool
+    is_tracked(img; value_name=value_name) || return false
+    vn = something(value_name, get(img.label_props, "_active", "default"))
+    cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, ["track_id"]) |> as_df
+    "track_id" in names(cell) || return false
+    tracked = Set{Any}()
+    for i in eachindex(cell[!, "label"])
+        t = cell[i, "track_id"]
+        (t isa Real && isfinite(t) && t > 0) && push!(tracked, cell[i, "label"])
+    end
+    isempty(tracked) && return false
+    # cells covered by any stored flow gate (empty/absent map → tracks can't be gated → ungated)
+    fm = try; load_pop_map(img; value_name=vn, pop_type="flow"); catch; nothing; end
+    (fm === nothing || isempty(fm.order)) && return true
+    covered = try
+        Set(pop_df(img, "flow", collect(fm.order); value_name=vn)[!, "label"])
+    catch
+        return true                                    # can't evaluate gates → don't hide the pop
+    end
+    any(t -> !(t in covered), tracked)
+end
+
 # ── Summary-canvas population picker (logic lives here, NOT in the API — api/plotting_api.jl is a
 #    thin wrapper; this is Revise-tracked + headless-testable per docs/ARCHITECTURE.md) ────────────
 
@@ -587,7 +625,8 @@ first-appearance order; `load_map` returning `nothing`/throwing for a missing (v
 skipped.
 """
 function plot_population_groups(imgs, value_names_for::Function, load_map::Function,
-                                pop_types::Vector{String})
+                                pop_types::Vector{String};
+                                root_derived_ok::Function = (_v, _pt, _dpath) -> true)
     # Gateless pop_type (`labels` = ungated all-cells, R parity): there is no gating map to flatten —
     # each segmentation IS its own population, named by its value_name. One selectable entry per vn, so
     # the user overlays whole segmentations (B, T, …) side by side. The path is the fixed "/labels" tag
@@ -629,6 +668,7 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
     for v in vn_order
         rebuilt = Tuple{String,String}[]
         for pt in pop_types, dpath in derived_pop_paths(pt)              # root-level derived, at the top
+            root_derived_ok(v, pt, dpath) || continue                   # e.g. hide root /_tracked when gated
             key = (pt, dpath)
             haskey(meta[v], key) || (meta[v][key] = (pop_name(dpath), "#7c93b8", pt))
             key in rebuilt || push!(rebuilt, key)

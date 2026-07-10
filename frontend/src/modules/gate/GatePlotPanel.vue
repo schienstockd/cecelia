@@ -23,6 +23,7 @@ import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
 import { coalesceByKey } from '../../utils/coalesce'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -67,6 +68,9 @@ const xTicks = ref<{ pos: number; label: string }[]>([])
 const yTicks = ref<{ pos: number; label: string }[]>([])
 const popLayers = ref<PopLayer[]>([])
 const loading = ref(false)
+// server flag: a track-grained plot (popType track/trackclust) on a segmentation that hasn't been
+// tracked → show a "track first" message instead of an empty plot. Set from plotmeta.
+const notTracked = ref(false)
 const pending = ref<Partial<GateSpec> | null>(null)
 const newName = ref('')
 
@@ -121,7 +125,8 @@ async function fetchMeta() {
   const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as {
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
-    usedX?: Kind; usedY?: Kind; gates?: SrvGate[] }
+    usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean }
+  notTracked.value = meta.tracked === false
   extents.value = { xMin: meta.xExtent[0], xMax: meta.xExtent[1], yMin: meta.yExtent[0], yMax: meta.yExtent[1] }
   viewExtents.value = { ...extents.value }
   xTicks.value = meta.xTicks; yTicks.value = meta.yTicks
@@ -261,6 +266,10 @@ watch(childGateSig, fetchGates)
 // a highlighted pop's membership changed elsewhere → refresh just its colour layer
 const hlVersion = computed(() => (props.highlight ?? []).reduce((s, p) => s + (g.popVersion[p] ?? 0), 0))
 watch(hlVersion, loadPopLayers)
+// a task finished on the image we show (e.g. tracking → track_id appears, so a track plot goes from
+// "not tracked" to populated) → full reload. Same universal mechanism every other plot uses; gated by
+// the global autoRefreshOnTask setting. Interactive gating was the one plot family not wired in.
+useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 // initial load is handled by the { immediate: true } store-readiness watch above.
 </script>
 
@@ -313,6 +322,11 @@ watch(hlVersion, loadPopLayers)
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
+      <!-- untracked segmentation on a track plot: nothing to show, point the user at tracking -->
+      <div v-if="notTracked" class="gate-empty">
+        <i class="pi pi-share-alt" />
+        <span>Not tracked yet — run tracking on this segmentation first.</span>
+      </div>
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus
@@ -365,6 +379,12 @@ watch(hlVersion, loadPopLayers)
 /* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
 .gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
   font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
+
+/* centred empty-state over the plot: track-grained pop type on an untracked segmentation */
+.gate-empty { position: absolute; inset: 0; margin: auto; width: max-content; height: max-content;
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px; pointer-events: none;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 6px;
+  font-size: 12px; color: var(--cc-text-dim); }
 .gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: 3px;
   padding: 0 3px; color: var(--cc-text); }
 </style>
