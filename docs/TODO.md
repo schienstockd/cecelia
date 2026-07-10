@@ -252,6 +252,15 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00087** — **Drop redundant `compactness` morphology measure** (2026-07-10)
+`compactness` and `sphericity` were computing the identical value (bit-for-bit equal on real data): the
+port had re-derived compactness as `(36π·V²)^(1/3)/A`, which equals the Wadell sphericity exactly. Even
+the old R formula (`surface_area^1.5/volume`) is a monotone transform of sphericity — both are pure
+functions of the isoperimetric ratio `A³/V²` — so it carries no independent information (and R had it
+commented out of its own feature lists). Removed the `compactness` column from `measure_utils.py`; keep
+`sphericity` plus the orthogonal `solidity`/`extent`. Deliberate deviation from R, noted at the code
+site. Affects newly measured images only (existing `.h5ad` keep the column until re-measured).
+
 **#00086** — **Dev worktree switch in Settings → System** (2026-07-10)
 Added a dev-only dropdown to relaunch the backend from another git worktree without the console.
 `GET /api/app/worktrees` lists `git worktree list`; `POST /api/app/switch-worktree {path}` records the
