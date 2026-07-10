@@ -32,6 +32,13 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariAsDask') !== 'false'  // default true
   )
 
+  // Render napari on the discrete GPU (hybrid-graphics machines, Linux only). Persisted here and
+  // re-asserted to the backend each session (App.vue) so the bridge launches on the right GPU; the
+  // backend holds the authoritative launch-time flag. Effective on the next bridge (re)start.
+  const napariDiscreteGpu = ref(
+    localStorage.getItem('cc.napariDiscreteGpu') === 'true'  // default false
+  )
+
   // ── Layout: collapse the main nav sidebar (left) and the module function/tasks panel (right)
   // to free up working space. Both default expanded, both persist across sessions.
   const sidebarCollapsed = ref(localStorage.getItem('cc.sidebarCollapsed') === 'true')
@@ -111,8 +118,9 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
+  watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible }
 })

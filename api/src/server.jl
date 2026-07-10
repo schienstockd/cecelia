@@ -210,6 +210,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_logs_recent()
         elseif path == "/api/napari/status"
             api_napari_status(req)
+        elseif path == "/api/napari/gpu"
+            api_napari_gpu_get(req)
         elseif path == "/api/notebooks"
             api_notebooks_list(req)
         elseif path == "/api/notebooks/status"
@@ -322,6 +324,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_screenshot(body_bytes)
         elseif path == "/api/napari/restart"
             api_napari_restart(body_bytes)
+        elseif path == "/api/napari/gpu"
+            api_napari_gpu_set(body_bytes)
         elseif path == "/api/napari/configure-autosave"
             api_napari_configure_autosave(body_bytes)
         elseif path == "/api/napari/show-labels"

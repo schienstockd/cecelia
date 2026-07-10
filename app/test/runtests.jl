@@ -50,6 +50,25 @@ end
         @test !isempty(projects_dir())
         @test !isempty(python_bin_path())
         @test tasks_concurrent_limit() >= 1
+        @test napari_discrete_gpu() isa Bool   # [napari].discreteGpu, default false
+    end
+
+    # ── Napari discrete-GPU launch env ──────────────────────────────────────────
+    # The bridge command gains the offload env only when discrete_gpu is on (Linux). DRI_PRIME is
+    # always applied (safe on single-GPU); the NVIDIA GLX vendor var only when NVIDIA is present.
+    @testset "Napari discrete-GPU command" begin
+        plain = Cecelia._bridge_cmd(false)
+        @test plain.env === nothing                          # no env override → inherits parent
+        gpu = Cecelia._bridge_cmd(true)
+        if Sys.islinux()
+            @test gpu.env !== nothing
+            @test any(==("DRI_PRIME=1"), gpu.env)             # always safe → always applied
+            # nvidia GLX vendor var is gated on detection (forcing it without NVIDIA breaks GL)
+            has_nvidia = any(startswith("__GLX_VENDOR_LIBRARY_NAME=nvidia"), gpu.env)
+            @test has_nvidia == Cecelia._nvidia_present()
+        else
+            @test gpu.env === nothing                         # no-op off Linux
+        end
     end
 
     # ── Model: create project and image ───────────────────────────────────────

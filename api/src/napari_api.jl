@@ -7,6 +7,22 @@ const _viewer_lock     = ReentrantLock()
 const _pending_open    = Ref{Any}(nothing)
 const _viewer_starting = Ref(false)
 
+# Runtime toggle for launching the bridge on the discrete GPU (see app/src/napari.jl → launch!).
+# Authoritative at launch time. `nothing` = not yet resolved → seed lazily from the
+# CECELIA_NAPARI_DISCRETE_GPU env var, then the `[napari].discreteGpu` config default. The Settings
+# switch flips it via POST /api/napari/gpu; the frontend re-asserts its saved choice each session.
+const _napari_discrete_gpu = Ref{Union{Bool,Nothing}}(nothing)
+
+function _napari_gpu()::Bool
+    isnothing(_napari_discrete_gpu[]) || return _napari_discrete_gpu[]
+    envv = lowercase(strip(get(ENV, "CECELIA_NAPARI_DISCRETE_GPU", "")))
+    seed = envv in ("1", "true", "yes", "on") ? true :
+           envv in ("0", "false", "no", "off") ? false :
+           napari_discrete_gpu()
+    _napari_discrete_gpu[] = seed
+    seed
+end
+
 # Track what's currently open so we can auto-save before switching images
 const _current_zarr_path = Ref{Union{String,Nothing}}(nothing)
 const _current_task_dir  = Ref{Union{String,Nothing}}(nothing)
@@ -101,9 +117,10 @@ function _ensure_viewer!()::Bool
         v = NapariViewer()
         _viewer_ref[] = v
         _viewer_starting[] = true
+        gpu = _napari_gpu()
         @async begin
             try
-                launch!(v)   # blocks until bridge is up
+                launch!(v; discrete_gpu = gpu)   # blocks until bridge is up
                 _execute_pending_open()
             catch e
                 @warn "Napari launch failed" exception = e
@@ -349,7 +366,7 @@ function api_napari_restart(body_bytes::Vector{UInt8})
     isnothing(v) && return api_napari_open(body_bytes)
     _with_viewer() do
         try
-            restart!(v)
+            restart!(v; discrete_gpu = _napari_gpu())
             200, JSON3.write((; ok = true))
         catch e
             500, JSON3.write((; error = sprint(showerror, e)))
@@ -675,4 +692,21 @@ end
 
 function api_napari_status(req::HTTP.Request)
     200, JSON3.write((; alive = _viewer_alive(), starting = _viewer_starting[]))
+end
+
+# ── REST: discrete-GPU toggle ─────────────────────────────────────────────────
+# GET  /api/napari/gpu             → { discreteGpu, supported }
+# POST /api/napari/gpu { enabled } → set the runtime flag; effective at the NEXT bridge launch, so
+#   the caller restarts napari (needsRestart) to apply it now. `supported` is false off Linux, where
+#   the flag is a no-op (GPU choice is an OS/driver setting there).
+function api_napari_gpu_get(req::HTTP.Request)
+    200, JSON3.write((; discreteGpu = _napari_gpu(), supported = Sys.islinux()))
+end
+
+function api_napari_gpu_set(body_bytes::Vector{UInt8})
+    data = try; JSON3.read(String(body_bytes), Dict{String,Any}); catch
+        return 400, JSON3.write((; error = "invalid JSON body")); end
+    _napari_discrete_gpu[] = Bool(get(data, "enabled", false))
+    200, JSON3.write((; discreteGpu = _napari_discrete_gpu[], supported = Sys.islinux(),
+                        needsRestart = _viewer_alive()))
 end

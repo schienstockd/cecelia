@@ -302,7 +302,9 @@ watch(hlVersion, loadPopLayers)
            v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
       <label class="ax-row"><span class="ax-lbl">pop</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
-        <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select></label>
+        <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
+        <!-- affordance beside the pop selector (out of the plot): the draw tool stays armed, hold Shift to grab/move/resize -->
+        <span v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</span></label>
     </div>
     <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
@@ -311,8 +313,6 @@ watch(hlVersion, loadPopLayers)
                      :mode="mode" :gate-line-width="gateLineWidth" :gate-labels="gateLabels"
                      :view-tick="viewTick" :loading="loading"
                      @draw="onDraw" @edit="onEdit" @cancel="mode = 'off'">
-      <!-- brief affordance: the draw tool stays armed, hold Shift to grab/move/resize a gate -->
-      <div v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</div>
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus
@@ -362,9 +362,9 @@ watch(hlVersion, loadPopLayers)
 .panel-name input.name-invalid { border-color: var(--cc-danger, #ef4444); }
 .name-hint { color: var(--cc-danger, #ef4444); font-size: 10px; max-width: 150px; line-height: 1.2; }
 /* subtle draw-mode affordance (top-right of the plot); mirrors .panel-name but muted and non-interactive */
-.gate-hint { position: absolute; top: 4px; right: 4px; pointer-events: none; display: flex; align-items: center; gap: 4px;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 4px; padding: 2px 6px;
-  font-size: 10px; color: var(--cc-text-dim); }
+/* inline affordance beside the pop selector (was overlaid on the plot, which obscured gating) */
+.gate-hint { margin-left: 2px; pointer-events: none; display: inline-flex; align-items: center; gap: 4px;
+  font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
 .gate-hint kbd { font: inherit; background: var(--cc-surface-2); border: 1px solid var(--cc-border); border-radius: 3px;
   padding: 0 3px; color: var(--cc-text); }
 </style>

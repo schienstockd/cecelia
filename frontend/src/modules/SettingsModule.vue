@@ -156,6 +156,39 @@ const guiPort = computed(() => location.port || (location.protocol === 'https:' 
 const svcBusy = ref('')     // which row's action is in flight ('napari' | 'notebooks' | 'app')
 const svcMsg = ref('')
 
+// ── Napari discrete-GPU toggle ──────────────────────────────────────────────
+// Persisted in the settings store (localStorage); the backend holds the authoritative launch-time
+// flag. `gpuSupported` is false off Linux (there GPU choice is an OS/driver setting → toggle is a
+// no-op). Flipping it POSTs the flag and restarts napari (if running) so it takes effect now.
+const gpuSupported = ref(true)
+const gpuBusy = ref(false)
+async function loadGpu() {
+  try {
+    const d = await (await fetch('/api/napari/gpu')).json()
+    gpuSupported.value = d.supported !== false
+  } catch { /* leave optimistic default; toggle still works */ }
+}
+async function toggleGpu() {
+  gpuBusy.value = true; svcMsg.value = ''
+  const which = settings.napariDiscreteGpu ? 'discrete' : 'default'
+  try {
+    const res = await fetch('/api/napari/gpu', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: settings.napariDiscreteGpu }),
+    })
+    const d = await res.json()
+    if (d.needsRestart) {
+      await svcPost('/api/napari/restart')
+      svcMsg.value = `Napari restarting on the ${which} GPU — reopen the image to reload its layers.`
+    } else {
+      svcMsg.value = `Napari will use the ${which} GPU next time it starts.`
+    }
+  } catch {
+    svcMsg.value = 'Could not update the GPU setting.'
+  } finally { gpuBusy.value = false; setTimeout(pollServices, 500) }
+}
+onMounted(loadGpu)
+
 async function pollServices() {
   try { napariRaw.value = await (await fetch('/api/napari/status')).json() } catch { napariRaw.value = null }
   try { notebooksRaw.value = await (await fetch('/api/notebooks/status')).json() } catch { notebooksRaw.value = null }
@@ -370,6 +403,22 @@ async function switchWt(path: string) {
           </button>
           <button v-if="napariSt !== 'stopped'" class="save-btn ghost" :disabled="svcBusy === 'napari'"
                   @click="napariAction('stop')"><i class="pi pi-stop" /> Stop</button>
+        </span>
+      </div>
+
+      <!-- discrete-GPU toggle: launches the napari bridge on the dGPU (hybrid-graphics machines).
+           Linux only; disabled with a hint elsewhere. Flipping it restarts napari to apply. -->
+      <div class="field" style="margin: 0.2rem 0 0.6rem;">
+        <label class="toggle-row"
+               :class="{ disabled: !gpuSupported || gpuBusy }"
+               v-tooltip.right="'Render napari on the discrete GPU (hybrid graphics). Restarts napari to apply. Linux only.'">
+          <input type="checkbox" v-model="settings.napariDiscreteGpu"
+                 :disabled="!gpuSupported || gpuBusy" @change="toggleGpu" />
+          <span class="toggle-label">Use discrete GPU for napari</span>
+          <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:0.7rem;" />
+        </label>
+        <span v-if="!gpuSupported" class="field-hint">
+          Only configurable on Linux — on this system the GPU is selected by the OS/driver.
         </span>
       </div>
 
@@ -597,6 +646,8 @@ async function switchWt(path: string) {
   user-select: none;
 }
 .toggle-row input { accent-color: var(--cc-accent); cursor: pointer; }
+.toggle-row.disabled { opacity: 0.5; cursor: not-allowed; }
+.toggle-row.disabled input { cursor: not-allowed; }
 
 .no-project {
   font-size: 0.8rem;
