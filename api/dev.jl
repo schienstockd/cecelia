@@ -37,7 +37,11 @@ function _free_port(port::Integer)
                 run(pipeline(`taskkill /PID $(last(split(strip(ln)))) /F /T`; stdout = devnull, stderr = devnull); wait = false)
             end
         else
-            pids = try readchomp(`lsof -ti tcp:$port`) catch; "" end
+            # -sTCP:LISTEN restricts to the process LISTENING on the port. Without it, `lsof -ti tcp:$port`
+            # also returns PIDs holding an ESTABLISHED connection to it — i.e. the browser (the open tab's
+            # page load + Vite HMR websocket) — so `kill` would reap Firefox/Chrome too (it crashes on a
+            # worktree switch). Mirrors the Windows branch's LISTENING filter above.
+            pids = try readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`) catch; "" end
             isempty(pids) || run(pipeline(`kill $(split(pids))`; stdout = devnull, stderr = devnull))
         end
     catch e
