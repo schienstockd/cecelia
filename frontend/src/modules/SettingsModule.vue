@@ -196,6 +196,15 @@ async function quitApp() {
   await appCtl.quit()
   svcMsg.value = appCtl.message
 }
+// dev worktree switch: relaunch the backend from another checkout (backend/:8080 only)
+onMounted(() => appCtl.refreshWorktrees())
+async function switchWt(path: string) {
+  if (!path) return
+  svcMsg.value = 'Switching worktree…'
+  await appCtl.switchWorktree(path)
+  svcMsg.value = appCtl.message
+  pollServices()
+}
 </script>
 
 <template>
@@ -333,6 +342,20 @@ async function quitApp() {
             </template>
           </ConfirmButton>
         </span>
+      </div>
+
+      <!-- dev worktree switch: relaunch the backend from another git worktree (avoids the console).
+           Backend :8080 only — a frontend-only branch still needs its own Vite (see docs/DEV.md). -->
+      <div v-if="diag?.dev && appCtl.canSwitch && appCtl.worktrees.length > 1" class="svc-row">
+        <span class="svc-name">Worktree</span>
+        <select class="wt-select" :disabled="appCtl.busy"
+                :value="appCtl.worktrees.find(w => w.current)?.path ?? ''"
+                @change="switchWt(($event.target as HTMLSelectElement).value)"
+                v-tooltip.top="'Relaunch the backend from another git worktree (dev). The page reconnects when it is back.'">
+          <option v-for="w in appCtl.worktrees" :key="w.path" :value="w.path">
+            {{ w.branch }}{{ w.current ? ' (current)' : '' }}
+          </option>
+        </select>
       </div>
 
       <div class="svc-row">
@@ -584,6 +607,7 @@ async function quitApp() {
 .svc-row { display: grid; grid-template-columns: 8rem 7rem 3.5rem 1fr; align-items: center;
   column-gap: 0.6rem; margin-bottom: 0.55rem; }
 .svc-name { font-size: 0.8rem; color: var(--cc-text); }
+.wt-select { font-size: 0.8rem; padding: 2px 6px; max-width: 18rem; }
 .svc-pill { justify-self: start; display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.72rem;
   color: var(--cc-text-dim); padding: 0.1rem 0.55rem; border: 1px solid var(--cc-border); border-radius: 999px;
   white-space: nowrap; }

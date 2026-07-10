@@ -252,6 +252,14 @@ batch it rather than churn standalone.
 
 ## Fixed
 
+**#00086** — **Dev worktree switch in Settings → System** (2026-07-10)
+Added a dev-only dropdown to relaunch the backend from another git worktree without the console.
+`GET /api/app/worktrees` lists `git worktree list`; `POST /api/app/switch-worktree {path}` records the
+target's `api/` dir in a sentinel file and exits with the restart code; `api/dev.jl` relaunches the
+child from that dir (loads the other worktree's project + code). Dev + supervised only; page reconnects
+via the shared `appControl` lifecycle (same as Restart). Backend :8080 only — a frontend branch still
+needs its own Vite. Docs: `docs/DEV.md`.
+
 **#00084** — **Windows CI frontend build: "Cannot find native binding" (rolldown)** (2026-07-09)
 The `windows-latest` CI leg intermittently failed at `npm run build` with `Cannot find module
 '@rolldown/binding-win32-x64-msvc'`. vite 8 bundles with rolldown, whose per-platform native binding is
