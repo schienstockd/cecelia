@@ -14,6 +14,7 @@
 
 const RESTART_EXIT_CODE = 42
 const FRONTEND_PORT = 5173
+const BACKEND_PORT  = 8080   # dev default; the by-handle kill covers a custom port, this is the backstop
 
 # Worktree switch (dev only, Settings → System): the server writes a target `api/` dir here, then exits
 # with the restart sentinel; we relaunch the backend FROM THAT DIR (and the frontend from the sibling
@@ -42,7 +43,12 @@ function _free_port(port::Integer)
             # page load + Vite HMR websocket) — so `kill` would reap Firefox/Chrome too (it crashes on a
             # worktree switch). Mirrors the Windows branch's LISTENING filter above.
             pids = try readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`) catch; "" end
-            isempty(pids) || run(pipeline(`kill $(split(pids))`; stdout = devnull, stderr = devnull))
+            if !isempty(pids)
+                run(pipeline(`kill $(split(pids))`; stdout = devnull, stderr = devnull))
+                sleep(0.4)                                    # give SIGTERM a moment, then force survivors
+                left = try readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`) catch; "" end
+                isempty(left) || run(pipeline(`kill -9 $(split(left))`; stdout = devnull, stderr = devnull))
+            end
         end
     catch e
         @warn "[dev] could not free port $port" exception = e
@@ -79,18 +85,25 @@ function supervise()
     julia = Base.julia_cmd().exec[1]   # this julia's executable; child gets its own flags (-t auto, Revise)
     workdir = @__DIR__                 # api/ of the worktree the server currently runs from
     vite = _start_frontend(dirname(workdir))
+    # Track the running backend so teardown can kill it. CRITICAL: the backend is spawned NON-blocking
+    # (`wait=false`) and we block on `wait(proc)` — with the old blocking `run(...; wait=true)` the handle
+    # wasn't captured until the call returned, so a Ctrl-C mid-run left the supervisor with nothing to
+    # kill, and the backend julia (which SURVIVES a bare terminal SIGINT) + Vite were orphaned on their
+    # ports. Now Ctrl-C interrupts `wait`, and `finally` kills BOTH children by handle + frees the ports.
+    backend = Ref{Union{Base.Process,Nothing}}(nothing)
     try
         while true
             # `--project` (no path) + relative `includet` resolve against the child's cwd → running it in
             # `workdir` loads that worktree's environment and server.
-            backend = Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`; dir = workdir)
-            proc = try
-                run(ignorestatus(backend); wait = true)  # inherits stdio + env (CECELIA_DEV/SUPERVISED/SWITCH_FILE)
+            backend[] = run(ignorestatus(Cmd(`$julia --project -t auto -e "using Revise; includet(\"src/server.jl\")"`;
+                                              dir = workdir)); wait = false)  # inherits stdio + env
+            try
+                wait(backend[])                           # block until it exits; Ctrl-C interrupts HERE
             catch e
-                e isa InterruptException && break         # Ctrl-C → stop supervising (finally stops Vite)
-                rethrow()
+                e isa InterruptException || rethrow()
+                break                                     # Ctrl-C → stop supervising (finally tears down)
             end
-            proc.exitcode == RESTART_EXIT_CODE || break   # 0 / crash / signal → done
+            backend[].exitcode == RESTART_EXIT_CODE || break   # 0 / crash / signal → done
 
             # relaunch target: the switch file names another worktree's api dir, else stay put.
             newdir = workdir
@@ -109,6 +122,10 @@ function supervise()
             end
         end
     finally
+        # Kill BOTH children on any exit (Ctrl-C, Quit, crash). The backend survives SIGINT, so kill it
+        # by handle and free :8080 as a backstop; _stop_frontend does the same for Vite (:5173).
+        try; backend[] === nothing || kill(backend[]); catch; end
+        _free_port(BACKEND_PORT)
         _stop_frontend(vite)
     end
 end
