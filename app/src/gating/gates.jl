@@ -156,7 +156,30 @@ function project_gate(g::Gate, xcol::AbstractString, ycol::AbstractString,
             "x_min" => min(ax, bx), "x_max" => max(ax, bx),
             "y_min" => min(ay, by), "y_max" => max(ay, by))
     else
-        Dict{String,Any}("kind" => "polygon",
-            "vertices" => [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices])
+        verts = g.vertices
+        # display transforms applied to the gate's OWN x/y channels (swap maps gate-x → plot-Y)
+        gxt = swap ? yt : xt
+        gyt = swap ? xt : yt
+        straight = transform_spec(g.x_transform) == transform_spec(gxt) &&
+                   transform_spec(g.y_transform) == transform_spec(gyt)
+        pts = if straight
+            # same transform → edges stay straight, keep the raw corners (a later edit round-trips cleanly)
+            [collect(to_disp(vx, vy)) for (vx, vy) in verts]
+        else
+            # a straight edge in the gate's transform is a CURVE in a different display transform — sample
+            # K points along each edge (in the gate's space) and map each, so the outline follows the curve.
+            K = 12
+            n = length(verts)
+            out = Vector{Vector{Float64}}()
+            for i in 1:n
+                (ax, ay) = verts[i]; (bx, by) = verts[mod1(i + 1, n)]
+                for s in 0:(K - 1)
+                    t = s / K
+                    push!(out, collect(to_disp(ax + t * (bx - ax), ay + t * (by - ay))))
+                end
+            end
+            out
+        end
+        Dict{String,Any}("kind" => "polygon", "vertices" => pts)
     end
 end

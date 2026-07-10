@@ -127,6 +127,14 @@ async function fetchMeta() {
   effYt.value = meta.usedY ?? yt.value
   serverGates.value = meta.gates ?? []
 }
+// refresh ONLY the server-projected child-gate outlines — gates come from plotmeta now, so a gate
+// added/edited/deleted (here or on another plot) needs a re-fetch to appear. Keeps the current axes
+// (no extent/tick reset), so it's cheap enough to run on every membership change.
+async function fetchGates() {
+  if (!g.imageUid || !xChan.value || !yChan.value) return
+  const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as { gates?: SrvGate[] }
+  serverGates.value = meta.gates ?? []
+}
 // just the base population points (cheap; regl redraw is instant → smooth membership updates). Uses the
 // EFFECTIVE transforms so the cloud matches the extent + projected gates fetchMeta set.
 async function fetchPoints() {
@@ -150,6 +158,7 @@ async function fetchPlot() {
 // membership refresh (another plot changed a gate on the pop we're showing) — no axis reload
 async function refreshMembership() {
   try {
+    await fetchGates()                    // outlines are server-projected → refresh them on any gate change
     if (parent.value !== 'root') await fetchPoints()
     await loadPopLayers()
   } catch (e) {
@@ -187,7 +196,8 @@ async function confirmGate() {
   const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
   const ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
   pending.value = null
-  if (ok) loadPopLayers()   // new child → its outline is reactive; refresh its colour layer
+  if (ok) { await fetchGates(); loadPopLayers() }   // pull the new server-projected outline + its colour layer
+
 }
 
 // existing gate moved/resized/vertex-edited on the canvas → persist (server recomputes + broadcasts)

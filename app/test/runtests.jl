@@ -1899,9 +1899,17 @@ end
         # polygon vertices map pointwise
         pgp = PolygonGate("cd4", "cd8", [(0.4543375762, 0.4543375762), (0.9069275915, 0.4543375762),
                                          (0.9069275915, 0.9069275915)]; x_transform=lcp, y_transform=lcp)
+        # onto a DIFFERENT display transform (logicle→linear) the edges curve → sampled 12 pts/edge
         pjp = project_gate(pgp, "cd4", "cd8", lin, lin)
-        @test pjp["kind"] == "polygon" && length(pjp["vertices"]) == 3
-        @test pjp["vertices"][1][1] ≈ 1000.0 atol=1e-2
+        @test pjp["kind"] == "polygon"
+        @test length(pjp["vertices"]) == 36                 # 3 edges × 12 samples
+        @test pjp["vertices"][1][1] ≈ 1000.0 atol=1e-2       # first sample = corner 1
+        # edge 1 is horizontal (y const ≈1000); its midpoint (idx 7 = t=0.5) bows far below the straight
+        # chord's linear midpoint (~50500) — that bow is the curve the sampling captures.
+        @test pjp["vertices"][7][2] ≈ 1000.0 atol=1e-2
+        @test pjp["vertices"][7][1] < 50000
+        # onto the SAME transform edges are already straight → corners kept (clean edit round-trip)
+        @test length(project_gate(pgp, "cd4", "cd8", lcp, lcp)["vertices"]) == 3
     end
 
     # ── Gating engine: density ────────────────────────────────────────────────
