@@ -88,6 +88,18 @@ function duplicatePanel(src: { state: PanelState }) {
   if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis } }
 }
 
+// "Show series": explode this panel by measurement — one duplicate per selected measure, so all the
+// track measurements (speed, displacement, straightness, …) are visible side by side instead of
+// flipping the single measure dropdown. Same deep-clone as duplicatePanel, overriding `measure`.
+function explodePanel(src: { state: PanelState }, measures: string[]) {
+  for (const m of measures) {
+    add()
+    const p = panels.value.at(-1)
+    if (p) p.state = { ...src.state, sel: [...src.state.sel], vis: { ...src.state.vis }, measure: m }
+  }
+  arrangeGrid()   // tile them so the whole set is visible at once (the point of "show series")
+}
+
 // useSummaryData prunes the GLOBAL selection when pops vanish; prune each panel's LOCAL selection here.
 watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.filter(k => validSelKeys.value.has(k)) })
 </script>
@@ -146,7 +158,7 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
                         :ui="p.state" :collapse-series="poolGroups"
                         :reload-token="reloadToken" :persist-key="`${ckey}:${p.id}`"
                         @activate="activeId = p.id" @remove="remove(p.id)"
-                        @duplicate="duplicatePanel(p)" />
+                        @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)" />
         </template>
         <SeriesPicker :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
                       @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />

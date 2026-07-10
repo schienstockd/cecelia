@@ -10,8 +10,8 @@ import GatingPlots from './gate/GatingPlots.vue'
 
 <template>
   <ModuleLayout module="gate" :show-attrs="true" :show-filter="true" :single-select="true" plots-label="Gating">
-    <template #plots="{ selectedUids }">
-      <GatingPlots :image-uid="selectedUids[0] ?? null" />
+    <template #plots="{ selectedUids, orderedUids, selectUids }">
+      <GatingPlots :image-uid="selectedUids[0] ?? null" :ordered-uids="orderedUids" :select-uids="selectUids" />
     </template>
   </ModuleLayout>
 </template>

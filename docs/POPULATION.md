@@ -241,8 +241,20 @@ not by the route.
 - **Set level** (later): pool across images, add a `uID` column — image results `vcat`. The
   dedup key picks up `uID` automatically once present.
 
+### `resolve_pops` — cached per-pop membership + display attrs
+
+`resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}` is the sibling accessor for per-pop
+*consumers* (the napari Points overlay): one `(path, name, colour, show, is_track, labels)` per
+**non-transient, non-empty** stored population of one segmentation — where `pop_df` returns a pooled
+cell frame, this returns the populations themselves with their member IDs and display metadata. It
+recomputes membership from the on-disk map + cell table and **caches on `img._pop_df_cache` under the
+same mtime-folded key trick** (`(value_name, pop_type, gating-map mtime, h5ad mtime)`), so a caller
+iterating every segmentation for a napari refresh only recomputes the one whose gate/h5ad changed. The
+transient napari-selection pop is excluded (it's the selection *source*). Cell pop_types only
+(`flow`/`clust`); track pops go through the Tracks overlay.
+
 REPL contract (headless, no API/UI): `add_pop!`, `set_gate!`, `recompute!`,
-`cells_in_pop`, `pop_df`, `save_pop_map!`/`load_pop_map`.
+`cells_in_pop`, `pop_df`, `resolve_pops`, `save_pop_map!`/`load_pop_map`.
 
 ## Gating engine
 
@@ -297,9 +309,14 @@ per-pop CSV.
 
 - **Napari** is a pure consumer — it never evaluates gates. Two linked directions
   (`docs/NAPARI.md`):
-  - *show populations*: `POST /api/napari/show-populations` → Julia recomputes → sends per-pop
-    label IDs + colours → bridge colours centroid Points layers (reads centroids locally). The
-    transient "Napari selection" pop is **excluded** here (it's the selection *source*; rendering
+  - *show populations*: `POST /api/napari/show-populations` → Julia resolves the in-scope
+    segmentation(s) via `resolve_pops` (per-pop `value_name` + label IDs + colours) → bridge colours
+    centroid Points layers (reads centroids locally, per value_name), layer per (segmentation, pop).
+    A blank scope shows ALL segmentations (overlay independent of the "active" one); a live gate edit
+    scopes to the edited segmentation (bridge prunes only within it) so it stays cheap. `resolve_pops`
+    is **cached** per `(value_name, pop_type, gating-map mtime, h5ad mtime)` — same auto-invalidation
+    trick as `pop_df` (`_pop_df_cache`), so an unchanged segmentation is free even on a full refresh.
+    The transient "Napari selection" pop is **excluded** here (it's the selection *source*; rendering
     it back stole napari's active layer mid-draw).
   - *cell selection (linked brushing)*: user draws a region on the image → bridge POSTs the
     inside cells' label IDs to `/api/napari/event` → Julia stores them and broadcasts the tree

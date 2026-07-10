@@ -675,10 +675,14 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
         end
         for (pt, path) in order[v]                                       # each stored pop, then its derived children
             push!(rebuilt, (pt, path))
+            parent_colour = meta[v][(pt, path)][2]                       # inherit the stored pop's colour…
             for dpath in derived_pop_paths(pt)
                 cpath = path * dpath                                     # dpath starts with "/" → "/qc" * "/_tracked"
                 key = (pt, cpath); haskey(meta[v], key) && continue
-                meta[v][key] = (pop_name(dpath), "#7c93b8", pt); push!(rebuilt, key)
+                # …so a derived child (e.g. /qc/_tracked) shows in its parent's colour rather than a
+                # generic grey. The parent's colour IS editable (gating page) but the derived child's
+                # isn't (read-only on the behaviour page), so propagating keeps them visually paired.
+                meta[v][key] = (pop_name(dpath), parent_colour, pt); push!(rebuilt, key)
             end
         end
         order[v] = rebuilt
@@ -738,6 +742,50 @@ function _pop_df_cache_key(img::CciaImage, pop_type, value_name, pops, pop_cols,
              join(sort(String.(collect(categorical))), "&"),
              join(stamps, "|"))
     string(hash(parts))
+end
+
+"""
+    resolve_pops(img, pop_type; value_name) -> Vector{NamedTuple}
+
+Resolve a segmentation's stored populations to display-ready, membership-resolved entries: one per
+**non-transient, non-empty** population of `value_name` under `pop_type`, as
+`(path, name, colour, show, is_track, labels)` where `labels` is the pop's member cell IDs (raw label
+IDs for cell pop_types). Membership is recomputed from the on-disk gating map + cell table, then
+**cached on the image** (`_pop_df_cache`, `Dict{String,Any}`) under a key folding the gating-map and
+h5ad mtimes — the SAME auto-invalidation trick `pop_df` uses (`_pop_df_mtime`). So an unchanged
+segmentation returns instantly, and a saved gate edit on ONE segmentation invalidates only its entry
+(a caller iterating every segmentation — e.g. a napari overlay refresh — then only recomputes the one
+that changed). Complements `cells_in_pop` (one pop, live map): this is the whole set, cached.
+
+The transient napari-selection pop is intentionally excluded (it's the selection *source*; rendering
+it back would steal napari's active layer). Cell pop_types only (`flow`/`clust`) — track pops go
+through the Tracks overlay (`show_tracks`), not this points path.
+"""
+function resolve_pops(img::CciaImage, pop_type::AbstractString;
+                      value_name::AbstractString)::Vector{NamedTuple}
+    pt = String(pop_type)
+    ckey = string("poplayers:", value_name, ":", pt, "@",
+                  _pop_df_mtime(gating_path(img._dir, value_name; pop_type = pt)),
+                  "/", _pop_df_mtime(img_label_props_path(img, value_name)))
+    cached = get(img._pop_df_cache, ckey, nothing)
+    cached === nothing || return cached::Vector{NamedTuple}
+    m = load_pop_map(img; value_name = value_name, pop_type = pt)
+    # membership eval uses RAW column names (gates store raw intensity column names). No transient
+    # napari-selection injection here — it must not enter the cached (pure on-disk) result.
+    fetch = cols -> (lp = label_props(img; value_name = value_name);
+                     isempty(cols) || select_cols(lp, cols); as_df(lp))
+    recompute!(m, fetch)
+    out = NamedTuple[]
+    for path in pop_paths(m)
+        p = pop_at(m, path)
+        p.transient && continue
+        labs = Int.(cells_in_pop(m, path))
+        isempty(labs) && continue
+        push!(out, (path = p.path, name = p.name, colour = p.colour,
+                    show = p.show, is_track = p.is_track, labels = labs))
+    end
+    img._pop_df_cache[ckey] = out
+    out
 end
 
 """

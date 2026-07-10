@@ -21,8 +21,9 @@ const { defs: trackingDefs, reload: reloadDefs } = useTaskDefs('tracking')
     <!-- Track-property gating: the SAME gating canvas as the Gate page, in track mode (one point
          per track; gate on motility / per-track aggregates). Active when exactly one image is
          selected. Reuses GatingPlots via popType — no track-specific component. -->
-    <template #plots="{ selectedUids }">
-      <GatingPlots :image-uid="selectedUids.length === 1 ? selectedUids[0] : null" pop-type="track" />
+    <template #plots="{ selectedUids, orderedUids, selectUids }">
+      <GatingPlots :image-uid="selectedUids.length === 1 ? selectedUids[0] : null" pop-type="track"
+                   :ordered-uids="orderedUids" :select-uids="selectUids" />
     </template>
   </ModuleLayout>
 </template>

@@ -221,7 +221,7 @@ const defs = useTaskDefs('segmentImages')
 
 - `#actions="{ hasSet }"` — items injected into the action bar before the image count (e.g. "Add images" button). `hasSet` is `true` when a set is active — use it to disable the button.
 - `#right="{ setUid, selectedUids, selectedNames }"` — the right-hand panel. All three slot props are computed inside `ModuleLayout`; the module page does not need its own refs for them.
-- `#plots="{ setUid, selectedUids, selectedNames, selectUids }"` — **the module's plot canvas.** `ModuleLayout` wraps it in ONE consistent, collapse-persisted `CollapsibleSection` (label via the `plotsLabel` prop, default `'Plots'`). **Do not wrap it yourself** — this is what makes every module page's plot canvas collapse the same way. This is the canonical place for the summary/gating/cluster canvas.
+- `#plots="{ setUid, selectedUids, selectedNames, selectUids, orderedUids }"` — **the module's plot canvas.** `ModuleLayout` wraps it in ONE consistent, collapse-persisted `CollapsibleSection` (label via the `plotsLabel` prop, default `'Plots'`). **Do not wrap it yourself** — this is what makes every module page's plot canvas collapse the same way. This is the canonical place for the summary/gating/cluster canvas. `selectUids(uids)` drives the table selection from the canvas; `orderedUids` is the visible image list in table order (filtered/hide-excluded applied) — used by the gating prev/next (`«`/`»`) buttons to step selection through the list.
 - `#below-table="{ setUid, selectedUids, selectedNames, selectUids }"` — extra *custom* content below the plots (rare). Wrap each piece in `<CollapsibleSection>` yourself; multiple sections supported.
 
 If you need the active set in the module page itself (e.g. Import's file-browser guard), import `useProjectStore` and call `project.activeSet()` directly.
@@ -344,6 +344,29 @@ placeholder rather than a real per-slice calibration on real data. Clicking the 
 `PhysicalSizeDialog.vue` right there (own local `physSizeDialogUid` ref — no page navigation),
 focused on that image with the current checkbox selection carried in as the target set for
 Apply/Fill-flagged. Shown on every module page — the icon isn't gated behind `showAttrs`/`module`.
+
+**Frozen left columns.** The table lives in a `.table-scroll` (`overflow-x: auto`) wrapper; the
+checkbox, viewer-eye, and **name** columns are `position: sticky` at fixed left offsets (0 / 36 / 68px)
+so the image identity stays put while the channel/attr columns scroll (Excel-style freeze). Frozen
+cells carry an opaque per-row background (`--row-bg`, set for hover/selected) so scrolled columns pass
+under them; the header row sits above the body via `z-index`.
+
+**Dimension columns.** A **Z** column (z-slice count) shows only when some image in the set is a
+z-stack (`sizeZ > 1`); a **Duration** column (timelapse span = `(sizeT − 1) × timeIncrement`, formatted
+via `utils/imageTable.ts → timelapseDuration`) shows only when some image is a timelapse (`sizeT > 1`)
+— so 2D single-timepoint sets aren't cluttered with empty columns. All fields come straight from the
+`CciaImage` payload (`sizeZ`/`sizeT`/`timeIncrement`/`timeIncrementUnit`).
+
+**Excluded images are selectable on the import + metadata pages only** (`module === 'import' |
+'metadata'` → `canSelectExcluded`): you curate/edit metadata there, including on excluded images, so
+their checkboxes are enabled and select-all includes them. Everywhere else the selection stays the
+runnable (included) subset (`includedUids`).
+
+**CSV export** lives in `ModuleLayout`'s table-tools bar (next to Filter/Excluded): `exportCsv` →
+`utils/imageTable.ts → imageTableCsvRows` (pure, tested) → `rowsToCsv`/`downloadBlob`
+(`plots/export.ts`). It exports **every** image including excluded ones (flagged `Excluded` + the
+`Exclusion note`), one aligned column per channel (`Channel 1…N`, value = the channel name) plus
+Z/frames/duration/pixel-size and one column per attr.
 
 **QC badge.** Separate from the metadata warning (which is import-metadata-specific), a row shows a
 `pi-flag` **QC** badge when `qcSummary(img)` (`frontend/src/lib/qc.ts`) finds any QC finding on the

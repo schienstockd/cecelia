@@ -243,3 +243,22 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: plotmeta gate-autoscale helpers" begin
+    # _gates_bbox: display-space bbox over a mixed rectangle + polygon gate list
+    @test _gates_bbox([]) == (Inf, -Inf, Inf, -Inf)          # nothing to enclose
+    rect = Dict{String,Any}("kind" => "rectangle", "x_min" => 1.0, "x_max" => 3.0,
+                            "y_min" => -2.0, "y_max" => 0.5)
+    poly = Dict{String,Any}("kind" => "polygon", "vertices" => [[5.0, 1.0], [6.0, -4.0], [4.5, 2.0]])
+    @test _gates_bbox([rect]) == (1.0, 3.0, -2.0, 0.5)
+    bb = _gates_bbox([rect, poly])
+    @test bb == (1.0, 6.0, -4.0, 2.0)                        # union across both gate kinds
+
+    # _include_range: only the side a gate actually exceeds moves; margin = fraction of the span
+    @test _include_range((0.0, 10.0), Inf, -Inf) == (0.0, 10.0)   # no finite gate → unchanged
+    @test _include_range((0.0, 10.0), 2.0, 8.0)  == (0.0, 10.0)   # gate inside → unchanged
+    lo, hi = _include_range((0.0, 10.0), -5.0, 20.0)              # exceeds both sides
+    @test lo == -5.0 - 0.5 && hi == 20.0 + 0.5                    # margin = 0.05 * span(10) = 0.5
+    lo2, hi2 = _include_range((0.0, 10.0), -5.0, 8.0)            # exceeds low side only
+    @test lo2 == -5.5 && hi2 == 10.0
+end

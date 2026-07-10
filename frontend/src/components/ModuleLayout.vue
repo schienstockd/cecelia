@@ -22,7 +22,8 @@
     #right    { setUid, selectedUids,
                 selectedNames }                 — the right-hand panel.
     #plots    { setUid, selectedUids,
-                selectedNames, selectUids }     — the module's plot canvas. ModuleLayout wraps it in
+                selectedNames, selectUids,
+                orderedUids }                   — the module's plot canvas. ModuleLayout wraps it in
                                                   ONE consistent, collapse-persisted CollapsibleSection
                                                   (labelled `plotsLabel`) — do NOT wrap it yourself.
                                                   This is how every module page gets the SAME
@@ -43,6 +44,8 @@ import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
 import { isExcluded } from '../utils/inclusion'
+import { imageTableCsvRows } from '../utils/imageTable'
+import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -195,6 +198,22 @@ function onSelectionChange(uids: string[]) {
 function selectUids(uids: string[]) {
   if (activeSet.value) project.setImageSelection(selScope.value, activeSet.value.uid, uids)
 }
+
+// Export the whole image table to CSV — EVERY image including excluded ones (flagged + their note),
+// one column per attr. Row-building is a pure util (tested); rowsToCsv/downloadBlob are the shared
+// export plumbing (plots/export.ts).
+function exportCsv() {
+  const imgs = activeSet.value?.images ?? []
+  if (!imgs.length) return
+  const rows = imageTableCsvRows(imgs, attrKeys.value)
+  const name = `${activeSet.value?.name ?? 'images'}.csv`.replace(/[^\w.-]+/g, '_')
+  downloadBlob(name, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
+}
+
+// Visible images in table order (filtered list when a filter/hide-excluded is active, else all).
+// Exposed to #plots so a canvas can step selection through the list (gating prev/next navigation).
+const visibleUids = computed<string[]>(() =>
+  filteredUids.value ?? (activeSet.value?.images ?? []).map(i => i.uid))
 </script>
 
 <template>
@@ -225,7 +244,14 @@ function selectUids(uids: string[]) {
           </span>
           <span class="no-set-hint" v-else>{{ noSetHint }}</span>
 
-          <div class="table-tools" v-if="activeSet && (excludedCount > 0 || (showFilter && attrKeys.length > 0))">
+          <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
+            <!-- CSV export: the whole table, including excluded images + their notes -->
+            <button class="filter-toggle" @click="exportCsv"
+              v-tooltip.left="'Export the image table to CSV (includes excluded images and their notes)'">
+              <i class="pi pi-download" />
+              <span class="filter-label">CSV</span>
+            </button>
+
             <!-- Excluded toggle: excluded images show greyed by default; this hides them entirely -->
             <button v-if="excludedCount > 0"
               class="filter-toggle" :class="{ active: hideExcluded }"
@@ -305,6 +331,7 @@ function selectUids(uids: string[]) {
               :selected-uids="selectedUids"
               :selected-names="selectedNames"
               :select-uids="selectUids"
+              :ordered-uids="visibleUids"
             />
           </CollapsibleSection>
 

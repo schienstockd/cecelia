@@ -316,19 +316,22 @@ the sole gate evaluator (`docs/POPULATION.md`); napari never evaluates gates.
 
 ### Consumer direction — `show_populations` (Julia → napari)
 
-`POST /api/napari/show-populations` → `api_napari_show_populations` recomputes the map and sends
-a `show_populations` command per the protocol. The **transient "Napari selection" pop is
-deliberately excluded** from what's pushed back to napari — it is the *source* of a selection,
-and re-rendering it as a Points layer (on every popmap broadcast) added a layer that stole
-napari's active layer, so the user couldn't keep editing the selection shape. It still appears on
-the flow plots.
+`POST /api/napari/show-populations` → `api_napari_show_populations` recomputes **every**
+segmentation's map (like `show-tracks`) and sends one `show_populations` command with all their
+pops — so opening the image / toggling *Show populations* shows every segmentation's gated pops at
+once (`T/qc` **and** `B/qc`), not just the "active" one (which isn't necessarily the segmentation
+you gated). Each pop carries its own `value_name`; the top-level `value_name` is only the bridge's
+per-pop default. The **transient "Napari selection" pop is deliberately excluded** from what's
+pushed back to napari — it is the *source* of a selection, and re-rendering it as a Points layer
+(on every popmap broadcast) added a layer that stole napari's active layer, so the user couldn't
+keep editing the selection shape. It still appears on the flow plots.
 
 ```json
-{ "type": "show_populations", "pop_type": "flow", "value_name": "B", "points_size": 6,
-  "pops": [ { "path": "root", "name": "root", "colour": "#9ca3af", "show": true,
-              "is_track": false, "label_ids": [...] },
-            { "path": "/lnk", "name": "lnk", "colour": "#f59e0b", "show": true,
-              "is_track": false, "label_ids": [0,1,2,...] } ] }
+{ "type": "show_populations", "pop_type": "flow", "value_name": "T", "points_size": 6,
+  "pops": [ { "value_name": "T", "path": "/qc", "name": "qc", "colour": "#f59e0b", "show": true,
+              "is_track": false, "label_ids": [0,1,2,...] },
+            { "value_name": "B", "path": "/qc", "name": "qc", "colour": "#f59e0b", "show": true,
+              "is_track": false, "label_ids": [7,8,9,...] } ] }
 ```
 
 The bridge owns **only** display: it reads cell **centroids locally** from the H5AD
@@ -336,11 +339,12 @@ The bridge owns **only** display: it reads cell **centroids locally** from the H
 `centroid-i` (skimage z,y,x order) + temporal `t` onto the image's display axes, and renders one
 Points layer per population, coloured by the pop colour (layer `visible` = the pop's `show` flag).
 Ports the old `napari_utils.show_pop_mapping`, minus the per-pop CSV crutch. Two details:
-- **Layer name = full population path**: `(pop_type) {path}` (e.g. `(flow) /A/B/C`), not the leaf
-  name — so nested pops are unambiguous in the layer list. The bridge falls back to `name` only if
-  `path` is absent.
-- **The root (whole segmentation) is included** as a `"path": "root"` pop (grey), so all cells are
-  visible and the user can spatially select from the full segmentation, not just gated children.
+- **Layer name = segmentation + full population path**: `(pop_type) ({value_name}) {path}` (e.g.
+  `(flow) (T) /A/B/C`), not the leaf name — so nested pops AND pops from different segmentations are
+  unambiguous in the layer list. The bridge falls back to `name` only if `path` is absent, and to the
+  call's top-level `value_name` if a pop omits its own.
+- **The root (whole segmentation) is NOT rendered** — a grey all-cells layer is noise that obscures
+  the actual populations; only the defined populations show.
 
 **Per-pop reconciliation (no full flush).** `show_populations` does **not** remove and re-add all
 layers each call — that full flush was prohibitively slow on CODEX images (many populations ×

@@ -4,10 +4,11 @@ import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
-import { useSettingsStore } from '../stores/settings'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
 import { isExcluded, isIncluded, includedUids } from '../utils/inclusion'
+import { timelapseDuration } from '../utils/imageTable'
+import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 
 const props = defineProps<{
@@ -26,7 +27,6 @@ const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
 const taskStore   = useTaskStore()
-const settings    = useSettingsStore()
 
 // opens right where you are — no page navigation needed
 const physSizeDialogUid = ref<string | null>(null)
@@ -203,7 +203,9 @@ function seed() {
   const imgs = images.value
   // keep only stored uids that are still present AND still included (an image excluded while away
   // shouldn't come back selected)
-  let uids = imgs.length ? stored.filter(u => imgs.some(i => i.uid === u && isIncluded(i))) : stored
+  let uids = imgs.length
+    ? stored.filter(u => imgs.some(i => i.uid === u && (canSelectExcluded.value || isIncluded(i))))
+    : stored
   if (props.singleSelect && uids.length > 1) uids = [uids[0]]
   selected.value = new Set(uids)
   emit('selectionChange', [...selected.value])
@@ -219,9 +221,14 @@ watch(() => project.getImageSelection(scope.value, props.setUid).join(','), (csv
   seed()
 })
 
-// Excluded images aren't selectable — select-all and the "all/some" state consider only the
-// included subset (the set that can actually be run).
-const selectableUids = computed(() => includedUids(images.value))
+// On the import + metadata pages excluded images ARE selectable (you curate/edit metadata there,
+// incl. on excluded ones); everywhere else selection is the runnable (included) subset only.
+const canSelectExcluded = computed(() => props.module === 'import' || props.module === 'metadata')
+
+// Selectable set for select-all + the "all/some" header state: all images where excluded are
+// selectable (import/metadata), else only the included (runnable) subset.
+const selectableUids = computed(() =>
+  canSelectExcluded.value ? images.value.map(i => i.uid) : includedUids(images.value))
 const allSelected = computed(() =>
   selectableUids.value.length > 0 && selectableUids.value.every(u => selected.value.has(u))
 )
@@ -287,7 +294,7 @@ async function resyncFlagged() {
 
 function toggle(uid: string) {
   const img = images.value.find(i => i.uid === uid)
-  if (img && isExcluded(img)) return    // excluded images aren't selectable for a run
+  if (img && isExcluded(img) && !canSelectExcluded.value) return   // excluded → not runnable (except import/metadata)
   if (props.singleSelect) {
     // radio-style: clicking selects only this image (clicking the selected one clears it)
     selected.value = selected.value.has(uid) ? new Set() : new Set([uid])
@@ -333,35 +340,13 @@ async function doDelete() {
 
 // ── Napari ────────────────────────────────────────────────────────────────────
 
+const { openInNapari: napariOpen } = useNapariOpen()   // shared open path (see composable)
 async function openInNapari(imageUid: string) {
-  const projectUid = projectMeta.current?.uid
-  if (!projectUid) return
-  // clicking the eye on the ALREADY-open image = reload it. Delegate to ViewerPanel (it owns the
-  // overlay logic), which reloads DATA only unless the user ticked reset — no needless pyramid reopen.
+  // reload short-circuits inside the composable too; skip the loading spinner for a reload
   if (project.napariImageUid === imageUid) { project.requestNapariReload(); return }
   napariLoading.value = new Set([...napariLoading.value, imageUid])
-  const autoProps = settings.napariAutoSaveLayerProps
   try {
-    const res = await fetch('/api/napari/open', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        projectUid,
-        imageUid,
-        autoSaveProps: autoProps,
-        autoLoadProps: autoProps,
-        show3D:        settings.getShow3D(props.setUid),   // per-set (only applied where a z-axis exists)
-        asDask:        settings.napariAsDask,
-      }),
-    })
-    const body = await res.json().catch(() => ({})) as { ok?: boolean; starting?: boolean; message?: string; error?: string }
-    if (res.status === 202 && body.starting) {
-      log.info(body.message ?? 'Napari is starting…', { source: 'viewer' }); return
-    }
-    if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-    log.info('Opened image in Napari.', { source: 'viewer' })
-  } catch (e) {
-    log.error(`Napari: ${e instanceof Error ? e.message : String(e)}`, { source: 'viewer' })
+    await napariOpen(imageUid, props.setUid)
   } finally {
     napariLoading.value = new Set([...napariLoading.value].filter(u => u !== imageUid))
   }
@@ -405,6 +390,11 @@ const channelCount = computed(() => {
 const channelIndices = computed(() =>
   Array.from({ length: channelCount.value }, (_, i) => i + 1)
 )
+
+// Dimension columns only appear when the set actually has a z-stack / timelapse (mirrors the
+// metadata-warning z>1 / t>1 tests), so 2D single-timepoint sets aren't cluttered with empty columns.
+const anyZStack    = computed(() => images.value.some(i => (i.sizeZ ?? 0) > 1))
+const anyTimelapse = computed(() => images.value.some(i => (i.sizeT ?? 0) > 1))
 
 // Union of attr keys across the set, sorted.
 const attrKeys = computed(() => {
@@ -478,7 +468,8 @@ onUnmounted(stopResize)
     <p class="empty-hint">Use <strong>Add images</strong> in the import module to add files.</p>
   </div>
 
-  <table v-else class="image-table">
+  <div v-else class="table-scroll">
+  <table class="image-table">
     <thead>
       <tr>
         <!-- fixed: checkbox (no select-all in single-select mode) -->
@@ -493,8 +484,8 @@ onUnmounted(stopResize)
         <!-- fixed: napari eye -->
         <th class="col-fixed col-viewer" />
 
-        <!-- resizable: name -->
-        <th class="col-resize" :style="{ width: colW('name'), minWidth: colW('name') }">
+        <!-- resizable: name (frozen-left) -->
+        <th class="col-resize col-name" :style="{ width: colW('name'), minWidth: colW('name') }">
           Name
           <button v-if="!singleSelect && flaggedUids.length" class="select-flagged-btn"
             :class="{ active: flaggedActive }" @click.stop="selectFlagged"
@@ -536,6 +527,14 @@ onUnmounted(stopResize)
         <th v-if="!showAttrs" class="col-fixed col-ch"
           v-tooltip.bottom="'Number of channels.'">Ch</th>
 
+        <!-- fixed: z-slices (only when the set has a z-stack) -->
+        <th v-if="anyZStack" class="col-fixed col-ch"
+          v-tooltip.bottom="'Number of z-slices.'">Z</th>
+
+        <!-- fixed: timelapse duration (only when the set has a timelapse) -->
+        <th v-if="anyTimelapse" class="col-fixed col-dur"
+          v-tooltip.bottom="'Total timelapse duration (first → last frame).'">Duration</th>
+
         <!-- fixed: per-module status -->
         <th v-if="module" class="col-fixed col-status">Status</th>
 
@@ -552,9 +551,10 @@ onUnmounted(stopResize)
         @click="toggle(img.uid)"
       >
         <td class="col-fixed col-check" @click.stop>
-          <input type="checkbox" :checked="selected.has(img.uid)" :disabled="isExcluded(img)"
+          <input type="checkbox" :checked="selected.has(img.uid)"
+            :disabled="isExcluded(img) && !canSelectExcluded"
             @change="toggle(img.uid)"
-            v-tooltip.right="isExcluded(img) ? 'Excluded — include it to select for a run.' : undefined" />
+            v-tooltip.right="isExcluded(img) && !canSelectExcluded ? 'Excluded — include it to select for a run.' : undefined" />
         </td>
 
         <td class="col-fixed col-viewer" @click.stop>
@@ -572,7 +572,7 @@ onUnmounted(stopResize)
           </button>
         </td>
 
-        <td class="col-resize td-name">
+        <td class="col-resize td-name col-name">
           <span class="name-row">
             <button v-if="warnIconFor(img)" class="warn-icon-btn" @click.stop="physSizeDialogUid = img.uid"
               v-tooltip.right="warnIconFor(img)!.tip">
@@ -660,6 +660,17 @@ onUnmounted(stopResize)
           <span v-else class="dim">—</span>
         </td>
 
+        <td v-if="anyZStack" class="col-fixed col-ch">
+          <span v-if="(img.sizeZ ?? 0) > 1">{{ img.sizeZ }}</span>
+          <span v-else class="dim">—</span>
+        </td>
+
+        <td v-if="anyTimelapse" class="col-fixed col-dur">
+          <span v-if="timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit)">{{
+            timelapseDuration(img.sizeT, img.timeIncrement, img.timeIncrementUnit) }}</span>
+          <span v-else class="dim">—</span>
+        </td>
+
         <td v-if="module" class="col-fixed col-status">
           <span v-if="imageModuleStatus(img)"
             class="status-badge"
@@ -683,6 +694,7 @@ onUnmounted(stopResize)
       </tr>
     </tbody>
   </table>
+  </div>
 
   <PhysicalSizeDialog v-if="physSizeDialogUid"
     :set-uid="setUid" :focus-uid="physSizeDialogUid" :selected-uids="[...selected]"
@@ -753,7 +765,26 @@ onUnmounted(stopResize)
 .col-check  { width: 36px; min-width: 36px; }
 .col-viewer { width: 32px; min-width: 32px; text-align: center; }
 .col-ch     { width: 40px; min-width: 40px; text-align: center; color: var(--cc-text-dim); }
+.col-dur    { width: 84px; min-width: 84px; text-align: center; color: var(--cc-text-dim); }
 .col-status { width: 100px; min-width: 100px; }
+
+/* ── Frozen left columns (Excel-style freeze panes) ────────────────────────────── */
+/* The table scrolls horizontally inside .table-scroll; the checkbox + viewer + name columns stick to
+   the left so the image identity stays visible. Each frozen cell needs an OPAQUE background (per row
+   state, via --row-bg) so the scrolled columns pass UNDER it; the header sits above the body cells. */
+.table-scroll { overflow-x: auto; width: 100%; }
+.image-row { --row-bg: var(--cc-bg); }
+.image-row:hover { --row-bg: var(--cc-surface-1); }
+.image-row.row-selected { --row-bg: #1b1b29; }          /* ≈ the #a78bfa14 selected tint, opaque */
+.image-table .col-check  { position: sticky; left: 0;    z-index: 2; }
+.image-table .col-viewer { position: sticky; left: 36px; z-index: 2; }   /* after 36px checkbox */
+.image-table .col-name   { position: sticky; left: 68px; z-index: 2; }   /* after 36+32px viewer */
+.image-table tbody .col-check,
+.image-table tbody .col-viewer,
+.image-table tbody .col-name  { background: var(--row-bg); }
+.image-table thead .col-check,
+.image-table thead .col-viewer,
+.image-table thead .col-name  { background: var(--cc-bg); z-index: 3; }  /* header above body */
 .col-actions{ width: 36px; min-width: 36px; text-align: center; }
 .col-ch-name { text-align: center; }
 
