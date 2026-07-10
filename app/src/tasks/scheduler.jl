@@ -198,7 +198,10 @@ function _kill_listeners_on_port(port::Integer)
     try
         out = Sys.iswindows() ?
             readchomp(`powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess"`) :
-            readchomp(`lsof -ti tcp:$port`)   # exits non-zero (throws) when nothing is listening → caught
+            # -sTCP:LISTEN keeps this to the LISTENING process (as the docstring promises + the Windows
+            # `-State Listen` above): plain `lsof -ti tcp:$port` also returns clients CONNECTED to the
+            # port, so we'd kill them too. Exits non-zero (throws) when nothing is listening → caught.
+            readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`)
         for line in split(out, '\n'; keepempty=false)
             p = tryparse(Int, strip(line))
             isnothing(p) || push!(pids, p)

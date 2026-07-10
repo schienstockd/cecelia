@@ -132,10 +132,13 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.instantiate()'"
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
 # after editing napari_bridge.py (the backend otherwise adopts the running bridge on restart).
-stop           = "kill $(lsof -ti tcp:8080) 2>/dev/null ; kill $(lsof -ti tcp:5173) 2>/dev/null ; kill $(lsof -ti tcp:7655) 2>/dev/null ; kill $(lsof -ti tcp:7660) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)'"
-stop-backend   = "kill $(lsof -ti tcp:8080) 2>/dev/null ; echo 'stopped backend(8080)'"
-stop-napari    = "kill $(lsof -ti tcp:7655) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
-stop-notebooks = "kill $(lsof -ti tcp:7660) 2>/dev/null ; echo 'stopped notebooks(7660)'"
+# -sTCP:LISTEN restricts to the LISTENING server; without it lsof also returns clients CONNECTED to the
+# port — the browser on :5173 (page + Vite HMR socket) — so `kill` would crash Firefox/Chrome. Mirrors
+# the win-64 branch's `-State Listen`.
+stop           = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:5173 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)'"
+stop-backend   = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)'"
+stop-napari    = "kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
+stop-notebooks = "kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped notebooks(7660)'"
 
 # Windows: kill by listening port via PowerShell (lsof is unix-only). Untested on Windows hardware.
 [target.win-64.tasks]
