@@ -113,6 +113,16 @@ GitHub-hosted runners are free on all OSes (no minute metering — the multiplie
 repos). All steps run under `bash` (Git Bash on the Windows runner). Keep it green before requesting
 a merge. See `docs/SHIPPING.md` for the release pipeline.
 
+> **Frontend typecheck — use `vue-tsc -b`, never `vue-tsc --noEmit`.** The frontend uses TS **project
+> references**, and `vue-tsc --noEmit` on the root config **silently skips the `.vue` files** (exits 0
+> with real errors). Verify types with **`npm run typecheck`** (`vue-tsc -b`) or `npm run build` —
+> which is exactly what CI runs. **Don't merge a red CI**: a merged type error here (an unimported
+> `ref`, a store method not in the store's `return`, …) throws a `ReferenceError` in a component's
+> `<script setup>`, which Vue surfaces as **`Maximum recursive updates exceeded in component
+> <ModuleLayout>`** and **blanks every module page** — it reads like a reactivity loop, but the root is
+> a setup exception in the child component. (This cost hours on 2026-07-10; CI *had* caught both errors,
+> the PR was merged red.)
+
 ## Releases
 
 Cut **off `main`** after the relevant PRs have merged, by pushing a tag:

@@ -14,7 +14,7 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
