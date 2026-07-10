@@ -230,6 +230,16 @@ watch(() => props.highlight, loadPopLayers, { deep: true })
 // another plot changed the gate of the population we display (or an ancestor) → refresh smoothly
 const parentVersion = computed(() => g.popVersion[parent.value] ?? 0)
 watch(parentVersion, refreshMembership)
+// the outlines we draw are the DIRECT CHILDREN of `parent`. Their set/geometry changes when a child
+// is added, deleted, or edited — here, on another plot, from napari, or via a WS broadcast — but that
+// bumps the CHILD's popVersion, never the displayed parent's, so neither parentVersion nor fetchPlot
+// (axis/parent watch) fires and a deleted child's outline would linger. Watch a signature of the
+// parent's children and re-fetch the outlines when it moves. (Mirrors the montage's `sig`, which
+// already hashes `d.children`; fetchGates is outlines-only, no axis/point reset.)
+const childGateSig = computed(() => g.flat
+  .filter(p => p.parent === parent.value)
+  .map(p => `${p.path}:${JSON.stringify(p.gate ?? null)}`).join('|'))
+watch(childGateSig, fetchGates)
 // a highlighted pop's membership changed elsewhere → refresh just its colour layer
 const hlVersion = computed(() => (props.highlight ?? []).reduce((s, p) => s + (g.popVersion[p] ?? 0), 0))
 watch(hlVersion, loadPopLayers)
