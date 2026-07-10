@@ -23,7 +23,7 @@
       "key": "forceRecompute",
       "label": "Force recompute",
       "type": "bool",
-      "default": false
+      "default": true
     }
   ]
 }

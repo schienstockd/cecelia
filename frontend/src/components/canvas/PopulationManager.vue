@@ -47,6 +47,7 @@ const emit = defineEmits<{
   'update:axisFromZero': [boolean]
   'update:vis': [patch: Partial<VisProps>]
   toggleHighlight: [string]
+  showDefiningPlot: [FlatPop]      // open the plot where this pop's gate was drawn
 }>()
 const g = useGatingStore()
 const log = useLogStore()
@@ -156,6 +157,10 @@ async function addClusterPopulation() {
             <small>{{ fmtPct(g.stats[p.path]?.pctParent) }}</small>
           </span>
 
+          <button v-if="p.gate" class="pm-icon" v-tooltip.left="'Show the plot where this gate was drawn'"
+                  @click.stop="emit('showDefiningPlot', p)">
+            <i class="pi pi-search" />
+          </button>
           <button class="pm-icon" :class="{ lit: isLit(p) }"
                   v-tooltip.left="isLit(p) ? 'Hide colour on plots' : 'Highlight colour on plots'"
                   @click.stop="emit('toggleHighlight', p.path)">

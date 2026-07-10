@@ -444,6 +444,31 @@ function api_projects_canvases(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# POST /api/images/value-name-check  { projectUid, valueName, imageUids: [...] }
+# Partition images by whether they carry the labelProps value_name (segmentation) — a generic
+# building block for any feature that must skip images lacking a value_name (e.g. copy gating across
+# images). Just a value_name-presence check per image (img_has_value_name); returns {available, missing}.
+function api_images_value_name_check(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    proj = String(get(body, :projectUid, ""))
+    vn   = String(get(body, :valueName, ""))
+    uids = get(body, :imageUids, nothing)
+    (uids isa AbstractVector) || return 400, JSON3.write((; error="imageUids required"))
+    isdir(joinpath(projects_dir(), proj)) || return 404, JSON3.write((; error="Project not found: $proj"))
+    available = String[]; missing = String[]
+    for u in uids
+        uid = String(u)
+        ok = try
+            img = init_object(proj, uid)
+            img isa CciaImage && img_has_value_name(img, vn)
+        catch; false end
+        ok ? push!(available, uid) : push!(missing, uid)
+    end
+    200, JSON3.write((; available, missing))
+end
+
 function api_projects_rename(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))

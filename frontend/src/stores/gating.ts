@@ -279,8 +279,6 @@ export const useGatingStore = defineStore('gating', () => {
   }
   // re-push populations to napari after a per-pop visibility change (silent if napari is down)
   const refreshNapariPops = () => _napari('/api/napari/show-populations', true)
-  // track gating: render the gated tracks as napari Tracks layers (one per pop). Loud (user action).
-  const showTracks = () => _napari('/api/napari/show-tracks', false)
   // unified re-push used by the manager's per-pop visibility toggle — routes to the right overlay
   // for the current popType (track → Tracks layers, else → population Points), silent.
   const refreshNapari = () => popType.value === 'track'
@@ -310,6 +308,6 @@ export const useGatingStore = defineStore('gating', () => {
     transientPaths, napariZMode, napariZWindow,
     projectUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
     addPop, addClusterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
-    refreshNapariPops, showTracks, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
+    refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
 })

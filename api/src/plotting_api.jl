@@ -75,7 +75,13 @@ function api_plot_populations(req::HTTP.Request)
         imgs,
         img -> versioned_keys(img.label_props),
         (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt),
-        plot_pop_types(pop_type, granularity))
+        plot_pop_types(pop_type, granularity);
+        # Only offer the root-level `/_tracked` when a segmentation has tracks OUTSIDE its gates
+        # (ungated tracking). When tracking was gated (e.g. to /qc) the root pop is a redundant
+        # duplicate of /<gate>/_tracked and misleadingly implies whole-segmentation tracking.
+        root_derived_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
+            any(im -> (vn in String.(versioned_keys(im.label_props))) &&
+                      has_ungated_tracks(im; value_name = vn), imgs))
     result = [Dict("valueName" => g.value_name,
                    "populations" => [Dict("path" => p.path, "name" => p.name,
                                           "colour" => p.colour, "popType" => p.pop_type)

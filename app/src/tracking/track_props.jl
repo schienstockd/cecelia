@@ -78,6 +78,9 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
     # read tracked cells: track_id + requested measures (label-keyed)
     cols = unique(vcat("track_id", cell_measures))
     cell = label_props(img; value_name=vn) |> lp -> select_cols(lp, cols) |> as_df
+    # segmentation isn't tracked (no track_id column) → no tracks. Return an empty, well-formed table
+    # rather than indexing a missing column (was an unhandled 500 on a track-grained gating plot).
+    "track_id" in names(cell) || return DataFrame(track_id = Int[], num_cells = Int[], label = Int[])
     keep = [r isa Number && !isnan(r) && Int(r) > 0 for r in cell[!, "track_id"]]
     cell = cell[keep, :]
     cell[!, :track_id] = Int.(cell[!, "track_id"])
@@ -124,6 +127,21 @@ function track_props(img::CciaImage; value_name::Union{AbstractString,Nothing}=n
 
     out[!, :label] = out[!, :track_id]         # engine membership is by-`label`
     out
+end
+
+"""
+    is_tracked(img; value_name) -> Bool
+
+Whether segmentation `value_name` has tracks — i.e. its label props carry a `track_id` obs column.
+Cheap: reads only the obs column list, not the data. A track-grained view (`pop_type`
+"track"/"trackclust") of an untracked segmentation has no data, so callers use this to say "track
+first" instead of erroring or showing an empty plot.
+"""
+function is_tracked(img::CciaImage; value_name::Union{AbstractString,Nothing}=nothing)::Bool
+    vn = something(value_name, get(img.label_props, "_active", "default"))
+    lp = label_props(img; value_name=vn)
+    isfile(lp.path) || return false
+    "track_id" in col_names(lp; data_type=:obs)
 end
 
 # numeric aggregate suffixes track_props appends to a base cell measure

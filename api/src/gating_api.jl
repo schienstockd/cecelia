@@ -384,6 +384,15 @@ function api_gating_plotmeta(req::HTTP.Request)
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
     pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    # A track-grained plot (popType track/trackclust) of an untracked segmentation has no data — tell
+    # the client to track first (it shows a message) and skip the empty data reads. `tracked` rides on
+    # every plotmeta response so the client can distinguish "not tracked" from "genuinely no points".
+    if _track_grained(pop_type) && !is_tracked(img; value_name = vn)
+        return 200, JSON3.write((; n = 0, mode = "scatter", tracked = false,
+            xExtent = [0.0, 1.0], yExtent = [0.0, 1.0], xLabel = x, yLabel = y,
+            xTicks = Dict{String,Any}[], yTicks = Dict{String,Any}[],
+            usedX = "linear", usedY = "linear", gates = Dict{String,Any}[]))
+    end
     xt0 = _axis_transform(q, "x"); yt0 = _axis_transform(q, "y")
     # raw extents over the WHOLE dataset (root): used both for ticks (labels read in data units, and
     # selecting a population doesn't rescale the axis) AND to decide auto-linearisation — so the
@@ -429,7 +438,7 @@ function api_gating_plotmeta(req::HTTP.Request)
         push!(gates, pj)
     end
     200, JSON3.write((;
-        n = n, mode = mode,
+        n = n, mode = mode, tracked = true,
         xExtent = [xext[1], xext[2]], yExtent = [yext[1], yext[2]],
         xLabel = x, yLabel = y,
         xTicks = _axis_ticks(xt, rxext[1], rxext[2]),
@@ -620,5 +629,41 @@ function api_gating_pop_rename(body_bytes::Vector{UInt8})
         end
         tree = _persist_and_broadcast!(m, img, body, vn, pt)
         200, JSON3.write((; tree = tree, path = newpath))
+    end
+end
+
+# POST /api/gating/copy  { projectUid, imageUid (source), valueName, popType, toImageUids: [...] }
+# Copy the gating strategy for ONE gating pop_type (flow = cell gates, or track = track gates) from
+# the source image to each target image, by writing the source's gating sidecar to each target —
+# REPLACING any existing gating there. Membership recomputes per image on read, so gates alone are
+# enough (no per-image recompute step, unlike the old R flowGatingSet copy). Plot layout is copied
+# client-side (the canvas store is in-memory + autosaves), not here.
+function api_gating_copy(body_bytes::Vector{UInt8})
+    img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
+    is_gating_pop_type(pt) || return _gerr(400, "Not a gating pop type: $pt (only flow/track)")
+    tgt_raw = get(body, "toImageUids", nothing)
+    (tgt_raw isa AbstractVector && !isempty(tgt_raw)) || return _gerr(400, "toImageUids required")
+    proj    = String(body["projectUid"])
+    src_uid = String(body["imageUid"])
+    _with_popmap_lock() do
+        m = load_pop_map(img; value_name = vn, pop_type = pt)
+        isempty(m.order) && return _gerr(400, "Source image has no $pt gating to copy")
+        copied = String[]; skipped = Dict{String,String}()
+        for t in tgt_raw
+            tuid = String(t)
+            tuid == src_uid && continue
+            timg, terr = _gating_image(proj, tuid)
+            timg === nothing && (skipped[tuid] = "not found"; continue)
+            img_has_value_name(timg, vn) ||
+                (skipped[tuid] = "no segmentation '$vn'"; continue)   # gates would reference absent channels
+            try
+                save_pop_map!(m, timg)                        # writes target gating sidecar (replace)
+                _broadcast_popmap(proj, tuid, vn, pt, m)      # refresh any client viewing the target
+                push!(copied, tuid)
+            catch e
+                skipped[tuid] = sprint(showerror, e)
+            end
+        end
+        200, JSON3.write((; copied = copied, skipped = skipped))
     end
 end

@@ -354,6 +354,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_pop_update(body_bytes)
         elseif path == "/api/gating/pop/rename"
             api_gating_pop_rename(body_bytes)
+        elseif path == "/api/gating/copy"
+            api_gating_copy(body_bytes)
+        elseif path == "/api/images/value-name-check"
+            api_images_value_name_check(body_bytes)
         elseif path == "/api/plot_data"
             api_plot_data(body_bytes)
         elseif path == "/api/repl"

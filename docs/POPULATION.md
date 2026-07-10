@@ -199,6 +199,28 @@ Returns a `DataFrame` with a `pop` column (+ `value_name`, requested cols). Capa
   `_`-leaf (→ 400), and the frontend hints against it while typing. This makes a derived name
   unambiguous and impossible to shadow with a real gate. (Deserialisation via `from_tree` bypasses
   the guard, and the derived injection itself passes `reserved_ok=true`.)
+- **Root `/_tracked` is offered only for *ungated* tracking.** The picker
+  (`plot_population_groups`) injects `/_tracked` under every stored pop (`/qc/_tracked` = qc's tracked
+  subset) but at ROOT only when `has_ungated_tracks(img; value_name)` — i.e. there are tracked cells
+  outside every gate. When tracking was gated (all `track_id>0` cells sit within gates) a root
+  `/_tracked` would just duplicate the per-gate ones and imply whole-segmentation tracking that never
+  happened, so it's suppressed. `is_tracked(img; value_name)` (cheap obs-column check) gates
+  track-grained plots too — an untracked segmentation shows "track first", not an error/empty plot.
+
+## Gating pop types & copy across images
+
+`GATING_POP_TYPES = ("flow", "track")` — the hand-drawn *gating* pop types (`flow` gates cells,
+`track` gates tracks), as opposed to the filter pop types (`clust`/`trackclust`) and derived `live`.
+One abstraction (`is_gating_pop_type`) so gating features treat both uniformly, no flow special-casing.
+
+**Copy gating → other images** (`POST /api/gating/copy`, ports R "Propagate to Selected"): because
+gate geometry lives *in* the `gating/{vn}.json` sidecar (not a binary GatingSet like R) and membership
+recomputes per image on read, copying a strategy is just writing the source sidecar to each target
+(REPLACE) — no per-image gate recompute. Copies ONE pop type at a time (the page's). Targets lacking
+the segmentation are skipped (`img_has_value_name`; the copy dialog prechecks via
+`/api/images/value-name-check` and flags them). The canvas **plot layout** is separate frontend state
+(the canvas store, loaded project-wide + autosaved), so it's copied client-side (`canvasPanels.copyEntry`),
+not by the route.
 - **`value_name=nothing`** resolves to the image's **active** segmentation (same resolution
   as `label_props(img)`); pass a name to set the default value_name for unprefixed pops.
 - **`drop_na`** drops cells that are NA/NaN in any requested `pop_col` (mirrors R popDT

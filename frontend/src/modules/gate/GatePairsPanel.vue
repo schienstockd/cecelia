@@ -17,6 +17,7 @@ import GateMontage from '../../components/plots/GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
 import { downloadDataUrl } from '../../plots/export'
+import { useDataRefresh } from '../../composables/useDataRefresh'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
 const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
@@ -53,10 +54,15 @@ const defs = computed(() => buildPairDefs(channels.value, parent.value, transfor
 // resolved from the store (GateMontage is store-agnostic).
 const highlightPops = computed(() => (props.highlight ?? []).map(path =>
   ({ path, colour: g.flat.find(p => p.path === path)?.colour ?? '#22d3ee' })))
+// a task finished on the image we show (e.g. tracking) → refetch the tiles. Same universal mechanism
+// every other plot uses (gated by autoRefreshOnTask); interactive gating was the gap. Bumping this
+// token flows into reloadKey below, which GateMontage watches to refetch.
+const taskReload = ref(0)
+useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { taskReload.value++ })
 // force a point refresh when membership moves without the tiles changing (ancestor gate edit, napari
 // selection re-evaluated) — the parent's / a highlighted pop's version bumps in the store.
 const reloadKey = computed(() =>
-  `${g.popVersion[parent.value] ?? 0}:${(props.highlight ?? []).map(p => g.popVersion[p] ?? 0).join(',')}`)
+  `${taskReload.value}:${g.popVersion[parent.value] ?? 0}:${(props.highlight ?? []).map(p => g.popVersion[p] ?? 0).join(',')}`)
 
 // channel picker (compact popover)
 const pickOpen = ref(false)
