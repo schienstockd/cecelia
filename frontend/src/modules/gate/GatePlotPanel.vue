@@ -21,6 +21,8 @@ import GateScatterCell from '../../components/plots/GateScatterCell.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl } from '../../plots/export'
+import { childGateSignature } from '../../utils/childGateSig'
+import { coalesceByKey } from '../../utils/coalesce'
 
 const props = defineProps<{
   index: number; active: boolean; parent: string; highlight: string[]
@@ -130,10 +132,20 @@ async function fetchMeta() {
 // refresh ONLY the server-projected child-gate outlines — gates come from plotmeta now, so a gate
 // added/edited/deleted (here or on another plot) needs a re-fetch to appear. Keeps the current axes
 // (no extent/tick reset), so it's cheap enough to run on every membership change.
-async function fetchGates() {
-  if (!g.imageUid || !xChan.value || !yChan.value) return
-  const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as { gates?: SrvGate[] }
-  serverGates.value = meta.gates ?? []
+// Coalesced (see utils/coalesce): adding a gate triggers this both from confirmGate (awaited, so the
+// outline is painted before the call returns) and from the childGateSig watcher. metaQ is child-set-
+// independent and the watcher flush always beats the network round-trip, so both share one in-flight
+// request — one plotmeta call, not two. Keyed on metaQ so an axis change (different key) never reuses
+// a stale in-flight promise.
+const fetchGatesFor = coalesceByKey(async (key: string) => {
+  const meta = await (await fetch(`/api/gating/plotmeta?${key}`)).json() as { gates?: SrvGate[] }
+  // drop a late response whose axes/parent (its metaQ key) no longer match the current view — else a
+  // fetchGates in flight for the old axes could overwrite a fresh fetchMeta's outlines (last-writer race).
+  if (key === metaQ.value) serverGates.value = meta.gates ?? []
+})
+function fetchGates(): Promise<void> {
+  if (!g.imageUid || !xChan.value || !yChan.value) return Promise.resolve()
+  return fetchGatesFor(metaQ.value)
 }
 // just the base population points (cheap; regl redraw is instant → smooth membership updates). Uses the
 // EFFECTIVE transforms so the cloud matches the extent + projected gates fetchMeta set.
@@ -196,7 +208,14 @@ async function confirmGate() {
   const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
   const ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
   pending.value = null
-  if (ok) { await fetchGates(); loadPopLayers() }   // pull the new server-projected outline + its colour layer
+  // await the outline so it's painted before we return; the childGateSig watcher fires too but
+  // coalesces into this same request (see fetchGates). loadPopLayers pulls the new pop's colour layer.
+  if (ok) {
+    try { await fetchGates() } catch (e) {
+      log.error(`Gating add: ${e instanceof Error ? e.message : String(e)}`, { source: 'gating' })
+    }
+    loadPopLayers()
+  }
 
 }
 
@@ -230,6 +249,15 @@ watch(() => props.highlight, loadPopLayers, { deep: true })
 // another plot changed the gate of the population we display (or an ancestor) → refresh smoothly
 const parentVersion = computed(() => g.popVersion[parent.value] ?? 0)
 watch(parentVersion, refreshMembership)
+// the outlines we draw are the DIRECT CHILDREN of `parent`. Their set/geometry changes when a child
+// is added, deleted, or edited — here, on another plot, from napari, or via a WS broadcast — but that
+// bumps the CHILD's popVersion, never the displayed parent's, so neither parentVersion nor fetchPlot
+// (axis/parent watch) fires and a deleted child's outline would linger. Watch a signature of the
+// parent's children and re-fetch the outlines when it moves. (Mirrors the montage's `sig`, which
+// already hashes `d.children`; fetchGates is outlines-only, no axis/point reset.) Signature logic is
+// extracted to utils/childGateSig.ts so it's unit-tested.
+const childGateSig = computed(() => childGateSignature(g.flat, parent.value))
+watch(childGateSig, fetchGates)
 // a highlighted pop's membership changed elsewhere → refresh just its colour layer
 const hlVersion = computed(() => (props.highlight ?? []).reduce((s, p) => s + (g.popVersion[p] ?? 0), 0))
 watch(hlVersion, loadPopLayers)
