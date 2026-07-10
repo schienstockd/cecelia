@@ -383,18 +383,29 @@ function api_gating_plotmeta(req::HTTP.Request)
     vn = _resolve_vn(img, get(q, "valueName", ""))
     x = get(q, "x", ""); y = get(q, "y", "")
     (isempty(x) || isempty(y)) && return _gerr(400, "x and y required")
-    xt = _axis_transform(q, "x"); yt = _axis_transform(q, "y")
-    xv, yv = _plot_xy(img, vn, get(q, "popType", "flow"), x, y, get(q, "pop", ROOT), xt, yt)
+    pop_type = get(q, "popType", "flow"); pop = get(q, "pop", ROOT)
+    xt0 = _axis_transform(q, "x"); yt0 = _axis_transform(q, "y")
+    # raw extents over the WHOLE dataset (root): used both for ticks (labels read in data units, and
+    # selecting a population doesn't rescale the axis) AND to decide auto-linearisation — so the
+    # transform choice is stable across populations, not re-decided per subset. Track-aware via _raw.
+    rxv, ryv = _plot_xy_raw(img, vn, pop_type, x, y, ROOT)
+    rxext = _finite_extrema(rxv); ryext = _finite_extrema(ryv)
+    # A non-linear transform that would collapse a bounded/small-range measure (morphology like
+    # solidity ∈ [0,1]) into a sliver is auto-swapped to linear; usedX/usedY tell the client so it can
+    # flag the axis. Both plotmeta and plotdata transform with these EFFECTIVE transforms, so the
+    # extent and the point cloud always agree. (The client sends its PREFERRED transform; the server
+    # decides what's usable — see docs/POPULATION.md.)
+    # Opt-in via autoLinear=1 (sent by the single flow plot AND the channel-pairs / gating-strategy
+    # montage; other callers keep the requested transform verbatim). usedX/usedY report what was used.
+    auto = get(q, "autoLinear", "") == "1"
+    xt = auto ? effective_transform(xt0, rxext[1], rxext[2]) : xt0
+    yt = auto ? effective_transform(yt0, ryext[1], ryext[2]) : yt0
+    xv, yv = _plot_xy(img, vn, pop_type, x, y, pop, xt, yt)
     n = length(xv)
     density_threshold = parse(Int, get(q, "densityThreshold", "200000"))
     mode = n > density_threshold ? "density" : "scatter"
     xext = _finite_extrema(xv)
     yext = _finite_extrema(yv)
-    # ticks use the raw extent (over the WHOLE dataset, not the pop subset) so labels read in data
-    # units and selecting a population doesn't rescale the axis — track-aware via _plot_xy_raw.
-    rxv, ryv = _plot_xy_raw(img, vn, get(q, "popType", "flow"), x, y, ROOT)
-    rxext = _finite_extrema(rxv)
-    ryext = _finite_extrema(ryv)
     # x0/y0=1 → "whole dataset" axis: origin at raw 0, upper bound = the FULL dataset max (rxext
     # is computed from all cells, not the pop subset), so selecting a population doesn't rescale
     # the axis (FlowJo behaviour). Autoscale (x0=0) fits the displayed population's extent.
@@ -404,12 +415,27 @@ function api_gating_plotmeta(req::HTTP.Request)
     if get(q, "y0", "") == "1"
         yext = (apply_transform(yt, 0.0), apply_transform(yt, float(ryext[2]))); ryext = (0.0, ryext[2])
     end
+    # Child gates of the displayed population, re-projected into the EFFECTIVE display transform so
+    # their outlines land on the dots even when a gate was drawn under a different transform (the client
+    # has no transform math). Colour/path travel so the client renders directly. Membership is untouched.
+    m = load_pop_map(img; value_name = vn, pop_type = pop_type)
+    gates = Dict{String,Any}[]
+    for cpath in direct_children(m, pop)
+        p = m.pops[cpath]
+        p.gate === nothing && continue
+        pj = project_gate(p.gate, x, y, xt, yt)
+        pj === nothing && continue
+        pj["path"] = cpath; pj["colour"] = p.colour
+        push!(gates, pj)
+    end
     200, JSON3.write((;
         n = n, mode = mode,
         xExtent = [xext[1], xext[2]], yExtent = [yext[1], yext[2]],
         xLabel = x, yLabel = y,
         xTicks = _axis_ticks(xt, rxext[1], rxext[2]),
         yTicks = _axis_ticks(yt, ryext[1], ryext[2]),
+        usedX = transform_kind(xt), usedY = transform_kind(yt),
+        gates = gates,
     ))
 end
 

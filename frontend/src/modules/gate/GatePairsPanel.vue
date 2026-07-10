@@ -38,6 +38,8 @@ const g = useGatingStore()
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
 const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v } })
 const transform = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
+// ≥1 tile's transform was auto-linearised (measure range too small) → amber the control + explain
+const coerced = ref(false)
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 const parentOptions = computed(() => ['root', ...g.flat.map(p => p.path)])
@@ -147,9 +149,12 @@ function exportPng() {
             <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * (MAX_CHANNELS - 1) / 2 }} scatter plots). Clear one to swap.</div>
           </div>
         </div>
-        <select class="tsel" v-model="transform" v-tooltip.bottom="'Axis transform (applied to every channel)'">
+        <select class="tsel" :class="{ 'tsel-amber': coerced }" v-model="transform"
+                v-tooltip.bottom="'Axis transform (per channel; auto-linear where the range needs it)'">
           <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option>
         </select>
+        <i v-if="coerced" class="pi pi-exclamation-triangle ax-warn"
+           v-tooltip.bottom="`Some channels’ range is too small for ${transform} — those shown linear`" />
       </div>
     </div>
 
@@ -161,7 +166,7 @@ function exportPng() {
                  :value-name="g.valueName" :pop-type="g.popType" :defs="defs" :col-label="g.colLabel"
                  :render-mode="renderMode" :gate-labels="props.gateLabels" :gate-line-width="props.gateLineWidth"
                  :highlight="highlightPops" :cols="channels.length || 1" :axis-from-zero="props.axisFromZero"
-                 :reload-key="reloadKey">
+                 :reload-key="reloadKey" @coerced="coerced = $event">
       <template #empty>Pick channels above to compare them against each other.</template>
     </GateMontage>
   </CanvasPanel>
@@ -181,6 +186,9 @@ function exportPng() {
 .ax-lbl { width: 2.6rem; color: var(--cc-text-dim); flex-shrink: 0; }
 .ax-chan { width: 12rem; flex: none; }
 .tsel { width: 5.5rem; flex-shrink: 0; }
+/* amber: some channels' range can't use the chosen transform → those tiles auto-shown on linear */
+.tsel.tsel-amber { border-color: #f59e0b; color: #f59e0b; }
+.ax-warn { color: #f59e0b; font-size: 0.7rem; flex-shrink: 0; cursor: help; }
 /* channel multiselect popover */
 .chan-pick { position: relative; flex: 1; min-width: 0; }
 .chan-btn { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 6px;

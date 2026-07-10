@@ -124,3 +124,39 @@ function gate_from_spec(spec::AbstractDict)::Gate
         error("Unknown gate kind: $kind")
     end
 end
+
+# ── Projection for display ──────────────────────────────────────────────────────
+# Re-express a gate's stored geometry (in its OWN transform space) into a target DISPLAY transform,
+# oriented to the plot's (xcol, ycol). The plot's points arrive already in the display transform (see
+# api plotdata), so a gate drawn under a DIFFERENT transform — e.g. drawn on logicle, now shown on a
+# coerced/switched linear axis — must be re-projected or its outline lands nowhere near the dots. The
+# client has no transform math (points/ticks are all server-computed), so this must happen here.
+# Per-axis and monotone: stored → raw (invert the gate's transform) → display (apply the target). Axes
+# transform independently, so a rectangle stays a rectangle; polygon vertices map pointwise (edges
+# approximated by straight segments — fine for a gating outline). Returns a JSON-ready Dict in DISPLAY
+# coords, or `nothing` if the gate isn't on this channel pair (either order). Membership is untouched —
+# this is purely for rendering the outline aligned with the displayed points.
+function project_gate(g::Gate, xcol::AbstractString, ycol::AbstractString,
+                      xt::AxisTransform, yt::AxisTransform)
+    gx, gy = g.x_channel, g.y_channel
+    direct = (gx == xcol && gy == ycol)
+    swap   = (gx == ycol && gy == xcol)
+    (direct || swap) || return nothing
+    # a stored point (on the gate's own x/y axes) → the plot's (x,y) display coordinates
+    to_disp(vgx, vgy) = begin
+        rgx = invert_transform(g.x_transform, vgx)          # raw value on the gate's x-channel
+        rgy = invert_transform(g.y_transform, vgy)          # raw value on the gate's y-channel
+        swap ? (apply_transform(xt, rgy), apply_transform(yt, rgx)) :   # gate x ↦ plot Y, gate y ↦ plot X
+               (apply_transform(xt, rgx), apply_transform(yt, rgy))
+    end
+    if g isa RectangleGate
+        (ax, ay) = to_disp(g.x_min, g.y_min)
+        (bx, by) = to_disp(g.x_max, g.y_max)
+        Dict{String,Any}("kind" => "rectangle",
+            "x_min" => min(ax, bx), "x_max" => max(ax, bx),
+            "y_min" => min(ay, by), "y_max" => max(ay, by))
+    else
+        Dict{String,Any}("kind" => "polygon",
+            "vertices" => [collect(to_disp(vx, vy)) for (vx, vy) in g.vertices])
+    end
+end

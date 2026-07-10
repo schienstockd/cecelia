@@ -53,6 +53,32 @@ Transforms (`linear`, `log`, `asinh`, **`logicle`** — Parks 2006) are implemen
 **once, in Julia**. The API serves *already-transformed* `Float32` coordinates + axis
 tick positions to the browser, so the frontend stays transform-free.
 
+### Auto-linearisation (range-based)
+
+A non-linear transform exists to spread a wide dynamic range; on a **bounded / small-range**
+measure — morphology like `solidity` ∈ [0,1] — it does the opposite and collapses every value into a
+sliver (logicle is calibrated to `T≈262144`, so `1.0` maps a hair above `logicle(0)` → an empty/clipped
+axis). So `plotmeta` (when the client sends `autoLinear=1`) computes `effective_transform` from the
+**whole-dataset** raw extent (stable across populations) and **substitutes `linear`** when the requested
+transform would map the data into < `COERCE_MIN_FRAC` (5%) of its display span (`transforms.jl`). It
+returns the transform it actually used as `usedX`/`usedY`; the client keeps the user's *preferred*
+transform, displays the effective one, marks the axis **amber**, and reverts automatically on a
+compatible measure. `plotmeta` and `plotdata` therefore agree by construction (the client fetches points
+with the effective transform). Membership is untouched — gates keep their own stored transform. Both
+the single flow plot and the channel-pairs / gating-strategy montage opt in (`autoLinear=1`); the montage
+decides per canonical pair and amber-flags its shared transform control when any tile is coerced.
+
+### Gate outlines projected for display
+
+A gate's geometry is stored in the transform it was **drawn** in. If the axis is later shown in a
+different transform (a switched/auto-linearised scale), drawing the stored coordinates as-is puts the
+outline nowhere near the dots — and the client has **no** transform math to fix it. So `plotmeta`
+returns each displayed population's child-gate outlines **re-projected into the effective display
+transform** (`project_gate`: stored → raw via `invert_transform` → display via `apply_transform`, per
+axis; a rectangle stays a rectangle, polygon vertices map pointwise). The client renders them as-is.
+Drawing/editing stamps the **effective** transform on the gate (the space it was drawn in), so
+membership stays correct.
+
 ## Storage
 
 Gating is a **per-segmentation sidecar**, keyed by `value_name`, colocated with the

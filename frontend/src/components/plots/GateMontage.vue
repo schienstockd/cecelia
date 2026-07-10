@@ -13,13 +13,13 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
-import type { GateSpec } from '../../stores/gating'
+import type { GateSpec, TransformSpec } from '../../stores/gating'
 import { plotHostToImageURL } from '../../plots/export'
 import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
-  type PanelDef, type PanelChild, type MontageId, type Ext, type Tick,
-  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson,
+  type PanelDef, type PanelChild, type MontageId, type Ext, type Tick, type SrvGate,
+  idQ, plotQ, canonicalOrient, transposePoints, transposeExt, pearson, effSpec, transposeGate,
 } from '../../plots/montage'
 
 const isScatter = (d: PanelDef) => (d.role ?? 'scatter') === 'scatter'
@@ -47,6 +47,8 @@ const props = withDefaults(defineProps<{
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
   highlight: () => [], cols: null, axisFromZero: true, reloadKey: 0,
 })
+// true when ≥1 tile's preferred transform was auto-linearised (host shows an amber hint on its control)
+const emit = defineEmits<{ coerced: [boolean] }>()
 
 const montageId = computed<MontageId>(() => ({
   projectUid: props.projectUid, imageUid: props.imageUid, valueName: props.valueName, popType: props.popType }))
@@ -74,24 +76,33 @@ async function loadPanels() {
   const tok = ++loadTok
   loading.value = true; err.value = ''
   const id = montageId.value
-  const metaCache = new Map<string, Promise<{ extents: Ext; xTicks: Tick[]; yTicks: Tick[] }>>()
+  interface MetaData { extents: Ext; xTicks: Tick[]; yTicks: Tick[]
+    effA: TransformSpec; effB: TransformSpec; coerced: boolean; gates: SrvGate[] }
+  const metaCache = new Map<string, Promise<MetaData>>()
   const ptsCache = new Map<string, Promise<Float32Array>>()
   const statCache = new Map<string, Promise<number | undefined>>()
 
-  // meta uses the whole-dataset axis (x0=1 in plotQ) → pop-independent range; cache by canonical pair.
+  // meta uses the whole-dataset axis (x0=1) + autoLinear (server may swap a collapsing transform → linear
+  // and report usedX/usedY) → pop-independent; cache by canonical pair. Carries the EFFECTIVE transforms
+  // (for the point fetch) and the server-projected child-gate outlines (canonical orientation).
   const metaFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
     if (!metaCache.has(o.groupKey)) metaCache.set(o.groupKey, (async () => {
-      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero)}`)).json() as {
-        xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[] }
+      const m = await (await fetch(`/api/gating/plotmeta?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero, true)}`)).json() as {
+        xExtent: [number, number]; yExtent: [number, number]; xTicks: Tick[]; yTicks: Tick[]
+        usedX?: string; usedY?: string; gates?: SrvGate[] }
       return { extents: { xMin: m.xExtent[0], xMax: m.xExtent[1], yMin: m.yExtent[0], yMax: m.yExtent[1] },
-               xTicks: m.xTicks, yTicks: m.yTicks }
+               xTicks: m.xTicks, yTicks: m.yTicks,
+               effA: effSpec(m.usedX, o.ta), effB: effSpec(m.usedY, o.tb),
+               coerced: (!!m.usedX && m.usedX !== o.ta.kind) || (!!m.usedY && m.usedY !== o.tb.kind),
+               gates: m.gates ?? [] } as MetaData
     })())
     return metaCache.get(o.groupKey)!
   }
-  const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string) => {
+  // points fetched with the EFFECTIVE transforms so the cloud matches the extent + projected gates.
+  const ptsFor = (o: ReturnType<typeof canonicalOrient>, pop: string, effA: TransformSpec, effB: TransformSpec) => {
     const key = `${pop}|${o.groupKey}`
     if (!ptsCache.has(key)) ptsCache.set(key, (async () =>
-      new Float32Array(await (await fetch(`/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, o.ta, o.tb, props.axisFromZero)}`)).arrayBuffer()))())
+      new Float32Array(await (await fetch(`/api/gating/plotdata?${plotQ(id, pop, o.a, o.b, effA, effB, props.axisFromZero)}`)).arrayBuffer()))())
     return ptsCache.get(key)!
   }
   const labelFor = async (c: PanelChild): Promise<string> => {
@@ -106,15 +117,27 @@ async function loadPanels() {
   }
 
   const corrMap: Record<string, number | null> = {}
+  let anyCoerced = false
   try {
     const entries = await Promise.all(defs.map(async d => {
       const o = canonicalOrient(d)
-      const [m, ptsRaw] = await Promise.all([metaFor(o, d.parentPath), ptsFor(o, d.parentPath)])
+      const m = await metaFor(o, d.parentPath)          // effective transforms decided here…
+      const ptsRaw = await ptsFor(o, d.parentPath, m.effA, m.effB)   // …then points fetched with them
+      if (m.coerced) anyCoerced = true
       corrMap[o.groupKey] = pearson(ptsRaw)   // r is orientation-invariant → compute on the canonical cloud
-      const gates = await Promise.all(d.children.map(async c =>
-        ({ path: c.path, colour: c.colour, gate: c.gate, label: await labelFor(c) })))
+      // outlines come from the server (projected into the effective transform), keyed by path; merge the
+      // child's name/colour/label. Transpose for the mirror tile like the points/extents.
+      const gmap = new Map(m.gates.map(sg => [sg.path, o.swap ? transposeGate(sg) : sg]))
+      const gates = (await Promise.all(d.children.map(async c => {
+        const sg = gmap.get(c.path)
+        if (!sg) return null
+        const gate = { kind: sg.kind, x_channel: d.xChan, y_channel: d.yChan,
+          x_transform: o.swap ? m.effB : m.effA, y_transform: o.swap ? m.effA : m.effB,
+          x_min: sg.x_min, x_max: sg.x_max, y_min: sg.y_min, y_max: sg.y_max, vertices: sg.vertices } as GateSpec
+        return { path: c.path, colour: c.colour, gate, label: await labelFor(c) }
+      }))).filter((g): g is { path: string; colour: string; gate: GateSpec; label: string } => g !== null)
       const popLayers = await Promise.all((props.highlight ?? []).map(async h => {
-        const raw = await ptsFor(o, h.path)
+        const raw = await ptsFor(o, h.path, m.effA, m.effB)
         return { path: h.path, colour: h.colour, points: o.swap ? transposePoints(raw) : raw }
       }))
       const data: PanelData = {
@@ -126,7 +149,7 @@ async function loadPanels() {
       }
       return [d.key, data] as const
     }))
-    if (tok === loadTok) { panelData.value = Object.fromEntries(entries); corrByGroup.value = corrMap }
+    if (tok === loadTok) { panelData.value = Object.fromEntries(entries); corrByGroup.value = corrMap; emit('coerced', anyCoerced) }
   } catch (e) {
     if (tok === loadTok) { err.value = e instanceof Error ? e.message : String(e); panelData.value = {}; corrByGroup.value = {} }
   } finally { if (tok === loadTok) loading.value = false }

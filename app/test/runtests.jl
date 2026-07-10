@@ -1826,6 +1826,25 @@ end
         end
         # vectorised
         @test apply_transform(lc, [0.0, 262144.0]) ≈ [0.1111111111, 1.0] atol=1e-6
+
+        # Range-based auto-linearisation: logicle collapses a bounded 0–1 measure (morphology) but
+        # spreads a real intensity range → effective_transform swaps to linear only for the former.
+        @test transform_kind(lc) == "logicle"
+        @test transform_collapses(lc, 0.02, 1.0)              # solidity ∈ [0,1] → collapses
+        @test !transform_collapses(lc, 0.0, 262144.0)         # full intensity range → fine
+        @test !transform_collapses(lc, 0.0, 5000.0)           # large-range morphology (area) → keep logicle
+        @test effective_transform(lc, 0.02, 1.0) isa LinearTransform
+        @test effective_transform(lc, 0.0, 262144.0) === lc   # untouched
+        @test effective_transform(LinearTransform(), 0.02, 1.0) isa LinearTransform  # linear never coerces
+        @test !transform_collapses(LinearTransform(), 0.02, 1.0)
+        # log needs ≥1 decade above the floor; asinh coerces when all data is inside its ~linear core
+        @test transform_collapses(LogTransform(floor=1.0), 0.5, 5.0)
+        @test !transform_collapses(LogTransform(floor=1.0), 1.0, 1e5)
+        @test transform_collapses(AsinhTransform(cofactor=150.0), 0.0, 1.0)
+        @test !transform_collapses(AsinhTransform(cofactor=150.0), 0.0, 5000.0)
+        # degenerate extent (single value / non-finite) → no coercion, keep requested
+        @test effective_transform(lc, 1.0, 1.0) === lc
+        @test effective_transform(lc, NaN, 1.0) === lc
     end
 
     # ── Gating engine: gates ──────────────────────────────────────────────────
@@ -1856,6 +1875,33 @@ end
             g2 = gate_from_spec(gate_spec(g))
             @test inside(g2, [5.0, 1000.0], [5.0, 1000.0]) == inside(g, [5.0, 1000.0], [5.0, 1000.0])
         end
+
+        # project_gate: re-express a gate's stored geometry into a DISPLAY transform so its outline
+        # aligns with points drawn in that transform (the client has no transform math).
+        lcp = LogicleTransform(T=262144, W=0.5, M=4.5, A=0)
+        # a rectangle stored in logicle coords, projected onto a LINEAR display → raw bounds
+        rgp = RectangleGate("cd4", "cd8", 0.4543375762, 0.9069275915, 0.4543375762, 0.9069275915;
+                            x_transform=lcp, y_transform=lcp)
+        lin = LinearTransform()
+        pj = project_gate(rgp, "cd4", "cd8", lin, lin)
+        @test pj["kind"] == "rectangle"
+        @test pj["x_min"] ≈ 1000.0 atol=1e-2      # invert(logicle, 0.4543) ≈ 1000
+        @test pj["x_max"] ≈ 100000.0 atol=1e-1    # invert(logicle, 0.9069) ≈ 100000
+        # projecting onto the SAME transform is (near) identity
+        same = project_gate(rgp, "cd4", "cd8", lcp, lcp)
+        @test same["x_min"] ≈ 0.4543375762 atol=1e-4
+        # swapped channel order → x/y transposed
+        sw = project_gate(rgp, "cd8", "cd4", lin, lin)
+        @test sw !== nothing
+        @test sw["y_min"] ≈ 1000.0 atol=1e-2
+        # not on this channel pair → nothing
+        @test project_gate(rgp, "cd4", "cd19", lin, lin) === nothing
+        # polygon vertices map pointwise
+        pgp = PolygonGate("cd4", "cd8", [(0.4543375762, 0.4543375762), (0.9069275915, 0.4543375762),
+                                         (0.9069275915, 0.9069275915)]; x_transform=lcp, y_transform=lcp)
+        pjp = project_gate(pgp, "cd4", "cd8", lin, lin)
+        @test pjp["kind"] == "polygon" && length(pjp["vertices"]) == 3
+        @test pjp["vertices"][1][1] ≈ 1000.0 atol=1e-2
     end
 
     # ── Gating engine: density ────────────────────────────────────────────────

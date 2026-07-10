@@ -269,6 +269,22 @@ child from that dir (loads the other worktree's project + code). Dev + supervise
 via the shared `appControl` lifecycle (same as Restart). Backend :8080 only — a frontend branch still
 needs its own Vite. Docs: `docs/DEV.md`.
 
+**#00085** — **Gating flow plot: morphology measures empty/clipped + gates miss dots after scale change** (2026-07-09)
+On a flow plot every axis defaulted to logicle, which collapses a bounded 0–1 morphology measure
+(`solidity`, `sphericity`, …) into a sliver → empty/clipped plot (worst on the whole-dataset axis where
+the upper bound is `logicle(1)≈logicle(0)`). Fixed range-based: `plotmeta` auto-substitutes `linear`
+when the requested transform would map the data into <5% of its display span (`effective_transform`,
+`app/src/gating/transforms.jl`), reporting `usedX`/`usedY`; the single flow plot (`autoLinear=1`) keeps
+the user's *preferred* transform, shows the effective one, marks the axis **amber** with a tip, and
+reverts automatically on a compatible measure. Separately, gates drawn under one transform missed the
+dots when the scale changed (gates store transformed coords; client has no transform math): `plotmeta`
+now returns child-gate outlines re-projected into the effective display transform (`project_gate`,
+`app/src/gating/gates.jl`), and draw/edit stamps the effective transform. Membership untouched.
+Applied to BOTH the single flow plot and the channel-pairs / gating-strategy montage (`GateMontage`
+adopts `usedX`/`usedY` + server-projected gates per canonical pair, and amber-flags its shared
+transform control when any tile is coerced). Docs: `docs/POPULATION.md`. Tests: `app/test/runtests.jl`
+(Transforms + Gates).
+
 **#00084** — **Windows CI frontend build: "Cannot find native binding" (rolldown)** (2026-07-09)
 The `windows-latest` CI leg intermittently failed at `npm run build` with `Cannot find module
 '@rolldown/binding-win32-x64-msvc'`. vite 8 bundles with rolldown, whose per-platform native binding is
