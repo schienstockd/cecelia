@@ -276,11 +276,15 @@ class MeasureUtils:
             if mesh.volume > 0:
                 row['surface_to_volume'] = float(mesh.area) / float(mesh.volume)
 
-            # sphericity: ratio of sphere area with same volume to actual area
+            # sphericity (Wadell): area of the equal-volume sphere / actual area. Range (0,1], 1 = sphere.
+            # NOTE: `compactness` was intentionally DROPPED. The old R version defined it as
+            # surface_area**1.5 / volume, but that is a monotone transform of sphericity (both are pure
+            # functions of the isoperimetric ratio A**3/V**2), so it carries no independent information —
+            # and the earlier port had re-derived it to a formula that equalled sphericity exactly. Use
+            # `solidity` / `extent` for genuinely orthogonal shape descriptors.
             if mesh.area > 0 and mesh.volume > 0:
                 r_eq = (3 * mesh.volume / (4 * np.pi)) ** (1 / 3)
-                row['sphericity']   = (4 * np.pi * r_eq ** 2) / float(mesh.area)
-                row['compactness']  = (36 * np.pi * mesh.volume ** 2) ** (1 / 3) / float(mesh.area)
+                row['sphericity'] = (4 * np.pi * r_eq ** 2) / float(mesh.area)
 
             # ellipsoid fit from convex hull vertices
             try:
