@@ -122,10 +122,15 @@ async function fetchBuf(q: string): Promise<Float32Array> {
 // axes/extents/ticks + effective transforms + projected gate outlines — only when X/Y/transform/parent
 // change (NOT on membership change). Sends the PREFERRED transform; adopts what the server used.
 async function fetchMeta() {
-  const meta = await (await fetch(`/api/gating/plotmeta?${metaQ.value}`)).json() as {
+  const key = metaQ.value                    // snapshot: drop the response if the view moved on
+  const meta = await (await fetch(`/api/gating/plotmeta?${key}`)).json() as {
     xExtent: [number, number]; yExtent: [number, number]
     xTicks: { pos: number; label: string }[]; yTicks: { pos: number; label: string }[]
     usedX?: Kind; usedY?: Kind; gates?: SrvGate[]; tracked?: boolean }
+  // A newer fetch (image/segmentation/axis/parent switch) is already in flight — a late stale meta
+  // would otherwise overwrite the fresh extents/ticks/gates (last-writer race), leaving the plot on
+  // the wrong axes or blank until the user nudged a control. (Mirrors fetchGatesFor's key guard.)
+  if (key !== metaQ.value) return
   notTracked.value = meta.tracked === false
   extents.value = { xMin: meta.xExtent[0], xMax: meta.xExtent[1], yMin: meta.yExtent[0], yMax: meta.yExtent[1] }
   viewExtents.value = { ...extents.value }
@@ -156,7 +161,13 @@ function fetchGates(): Promise<void> {
 // EFFECTIVE transforms so the cloud matches the extent + projected gates fetchMeta set.
 async function fetchPoints() {
   if (!g.imageUid || !xChan.value || !yChan.value) return
-  points.value = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value))
+  const key = metaQ.value                    // snapshot the view; drop a stale response
+  const buf = await fetchBuf(plotQ(parent.value, effXt.value, effYt.value))
+  // same last-writer guard as fetchMeta: if the image/segmentation/axis/parent changed while this
+  // was in flight, an out-of-order resolve must NOT clobber the current cloud (the intermittent
+  // "blank until I toggle a control" gap on image switch).
+  if (key !== metaQ.value) return
+  points.value = buf
 }
 
 // full reload: axes + points + layers (axes / parent / image / value-name change)
@@ -258,11 +269,12 @@ watch(parentVersion, refreshMembership)
 // is added, deleted, or edited — here, on another plot, from napari, or via a WS broadcast — but that
 // bumps the CHILD's popVersion, never the displayed parent's, so neither parentVersion nor fetchPlot
 // (axis/parent watch) fires and a deleted child's outline would linger. Watch a signature of the
-// parent's children and re-fetch the outlines when it moves. (Mirrors the montage's `sig`, which
-// already hashes `d.children`; fetchGates is outlines-only, no axis/point reset.) Signature logic is
-// extracted to utils/childGateSig.ts so it's unit-tested.
+// parent's children and refresh on any change. Use fetchMeta (not the outlines-only fetchGates) so the
+// autoscale re-runs: dragging a gate BEYOND the current axes regrows the extent to fit it, so the gate
+// snaps back on-plot on release — no more toggling the segmentation to force a redraw. fetchMeta also
+// returns the outlines, so this covers add/delete too. Signature logic → utils/childGateSig.ts (tested).
 const childGateSig = computed(() => childGateSignature(g.flat, parent.value))
-watch(childGateSig, fetchGates)
+watch(childGateSig, fetchMeta)
 // a highlighted pop's membership changed elsewhere → refresh just its colour layer
 const hlVersion = computed(() => (props.highlight ?? []).reduce((s, p) => s + (g.popVersion[p] ?? 0), 0))
 watch(hlVersion, loadPopLayers)

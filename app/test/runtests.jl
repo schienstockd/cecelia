@@ -2085,6 +2085,11 @@ end
         @test !any(p.path == "/TEST" for p in cpops)
         # the nested derived pop is named by its leaf (indents under its parent in the UI)
         @test only(p for p in cpops if p.path == "/qc/_tracked").name == "_tracked"
+        # a derived child inherits its parent pop's colour (so /qc/_tracked pairs with /qc visually —
+        # the derived colour is read-only on the behaviour page, the parent's is editable on gating)
+        @test only(p for p in cpops if p.path == "/qc/_tracked").colour == "#ef4444"      # = /qc
+        @test only(p for p in cpops if p.path == "/qc/sub/_tracked").colour == "#abc"      # = /qc/sub
+        @test only(p for p in cpops if p.path == "/_tracked").colour == "#7c93b8"          # root: no parent → grey
 
         # TRACK granularity → unions live (incl. nested /qc/_tracked) AND track (/TEST), each tagged
         trk = plot_population_groups([:img1], names_for, load, plot_pop_types("live", "track"))
@@ -2345,6 +2350,40 @@ end
             @test haskey(img._pop_df_cache, ck)
             fresh = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"], flush_cache=true)
             @test nrow(cached) == truth && nrow(fresh) == truth
+        end
+    end
+
+    # ── resolve_pops: cached, display-ready per-pop membership (napari points overlay) ──
+    @testset "resolve_pops (KDIeEm)" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        if !have_fixture(h5)
+            @test_skip "resolve_pops (fixture missing)"
+        else
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+            img = CciaImage(uid="KDIeEm", dir=td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+
+            full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
+            thr  = sort(full.mean_intensity_0)[cld(nrow(full), 2)]      # ~median → partial selection
+            want = sort(Int.(full.label[full.mean_intensity_0 .>= thr]))
+
+            m = PopulationMap(pop_type="flow", value_name="B")
+            add_pop!(m, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1",
+                                                  thr, 1e12, -1e12, 1e12), colour="#ef4444")
+            save_pop_map!(m, img)
+
+            layers = resolve_pops(img, "flow"; value_name="B")
+            @test length(layers) == 1
+            L = layers[1]
+            @test L.path == "/pos" && L.name == "pos" && L.colour == "#ef4444"
+            @test L.show === true && L.is_track === false
+            @test sort(L.labels) == want                       # membership == the gate's cells
+
+            # cached: a second call returns the SAME stored object (no recompute), keyed under poplayers:
+            again = resolve_pops(img, "flow"; value_name="B")
+            @test again === layers
+            @test any(k -> startswith(k, "poplayers:"), keys(img._pop_df_cache))
         end
     end
 

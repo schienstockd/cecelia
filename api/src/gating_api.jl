@@ -374,6 +374,39 @@ function _finite_extrema(v, fallback::Tuple{Float64,Float64} = (0.0, 1.0))::Tupl
     lo <= hi ? (lo, hi) : fallback
 end
 
+# Display-space bounding box (xlo, xhi, ylo, yhi) enclosing a plotmeta `gates` list (projected
+# child-gate outlines). Rectangles carry x_min/x_max/y_min/y_max; polygons carry `vertices`
+# ([[x,y],…]). All coords are already in the plot's display transform. Inf's when there are no
+# gates (nothing to enclose).
+function _gates_bbox(gates)
+    xlo = Inf; xhi = -Inf; ylo = Inf; yhi = -Inf
+    for pj in gates
+        if get(pj, "kind", "") == "rectangle"
+            xlo = min(xlo, pj["x_min"]); xhi = max(xhi, pj["x_max"])
+            ylo = min(ylo, pj["y_min"]); yhi = max(yhi, pj["y_max"])
+        else
+            for v in get(pj, "vertices", ())
+                xlo = min(xlo, v[1]); xhi = max(xhi, v[1])
+                ylo = min(ylo, v[2]); yhi = max(yhi, v[2])
+            end
+        end
+    end
+    (xlo, xhi, ylo, yhi)
+end
+
+# Grow a display extent `(lo, hi)` to also enclose `[glo, ghi]`, plus a `margin` fraction of the
+# resulting span so a gate edge lands inside the axes (grabbable), not flush on the border. No-op
+# when the target range is not finite (no gate). Used to autoscale a plot to its child gates so a
+# gate drawn beyond the data cloud stays on-screen and adjustable.
+function _include_range((lo, hi)::Tuple, glo, ghi; margin::Float64 = 0.05)
+    (isfinite(glo) && isfinite(ghi)) || return (float(lo), float(hi))
+    span = hi > lo ? hi - lo : 1.0
+    m = margin * span
+    nlo = glo < lo ? glo - m : float(lo)     # only grow the side a gate actually exceeds
+    nhi = ghi > hi ? ghi + m : float(hi)
+    (nlo, nhi)
+end
+
 # ── GET /api/gating/plotmeta ──────────────────────────────────────────────────
 # returns n + mode (scatter|density) + transformed extents + axis ticks
 function api_gating_plotmeta(req::HTTP.Request)
@@ -436,6 +469,17 @@ function api_gating_plotmeta(req::HTTP.Request)
         pj === nothing && continue
         pj["path"] = cpath; pj["colour"] = p.colour
         push!(gates, pj)
+    end
+    # Autoscale to the child gates: a gate drawn beyond the data cloud would otherwise fall outside
+    # the axes and be un-grabbable. Grow the display extent to enclose the projected outlines, and
+    # re-derive the raw tick range from the widened extent so ticks span the whole axis. Only the
+    # side a gate actually exceeds moves (the common in-bounds case is untouched).
+    gb = _gates_bbox(gates)
+    xext2 = _include_range(xext, gb[1], gb[2]); yext2 = _include_range(yext, gb[3], gb[4])
+    if xext2 != xext || yext2 != yext
+        xext, yext = xext2, yext2
+        rxext = (invert_transform(xt, xext[1]), invert_transform(xt, xext[2]))
+        ryext = (invert_transform(yt, yext[1]), invert_transform(yt, yext[2]))
     end
     200, JSON3.write((;
         n = n, mode = mode, tracked = true,

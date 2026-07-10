@@ -17,6 +17,8 @@
 import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
+import { useProjectStore } from '../../stores/project'
+import { useNapariOpen } from '../../composables/useNapariOpen'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
 import GatePlotPanel from './GatePlotPanel.vue'
@@ -25,11 +27,17 @@ import PopulationManager from '../../components/canvas/PopulationManager.vue'
 import GatingCopyDialog from './GatingCopyDialog.vue'
 import type { FlatPop } from '../../stores/gating'
 
-const props = withDefaults(defineProps<{ imageUid: string | null; popType?: string }>(),
-  { popType: 'flow' })
+const props = withDefaults(defineProps<{
+  imageUid: string | null
+  popType?: string
+  orderedUids?: string[]                        // visible images in table order (for prev/next)
+  selectUids?: (uids: string[]) => void          // drive the table selection (ModuleLayout)
+}>(), { popType: 'flow', orderedUids: () => [] })
 const isTrack = computed(() => props.popType === 'track')
 const g = useGatingStore()
 const ws = useWsStore()
+const project = useProjectStore()
+const { openInNapari } = useNapariOpen()
 
 // ── Scope ─────────────────────────────────────────────────────────────────────
 // EVERY manager option (highlighted pops, gate labels, line width, axis) obeys this:
@@ -94,6 +102,22 @@ function setParent(id: number, v: string) { const p = panels.value.find(x => x.i
 function onPickPop(path: string) {
   const s = activePanel.value?.state
   if (s) s.parent = s.parent === path ? 'root' : path
+}
+
+// Prev/next image navigation: step the table selection through the visible image list, so gating a
+// batch is just << / >>, not a manual re-pick each time. Stops at the ends (no wrap) — the buttons
+// disable there. Changing the selection re-drives imageUid via ModuleLayout (see `load`).
+const navIndex = computed(() => props.imageUid ? props.orderedUids.indexOf(props.imageUid) : -1)
+const hasPrev  = computed(() => navIndex.value > 0)
+const hasNext  = computed(() => navIndex.value >= 0 && navIndex.value < props.orderedUids.length - 1)
+function navTo(delta: number) {
+  const i = navIndex.value + delta
+  if (i < 0 || i >= props.orderedUids.length) return
+  const uid = props.orderedUids[i]
+  props.selectUids?.([uid])                    // switch the gating plots to the next image
+  // follow along in the viewer IF napari is currently showing an image — so gating a batch keeps the
+  // image in sync too, not just the plot. Don't force-launch napari when it isn't open.
+  if (project.napariImageUid) openInNapari(uid, setUid.value)
 }
 
 // "Copy gating strategy to other images" dialog (per current pop type; see GatingCopyDialog).
@@ -206,6 +230,10 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <div class="seg" v-tooltip.bottom="'Step to the previous / next image in the list'">
+          <button :disabled="!hasPrev" @click="navTo(-1)" aria-label="Previous image">&laquo;</button>
+          <button :disabled="!hasNext" @click="navTo(1)" aria-label="Next image">&raquo;</button>
+        </div>
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
         <span class="gp-hint">drag plots by their title · resize from the corner</span>
@@ -249,6 +277,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
 .seg button.on { background: var(--cc-accent); color: #fff; }
+.seg button:disabled { opacity: 0.35; cursor: default; }
+.seg button:disabled:hover { color: var(--cc-text-dim); }
 /* z-slice window stepper (shown only in slice mode) */
 .zwin { display: flex; align-items: center; gap: 2px; color: var(--cc-text-dim); }
 .zwin input { width: 3.2rem; font-size: 12px; padding: 3px 4px; }

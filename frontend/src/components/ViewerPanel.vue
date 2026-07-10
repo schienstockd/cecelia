@@ -138,12 +138,12 @@ watch(() => settings.napariAutoSaveLayerProps, async enabled => {
   } catch { /* napari not running */ }
 })
 
-// Push a pop type's populations to napari as centroid points. When no `valueName` is given we send
-// BLANK so the server resolves the image's ACTIVE segmentation — the same one gating/clustering
-// (and the population manager's own napari toggle) write to. Defaulting to `labelNames[0]` was the
-// bug: the first label set isn't necessarily the active/clustered one, so clust pops never resolved
-// and only the manager's per-pop toggle (which uses the store's active value_name) showed them.
-// The bridge namespaces layers by `(popType)`, so flow/clust overlays coexist.
+// Push a pop type's populations to napari as centroid points. The server shows EVERY segmentation's
+// pops at once (each as its own value_name-tagged layer), so `valueName` no longer selects which pops
+// appear — the overlay is independent of which segmentation is "active" (opening the image shows all,
+// not just the active/first one). The bridge namespaces layers by `(popType) (valueName)`, so
+// flow/clust overlays across segmentations coexist. `valueName` is still forwarded as the bridge's
+// per-pop default for older senders; blank is fine.
 async function pushPopulations(popType: string, show: boolean, valueName?: string): Promise<boolean> {
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid

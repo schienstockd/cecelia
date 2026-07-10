@@ -373,38 +373,74 @@ class NapariState:
         return res
 
     @staticmethod
-    def pop_layer_name(pop_type: str, name: str) -> str:
-        return f"({pop_type}) {name}"
+    def pop_layer_name(pop_type: str, value_name: str, name: str) -> str:
+        # prefixed by pop_type + the SEGMENTATION value_name so several segmentations coexist as
+        # separate layers (e.g. "(flow) (T) /qc" AND "(flow) (B) /qc"). Mirrors track_layer_name.
+        return f"({pop_type}) ({value_name}) {name}"
+
+    @staticmethod
+    def _pop_layer_vn(pop_type: str, layer_name: str):
+        # extract the segmentation value_name from a pop layer name "(pop_type) (VN) path" (None if
+        # it doesn't match) — used to scope reconciliation to specific segmentations.
+        prefix = f"({pop_type}) ("
+        if not layer_name.startswith(prefix):
+            return None
+        rest = layer_name[len(prefix):]
+        end = rest.find(")")
+        return rest[:end] if end >= 0 else None
 
     def show_populations(self, pops, value_name: str = "default",
-                         points_size: int = 6, pop_type: str = "flow"):
+                         points_size: int = 6, pop_type: str = "flow",
+                         value_names=None, scoped: bool = False):
         """Reconcile the population Points layers **per pop** — update existing layers in place,
         add new ones, remove only the gone (deleted/renamed) ones, and **skip layers that didn't
         change** (same membership + colour + size + visibility). This avoids the old full flush
         (remove + re-add every layer on every gating change), which was prohibitively slow on
         CODEX images (many populations × many cells): a single gate edit now touches only the
         one population (+ descendants) that actually changed. Membership (label IDs) comes from
-        Julia; centroids are read locally from the H5AD."""
+        Julia; centroids are read locally from the H5AD.
+
+        `scoped` + `value_names`: a SCOPED push (a live gate edit, which recomputed only the edited
+        segmentation) prunes stale layers ONLY within `value_names`, leaving other segmentations'
+        layers intact. A full push (scoped False) prunes globally, so a vanished pop/segmentation is
+        still cleaned up on the next open / master toggle."""
         if self._task_dir is None:
             raise RuntimeError("call set_task_dir before show_populations")
 
-        # name layers by full population path (root/A/B/C → "(flow) /A/B/C"), not the leaf name
-        desired = {self.pop_layer_name(pop_type, p.get("path") or p["name"]): p for p in pops}
+        # name layers by SEGMENTATION value_name + full population path (root/A/B/C → "(flow) (T)
+        # /A/B/C"), not the leaf name — so pops from several segmentations coexist. Each pop carries
+        # its own `value_name` (default to the call's for older senders); centroids are read per
+        # value_name (cached). Mirrors show_tracks, which is already multi-segmentation.
+        desired = {}
+        for p in pops:
+            vn = p.get("value_name", value_name)
+            desired[self.pop_layer_name(pop_type, vn, p.get("path") or p["name"])] = (vn, p)
 
-        # remove layers whose population is gone (deleted / renamed) — per layer, not a flush
+        # remove layers whose population is gone (deleted / renamed) — per layer, not a flush.
+        # A scoped push only prunes within the pushed segmentations (a live edit that recomputed just
+        # those); a full push prunes across all segmentations of this pop_type.
+        scope = set(value_names) if (scoped and value_names) else None
         for name in [l.name for l in self._viewer.layers
-                     if l.name.startswith(f"({pop_type}") and l.name not in desired]:
+                     if l.name.startswith(f"({pop_type}") and l.name not in desired
+                     and (scope is None or self._pop_layer_vn(pop_type, l.name) in scope)]:
             _remove_layer(self._viewer, name)
             self._pop_sigs.pop(name, None)
         if not desired:
             return
 
-        labels, C, _ = self._centroid_matrix(value_name)
-        if len(C) == 0:
-            return
-        label_to_row = {int(l): i for i, l in enumerate(labels)}
+        # per-value_name centroid matrices, cached across pops sharing a segmentation
+        mats = {}
+        def _mat(vn):
+            if vn not in mats:
+                labels, C, _ = self._centroid_matrix(vn)
+                mats[vn] = (labels, C, {int(l): i for i, l in enumerate(labels)}) if len(C) else None
+            return mats[vn]
 
-        for name, pop in desired.items():
+        for name, (vn, pop) in desired.items():
+            m = _mat(vn)
+            if m is None:
+                continue
+            labels, C, label_to_row = m
             ids     = [int(l) for l in pop.get("label_ids", [])]
             colour  = pop.get("colour", "#ffffff")
             visible = pop.get("show", True)
@@ -1150,6 +1186,8 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 value_name=cmd.get("value_name", "default"),
                 points_size=cmd.get("points_size", 6),
                 pop_type=cmd.get("pop_type", "flow"),
+                value_names=cmd.get("value_names"),
+                scoped=cmd.get("scoped", False),
             )
 
         elif t == "show_tracks":

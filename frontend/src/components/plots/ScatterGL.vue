@@ -181,7 +181,7 @@ async function render() {
 
 // draw the current encoding (density / category / flat). `pointMult` scales the point size — the export
 // path enlarges the backing store by `scale`, so points must grow by the same factor to keep the look.
-async function drawCurrent(pointMult = 1) {
+async function drawCurrent(pointMult = 1, drawOpts: Record<string, unknown> = {}) {
   if (!scatterplot) return
   const { x, y } = xy()
   const ps = props.pointSize * pointMult
@@ -194,15 +194,19 @@ async function drawCurrent(pointMult = 1) {
     const v = new Float32Array(x.length)
     for (let i = 0; i < x.length; i++) v[i] = (cats[i] ?? 0) / denom
     scatterplot.set({ colorBy: 'valueA', pointColor: pal, opacity: props.opacity, pointSize: ps })
-    await scatterplot.draw({ x, y, valueA: v })
+    await scatterplot.draw({ x, y, valueA: v }, drawOpts)
   } else if (props.colorMode === 'density' && x.length) {
     scatterplot.set({ colorBy: 'valueA', pointColor: RAMP, opacity: props.opacity, pointSize: ps })
-    await scatterplot.draw({ x, y, valueA: density() })
+    await scatterplot.draw({ x, y, valueA: density() }, drawOpts)
   } else {
     scatterplot.set({ colorBy: null, pointColor: props.flatColor, opacity: props.opacity, pointSize: ps })
-    await scatterplot.draw({ x, y })
+    await scatterplot.draw({ x, y }, drawOpts)
   }
 }
+// resolve after the browser has painted the next frame — regl-scatterplot's draw() promise can resolve
+// before the frame is actually committed to the (preserveDrawingBuffer) canvas, so a readback right
+// after would capture a partial/blank frame (the "snapshot before it finished rendering" export bug).
+const nextFrame = () => new Promise<void>(r => requestAnimationFrame(() => r()))
 
 function resize() {
   if (!scatterplot || !canvasEl.value) return
@@ -219,6 +223,10 @@ function resize() {
 // transparent ground (points-only → composites over the host fill), snapshot, then restore.
 async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   if (!scatterplot || !canvasEl.value) return null
+  // no points to draw (e.g. density/contour mode draws from PlotLayers instead) → nothing to export;
+  // return null so the compositor keeps the live (empty) canvas and we DON'T resize+redraw the live
+  // scatterplot for nothing (that resize is what made the plot visibly flash on every export).
+  if (xy().x.length === 0) return null
   const live = canvasEl.value
   const { w, h } = box()
   // guaranteed fallback: the current on-screen frame (screen resolution)
@@ -226,9 +234,24 @@ async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   fallback.getContext('2d')?.drawImage(live, 0, 0)
   const cssW = live.style.width, cssH = live.style.height
   try {
-    scatterplot.set({ backgroundColor: [0, 0, 0, 0], width: Math.round(w * scale), height: Math.round(h * scale), aspectRatio: aspect() })
+    // clamp the backing store to the GPU's REAL limits — a big panel × a high export scale can exceed
+    // MAX_TEXTURE_SIZE / MAX_VIEWPORT_DIMS, which silently clips the render to a sub-rectangle (dropped
+    // dots). Read the actual caps rather than assume a fixed number (they vary by GPU/browser).
+    const gl = (live.getContext('webgl2') || live.getContext('webgl')) as
+      (WebGL2RenderingContext | WebGLRenderingContext | null)
+    const vp = gl?.getParameter(gl.MAX_VIEWPORT_DIMS) as (Int32Array | number[] | undefined)
+    const tex = gl?.getParameter(gl.MAX_TEXTURE_SIZE) as (number | undefined)
+    const cap = Math.max(1, Math.min(vp?.[0] ?? 8192, vp?.[1] ?? 8192, tex ?? 8192))
+    const s = Math.max(1, Math.min(scale, cap / w, cap / h))
+    scatterplot.set({ backgroundColor: [0, 0, 0, 0], width: Math.round(w * s), height: Math.round(h * s), aspectRatio: aspect() })
     live.style.width = cssW || `${w}px`; live.style.height = cssH || `${h}px`   // keep the on-screen size
-    await drawCurrent(scale)   // redraw the same encoding, point size scaled to match the big backing
+    // regl-scatterplot applies the new viewport/projection on the NEXT frame, not synchronously — so
+    // drawing in the same tick would render the point cloud with the pre-resize projection and clip it
+    // into a corner. Wait one frame for the resize to take, THEN draw the final frame (transition:false
+    // = no animated tween a snapshot could catch mid-way), then wait once more for it to actually paint.
+    await nextFrame()
+    await drawCurrent(s, { transition: false })   // point size scaled to match the big backing
+    await nextFrame()
     const snap = document.createElement('canvas'); snap.width = live.width; snap.height = live.height
     snap.getContext('2d')?.drawImage(live, 0, 0)
     return snap.width > fallback.width ? snap : fallback

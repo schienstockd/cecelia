@@ -39,7 +39,7 @@ const props = defineProps<{
   persistKey?: string                  // CanvasPanel geometry persistence key
   docked?: boolean                     // fill a grid slot (Analysis board) instead of free-floating
 }>()
-const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
+const emit = defineEmits<{ activate: [number]; remove: []; duplicate: []; explode: [string[]] }>()
 const plotRef = useTemplateRef<{ toImageURL(t: 'png' | 'svg', light?: boolean): Promise<string | null> }>('plotRef')
 
 const param = (k: string, d: unknown) => props.spec.params?.find(p => p.key === k)?.default ?? d
@@ -97,6 +97,24 @@ watch([measureOpts, colsLoaded], () => {
     measure.value = measureOpts.value[0]
 })
 const chartType = computed<ChartType>({ get: () => props.ui.chartType ?? props.spec.chartTypes[0], set: v => (props.ui.chartType = v) })
+
+// "Show series" (explode by measurement): a small dialog to pick measures, then the host duplicates
+// this plot once per pick — so every track measurement is visible side by side, not one at a time.
+// Only meaningful when this chart plots a measure (not heatmap/count) and there's more than one to pick.
+// only for free-floating panels (the module canvas) — the Analysis board's docked grid has fixed slots
+const canExplode = computed(() => !props.docked && chartType.value !== 'heatmap' && chartType.value !== 'count' && measureOpts.value.length > 1)
+const showExplode = ref(false)
+const explodeSel = ref<string[]>([])
+// default-select every OTHER measure (the current one is already shown on this panel, so exploding it
+// would just duplicate the source — leave it unticked; the user can re-tick it if they want a copy)
+function openExplode() { explodeSel.value = measureOpts.value.filter(m => m !== measure.value); showExplode.value = true }
+function toggleExplode(m: string) {
+  explodeSel.value = explodeSel.value.includes(m) ? explodeSel.value.filter(x => x !== m) : [...explodeSel.value, m]
+}
+function applyExplode() {
+  if (explodeSel.value.length) emit('explode', measureOpts.value.filter(m => explodeSel.value.includes(m)))
+  showExplode.value = false
+}
 const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
 const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
 const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorMetric ?? 'ci95', set: v => (props.ui.errorMetric = v) })
@@ -519,6 +537,24 @@ defineExpose({ getCsv, exportImage })
               v-tooltip.top="docked ? 'Duplicate this plot into the next empty slot' : 'Duplicate this plot (same series + settings) to tweak one thing'">
         <i class="pi pi-copy" />
       </button>
+      <!-- Show series: pick measures → one copy of this plot per measure, to see them all at once -->
+      <div v-if="canExplode" class="sp-explode-wrap">
+        <button class="sp-iconbtn" type="button" @click="openExplode"
+                v-tooltip.top="'Show series: duplicate this plot for each selected measurement'">
+          <i class="pi pi-chart-bar" />
+        </button>
+        <div v-if="showExplode" class="sp-explode-pop" @click.stop>
+          <div class="sp-explode-hd">Measurements to plot</div>
+          <label v-for="m in measureOpts" :key="m" class="sp-explode-row">
+            <input type="checkbox" :checked="explodeSel.includes(m)" @change="toggleExplode(m)" /> {{ m }}
+          </label>
+          <div class="sp-explode-ft">
+            <button class="cc-btn" type="button" @click="showExplode = false">Cancel</button>
+            <button class="cc-btn cc-btn-primary" type="button" :disabled="!explodeSel.length"
+                    @click="applyExplode">Show {{ explodeSel.length }}</button>
+          </div>
+        </div>
+      </div>
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
       <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
@@ -550,6 +586,16 @@ defineExpose({ getCsv, exportImage })
   color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
 .sp-iconbtn:hover { color: var(--cc-text); border-color: #484f58; }
 .sp-iconbtn.on { color: var(--cc-text); border-color: var(--cc-accent); }
+
+/* "show series" measure-picker popover (opens upward from the footer button) */
+.sp-explode-wrap { position: relative; display: inline-flex; }
+.sp-explode-pop { position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 30;
+  min-width: 13rem; max-height: 60vh; overflow-y: auto; padding: 8px;
+  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 0.4rem;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.35); font-size: 12px; }
+.sp-explode-hd { color: var(--cc-text-dim); font-size: 11px; margin-bottom: 6px; }
+.sp-explode-row { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--cc-text); cursor: pointer; }
+.sp-explode-ft { display: flex; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 
 /* options popover */
 .sp-pop-wrap { position: relative; display: inline-flex; }

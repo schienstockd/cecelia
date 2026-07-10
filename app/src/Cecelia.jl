@@ -52,7 +52,7 @@ export GATING_POP_TYPES, is_gating_pop_type
 export flatten_pop_tree, plot_pop_types, plot_population_groups
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
-export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df
+export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
 export plot_summary_data
 export track_props, track_cell_measures, is_tracked
 export hmm_fit_states, hmm_transitions, DiagGaussEmission

@@ -411,34 +411,49 @@ function api_napari_show_populations(body_bytes::Vector{UInt8})
 
     img, err = _gating_image(project_uid, image_uid)
     err === nothing || return err
-    vn = _resolve_vn(img, String(get(data, :valueName, "")))
+
+    # Scope: an explicit `valueNames` list (or a single non-blank `valueName`) → refresh ONLY those
+    # segmentations; blank → ALL real segmentations. Live gate edits pass the edited segmentation so we
+    # don't recompute every segmentation's membership on each edit (open / the master toggle pass blank
+    # → full refresh). `scoped` tells the bridge to prune stale layers only within `segs`, leaving the
+    # other segmentations' layers intact — so a scoped push is as cheap as the pre-multi-seg behaviour.
+    all_segs = String[v for v in versioned_keys(img.label_props) if !is_reserved_value_name(v)]
+    raw_vns  = get(data, :valueNames, nothing)
+    one_vn   = String(get(data, :valueName, ""))
+    want = raw_vns !== nothing ? String[v for v in String.(raw_vns) if haskey(img.label_props, v)] :
+           (!isempty(one_vn) && haskey(img.label_props, one_vn)) ? String[one_vn] : String[]
+    segs   = isempty(want) ? all_segs : want
+    scoped = !isempty(want)                    # a real subset was requested → bridge prunes within `segs`
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
 
     pops = Vector{Dict{String,Any}}()
-    # an image not segmented yet has no labelProps → no populations to show; fall through with
-    # empty `pops` (the bridge then just clears any existing pop layers) rather than 500ing in
-    # `_live_map` → `label_props` ("No labelProps for value_name=… on image …"). After segmentation
-    # the image has labelProps and populations resolve normally.
+    # Show the gated populations of the in-scope segmentation(s) — each pop its own layer, tagged and
+    # named by its value_name (e.g. "(flow) (T) /qc" AND "(flow) (B) /qc"). Multi-segmentation like
+    # show-tracks, so the overlay is independent of which single segmentation is "active": opening the
+    # image (blank scope) shows every segmentation's pops, not just the active one. `resolve_pops` is
+    # CACHED per (segmentation, mtimes), so an unchanged segmentation on a full push returns instantly.
+    #
+    # an image not segmented yet has no labelProps → no populations; fall through with empty `pops`.
     if show && _has_label_props(img)
-        m = _live_map(img, vn, pop_type)
-        # NB: the root (whole segmentation) is intentionally NOT rendered — a grey all-cells layer is
-        # noise and obscures the actual populations. Only the defined populations are shown.
-        for path in pop_paths(m)
-            p = pop_at(m, path)
-            p.transient && continue           # never render the napari selection back into napari
-            labs = Int.(cells_in_pop(m, path))
-            isempty(labs) && continue
-            push!(pops, Dict{String,Any}(
-                "path" => p.path, "name" => p.name, "colour" => p.colour,
-                "show" => p.show, "is_track" => p.is_track, "label_ids" => labs))
+        for wn in segs
+            try
+                for L in resolve_pops(img, pop_type; value_name = wn)
+                    push!(pops, Dict{String,Any}(
+                        "value_name" => wn, "path" => L.path, "name" => L.name, "colour" => L.colour,
+                        "show" => L.show, "is_track" => L.is_track, "label_ids" => L.labels))
+                end
+            catch e
+                @warn "populations unavailable" value_name = wn exception = e
+            end
         end
-    end   # show=false → empty pops → bridge removes the existing pop layers
+    end   # show=false → empty pops → bridge removes the in-scope pop layers
     _with_viewer() do
         try
             send(v, Dict{String,Any}("type" => "show_populations", "pop_type" => pop_type,
-                "value_name" => vn, "points_size" => points_size, "pops" => pops))
+                "value_name" => (isempty(segs) ? "" : first(segs)), "value_names" => segs,
+                "scoped" => scoped, "points_size" => points_size, "pops" => pops))
             200, JSON3.write((; ok = true, n = length(pops)))
         catch e
             @warn "show_populations failed" exception = e
