@@ -607,5 +607,5 @@ defineExpose({ capturePage, collectCsvs })
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .lc-add-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.6; }
-.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; }
+.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; padding-right: 10px; box-sizing: content-box; }
 </style>
