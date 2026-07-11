@@ -27,10 +27,13 @@ const props = defineProps<{
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
-  state: { labels?: boolean }
+  state: { labels?: boolean; legend?: boolean }
 }>()
 const log = useLogStore()
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
+// show/hide the population legend — persisted per panel (default on). On the Analysis canvas it can
+// eat ~half the plot, so let the user reclaim that space.
+const showLegend = computed({ get: () => props.state.legend !== false, set: v => (props.state.legend = v) })
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
 
 // `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only) —
@@ -72,8 +75,20 @@ const extents = ref({ xMin: 0, xMax: 1, yMin: 0, yMax: 1 })
 const loading = ref(false)
 const err = ref('')
 const total = computed(() => (points.value ? points.value.length / 2 : 0))
-const lx = (x: number) => `${((x - extents.value.xMin) / Math.max(1e-9, extents.value.xMax - extents.value.xMin)) * 100}%`
-const ly = (y: number) => `${(1 - (y - extents.value.yMin) / Math.max(1e-9, extents.value.yMax - extents.value.yMin)) * 100}%`
+// current on-screen plot box (px) — tracked so the label map matches the canvas one under resize
+const boxW = ref(0), boxH = ref(0)
+// data→px with a SINGLE uniform scale (letterboxed/centred), so the embedding stays isotropic — a UMAP
+// warps if x and y stretch independently to fill a non-square box (e.g. after hiding the legend). Used
+// by BOTH the dot canvas and the HTML labels so they stay aligned.
+function mapPx(x: number, y: number, w: number, h: number): [number, number] {
+  const { xMin, xMax, yMin, yMax } = extents.value
+  const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
+  const sc = Math.min(w / xr, h / yr) || 0
+  const offX = (w - xr * sc) / 2, offY = (h - yr * sc) / 2
+  return [offX + (x - xMin) * sc, offY + (yMax - y) * sc]   // y flips (screen down)
+}
+const lx = (x: number) => `${mapPx(x, 0, boxW.value, boxH.value)[0]}px`
+const ly = (y: number) => `${mapPx(0, y, boxW.value, boxH.value)[1]}px`
 
 // ── 2D dot render (no WebGL) ──────────────────────────────────────────────────────────────────────
 // Draw each point via the SAME data→px map as the labels (lx/ly), so cluster labels sit exactly on
@@ -86,8 +101,6 @@ const DOT_R = 2
 function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
   const pts = points.value, cats = categories.value, pal = palette.value
   if (!pts || !cats || !pal.length) return
-  const { xMin, xMax, yMin, yMax } = extents.value
-  const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
   const n = pts.length / 2, s = DOT_R * 2
   const groups: number[][] = pal.map(() => [])
   for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
@@ -96,7 +109,7 @@ function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
     const g = groups[gi]; if (!g.length) continue
     c.fillStyle = pal[gi]
     for (const i of g) {
-      const px = ((pts[2 * i] - xMin) / xr) * w, py = (1 - (pts[2 * i + 1] - yMin) / yr) * h
+      const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h)
       c.fillRect(px - DOT_R, py - DOT_R, s, s)
     }
   }
@@ -108,6 +121,7 @@ function redraw() {
   if (!dctx) return
   const dpr = window.devicePixelRatio || 1
   const w = el.clientWidth, h = el.clientHeight
+  boxW.value = w; boxH.value = h   // keep the label map in sync with the canvas box
   el.width = Math.max(1, w * dpr); el.height = Math.max(1, h * dpr)
   dctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   dctx.clearRect(0, 0, w, h)
@@ -263,6 +277,8 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
     <div class="uv-ctrl cc-panel-controls">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
+      <button class="cc-btn cc-btn-ghost" :class="{ on: showLegend }" @click="showLegend = !showLegend"
+              v-tooltip.bottom="'Toggle the population legend'"><i class="pi pi-list" /></button>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
@@ -270,7 +286,11 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
       <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
            this opaque div OVER the transparent hi-res points (the points-missing bug). On-screen it
            carries the scatter ground for the letterbox margins. -->
-      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround }">
+      <!-- forceLight = board/PDF export: drop the plot's bounding-box border (+ rounding) so the
+           exported figure has no frame around the UMAP; on-screen it keeps the border. -->
+      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround,
+                                     border: forceLight ? 'none' : undefined,
+                                     borderRadius: forceLight ? '0' : undefined }">
         <template v-if="points && points.length">
           <canvas ref="dotsEl" class="uv-canvas" />
           <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
@@ -281,7 +301,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
           <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
         </div>
       </div>
-      <div v-if="legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
+      <div v-if="showLegend && legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />
           <span class="leg-lbl">{{ l.label }}</span>

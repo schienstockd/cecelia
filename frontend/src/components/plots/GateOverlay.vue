@@ -177,14 +177,18 @@ function drawGateLabel(g: GateSpec, path: string, colour: string, label?: string
   // normally sit just ABOVE the gate's top edge; if a gate near the plot top would push the label
   // off-canvas at the top (it was getting clipped), put it just BELOW the gate instead; only if that
   // would also clip (a gate spanning the full height) fall back to just inside the top edge.
-  const { h } = size(); const LABEL_H = 15             // ~12px glyphs + halo
+  const { w, h } = size(); const LABEL_H = 15          // ~12px glyphs + halo
   let y: number, baseline: CanvasTextBaseline
   if (top - 4 >= LABEL_H) { y = top - 4; baseline = 'bottom' }
   else if (bottom + 4 + LABEL_H <= h) { y = bottom + 4; baseline = 'top' }
   else { y = top + 4; baseline = 'top' }
   c.textBaseline = baseline
-  c.strokeText(name, cx, y)
-  c.fillStyle = colour; c.fillText(name, cx, y); c.restore()
+  // clamp horizontally so a gate near the left/right edge doesn't push the (centred) label — and its
+  // trailing "…%" — off-canvas where it gets clipped. Keep the whole label inside the plot area.
+  const halfW = c.measureText(name).width / 2 + 3
+  const x = Math.max(halfW, Math.min(w - halfW, cx))
+  c.strokeText(name, x, y)
+  c.fillStyle = colour; c.fillText(name, x, y); c.restore()
 }
 function drawHandles(g: GateSpec, colour: string) {
   const c = ctx!; c.fillStyle = '#fff'; c.strokeStyle = colour; c.lineWidth = 1.5

@@ -169,6 +169,11 @@ function addPlot(i: number, val: string) {
 }
 function clearSlot(i: number) { layout.setContent(props.canvasKey, i, null) }
 
+// per-slot title (figure caption) — persisted in the slot's own state bag (survives navigation with the
+// rest of the layout). Empty by default; drawn above the plot in the PDF export.
+const slotTitle = (i: number): string => (entry.value.contents[i]?.state.title as string) ?? ''
+function setSlotTitle(i: number, v: string) { const c = entry.value.contents[i]; if (c) c.state.title = v }
+
 // duplicate a slot's plot into the NEXT EMPTY slot (deep-copy its state so you can tweak one thing);
 // no-op if the grid is full.
 function nextEmpty(from: number): number {
@@ -286,7 +291,7 @@ const interactiveRefs = new Map<number, ExportRef>()
 function setSummaryRef(i: number, el: unknown) { if (el) summaryRefs.set(i, el as SummaryRef); else summaryRefs.delete(i) }
 function setInteractiveRef(i: number, el: unknown) { if (el) interactiveRefs.set(i, el as ExportRef); else interactiveRefs.delete(i) }
 
-type PdfSlotOut = { rect: { x: number; y: number; w: number; h: number }; png: string | null; name: string; csv?: string | null }
+type PdfSlotOut = { rect: { x: number; y: number; w: number; h: number }; png: string | null; name: string; title?: string; csv?: string | null }
 async function capturePage() {
   const gridEl = gridRef.value
   if (!gridEl) return { aspect: 1, slots: [] as PdfSlotOut[] }
@@ -315,7 +320,7 @@ async function capturePage() {
       const sr = el.getBoundingClientRect()
       const rect = { x: (sr.left - gr.left) / gr.width, y: (sr.top - gr.top) / gr.height,
                      w: sr.width / gr.width, h: sr.height / gr.height }
-      slots.push({ rect, png, name: labelFor(c), csv })
+      slots.push({ rect, png, name: labelFor(c), title: (c.state.title as string) || undefined, csv })
     }
   } finally { capturing.value = false }
   return { aspect: gr.width / Math.max(1, gr.height), slots }
@@ -448,6 +453,12 @@ defineExpose({ capturePage, collectCsvs })
                @dragstart="dragFrom.i = i" @dragend="dragFrom.i = -1"
                @dragover.prevent @drop.prevent="onDrop(i)"
                @mousedown="layout.setActive(canvasKey, i)">
+            <!-- per-slot title (figure caption) — persisted in the slot's state, drawn above the plot
+                 in the PDF export (pdf.ts). Only for filled slots. -->
+            <input v-if="entry.contents[i]" class="lc-slot-cap" :value="slotTitle(i)"
+                   @input="setSlotTitle(i, ($event.target as HTMLInputElement).value)"
+                   @mousedown.stop placeholder="Add a title…" />
+            <div class="lc-slot-plot">
             <!-- summary plot -->
             <SummaryPanel v-if="entry.contents[i]?.kind === 'summary' && specById[entry.contents[i]!.ref]"
                           :ref="el => setSummaryRef(i, el)"
@@ -491,6 +502,7 @@ defineExpose({ capturePage, collectCsvs })
                 </optgroup>
               </select>
               <span class="lc-add-hint">empty slot</span>
+            </div>
             </div>
           </div>
         </div>
@@ -564,7 +576,14 @@ defineExpose({ capturePage, collectCsvs })
 .lc-zoom { display: block; }
 .lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; }
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: 6px; overflow: hidden;
-  display: flex; min-width: 0; min-height: 0; background: var(--cc-bg); }
+  display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--cc-bg); }
+/* per-slot title (figure caption): a plain-looking, centred, editable line above the plot */
+.lc-slot-cap { flex: 0 0 auto; width: 100%; box-sizing: border-box; border: none; background: transparent;
+  color: var(--cc-text); font-size: 12px; font-weight: 600; text-align: center; padding: 3px 6px 1px; }
+.lc-slot-cap::placeholder { color: var(--cc-text-dim); font-weight: 400; opacity: 0.55; }
+.lc-slot-cap:focus { outline: none; background: var(--cc-surface-2); }
+/* the plot area fills the rest of the slot (was the slot itself before the caption was added) */
+.lc-slot-plot { flex: 1; min-width: 0; min-height: 0; display: flex; position: relative; }
 .lc-slot.filled { border-style: solid; }
 /* selection = amber, matching CanvasPanel .panel.active and every module page (was a clashing violet).
    A FILLED slot's panel already draws the amber border + glow, so don't double it there — only an empty

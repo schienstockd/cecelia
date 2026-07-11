@@ -43,9 +43,10 @@ const props = withDefaults(defineProps<{
   // bump to force a data refresh when tiles are unchanged but membership moved (ancestor gate edit,
   // napari selection) — the parent's point cloud can change without any def changing.
   reloadKey?: string | number
+  fontSize?: number                              // axis font size (px) forwarded to each tile (vis slider)
 }>(), {
   renderMode: 'points', gateLabels: true, gateLineWidth: 1.5,
-  highlight: () => [], cols: null, axisFromZero: true, reloadKey: 0,
+  highlight: () => [], cols: null, axisFromZero: true, reloadKey: 0, fontSize: 11,
 })
 // true when ≥1 tile's preferred transform was auto-linearised (host shows an amber hint on its control)
 const emit = defineEmits<{ coerced: [boolean] }>()
@@ -219,7 +220,7 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
                          :pop-layers="panelData[d.key].popLayers" :show-pops="(highlight?.length ?? 0) > 0"
                          :render-mode="renderMode" mode="off" :gate-labels="gateLabels"
                          :gate-line-width="gateLineWidth" :compact="!single" :readonly="true"
-                         :hide-axis-labels="cols != null" />
+                         :hide-axis-labels="cols != null" :font-size="fontSize" />
         <div v-else class="gm-loading">…</div>
       </div>
     </template>

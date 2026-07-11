@@ -45,10 +45,12 @@ const props = withDefaults(defineProps<{
   hideAxisLabels?: boolean                       // drop the x/y axis-name labels (pairs matrix — the
                                                  // diagonal names each channel, so per-tile labels only
                                                  // clutter/clip); also reclaims their padding
+  fontSize?: number                              // base axis font size (px) — the vis slider; scales the
+                                                 // tick labels + axis names (--gate-font). Default 11.
 }>(), {
   gates: () => [], popLayers: () => [], renderMode: 'points', showPops: false,
   mode: 'off', gateLineWidth: 1.5, gateLabels: false, viewTick: 0, loading: false, compact: false, readonly: false,
-  hideAxisLabels: false,
+  hideAxisLabels: false, fontSize: 11,
 })
 const emit = defineEmits<{ draw: [Partial<GateSpec>]; edit: [{ path: string; gate: GateSpec }]; cancel: [] }>()
 
@@ -100,7 +102,8 @@ defineExpose({ exportImage, hiRes })
 </script>
 
 <template>
-  <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }">
+  <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }"
+       :style="{ '--gate-font': `${fontSize}px` }">
     <div class="panel-plot">
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
@@ -136,8 +139,8 @@ defineExpose({ exportImage, hiRes })
 /* compact: tight chrome for small montage squares (gating-strategy) — smaller padding, no min-height,
    axis names pulled in, tick labels hidden to avoid crowding */
 .plot-capture.compact { min-height: 0; padding: 10px 8px 20px 30px; }
-.plot-capture.compact .axis-x { bottom: -15px; font-size: 10px; }
-.plot-capture.compact .axis-y { left: -24px; font-size: 10px; }
+.plot-capture.compact .axis-x { bottom: -15px; font-size: calc(var(--gate-font, 11px) - 1px); }
+.plot-capture.compact .axis-y { left: -24px; font-size: calc(var(--gate-font, 11px) - 1px); }
 .plot-capture.compact .xtick-lbl, .plot-capture.compact .ytick-lbl { display: none; }
 /* compact tiles can be smaller than the full-size 150px plot floor — lift it so the plot shrinks to the
    (square) tile instead of overflowing and being clipped by the cell (the pairs matrix packs small tiles). */
@@ -152,13 +155,15 @@ defineExpose({ exportImage, hiRes })
 .axisline-y { left: 0; top: 0; bottom: 0; width: 1px; }
 .xtick { position: absolute; bottom: 0; transform: translate(-50%, 100%); display: flex; flex-direction: column; align-items: center; pointer-events: none; }
 .xtick-mark { width: 1px; height: 5px; background: var(--cc-text-dim); }
-.xtick-lbl { margin-top: 3px; font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
+.xtick-lbl { margin-top: 3px; font-size: calc(var(--gate-font, 11px) - 1px); color: var(--cc-text-dim); white-space: nowrap; }
 .ytick { position: absolute; left: 0; transform: translate(-100%, -50%); display: flex; align-items: center; pointer-events: none; }
 .ytick-mark { width: 5px; height: 1px; background: var(--cc-text-dim); }
-.ytick-lbl { margin-right: 3px; font-size: 10px; color: var(--cc-text-dim); white-space: nowrap; }
-.axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); font-size: 13px; font-weight: 600; color: var(--cc-text); }
+.ytick-lbl { margin-right: 3px; font-size: calc(var(--gate-font, 11px) - 1px); color: var(--cc-text-dim); white-space: nowrap; }
+/* nowrap so a long channel name (e.g. "Bcells-ubiTom") stays on ONE line in the axis gutter instead of
+   wrapping into the plot; it sits in the .plot-capture padding, which overflows visibly if needed */
+.axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 /* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
-  writing-mode: vertical-rl; font-size: 13px; font-weight: 600; color: var(--cc-text); }
+  writing-mode: vertical-rl; white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 .panel-loading { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--cc-text-dim); }
 </style>

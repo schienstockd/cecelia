@@ -101,9 +101,14 @@ slots capture the live viewer via `/api/napari/screenshot` (backend restart to a
 reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out **exact A4** pages
 (per-board orientation) via `pdf-lib`.
 
+- **Per-slot title (figure caption)**: each filled slot has an editable title line (`.lc-slot-cap`,
+  persisted in the slot's `state.title`), shown above the plot on-screen and drawn above the slot image
+  in the PDF (`pdf.ts` reserves `SLOT_TITLE_H` only when a title is set). Empty by default.
 - **Light theme**: dark theme is on-screen only. Each plot exposes `exportImage()` → a plot-only
   **light-theme** PNG (summary via `PlotChart.toImageURL(_, light)`; interactive/cluster via a
   `forceLight`/`.cc-light` re-render). Chrome is excluded (the plot host is captured, not the slot).
+  `UmapView` also drops its plot bounding-box border under `forceLight` so the exported figure is
+  frameless.
 - **Hi-res raster**: WebGL scatters (UMAP, gating cell) would export soft at screen backing size. The
   **shared** helpers `rasterExportScale` + `rasterPlotToImageURL` (`plots/export.ts`) target a fixed
   ~2200px long side (scale 4–14×) and re-render the point cloud at that scale via each view's `hiRes`
