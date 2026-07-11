@@ -159,9 +159,11 @@ defineExpose({ exportImage, hiRes })
 .ytick { position: absolute; left: 0; transform: translate(-100%, -50%); display: flex; align-items: center; pointer-events: none; }
 .ytick-mark { width: 5px; height: 1px; background: var(--cc-text-dim); }
 .ytick-lbl { margin-right: 3px; font-size: calc(var(--gate-font, 11px) - 1px); color: var(--cc-text-dim); white-space: nowrap; }
-.axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
+/* nowrap so a long channel name (e.g. "Bcells-ubiTom") stays on ONE line in the axis gutter instead of
+   wrapping into the plot; it sits in the .plot-capture padding, which overflows visibly if needed */
+.axis-x { position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 /* vertical text via writing-mode (rotate's origin offsets by half the text width → overlap) */
 .axis-y { position: absolute; left: -66px; top: 50%; transform: translateY(-50%) rotate(180deg);
-  writing-mode: vertical-rl; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
+  writing-mode: vertical-rl; white-space: nowrap; font-size: calc(var(--gate-font, 11px) + 2px); font-weight: 600; color: var(--cc-text); }
 .panel-loading { position: absolute; top: 4px; right: 6px; font-size: 11px; color: var(--cc-text-dim); }
 </style>
