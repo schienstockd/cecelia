@@ -127,6 +127,17 @@ export interface BuildOpts extends VisProps {
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
 const FONT = 'Helvetica, Arial, sans-serif'
+
+// Measure rendered text width (memoised canvas) so margins fit labels exactly instead of guessing by
+// char count (which over-reserved and left a gap). Falls back to a rough estimate outside the browser.
+let _measCtx: CanvasRenderingContext2D | null = null
+function textWidth(text: string, fontPx: number): number {
+  if (typeof document === 'undefined') return text.length * fontPx * 0.55
+  if (!_measCtx) _measCtx = document.createElement('canvas').getContext('2d')
+  if (!_measCtx) return text.length * fontPx * 0.55
+  _measCtx.font = `${fontPx}px ${FONT}`
+  return _measCtx.measureText(text).width
+}
 const THEME = {
   style: { background: 'white', color: '#111', fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -392,9 +403,10 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // the top row of cells — and a touch more when a title (top-left) shares the band.
   const topPad = o.legend ? (o.title ? 52 : 46) : (o.title ? 34 : 12)
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
-  // clipped at a fixed 120). Approx char width ≈ 0.6·fontSize; clamp so it never eats the whole plot.
-  const longestY = (r.yLabels ?? []).reduce((m, s) => Math.max(m, String(s).length), 0)
-  const marginLeft = Math.round(Math.min(260, Math.max(120, longestY * (o.fontSize || 11) * 0.6 + 18)))
+  // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
+  // over-reserved → a big left gap); +14 for the tick mark + gap, clamped so it never eats the plot.
+  const longestYW = (r.yLabels ?? []).reduce((m, s) => Math.max(m, textWidth(String(s), o.fontSize || 11)), 0)
+  const marginLeft = Math.round(Math.min(260, Math.max(48, longestYW + 14)))
   const opts: Record<string, unknown> = {
     ...THEME, marginLeft, marginBottom: 64, marginTop: topPad, marginRight: 16,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
