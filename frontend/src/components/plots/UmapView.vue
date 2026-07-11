@@ -27,10 +27,13 @@ const props = defineProps<{
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
-  state: { labels?: boolean }
+  state: { labels?: boolean; legend?: boolean }
 }>()
 const log = useLogStore()
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
+// show/hide the population legend — persisted per panel (default on). On the Analysis canvas it can
+// eat ~half the plot, so let the user reclaim that space.
+const showLegend = computed({ get: () => props.state.legend !== false, set: v => (props.state.legend = v) })
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
 
 // `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only) —
@@ -263,6 +266,8 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
     <div class="uv-ctrl cc-panel-controls">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
+      <button class="cc-btn cc-btn-ghost" :class="{ on: showLegend }" @click="showLegend = !showLegend"
+              v-tooltip.bottom="'Toggle the population legend'"><i class="pi pi-list" /></button>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
     </div>
@@ -281,7 +286,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
           <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
         </div>
       </div>
-      <div v-if="legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
+      <div v-if="showLegend && legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />
           <span class="leg-lbl">{{ l.label }}</span>

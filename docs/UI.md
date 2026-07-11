@@ -569,6 +569,14 @@ points, no fetch). In matrix mode `GateScatterCell` gets `hideAxisLabels` (the d
 channel, so per-tile axis labels only clutter/clip). Add a new gate-montage view by building `PanelDef[]`
 and rendering `<GateMontage>` — never a second gate renderer.
 
+The gate scatter's axis chrome is HTML (tick labels + rotated axis names), so it doesn't inherit
+Plot's `style.fontSize`. It takes an explicit **`fontSize`** prop (default 11) exposed as the
+`--gate-font` CSS var and used by the tick/axis-name rules (so the vis **Font size** slider works on
+the board's gating-strategy plot); `GatingStrategyView` forwards `vis.fontSize` through `GateMontage`.
+Gate `%` labels (`GateOverlay.drawGateLabel`) are clamped to the plot box on **both** axes — vertical
+fallback (above→below→inside) plus a horizontal clamp on the centred text — so a gate at the edge
+doesn't clip the trailing `…%`.
+
 ### Generic plot-integration interface (reuse across surfaces)
 
 A plot is defined **once** and appears on any surface — module page, **Analysis board**, and (future)
@@ -631,7 +639,8 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
   render as absolute overlay strips over the body; a **pin** toggle (`pi-thumbtack`, next to the drag
   icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
 - **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
-  `.uv-ctrl`, `ImageStripView` `.is-bar`) opt in by tagging that bar `.cc-panel-controls` **and** giving
+  `.uv-ctrl` — which carries the cluster-label **and** population-legend toggles, each persisted per
+  panel in `state`, `ImageStripView` `.is-bar`) opt in by tagging that bar `.cc-panel-controls` **and** giving
   their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
   then auto-hides it by the same trigger. One mechanism for every control surface; don't add a second.
 - **Opt OUT with `:auto-hide="false"`** where you interact with the plot constantly and controls popping

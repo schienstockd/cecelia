@@ -211,7 +211,7 @@ defineExpose({ exportImage })
 
     <GateMontage ref="montageRef" :project-uid="projectUid" :image-uid="imageUid" :value-name="valueName"
                  :pop-type="popType" :defs="panelDefs" :col-label="colLabel" :render-mode="renderMode"
-                 :gate-labels="true">
+                 :gate-labels="true" :font-size="vis?.fontSize ?? 11">
       <template #empty>
         No gate to show for “{{ rootPop }}”.
         {{ showHierarchy ? 'No gated populations beneath it — draw gates on the Gate page first.'
