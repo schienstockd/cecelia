@@ -2,7 +2,7 @@ import { ref, computed, watch, onMounted, onUnmounted, type Ref } from 'vue'
 import { useWsStore } from '../stores/ws'
 import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
-import { tkey } from '../plots/series'
+import { tkey, parseTkey } from '../plots/series'
 import { defaultVis, type VisProps } from '../plots/plot'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
 
@@ -126,7 +126,15 @@ export function useSummaryData(opts: {
   // prune the selection to populations that still exist — but ONLY once we actually have populations.
   // segPops is transiently [] during load / image-switch / a failed fetch; pruning then would wipe a
   // restored selection (and it would save back empty). Guard so an empty segPops never clears gSel.
-  watch(segPops, () => { if (segPops.value.length) gSel.value = gSel.value.filter(k => validSelKeys.value.has(k)) })
+  // popType-AWARE: only prune keys of the CURRENTLY-LOADED popType. On the mixed board (popType follows
+  // the active slot), segPops holds only one popType at a time — pruning blindly would drop the OTHER
+  // plots' selections (e.g. selecting a trackclust pop-summary slot wiped the track-measure plots'
+  // live/track pops). Keep any key whose popType isn't the current one; it belongs to another slot.
+  watch(segPops, () => {
+    if (!segPops.value.length) return
+    const valid = validSelKeys.value, pt = popType.value
+    gSel.value = gSel.value.filter(k => parseTkey(k).popType !== pt || valid.has(k))
+  })
   onMounted(async () => { ws.on('gating:popmap', onPopmap); await loadSpecs(); await loadPops(); await loadAttrs() })
   onUnmounted(() => ws.off('gating:popmap', onPopmap))
 

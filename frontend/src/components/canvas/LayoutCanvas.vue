@@ -117,7 +117,7 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, validSelKeys,
+  specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
 } = useSummaryData({
@@ -277,10 +277,14 @@ function clusterPanelProps(i: number) {
 
 // prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
 // a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
-// then persist-empty) a restored per-slot selection.
+// then persist-empty) a restored per-slot selection. popType-AWARE (mixed board): segPops holds only the
+// active slot's popType, so only prune keys of THAT popType — else selecting e.g. a trackclust slot would
+// wipe the live/track selections of the other (track-measure) plots.
 watch(segPops, () => {
   if (!segPops.value.length) return
-  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = st(c).sel.filter(k => validSelKeys.value.has(k))
+  const valid = validSelKeys.value, pt = popType.value
+  const keep = (k: string) => parseTkey(k).popType !== pt || valid.has(k)
+  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = st(c).sel.filter(keep)
 })
 
 // ── PDF export: capture each filled slot to a PNG (hiding the drag grips), keyed by its grid-area ──

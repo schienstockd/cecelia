@@ -69,7 +69,7 @@ provide(CANVAS_ZOOM_KEY, zoom)
 const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, validSelKeys,
+  specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
 } = useSummaryData({ projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module, shared })
@@ -116,7 +116,12 @@ function explodePanel(src: { state: PanelState }, measures: string[]) {
 }
 
 // useSummaryData prunes the GLOBAL selection when pops vanish; prune each panel's LOCAL selection here.
-watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.filter(k => validSelKeys.value.has(k)) })
+// popType-aware (keep other-popType keys) for parity with the board's mixed-popType prune.
+watch(segPops, () => {
+  const valid = validSelKeys.value, pt = popType.value
+  const keep = (k: string) => parseTkey(k).popType !== pt || valid.has(k)
+  for (const p of panels.value) p.state.sel = p.state.sel.filter(keep)
+})
 </script>
 
 <template>
