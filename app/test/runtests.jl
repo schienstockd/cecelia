@@ -2735,6 +2735,29 @@ end
         @test length(rc0["series"]) == 1 && rc0["series"][1]["n"] == 6
     end
 
+    @testset "plot count (raw + proportion normalize) — population summary" begin
+        # two pops in two images; count → raw row counts; normalize=:fraction → each pop's share of
+        # its image's plotted total (the population-summary plot). Deterministic frame — no fixture.
+        df = DataFrame("value_name" => fill("A", 10),
+                       "pop" => ["/p","/p","/p","/q","/q", "/p","/q","/q","/q","/p"],
+                       "uID" => ["x","x","x","x","x",       "y","y","y","y","y"])
+        # image x: /p=3, /q=2 (total 5); image y: /p=2, /q=3 (total 5)
+        bykey(r) = Dict((s["uID"], s["pop"]) => s["value"] for s in r["series"])
+        raw = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                   normalize=:none, by_image=true)
+        @test raw["chartType"] == "count"
+        rk = bykey(raw)
+        @test rk[("x","A/p")] == 3.0 && rk[("x","A/q")] == 2.0
+        @test rk[("y","A/p")] == 2.0 && rk[("y","A/q")] == 3.0
+        prop = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                    normalize=:fraction, by_image=true)
+        @test prop["normalize"] == "fraction"
+        pk = bykey(prop)
+        @test pk[("x","A/p")] ≈ 0.6 && pk[("x","A/q")] ≈ 0.4     # 3/5, 2/5
+        @test pk[("y","A/p")] ≈ 0.4 && pk[("y","A/q")] ≈ 0.6     # 2/5, 3/5
+        @test Dict((s["uID"], s["pop"]) => s["n"] for s in prop["series"])[("x","A/p")] == 3
+    end
+
     @testset "plot matrix (heatmap: profile + crosstab)" begin
         # PROFILE: rows = measures, cols = category levels; cell = mean(measure | level). Pools the whole
         # frame into one grid (no series). Deterministic synthetic frame — no fixture.

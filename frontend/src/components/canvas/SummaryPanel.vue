@@ -512,7 +512,8 @@ defineExpose({ getCsv, exportImage })
               <option value="sd">SD</option>
             </select>
           </label>
-          <label v-else-if="chartType === 'frequency'" class="sp-pop-row">
+          <label v-else-if="chartType === 'frequency' || chartType === 'count'" class="sp-pop-row"
+                 v-tooltip.left="chartType === 'count' ? 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count' : ''">
             <span>Proportion</span>
             <input type="checkbox" v-model="normalize" />
           </label>

@@ -250,10 +250,22 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # cell count per timepoint per image — the temporal-consistency time series (drops/spikes are
         # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
         # or a line over the ordered group (t). See docs/PLOTS.md → Segmentation QC plot.
+        #
+        # `normalize` (:fraction/:total) → each series' FRACTION of that image's plotted total (its
+        # uID bucket): for mutually-exclusive populations (e.g. the clustered pops) that's each pop's
+        # share of the image's cells, plotted across images — the "population summary" plot. Pooled
+        # (scope=summarised, uID="") normalises over the whole pooled set.
         groups = sgroups(df)
-        series = [merge(base(g), Dict("value" => Float64(nrow(g.sub)), "n" => nrow(g.sub)))
-                  for g in groups]
+        frac = normalize == :fraction || normalize == :total
+        totals = Dict{String,Int}()
+        frac && for g in groups; totals[g.uid] = get(totals, g.uid, 0) + nrow(g.sub); end
+        series = map(groups) do g
+            n = nrow(g.sub)
+            v = frac ? (get(totals, g.uid, 0) == 0 ? 0.0 : n / totals[g.uid]) : Float64(n)
+            merge(base(g), Dict("value" => v, "n" => n))
+        end
         return withgb(Dict{String,Any}("chartType" => "count", "measureType" => "numeric",
+                                "normalize" => String(normalize),
                                 "granularity" => String(granularity), "series" => series))
 
     elseif chart_type == "boxplot"

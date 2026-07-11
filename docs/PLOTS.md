@@ -149,6 +149,20 @@ as `bar`), needing **no** `measure`. It's the segmentation-integrity headline: w
 **cell count per timepoint** — the temporal-consistency time series (drops/spikes are visible). The
 frontend renders it as a bar, or a line over the ordered `group` (t).
 
+`normalize` (`:fraction`) turns each series into its **fraction of its image's plotted total** (its
+`uID` bucket; pooled → the whole set) — for mutually-exclusive populations that's each pop's **% of
+the image's cells**. Exposed as the panel's **Proportion** toggle (now shown for `count`, not just
+`frequency`). This is the **population summary** plot.
+
+### Population summary plot
+
+`app/src/plotDefinitions/population_summary.json` (`module: "phenotype"`, `family: "summary"`,
+`chartTypes: ["count"]`, `popType: "flow"`) — cell counts / proportion of each **gated** population
+across images. Hosted on the **Phenotype** page (`PhenotypeModule.vue` → `<SummaryCanvas module="phenotype">`,
+route `/phenotype`) — the analysis counterpart to **Gate**, exactly as **Behaviour** is to **Track**.
+Because the page's summary canvas is popType-homogeneous, the page sorts the popType (Phenotype = `flow`
+gated cells); the same `count`+`normalize` backbone serves gated pops here and label counts on Segment.
+
 ### Segmentation QC plot
 
 The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*
