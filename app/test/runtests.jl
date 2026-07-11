@@ -2566,6 +2566,19 @@ end
             sp = pop_df(img, "live", ["B/_tracked"]; granularity=:track,
                         pop_cols=["live.track.speed"])
             @test "live.track.speed" in names(sp) && !("live.track.duration" in names(sp))
+
+            # cell_measures aggregation (the clustTracks path): a per-cell measure is aggregated to
+            # per-track feature column(s) via track_props, alongside motility — this is what lets
+            # clustTracks cluster `_tracked` pops on HMM/intensity features, not just motility.
+            cvars = col_names(label_props(img; value_name="B"); data_type=:vars)
+            if !isempty(cvars)
+                base = String(first(cvars))                        # a real per-cell measure
+                ag = pop_df(img, "live", ["B/_tracked"]; granularity=:track, cell_measures=[base])
+                @test any(startswith(c, base * ".") for c in names(ag))   # aggregated → {base}.…
+                @test nrow(ag) == nrow(tr)                          # same tracks, extra feature cols
+                @test "live.track.speed" in names(ag)               # motility still present
+                @test "num_cells" in names(ag)                      # per-track cell count (minTracklength)
+            end
         end
     end
 

@@ -36,7 +36,11 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
 
     pops = _str_list(params, "popsToCluster")           # shared with clustPops (cluster.jl)
     isempty(pops) && (on_log("[ERROR] clustTracks: select at least one track population"); return nothing)
-    pop_type = string(get(params, "popType", "track"))
+    # popScope="tracks" (cluster.json) surfaces `_tracked` populations, which are `live`-derived
+    # (track_id>0 within a cell gate) — resolved under "live" with :track granularity (membership at
+    # cell level → tracks, features from `track_props`). NOT the per-track gate map ("track"), which
+    # is why the old "track" default returned no tracks for `_tracked` pops.
+    pop_type = string(get(params, "popType", "live"))
     suffix   = string(get(params, "valueNameSuffix", "default"))
     feature_cols = _str_list(params, "clusterMeasures") # per-track property column names
     isempty(feature_cols) &&
@@ -61,7 +65,9 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     cell_measures = String[f for f in feature_cols if !(f in mot_set)]
 
     # ── pooled per-track features: one row per track tagged with uID + value_name + track_id ──
-    # pop_type="track" → `track_props` (motility ⊕ on-read aggregates), one point per track.
+    # pop_type "live" + :track → membership from the `_tracked` cell gate, features from `track_props`
+    # (motility ⊕ on-read aggregates), one point per track. (pop_type "track"/"trackclust" would gate
+    # the per-track table directly — same `track_props` features, different membership source.)
     df = pop_df(imgs, uids, pop_type, pops;
                 granularity = :track, cell_measures = cell_measures, pop_cols = String[])
     nrow(df) == 0 && (on_log("[ERROR] clustTracks: no tracks for pops=$(pops)"); return nothing)
