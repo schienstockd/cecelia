@@ -642,9 +642,9 @@ squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver
 
 ### Canvas zoom (fit-to-view)
 
-Every plot canvas — the Analysis board's fixed grid AND the free-floating module canvases
-(`SummaryCanvas`, `GatingPlots`) — shares one visual zoom, so a big workspace fits the screen without
-hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom` ref + `fitWidth`/`fitHeight`;
+Every plot canvas — the Analysis board's fixed grid AND **all** free-floating module canvases
+(`SummaryCanvas`, `GatingPlots`, `ClusterPlots`) — shares one visual zoom, so a big workspace fits the
+screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom` ref + `fitWidth`/`fitHeight`;
 `components/canvas/CanvasZoomControl.vue` is the shared slider/fit/% control. It's a **CSS
 `transform: scale`** — purely visual: it never resizes a plot's own canvas or changes what's exported
 (the export re-renders at full logical resolution; the board neutralises the zoom during PDF capture).
@@ -658,9 +658,10 @@ hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom` ref + `fitWid
 
 ### Show/hide the population manager
 
-The floating population manager (`PopulationManager` on the gate/tracking pages, `SeriesPicker` on
-summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons, persisted per canvas in
-the `shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
+The floating population manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker`
+on summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons on **every** module
+canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`), persisted per canvas in the
+`shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
 
 ---
 

@@ -13,8 +13,9 @@
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
-import { densityGrid, densityImageData, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
+import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
 import { densityContours } from '../../plots/contour'
+import { BLUE_HEAT_RGB } from '../../plots/flowColors'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
@@ -35,6 +36,14 @@ const G = DENSITY_GRID
 const LEVELS = CONTOUR_LEVELS
 
 function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.clientHeight } }
+// base contour/outlier ink resolved from the themed CSS var so it flips DARK-on-white for the light PDF
+// export (.cc-light on an ancestor) and light-on-dark on screen — a hardcoded grey was invisible on the
+// white export. Falls back to a mid slate that reads on either ground.
+function ink(): string {
+  const el = canvasEl.value
+  const v = el && getComputedStyle(el).getPropertyValue('--cc-text-dim').trim()
+  return v || '#64748b'
+}
 function toPx(vx: number, vy: number): [number, number] {
   const { w, h } = size(); const { xMin, xMax, yMin, yMax } = props.viewExtents
   const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
@@ -46,18 +55,25 @@ function gridToPx(gx: number, gy: number): [number, number] {
   return toPx(xMin + (gx / G) * (xMax - xMin), yMin + (gy / G) * (yMax - yMin))
 }
 
-// FlowJo pseudocolour density raster: build the G×G RGBA image, then upscale (smoothed) to the plot rect
-function drawRaster(points: Float32Array, alpha = 1) {
+// FlowJo/OMIQ pseudocolour DOT plot: each point drawn at its position, coloured by its LOCAL density
+// via the blue-heat ramp — point resolution, no blocky cells. Bucketed by colour so we set fillStyle
+// ~B times, not once per point (fast for 100k+ points).
+const DOT_BUCKETS = 64
+const DOT_R = 0.7
+function drawDensityDots(points: Float32Array, alpha = 1) {
   const c = ctx!
-  const img = densityImageData(points, props.viewExtents, G)
-  const off = document.createElement('canvas'); off.width = G; off.height = G
-  const octx = off.getContext('2d')!
-  const idata = octx.createImageData(G, G); idata.data.set(img.data)   // avoids ImageData-ctor buffer typing
-  octx.putImageData(idata, 0, 0)
-  const { w, h } = size()
-  c.save()
-  c.globalAlpha = alpha; c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'
-  c.drawImage(off, 0, 0, G, G, 0, 0, w, h)
+  const t = pointDensities(points, props.viewExtents)
+  const n = points.length / 2
+  const groups: number[][] = Array.from({ length: DOT_BUCKETS }, () => [])
+  for (let i = 0; i < n; i++) groups[Math.min(DOT_BUCKETS - 1, Math.floor(t[i] * DOT_BUCKETS))].push(i)
+  const s = DOT_R * 2
+  c.save(); c.globalAlpha = alpha
+  for (let b = 0; b < DOT_BUCKETS; b++) {
+    const g = groups[b]; if (!g.length) continue
+    const ci = Math.min(255, Math.round((b / (DOT_BUCKETS - 1)) * 255))
+    c.fillStyle = `rgb(${BLUE_HEAT_RGB[ci * 3]},${BLUE_HEAT_RGB[ci * 3 + 1]},${BLUE_HEAT_RGB[ci * 3 + 2]})`
+    for (const i of g) { const [px, py] = toPx(points[2 * i], points[2 * i + 1]); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+  }
   c.restore()
 }
 
@@ -89,10 +105,11 @@ function drawDots(points: Float32Array, colour: string, r = 1.5) {
     c.fillRect(px - r, py - r, s, s)
   }
 }
-// "contour + outliers": the sparse-tail points the contours don't enclose, drawn as subtle dots
+// "contour + outliers": the sparse-tail points the contours don't enclose, drawn as clear dots (they
+// were barely visible before — bumped alpha + size so the tail reads like the old WebGL render did)
 function drawOutliers(points: Float32Array, colour: string) {
-  ctx!.globalAlpha = 0.3
-  drawDots(outlierPoints(points, props.viewExtents, G), colour, 0.6)
+  ctx!.globalAlpha = 0.8
+  drawDots(outlierPoints(points, props.viewExtents, G), colour, 1.3)
   ctx!.globalAlpha = 1
 }
 
@@ -101,10 +118,11 @@ function paintContent() {
   const mode = props.renderMode
   // BASE population
   if (props.basePoints?.length) {
-    if (mode === 'points') drawRaster(props.basePoints, props.showPops ? 0.4 : 1)   // dim under pop overlays
+    if (mode === 'points') drawDensityDots(props.basePoints, props.showPops ? 0.4 : 1)   // dim under pop overlays
     else {
-      drawContours(props.basePoints, '#cbd5e1')
-      if (mode === 'outliers') drawOutliers(props.basePoints, '#cbd5e1')
+      const base = ink()
+      drawContours(props.basePoints, base)
+      if (mode === 'outliers') drawOutliers(props.basePoints, base)
     }
   }
   // child POPULATION overlays

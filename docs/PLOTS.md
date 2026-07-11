@@ -38,16 +38,20 @@ native SVG (so SVG export is "serialize the node") and does **heatmaps/tiled map
 and small. regl-scatterplot now owns **UMAP only**; the **gating** scatter is a **2D density raster**
 (no WebGL) — see below.
 
-**Gating scatter = 2D density raster (no WebGL).** The gating point cloud is non-interactive (fixed
-camera; gate *drawing* is the only interaction, on the canvas2D overlay), so it renders as a
-FlowJo/OMIQ-style density raster instead of a GPU point cloud: `plots/density.ts` bins → Gaussian-blurs
-→ `densityImageData` colours each cell via the shared blue-heat ramp (`plots/flowColors.ts`), upscaled
-smoothly to the plot; contours are clean connected rings from **d3-contour** (`plots/contour.ts`) on the
-blurred grid (replacing jagged marching-squares segments). `components/plots/PlotLayers.vue` draws base
-(raster or contours) + child-pop overlays on one 2D canvas; `GateScatterCell.vue` composites it with the
-gate overlay. **Export re-renders the same 2D content at target scale** (crisp, cannot clip) — this
-replaced the fragile WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change
-(autoscale, zero-extent, image switch); tune the look via `DENSITY_GRID`/`BLUR_*`/`CONTOUR_LEVELS`.
+**Gating scatter = 2D pseudocolour DOT plot (no WebGL).** The gating point cloud is non-interactive
+(fixed camera; gate *drawing* is the only interaction, on the canvas2D overlay), so it renders on a 2D
+canvas instead of a GPU point cloud. **FlowJo/OMIQ look = each point drawn coloured by its LOCAL
+density** (`plots/density.ts` `pointDensities` → blue-heat ramp `plots/flowColors.ts`), NOT a binned
+image — a binned raster showed "weird rectangles"; the dot plot reads at point resolution. Points are
+bucketed by colour so `fillStyle` is set ~64×, not per point. Contours are clean connected rings from
+**d3-contour** (`plots/contour.ts`) on a separate, heavily-blurred grid (`DENSITY_GRID`/`CONTOUR_BLUR_*`;
+the dots use `DOT_GRID`/`DOT_BLUR_*`). `components/plots/PlotLayers.vue` draws base (dots or contours) +
+child-pop overlays on one 2D canvas; `GateScatterCell.vue` composites it with the gate overlay.
+**Export re-renders the same 2D content at target scale** (crisp, cannot clip) — replaced the fragile
+WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change (autoscale, zero-extent,
+image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` var (so it flips
+dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
+detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
 
 Code: `frontend/src/plots/plot.ts` (`buildPlotOptions(Plot, r, o)` — one builder per chart type,
 returns a `Plot.plot()` options object; takes the Plot module as a param so it carries no eager import)

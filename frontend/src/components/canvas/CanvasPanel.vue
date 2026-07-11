@@ -142,7 +142,9 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel-spacer { flex: 1; }
 /* main region below the head: the anchor for the auto-hide control overlays (position: relative) and
    the box the body fills. */
-.panel-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* overflow: hidden so a plot with its own min-height can't spill out of the main region and cover the
+   footer (export/duplicate) or header when the panel/slot is small — it clips within the box instead */
+.panel-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* controls / footer: shared layout only. The overlay look + hover-reveal live in the global
    .cc-panel-controls utility (style.css); the in-flow look (auto-hide off) is the .inflow variant. */
 .panel-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; }

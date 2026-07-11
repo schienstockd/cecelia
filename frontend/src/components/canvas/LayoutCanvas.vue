@@ -566,7 +566,11 @@ defineExpose({ capturePage, collectCsvs })
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: 6px; overflow: hidden;
   display: flex; min-width: 0; min-height: 0; background: var(--cc-bg); }
 .lc-slot.filled { border-style: solid; }
-.lc-slot.active { border-color: #7c3aed; }
+/* selection = amber, matching CanvasPanel .panel.active and every module page (was a clashing violet).
+   A FILLED slot's panel already draws the amber border + glow, so don't double it there — only an empty
+   slot needs its own amber selection border. */
+.lc-slot.active { border-color: #ff8c1a; }
+.lc-slot.filled.active { border-color: var(--cc-border); }
 /* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
