@@ -2756,6 +2756,20 @@ end
         @test pk[("x","A/p")] ≈ 0.6 && pk[("x","A/q")] ≈ 0.4     # 3/5, 2/5
         @test pk[("y","A/p")] ≈ 0.4 && pk[("y","A/q")] ≈ 0.6     # 2/5, 3/5
         @test Dict((s["uID"], s["pop"]) => s["n"] for s in prop["series"])[("x","A/p")] == 3
+
+        # no measure + a DISTRIBUTION chart → each IMAGE is a point (its pop count), grouped by pop:
+        # boxplot/beeswarm show within-pop variability and compare pops. A/p counts = [3(x),2(y)],
+        # A/q = [2(x),3(y)] → each pop has 2 points (images), median 2.5.
+        bx = Cecelia._summary_agg(df, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test bx["chartType"] == "boxplot"
+        bybp = Dict(s["pop"] => s for s in bx["series"])
+        @test Set(keys(bybp)) == Set(["A/p", "A/q"])
+        @test bybp["A/p"]["n"] == 2 && bybp["A/p"]["median"] == 2.5
+        # bar over the same per-image counts → mean (A/p mean of [3,2] = 2.5)
+        br = Cecelia._summary_agg(df, "bar"; measure=nothing, granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test Dict(s["pop"] => s["value"] for s in br["series"])["A/p"] == 2.5
     end
 
     @testset "plot matrix (heatmap: profile + crosstab)" begin

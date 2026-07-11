@@ -144,6 +144,32 @@ end
 _var_measure_set(imgs::AbstractVector{<:CciaImage}, value_name)::Set{String} =
     isempty(imgs) ? Set{String}() : _var_measure_set(first(imgs), value_name)
 
+# POPULATION SUMMARY backbone: collapse a cell/track pop_df to ONE ROW PER (value_name, pop, uID),
+# whose value is the population's COUNT — or, when `normalize`, its FRACTION of that image's plotted
+# total (across the plotted pops; pooled over the whole set when there's no uID). Feeding these
+# per-image rows to the normal distribution builders (boxplot/violin/strip/bar) makes each IMAGE a
+# data point grouped by pop → within-pop variability + between-pop comparison (R popsSummary port).
+const _POP_METRIC_COL = "__pop_metric"
+function _population_metric_frame(df::DataFrame; normalize::Symbol=:none)::DataFrame
+    has_uid = :uID in propertynames(df); has_vn = :value_name in propertynames(df)
+    vn  = has_vn  ? String.(df.value_name) : fill("", nrow(df))
+    pop = String.(df.pop)
+    uid = has_uid ? String.(df.uID) : fill("", nrow(df))
+    cnt = Dict{Tuple{String,String,String},Int}(); order = Tuple{String,String,String}[]
+    for i in 1:nrow(df)
+        k = (vn[i], pop[i], uid[i]); haskey(cnt, k) || push!(order, k); cnt[k] = get(cnt, k, 0) + 1
+    end
+    frac = normalize in (:fraction, :total)
+    tot = Dict{String,Int}()
+    frac && for (k, n) in cnt; tot[k[3]] = get(tot, k[3], 0) + n; end
+    vns = String[]; pops = String[]; uids = String[]; vals = Float64[]
+    for k in order
+        n = cnt[k]; push!(vns, k[1]); push!(pops, k[2]); push!(uids, k[3])
+        push!(vals, frac ? (tot[k[3]] == 0 ? 0.0 : n / tot[k[3]]) : Float64(n))
+    end
+    DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, _POP_METRIC_COL => vals)
+end
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
@@ -167,6 +193,17 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         return _matrix_agg(df; mode = String(matrix_mode), measures = ms, category = category,
                            separator = separator, zscore = zscore, normalize = matrix_normalize,
                            granularity = granularity)
+    end
+    # POPULATION SUMMARY — a distribution/bar chart with NO cell `measure`: each IMAGE becomes one data
+    # point whose value is the pop's count (or its fraction of the image's plotted total). Pre-aggregate
+    # to per-(value_name, pop, uID) rows, then run the normal distribution builder over those per-image
+    # values (series = pop, points = images) → boxplot/violin/strip/beeswarm/bar show within-pop
+    # variability and compare pops. `count` keeps its per-(pop, image) bar view (handled below).
+    if measure === nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar")
+        df = _population_metric_frame(df; normalize=normalize)
+        measure = _POP_METRIC_COL
+        by_image = false           # pool images into the pop series as individual points
+        normalize = :none
     end
     # `group` is the optional categorical sub-axis level (e.g. an HMM state) — "" when not grouping.
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)

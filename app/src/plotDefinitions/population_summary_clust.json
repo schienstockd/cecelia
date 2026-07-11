@@ -1,12 +1,12 @@
 {
-  "id": "population_summary",
-  "label": "Population summary",
-  "module": "phenotype",
+  "id": "population_summary_clust",
+  "label": "Population summary (cell clusters)",
+  "module": "clustPops",
   "family": "summary",
   "chartTypes": ["boxplot", "strip", "violin", "bar", "count"],
   "whiteboardCompatible": true,
   "dataSource": {
-    "popType": "flow",
+    "popType": "clust",
     "granularity": "cell"
   },
   "scopeModes": ["per_image", "summarised", "by_attr"],
