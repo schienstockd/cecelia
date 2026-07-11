@@ -231,6 +231,9 @@ async function quitApp() {
 }
 // dev worktree switch: relaunch the backend from another checkout (backend/:8080 only)
 onMounted(() => appCtl.refreshWorktrees())
+// folder name of a worktree path — labels the option so the PRIMARY ("main") checkout is
+// recognisable even when it's on a feature branch (the branch label alone can't identify it).
+function wtFolder(path: string): string { return path.split('/').filter(Boolean).pop() ?? path }
 async function switchWt(path: string) {
   if (!path) return
   svcMsg.value = 'Switching worktree…'
@@ -386,7 +389,7 @@ async function switchWt(path: string) {
                 @change="switchWt(($event.target as HTMLSelectElement).value)"
                 v-tooltip.top="'Relaunch the backend from another git worktree (dev). The page reconnects when it is back.'">
           <option v-for="w in appCtl.worktrees" :key="w.path" :value="w.path">
-            {{ w.branch }}{{ w.current ? ' (current)' : '' }}
+            {{ wtFolder(w.path) }} — {{ w.branch }}{{ w.primary ? ' (main)' : '' }}{{ w.current ? ' (current)' : '' }}
           </option>
         </select>
       </div>

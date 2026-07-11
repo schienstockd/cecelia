@@ -382,13 +382,24 @@ end
 # track belongs to a pop if any of its cells are in that pop. Mirrors the `_pop_df` dedup, but
 # the row key is the track (value_name, track_id), not the cell label.
 function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::AbstractString;
-                        pop_cols=nothing, unique_labels::Bool=true, drop_na::Bool=false)::DataFrame
+                        pop_cols=nothing, unique_labels::Bool=true, drop_na::Bool=false,
+                        cell_measures=String[], categorical=String[])::DataFrame
     frames = DataFrame[]
     for (vn, vpops) in _group_pops_by_value_name(pops, default_vn)
-        tpath = img_track_props_path(img, vn)
-        isfile(tpath) || begin
-            @warn "pop_df(:track): no track table for value_name=$vn — run tracking.track_measures" tpath
+        # per-track feature table (label == track_id): motility (from `{vn}__tracks.h5ad`) ⊕ on-read
+        # aggregates of `cell_measures` (HMM-state / transition frequencies, intensity/morphology
+        # means). SAME source (`track_props`) as the `track`/`trackclust` gating path — so a `live`
+        # `_tracked` population clusters on the identical per-track features as a hand-drawn track
+        # gate. This is why clustTracks works off `_tracked` pops. Empty → untracked seg, skip.
+        ttab = track_props(img; value_name=vn, cell_measures=cell_measures, categorical=categorical)
+        nrow(ttab) == 0 && begin
+            @warn "pop_df(:track): no tracks for value_name=$vn — run tracking.track_measures first" vn
             continue
+        end
+        # narrow to requested measures (keeping the track-key bookkeeping); empty pop_cols = all cols
+        if !(pop_cols === nothing || isempty(pop_cols))
+            keep = intersect(unique(vcat("label", "track_id", "num_cells", String.(pop_cols))), names(ttab))
+            select!(ttab, keep)
         end
 
         # cell-level gate membership (Julia is the evaluator), then cell label → track_id
@@ -402,10 +413,6 @@ function _pop_df_tracks(img::CciaImage, load_map::Function, pops, default_vn::Ab
             cell_tid[Int(r.label)] = Int(r.track_id)
         end
 
-        # per-track table (label == track_id); select requested measures when given
-        tview = label_props(tpath)
-        pop_cols === nothing || select_cols(tview, String.(pop_cols))
-        ttab = as_df(tview)
         trow = Dict(Int(t) => i for (i, t) in enumerate(ttab.label))
 
         for pop in vpops
@@ -970,10 +977,12 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         end
     end
 
-    # :track → one row per track from the companion track table (membership still cell-level).
+    # :track → one row per track (features from `track_props`: motility ⊕ `cell_measures` aggregates),
+    # membership still evaluated at cell level then mapped to tracks.
     if granularity === :track
         df = _pop_df_tracks(img, load_map, pops, resolved_vn;
-                            pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na)
+                            pop_cols=pop_cols, unique_labels=unique_labels, drop_na=drop_na,
+                            cell_measures=cell_measures, categorical=categorical)
         img._pop_df_cache[ckey] = df
         return copy(df)
     end
