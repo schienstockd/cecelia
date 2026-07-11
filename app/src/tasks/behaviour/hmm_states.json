@@ -11,11 +11,11 @@
       "key": "pops",
       "label": "Populations",
       "type": "popSelection",
-      "popType": "live",
+      "popScope": "tracks",
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Populations to model, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked). One HMM is fitted jointly over all selected populations and all selected images. Pick a segmentation's tracked cells (/_tracked) or a gated population within it."
+      "tip": "Track populations to model, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked, or a gated tracked subset like A/qc/_tracked). One HMM is fitted jointly over all selected populations and all selected images."
     },
     {
       "key": "colName",

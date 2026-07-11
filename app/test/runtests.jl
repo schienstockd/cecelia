@@ -2127,6 +2127,73 @@ end
         @test only(lab[2].populations).name == "T"
     end
 
+    @testset "popScope population picker" begin
+        # is_track_pop: the sole cell-vs-track test (Julia parity of the R `isTrack` attribute)
+        @test is_track_pop("live", "/qc") == false                  # plain cell gate
+        @test is_track_pop("flow", "/qc/sub") == false
+        @test is_track_pop("clust", "/myeloid") == false            # cell cluster
+        @test is_track_pop("live", "/_tracked") == true             # derived tracked set (root)
+        @test is_track_pop("live", "/qc/_tracked") == true          # derived tracked subset of a gate
+        @test is_track_pop("track", "/TEST") == true                # per-track gate
+        @test is_track_pop("trackclust", "/clusterA") == true       # track cluster
+
+        # scope_pop_types: sources loaded per scope; clusters toggleable; unknown scope throws
+        @test scope_pop_types("cells", true)  == ["live", "clust"]
+        @test scope_pop_types("cells", false) == ["live"]
+        @test scope_pop_types("tracks", true)  == ["live", "track", "trackclust"]
+        @test scope_pop_types("tracks", false) == ["live", "track"]
+        @test_throws ErrorException scope_pop_types("bogus", true)
+
+        # maps: flow gates (/qc, /qc/sub), a per-track gate (/TEST), a cell cluster (/myeloid),
+        # a track cluster (/clusterA)
+        fm = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
+        add_pop!(fm, "sub"; parent="/qc", gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#abc")
+        tm = PopulationMap(pop_type="track", value_name="C")
+        add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5, colour="#f59e0b")
+        cm = PopulationMap(pop_type="clust", value_name="C")
+        add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2])
+        tcm = PopulationMap(pop_type="trackclust", value_name="C")
+        add_pop!(tcm, "clusterA"; filter_measure="clusters.tracks", filter_fun="in", filter_values=[0])
+        names_for = _ -> ["C"]
+        load = (_, vn, pt) -> vn != "C" ? nothing :
+            pt == "live" ? fm : pt == "track" ? tm : pt == "clust" ? cm : pt == "trackclust" ? tcm : nothing
+
+        # CELLS scope: all-cells root ("/") + plain gates + cell clusters; NO derived _tracked sets
+        cells = population_scope_groups([:img1], names_for, load, "cells")
+        @test length(cells) == 1 && cells[1].value_name == "C"
+        cpaths = [p.path for p in cells[1].populations]
+        @test cpaths == ["/", "/qc", "/qc/sub", "/myeloid"]
+        @test cells[1].populations[1].name == "all"                 # backend all-cells root
+        @test !any(occursin("_tracked", p) for p in cpaths)         # cells never show tracked sets
+        @test all(!is_track_pop(p.pop_type, p.path) for p in cells[1].populations if p.path != "/")
+
+        # CELLS, clusters excluded → drops /myeloid
+        cells_nc = population_scope_groups([:img1], names_for, load, "cells"; include_clusters=false)
+        @test [p.path for p in cells_nc[1].populations] == ["/", "/qc", "/qc/sub"]
+
+        # TRACKS scope: derived _tracked sets (root + per-gate) + per-track gate + track cluster;
+        # NO plain cell gates (/qc, /qc/sub) and NO all-cells root ("/")
+        trk = population_scope_groups([:img1], names_for, load, "tracks")
+        tpaths = Set(p.path for p in trk[1].populations)
+        @test tpaths == Set(["/_tracked", "/qc/_tracked", "/qc/sub/_tracked", "/TEST", "/clusterA"])
+        @test !("/qc" in tpaths) && !("/qc/sub" in tpaths) && !("/" in tpaths)
+        @test all(is_track_pop(p.pop_type, p.path) for p in trk[1].populations)
+        # a derived tracked child keeps its parent gate's colour (visual pairing, read-only)
+        @test only(p for p in trk[1].populations if p.path == "/qc/_tracked").colour == "#ef4444"
+
+        # TRACKS, gated tracking → root /_tracked hidden (redundant with /qc/_tracked); children kept
+        trk_g = population_scope_groups([:img1], names_for, load, "tracks";
+                                        root_derived_ok=(_v, _pt, d) -> d != "/_tracked")
+        gpaths = Set(p.path for p in trk_g[1].populations)
+        @test !("/_tracked" in gpaths) && "/qc/_tracked" in gpaths
+
+        # TRACKS, clusters excluded → drops /clusterA, keeps the per-track gate /TEST
+        trk_nc = population_scope_groups([:img1], names_for, load, "tracks"; include_clusters=false)
+        tncpaths = Set(p.path for p in trk_nc[1].populations)
+        @test !("/clusterA" in tncpaths) && "/TEST" in tncpaths
+    end
+
     # ── Gating engine: recompute, membership, filtered (tracked) pops ─────────
     @testset "recompute! + cells_in_pop" begin
         df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9], track_id=[0, 5, 9, 0, 7])

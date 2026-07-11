@@ -18,7 +18,7 @@
       "key": "popsToTrack",
       "label": "Population",
       "type": "popSelection",
-      "popType": "flow",
+      "popScope": "cells",
       "default": "NONE",
       "tip": "Track the whole segmentation (NONE) or only the cells of a gated flow population."
     },

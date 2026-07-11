@@ -18,12 +18,11 @@
       "key": "popsToCluster",
       "label": "Track populations",
       "type": "popSelection",
-      "popType": "track",
+      "popScope": "tracks",
       "multiple": true,
       "acrossSegmentations": true,
-      "includeRoot": true,
       "default": [],
-      "tip": "Track populations to cluster, across any segmentation — “<seg> · all” is every tracked object of that segmentation, plus any gated track sub-populations. All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
+      "tip": "Track populations to cluster, across any segmentation — “<seg>/_tracked” is every tracked object of that segmentation (shown when it has ungated tracks), plus any gated tracked sub-populations (e.g. <seg>/qc/_tracked). All selected tracks from all selected images are clustered jointly, so cluster IDs are comparable across the set."
     },
     {
       "key": "clusterMeasures",

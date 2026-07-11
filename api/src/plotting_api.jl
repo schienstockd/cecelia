@@ -52,6 +52,7 @@ function api_plot_populations(req::HTTP.Request)
     set_uid = get(q, "setUid", "")
     pop_type = get(q, "popType", "live")
     granularity = get(q, "granularity", "")
+    scope = get(q, "popScope", "")
     isempty(proj) && return _gerr(400, "projectUid required")
     imgs = CciaImage[]
     if !isempty(set_uid)
@@ -68,20 +69,31 @@ function api_plot_populations(req::HTTP.Request)
         imgs = CciaImage[img]
     end
 
-    # All the picker logic (pop_type selection by granularity, cross-image/cross-pop_type union +
-    # dedup, derived-pop injection, pop_type tagging) lives in the PACKAGE (Revise-tracked, tested) —
-    # this route just resolves the images and shapes the result as JSON.
-    groups = plot_population_groups(
-        imgs,
-        img -> versioned_keys(img.label_props),
-        (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt),
-        plot_pop_types(pop_type, granularity);
-        # Only offer the root-level `/_tracked` when a segmentation has tracks OUTSIDE its gates
-        # (ungated tracking). When tracking was gated (e.g. to /qc) the root pop is a redundant
-        # duplicate of /<gate>/_tracked and misleadingly implies whole-segmentation tracking.
-        root_derived_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
-            any(im -> (vn in String.(versioned_keys(im.label_props))) &&
-                      has_ungated_tracks(im; value_name = vn), imgs))
+    # All the picker logic (scope/pop_type selection, cross-image/cross-pop_type union + dedup,
+    # derived-pop injection, cell-vs-track filtering, pop_type tagging) lives in the PACKAGE
+    # (Revise-tracked, tested) — this route just resolves the images and shapes the result as JSON.
+    names_for = img -> versioned_keys(img.label_props)
+    load_map = (img, vn, pt) -> load_pop_map(img; value_name = vn, pop_type = pt)
+    # Only offer the root-level `/_tracked` when a segmentation has tracks OUTSIDE its gates (ungated
+    # tracking). When tracking was gated (e.g. to /qc) the root pop is a redundant duplicate of
+    # /<gate>/_tracked and misleadingly implies whole-segmentation tracking.
+    root_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
+        any(im -> (vn in String.(versioned_keys(im.label_props))) &&
+                  has_ungated_tracks(im; value_name = vn), imgs)
+    # `popScope` (cells|tracks) is the module-function picker: a defined scope resolved across sources,
+    # cell-vs-track filtered. Absent → legacy summary-canvas path (raw popType + granularity).
+    groups = if !isempty(scope)
+        include_clusters = get(q, "includeClusters", "true") != "false"
+        try
+            population_scope_groups(imgs, names_for, load_map, scope;
+                                    include_clusters = include_clusters, root_derived_ok = root_ok)
+        catch e
+            return _gerr(400, sprint(showerror, e))
+        end
+    else
+        plot_population_groups(imgs, names_for, load_map,
+                               plot_pop_types(pop_type, granularity); root_derived_ok = root_ok)
+    end
     result = [Dict("valueName" => g.value_name,
                    "populations" => [Dict("path" => p.path, "name" => p.name,
                                           "colour" => p.colour, "popType" => p.pop_type)

@@ -130,25 +130,35 @@ async function loadPops() {
   if (props.param.type !== 'popSelection') return
   const img = props.context?.images?.[0]
   const projectUid = props.context?.projectUid
-  const popType = props.param.popType ?? 'flow'
+  // popScope (cells|tracks) is the defined module-function scope; the backend resolves sources +
+  // cell/track filtering + existence-checked roots. Falls back to the raw popType picker when absent.
+  const popScope = props.param.popScope
+  const popType = props.param.popType ?? (popScope === 'cells' ? 'flow' : popScope === 'tracks' ? 'live' : 'flow')
   if (popAcross.value) {
     // populations across every segmentation, value_name-prefixed (incl. the derived /_tracked)
     popMultiOptions.value = []
     if (!img || !projectUid) return
     try {
-      const q = `projectUid=${projectUid}&imageUid=${img.uid}&popType=${popType}`
+      let q = `projectUid=${projectUid}&imageUid=${img.uid}`
+      if (popScope) {
+        q += `&popScope=${popScope}`
+        if (props.param.includeClusters === false) q += `&includeClusters=false`
+      } else {
+        q += `&popType=${popType}`
+      }
       const res = await fetch(`/api/plots/populations?${q}`)
       if (!res.ok) return
       const groups = await res.json() as PopGroup[]
       const opts: { label: string; value: string }[] = []
       for (const g of groups) {
-        // includeRoot: offer the WHOLE population of the segmentation (`A/` → is_root → all
-        // cells/tracks), so e.g. cluster tracks can select every tracked object per segmentation
-        // even with no gated sub-populations.
-        if (props.param.includeRoot) opts.push({ label: `${g.valueName} · all`, value: `${g.valueName}/` })
+        // legacy popType path: fabricate the whole-segmentation root client-side. popScope returns
+        // roots from the backend (existence-checked: an all-cells "/" for cells, the guarded
+        // "/_tracked" for tracks), so no bogus "<seg> · all" when the segmentation has no tracks.
+        if (!popScope && props.param.includeRoot) opts.push({ label: `${g.valueName} · all`, value: `${g.valueName}/` })
         for (const p of g.populations) {
-          const value = `${g.valueName}${p.path}`   // "A" + "/_tracked" → "A/_tracked"
-          opts.push({ label: value, value })
+          const value = `${g.valueName}${p.path}`                     // "A" + "/_tracked" → "A/_tracked"
+          const label = p.path === '/' ? `${g.valueName} · all` : value   // backend all-cells root
+          opts.push({ label, value })
         }
       }
       popMultiOptions.value = opts
