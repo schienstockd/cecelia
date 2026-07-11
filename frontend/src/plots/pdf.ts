@@ -10,13 +10,13 @@ import { downloadBlob } from './export'
 
 // Each slot carries a NORMALISED rect (0..1) measured from the on-screen board, so the PDF reproduces
 // the real layout (spans, plates, row height, gaps) rather than a re-derived uniform grid.
-export interface PdfSlot { rect: { x: number; y: number; w: number; h: number }; png: string | null; csv?: string | null; name?: string }
+export interface PdfSlot { rect: { x: number; y: number; w: number; h: number }; png: string | null; csv?: string | null; name?: string; title?: string }
 export interface PdfPage { title: string; aspect: number; slots: PdfSlot[] }
 
 // A4 in points (1pt = 1/72"): 210×297mm → 595.28 × 841.89. Each page picks the ORIENTATION that best
 // fits its board (wide board → landscape, tall board → portrait) so the sheet stays true A4 either way.
 // Tight margins — the board proportions (not padding) drive the spacing.
-const A4_SHORT = 595.28, A4_LONG = 841.89, MARGIN = 16, TITLE_H = 18, PAD = 2
+const A4_SHORT = 595.28, A4_LONG = 841.89, MARGIN = 16, TITLE_H = 18, PAD = 2, SLOT_TITLE_H = 14
 
 function dataUrlToBytes(dataUrl: string): Uint8Array {
   const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1)
@@ -29,8 +29,9 @@ function dataUrlToBytes(dataUrl: string): Uint8Array {
 const safe = (s: string) => s.replace(/[^\w.-]+/g, '_')
 
 export async function exportTabsToPdf(pages: PdfPage[], filename = 'analysis.pdf') {
-  const { PDFDocument } = await import('pdf-lib')
+  const { PDFDocument, StandardFonts } = await import('pdf-lib')
   const doc = await PDFDocument.create()
+  const font = await doc.embedFont(StandardFonts.Helvetica)   // for centring slot titles (needs width metrics)
   for (const page of pages) {
     // A4, oriented to the board: wide (aspect ≥ 1) → landscape, tall → portrait
     const landscape = (page.aspect || 1) >= 1
@@ -56,14 +57,24 @@ export async function exportTabsToPdf(pages: PdfPage[], filename = 'analysis.pdf
       const w = slot.rect.w * bw - 2 * PAD
       const h = slot.rect.h * bh - 2 * PAD
 
+      // optional per-slot title (figure caption): a centred line at the top of the slot; the image area
+      // shrinks below it. Reserve nothing when there's no title.
+      const capH = slot.title ? SLOT_TITLE_H : 0
+      if (slot.title) {
+        const size = 9
+        const tw = font.widthOfTextAtSize(slot.title, size)
+        p.drawText(slot.title, { x: sx + Math.max(0, (w - tw) / 2), y: PAGE_H - syTop - size, size, font })
+      }
+      const imgTop = syTop + capH, imgH = h - capH
+
       if (slot.png) {
         try {
           const img = await doc.embedPng(dataUrlToBytes(slot.png))
-          const s = Math.min(w / img.width, h / img.height)
+          const s = Math.min(w / img.width, imgH / img.height)
           const iw = img.width * s, ih = img.height * s
-          // centre the (aspect-preserved) image in its slot rect; PDF origin is bottom-left
+          // centre the (aspect-preserved) image in its slot rect (below the title); PDF origin is bottom-left
           const x = sx + (w - iw) / 2
-          const y = PAGE_H - (syTop + (h - ih) / 2) - ih
+          const y = PAGE_H - (imgTop + (imgH - ih) / 2) - ih
           p.drawImage(img, { x, y, width: iw, height: ih })
         } catch { /* skip an unembeddable image */ }
       }

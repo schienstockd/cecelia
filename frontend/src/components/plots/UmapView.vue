@@ -286,7 +286,11 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
       <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
            this opaque div OVER the transparent hi-res points (the points-missing bug). On-screen it
            carries the scatter ground for the letterbox margins. -->
-      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround }">
+      <!-- forceLight = board/PDF export: drop the plot's bounding-box border (+ rounding) so the
+           exported figure has no frame around the UMAP; on-screen it keeps the border. -->
+      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround,
+                                     border: forceLight ? 'none' : undefined,
+                                     borderRadius: forceLight ? '0' : undefined }">
         <template v-if="points && points.length">
           <canvas ref="dotsEl" class="uv-canvas" />
           <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
