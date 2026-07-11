@@ -54,6 +54,7 @@ export flatten_pop_tree, plot_pop_types, plot_population_groups
 export is_track_pop, scope_pop_types, population_scope_groups
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
+export co_clustered_value_names
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
 export plot_summary_data
 export track_props, track_cell_measures, is_tracked

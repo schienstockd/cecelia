@@ -2268,6 +2268,11 @@ end
         # unknown pop → left as-is (falls back to default_vn downstream); non-cluster type → no-op
         @test Cecelia._expand_cluster_pops(img, ["/Nope"], "trackclust", "B") == ["/Nope"]
         @test Cecelia._expand_cluster_pops(img, ["/x"], "flow", "B") == ["/x"]
+
+        # per-cluster heatmap detection: a matrix over a clusters.{suffix} column pools co-clustered vns
+        @test Cecelia._cluster_matrix_suffix("matrix", "clusters.movement") == "movement"
+        @test Cecelia._cluster_matrix_suffix("matrix", "pop") === nothing      # per-population mode
+        @test Cecelia._cluster_matrix_suffix("boxplot", "clusters.movement") === nothing
     end
 
     # ── Gating engine: recompute, membership, filtered (tracked) pops ─────────
