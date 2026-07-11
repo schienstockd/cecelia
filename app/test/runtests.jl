@@ -2223,6 +2223,53 @@ end
         @test !("/clusterA" in tncpaths) && "/TEST" in tncpaths
     end
 
+    # ── Cluster-pop auto-share across co-clustered segmentations (CLUSTER_POOLING_PLAN.md) ─────
+    @testset "cluster pop auto-share (co-clustered value_names)" begin
+        td = mktempdir()
+        lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        # B & T were clustered together (both track sidecars carry suffix "movement"); C was not.
+        for vn in ("B", "T")
+            open(joinpath(lpdir, "$(vn)__tracks.clustfeatures.json"), "w") do f
+                JSON3.write(f, Dict("movement" => Dict("features" => ["live.track.speed"], "partOf" => ["u1"])))
+            end
+        end
+        # named trackclust pops authored ONLY under B (filter the shared clusters.movement column)
+        bm = PopulationMap(pop_type="trackclust", value_name="B")
+        add_pop!(bm, "Directed"; filter_measure="clusters.movement", filter_fun="in", filter_values=[3], colour="#c061cb")
+        add_pop!(bm, "Scanning"; filter_measure="clusters.movement", filter_fun="in", filter_values=[0], colour="#62a0ea")
+        save_pop_map!(bm, td)
+
+        img = CciaImage(; dir=td)
+        img.label_props = Dict("B" => "B.h5ad", "T" => "T.h5ad", "C" => "C.h5ad", "_active" => "B")
+
+        # co-clustered segmentations for run "movement" (track granularity) = B and T (not C)
+        @test Set(Cecelia.co_clustered_value_names(img, "movement"; granularity=:track)) == Set(["B", "T"])
+
+        # B has its OWN sidecar → loaded verbatim
+        mb = load_pop_map(img; value_name="B", pop_type="trackclust")
+        @test Set(keys(mb.pops)) == Set(["/Directed", "/Scanning"]) && mb.value_name == "B"
+
+        # T has NO sidecar but IS co-clustered → BORROWS B's named pops, relabeled to T so
+        # membership resolves over T's own track table
+        mt = load_pop_map(img; value_name="T", pop_type="trackclust")
+        @test Set(keys(mt.pops)) == Set(["/Directed", "/Scanning"])
+        @test mt.value_name == "T" && all(p.value_name == "T" for p in values(mt.pops))
+        @test mt.pops["/Directed"].filter_measure == "clusters.movement"
+
+        # C was NOT part of the run (no clustfeatures suffix) → no borrow (empty map)
+        mc = load_pop_map(img; value_name="C", pop_type="trackclust")
+        @test isempty(mc.pops)
+
+        # BARE cluster-pop ref expands across ALL co-clustered segmentations (R popDT parity)
+        @test Set(Cecelia._expand_cluster_pops(img, ["/Directed"], "trackclust", "B")) ==
+              Set(["B/Directed", "T/Directed"])
+        # explicit value_name-prefixed ref is untouched (single-segmentation request still works)
+        @test Cecelia._expand_cluster_pops(img, ["T/Scanning"], "trackclust", "B") == ["T/Scanning"]
+        # unknown pop → left as-is (falls back to default_vn downstream); non-cluster type → no-op
+        @test Cecelia._expand_cluster_pops(img, ["/Nope"], "trackclust", "B") == ["/Nope"]
+        @test Cecelia._expand_cluster_pops(img, ["/x"], "flow", "B") == ["/x"]
+    end
+
     # ── Gating engine: recompute, membership, filtered (tracked) pops ─────────
     @testset "recompute! + cells_in_pop" begin
         df = DataFrame(label=[1, 2, 3, 4, 5], x=[1.0, 6, 6, 9, 9], track_id=[0, 5, 9, 0, 7])
@@ -2733,6 +2780,71 @@ end
         rc0 = Cecelia._summary_agg(dfc, "bar"; measure="m", granularity=:cell, nbins=10,
                                    normalize=:none, by_image=true, collapse_series=true)
         @test length(rc0["series"]) == 1 && rc0["series"][1]["n"] == 6
+    end
+
+    @testset "plot count (raw + proportion normalize) — population summary" begin
+        # two pops in two images; count → raw row counts; normalize=:fraction → each pop's share of
+        # its image's plotted total (the population-summary plot). Deterministic frame — no fixture.
+        df = DataFrame("value_name" => fill("A", 10),
+                       "pop" => ["/p","/p","/p","/q","/q", "/p","/q","/q","/q","/p"],
+                       "uID" => ["x","x","x","x","x",       "y","y","y","y","y"])
+        # image x: /p=3, /q=2 (total 5); image y: /p=2, /q=3 (total 5)
+        bykey(r) = Dict((s["uID"], s["pop"]) => s["value"] for s in r["series"])
+        raw = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                   normalize=:none, by_image=true)
+        @test raw["chartType"] == "count"
+        rk = bykey(raw)
+        @test rk[("x","A/p")] == 3.0 && rk[("x","A/q")] == 2.0
+        @test rk[("y","A/p")] == 2.0 && rk[("y","A/q")] == 3.0
+        prop = Cecelia._summary_agg(df, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                    normalize=:fraction, by_image=true)
+        @test prop["normalize"] == "fraction"
+        pk = bykey(prop)
+        @test pk[("x","A/p")] ≈ 0.6 && pk[("x","A/q")] ≈ 0.4     # 3/5, 2/5
+        @test pk[("y","A/p")] ≈ 0.4 && pk[("y","A/q")] ≈ 0.6     # 2/5, 3/5
+        @test Dict((s["uID"], s["pop"]) => s["n"] for s in prop["series"])[("x","A/p")] == 3
+
+        # no measure + a DISTRIBUTION chart → each IMAGE is a point (its pop count), grouped by pop:
+        # boxplot/beeswarm show within-pop variability and compare pops. A/p counts = [3(x),2(y)],
+        # A/q = [2(x),3(y)] → each pop has 2 points (images), median 2.5.
+        bx = Cecelia._summary_agg(df, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test bx["chartType"] == "boxplot"
+        bybp = Dict(s["pop"] => s for s in bx["series"])
+        @test Set(keys(bybp)) == Set(["A/p", "A/q"])
+        @test bybp["A/p"]["n"] == 2 && bybp["A/p"]["median"] == 2.5
+        # bar over the same per-image counts → mean (A/p mean of [3,2] = 2.5)
+        br = Cecelia._summary_agg(df, "bar"; measure=nothing, granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test Dict(s["pop"] => s["value"] for s in br["series"])["A/p"] == 2.5
+
+        # SPLIT BY POPULATION: two tracked pops (value_names B, T) each with clusters — proportion is
+        # normalised WITHIN each value_name per image, not pooled across B+T.
+        df2 = DataFrame("value_name" => ["B","B","B","T","T", "B","B","T","T","T"],
+                        "pop" => ["/Dir","/Dir","/Mea","/Dir","/Mea", "/Dir","/Mea","/Dir","/Mea","/Mea"],
+                        "uID" => ["x","x","x","x","x",              "y","y","y","y","y"])
+        pr2 = Cecelia._summary_agg(df2, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                   normalize=:fraction, by_image=true)
+        p2 = Dict((s["uID"], s["pop"]) => s["value"] for s in pr2["series"])
+        @test p2[("x","B/Dir")] ≈ 2/3 && p2[("x","B/Mea")] ≈ 1/3   # within B (image x: B tot 3)
+        @test p2[("x","T/Dir")] ≈ 1/2 && p2[("x","T/Mea")] ≈ 1/2   # within T (image x: T tot 2)
+        @test p2[("y","B/Dir")] ≈ 1/2 && p2[("y","T/Mea")] ≈ 2/3   # within B / T (image y)
+
+        # COMPLETE CASES (R tidyr::complete): image y has no /q — it must still contribute a 0 to /q's
+        # distribution, not be dropped. Without completion /q would have n=1 (only x) and median 1.
+        df3 = DataFrame("value_name" => fill("A", 5),
+                        "pop" => ["/p","/p","/q", "/p","/p"],
+                        "uID" => ["x","x","x",    "y","y"])          # x: p=2 q=1 ; y: p=2 q=0 (missing)
+        bx3 = Cecelia._summary_agg(df3, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                   normalize=:none, by_image=true)
+        by3 = Dict(s["pop"] => s for s in bx3["series"])
+        @test by3["A/q"]["n"] == 2 && by3["A/q"]["median"] == 0.5    # /q points [1(x), 0(y)]
+        @test by3["A/p"]["n"] == 2 && by3["A/p"]["median"] == 2.0
+        # proportion completes too: /q in image y = 0 / (y's A total 2) = 0 → points [1/3, 0]
+        pr3 = Cecelia._summary_agg(df3, "boxplot"; measure=nothing, granularity=:cell, nbins=10,
+                                   normalize=:fraction, by_image=true)
+        by3f = Dict(s["pop"] => s for s in pr3["series"])
+        @test by3f["A/q"]["n"] == 2 && by3f["A/q"]["median"] ≈ 1/6
     end
 
     @testset "plot matrix (heatmap: profile + crosstab)" begin

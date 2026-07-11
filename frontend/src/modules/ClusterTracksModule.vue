@@ -12,6 +12,8 @@
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import ClusterPlots from './cluster/ClusterPlots.vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
+import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
@@ -30,6 +32,13 @@ const { defs: clustDefs, reload: reloadDefs } = useTaskDefs('clustTracks')
     </template>
     <template #plots="{ selectedUids, selectUids }">
       <ClusterPlots :image-uids="selectedUids" :select-uids="selectUids" pop-type="trackclust" />
+    </template>
+    <!-- population summary of the track-cluster pops (counts / proportion per image; boxplot/beeswarm/bar)
+         — same backbone as Phenotype/Behaviour, popType trackclust so it's homogeneous here -->
+    <template #below-table="{ selectedUids }">
+      <CollapsibleSection label="Population summary" max-height="none" :storage-key="'cc-popsum-open:clustTracks'">
+        <SummaryCanvas :image-uids="selectedUids" module="clustTracks" />
+      </CollapsibleSection>
     </template>
   </ModuleLayout>
 </template>

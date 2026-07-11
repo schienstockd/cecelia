@@ -22,6 +22,7 @@ const router = createRouter({
     { path: '/cleanup',   component: () => import('./modules/CleanupModule.vue'),       meta: { label: 'Cleanup' } },
     { path: '/segment',   component: () => import('./modules/SegmentModule.vue'),       meta: { label: 'Segment' } },
     { path: '/gate',      component: () => import('./modules/GatingModule.vue'),        meta: { label: 'Gate' } },
+    { path: '/phenotype', component: () => import('./modules/PhenotypeModule.vue'),     meta: { label: 'Phenotype' } },
     { path: '/track',     component: () => import('./modules/TrackingModule.vue'),      meta: { label: 'Track' } },
     { path: '/behaviour', component: () => import('./modules/BehaviourModule.vue'),     meta: { label: 'Behaviour' } },
     { path: '/clust-cells',  component: () => import('./modules/ClusterCellsModule.vue'),  meta: { label: 'Cluster cells' } },

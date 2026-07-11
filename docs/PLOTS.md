@@ -149,6 +149,35 @@ as `bar`), needing **no** `measure`. It's the segmentation-integrity headline: w
 **cell count per timepoint** — the temporal-consistency time series (drops/spikes are visible). The
 frontend renders it as a bar, or a line over the ordered `group` (t).
 
+`normalize` (`:fraction`) turns each series into its **fraction of its image's plotted total** (its
+`uID` bucket; pooled → the whole set) — for mutually-exclusive populations that's each pop's **% of
+the image's cells**. Exposed as the panel's **Proportion** toggle (now shown for `count`, not just
+`frequency`). This is the **population summary** plot.
+
+### Population summary plot (counts / proportion per population)
+
+One **generalised backbone**, one spec per popType. The plot summarises **population membership** (not
+a cell measure): how many cells/tracks are in each population, or each pop's proportion of its image's
+total. Two views, both from the same backbone:
+
+- **`count`** → one bar per `(pop, image)` (`normalize` → fraction of the image's plotted total).
+- **`boxplot` / `violin` / `strip` / `bar`** with **no `measure`** → each **image** is one data point
+  (its pop count/proportion), grouped by pop, so you see **within-pop variability across images** and
+  **compare pops**. `plot_data.jl`'s `_population_metric_frame` collapses the pop_df to one row per
+  `(value_name, pop, uID)`, then the normal distribution builders run over those per-image rows
+  (`_summary_agg` detects `measure===nothing` + a distribution chart). Port of R `popsSummary`
+  (boxplot / `geom_quasirandom` / jitter over `pop.n` / `pop.freq`).
+
+Specs (each carries ONE popType so a page's summary canvas — and the board's manager — is
+homogeneous): `population_summary` (Phenotype, `flow`), `population_summary_tracks`
+(Behaviour, `live`), `population_summary_clust` (Cluster cells, `clust`), `population_summary_trackclust`
+(Cluster tracks, `trackclust`). The **Phenotype** page (`/phenotype`, `PhenotypeModule.vue`) is the
+analysis counterpart to **Gate** (as Behaviour is to Track); the cluster pages host the same via a
+collapsible `SummaryCanvas` below the cluster canvas. All are `whiteboardCompatible`. **Board caveat**:
+the universal board's summary canvas resolves ONE popType (from its specs), so only that popType's
+population-summary surfaces its pops there — the popType is properly sorted on the per-module pages.
+The frontend hides the measure picker for a measure-less (population) spec and never sends a measure.
+
 ### Segmentation QC plot
 
 The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*

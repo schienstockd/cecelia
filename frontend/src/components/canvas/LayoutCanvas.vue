@@ -117,12 +117,18 @@ watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
-  specs, specById, segPops, seriesColor, reloadToken, validSelKeys,
+  specs, specById, segPops, seriesColor, reloadToken, validSelKeys, popType,
   compareMode, compareAttr, compareAttr2, scope, gSel, gVis, poolGroups,
   canCompare, panelSetUid, panelImageUids, panelScope, panelGroupAttr, attrOptions2, setAttrs,
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
   shared: computed(() => entry.value.shared),
+  // the board is mixed-popType: point the picker at the ACTIVE summary slot's spec so it surfaces that
+  // plot's popType (each population-summary spec carries one popType — split per module page).
+  activeSpecId: computed(() => {
+    const c = entry.value.contents[entry.value.activeIndex]
+    return c && c.kind === 'summary' ? c.ref : null
+  }),
 })
 
 // ── slot content: active slot, add/clear, drag-swap ──────────────────────────────────────────────
@@ -271,10 +277,14 @@ function clusterPanelProps(i: number) {
 
 // prune vanished pops from every slot's local selection (the composable prunes the global one). Guard on
 // a non-empty segPops — it's transiently [] during load/image-switch, and pruning then would wipe (and
-// then persist-empty) a restored per-slot selection.
+// then persist-empty) a restored per-slot selection. popType-AWARE (mixed board): segPops holds only the
+// active slot's popType, so only prune keys of THAT popType — else selecting e.g. a trackclust slot would
+// wipe the live/track selections of the other (track-measure) plots.
 watch(segPops, () => {
   if (!segPops.value.length) return
-  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = st(c).sel.filter(k => validSelKeys.value.has(k))
+  const valid = validSelKeys.value, pt = popType.value
+  const keep = (k: string) => parseTkey(k).popType !== pt || valid.has(k)
+  for (const c of entry.value.contents) if (c && Array.isArray(st(c).sel)) st(c).sel = st(c).sel.filter(keep)
 })
 
 // ── PDF export: capture each filled slot to a PNG (hiding the drag grips), keyed by its grid-area ──
@@ -597,5 +607,9 @@ defineExpose({ capturePage, collectCsvs })
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .lc-add-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.6; }
-.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; }
+/* stick to the top of the scroll viewport so the pop manager stays reachable as the (tall) board
+   scrolls past — otherwise you must scroll back up to change the selection. align-self so the sticky
+   box hugs the top of the flex row; its own overflow-y scrolls a manager taller than the viewport. */
+.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; padding-right: 10px; box-sizing: content-box;
+  position: sticky; top: 8px; align-self: flex-start; max-height: calc(100vh - 16px); }
 </style>

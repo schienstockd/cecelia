@@ -1,0 +1,16 @@
+{
+  "id": "population_summary_tracks",
+  "label": "Population summary (tracks)",
+  "module": "behaviourAnalysis",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "violin", "bar", "count"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "live",
+    "granularity": "track"
+  },
+  "scopeModes": ["per_image", "summarised", "by_attr"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "id": "population_summary",
+  "label": "Population summary",
+  "module": "phenotype",
+  "family": "summary",
+  "chartTypes": ["boxplot", "strip", "violin", "bar", "count"],
+  "whiteboardCompatible": true,
+  "dataSource": {
+    "popType": "flow",
+    "granularity": "cell"
+  },
+  "scopeModes": ["per_image", "summarised", "by_attr"],
+  "params": [
+    { "key": "normalize", "label": "As proportion", "type": "bool", "default": true }
+  ]
+}

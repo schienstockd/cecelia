@@ -48,6 +48,7 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/segment', label: 'Segment', icon: 'pi-th-large',    tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
       { to: '/gate',    label: 'Gate',    icon: 'pi-chart-scatter',tip: 'FlowJo-style manual gating on segmented populations.', requiresProject: true },
+      { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise gated-cell populations — counts / proportion of each population across images (the analysis counterpart to Gate).', requiresProject: true },
       { to: '/track',   label: 'Track',   icon: 'pi-share-alt',   tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
       { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar', tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
       { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },

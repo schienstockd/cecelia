@@ -88,6 +88,10 @@ const measureOpts = computed(() => {
 })
 // each option reads the persisted panel state, falling back to the spec default; writing persists it.
 const measure = computed<string>({ get: () => props.ui.measure ?? props.spec.dataSource.measure, set: v => (props.ui.measure = v) })
+// a spec with NO measure is a POPULATION SUMMARY (count / proportion of each pop) — no measure picker,
+// and never send a measure (the backend then treats boxplot/violin/strip/bar as a per-image count
+// distribution, and count as per-image bars). See plot_data.jl _population_metric_frame.
+const hasMeasure = computed(() => !!props.spec.dataSource.measure)
 // drop a persisted/selected measure that isn't available for the current data (avoids a 400 fetch).
 // Only act once columns have loaded (measuresFromData needs varCols; otherwise the transient fallback
 // list would reset the user's pick mid-load and it'd "cycle"). No-op writes are skipped by the guard.
@@ -349,8 +353,9 @@ async function fetchData() {
         projectUid: props.projectUid,
         popType: pt, granularity: props.spec.dataSource.granularity,
         chartType: be.chartType,
-        // count is a row count — no measure. Sending one would just fetch an unused column.
-        ...(chartType.value === 'count' ? {} : { measure: measure.value }),
+        // count is a row count — no measure. A measure-less (population summary) spec sends none for
+        // any chart, so the backend runs the per-image count/proportion distribution. Else send it.
+        ...(chartType.value === 'count' || !hasMeasure.value ? {} : { measure: measure.value }),
         series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
         bins: bins.value,
         normalize: be.normalize ?? normalize.value,
@@ -442,7 +447,7 @@ defineExpose({ getCsv, exportImage })
     <template #actions>
       <!-- primary: what to plot + how (the single-measure picker is irrelevant for the matrix grid and
            for a row count) -->
-      <select v-if="chartType !== 'heatmap' && chartType !== 'count'" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
+      <select v-if="chartType !== 'heatmap' && chartType !== 'count' && hasMeasure" v-model="measure" class="sp-measure" v-tooltip.bottom="'Measure to plot'">
         <option v-for="m in measureOpts" :key="m" :value="m">{{ m }}</option>
       </select>
       <select v-if="validCharts.length > 1" v-model="chartType" class="sp-chart"
@@ -512,7 +517,8 @@ defineExpose({ getCsv, exportImage })
               <option value="sd">SD</option>
             </select>
           </label>
-          <label v-else-if="chartType === 'frequency'" class="sp-pop-row">
+          <label v-else-if="chartType === 'frequency' || chartType === 'count' || !hasMeasure" class="sp-pop-row"
+                 v-tooltip.left="hasMeasure && chartType === 'frequency' ? '' : 'Plot each population’s FRACTION of its image’s (plotted) total instead of the raw count'">
             <span>Proportion</span>
             <input type="checkbox" v-model="normalize" />
           </label>

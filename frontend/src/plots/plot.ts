@@ -300,12 +300,13 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (!opts) return null
 
   // theme_classic L-shaped axis lines (Observable Plot draws ticks/labels but no domain line) —
-  // a single frame stroke on the left + bottom of every facet. `currentColor` picks up the theme ink.
+  // a single frame stroke on the left + bottom. `currentColor` picks up the theme ink. When FACETING
+  // (small multiples), Plot repeats each frame PER facet, so the left anchor becomes a vertical divider
+  // at every facet boundary — drop it and keep only the shared bottom baseline (the y-axis ticks still
+  // render on the leftmost facet).
   if (Array.isArray(opts.marks)) {
-    (opts.marks as unknown[]).push(
-      Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
-      Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
-    )
+    (opts.marks as unknown[]).push(Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }))
+    if (!o.facet) (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
   }
 
   // ── generic post-process: layout / label / font knobs (R plotHelpers adjustments) ──
@@ -722,6 +723,9 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                         fillOpacity: 0.55, stroke: 'currentColor', strokeWidth: 0.8, title: 'tip', tip: true, ...f }), // box
       RulePos(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'median', stroke: 'currentColor', strokeWidth: 1.6, ...f }), // median
       ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
+                                        // themed outline so a whitish series colour still reads on the
+                                        // white PDF / light ground (currentColor = dark there)
+                                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                                         fillOpacity: o.pointOpacity, ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
     ],
@@ -776,6 +780,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     [a.meas]: { label: r.measure, grid: false, ...logY },
     marks: [
       Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: o.colorData ? 'series' : 'currentColor',
+                       // themed outline so whitish series colours read on the white PDF / light ground
+                       stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                        fillOpacity: o.pointOpacity, ...fxCh(o) }),
     ],
   }

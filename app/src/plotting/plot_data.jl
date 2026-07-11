@@ -144,6 +144,53 @@ end
 _var_measure_set(imgs::AbstractVector{<:CciaImage}, value_name)::Set{String} =
     isempty(imgs) ? Set{String}() : _var_measure_set(first(imgs), value_name)
 
+# POPULATION SUMMARY backbone: collapse a cell/track pop_df to ONE ROW PER (value_name, pop, uID),
+# whose value is the population's COUNT — or, when `normalize`, its FRACTION of that image's plotted
+# total (across the plotted pops; pooled over the whole set when there's no uID). Feeding these
+# per-image rows to the normal distribution builders (boxplot/violin/strip/bar) makes each IMAGE a
+# data point grouped by pop → within-pop variability + between-pop comparison (R popsSummary port).
+const _POP_METRIC_COL = "__pop_metric"
+function _population_metric_frame(df::DataFrame; normalize::Symbol=:none,
+                                  col::AbstractString=_POP_METRIC_COL)::DataFrame
+    has_uid = :uID in propertynames(df); has_vn = :value_name in propertynames(df)
+    vn  = has_vn  ? String.(df.value_name) : fill("", nrow(df))
+    pop = String.(df.pop)
+    uid = has_uid ? String.(df.uID) : fill("", nrow(df))
+    # count per (value_name, pop, uID), tracking first-appearance order of pops/images per segmentation.
+    cnt = Dict{Tuple{String,String,String},Int}()
+    vn_order = String[]; seen_vn = Set{String}()
+    pop_order = Dict{String,Vector{String}}(); uid_order = Dict{String,Vector{String}}()
+    for i in 1:nrow(df)
+        v = vn[i]; p = pop[i]; u = uid[i]
+        cnt[(v, p, u)] = get(cnt, (v, p, u), 0) + 1
+        if !(v in seen_vn); push!(vn_order, v); push!(seen_vn, v); pop_order[v] = String[]; uid_order[v] = String[]; end
+        p in pop_order[v] || push!(pop_order[v], p)
+        u in uid_order[v] || push!(uid_order[v], u)
+    end
+    # COMPLETE CASES (R tidyr::complete / expand.grid): within each segmentation (value_name), every
+    # population seen in ANY image gets a row for EVERY image that has that segmentation — a missing
+    # (pop, image) is a genuine 0, not absent data. Without this, the boxplot/strip of a cluster's
+    # per-image count/proportion silently DROPS the images lacking that cluster, biasing the
+    # distribution (n too small, median/mean shifted up). Universe is derived per value_name (pops seen
+    # under vn × images seen under vn), so we never fabricate a 0 for an image not segmented for that vn.
+    order = Tuple{String,String,String}[]
+    for v in vn_order, p in pop_order[v], u in uid_order[v]
+        k = (v, p, u); haskey(cnt, k) || (cnt[k] = 0); push!(order, k)
+    end
+    # proportion denominator = the tracked population's total per image → keyed by (uID, value_name),
+    # so clusters within B and within T are each normalised to their OWN population (not pooled B+T).
+    frac = normalize in (:fraction, :total)
+    tot = Dict{Tuple{String,String},Int}()   # (uid, vn) → total
+    frac && for (k, n) in cnt; tk = (k[3], k[1]); tot[tk] = get(tot, tk, 0) + n; end
+    vns = String[]; pops = String[]; uids = String[]; vals = Float64[]
+    for k in order
+        n = cnt[k]; push!(vns, k[1]); push!(pops, k[2]); push!(uids, k[3])
+        d = frac ? get(tot, (k[3], k[1]), 0) : 0
+        push!(vals, frac ? (d == 0 ? 0.0 : n / d) : Float64(n))
+    end
+    DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, String(col) => vals)
+end
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
@@ -167,6 +214,19 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         return _matrix_agg(df; mode = String(matrix_mode), measures = ms, category = category,
                            separator = separator, zscore = zscore, normalize = matrix_normalize,
                            granularity = granularity)
+    end
+    # POPULATION SUMMARY — a distribution/bar chart with NO cell `measure`: each IMAGE becomes one data
+    # point whose value is the pop's count (or its fraction of the image's plotted total). Pre-aggregate
+    # to per-(value_name, pop, uID) rows, then run the normal distribution builder over those per-image
+    # values (series = pop, points = images) → boxplot/violin/strip/beeswarm/bar show within-pop
+    # variability and compare pops. `count` keeps its per-(pop, image) bar view (handled below).
+    if measure === nothing && chart_type in ("boxplot", "violin", "strip", "points", "bar")
+        # friendly axis label (also the df column name so the builders read it) — count vs proportion
+        metric_label = normalize in (:fraction, :total) ? "proportion" : "count"
+        df = _population_metric_frame(df; normalize=normalize, col=metric_label)
+        measure = metric_label
+        by_image = false           # pool images into the pop series as individual points
+        normalize = :none
     end
     # `group` is the optional categorical sub-axis level (e.g. an HMM state) — "" when not grouping.
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)
@@ -250,10 +310,22 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # cell count per timepoint per image — the temporal-consistency time series (drops/spikes are
         # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
         # or a line over the ordered group (t). See docs/PLOTS.md → Segmentation QC plot.
+        #
+        # `normalize` (:fraction/:total) → each series' FRACTION of the plotted total WITHIN its own
+        # tracked population, per image: the denominator is keyed by (uID, value_name), so a plot
+        # spanning several segmentations/tracked pops (e.g. B and T) reports each cluster's share of
+        # *that* population's cells — not pooled across B+T. Pooled scope (uID="") folds over images.
         groups = sgroups(df)
-        series = [merge(base(g), Dict("value" => Float64(nrow(g.sub)), "n" => nrow(g.sub)))
-                  for g in groups]
+        frac = normalize == :fraction || normalize == :total
+        totals = Dict{Tuple{String,String},Int}()
+        frac && for g in groups; k = (g.uid, g.vn); totals[k] = get(totals, k, 0) + nrow(g.sub); end
+        series = map(groups) do g
+            n = nrow(g.sub); tot = get(totals, (g.uid, g.vn), 0)
+            v = frac ? (tot == 0 ? 0.0 : n / tot) : Float64(n)
+            merge(base(g), Dict("value" => v, "n" => n))
+        end
         return withgb(Dict{String,Any}("chartType" => "count", "measureType" => "numeric",
+                                "normalize" => String(normalize),
                                 "granularity" => String(granularity), "series" => series))
 
     elseif chart_type == "boxplot"
