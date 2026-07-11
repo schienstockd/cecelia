@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { densityGrid, outlierPoints, DENSITY_GRID } from './density'
+import { densityGrid, densityImageData, outlierPoints, DENSITY_GRID } from './density'
 
 const ext = { xMin: 0, xMax: 1, yMin: 0, yMax: 1 }
 
@@ -15,16 +15,34 @@ describe('densityGrid', () => {
     const g = densityGrid(new Float32Array(cluster(300, 0.2, 0.2)), ext)
     expect(g.length).toBe(DENSITY_GRID * DENSITY_GRID)
     expect(Math.max(...g)).toBeCloseTo(1, 6)
-    // the peak cell should be near (0.2,0.2): gx=gy≈floor(0.2*64)=12
+    // the peak cell should be near (0.2,0.2): gx=gy≈floor(0.2*G) (± a couple of cells for the blur)
+    const expected = Math.floor(0.2 * DENSITY_GRID)
     let peak = 0, pi = 0
     g.forEach((v, i) => { if (v > peak) { peak = v; pi = i } })
     const gy = Math.floor(pi / DENSITY_GRID), gx = pi % DENSITY_GRID
-    expect(Math.abs(gx - 12)).toBeLessThanOrEqual(2)
-    expect(Math.abs(gy - 12)).toBeLessThanOrEqual(2)
+    expect(Math.abs(gx - expected)).toBeLessThanOrEqual(3)
+    expect(Math.abs(gy - expected)).toBeLessThanOrEqual(3)
   })
   it('skips non-finite and out-of-range points without throwing', () => {
     const g = densityGrid(new Float32Array([NaN, 0.5, 5, 5, 0.3, 0.3]), ext)
     expect(Math.max(...g)).toBeGreaterThan(0)   // only the (0.3,0.3) point counted
+  })
+})
+
+describe('densityImageData', () => {
+  it('returns G×G RGBA with empty cells transparent and dense cells opaque + coloured', () => {
+    const img = densityImageData(new Float32Array(cluster(400, 0.5, 0.5)), ext)
+    expect(img.width).toBe(DENSITY_GRID)
+    expect(img.height).toBe(DENSITY_GRID)
+    expect(img.data.length).toBe(DENSITY_GRID * DENSITY_GRID * 4)
+    // a corner far from the (0.5,0.5) blob → empty → fully transparent
+    const cornerA = (0 * DENSITY_GRID + 0) * 4
+    expect(img.data[cornerA + 3]).toBe(0)
+    // the centre cell (rows flipped: destRow = G-1-gy, gy≈G/2 → still ≈centre) is opaque + non-black
+    const mid = Math.floor(DENSITY_GRID / 2)
+    const o = (mid * DENSITY_GRID + mid) * 4
+    expect(img.data[o + 3]).toBe(255)
+    expect(img.data[o] + img.data[o + 1] + img.data[o + 2]).toBeGreaterThan(0)
   })
 })
 

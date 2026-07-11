@@ -101,7 +101,7 @@ defineExpose({ exportImage })
 
 <template>
   <div class="is-view">
-    <div class="is-bar">
+    <div class="is-bar cc-panel-controls">
       <div class="seg" v-tooltip.bottom="'Strip direction'">
         <button :class="{ on: orientation === 'h' }" @click="orientation = 'h'"><i class="pi pi-arrows-h" /></button>
         <button :class="{ on: orientation === 'v' }" @click="orientation = 'v'"><i class="pi pi-arrows-v" /></button>
@@ -158,10 +158,11 @@ defineExpose({ exportImage })
 </template>
 
 <style scoped>
-.is-view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+/* position: relative so the overlaid .is-bar (.cc-panel-controls) anchors to the strip box */
+.is-view { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 /* angle/width live in a ⚙ popover (below), so the bar stays short and never wraps */
-.is-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap; flex-shrink: 0;
-  border-bottom: 1px solid var(--cc-border); font-size: 12px; }
+.is-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px; flex-wrap: wrap;
+  font-size: 12px; }
 .is-opts { position: relative; display: inline-flex; }
 .is-gear { display: inline-flex; align-items: center; justify-content: center; width: 1.7rem; height: 1.6rem;
   border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);

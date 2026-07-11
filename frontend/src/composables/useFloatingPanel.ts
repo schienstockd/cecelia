@@ -21,11 +21,16 @@ export function useFloatingPanel(
     margin?: number
     onActivate?: () => void
     arrange?: () => ArrangeCmd | null | undefined
+    // current visual zoom of the canvas (CSS transform:scale). Positions (`pos`) are in UNSCALED CSS
+    // px, but the mouse moves in screen px — so a screen delta moves the panel by delta/zoom in CSS
+    // space. Default 1 (no zoom). See useCanvasZoom.
+    zoom?: () => number
   } = {},
 ) {
   const margin = opts.margin ?? 24
   const pos = ref({ x: opts.initial?.x ?? 16, y: opts.initial?.y ?? 16 })
-  let dragging = false, ox = 0, oy = 0
+  // drag tracked from the START mouse+pos so we can divide the screen-space delta by the zoom
+  let dragging = false, sx = 0, sy = 0, spx = 0, spy = 0
 
   function clamp(x: number, y: number) {
     const node = el.value
@@ -36,7 +41,11 @@ export function useFloatingPanel(
       y: Math.min(Math.max(y, 0), par.clientHeight - margin),
     }
   }
-  function onMove(e: MouseEvent) { if (dragging) pos.value = clamp(e.clientX - ox, e.clientY - oy) }
+  function onMove(e: MouseEvent) {
+    if (!dragging) return
+    const z = opts.zoom?.() ?? 1
+    pos.value = clamp(spx + (e.clientX - sx) / z, spy + (e.clientY - sy) / z)
+  }
   function endDrag() {
     dragging = false
     window.removeEventListener('mousemove', onMove)
@@ -45,8 +54,7 @@ export function useFloatingPanel(
   function startDrag(e: MouseEvent) {
     opts.onActivate?.()
     dragging = true
-    ox = e.clientX - pos.value.x
-    oy = e.clientY - pos.value.y
+    sx = e.clientX; sy = e.clientY; spx = pos.value.x; spy = pos.value.y
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', endDrag)
   }

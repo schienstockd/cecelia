@@ -15,7 +15,6 @@
 <script setup lang="ts">
 import { useTemplateRef, toRef } from 'vue'
 import type { GateSpec } from '../../stores/gating'
-import ScatterGL from './ScatterGL.vue'
 import PlotSpinner from './PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
@@ -75,11 +74,10 @@ function fmtTick(label: string): string {
 // scale so nothing is upscaled from the screen-DPR backing store; route each live canvas to its layer.
 const hostEl = useTemplateRef<HTMLElement>('hostEl')
 type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }
-const scatterRef = useTemplateRef<LayerExport>('scatterRef')
 const layersRef = useTemplateRef<LayerExport>('layersRef')
 const overlayRef = useTemplateRef<LayerExport>('overlayRef')
 const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
-  for (const r of [scatterRef, layersRef, overlayRef]) {
+  for (const r of [layersRef, overlayRef]) {
     if (cv === r.value?.getCanvas()) return (await r.value?.exportCanvas(scale)) ?? null
   }
   return null
@@ -104,11 +102,7 @@ defineExpose({ exportImage, hiRes })
 <template>
   <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }">
     <div class="panel-plot">
-      <!-- WebGL base cloud only in 'points' mode; contour/outliers draw from PlotLayers instead, so we
-           skip the point upload entirely (contour-only is the fast path the user asked for). -->
-      <ScatterGL ref="scatterRef" :points="renderMode === 'points' ? points : null" :extents="extents"
-                 :color-mode="showPops ? 'flat' : 'density'"
-                 :opacity="showPops ? 0.35 : 1" :point-size="3" />
+      <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />
       <GateOverlay ref="overlayRef" :extents="viewExtents" :mode="mode" :gates="gates" :view-tick="viewTick"

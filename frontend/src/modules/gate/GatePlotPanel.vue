@@ -286,8 +286,10 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 </script>
 
 <template>
+  <!-- auto-hide OFF: you draw gates on this canvas constantly, so the render-mode / gate tools stay
+       in flow rather than popping over the plot on hover -->
   <CanvasPanel :index="index" :active="props.active" :arrange="props.arrange" :title="`Plot ${index + 1}`"
-               :persist-key="props.persistKey"
+               :persist-key="props.persistKey" :auto-hide="false"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <!-- header tools (render mode + gate-draw tools) sit in the panel title bar -->
     <template #actions>

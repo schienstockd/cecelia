@@ -32,6 +32,22 @@ Each tab renders through `components/canvas/LayoutCanvas.vue`: a **comic-plate**
 content is `{ kind, ref, state }`; the `⚙` popover tunes cols/rows/row-height. `TabbedCanvas.vue` wraps
 it with the tab bar + the PDF/CSV export buttons.
 
+### A4 sheet lock + plates
+
+The board box is **locked to an A4 sheet** by default so it is WYSIWYG with the exported page — no more
+"the board fills the width, so the plates are too wide". Per-tab `sheet` (`analysisLayout` entry):
+`a4-portrait` (default; **undefined reads as portrait** so old boards get the fix) · `a4-landscape` · `free`.
+In an A4 mode the grid's on-screen **width is derived from its height × the page aspect**
+(`A4_PORTRAIT_ASPECT`/`A4_LANDSCAPE_ASPECT` in `layoutTemplates.ts`) and it centres in the free space
+(`.lc-canvas-wrap`); `free` keeps the old flex-fill. Because the on-screen aspect is now exact,
+`capturePage`'s measured aspect drives the correct PDF orientation.
+
+Plates carry an `orient` tag (`portrait`/`landscape`/`any`); the **Plates** picker shows only those
+matching the current sheet. A **custom plate builder** (`components/canvas/PlateBuilder.vue`, "Custom…"
+button) lets you set N×M then **drag cells to merge** into varied-size panels (click a merge to split);
+its span math is the pure, unit-tested `utils/plateBuilder.ts` and it emits a `LayoutTemplate` that
+`applyTemplate` adopts (preserving slot contents by index).
+
 ## Plot families — one registry-driven mechanism
 
 Slots are filled from the **same registries the module pages use** — there is one way to host a plot,
@@ -93,6 +109,12 @@ reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out
   ~2200px long side (scale 4–14×) and re-render the point cloud at that scale via each view's `hiRes`
   resolver (`ScatterGL.exportCanvas`). One path for both the gating scatter and the cluster UMAP — do
   not reinvent the scale math per plot.
+  - **GPU-limit clamp (dots-clipped bug)**: `exportCanvas` clamps the export scale to the GPU's
+    `MAX_TEXTURE_SIZE`/`MAX_VIEWPORT_DIMS`, **accounting for `devicePixelRatio`** — regl-scatterplot
+    multiplies the backing store by DPR, so the real buffer is `size·s·dpr`. Without the DPR factor a
+    hi-DPI screen at a high scale (small board plots hit ~14×) overflows the cap and the render is
+    silently clipped to a sub-rectangle → dots cut off (was visible in the board PDF *and* the
+    module-page PNG export, since both share `exportCanvas`).
 - **CSV**: each summary/cluster panel exposes `getCsv()` (the shown aggregated data); the standalone CSV
   button collects them all (→ Prism).
 

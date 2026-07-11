@@ -34,8 +34,20 @@ to be reverse-engineered config by config. Observable Plot wins on all three: it
 match ggplot `theme_classic` (the old R look — `plotHelpers.R`), jitter/beeswarm is a real transform,
 and resize is just "re-call `Plot.plot()` with a new width/height" (no signal graph). It also renders
 native SVG (so SVG export is "serialize the node") and does **heatmaps/tiled maps natively** (`Plot.cell`
-/ `Plot.raster`) — both on the roadmap (§9). regl-scatterplot still owns the big WebGL point clouds
-(gating/UMAP); Plot is summaries only, where data is server-aggregated and small.
+/ `Plot.raster`) — both on the roadmap (§9). Plot is summaries only, where data is server-aggregated
+and small. regl-scatterplot now owns **UMAP only**; the **gating** scatter is a **2D density raster**
+(no WebGL) — see below.
+
+**Gating scatter = 2D density raster (no WebGL).** The gating point cloud is non-interactive (fixed
+camera; gate *drawing* is the only interaction, on the canvas2D overlay), so it renders as a
+FlowJo/OMIQ-style density raster instead of a GPU point cloud: `plots/density.ts` bins → Gaussian-blurs
+→ `densityImageData` colours each cell via the shared blue-heat ramp (`plots/flowColors.ts`), upscaled
+smoothly to the plot; contours are clean connected rings from **d3-contour** (`plots/contour.ts`) on the
+blurred grid (replacing jagged marching-squares segments). `components/plots/PlotLayers.vue` draws base
+(raster or contours) + child-pop overlays on one 2D canvas; `GateScatterCell.vue` composites it with the
+gate overlay. **Export re-renders the same 2D content at target scale** (crisp, cannot clip) — this
+replaced the fragile WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change
+(autoscale, zero-extent, image switch); tune the look via `DENSITY_GRID`/`BLUR_*`/`CONTOUR_LEVELS`.
 
 Code: `frontend/src/plots/plot.ts` (`buildPlotOptions(Plot, r, o)` — one builder per chart type,
 returns a `Plot.plot()` options object; takes the Plot module as a param so it carries no eager import)

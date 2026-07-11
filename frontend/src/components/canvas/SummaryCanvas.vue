@@ -14,13 +14,15 @@
   module filter off.
 -->
 <script setup lang="ts">
-import { computed, watch, useTemplateRef } from 'vue'
+import { computed, watch, provide, useTemplateRef } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useSummaryData } from '../../composables/useSummaryData'
+import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
 import SummaryPanel from './SummaryPanel.vue'
+import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
@@ -52,6 +54,18 @@ const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
 const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
   useCanvasPanels<PanelState>(canvasRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
     ckey)
+// show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
+const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
+
+// ── visual zoom (shared control) — scale the free-floating workspace to see everything at once.
+// Fit measures the panel bounding box (the zoom layer's scroll size); drag is zoom-corrected via the
+// injected zoom (CanvasPanel → useFloatingPanel). The population picker sits OUTSIDE the zoom layer so
+// the control panel stays full-size.
+const zoomRef = useTemplateRef<HTMLElement>('zoomRef')
+const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
+  () => { const el = zoomRef.value; return el ? { w: el.scrollWidth, h: el.scrollHeight } : { w: null, h: 0 } })
+provide(CANVAS_ZOOM_KEY, zoom)
+const zoomStyle = computed(() => zoom.value !== 1 ? { transform: `scale(${zoom.value})`, transformOrigin: 'top left' } : {})
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys,
@@ -144,10 +158,19 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <div class="seg">
+          <button :class="{ on: showManager }" @click="showManager = !showManager"
+                  v-tooltip.bottom="showManager ? 'Hide the population picker' : 'Show the population picker'">
+            <i class="pi pi-sitemap" />
+          </button>
+        </div>
+        <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <span v-if="!specs.length" class="sc-hint">No plot types available for this module yet.</span>
         <span v-else class="sc-hint">eye-select populations to plot · drag plots by their title</span>
       </div>
       <div ref="canvasRef" class="sc-canvas">
+        <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
+        <div ref="zoomRef" class="sc-zoom" :style="zoomStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <SummaryPanel v-if="specById[p.state.specId]" :index="i" :arrange="p.arrange"
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
@@ -160,7 +183,8 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
                         @activate="activeId = p.id" @remove="remove(p.id)"
                         @duplicate="duplicatePanel(p)" @explode="explodePanel(p, $event)" />
         </template>
-        <SeriesPicker :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
+        </div>
+        <SeriesPicker v-if="showManager" :groups="segPops" :selected="activeSel" :scope="scope" :vis="activeVis"
                       @toggle="toggleTarget" @update:scope="scope = $event" @update:vis="setVis" />
       </div>
     </template>
@@ -185,5 +209,8 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
 .seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
+.seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .sc-canvas { position: relative; flex: 1; min-height: 70vh; }
+/* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
+.sc-zoom { position: absolute; inset: 0; }
 </style>

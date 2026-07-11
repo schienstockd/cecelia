@@ -7,9 +7,10 @@
   Drag/clamp/arrange come from useFloatingPanel so every floating panel behaves identically.
 -->
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, useTemplateRef, watch, useSlots } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, useTemplateRef, watch, useSlots } from 'vue'
 import { useFloatingPanel, type ArrangeCmd } from '../../composables/useFloatingPanel'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
+import { useInjectedZoom } from '../../composables/useCanvasZoom'
 
 const props = withDefaults(defineProps<{
   index: number
@@ -23,19 +24,33 @@ const props = withDefaults(defineProps<{
   // DOCKED: fill the parent slot (Analysis-canvas grid layout) instead of free-floating — no drag,
   // no resize, no geometry persistence. Keeps the header/actions/body/footer chrome.
   docked?: boolean
-}>(), { active: false, removable: true, arrange: null, docked: false })
+  // AUTO-HIDE: give the plot the whole box and overlay the control surfaces (actions + footer),
+  // revealing them only on hover (or when pinned). Default ON — every summary/interactive plot wants
+  // its plot un-squashed (and the PDF captures the full-box plot, not a control-squashed strip). The
+  // gate-DRAWING panels opt OUT (`:auto-hide="false"`) because you interact with the plot constantly
+  // there and popping controls over the canvas would fight the gate tools. Interactive views whose
+  // toolbar lives INSIDE the body opt in by tagging it `.cc-panel-controls` (see style.css / docs/UI.md).
+  autoHide?: boolean
+}>(), { active: false, removable: true, arrange: null, docked: false, autoHide: true })
 const emit = defineEmits<{ activate: [number]; remove: [] }>()
 
 const collapsed = ref(false)
+// pin the auto-hide controls open (local like `collapsed` — a transient chrome preference, not a
+// persisted plot option). Only meaningful when autoHide is on and there are controls to reveal.
+const pinned = ref(false)
 const slots = useSlots()
+const hasControls = computed(() => !!slots.actions || !!slots.footer)
 const root = useTemplateRef<HTMLElement>('root')
 const store = useCanvasPanelsStore()
 const saved = props.persistKey ? store.getGeom(props.persistKey) : undefined
+// the host canvas may apply a visual zoom (transform:scale); inject it so drag deltas are zoom-correct
+const injectedZoom = useInjectedZoom()
 const { pos, startDrag } = useFloatingPanel(root, {
   // restore the saved position, else stagger by index
   initial: saved ? { x: saved.x, y: saved.y } : { x: 16 + props.index * 30, y: 16 + props.index * 30 },
   onActivate: () => emit('activate', props.index),
   arrange: () => props.arrange,
+  zoom: injectedZoom,
 })
 
 // persist geometry (position + the CSS-resized size) so the layout survives navigation.
@@ -57,30 +72,46 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 </script>
 
 <template>
-  <div ref="root" class="panel" :class="{ active, collapsed, docked }"
+  <div ref="root" class="panel" :class="{ active, collapsed, docked, 'controls-pinned': pinned }"
        :style="docked ? undefined : { left: pos.x + 'px', top: pos.y + 'px' }" @mousedown="emit('activate', index)">
     <!-- title row: the WHOLE row drags (like PopulationManager); buttons stop the drag -->
     <div class="panel-head" @mousedown.prevent="docked || startDrag($event)"
          v-tooltip.bottom="docked ? undefined : 'Drag to move'">
-      <span class="panel-title"><i v-if="!docked" class="pi pi-arrows-alt drag-icon" />{{ title }}</span>
+      <span class="panel-title"><i v-if="!docked" class="pi pi-arrows-alt drag-icon" /><!--
+        --><i v-else class="pi pi-arrows-alt drag-icon grip" draggable="true"
+             v-tooltip.bottom="'Drag to move / swap'" @mousedown.stop @click.stop /><!--
+        --><span class="panel-title-txt">{{ title }}</span></span>
       <span class="panel-spacer" />
-      <button v-if="!docked" class="panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
+      <!-- pin the auto-hiding controls open (next to the drag icon). Only when there ARE controls
+           to reveal and auto-hide is active. -->
+      <button v-if="autoHide && hasControls && !collapsed" class="panel-btn" :class="{ on: pinned }"
+              v-tooltip.bottom="pinned ? 'Auto-hide controls (show on hover)' : 'Keep controls visible'"
+              @mousedown.stop @click.stop="pinned = !pinned">
+        <i class="pi pi-thumbtack" />
+      </button>
+      <button v-if="!docked" class="panel-btn panel-collapse" v-tooltip.bottom="collapsed ? 'Expand' : 'Collapse'"
               @mousedown.stop @click.stop="collapsed = !collapsed">
         <i :class="collapsed ? 'pi pi-chevron-down' : 'pi pi-chevron-up'" />
       </button>
       <template v-if="removable">
         <span class="ctrl-sep" />
-        <button class="panel-remove" v-tooltip.bottom="'Remove this plot'"
+        <button class="panel-btn panel-remove" v-tooltip.bottom="'Remove this plot'"
                 @mousedown.stop @click.stop="emit('remove')">
           <i class="pi pi-minus" />
         </button>
       </template>
     </div>
-    <!-- controls row (plot options) — its own row so it never clips at min width -->
-    <div v-if="slots.actions && !collapsed" class="panel-controls"><slot name="actions" /></div>
-    <div v-show="!collapsed" class="panel-body"><slot /></div>
-    <!-- footer row (utility actions: duplicate / export) -->
-    <div v-if="slots.footer && !collapsed" class="panel-foot"><slot name="footer" /></div>
+    <!-- IN-FLOW controls (auto-hide OFF, e.g. the gate-drawing page): own rows so they never clip -->
+    <div v-if="!autoHide && slots.actions && !collapsed" class="panel-controls inflow"><slot name="actions" /></div>
+    <!-- body always gets the whole box; in auto-hide mode the controls overlay it (see .cc-panel-controls) -->
+    <div v-show="!collapsed" class="panel-main">
+      <div class="panel-body"><slot /></div>
+      <template v-if="autoHide">
+        <div v-if="slots.actions" class="panel-controls cc-panel-controls"><slot name="actions" /></div>
+        <div v-if="slots.footer" class="panel-foot cc-panel-controls bottom"><slot name="footer" /></div>
+      </template>
+    </div>
+    <div v-if="!autoHide && slots.footer && !collapsed" class="panel-foot inflow"><slot name="footer" /></div>
   </div>
 </template>
 
@@ -99,22 +130,33 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
 .panel.collapsed { height: auto !important; min-height: 0 !important; resize: none; }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 5px 8px; cursor: move;
   border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-2); }
+/* min-width:0 lets the title shrink; the text span truncates so it never shoves the head buttons */
 .panel-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 12px;
-  letter-spacing: 0.02em; user-select: none; }
-.drag-icon { font-size: 10px; opacity: 0.55; }
+  letter-spacing: 0.02em; user-select: none; min-width: 0; }
+.panel-title-txt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.drag-icon { font-size: 10px; opacity: 0.55; flex: none; }
+/* docked panels: the drag icon IS the reorder handle (in-flow in the header → aligned with the other
+   buttons, no absolute overlay to collide with the pin). Its native dragstart bubbles to the board slot. */
+.drag-icon.grip { cursor: grab; font-size: 12px; opacity: 0.7; padding: 2px; margin: -2px 0; }
+.drag-icon.grip:active { cursor: grabbing; }
 .panel-spacer { flex: 1; }
-/* controls row: wraps instead of clipping when the panel is narrow */
-.panel-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px;
-  border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }
-/* footer row: utility actions, right-aligned */
-.panel-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 8px;
-  border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
+/* main region below the head: the anchor for the auto-hide control overlays (position: relative) and
+   the box the body fills. */
+.panel-main { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+/* controls / footer: shared layout only. The overlay look + hover-reveal live in the global
+   .cc-panel-controls utility (style.css); the in-flow look (auto-hide off) is the .inflow variant. */
+.panel-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 8px; }
+.panel-foot { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 5px 8px; }
+/* in-flow (auto-hide OFF): solid rows that reserve height, as before */
+.panel-controls.inflow { border-bottom: 1px solid var(--cc-border); background: var(--cc-surface-1); }
+.panel-foot.inflow { border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); flex-shrink: 0; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.panel-remove, .panel-collapse { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
+.panel-btn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
   border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1); color: var(--cc-text-dim);
   cursor: pointer; font-size: 0.7rem; }
+.panel-btn:hover { color: var(--cc-text); border-color: #484f58; }
+.panel-btn.on { color: var(--cc-text); border-color: var(--cc-accent); }
 .panel-remove:hover { color: #f87171; border-color: #f87171; }
-.panel-collapse:hover { color: var(--cc-text); border-color: #484f58; }
 /* the panel content fills the rest; body is a column so a plot area can flex:1 inside it */
 .panel-body { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 </style>

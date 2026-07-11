@@ -206,7 +206,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 
 <template>
   <div class="uv">
-    <div class="uv-ctrl">
+    <div class="uv-ctrl cc-panel-controls">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
       <span class="uv-spacer" />
@@ -241,7 +241,8 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 </template>
 
 <style scoped>
-.uv { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/* position: relative so the overlaid .uv-ctrl (.cc-panel-controls) anchors to the plot box */
+.uv { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .uv-ctrl { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font-size: 12px; color: var(--cc-text-dim); }
 /* active (ticked) label toggle: filled accent so it's clearly on/off */
 .uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }

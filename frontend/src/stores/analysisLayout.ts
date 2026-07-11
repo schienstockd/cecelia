@@ -17,6 +17,10 @@ interface LayoutEntry {
   rowTracks?: string; colTracks?: string   // non-uniform plates (e.g. a short header row)
   rowHeight?: number                       // px per grid row (board-level slot-height slider); the board
                                            // scrolls in the page if taller than the viewport
+  // A4 sheet lock: 'a4-portrait' | 'a4-landscape' constrain the board's on-screen box to page
+  // proportions (WYSIWYG with the PDF); 'free' lets it fill the page width (the old behaviour).
+  // Undefined (older persisted boards) is read as 'a4-portrait' so the fix applies retroactively.
+  sheet?: 'free' | 'a4-portrait' | 'a4-landscape'
   contents: (SlotContent | null)[]     // aligned 1:1 with slotAreas
   activeIndex: number
   shared: Record<string, unknown>      // canvas-level view-state for useSummaryData (compare/scope/sel/vis)

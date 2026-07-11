@@ -14,16 +14,18 @@
   active panel) are shared as-is — no track-specific clone.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, provide, onMounted, onUnmounted, useTemplateRef } from 'vue'
 import { useGatingStore } from '../../stores/gating'
 import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
 import { useNapariOpen } from '../../composables/useNapariOpen'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
 import { useViewState } from '../../composables/useViewState'
+import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
 import GatePairsPanel from './GatePairsPanel.vue'
 import PopulationManager from '../../components/canvas/PopulationManager.vue'
+import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import GatingCopyDialog from './GatingCopyDialog.vue'
 import type { FlatPop } from '../../stores/gating'
 
@@ -62,6 +64,17 @@ const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrange
   useCanvasPanels<PlotState>(canvasRef, () =>
     ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
        x: '', y: '', xt: defT, yt: defT, renderMode: 'points', channels: [] }), ckey)
+// show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
+const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
+
+// visual zoom (shared control): scale the free-floating plot workspace to see everything at once. Fit
+// measures the plot bounding box (zoom layer scroll size); drag is zoom-corrected via the injected zoom.
+// The population manager sits OUTSIDE the zoom layer so it stays full-size.
+const zoomRef = useTemplateRef<HTMLElement>('zoomRef')
+const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
+  () => { const el = zoomRef.value; return el ? { w: el.scrollWidth, h: el.scrollHeight } : { w: null, h: 0 } })
+provide(CANVAS_ZOOM_KEY, zoom)
+const zoomStyle = computed(() => zoom.value !== 1 ? { transform: `scale(${zoom.value})`, transformOrigin: 'top left' } : {})
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
 
@@ -230,15 +243,24 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <div class="seg">
+          <button :class="{ on: showManager }" @click="showManager = !showManager"
+                  v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
+            <i class="pi pi-sitemap" />
+          </button>
+        </div>
         <div class="seg" v-tooltip.bottom="'Step to the previous / next image in the list'">
           <button :disabled="!hasPrev" @click="navTo(-1)" aria-label="Previous image">&laquo;</button>
           <button :disabled="!hasNext" @click="navTo(1)" aria-label="Next image">&raquo;</button>
         </div>
         <button class="cc-btn" v-tooltip.bottom="'Copy this gating to other images in the set'"
                 @click="showCopy = true"><i class="pi pi-copy" /> Copy</button>
+        <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <span class="gp-hint">drag plots by their title · resize from the corner</span>
       </div>
       <div ref="canvasRef" class="gp-canvas">
+        <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
+        <div ref="zoomRef" class="gp-zoom" :style="zoomStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <GatePairsPanel v-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
@@ -251,7 +273,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
                          :ui="p.state" :persist-key="`${ckey}:${p.id}`"
                          @activate="activeId = p.id" @update:parent="setParent(p.id, $event)" @remove="remove(p.id)" />
         </template>
-        <PopulationManager :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
+        </div>
+        <PopulationManager v-if="showManager" :selected="selected" :highlighted="activeHL" :scope="scope" :pop-type="props.popType"
                            :line-width="activeLineWidth" :gate-labels="activeLabels" :axis-from-zero="activeFromZero"
                            @update:selected="onPickPop" @update:scope="scope = $event" @toggle-highlight="toggleHighlight"
                            @update:line-width="setLineWidth" @update:gate-labels="setLabels"
@@ -284,4 +307,6 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 .zwin input { width: 3.2rem; font-size: 12px; padding: 3px 4px; }
 /* free-floating plot workspace: panels + manager are absolutely positioned within */
 .gp-canvas { position: relative; flex: 1; min-height: 70vh; }
+/* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */
+.gp-zoom { position: absolute; inset: 0; }
 </style>

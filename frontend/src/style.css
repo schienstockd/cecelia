@@ -147,3 +147,35 @@ select option { background: var(--cc-surface-1); color: var(--cc-text); }
 /* tinted native widgets to the accent */
 input[type="range"] { accent-color: var(--cc-accent); cursor: pointer; }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--cc-accent); cursor: pointer; }
+
+/* ── CanvasPanel auto-hide control overlays ────────────────────────────────── */
+/* A CanvasPanel (auto-hide on, the default) gives its plot the WHOLE box; every control surface is
+   overlaid on the plot and hidden until the panel is hovered — or pinned open (the panel toggles
+   `.controls-pinned` on itself). Two producers wear this class:
+     • CanvasPanel's own #actions / #footer overlays (top / bottom `.bottom`);
+     • an interactive VIEW whose toolbar lives inside the body (GatingStrategyView `.gs-bar`,
+       UmapView `.uv-ctrl`, ImageStripView `.is-bar`) — those tag their bar `.cc-panel-controls` and
+       give their root `position: relative`, so it anchors to the plot box, not the panel.
+   This is why the analysis-board plots (and their PDF export) fill their slot instead of being squashed
+   by a stack of controls. See docs/UI.md → "Auto-hide panel controls". */
+/* NB: do NOT add backdrop-filter/filter/transform here — they make this the containing block for
+   `position: fixed` descendants, which throws the SummaryPanel "Plot options" popover (fixed,
+   viewport-positioned) off to the overlay's corner. Use a near-opaque background instead of a blur. */
+.cc-panel-controls {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 6;
+  opacity: 0; pointer-events: none; transition: opacity 0.12s ease;
+  background: color-mix(in srgb, var(--cc-surface-2) 96%, transparent);
+  border-bottom: 1px solid var(--cc-border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+}
+.cc-panel-controls.bottom {
+  top: auto; bottom: 0;
+  border-bottom: none; border-top: 1px solid var(--cc-border);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.28);
+}
+.panel:hover .cc-panel-controls,
+.panel.controls-pinned .cc-panel-controls { opacity: 1; pointer-events: auto; }
+/* during a PDF / board capture a revealed strip (and the header drag handle) must never land in a
+   snapshot (the `.capturing` ancestor is set on the board grid while exporting) */
+.capturing .cc-panel-controls { opacity: 0 !important; pointer-events: none !important; }
+.capturing .drag-icon { visibility: hidden !important; }
