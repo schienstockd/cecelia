@@ -259,11 +259,14 @@ docs/TODO.md.)
    plot panels (CanvasPanel chevron).
 7. **Plot adjustments** ported from the old R `plotChartsServer.R` / `plotHelpers.R`, grouped into
    collapsible sub-sections in the `SeriesPicker` Options (Layout / Points / Colours / Labels),
-   governed by the global/local scope (`VisProps`): legend, log scale, gridlines, rotate-X-labels,
+   governed by the global/local scope (`VisProps`): legend, log scale, gridlines, rotate-X-labels
+   (with an **angle slider**, `rotateXAngle`, 0–90°; the bottom margin scales with the angle),
    **facet** (small multiples per series), **dark theme**, Y-range override; jitter type
    (beeswarm/random/none), colour-data, point size/opacity; **palette** (Okabe-Ito, Tol bright/
-   muted/light, user list); title, X/Y axis labels, font size. All builder ink is `currentColor` so
-   the dark theme flips with one `style.color`.
+   muted/light, `distinct`, user list); title, X/Y axis labels, font size. All builder ink is
+   `currentColor` so the dark theme flips with one `style.color`. The **cluster UMAP** (`UmapView`)
+   honours the same `palette` choice for colour-by-cluster (via `paletteRange`; `standard` falls back
+   to its built-in palette).
 8. **Track populations in the picker** — a track-granularity plot's picker unions `live` (cell gates
    + derived `/_tracked`) and `track` gates (per-track-measure gates from `{vn}__tracks.json`), each
    tagged with its `popType`; the panel groups series by popType and fetches one `/api/plot_data` per

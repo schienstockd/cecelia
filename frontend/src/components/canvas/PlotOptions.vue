@@ -37,8 +37,12 @@ const has = (s: string) => props.sections.includes(s as 'layout')
           <input type="checkbox" :checked="vis.logScale" @change="set({ logScale: ($event.target as HTMLInputElement).checked })" /></label>
         <label class="po-row"><span>Gridlines</span>
           <input type="checkbox" :checked="vis.grid" @change="set({ grid: ($event.target as HTMLInputElement).checked })" /></label>
-        <label class="po-row" v-tooltip.left="'Rotate x tick labels 45°'"><span>Rotate X labels</span>
+        <label class="po-row" v-tooltip.left="'Rotate the x tick labels (angle below)'"><span>Rotate X labels</span>
           <input type="checkbox" :checked="vis.rotateXLabel" @change="set({ rotateXLabel: ($event.target as HTMLInputElement).checked })" /></label>
+        <label v-if="vis.rotateXLabel" class="po-row" v-tooltip.left="'X tick-label angle (degrees)'"><span>X angle</span>
+          <input type="range" min="0" max="90" step="5" :value="vis.rotateXAngle ?? 45"
+                 @input="set({ rotateXAngle: parseInt(($event.target as HTMLInputElement).value) })" />
+          <span class="po-val">{{ vis.rotateXAngle ?? 45 }}°</span></label>
         <label class="po-row" v-tooltip.left="'Flip 90° — measure on X, series labels on Y (R coord_flip)'"><span>Rotate 90°</span>
           <input type="checkbox" :checked="vis.rotate"
                  @change="set({ rotate: ($event.target as HTMLInputElement).checked, ...(($event.target as HTMLInputElement).checked ? { facet: false } : {}) })" /></label>

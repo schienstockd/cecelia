@@ -18,7 +18,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
-import type { VisProps } from '../../plots/plot'
+import { paletteRange, type VisProps } from '../../plots/plot'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -26,7 +26,7 @@ const props = defineProps<{
   // populations whose eye is on in the manager: colour their clusters in the pop colour, grey the
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
-  vis?: VisProps                 // canvas plot styling — here we honour the dark-theme knob
+  vis?: VisProps                 // canvas plot styling — we honour the dark-theme knob + the palette choice
   state: { labels?: boolean; legend?: boolean }
 }>()
 const log = useLogStore()
@@ -163,8 +163,11 @@ function recolour() {
     const otherN = distinct.filter(c => !shownIds.has(c)).reduce((s, c) => s + (counts.get(c) ?? 0), 0)
     legend.value = otherN ? [...popN, { label: 'other', colour: UNCLUSTERED, n: otherN }] : popN
   } else {
+    // colour-by-cluster: honour the pop manager's palette choice (vis.palette / userColors — e.g.
+    // "distinct"); fall back to the built-in PALETTE for the default 'standard' (paletteRange → null).
+    const pal = (props.vis ? paletteRange(props.vis, distinct.filter(c => c >= 0).length) : null) ?? PALETTE
     let pi = 0
-    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : PALETTE[pi++ % PALETTE.length]) })
+    distinct.forEach((c, i) => { idxOf.set(c, i); colourFor.set(c, c < 0 ? UNCLUSTERED : pal[pi++ % pal.length]) })
     legend.value = distinct.map(c => ({ label: c < 0 ? 'unclustered' : `cluster ${c}`, colour: colourFor.get(c)!, n: counts.get(c)! }))
   }
   const cats = new Float32Array(codes.length)
@@ -235,6 +238,8 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popT
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
 watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
+// re-colour when the pop manager's palette choice changes (e.g. standard → distinct)
+watch(() => [props.vis?.palette, props.vis?.userColors], recolour)
 // redraw the 2D dots when the data / colouring / extents change
 watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
 onMounted(() => {
