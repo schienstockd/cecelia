@@ -18,10 +18,9 @@
       "key": "popsToCluster",
       "label": "Populations",
       "type": "popSelection",
-      "popType": "flow",
+      "popScope": "cells",
       "multiple": true,
       "acrossSegmentations": true,
-      "includeRoot": true,
       "default": [],
       "tip": "Populations to cluster, across any segmentation — “<seg> · all” is every cell of that segmentation, plus any gated sub-populations. All selected cells from all selected images are clustered jointly, so cluster IDs are comparable across the set."
     },

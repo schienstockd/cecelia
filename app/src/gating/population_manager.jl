@@ -693,6 +693,76 @@ function plot_population_groups(imgs, value_names_for::Function, load_map::Funct
      for v in vn_order]
 end
 
+# ── popScope: the two object scopes a MODULE FUNCTION's population picker offers (docs/ANALYSIS.md).
+#    A task's popSelection param declares `popScope` = "cells" or "tracks" instead of hand-rolling a
+#    raw pop_type per module. This is the Julia parity of the old R `isTrack` pop-map attribute + the
+#    `tracksOnly` flag: "cells" = per-cell populations (flow gates [+ clust clusters]); "tracks" =
+#    per-track populations (the derived `_tracked` sets [+ per-track gates + trackclust clusters]).
+#    Clustering-derived pops are included by default; a picker opts out with `includeClusters=false`.
+#    Resolution lives here (package: Revise-tracked + headless-testable per docs/ARCHITECTURE.md);
+#    api/plotting_api.jl stays a thin wrapper. New scopes slot in via `scope_pop_types`. ────────────
+
+"""
+    is_track_pop(pop_type, path) -> Bool
+
+Whether a population enumerated by `plot_population_groups` is a PER-TRACK population (its members are
+tracks) rather than a per-cell one. Track iff its leaf is a track-flagged derived pop (`_tracked`) or
+its `pop_type` gates/filters tracks (`track`/`trackclust`); plain `flow`/`live` gates and `clust` pops
+are cells. The Julia equivalent of the R `isTrack` pop-map attribute — the sole cell-vs-track test.
+"""
+function is_track_pop(pop_type::AbstractString, path::AbstractString)::Bool
+    leaf = String(last(split(String(path), '/')))
+    haskey(_DERIVED_POPS, leaf) && return _DERIVED_POPS[leaf].is_track
+    String(pop_type) in ("track", "trackclust")
+end
+
+"""
+    scope_pop_types(scope, include_clusters) -> Vector{String}
+
+The pop_types `population_scope_groups` must load to cover a `popScope`. BOTH scopes load `live`: its
+stored flow gates are the cell pops AND the parents the derived `/_tracked` children hang off. `tracks`
+adds `track` (the per-track gate map) and, unless excluded, `trackclust`; `cells` adds `clust` unless
+excluded. Throws on an unknown scope (a spec typo should fail loudly, not silently empty the picker).
+"""
+function scope_pop_types(scope::AbstractString, include_clusters::Bool)::Vector{String}
+    if String(scope) == "tracks"
+        pts = ["live", "track"]; include_clusters && push!(pts, "trackclust")
+    elseif String(scope) == "cells"
+        pts = ["live"]; include_clusters && push!(pts, "clust")
+    else
+        error("unknown popScope: $scope (expected \"cells\" or \"tracks\")")
+    end
+    pts
+end
+
+"""
+    population_scope_groups(imgs, value_names_for, load_map, scope; kwargs...) -> Vector{NamedTuple}
+
+The MODULE-FUNCTION population picker (a task's popSelection param): `plot_population_groups` filtered
+to one `popScope`. Loads `scope_pop_types(scope, include_clusters)`, keeps only pops whose
+`is_track_pop` matches the scope — so `tracks` drops plain cell gates (`/qc`) while keeping their
+tracked subset (`/qc/_tracked`), and `cells` drops the derived `/_tracked` sets. For `cells` it
+prepends an all-cells root (`/`) per segmentation (always real — the segmentation has label props).
+The all-TRACKS root is the derived `/_tracked` root already produced by `plot_population_groups` and
+guarded by `root_derived_ok` (only offered when the segmentation has ungated tracks), so a bogus "all
+tracks" never appears when there are none. Same injected closures as `plot_population_groups`.
+"""
+function population_scope_groups(imgs, value_names_for::Function, load_map::Function,
+                                 scope::AbstractString; include_clusters::Bool = true,
+                                 root_derived_ok::Function = (_v, _pt, _dpath) -> true)
+    want_track = String(scope) == "tracks"
+    groups = plot_population_groups(imgs, value_names_for, load_map,
+                                    scope_pop_types(scope, include_clusters);
+                                    root_derived_ok = root_derived_ok)
+    [(value_name = g.value_name,
+      populations = begin
+          kept = [p for p in g.populations if is_track_pop(p.pop_type, p.path) == want_track]
+          want_track ? kept :
+              vcat([(path = "/", name = "all", colour = "#7c93b8", pop_type = "live")], kept)
+      end)
+     for g in groups]
+end
+
 # Inject the derived pop(s) for the requested paths into a (flow) map, transiently. A path whose
 # leaf is a registered derived pop for this `pop_type` (e.g. ".../_tracked" under `live`) becomes
 # a filtered child of its parent; recompute! then composes parent ∩ filter. Unknown/foreign-type

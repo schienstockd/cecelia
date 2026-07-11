@@ -11,11 +11,11 @@
       "key": "pops",
       "label": "Populations",
       "type": "popSelection",
-      "popType": "live",
+      "popScope": "tracks",
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
-      "tip": "Populations whose HMM state columns to read, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked). Same selection style as HMM States."
+      "tip": "Track populations whose HMM state columns to read, across any segmentation (e.g. A/_tracked, B/_tracked, C/_tracked). Same selection style as HMM States."
     },
     {
       "key": "colName",

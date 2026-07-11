@@ -9,7 +9,9 @@ export interface ParamDef {
   tip?: string
   trimPrefix?: string   // labelPropsColsSelection: strip this prefix from option labels (display only)
   acrossSegmentations?: boolean  // popSelection: list populations across ALL segmentations (value_name-prefixed)
-  includeRoot?: boolean          // popSelection (across): also offer each segmentation's whole population ("<seg> · all")
+  includeRoot?: boolean          // popSelection (across, legacy popType path): also offer each segmentation's whole population ("<seg> · all")
+  popScope?: 'cells' | 'tracks'  // popSelection: the module-function object scope — cell pops vs tracked pops (backend resolves sources + cell/track filtering); preferred over raw popType
+  includeClusters?: boolean      // popSelection (popScope): also offer clustering-derived pops (clust/trackclust); default true
   // int / float
   min?: number
   max?: number
