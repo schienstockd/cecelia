@@ -730,7 +730,9 @@ onUnmounted(stopResize)
   <!-- run-history popover — teleported to <body> so it escapes the table's scroll/transform
        containing block (was clipped by the following row); positioned (fixed) from the cog rect -->
   <Teleport to="body">
-    <div v-if="runLogImg" class="runlog-pop" :style="runLogPos">
+    <!-- carry the theme tokens (--cc-*) on the popover itself: teleported to <body> it's outside the
+         shell's .cc-dark wrapper, so var(--cc-surface-1) etc. would otherwise be undefined (transparent) -->
+    <div v-if="runLogImg" class="runlog-pop cc-dark" :style="runLogPos">
       <div class="runlog-hd">Run history</div>
       <div v-if="!runLogImg.runLog || !runLogImg.runLog.length" class="runlog-empty">No functions recorded yet.</div>
       <div v-for="(e, i) in [...(runLogImg.runLog ?? [])].reverse()" :key="i" class="runlog-row">
