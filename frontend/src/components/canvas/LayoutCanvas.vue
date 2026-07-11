@@ -123,6 +123,12 @@ const {
 } = useSummaryData({
   projectUid, imageUids: computed(() => props.imageUids), setUid, module: props.module,
   shared: computed(() => entry.value.shared),
+  // the board is mixed-popType: point the picker at the ACTIVE summary slot's spec so it surfaces that
+  // plot's popType (each population-summary spec carries one popType — split per module page).
+  activeSpecId: computed(() => {
+    const c = entry.value.contents[entry.value.activeIndex]
+    return c && c.kind === 'summary' ? c.ref : null
+  }),
 })
 
 // ── slot content: active slot, add/clear, drag-swap ──────────────────────────────────────────────

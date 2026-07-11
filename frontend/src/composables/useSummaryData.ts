@@ -20,6 +20,11 @@ export function useSummaryData(opts: {
   setUid: Ref<string | null>
   module: string | null | undefined
   shared: Ref<Record<string, unknown>>
+  // OPTIONAL: the id of the ACTIVE slot's spec (the universal board). When set, the population picker's
+  // popType/granularity follow the ACTIVE plot's spec instead of the first registered spec — so a mixed
+  // board (flow / live / clust / trackclust) surfaces the RIGHT pops for whichever plot is selected.
+  // Omitted on the per-module canvases (their specs share a popType, so specs[0] is correct).
+  activeSpecId?: Ref<string | null>
 }) {
   const { projectUid, imageUids, setUid, module } = opts
   const ws = useWsStore()
@@ -68,8 +73,13 @@ export function useSummaryData(opts: {
   // available plot specs (per-module registry; null module = universal → all specs)
   const specs = ref<PlotSpec[]>([])
   const specById = computed(() => Object.fromEntries(specs.value.map(s => [s.id, s])))
-  const popType = computed(() => specs.value[0]?.dataSource.popType ?? 'live')
-  const granularity = computed(() => specs.value.some(s => s.dataSource.granularity === 'track') ? 'track' : 'cell')
+  // active plot's spec (board only; each spec carries ONE popType because the plots are split per
+  // module page) — its popType/granularity drive the picker so a mixed board surfaces the right pops.
+  const activeSpec = computed(() => opts.activeSpecId?.value ? specById.value[opts.activeSpecId.value] : undefined)
+  const popType = computed(() => activeSpec.value?.dataSource.popType ?? specs.value[0]?.dataSource.popType ?? 'live')
+  const granularity = computed(() =>
+    activeSpec.value?.dataSource.granularity
+      ?? (specs.value.some(s => s.dataSource.granularity === 'track') ? 'track' : 'cell'))
   async function loadSpecs() {
     const q = module ? `?module=${encodeURIComponent(module)}` : ''
     try { specs.value = await (await fetch(`/api/plots/definitions${q}`)).json() } catch { specs.value = [] }
