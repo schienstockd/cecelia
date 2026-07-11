@@ -94,6 +94,35 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Run log (automatic per-image provenance) ─────────────────────────────────
+    @testset "Run log" begin
+        proj = create_project!(name="runlog-test-$(rand(1000:9999))", kind="static")
+        s = add_set!(proj; name="set-A")
+        img = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path" => "/tmp/fake.tif"))
+
+        @test read_run_log(img) == Any[]                       # empty before any run
+        append_run_log!(img, "segment.cellpose", "default")
+        append_run_log!(img, "behaviour.hmm")
+        log = read_run_log(img)
+        @test length(log) == 2
+        @test log[1]["fun"] == "segment.cellpose"
+        @test log[1]["valueName"] == "default"
+        @test haskey(log[1], "at") && !isempty(log[1]["at"])
+        @test log[2]["fun"] == "behaviour.hmm"
+
+        # persists across reload (init_object)
+        loaded = init_object(proj.uid, img.uid)
+        @test length(read_run_log(loaded)) == 2
+
+        # capped to the most recent RUN_LOG_CAP entries
+        for i in 1:(Cecelia.RUN_LOG_CAP + 10); append_run_log!(img, "x.$i"); end
+        capped = read_run_log(img)
+        @test length(capped) == Cecelia.RUN_LOG_CAP
+        @test capped[end]["fun"] == "x.$(Cecelia.RUN_LOG_CAP + 10)"   # newest kept
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Lockfile (naive guard) ──────────────────────────────────────────────────
     @testset "with_transaction" begin
         proj     = create_project!(name="lock-test-$(rand(1000:9999))", kind="static")

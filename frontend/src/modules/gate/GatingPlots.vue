@@ -20,6 +20,7 @@ import { useWsStore } from '../../stores/ws'
 import { useProjectStore } from '../../stores/project'
 import { useNapariOpen } from '../../composables/useNapariOpen'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
+import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useViewState } from '../../composables/useViewState'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import GatePlotPanel from './GatePlotPanel.vue'
@@ -52,7 +53,8 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
 interface PlotState { kind: 'single' | 'pairs'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
   x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
-const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
+const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
+const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
@@ -60,21 +62,20 @@ const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:$
 // track properties → linear by default; flow intensities → logicle (FlowJo). Channels (x/y) start
 // empty and the panel picks index-based defaults once the store's columns load (see ensureChannels).
 const defT: GateKind = props.popType === 'track' ? 'linear' : 'logicle'
-const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
-  useCanvasPanels<PlotState>(canvasRef, () =>
+const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+  useCanvasPanels<PlotState>(zoomRef, () =>
     ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
        x: '', y: '', xt: defT, yt: defT, renderMode: 'points', channels: [] }), ckey)
 // show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 
 // visual zoom (shared control): scale the free-floating plot workspace to see everything at once. Fit
-// measures the plot bounding box (zoom layer scroll size); drag is zoom-corrected via the injected zoom.
-// The population manager sits OUTSIDE the zoom layer so it stays full-size.
-const zoomRef = useTemplateRef<HTMLElement>('zoomRef')
+// fits the actual plot bounding box; drag is zoom-corrected via the injected zoom. The workspace GROWS
+// when zoomed out (useCanvasWorkspace); the population manager sits OUTSIDE the zoom layer (full-size).
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => { const el = zoomRef.value; return el ? { w: el.scrollWidth, h: el.scrollHeight } : { w: null, h: 0 } })
+  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const zoomStyle = computed(() => zoom.value !== 1 ? { transform: `scale(${zoom.value})`, transformOrigin: 'top left' } : {})
+const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // add a read-only channel-pairs matrix panel (same canvas, same shared options as a single plot)
 function addPairs() { const id = add(); const p = panels.value.find(x => x.id === id); if (p) p.state.kind = 'pairs' }
 
@@ -260,7 +261,7 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
       </div>
       <div ref="canvasRef" class="gp-canvas">
         <!-- scaled workspace: the plots zoom together; the population manager stays full-size (below) -->
-        <div ref="zoomRef" class="gp-zoom" :style="zoomStyle">
+        <div ref="zoomRef" class="gp-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <GatePairsPanel v-if="p.state.kind === 'pairs'" :index="i" :arrange="p.arrange"
                           :active="p.id === activeId" :parent="p.state.parent" :highlight="panelHL(p.state)"
@@ -308,5 +309,6 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* free-floating plot workspace: panels + manager are absolutely positioned within */
 .gp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */
-.gp-zoom { position: absolute; inset: 0; }
+/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace */
+.gp-zoom { position: absolute; top: 0; left: 0; }
 </style>

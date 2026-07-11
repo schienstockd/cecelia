@@ -232,15 +232,37 @@ _clust_members(props_path::AbstractString) = Dict{String,Any}(
     String(k) => (v isa AbstractVector ? String[] : get(v, "partOf", String[]))
     for (k, v) in _clust_manifest(props_path))
 
-# distinct cluster IDs per suffix — the universe the pop-manager offers as tickable clusters. Reads
-# the `clusters.{suffix}` obs column (integer codes) and drops unclustered (<0). One column read per
-# suffix; suffixes are few per table (usually 1), so the cost is a single-column scan on image-select.
-function _cluster_ids(path::AbstractString, suffixes::Vector{String})
+# distinct cluster IDs per suffix — the universe the pop-manager offers as tickable clusters. Clustering
+# is SET-scope, so a single image's `clusters.{suffix}` column carries only the subset of the shared
+# 0..k-1 codes present in ITS objects; scanning one image under-reports (e.g. 2 of 4). Pool across the
+# run's MEMBER images (`partOf`, from _clust_members) so the universe matches the pooled UMAP/heatmap.
+# A suffix with no recorded members (pre-partOf run) falls back to the primary image's own column.
+function _cluster_ids(project_uid::AbstractString, primary_path::AbstractString, vn::AbstractString,
+                      suffixes::Vector{String}, members::AbstractDict, track::Bool)
+    pathcache = Dict{String,Union{String,Nothing}}()   # init_object per uID isn't free; a member may back several suffixes
+    member_path(u) = get!(pathcache, u) do
+        mi = try init_object(project_uid, u) catch; nothing end
+        mi isa CciaImage || return nothing
+        p = track ? img_track_props_path(mi, vn) : img_label_props_path(mi, vn)
+        isfile(p) ? p : nothing
+    end
     out = Dict{String,Any}()
     for s in suffixes
         col = "clusters.$s"
-        df = label_props(path) |> select_cols([col]) |> as_df
-        out[s] = sort!(collect(Set(Int(round(x)) for x in df[!, col] if isfinite(x) && x >= 0)))
+        paths = String[]
+        for u in String.(get(members, s, String[]))
+            p = member_path(u); p === nothing || push!(paths, p)
+        end
+        isempty(paths) && push!(paths, primary_path)
+        ids = Set{Int}()
+        for p in paths
+            df = try label_props(p) |> select_cols([col]) |> as_df catch; continue end
+            hasproperty(df, Symbol(col)) || continue
+            for x in df[!, col]
+                (isfinite(x) && x >= 0) && push!(ids, Int(round(x)))
+            end
+        end
+        out[s] = sort!(collect(ids))
     end
     out
 end
@@ -286,7 +308,8 @@ function api_gating_channels(req::HTTP.Request)
             clusterSuffixes = _cluster_suffixes(tobs),           # trackclust runs in the track table
             clusterFeatures = _clust_features(tpath),
             clusterMembers  = _clust_members(tpath),             # uIDs clustered together (partOf)
-            clusterIds      = isfile(tpath) ? _cluster_ids(tpath, _cluster_suffixes(tobs)) : Dict{String,Any}(),
+            clusterIds      = isfile(tpath) ? _cluster_ids(get(q, "projectUid", ""), tpath, vn,
+                                _cluster_suffixes(tobs), _clust_members(tpath), true) : Dict{String,Any}(),
             valueNames = versioned_keys(img.label_props),
             valueName = vn,
             popType = get(q, "popType", "track"),
@@ -311,7 +334,9 @@ function api_gating_channels(req::HTTP.Request)
         clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
         clusterFeatures = _clust_features(img_label_props_path(img, vn)),
         clusterMembers  = _clust_members(img_label_props_path(img, vn)),        # uIDs clustered together (partOf)
-        clusterIds      = _cluster_ids(img_label_props_path(img, vn), _cluster_suffixes(col_names(lp; data_type = :obs))),
+        clusterIds      = _cluster_ids(get(q, "projectUid", ""), img_label_props_path(img, vn), vn,
+                            _cluster_suffixes(col_names(lp; data_type = :obs)),
+                            _clust_members(img_label_props_path(img, vn)), false),
         valueNames = versioned_keys(img.label_props),
         valueName = vn,                 # the server-resolved value_name these columns belong to
     ))

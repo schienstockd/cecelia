@@ -40,6 +40,11 @@ async function render() {
   // panel — the bottom x-axis can't be clipped. We draw the legend ourselves as an absolute overlay
   // (consumes no layout height), so it never pushes the axis out of view.
   node = Plot.plot({ ...base, width: w, height: h }) as SVGElement
+  // Observable Plot's tooltip (`tip: true`) fills its background rect from the CSS var
+  // `--plot-background` (default white), NOT from style.background — so in dark theme the tip was
+  // white-on-white (light ink over a white rect). Point the var at the theme ground so the tip rect
+  // matches the plot ink.
+  ;(node as SVGElement).style.setProperty('--plot-background', props.opts?.darkTheme ? '#1f2226' : 'white')
   host.value.append(node)
 
   const ink = props.opts.darkTheme ? '#e6e6e6' : '#111'

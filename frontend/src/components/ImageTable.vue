@@ -160,6 +160,23 @@ async function saveNote(img: CciaImage, val: string) {
 // ── Include / exclude ─────────────────────────────────────────────────────────
 // Excluded images stay visible but greyed, can't be selected, and are skipped by every run.
 const NOTE_KEY = '__note'
+
+// run-history popover (cog after the uid) — automatic per-image provenance (project store `runLog`).
+// position: fixed from the cog so it escapes the table's horizontal scroll clipping.
+const runLogUid = ref<string | null>(null)
+const runLogPos = ref<Record<string, string>>({})
+const fmtRunAt = (at: string) => (at ?? '').replace('T', ' ')
+function toggleRunLog(uid: string, e: MouseEvent) {
+  if (runLogUid.value === uid) { runLogUid.value = null; return }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  runLogPos.value = { position: 'fixed', top: `${Math.round(r.bottom + 4)}px`, left: `${Math.round(r.left)}px` }
+  runLogUid.value = uid
+}
+function onDocMouseDownRunLog(e: MouseEvent) {
+  if (runLogUid.value && !(e.target as HTMLElement).closest('.runlog-cell')) runLogUid.value = null
+}
+onMounted(() => document.addEventListener('mousedown', onDocMouseDownRunLog))
+onUnmounted(() => document.removeEventListener('mousedown', onDocMouseDownRunLog))
 async function setIncluded(img: CciaImage, included: boolean) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
@@ -599,20 +616,36 @@ onUnmounted(stopResize)
               v-tooltip.right="isExcluded(img) ? 'Include in processing.' : 'Exclude from processing (won\'t be run).'">
               <i :class="isExcluded(img) ? 'pi pi-check-circle' : 'pi pi-ban'" />
             </button>
+            <!-- run history: cog → popover listing the functions run on this image + when (provenance) -->
+            <span class="runlog-cell" @click.stop>
+              <button class="row-icon-btn runlog-cog" :class="{ on: runLogUid === img.uid }"
+                @click.stop="toggleRunLog(img.uid, $event)"
+                v-tooltip.right="'Functions run on this image'"><i class="pi pi-cog" /></button>
+              <div v-if="runLogUid === img.uid" class="runlog-pop" :style="runLogPos">
+                <div class="runlog-hd">Run history</div>
+                <div v-if="!img.runLog || !img.runLog.length" class="runlog-empty">No functions recorded yet.</div>
+                <div v-for="(e, i) in [...(img.runLog ?? [])].reverse()" :key="i" class="runlog-row">
+                  <span class="runlog-fun">{{ e.fun }}</span>
+                  <span v-if="e.valueName" class="runlog-vn">{{ e.valueName }}</span>
+                  <span class="runlog-at">{{ fmtRunAt(e.at) }}</span>
+                </div>
+              </div>
+            </span>
           </span>
           <span class="uid-row">
             <span class="img-uid">{{ img.uid }}</span>
           </span>
-          <!-- exclusion note: editable reason, shown only for excluded images -->
-          <span v-if="isExcluded(img)" class="note-row" @click.stop>
+          <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
+               exclusion reason (shown in the badge tooltip + CSV) -->
+          <span class="note-row" @click.stop>
             <input v-if="isEditing(img.uid, NOTE_KEY)"
               class="attr-edit" v-model="editValue" :ref="focusEditInput"
-              placeholder="reason (optional)"
+              :placeholder="isExcluded(img) ? 'reason (optional)' : 'note (optional)'"
               @keyup.enter="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))"
               @keyup.esc="cancelEdit"
               @blur="commitEdit(img.uid, NOTE_KEY, img.note ?? '', v => saveNote(img, v))" />
             <span v-else class="note-text" @click="startEdit(img.uid, NOTE_KEY, img.note ?? '')"
-              v-tooltip.right="'Click to edit the exclusion note.'">
+              v-tooltip.right="'Click to edit the note.'">
               <i class="pi pi-comment" /> {{ img.note || 'add a note…' }}
             </span>
           </span>
@@ -892,6 +925,18 @@ th:hover .resize-handle::after { opacity: 1; }
   gap: 0.25rem;
   min-width: 0;
 }
+/* run-history cog + popover (fixed so it escapes the table's horizontal scroll) */
+.runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
+.runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
+.runlog-pop { z-index: 40; min-width: 15rem; max-height: 16rem; overflow-y: auto;
+  padding: 6px 8px; background: var(--cc-surface-1); border: 1px solid var(--cc-border);
+  border-radius: 5px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+.runlog-hd { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); margin-bottom: 4px; }
+.runlog-empty { font-size: 0.7rem; color: var(--cc-text-dim); }
+.runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: 0.7rem; }
+.runlog-fun { font-weight: 600; color: var(--cc-text); font-family: var(--cc-mono); }
+.runlog-vn { color: var(--cc-accent); font-size: 0.62rem; }
+.runlog-at { margin-left: auto; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .img-uid {
   font-family: var(--cc-mono);
   font-size: 0.68rem;
