@@ -266,7 +266,11 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   let color = colourScale(r.series, keyOf, o.colorOf)
   // When sub-split by a groupBy column (e.g. HMM state) the levels have no population-manager colour,
   // so 'standard' would paint every level the same pop colour — fall back to distinct hues instead.
-  const groupColouring = !!r.groupBy && o.palette === 'standard'
+  // Gate on the series ACTUALLY varying by group (d.grp), not merely on r.groupBy being present: a
+  // groupBy that yields one level per series (e.g. track measures come back with a groupBy set but
+  // `group=""`) must keep the population colours, not get distinct hues (the "track measures show
+  // red/green instead of the pop colours" bug).
+  const groupColouring = d.grp && o.palette === 'standard'
   // palette override (R adjustColors): assign palette/user/distinct colours by series order;
   // 'standard' keeps the population-manager colours from colorOf (consistent across images).
   if (o.palette === 'user') {
