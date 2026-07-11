@@ -41,6 +41,18 @@ const cursor = ref('default')
 
 // ── coordinate mapping (data ⇄ px) via the live extents ──
 function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.clientHeight } }
+// a white/default gate outline is invisible on the light PDF export — resolve those to the themed
+// `--cc-text` var so they flip DARK-on-white for export and stay white on the dark screen (same trick
+// as the contour ink). Gates with a real pop colour are left as-is (visible on either ground).
+function ink(): string {
+  const el = canvasEl.value
+  const v = el && getComputedStyle(el).getPropertyValue('--cc-text').trim()
+  return v || '#fafafa'
+}
+function gateColour(colour?: string): string {
+  const c = (colour ?? '').trim().toLowerCase()
+  return (!c || c === 'white' || c === '#fff' || c === '#ffffff' || c === '#fafafa') ? ink() : colour!
+}
 function dataToPx(vx: number, vy: number): [number, number] {
   const { w, h } = size(); const { xMin, xMax, yMin, yMax } = props.extents
   const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
@@ -191,7 +203,9 @@ function drawHandles(g: GateSpec, colour: string) {
 function paintGates() {
   for (const g of props.gates ?? []) {
     const spec = g.path === editPath && draft.value ? draft.value : g.gate
-    strokeShape(spec, g.colour || '#fafafa')
+    // outline flips for white/default gates (invisible on white export); the label keeps its colour —
+    // it has a dark halo, so white text stays legible on either ground.
+    strokeShape(spec, gateColour(g.colour))
     if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa', g.label)
   }
 }

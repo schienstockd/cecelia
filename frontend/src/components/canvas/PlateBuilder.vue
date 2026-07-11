@@ -6,7 +6,7 @@
   drag UI. Seeded from the current plate so you can tweak rather than start over.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onBeforeUnmount, useTemplateRef } from 'vue'
 import { normSpan, applyDrag, clampSpans, slotsToSpans, buildPlate, type PlateSpan, type Cell } from '../../utils/plateBuilder'
 import type { LayoutTemplate } from '../../plots/layoutTemplates'
 
@@ -31,18 +31,34 @@ const gridTmpl = computed(() => ({
 const areaStyle = (s: PlateSpan) => ({ gridArea: `${s.r0 + 1} / ${s.c0 + 1} / ${s.r1 + 2} / ${s.c1 + 2}` })
 
 // ── drag to merge / click to split ────────────────────────────────────────────
+// Hit-test the CELL under the pointer from its position relative to the grid rect — robust to fast
+// drags and to the grid re-rendering after a merge (per-cell pointerenter was jumpy and stopped
+// firing after the first merge). One pointerdown → window move/up so the drag survives leaving a cell.
+const gridRef = useTemplateRef<HTMLElement>('gridRef')
 const dragging = ref(false)
 const start = ref<Cell | null>(null)
 const hover = ref<Cell | null>(null)
 const dragRect = computed(() => (dragging.value && start.value && hover.value) ? normSpan(start.value, hover.value) : null)
-function onDown(cell: Cell) { start.value = hover.value = cell; dragging.value = true; window.addEventListener('pointerup', onUp) }
-function onEnter(cell: Cell) { if (dragging.value) hover.value = cell }
+function cellAt(e: PointerEvent): Cell | null {
+  const el = gridRef.value; if (!el) return null
+  const r = el.getBoundingClientRect()
+  const c = Math.floor(((e.clientX - r.left) / r.width) * cols.value)
+  const rr = Math.floor(((e.clientY - r.top) / r.height) * rows.value)
+  return { r: Math.max(0, Math.min(rows.value - 1, rr)), c: Math.max(0, Math.min(cols.value - 1, c)) }
+}
+function onMove(e: PointerEvent) { if (dragging.value) { const c = cellAt(e); if (c) hover.value = c } }
 function onUp() {
+  window.removeEventListener('pointermove', onMove)
   window.removeEventListener('pointerup', onUp)
   if (dragging.value && start.value && hover.value) spans.value = applyDrag(spans.value, normSpan(start.value, hover.value))
   dragging.value = false; start.value = hover.value = null
 }
-onBeforeUnmount(() => window.removeEventListener('pointerup', onUp))
+function onDown(e: PointerEvent) {
+  const c = cellAt(e); if (!c) return
+  start.value = hover.value = c; dragging.value = true
+  window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp)
+}
+onBeforeUnmount(onUp)
 
 const slotCount = computed(() => buildPlate(cols.value, rows.value, spans.value).slots.length)
 function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)) }
@@ -58,9 +74,8 @@ function apply() { emit('apply', buildPlate(cols.value, rows.value, spans.value)
       <span class="pb-hint">drag to merge · click a merge to split</span>
     </div>
 
-    <div class="pb-grid" :style="gridTmpl">
-      <div v-for="cell in gridCells" :key="`${cell.r}-${cell.c}`" class="pb-cell"
-           @pointerdown.prevent="onDown(cell)" @pointerenter="onEnter(cell)" />
+    <div ref="gridRef" class="pb-grid" :style="gridTmpl" @pointerdown.prevent="onDown">
+      <div v-for="cell in gridCells" :key="`${cell.r}-${cell.c}`" class="pb-cell" />
       <div v-for="(s, i) in spans" :key="`s${i}`" class="pb-span" :style="areaStyle(s)" />
       <div v-if="dragRect" class="pb-drag" :style="areaStyle(dragRect)" />
     </div>

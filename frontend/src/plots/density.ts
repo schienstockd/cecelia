@@ -1,15 +1,17 @@
-// Density grid + raster image + outlier classification for the gate scatter. The base gating cloud is
-// rendered as a FlowJo/OMIQ-style 2D DENSITY RASTER (no WebGL): bin → blur → blue-heat ramp. The same
-// blurred grid feeds the contour rings (plots/contour.ts). Pure + unit-tested (docs/DEV.md).
-import { BLUE_HEAT_RGB } from './flowColors'
-
+// Density estimation for the gate scatter (no WebGL). The base cloud is a FlowJo/OMIQ pseudocolour DOT
+// plot: `pointDensities` gives each point its local density → the renderer colours it via the blue-heat
+// ramp. The same binning feeds the contour rings (plots/contour.ts) and the outlier tail. Pure +
+// unit-tested (docs/DEV.md).
 export type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
-export const DENSITY_GRID = 128            // grid resolution (raster + contour); upscaled smoothly to px
-// blur strength — a few box-blur passes ≈ a Gaussian. Heavier than a single 3×3 so contours read as
-// clean nested rings (FlowJo look) instead of jagged per-cell wiggles.
-export const BLUR_RADIUS = 2
-export const BLUR_PASSES = 3
+// per-point density (dots) estimates on a moderate grid + blur; contours use a coarser, heavily-blurred
+// grid so the rings read as clean nested curves. A few box-blur passes ≈ a Gaussian.
+export const DOT_GRID = 160                // per-point density-colour grid (the dot plot)
+export const DOT_BLUR_RADIUS = 2
+export const DOT_BLUR_PASSES = 2
+export const DENSITY_GRID = 128            // contour / outlier grid
+export const CONTOUR_BLUR_RADIUS = 2
+export const CONTOUR_BLUR_PASSES = 3
 // contour thresholds (normalised 0..1, outer→inner). Geometric-ish spacing: more lines through the
 // sparse shoulder, fewer at the dense core — reads like FlowJo probability contours.
 export const CONTOUR_LEVELS = [0.05, 0.12, 0.24, 0.42, 0.65, 0.88]
@@ -42,8 +44,9 @@ function boxBlur(g: Float32Array, G: number, radius: number, passes: number) {
   }
 }
 
-// bin points into a G×G count grid over `ext`, then blur. Returns the raw blurred grid + its max.
-function binAndBlur(points: Float32Array, ext: Ext, G: number): { grid: Float32Array; max: number } {
+// bin points into a G×G count grid over `ext`, then blur (radius/passes). Returns raw blurred grid + max.
+function binAndBlur(points: Float32Array, ext: Ext, G: number, radius: number, passes: number):
+    { grid: Float32Array; max: number } {
   const xs = ext.xMax > ext.xMin ? ext.xMax - ext.xMin : 1
   const ys = ext.yMax > ext.yMin ? ext.yMax - ext.yMin : 1
   const g = new Float32Array(G * G)
@@ -55,7 +58,7 @@ function binAndBlur(points: Float32Array, ext: Ext, G: number): { grid: Float32A
     if (gx < 0 || gx > G - 1 || gy < 0 || gy > G - 1) continue
     g[gy * G + gx] += 1
   }
-  boxBlur(g, G, BLUR_RADIUS, BLUR_PASSES)
+  boxBlur(g, G, radius, passes)
   let max = 0
   for (let i = 0; i < g.length; i++) if (g[i] > max) max = g[i]
   return { grid: g, max }
@@ -63,32 +66,28 @@ function binAndBlur(points: Float32Array, ext: Ext, G: number): { grid: Float32A
 
 // normalised (0..1) blurred density grid, row-major (gy*G + gx) — used by the contour rings + outliers.
 export function densityGrid(points: Float32Array, ext: Ext, G = DENSITY_GRID): Float32Array {
-  const { grid, max } = binAndBlur(points, ext, G)
+  const { grid, max } = binAndBlur(points, ext, G, CONTOUR_BLUR_RADIUS, CONTOUR_BLUR_PASSES)
   if (max > 0) for (let i = 0; i < grid.length; i++) grid[i] /= max
   return grid
 }
 
-// FlowJo-style pseudocolour raster: RGBA bytes (G×G), each cell coloured by LOG-scaled density via the
-// blue-heat ramp; empty cells transparent. Rows are FLIPPED (yMax at the top) so it draws directly onto
-// a top-left-origin canvas matching the axes. `putImageData` this at G×G then drawImage-upscale (smooth)
-// to the plot rect.
-export function densityImageData(points: Float32Array, ext: Ext, G = DENSITY_GRID):
-    { data: Uint8ClampedArray; width: number; height: number } {
-  const { grid, max } = binAndBlur(points, ext, G)
+// per-point LOG-scaled local density (0..1) — colour each point by this via the blue-heat ramp for the
+// FlowJo pseudocolour DOT plot (point resolution, no blocky cells). Non-finite/out-of-range → 0.
+export function pointDensities(points: Float32Array, ext: Ext, G = DOT_GRID): Float32Array {
+  const { grid, max } = binAndBlur(points, ext, G, DOT_BLUR_RADIUS, DOT_BLUR_PASSES)
   const lmax = Math.log1p(max) || 1
-  const data = new Uint8ClampedArray(G * G * 4)
-  for (let gy = 0; gy < G; gy++) {
-    const destRow = G - 1 - gy                             // flip: high data-y → top row
-    for (let gx = 0; gx < G; gx++) {
-      const raw = grid[gy * G + gx]
-      const o = (destRow * G + gx) * 4
-      if (raw <= 0) { data[o + 3] = 0; continue }          // empty → transparent
-      const c = Math.min(255, Math.max(0, Math.round((Math.log1p(raw) / lmax) * 255)))
-      data[o] = BLUE_HEAT_RGB[c * 3]; data[o + 1] = BLUE_HEAT_RGB[c * 3 + 1]
-      data[o + 2] = BLUE_HEAT_RGB[c * 3 + 2]; data[o + 3] = 255
-    }
+  const xs = ext.xMax > ext.xMin ? ext.xMax - ext.xMin : 1
+  const ys = ext.yMax > ext.yMin ? ext.yMax - ext.yMin : 1
+  const n = points.length / 2
+  const out = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    const px = points[2 * i], py = points[2 * i + 1]
+    if (!Number.isFinite(px) || !Number.isFinite(py)) continue
+    const gx = Math.floor(((px - ext.xMin) / xs) * G), gy = Math.floor(((py - ext.yMin) / ys) * G)
+    if (gx < 0 || gx > G - 1 || gy < 0 || gy > G - 1) continue
+    out[i] = Math.log1p(grid[gy * G + gx]) / lmax
   }
-  return { data, width: G, height: G }
+  return out
 }
 
 // interleaved subset of `points` whose smoothed density is below `level` — the sparse tail drawn as

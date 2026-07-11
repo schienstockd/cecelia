@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { densityGrid, densityImageData, outlierPoints, DENSITY_GRID } from './density'
+import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID } from './density'
 
 const ext = { xMin: 0, xMax: 1, yMin: 0, yMax: 1 }
 
@@ -29,20 +29,17 @@ describe('densityGrid', () => {
   })
 })
 
-describe('densityImageData', () => {
-  it('returns G×G RGBA with empty cells transparent and dense cells opaque + coloured', () => {
-    const img = densityImageData(new Float32Array(cluster(400, 0.5, 0.5)), ext)
-    expect(img.width).toBe(DENSITY_GRID)
-    expect(img.height).toBe(DENSITY_GRID)
-    expect(img.data.length).toBe(DENSITY_GRID * DENSITY_GRID * 4)
-    // a corner far from the (0.5,0.5) blob → empty → fully transparent
-    const cornerA = (0 * DENSITY_GRID + 0) * 4
-    expect(img.data[cornerA + 3]).toBe(0)
-    // the centre cell (rows flipped: destRow = G-1-gy, gy≈G/2 → still ≈centre) is opaque + non-black
-    const mid = Math.floor(DENSITY_GRID / 2)
-    const o = (mid * DENSITY_GRID + mid) * 4
-    expect(img.data[o + 3]).toBe(255)
-    expect(img.data[o] + img.data[o + 1] + img.data[o + 2]).toBeGreaterThan(0)
+describe('pointDensities', () => {
+  it('is one 0..1 value per point, highest in the dense core, lowest in the sparse tail', () => {
+    const pts = new Float32Array([...cluster(400, 0.5, 0.5), 0.02, 0.02])   // dense core + 1 lone tail point
+    const t = pointDensities(pts, ext)
+    expect(t.length).toBe(pts.length / 2)
+    for (const v of t) { expect(v).toBeGreaterThanOrEqual(0); expect(v).toBeLessThanOrEqual(1) }
+    expect(t[0]).toBeGreaterThan(t[t.length - 1])   // a core point is denser than the lone tail point
+  })
+  it('gives non-finite points 0 density', () => {
+    const t = pointDensities(new Float32Array([NaN, NaN, 0.5, 0.5]), ext)
+    expect(t[0]).toBe(0)
   })
 })
 

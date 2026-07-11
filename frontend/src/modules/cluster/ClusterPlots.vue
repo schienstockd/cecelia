@@ -15,8 +15,10 @@
   cluster numbering; the heatmap pools via setUid).
 -->
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, provide } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
+import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
+import CanvasZoomControl from '../../components/canvas/CanvasZoomControl.vue'
 import { useProjectStore } from '../../stores/project'
 import { useGatingStore } from '../../stores/gating'
 import { useCanvasPanels, type CanvasItem } from '../../composables/useCanvasPanels'
@@ -67,6 +69,14 @@ for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.s
 const { suffix, highlighted, scope, vis: gVis } = useViewState(shared, {
   suffix: 'default', highlighted: [] as string[], scope: 'global' as 'global' | 'local',
   vis: defaultVis() as VisProps })
+
+// visual zoom (shared control): scale the free-floating cluster workspace; drag is zoom-corrected via
+// the injected zoom (CanvasPanel → useFloatingPanel). The population manager stays full-size (outside).
+const zoomRef = ref<HTMLElement | null>(null)
+const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
+  () => { const el = zoomRef.value; return el ? { w: el.scrollWidth, h: el.scrollHeight } : { w: null, h: 0 } })
+provide(CANVAS_ZOOM_KEY, zoom)
+const zoomStyle = computed(() => zoom.value !== 1 ? { transform: `scale(${zoom.value})`, transformOrigin: 'top left' } : {})
 
 // run list + per-run features/cluster metadata + valid-image resolution + the gating-store drive +
 // highlight→shownPops resolution (shared with the Analysis board via useClusterContext).
@@ -193,6 +203,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <span class="cp-hint">drag plots by their title · resize from the corner</span>
       </div>
 
@@ -224,6 +235,8 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                            :vis="activeVis"
                            @update:selected="selectedPop = $event" @update:scope="scope = $event"
                            @update:vis="setVis" @toggle-highlight="toggleHighlight" />
+        <!-- scaled workspace: the plots zoom together; the population manager stays full-size (above) -->
+        <div ref="zoomRef" class="cp-zoom" :style="zoomStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <!-- interactive (UMAP, …) → generic InteractivePanel -->
           <InteractivePanel v-if="isInteractiveView(p.state.kind)" :index="i" :arrange="p.arrange"
@@ -239,6 +252,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
                             v-bind="clusterPanelProps(p)" :persist-key="`${ckey}:${p.id}`"
                             @activate="activeId = p.id" @remove="remove(p.id)" @duplicate="duplicatePanel(p.state)" />
         </template>
+        </div>
       </div>
     </template>
   </div>
@@ -263,4 +277,6 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
 .cp-canvas { position: relative; flex: 1; min-height: 70vh; }
+/* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
+.cp-zoom { position: absolute; inset: 0; }
 </style>
