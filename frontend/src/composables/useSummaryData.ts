@@ -85,24 +85,59 @@ export function useSummaryData(opts: {
     try { specs.value = await (await fetch(`/api/plots/definitions${q}`)).json() } catch { specs.value = [] }
   }
 
-  // populations across the selected images, grouped by segmentation
+  // populations across the selected images, grouped by segmentation (drives the picker — holds ONLY the
+  // active popType on the mixed board, since it follows the active slot).
   const segPops = ref<SegmentationPops[]>([])
-  const popColors = computed(() => {
-    const m = new Map<string, string>()
-    for (const g of segPops.value) for (const p of g.populations) m.set(`${g.valueName}${p.path}`, p.colour)
-    return m
-  })
-  async function loadPops() {
-    if (!imageUid.value && !imageUids.value.length) { segPops.value = []; return }
-    const p = new URLSearchParams({ projectUid: projectUid.value, popType: popType.value, granularity: granularity.value })
+  // Population colours, ACCUMULATING across popTypes (keyed `${valueName}${path}`; colours are stable).
+  // A plain computed(segPops) would drop every OTHER popType's colours the moment the active slot
+  // switches — so the non-active slots (and a full-board PDF export) render grey. We instead MERGE each
+  // load into a persistent map so once a popType's colours have loaded they stay available for its
+  // slots even while another popType is active; popmap reload re-merges to refresh any changed colour.
+  const popColors = ref(new Map<string, string>())
+  function mergeColors(groups: SegmentationPops[]) {
+    if (!groups.length) return
+    const m = new Map(popColors.value)
+    for (const g of groups) for (const p of g.populations) m.set(`${g.valueName}${p.path}`, p.colour)
+    popColors.value = m
+  }
+  function popsUrl(pt: string, gran: string) {
+    const p = new URLSearchParams({ projectUid: projectUid.value, popType: pt, granularity: gran })
     if (setUid.value) { p.set('setUid', setUid.value); if (imageUids.value.length) p.set('imageUids', imageUids.value.join(',')) }
     else if (imageUid.value) p.set('imageUid', imageUid.value)
-    try { segPops.value = await (await fetch(`/api/plots/populations?${p}`)).json() }
+    return `/api/plots/populations?${p}`
+  }
+  async function loadPops() {
+    if (!imageUid.value && !imageUids.value.length) { segPops.value = []; return }
+    try { segPops.value = await (await fetch(popsUrl(popType.value, granularity.value))).json() }
     catch { segPops.value = [] }
+    mergeColors(segPops.value)
+    warmColors()
+  }
+  // Pre-warm colours for EVERY (popType, granularity) among the specs — the board hosts a mix, but
+  // loadPops only fetches the ACTIVE slot's popType. Without this, a slot never made active has no
+  // colours, so a full-board PDF export paints it grey. Colours are stable → a single seed each is
+  // enough. No-op on module pages (one combo, already covered by loadPops).
+  async function warmColors() {
+    if (!imageUid.value && !imageUids.value.length) return
+    const combos = new Map<string, { pt: string; gran: string }>()
+    for (const s of specs.value)
+      combos.set(`${s.dataSource.popType}|${s.dataSource.granularity}`,
+                 { pt: s.dataSource.popType, gran: s.dataSource.granularity })
+    if (combos.size <= 1) return
+    await Promise.all([...combos.values()].map(async c => {
+      try { mergeColors(await (await fetch(popsUrl(c.pt, c.gran))).json()) } catch { /* ignore */ }
+    }))
   }
 
-  // series colour = the POPULATION colour so a population reads identically across images
-  function seriesColor(s: PlotSeries): string { return popColors.value.get(s.pop) ?? '#7c93b8' }
+  // series colour = the POPULATION colour so a population reads identically across images. A COMPUTED
+  // returning the resolver (not a plain function) so its IDENTITY changes whenever popColors updates →
+  // the panel's buildOpts (which captures colorOf) recomputes and the plot re-renders. A stable
+  // function reference would leave colours grey until the next data change — the "grey on load until I
+  // toggle a population" bug (colours arrive from loadPops AFTER the first render).
+  const seriesColor = computed(() => {
+    const m = popColors.value
+    return (s: PlotSeries): string => m.get(s.pop) ?? '#7c93b8'
+  })
 
   // live updates: the server broadcasts gating:popmap after any gate mutation — refetch pops + bump a
   // token so panels re-pull data (membership may change with no prop change). Prune vanished selections.

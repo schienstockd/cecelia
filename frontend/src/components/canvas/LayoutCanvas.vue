@@ -607,5 +607,9 @@ defineExpose({ capturePage, collectCsvs })
    dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .lc-add-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.6; }
-.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; padding-right: 10px; box-sizing: content-box; }
+/* stick to the top of the scroll viewport so the pop manager stays reachable as the (tall) board
+   scrolls past — otherwise you must scroll back up to change the selection. align-self so the sticky
+   box hugs the top of the flex row; its own overflow-y scrolls a manager taller than the viewport. */
+.lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; padding-right: 10px; box-sizing: content-box;
+  position: sticky; top: 8px; align-self: flex-start; max-height: calc(100vh - 16px); }
 </style>

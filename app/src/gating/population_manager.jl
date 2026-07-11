@@ -283,8 +283,123 @@ end
 
 # CciaImage convenience (task_dir = img._dir)
 save_pop_map!(m::PopulationMap, img::CciaImage) = save_pop_map!(m, img._dir)
-load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::AbstractString="flow") =
-    load_pop_map(img._dir, value_name; pop_type=pop_type)
+
+# ── Co-clustered segmentations + cluster-pop auto-share (docs/todo/CLUSTER_POOLING_PLAN.md) ────────
+# Clustering (clustPops/clustTracks) runs JOINTLY across the selected populations, which may span
+# several segmentations (value_names). The engine writes ONE shared `clusters.{suffix}` column + a
+# `{props}.clustfeatures.json` sidecar (keyed by suffix) into EVERY input segment. So the value_names
+# that took part in a run = those whose clustfeatures sidecar carries `suffix` — the single source of
+# truth for "which segmentations belong to this clustering".
+_clustfeatures_path(props_path::AbstractString) = replace(props_path, r"\.h5ad$" => ".clustfeatures.json")
+function _clustfeatures_suffixes(props_path::AbstractString)::Set{String}
+    s = _clustfeatures_path(props_path)
+    isfile(s) || return Set{String}()
+    try
+        Set{String}(String(k) for k in keys(JSON3.read(read(s, String), Dict{String,Any})))
+    catch
+        Set{String}()
+    end
+end
+
+"""
+    co_clustered_value_names(img, suffix; granularity=:cell) -> Vector{String}
+
+The image's segmentations (value_names) that took part in clustering run `suffix` — i.e. whose
+clustfeatures sidecar (`{props}.clustfeatures.json`) carries `suffix`. `granularity=:track` reads the
+per-track table's sidecar (`trackclust`), `:cell` the cell table's (`clust`). First-appearance order
+of `versioned_keys(img.label_props)`. Falls back to the active value_name when nothing is recorded
+(pre-clustfeatures runs), so callers always get at least one segmentation.
+"""
+function co_clustered_value_names(img::CciaImage, suffix::AbstractString;
+                                  granularity::Symbol=:cell)::Vector{String}
+    out = String[]
+    for vn in versioned_keys(img.label_props)
+        v = String(vn)
+        p = granularity === :track ? img_track_props_path(img, v) : img_label_props_path(img, v)
+        String(suffix) in _clustfeatures_suffixes(p) && push!(out, v)
+    end
+    isempty(out) ? String[String(get(img.label_props, "_active", "default"))] : out
+end
+
+_is_cluster_pop_type(pop_type)::Bool = String(pop_type) in ("clust", "trackclust")
+
+# Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "clusters.{suffix}").
+function _referenced_cluster_suffixes(m::PopulationMap)::Set{String}
+    out = Set{String}()
+    for p in values(m.pops)
+        fm = p.filter_measure
+        (fm === nothing || !startswith(String(fm), "clusters.")) && continue
+        push!(out, String(fm)[ncodeunits("clusters.")+1:end])
+    end
+    out
+end
+
+# AUTO-SHARE: a segmentation that took part in a joint clustering but has no OWN named cluster-pop
+# sidecar (the names were authored under a sibling value_name — e.g. under B while T got only the
+# shared `clusters.{suffix}` column) borrows the sibling's map, RELABELED to itself so membership
+# resolves over ITS own table. Guarded: only borrow when this vn shares the sibling map's referenced
+# `clusters.{suffix}` (so we never fabricate cluster pops for a segmentation not in the run). Returns
+# nothing when there's nothing to borrow. Read-side only — the SAVE path stays per-vn (editing under a
+# borrowing vn materialises its own real sidecar: plain copy semantics).
+function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
+                                 pop_type::AbstractString)::Union{PopulationMap,Nothing}
+    granularity = pop_type == "trackclust" ? :track : :cell
+    p = granularity === :track ? img_track_props_path(img, value_name) : img_label_props_path(img, value_name)
+    my_suffixes = _clustfeatures_suffixes(p)
+    isempty(my_suffixes) && return nothing              # this vn wasn't clustered → nothing to share
+    for vn in versioned_keys(img.label_props)
+        v = String(vn); v == value_name && continue
+        sib = load_pop_map(img._dir, v; pop_type=pop_type)
+        isempty(sib.pops) && continue
+        ref = _referenced_cluster_suffixes(sib)
+        (isempty(ref) || !(ref ⊆ my_suffixes)) && continue
+        sib.value_name = value_name
+        for pop in values(sib.pops); pop.value_name = value_name; end
+        return sib
+    end
+    nothing
+end
+
+function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::AbstractString="flow")
+    m = load_pop_map(img._dir, value_name; pop_type=pop_type)
+    # cluster pop_types with no own sidecar → try to borrow from a co-clustered sibling (auto-share)
+    (_is_cluster_pop_type(pop_type) && isempty(m.pops)) || return m
+    something(_borrow_cluster_pop_map(img, String(value_name), String(pop_type)), m)
+end
+
+# Old-R `popDT(popType="clust", pops=c("A","B","C"))` returned those cluster pops across ALL
+# segmentations used in the clustering run — pooled, tagged by value_name. Cluster pops are GLOBAL to a
+# run (one shared `clusters.{suffix}` column across its segments), NOT per-segmentation like gates. So a
+# BARE cluster-pop reference (root-relative `/A`, no value_name prefix) expands to EVERY co-clustered
+# value_name; membership is then evaluated against each segment's own table (own or auto-shared def) and
+# the rows pooled + value_name-tagged by the normal pop_df machinery. A value_name-prefixed ref
+# ("T/A") is explicit and passes through unchanged (so a single-segmentation request still works). The
+# run is identified from the pop's own definition (`filter_measure = clusters.{suffix}`).
+function _expand_cluster_pops(img::CciaImage, pops, pop_type::AbstractString, default_vn::AbstractString)
+    _is_cluster_pop_type(pop_type) || return pops
+    granularity = pop_type == "trackclust" ? :track : :cell
+    vns = versioned_keys(img.label_props)
+    out = String[]
+    for p0 in pops
+        p = String(p0)
+        if !(startswith(p, "/") || is_root(p)); push!(out, p); continue; end   # explicit "vn/path" → keep
+        is_root(p) && (push!(out, p); continue)                                # root has no cluster expansion
+        # find the run this pop belongs to: a value_name whose OWN sidecar defines it as a cluster filter
+        suffix = nothing
+        for vn in vns
+            m = load_pop_map(img._dir, String(vn); pop_type=pop_type)
+            has_pop(m, p) || continue
+            fm = m.pops[p].filter_measure
+            (fm !== nothing && startswith(String(fm), "clusters.")) || continue
+            suffix = String(fm)[ncodeunits("clusters.")+1:end]; break
+        end
+        suffix === nothing && (push!(out, p); continue)                        # unknown → leave to default_vn
+        for vn in co_clustered_value_names(img, suffix; granularity=granularity)
+            push!(out, "$(vn)$(p)")                                            # "/A" → "B/A", "T/A", …
+        end
+    end
+    unique(out)
+end
 
 # ── pop_df — unified population accessor (pop_type-agnostic) ─────────────────────
 #
@@ -920,6 +1035,9 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
         error("pop_df: granularity must be :cell or :track (got :$granularity)")
     # value_name=nothing → active segmentation key (same resolution as label_props(img))
     resolved_vn = something(value_name, get(img.label_props, "_active", "default"))
+    # cluster pops are GLOBAL to a run → a bare ref spans all co-clustered segmentations (R popDT
+    # parity); value_name-prefixed refs are untouched. No-op for non-cluster pop_types.
+    pops = _expand_cluster_pops(img, pops, String(pop_type), resolved_vn)
 
     ckey = _pop_df_cache_key(img, pop_type, resolved_vn, pops, pop_cols, include_x, include_obs,
                              unique_labels, drop_na, raw_channel_names, granularity,

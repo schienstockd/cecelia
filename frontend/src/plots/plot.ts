@@ -300,12 +300,13 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
   if (!opts) return null
 
   // theme_classic L-shaped axis lines (Observable Plot draws ticks/labels but no domain line) —
-  // a single frame stroke on the left + bottom of every facet. `currentColor` picks up the theme ink.
+  // a single frame stroke on the left + bottom. `currentColor` picks up the theme ink. When FACETING
+  // (small multiples), Plot repeats each frame PER facet, so the left anchor becomes a vertical divider
+  // at every facet boundary — drop it and keep only the shared bottom baseline (the y-axis ticks still
+  // render on the leftmost facet).
   if (Array.isArray(opts.marks)) {
-    (opts.marks as unknown[]).push(
-      Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
-      Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
-    )
+    (opts.marks as unknown[]).push(Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }))
+    if (!o.facet) (opts.marks as unknown[]).push(Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }))
   }
 
   // ── generic post-process: layout / label / font knobs (R plotHelpers adjustments) ──

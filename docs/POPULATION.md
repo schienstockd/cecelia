@@ -119,6 +119,22 @@ the UI restricts writes to the selected `partOf` images. The frontend applies th
 per-image `pop/add`/`pop/update`/… calls across those images (the gating store's `mirrorUids`); the
 old R `propagatePopMap` "populate to set" crutch is gone.
 
+**Cluster pops are GLOBAL to a run, across all its segmentations (docs/todo/CLUSTER_POOLING_PLAN.md).**
+A single clustering run may span several segmentations (value_names) — e.g. `clustTracks` over
+`B/qc/_tracked` + `T/qc/_tracked` writes ONE shared `clusters.{suffix}` column into *each* segment's
+table (and a per-segment clustfeatures sidecar keyed by suffix). The *named* cluster pops, however,
+are authored under one value_name (whichever was active). Two mechanisms make them behave as run-global
+(matching old R `popDT(popType="clust", pops=c("A","B","C"))`, which returned those pops across every
+clustered segmentation):
+- **Auto-share** — `load_pop_map(img; pop_type=clust|trackclust)` for a value_name with no OWN sidecar
+  BORROWS a co-clustered sibling's named pops, relabeled to itself, so the picker and membership both
+  surface them. Read-side only (save still writes a per-vn sidecar). Guarded by the clustfeatures
+  suffix so a segmentation not in the run never gets fabricated pops.
+- **Bare-pop pooling** — `pop_df(popType=clust|trackclust, pops=["/A", …])` expands a bare (root-
+  relative) cluster-pop ref to EVERY co-clustered value_name, pooled and value_name-tagged; a
+  value_name-prefixed ref (`"T/A"`) stays scoped to that one segmentation. `co_clustered_value_names`
+  is the source of truth (the value_names whose clustfeatures sidecar carries the run's suffix).
+
 ## `pop_df` — unified accessor
 
 > **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the `pop_map`
