@@ -544,42 +544,49 @@ function api_plots_umap(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     img, err = _gating_image(get(q, "projectUid", ""), get(q, "imageUid", ""))
     err === nothing || return err
-    vn       = _resolve_vn(img, get(q, "valueName", ""))
     pop_type = get(q, "popType", "clust")
     suffix   = get(q, "suffix", "default")
     pop      = get(q, "pop", ROOT)
     umap_key = "X_umap.$suffix"; clust_col = "clusters.$suffix"
+    track    = _track_grained(pop_type)
+    # POOL across every segmentation that took part in this clustering run (co-clustered value_names),
+    # so the UMAP shows all segments' points in the ONE shared embedding — not just the active one
+    # (docs/todo/CLUSTER_POOLING_PLAN.md). An explicit `valueName` restricts to that single segmentation.
+    req_vn = get(q, "valueName", "")
+    vns = (!isempty(req_vn) && haskey(img.label_props, req_vn)) ? String[String(req_vn)] :
+          co_clustered_value_names(img, suffix; granularity = track ? :track : :cell)
 
-    # data table: trackclust → per-track table; clust → cell table
-    path = _track_grained(pop_type) ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
-    isfile(path) || return _gerr(404, "No labelProps/track table for value_name=$vn")
-    xy = obsm(label_props(path), umap_key)              # (n_obs, 2), obs order
-    size(xy, 1) == 0 && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
-    # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
-    cdf = label_props(path) |> select_cols([clust_col]) |> as_df
-    codes = clust_col in names(cdf) ? cdf[!, clust_col] : fill(missing, nrow(cdf))
-
-    keep = trues(size(xy, 1))
-    if !is_root(pop)
-        m = _live_map(img, vn, pop_type)
-        has_pop(m, pop) || return _gerr(404, "Population not found: $pop")
-        sel  = Set(cells_in_pop(m, pop))
-        keep = BitVector(l in sel for l in cdf.label)
+    out = Float32[]   # [x, y, code] triples, concatenated across the co-clustered segmentations
+    for vn in vns
+        path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
+        isfile(path) || continue
+        xy = obsm(label_props(path), umap_key)          # (n_obs, 2), obs order
+        size(xy, 1) == 0 && continue
+        # cluster codes aligned to obs order (label + the code column, same obs order as obsm)
+        cdf = label_props(path) |> select_cols([clust_col]) |> as_df
+        codes = clust_col in names(cdf) ? cdf[!, clust_col] : fill(missing, nrow(cdf))
+        keep = trues(size(xy, 1))
+        if !is_root(pop)
+            m = _live_map(img, vn, pop_type)
+            has_pop(m, pop) || continue                 # this segment lacks the pop → contributes nothing
+            sel  = Set(cells_in_pop(m, pop))
+            keep = BitVector(l in sel for l in cdf.label)
+        end
+        # drop rows with no embedding — cells/tracks outside the clustered set have NaN UMAP coords
+        # (and NaN code); they'd otherwise render as a stray "NaN" cluster.
+        @inbounds for i in 1:size(xy, 1)
+            (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
+        end
+        idx = findall(keep)
+        base = length(out); resize!(out, base + 3 * length(idx))
+        @inbounds for (j, i) in enumerate(idx)
+            out[base + 3j - 2] = Float32(xy[i, 1]); out[base + 3j - 1] = Float32(xy[i, 2])
+            c = codes[i]
+            out[base + 3j]     = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+        end
     end
-    # drop rows with no embedding — cells/tracks outside the clustered set have NaN UMAP coords
-    # (and NaN code); they'd otherwise render as a stray "NaN" cluster.
-    @inbounds for i in 1:size(xy, 1)
-        (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
-    end
-
-    idx = findall(keep)
-    buf = Vector{Float32}(undef, 3 * length(idx))
-    @inbounds for (j, i) in enumerate(idx)
-        buf[3j-2] = Float32(xy[i, 1]); buf[3j-1] = Float32(xy[i, 2])
-        c = codes[i]
-        buf[3j]   = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
-    end
-    200, collect(reinterpret(UInt8, buf))
+    isempty(out) && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
+    200, collect(reinterpret(UInt8, out))
 end
 
 # ── GET /api/gating/density → binary Float32 grid (bins×bins, row-major) ──────

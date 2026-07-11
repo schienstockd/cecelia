@@ -53,23 +53,26 @@ every input segment). Source of truth = the clustfeatures sidecar (cheap JSON, n
   Stage-1. Own sidecar always wins; editing+saving under T materialises a real T sidecar (copy
   semantics — acceptable). TEST: borrow round-trips; membership over T's table.
 
-### Stage 3 — UMAP pooling (`api_plots_umap`)
-- Pool `obsm[X_umap.suffix]` + `clusters.suffix` across `co_clustered_value_names`. Binary becomes
-  `[x, y, code, segIdx]` per point (segIdx into a returned value_name list — via an `X-Value-Names`
-  response header, keeping the body pure binary). Pop subset resolves membership per vn. Frontend
-  (regl-scatterplot UMAP view) reads segIdx → optional tint/split by segmentation; default colours by
-  cluster code as today. Drop NaN-embedding rows as now.
+### Stage 3 — UMAP pooling (`api_plots_umap`)  ✅ DONE (browser-verified)
+- Endpoint now pools `obsm[X_umap.suffix]` + `clusters.suffix` across `co_clustered_value_names`
+  (an explicit `valueName` restricts to one). Pop subset resolves membership per vn (via `_live_map`,
+  which uses the borrowing `load_pop_map`). Kept the binary `[x, y, code]` shape, so the frontend
+  concatenates as before — no frontend change. NB: `co_clustered_value_names` had to be **exported**
+  (Cecelia.jl) or the bare API call `UndefVarError`s → 500 → "No UMAP at suffix" (the symptom hit
+  once; fixed). API + export change → **server restart** to load.
+- (Deferred nice-to-have: a `segIdx` channel + `X-Value-Names` header for tint-by-segmentation.)
 
-### Stage 4 — heatmap pooling
-- The cluster heatmap aggregates features per cluster from one vn's table → pool rows across
-  co-clustered vns before aggregation (find the heatmap data path; likely `plot_summary_data`
-  matrix/profile over the cluster column, or a dedicated endpoint). Keep the shared cluster-id
-  universe (`_cluster_ids` already pools across member IMAGES; extend to VALUE_NAMES via Stage-1).
+### Stage 4 — heatmap pooling  ✅ DONE (needs browser check)
+- Per-POPULATION heatmap (category="pop", bare cluster-pop paths) already pools via the bare-pop
+  expansion in `pop_df`. Per-CLUSTER heatmap (matrix over `clusters.{suffix}`, root pop) now pools too:
+  `plot_summary_data` (single + multi-image) detects the cluster-matrix case (`_cluster_matrix_suffix`)
+  and vcats `pop_df` across `co_clustered_value_names` (`_pool_co_clustered`). app/src → Revise picks
+  it up (no restart beyond the Stage-3 export one).
 
-### Stage 5 — frontend cluster page
-- Consume pooled UMAP/heatmap; surface "segmentations: B, T" info; no per-vn selector needed.
-  Pop picker/manager keeps editing under the primary vn (auto-share covers the rest). Optional:
-  colour-by-segmentation toggle on the UMAP.
+### Stage 5 — frontend cluster page  (mostly N/A — pooling is backend-transparent)
+- UMAP + heatmap consume the pooled data with no change. Remaining OPTIONAL polish: surface a
+  "segmentations: B, T" hint, and a colour/tint-by-segmentation toggle on the UMAP (needs the
+  deferred segIdx from Stage 3). Not required for "pool everything"; deferred unless asked.
 
 ## Notes / invariants
 - `api/src/*.jl` (umap/heatmap endpoints) are NOT Revise-tracked → server restart to test Stages 3-4.

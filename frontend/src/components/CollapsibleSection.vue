@@ -35,7 +35,11 @@ watch(open, v => {
       <i :class="['pi', open ? 'pi-chevron-up' : 'pi-chevron-down']" />
       <span class="cs-label">{{ label }}</span>
     </button>
-    <div v-show="open" class="cs-body" :style="{ maxHeight }">
+    <!-- with a real max-height the body scrolls itself; with max-height:none it must NOT be a scroll
+         container (overflow-y:auto would still make it the sticky scrollport, so a `position:sticky`
+         descendant — e.g. the board's pop-manager rail — sticks to a box that never scrolls and never
+         activates). Let the outer page scroll handle it. -->
+    <div v-show="open" class="cs-body" :style="{ maxHeight, overflowY: maxHeight === 'none' ? 'visible' : 'auto' }">
       <slot />
     </div>
   </div>

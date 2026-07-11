@@ -517,6 +517,22 @@ end
 _cols_for(chart_type, measure, group_by, measures, category) =
     chart_type == "matrix" ? _matrix_cols(measures, measure, category) : _plot_cols(measure, group_by)
 
+# The per-CLUSTER heatmap is a matrix over a `clusters.{suffix}` column (root pop) → its frame must
+# span ALL co-clustered segmentations so the signature covers the whole run, not just the active
+# value_name (docs/todo/CLUSTER_POOLING_PLAN.md). Returns the run suffix when this applies, else
+# nothing (the normal single-value_name pop_df is used). Per-POPULATION heatmaps (category="pop", bare
+# cluster-pop paths) already pool via the bare-pop expansion in pop_df, so only the root case needs it.
+_cluster_matrix_suffix(chart_type, category)::Union{String,Nothing} =
+    (chart_type == "matrix" && category !== nothing && startswith(String(category), "clusters.")) ?
+        String(category)[ncodeunits("clusters.")+1:end] : nothing
+
+# vcat pop_df across the co-clustered segmentations (`fetch_vn(vn)` returns one segment's frame).
+_pool_co_clustered(vns, fetch_vn)::DataFrame = begin
+    frames = DataFrame[]
+    for vn in vns; d = fetch_vn(vn); nrow(d) > 0 && push!(frames, d); end
+    isempty(frames) ? DataFrame() : reduce((a, b) -> vcat(a, b; cols=:union), frames)
+end
+
 function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart_type::AbstractString;
                            value_name::Union{AbstractString,Nothing}=nothing,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
@@ -529,9 +545,14 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none)::Dict{String,Any}
     pops = String.(collect(pops))
-    df = pop_df(img, pop_type, pops; value_name=value_name, granularity=granularity,
-                pop_cols=_cols_for(chart_type, measure, group_by, measures, category),
-                raw_channel_names=(chart_type == "matrix"))
+    cols = _cols_for(chart_type, measure, group_by, measures, category)
+    sfx = _cluster_matrix_suffix(chart_type, category)
+    df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
+        _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity),
+            vn -> pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
+                         pop_cols=cols, raw_channel_names=true)) :
+        pop_df(img, pop_type, pops; value_name=value_name, granularity=granularity,
+               pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, value_name),
@@ -555,9 +576,17 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            matrix_normalize::Symbol=:none,
                            attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
     pops = String.(collect(pops))
-    df = pop_df(imgs, uids, pop_type, pops; value_name=value_name, granularity=granularity,
-                pop_cols=_cols_for(chart_type, measure, group_by, measures, category),
-                raw_channel_names=(chart_type == "matrix"))
+    cols = _cols_for(chart_type, measure, group_by, measures, category)
+    sfx = _cluster_matrix_suffix(chart_type, category)
+    # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
+    # so the value_name set is consistent; take it from the first image). Each vn still pools across
+    # images via the multi-image pop_df.
+    df = (sfx !== nothing && _is_cluster_pop_type(pop_type) && !isempty(imgs)) ?
+        _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity),
+            vn -> pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
+                         pop_cols=cols, raw_channel_names=true)) :
+        pop_df(imgs, uids, pop_type, pops; value_name=value_name, granularity=granularity,
+               pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, value_name),
