@@ -2770,6 +2770,18 @@ end
         br = Cecelia._summary_agg(df, "bar"; measure=nothing, granularity=:cell, nbins=10,
                                   normalize=:none, by_image=true)
         @test Dict(s["pop"] => s["value"] for s in br["series"])["A/p"] == 2.5
+
+        # SPLIT BY POPULATION: two tracked pops (value_names B, T) each with clusters — proportion is
+        # normalised WITHIN each value_name per image, not pooled across B+T.
+        df2 = DataFrame("value_name" => ["B","B","B","T","T", "B","B","T","T","T"],
+                        "pop" => ["/Dir","/Dir","/Mea","/Dir","/Mea", "/Dir","/Mea","/Dir","/Mea","/Mea"],
+                        "uID" => ["x","x","x","x","x",              "y","y","y","y","y"])
+        pr2 = Cecelia._summary_agg(df2, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                   normalize=:fraction, by_image=true)
+        p2 = Dict((s["uID"], s["pop"]) => s["value"] for s in pr2["series"])
+        @test p2[("x","B/Dir")] ≈ 2/3 && p2[("x","B/Mea")] ≈ 1/3   # within B (image x: B tot 3)
+        @test p2[("x","T/Dir")] ≈ 1/2 && p2[("x","T/Mea")] ≈ 1/2   # within T (image x: T tot 2)
+        @test p2[("y","B/Dir")] ≈ 1/2 && p2[("y","T/Mea")] ≈ 2/3   # within B / T (image y)
     end
 
     @testset "plot matrix (heatmap: profile + crosstab)" begin

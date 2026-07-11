@@ -722,6 +722,9 @@ function boxplot(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
                         fillOpacity: 0.55, stroke: 'currentColor', strokeWidth: 0.8, title: 'tip', tip: true, ...f }), // box
       RulePos(stat, { [a.posLo]: 'xlo', [a.posHi]: 'xhi', [a.meas]: 'median', stroke: 'currentColor', strokeWidth: 1.6, ...f }), // median
       ...(pts.length ? [Plot.dot(pts, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: ptFill,
+                                        // themed outline so a whitish series colour still reads on the
+                                        // white PDF / light ground (currentColor = dark there)
+                                        stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                                         fillOpacity: o.pointOpacity, ...f })] : []),
       Plot.dot(stat, { [a.pos]: 'xi', [a.meas]: 'mean', symbol: 'diamond', fill: 'currentColor', r: 3.2, ...f }),  // mean
     ],
@@ -776,6 +779,8 @@ function strip(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts,
     [a.meas]: { label: r.measure, grid: false, ...logY },
     marks: [
       Plot.dot(rows, { [a.pos]: 'xj', [a.meas]: 'value', r: o.pointSize, fill: o.colorData ? 'series' : 'currentColor',
+                       // themed outline so whitish series colours read on the white PDF / light ground
+                       stroke: 'currentColor', strokeWidth: 0.5, strokeOpacity: 0.55,
                        fillOpacity: o.pointOpacity, ...fxCh(o) }),
     ],
   }

@@ -159,13 +159,16 @@ function _population_metric_frame(df::DataFrame; normalize::Symbol=:none)::DataF
     for i in 1:nrow(df)
         k = (vn[i], pop[i], uid[i]); haskey(cnt, k) || push!(order, k); cnt[k] = get(cnt, k, 0) + 1
     end
+    # proportion denominator = the tracked population's total per image → keyed by (uID, value_name),
+    # so clusters within B and within T are each normalised to their OWN population (not pooled B+T).
     frac = normalize in (:fraction, :total)
-    tot = Dict{String,Int}()
-    frac && for (k, n) in cnt; tot[k[3]] = get(tot, k[3], 0) + n; end
+    tot = Dict{Tuple{String,String},Int}()   # (uid, vn) → total
+    frac && for (k, n) in cnt; tk = (k[3], k[1]); tot[tk] = get(tot, tk, 0) + n; end
     vns = String[]; pops = String[]; uids = String[]; vals = Float64[]
     for k in order
         n = cnt[k]; push!(vns, k[1]); push!(pops, k[2]); push!(uids, k[3])
-        push!(vals, frac ? (tot[k[3]] == 0 ? 0.0 : n / tot[k[3]]) : Float64(n))
+        d = frac ? get(tot, (k[3], k[1]), 0) : 0
+        push!(vals, frac ? (d == 0 ? 0.0 : n / d) : Float64(n))
     end
     DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, _POP_METRIC_COL => vals)
 end
@@ -288,17 +291,17 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         # visible). Series shape mirrors `bar` (`value` = count) so the frontend renders it as a bar
         # or a line over the ordered group (t). See docs/PLOTS.md → Segmentation QC plot.
         #
-        # `normalize` (:fraction/:total) → each series' FRACTION of that image's plotted total (its
-        # uID bucket): for mutually-exclusive populations (e.g. the clustered pops) that's each pop's
-        # share of the image's cells, plotted across images — the "population summary" plot. Pooled
-        # (scope=summarised, uID="") normalises over the whole pooled set.
+        # `normalize` (:fraction/:total) → each series' FRACTION of the plotted total WITHIN its own
+        # tracked population, per image: the denominator is keyed by (uID, value_name), so a plot
+        # spanning several segmentations/tracked pops (e.g. B and T) reports each cluster's share of
+        # *that* population's cells — not pooled across B+T. Pooled scope (uID="") folds over images.
         groups = sgroups(df)
         frac = normalize == :fraction || normalize == :total
-        totals = Dict{String,Int}()
-        frac && for g in groups; totals[g.uid] = get(totals, g.uid, 0) + nrow(g.sub); end
+        totals = Dict{Tuple{String,String},Int}()
+        frac && for g in groups; k = (g.uid, g.vn); totals[k] = get(totals, k, 0) + nrow(g.sub); end
         series = map(groups) do g
-            n = nrow(g.sub)
-            v = frac ? (get(totals, g.uid, 0) == 0 ? 0.0 : n / totals[g.uid]) : Float64(n)
+            n = nrow(g.sub); tot = get(totals, (g.uid, g.vn), 0)
+            v = frac ? (tot == 0 ? 0.0 : n / tot) : Float64(n)
             merge(base(g), Dict("value" => v, "n" => n))
         end
         return withgb(Dict{String,Any}("chartType" => "count", "measureType" => "numeric",
