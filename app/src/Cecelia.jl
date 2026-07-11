@@ -23,6 +23,7 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_valu
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path
+export read_run_log, append_run_log!, run_log_path
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
@@ -105,6 +106,7 @@ include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
 include("qc.jl")
+include("run_log.jl")
 include("label_props.jl")
 include("gating/transforms.jl")
 include("gating/gates.jl")

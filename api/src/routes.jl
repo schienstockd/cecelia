@@ -937,6 +937,9 @@ function _image_payload(img::CciaImage)
         # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
         # flags the GUI renders as a badge + tooltip. Empty dict when a task has emitted none.
         qc              = read_all_qc(img),
+        # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
+        # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
+        runLog          = read_run_log(img),
     )
 end
 

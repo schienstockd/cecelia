@@ -285,6 +285,19 @@ function _execute_job!(job::TaskJob)
     end
     _set_status!(rec, is_cancelled(job.id) ? :cancelled :
                       isnothing(result)    ? :failed    : :done)
+    # append to each target image's run log on success (:done) — automatic provenance history for the
+    # image table (no params; those live in the task config). Never fail the task over a log write.
+    if !is_cancelled(job.id) && !isnothing(result)
+        try
+            fn = _fun_name_from_task(job.task)
+            vn = string(get(job.params, "valueName", ""))
+            for tgt in (isnothing(job.imgs) ? [job.img] : job.imgs)
+                append_run_log!(tgt, fn, vn)
+            end
+        catch e
+            @warn "run-log append failed" task_id = job.id exception = e
+        end
+    end
     put!(job.done, result)
 end
 

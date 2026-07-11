@@ -1,4 +1,4 @@
-import { ref, inject, type Ref, type InjectionKey } from 'vue'
+import { ref, inject, onMounted, onBeforeUnmount, type Ref, type InjectionKey } from 'vue'
 
 // Generic VISUAL zoom for any plot canvas (the Analysis board's fixed grid AND the free-floating module
 // canvases). A CSS `transform: scale` on the content — purely visual, so it never resizes the plots'
@@ -35,6 +35,34 @@ export function useCanvasZoom(viewport: Ref<HTMLElement | null>, content: () => 
   }
   function setZoom(z: number) { zoom.value = clampZoom(z) }
   function reset() { zoom.value = 1 }
+  const zoomBy = (factor: number) => setZoom(zoom.value * factor)
+
+  // Keyboard/wheel shortcuts (mirrors Illustrator/Figma): shift+wheel over the canvas zooms; shift +/-
+  // steps zoom, shift+0 resets. Bound here so every host (board + module canvases) gets them for free.
+  // wheel listens on the viewport (passive:false so we can preventDefault the page scroll); keys listen
+  // on window but only one canvas host is mounted per route, and we ignore typing in inputs.
+  const STEP = 1.1
+  const onWheel = (e: WheelEvent) => {
+    if (!e.shiftKey) return
+    e.preventDefault()
+    zoomBy(e.deltaY < 0 ? STEP : 1 / STEP)
+  }
+  const onKey = (e: KeyboardEvent) => {
+    if (!e.shiftKey) return
+    const t = e.target as HTMLElement | null
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); zoomBy(STEP) }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); zoomBy(1 / STEP) }
+    else if (e.key === ')' || e.key === '0') { e.preventDefault(); reset() }
+  }
+  onMounted(() => {
+    viewport.value?.addEventListener('wheel', onWheel, { passive: false })
+    window.addEventListener('keydown', onKey)
+  })
+  onBeforeUnmount(() => {
+    viewport.value?.removeEventListener('wheel', onWheel)
+    window.removeEventListener('keydown', onKey)
+  })
   // fit width only if the content actually overflows the viewport (used on first render so a big board
   // is visible without hiding the sidebar, but a board that already fits is left at 100%).
   function fitWidthIfOverflow() {

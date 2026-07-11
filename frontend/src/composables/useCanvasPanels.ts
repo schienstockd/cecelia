@@ -72,5 +72,18 @@ export function useCanvasPanels<S>(
   }
   const activePanel = computed(() => panels.value.find(p => p.id === activeId.value))
 
-  return { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade }
+  // Bounding box of the placed panels (max right/bottom over this canvas's persisted geometry), in
+  // unscaled workspace px. Hosts feed it to `useCanvasZoom` so "Fit" fits the actual plots, not the
+  // (zoom-dependent) workspace size — see useCanvasWorkspace.
+  const contentBounds = computed(() => {
+    let w = 0, h = 0
+    const pre = `${keyRef.value}:`
+    for (const [k, g] of Object.entries(store.geom)) {
+      if (!k.startsWith(pre)) continue
+      w = Math.max(w, g.x + g.w); h = Math.max(h, g.y + g.h)
+    }
+    return { w, h }
+  })
+
+  return { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds }
 }

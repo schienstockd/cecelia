@@ -14,10 +14,9 @@
   the panel's persisted per-panel options bag (here just `labels`).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, nextTick, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
 import { useDataRefresh } from '../../composables/useDataRefresh'
-import ScatterGL from './ScatterGL.vue'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import type { VisProps } from '../../plots/plot'
 
@@ -75,6 +74,56 @@ const err = ref('')
 const total = computed(() => (points.value ? points.value.length / 2 : 0))
 const lx = (x: number) => `${((x - extents.value.xMin) / Math.max(1e-9, extents.value.xMax - extents.value.xMin)) * 100}%`
 const ly = (y: number) => `${(1 - (y - extents.value.yMin) / Math.max(1e-9, extents.value.yMax - extents.value.yMin)) * 100}%`
+
+// ── 2D dot render (no WebGL) ──────────────────────────────────────────────────────────────────────
+// Draw each point via the SAME data→px map as the labels (lx/ly), so cluster labels sit exactly on
+// their dots — regl-scatterplot's aspectRatio fill drifted from the HTML-stretched labels. Colour by
+// category (palette index), bucketed so fillStyle is set once per cluster.
+const dotsEl = useTemplateRef<HTMLCanvasElement>('dotsEl')
+let dctx: CanvasRenderingContext2D | null = null
+let dro: ResizeObserver | null = null
+const DOT_R = 2
+function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
+  const pts = points.value, cats = categories.value, pal = palette.value
+  if (!pts || !cats || !pal.length) return
+  const { xMin, xMax, yMin, yMax } = extents.value
+  const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
+  const n = pts.length / 2, s = DOT_R * 2
+  const groups: number[][] = pal.map(() => [])
+  for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
+  c.globalAlpha = 0.9
+  for (let gi = 0; gi < pal.length; gi++) {
+    const g = groups[gi]; if (!g.length) continue
+    c.fillStyle = pal[gi]
+    for (const i of g) {
+      const px = ((pts[2 * i] - xMin) / xr) * w, py = (1 - (pts[2 * i + 1] - yMin) / yr) * h
+      c.fillRect(px - DOT_R, py - DOT_R, s, s)
+    }
+  }
+  c.globalAlpha = 1
+}
+function redraw() {
+  const el = dotsEl.value; if (!el) return
+  if (!dctx) dctx = el.getContext('2d')
+  if (!dctx) return
+  const dpr = window.devicePixelRatio || 1
+  const w = el.clientWidth, h = el.clientHeight
+  el.width = Math.max(1, w * dpr); el.height = Math.max(1, h * dpr)
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  dctx.clearRect(0, 0, w, h)
+  paintDots(dctx, w, h)
+}
+// hi-res export: re-paint at scale× onto an offscreen canvas (crisp; a 2D canvas can't clip)
+async function exportDots(scale: number): Promise<HTMLCanvasElement | null> {
+  const el = dotsEl.value; if (!el) return null
+  const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return null
+  const off = document.createElement('canvas')
+  off.width = Math.max(1, Math.round(w * scale)); off.height = Math.max(1, Math.round(h * scale))
+  const octx = off.getContext('2d'); if (!octx) return null
+  octx.setTransform(scale, 0, 0, scale, 0, 0)
+  paintDots(octx, w, h)
+  return off
+}
 
 // per-point cluster codes + their tallies, kept so highlighting recolours without refetching.
 const codesRef = ref<Float32Array | null>(null)
@@ -172,15 +221,20 @@ watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popT
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
 watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
-onMounted(load)
+// redraw the 2D dots when the data / colouring / extents change
+watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
+onMounted(() => {
+  load()
+  if (dotsEl.value) { dro = new ResizeObserver(redraw); dro.observe(dotsEl.value); redraw() }
+})
+onBeforeUnmount(() => { dro?.disconnect(); dro = null })
 
 // ── export (surfaced by the host InteractivePanel via defineExpose) ──
-// PNG composites the WebGL scatter + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
+// PNG composites the 2D dot canvas + the HTML labels/legend (plots/export.ts); CSV is x,y,cluster.
 const plotEl = useTemplateRef<HTMLElement>('plotEl')
-const scatterRef = useTemplateRef<{ exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }>('scatterRef')
-// re-render the scatter at export resolution so the point cloud is crisp (not a 2×-upscaled 1× canvas)
+// re-render the dots at export resolution so the cloud is crisp (not a 2×-upscaled 1× canvas)
 const hiRes = async (cv: HTMLCanvasElement, scale: number) =>
-  cv === scatterRef.value?.getCanvas() ? (await scatterRef.value?.exportCanvas(scale) ?? null) : null
+  cv === dotsEl.value ? (await exportDots(scale)) : null
 function exportAs(kind: string) {
   const stem = `umap_${props.suffix}`.replace(/[^\w.-]+/g, '_')
   if (kind === 'png') plotHostToImageURL(plotEl.value, ground.value, { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
@@ -218,9 +272,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
            carries the scatter ground for the letterbox margins. -->
       <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround }">
         <template v-if="points && points.length">
-          <ScatterGL ref="scatterRef" :points="points" :extents="extents" color-mode="category"
-                     :categories="categories" :palette="palette" :point-size="4" :opacity="0.9"
-                     :background-color="scatterGround" />
+          <canvas ref="dotsEl" class="uv-canvas" />
           <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
                 :style="{ left: lx(c.x), top: ly(c.y), ...labelStyle }">{{ c.label }}</span>
         </template>
@@ -250,6 +302,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 .uv-count { font-variant-numeric: tabular-nums; }
 .uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
 .uv-plot { position: relative; flex: 1; min-height: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
+.uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-size: 11px; font-weight: 700;
   color: #111; background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.35); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
 .uv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }

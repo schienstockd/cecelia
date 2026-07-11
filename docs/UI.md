@@ -651,10 +651,19 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
 
 - **Fixed-grid board**: the grid scales inside a `.lc-zoom` footprint (sized to the scaled dims so the
   viewport scrolls); auto-fits width on first render if the board would overflow.
-- **Free-floating canvases**: the panels scale inside a `.sc-zoom`/`.gp-zoom` layer; the population
-  manager sits OUTSIDE it so the control panel stays full-size. Because panels are dragged in screen px,
-  the host `provide()`s the zoom under `CANVAS_ZOOM_KEY` and `CanvasPanel` injects it into
+- **Free-floating canvases**: the panels scale inside a `.sc-zoom`/`.gp-zoom`/`.cp-zoom` layer; the
+  population manager sits OUTSIDE it so the control panel stays full-size. Because panels are dragged in
+  screen px, the host `provide()`s the zoom under `CANVAS_ZOOM_KEY` and `CanvasPanel` injects it into
   `useFloatingPanel`, which divides drag deltas by the zoom (else a panel moves `zoom`× too fast).
+  - **Workspace grows on zoom-out** (`composables/useCanvasWorkspace.ts`): the zoom layer is sized to
+    `viewport / min(zoom, 1)`, so zooming OUT enlarges the *logical* workspace (Tile spreads into it, a
+    panel can be dragged across it) instead of shrinking everything into the top-left and wasting the
+    page — the layer is the panels' `offsetParent`, so `useFloatingPanel`'s clamp and `useCanvasPanels`'
+    `arrangeGrid` both use the enlarged size. At ≥ 100% it stays viewport-sized (zoom-in inspects). "Fit"
+    fits the actual plot bounding box (`useCanvasPanels.contentBounds`), not the zoom-dependent workspace.
+
+**Zoom shortcuts** (all canvases, wired once in `useCanvasZoom`): **shift + mouse-wheel** over the canvas
+zooms; **shift +/-** steps; **shift + 0** resets. Keys are ignored while typing in an input.
 
 ### Show/hide the population manager
 

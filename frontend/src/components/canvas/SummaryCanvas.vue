@@ -18,6 +18,7 @@ import { computed, watch, provide, useTemplateRef } from 'vue'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanels } from '../../composables/useCanvasPanels'
+import { useCanvasWorkspace } from '../../composables/useCanvasWorkspace'
 import { useSummaryData } from '../../composables/useSummaryData'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import SeriesPicker from './SeriesPicker.vue'
@@ -50,22 +51,22 @@ interface PanelState {
   groupBy?: string; smooth?: number; interval?: boolean
   matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'
 }
-const canvasRef = useTemplateRef<HTMLElement>('canvasRef')
-const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade } =
-  useCanvasPanels<PanelState>(canvasRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
+const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
+const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
+const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
+  useCanvasPanels<PanelState>(zoomRef, () => ({ specId: specs.value[0]?.id ?? '', sel: [], vis: defaultVis() }),
     ckey)
 // show/hide the floating population picker — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 
-// ── visual zoom (shared control) — scale the free-floating workspace to see everything at once.
-// Fit measures the panel bounding box (the zoom layer's scroll size); drag is zoom-corrected via the
-// injected zoom (CanvasPanel → useFloatingPanel). The population picker sits OUTSIDE the zoom layer so
-// the control panel stays full-size.
-const zoomRef = useTemplateRef<HTMLElement>('zoomRef')
+// ── visual zoom (shared control) — scale the free-floating workspace to see everything at once. Fit
+// fits the actual plot bounding box; drag is zoom-corrected via the injected zoom (CanvasPanel →
+// useFloatingPanel). The workspace GROWS when zoomed out (useCanvasWorkspace) so the whole page stays
+// usable; the population picker sits OUTSIDE the zoom layer so the control panel stays full-size.
 const { zoom, fitWidth, fitHeight, setZoom, reset: resetZoom } = useCanvasZoom(canvasRef,
-  () => { const el = zoomRef.value; return el ? { w: el.scrollWidth, h: el.scrollHeight } : { w: null, h: 0 } })
+  () => ({ w: contentBounds.value.w || null, h: contentBounds.value.h }))
 provide(CANVAS_ZOOM_KEY, zoom)
-const zoomStyle = computed(() => zoom.value !== 1 ? { transform: `scale(${zoom.value})`, transformOrigin: 'top left' } : {})
+const { workspaceStyle } = useCanvasWorkspace(canvasRef, zoom)
 // shared summary-plot data + canvas-level view-state (identical whether plots float or sit in a grid)
 const {
   specs, specById, segPops, seriesColor, reloadToken, validSelKeys,
@@ -170,7 +171,7 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
       </div>
       <div ref="canvasRef" class="sc-canvas">
         <!-- scaled workspace: the panels zoom together; the population picker stays full-size (below) -->
-        <div ref="zoomRef" class="sc-zoom" :style="zoomStyle">
+        <div ref="zoomRef" class="sc-zoom" :style="workspaceStyle">
         <template v-for="(p, i) in panels" :key="`${ckey}:${p.id}`">
           <SummaryPanel v-if="specById[p.state.specId]" :index="i" :arrange="p.arrange"
                         :active="p.id === activeId" :spec="specById[p.state.specId]"
@@ -211,6 +212,7 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
 .seg button:hover { color: var(--cc-text); }
 .seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .sc-canvas { position: relative; flex: 1; min-height: 70vh; }
-/* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
-.sc-zoom { position: absolute; inset: 0; }
+/* the scaled workspace (offsetParent for the floating panels); size + transform set inline by
+   useCanvasWorkspace — grows to viewport/zoom when zoomed out so the whole page stays usable */
+.sc-zoom { position: absolute; top: 0; left: 0; }
 </style>

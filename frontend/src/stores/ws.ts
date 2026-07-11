@@ -273,6 +273,7 @@ export const useWsStore = defineStore('ws', () => {
               .then(r => (r.ok ? r.json() : null))
               .then(d => {
                 if (d?.image?.qc !== undefined) useProjectStore().updateImageMeta(imageUid, { qc: d.image.qc })
+                if (d?.image?.runLog !== undefined) useProjectStore().updateImageMeta(imageUid, { runLog: d.image.runLog })
               })
               .catch(() => {})
           }
