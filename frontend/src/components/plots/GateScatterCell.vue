@@ -19,7 +19,6 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import GateOverlay from './GateOverlay.vue'
-import { rasterPlotToImageURL } from '../../plots/export'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -75,6 +74,7 @@ function fmtTick(label: string): string {
 // export: each stacked canvas (WebGL scatter + canvas2D contours/gates) re-renders itself at export
 // scale so nothing is upscaled from the screen-DPR backing store; route each live canvas to its layer.
 const hostEl = useTemplateRef<HTMLElement>('hostEl')
+const panelPlotEl = useTemplateRef<HTMLElement>('panelPlotEl')
 type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }
 const layersRef = useTemplateRef<LayerExport>('layersRef')
 const overlayRef = useTemplateRef<LayerExport>('overlayRef')
@@ -84,19 +84,84 @@ const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
   }
   return null
 }
+
+// Draw the axis (lines, tick marks + labels, axis names) onto the export ctx, using the SAME
+// data→plot-area mapping as the dot/gate canvases. This is the whole point of the unified export: the
+// axis is NOT a separately-composited HTML overlay any more (that desynced from the canvas in the PDF —
+// "dots and axis on a different scale"), it's painted on the same canvas from the same viewExtents, so
+// it can't drift. `pr` = plot-area rect (the panel-plot) within the capture, in CSS px.
+function drawAxes(c: CanvasRenderingContext2D, pr: { x: number; y: number; w: number; h: number }) {
+  const e = props.viewExtents
+  const xs = e.xMax > e.xMin ? e.xMax - e.xMin : 1, ys = e.yMax > e.yMin ? e.yMax - e.yMin : 1
+  const px = (v: number) => pr.x + ((v - e.xMin) / xs) * pr.w
+  const py = (v: number) => pr.y + (1 - (v - e.yMin) / ys) * pr.h
+  const cssVar = (n: string, fb: string) => {
+    const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
+    return v || fb
+  }
+  const ink = cssVar('--cc-text', '#111'), dim = cssVar('--cc-text-dim', '#555'), border = cssVar('--cc-border', '#c9ccd1')
+  const tickFont = Math.max(7, props.fontSize - 1), nameFont = props.fontSize + 2, MARK = 5, GAP = 3
+  const bottom = pr.y + pr.h, left = pr.x
+  c.save()
+  // axis lines (L: left + bottom)
+  c.strokeStyle = border; c.lineWidth = 1
+  c.beginPath(); c.moveTo(left, pr.y); c.lineTo(left, bottom); c.moveTo(left, bottom); c.lineTo(pr.x + pr.w, bottom); c.stroke()
+  // x ticks
+  c.fillStyle = dim; c.strokeStyle = dim; c.font = `${tickFont}px system-ui, sans-serif`
+  c.textAlign = 'center'; c.textBaseline = 'top'
+  for (const t of props.xTicks) {
+    const x = px(t.pos)
+    c.beginPath(); c.moveTo(x, bottom); c.lineTo(x, bottom + MARK); c.stroke()
+    if (!props.compact) c.fillText(fmtTick(t.label), x, bottom + MARK + GAP)
+  }
+  // y ticks
+  c.textAlign = 'right'; c.textBaseline = 'middle'
+  for (const t of props.yTicks) {
+    const y = py(t.pos)
+    c.beginPath(); c.moveTo(left, y); c.lineTo(left - MARK, y); c.stroke()
+    if (!props.compact) c.fillText(fmtTick(t.label), left - MARK - GAP, y)
+  }
+  // axis names (skip when hidden — pairs matrix names each channel on the diagonal)
+  if (!props.hideAxisLabels) {
+    c.fillStyle = ink; c.font = `600 ${nameFont}px system-ui, sans-serif`
+    c.textAlign = 'center'; c.textBaseline = 'alphabetic'
+    c.fillText(props.xLabel, pr.x + pr.w / 2, bottom + MARK + GAP + tickFont + nameFont + 6)
+    c.save(); c.translate(Math.max(nameFont, left - 44), pr.y + pr.h / 2); c.rotate(-Math.PI / 2)
+    c.textBaseline = 'top'; c.fillText(props.yLabel, 0, 0); c.restore()
+  }
+  c.restore()
+}
+
 // `light` = flip the ink/border vars (via .cc-light) so ticks/axis names read dark on a white ground —
-// used by the PDF export (dark theme is only for on-screen display). The crisp fixed-resolution raster
-// export (aim for a ~2200px long side so a small slot doesn't export soft) is the SHARED helper
-// rasterPlotToImageURL — the same path the cluster UMAP uses.
+// used by the PDF export (dark theme is only for on-screen display). UNIFIED export: one canvas holding
+// the dots + gate + axis (all from the same viewExtents), instead of compositing a canvas + a cloned
+// HTML axis overlay (which desynced in the PDF). Aim for a ~2200px long side so a small slot isn't soft.
 async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null> {
-  const el = hostEl.value
-  if (light) el?.classList.add('cc-light')
-  try { return await rasterPlotToImageURL(el, bg, hiRes) }
-  finally { if (light) el?.classList.remove('cc-light') }
+  const host = hostEl.value, pp = panelPlotEl.value
+  if (!host || !pp) return null
+  if (light) host.classList.add('cc-light')
+  try {
+    const capW = host.clientWidth, capH = host.clientHeight
+    if (!capW || !capH) return null
+    const scale = Math.min(14, Math.max(4, Math.ceil(2200 / Math.max(capW, capH))))
+    const out = document.createElement('canvas')
+    out.width = Math.round(capW * scale); out.height = Math.round(capH * scale)
+    const ctx = out.getContext('2d'); if (!ctx) return null
+    ctx.scale(scale, scale)
+    if (bg && bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, capW, capH) }
+    // plot-area rect within the capture (panel-plot, offset by the capture's padding); offsetLeft/Top +
+    // clientWidth/Height are the UNTRANSFORMED layout box, so this is immune to any ancestor zoom.
+    const pr = { x: pp.offsetLeft, y: pp.offsetTop, w: pp.clientWidth, h: pp.clientHeight }
+    for (const r of [layersRef, overlayRef]) {   // dots first, then gates — both fill the plot-area
+      const layer = await r.value?.exportCanvas(scale)
+      if (layer) ctx.drawImage(layer, pr.x, pr.y, pr.w, pr.h)
+    }
+    drawAxes(ctx, pr)
+    return out.toDataURL('image/png')
+  } finally { if (light) host.classList.remove('cc-light') }
 }
 // `hiRes` is exposed so a host that captures a LARGER element containing several of these cells (the
-// gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale — otherwise the
-// montage would composite every subplot at screen resolution.
+// gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale.
 defineExpose({ exportImage, hiRes })
 
 </script>
@@ -104,7 +169,7 @@ defineExpose({ exportImage, hiRes })
 <template>
   <div ref="hostEl" class="plot-capture" :class="{ compact, 'no-axis': hideAxisLabels }"
        :style="{ '--gate-font': `${fontSize}px` }">
-    <div class="panel-plot">
+    <div ref="panelPlotEl" class="panel-plot">
       <!-- base cloud (density raster / contours), child-pop overlays, and outliers — all 2D, no WebGL -->
       <PlotLayers ref="layersRef" :view-extents="viewExtents" :render-mode="renderMode" :base-points="points"
                   :pop-layers="popLayers" :show-pops="showPops" :view-tick="viewTick" />

@@ -48,6 +48,13 @@ function inlineComputedStyles(src: Element, dst: Element) {
   const cs = getComputedStyle(src)
   let s = ''
   for (let i = 0; i < cs.length; i++) { const k = cs[i]; s += `${k}:${cs.getPropertyValue(k)};` }
+  // getComputedStyle().width/height are the CONTENT-box values. If the element is `box-sizing:border-box`
+  // (e.g. the gate plot's .plot-capture + the montage cells), inlining that content width UNDER
+  // border-box makes the clone TOTAL = content (padding eaten), shrinking it — and it compounds through
+  // each nested padded element. The cloned HTML axis overlay then renders SMALLER than the composited
+  // (live-rect) canvas → the gating-PDF "dots and axis on a different scale". Force content-box so
+  // width + padding + border reconstruct the original box. (Appended last so it wins.)
+  s += 'box-sizing:content-box;'
   dst.setAttribute('style', s)
   const sc = src.children, dc = dst.children
   for (let i = 0; i < sc.length; i++) inlineComputedStyles(sc[i], dc[i])
@@ -115,10 +122,15 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
   ctx.scale(scale, scale)
   if (bg && bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h) }
   const hr = host.getBoundingClientRect()
+  // getBoundingClientRect includes any ancestor CSS transform (the canvas ZOOM: scale()), but the
+  // composite + HTML overlay are sized from clientWidth (UNtransformed). Divide rect deltas by that
+  // scale so the canvas layers land in the same untransformed CSS-px space as the axis overlay — else a
+  // zoomed board/module (scale ≠ 1) exports the dots/gate at a different scale than the axis ticks.
+  const k = w ? hr.width / w : 1
   for (const cv of Array.from(host.querySelectorAll('canvas'))) {
     const r = cv.getBoundingClientRect()
     const hi = opts.hiRes ? await opts.hiRes(cv, scale) : null
-    try { ctx.drawImage(hi ?? cv, r.left - hr.left, r.top - hr.top, r.width, r.height) } catch { /* tainted/empty */ }
+    try { ctx.drawImage(hi ?? cv, (r.left - hr.left) / k, (r.top - hr.top) / k, r.width / k, r.height / k) } catch { /* tainted/empty */ }
   }
   const overlayUrl = await elementToImageURL(host, 'svg', 'transparent', { blankCanvases: true })
   if (overlayUrl) { const img = await loadImg(overlayUrl); if (img) ctx.drawImage(img, 0, 0, w, h) }
