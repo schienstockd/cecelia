@@ -161,8 +161,9 @@ async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null
   } finally { if (light) host.classList.remove('cc-light') }
 }
 // `hiRes` is exposed so a host that captures a LARGER element containing several of these cells (the
-// gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale.
-defineExpose({ exportImage, hiRes })
+// gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale. `getHost`
+// lets the montage place each tile's UNIFIED export image at the tile's grid rect.
+defineExpose({ exportImage, hiRes, getHost: () => hostEl.value })
 
 </script>
 

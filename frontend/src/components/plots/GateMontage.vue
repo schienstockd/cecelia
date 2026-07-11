@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
-import { plotHostToImageURL } from '../../plots/export'
+import { elementToImageURL, loadImg } from '../../plots/export'
 import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
@@ -172,6 +172,7 @@ const gridRef = useTemplateRef<HTMLElement>('gridRef')
 type CellExport = {
   exportImage(bg?: string, light?: boolean): Promise<string | null>
   hiRes(cv: HTMLCanvasElement, scale: number): Promise<CanvasImageSource | null>
+  getHost(): HTMLElement | null
 }
 const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
@@ -180,14 +181,34 @@ async function exportImage(bg = '#ffffff', light = true): Promise<string | null>
   if (defs.length === 1) return (await cellRefs.get(defs[0].key)?.exportImage(bg, light)) ?? null
   const el = gridRef.value
   if (!el) return null
-  const cells = [...cellRefs.values()]
-  const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
-    for (const c of cells) { const r = await c.hiRes?.(cv, scale); if (r) return r }
-    return null
-  }
-  const scale = Math.min(8, Math.max(4, Math.ceil(2800 / (el.clientWidth || 500))))
+  // Multi-tile: composite each scatter tile's UNIFIED export image (dots + gate + axis on one canvas —
+  // see GateScatterCell.exportImage) at its grid rect, OVER an HTML overlay that carries the non-scatter
+  // cells (ggpairs diagonal names, correlation cells, per-tile titles). This avoids the old per-canvas
+  // composite whose separately-rasterised HTML axis desynced from the dots (the gating-PDF scale bug).
   if (light) el.classList.add('cc-light')
-  try { return await plotHostToImageURL(el, bg, { hiRes, scale }) } finally { if (light) el.classList.remove('cc-light') }
+  try {
+    const gr = el.getBoundingClientRect()
+    const k = el.clientWidth ? gr.width / el.clientWidth : 1   // ancestor zoom (untransform the rects)
+    const w = el.clientWidth, h = el.clientHeight
+    const scale = Math.min(8, Math.max(4, Math.ceil(2800 / (w || 500))))
+    const out = document.createElement('canvas')
+    out.width = Math.round(w * scale); out.height = Math.round(h * scale)
+    const ctx = out.getContext('2d'); if (!ctx) return null
+    ctx.scale(scale, scale)
+    if (bg && bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h) }
+    // base layer: the grid's HTML (non-scatter cells + titles); scatter tiles get overwritten next
+    const overlayUrl = await elementToImageURL(el, 'svg', 'transparent', { blankCanvases: true })
+    if (overlayUrl) { const img = await loadImg(overlayUrl); if (img) ctx.drawImage(img, 0, 0, w, h) }
+    // overwrite each scatter tile's region with its unified plot image
+    for (const cell of cellRefs.values()) {
+      const host = cell.getHost?.(); if (!host) continue
+      const url = await cell.exportImage(bg, false)   // .cc-light already on the grid ancestor
+      const img = url ? await loadImg(url) : null; if (!img) continue
+      const r = host.getBoundingClientRect()
+      ctx.drawImage(img, (r.left - gr.left) / k, (r.top - gr.top) / k, r.width / k, r.height / k)
+    }
+    return out.toDataURL('image/png')
+  } finally { if (light) el.classList.remove('cc-light') }
 }
 defineExpose({ exportImage })
 

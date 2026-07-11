@@ -94,7 +94,7 @@ export async function elementToImageURL(el: HTMLElement | null, type: 'png' | 's
   return type === 'svg' ? url : await rasterize(url, w, h)
 }
 
-function loadImg(url: string): Promise<HTMLImageElement | null> {
+export function loadImg(url: string): Promise<HTMLImageElement | null> {
   return new Promise(res => { const i = new Image(); i.onload = () => res(i); i.onerror = () => res(null); i.src = url })
 }
 
