@@ -391,8 +391,12 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // reserve a top band for the colour-ramp legend (drawn top-right as an overlay) so it never covers
   // the top row of cells — and a touch more when a title (top-left) shares the band.
   const topPad = o.legend ? (o.title ? 52 : 46) : (o.title ? 34 : 12)
+  // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
+  // clipped at a fixed 120). Approx char width ≈ 0.6·fontSize; clamp so it never eats the whole plot.
+  const longestY = (r.yLabels ?? []).reduce((m, s) => Math.max(m, String(s).length), 0)
+  const marginLeft = Math.round(Math.min(260, Math.max(120, longestY * (o.fontSize || 11) * 0.6 + 18)))
   const opts: Record<string, unknown> = {
-    ...THEME, marginLeft: 120, marginBottom: 64, marginTop: topPad, marginRight: 16,
+    ...THEME, marginLeft, marginBottom: 64, marginTop: topPad, marginRight: 16,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
     x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: o.rotateXLabel ? xTickRotate(o) : 0 },
     y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
