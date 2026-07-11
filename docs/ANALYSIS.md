@@ -93,7 +93,10 @@ the transpose reuse (mirror tiles share one fetch) and the optional coloured pop
 
 ### Image / napari-screenshot slot
 `ImageStripView` shows an image filmstrip with a caption overlay (size slider in its ⚙). Napari-screenshot
-slots capture the live viewer via `/api/napari/screenshot` (backend restart to activate).
+slots capture the live viewer via `/api/napari/screenshot` (backend restart to activate). The per-frame
+caption (bottom-centre) and actions (recapture / remove, bottom-right) sit **above** the auto-hide
+toolbar (`.cc-panel-controls`, z-index 6) — they used to live at the top and were masked when the
+hover toolbar appeared.
 
 ## Export — PDF + CSV
 

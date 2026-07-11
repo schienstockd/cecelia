@@ -194,17 +194,19 @@ defineExpose({ exportImage })
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 12px; }
 .is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
-/* caption overlay: white, centred, near the bottom of the image (legible via text-shadow) */
+/* caption overlay: white, centred, near the bottom of the image (legible via text-shadow). z-index
+   above the auto-hide toolbar (.cc-panel-controls, z-index 6) so it's never masked when hovering. */
 .is-cap { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center;
-  padding: 0 10px; pointer-events: none; }
+  padding: 0 3.4rem 0 10px; pointer-events: none; z-index: 7; }
 .is-cap-input, .is-cap-text { pointer-events: auto; max-width: 100%; text-align: center; color: #fff;
   font-size: var(--cap-size, 13px); font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
 .is-cap-input { width: 100%; background: transparent; border: none; border-radius: 3px; padding: 1px 4px; }
 .is-cap-input:focus { outline: none; background: rgba(0,0,0,0.35); }
 .is-cap-input::placeholder { color: rgba(255,255,255,0.55); font-weight: 400; }
 .is-cap-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* per-frame actions, top-right corner over the image */
-.is-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; }
+/* per-frame actions (recapture / remove): BOTTOM-right, above the auto-hide toolbar (z-index 6) which
+   overlays the TOP of the frame on hover and used to mask them (the "retake button is masked" bug) */
+.is-actions { position: absolute; bottom: 4px; right: 4px; display: flex; gap: 4px; z-index: 7; }
 .is-mini { width: 1.4rem; height: 1.4rem; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--cc-border); border-radius: 3px; background: rgba(0,0,0,0.45); color: #fff;
   cursor: pointer; font-size: 0.6rem; }
