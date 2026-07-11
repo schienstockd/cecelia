@@ -17,6 +17,7 @@
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
+import { BLUE_HEAT_RAMP as RAMP } from '../../plots/flowColors'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -34,26 +35,7 @@ const props = withDefaults(defineProps<{
 }>(), { colorMode: 'density', pointSize: 3, opacity: 1, flatColor: '#8b8b8b',
         categories: null, palette: () => [], backgroundColor: '#0d0b1a' })
 
-// FlowJo "pseudocolour" blue-heat ramp (R: .flowColorRampBlueHeat, flowHelpers.R:775),
-// low end lifted off pure black so sparse points stay visible on the dark background, and
-// interpolated to 256 stops so regl shows a smooth gradient (not 5 hard bands).
-function hexRgb(h: string): [number, number, number] {
-  return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]
-}
-function buildRamp(anchors: string[], n: number): string[] {
-  const rgb = anchors.map(hexRgb)
-  const out: string[] = []
-  const hex = (n: number) => n.toString(16).padStart(2, '0')
-  for (let i = 0; i < n; i++) {
-    const t = (i / (n - 1)) * (rgb.length - 1)
-    const k = Math.min(rgb.length - 2, Math.floor(t)), f = t - k
-    const c = [0, 1, 2].map(j => Math.round(rgb[k][j] + (rgb[k + 1][j] - rgb[k][j]) * f))
-    out.push(`#${hex(c[0])}${hex(c[1])}${hex(c[2])}`)   // hex — regl's colour parser needs it
-  }
-  return out
-}
-const RAMP = buildRamp(['#0b1a4d', '#1793ff', '#04fa00', '#ffa805', '#ff3856'], 256)
-
+// FlowJo "pseudocolour" blue-heat ramp — shared with the 2D raster renderer (plots/flowColors.ts).
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
 // regl-scatterplot has TS types but the instance is dynamic; keep it loosely typed.
 let scatterplot: any = null
@@ -242,16 +224,24 @@ async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
     const vp = gl?.getParameter(gl.MAX_VIEWPORT_DIMS) as (Int32Array | number[] | undefined)
     const tex = gl?.getParameter(gl.MAX_TEXTURE_SIZE) as (number | undefined)
     const cap = Math.max(1, Math.min(vp?.[0] ?? 8192, vp?.[1] ?? 8192, tex ?? 8192))
-    const s = Math.max(1, Math.min(scale, cap / w, cap / h))
-    scatterplot.set({ backgroundColor: [0, 0, 0, 0], width: Math.round(w * s), height: Math.round(h * s), aspectRatio: aspect() })
+    // regl-scatterplot multiplies the backing store by devicePixelRatio, so the REAL buffer is
+    // (w|h)·s·dpr — clamp against THAT, not the CSS px. Without the dpr factor a hi-DPI screen at a
+    // high export scale (small board plots hit ~14×) silently overflows the GPU cap in the taller
+    // dimension and the render is clipped to a sub-rectangle → dots cut off at the bottom of the PDF.
+    const dpr = (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1)
+    const s = Math.max(1, Math.min(scale, cap / (w * dpr), cap / (h * dpr)))
+    // ROOT CAUSE of the export clip: regl-scatterplot resets the data `aspectRatio` to its default
+    // (square) during an internal RESIZE, so passing aspectRatio in the SAME set() as width/height does
+    // not survive — the next draw renders the data square and, on our non-square plot, overscales Y and
+    // clips the cloud (dots cut off top/bottom). Fix: resize first, then RE-ASSERT aspectRatio on a
+    // separate frame so the projection matches the resized canvas before we draw.
+    scatterplot.set({ backgroundColor: [0, 0, 0, 0], width: Math.round(w * s), height: Math.round(h * s) })
     live.style.width = cssW || `${w}px`; live.style.height = cssH || `${h}px`   // keep the on-screen size
-    // regl-scatterplot applies the new viewport/projection on the NEXT frame, not synchronously — so
-    // drawing in the same tick would render the point cloud with the pre-resize projection and clip it
-    // into a corner. Wait one frame for the resize to take, THEN draw the final frame (transition:false
-    // = no animated tween a snapshot could catch mid-way), then wait once more for it to actually paint.
-    await nextFrame()
-    await drawCurrent(s, { transition: false })   // point size scaled to match the big backing
-    await nextFrame()
+    await nextFrame()                              // let the resize take (it resets aspectRatio)
+    scatterplot.set({ aspectRatio: aspect() })     // re-assert the projection AFTER the resize
+    await nextFrame()                              // let aspectRatio take
+    await drawCurrent(s, { transition: false })    // point size scaled to match the big backing
+    await nextFrame()                              // let the (preserveDrawingBuffer) frame actually paint
     const snap = document.createElement('canvas'); snap.width = live.width; snap.height = live.height
     snap.getContext('2d')?.drawImage(live, 0, 0)
     return snap.width > fallback.width ? snap : fallback

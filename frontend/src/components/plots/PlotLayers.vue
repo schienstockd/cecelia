@@ -1,37 +1,38 @@
 <!--
-  canvas2D render layer between ScatterGL (base points) and GateOverlay (gate drawing).
-  Two FlowJo-style jobs, both rescaling on zoom (it maps data→px via the LIVE viewExtents):
+  The gating base renderer + overlays, all on ONE 2D canvas (no WebGL — see docs/PLOTS.md). Replaces the
+  old regl point cloud for gating: the base population is a FlowJo/OMIQ-style DENSITY RASTER (points
+  mode) or clean d3-contour rings (contour/outliers mode). Sits between the (now-removed) WebGL layer
+  and GateOverlay (gate drawing). Everything maps data→px via the LIVE viewExtents, so it rescales on
+  zoom / axis-extent change; export re-renders the same 2D content at scale (crisp, cannot clip).
 
-   1. Contour mode  → marching-squares contours of the base population's density, at
-      normalised z = 1 − [0.95, 0.90, 0.75, 0.5]  (R: .flowContourLines, flowHelpers.R:46).
-   2. Population colour overlay (showPops) → for each visible child population on these axes,
-      draw its cells in the population colour: as dots (points mode) or as a contour (contour
-      mode). Works for BOTH base modes. Subsets come from the server (plotdata?pop=…), so Julia
-      still owns membership; we only colour.
+    • points   → density raster of the base population (dimmed when showing pops).
+    • contour  → nested contour rings of the base density.
+    • outliers → contour rings + the sparse-tail dots the rings don't enclose.
+    • showPops → each visible child population drawn in its colour (dots in points mode, rings otherwise).
+  Subsets come from the server (plotdata?pop=…), so Julia still owns membership; we only colour.
 -->
 <script setup lang="ts">
 import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
-import { densityGrid as computeDensityGrid, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
+import { densityGrid, densityImageData, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
+import { densityContours } from '../../plots/contour'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
 const props = defineProps<{
   viewExtents: Ext                          // live (zoom-synced) data extents
-  renderMode: 'points' | 'contour' | 'outliers'   // contour = contours only; outliers = contours + tail dots
-  basePoints: Float32Array | null           // base population points (for base contour)
+  renderMode: 'points' | 'contour' | 'outliers'
+  basePoints: Float32Array | null           // base population points
   popLayers: PopLayer[]                      // visible child pops to colour
   showPops: boolean
   viewTick: number                           // bump → redraw (camera moved)
 }>()
-// contour-family modes (contours drawn, no full WebGL point cloud); `outliers` adds the sparse-tail dots
-const isContour = () => props.renderMode === 'contour' || props.renderMode === 'outliers'
 
 const canvasEl = useTemplateRef<HTMLCanvasElement>('canvasEl')
 let ctx: CanvasRenderingContext2D | null = null
 let ro: ResizeObserver | null = null
 
-const G = DENSITY_GRID                       // contour grid resolution (shared with density.ts)
-const LEVELS = CONTOUR_LEVELS                // 1 − confidence levels (outer→inner)
+const G = DENSITY_GRID
+const LEVELS = CONTOUR_LEVELS
 
 function size() { const c = canvasEl.value!; return { w: c.clientWidth, h: c.clientHeight } }
 function toPx(vx: number, vy: number): [number, number] {
@@ -39,99 +40,83 @@ function toPx(vx: number, vy: number): [number, number] {
   const xs = xMax > xMin ? xMax - xMin : 1, ys = yMax > yMin ? yMax - yMin : 1
   return [((vx - xMin) / xs) * w, (1 - (vy - yMin) / ys) * h]
 }
-
-// density grid (normalised 0..1) over the current view — shared pure helper (plots/density.ts)
-const densityGrid = (points: Float32Array) => computeDensityGrid(points, props.viewExtents, G)
-
-// grid cell coords → data coords. Samples sit at bin CENTRES ((i+0.5)/G), matching the
-// binning above (floor((v-min)/range*G)); using /(G-1) here mis-scaled contours vs the points.
-function cellToData(gx: number, gy: number): [number, number] {
+// d3-contour ring coord (grid space [0,G], col=x row=y) → px
+function gridToPx(gx: number, gy: number): [number, number] {
   const { xMin, xMax, yMin, yMax } = props.viewExtents
-  return [xMin + ((gx + 0.5) / G) * (xMax - xMin), yMin + ((gy + 0.5) / G) * (yMax - yMin)]
+  return toPx(xMin + (gx / G) * (xMax - xMin), yMin + (gy / G) * (yMax - yMin))
 }
 
-// marching squares: stroke contour segments for one level
-function strokeContour(z: Float32Array, level: number) {
+// FlowJo pseudocolour density raster: build the G×G RGBA image, then upscale (smoothed) to the plot rect
+function drawRaster(points: Float32Array, alpha = 1) {
   const c = ctx!
-  const interp = (a: number, b: number) => (a === b ? 0.5 : (level - a) / (b - a))
-  c.beginPath()
-  for (let y = 0; y < G - 1; y++) for (let x = 0; x < G - 1; x++) {
-    const tl = z[y * G + x], tr = z[y * G + x + 1], br = z[(y + 1) * G + x + 1], bl = z[(y + 1) * G + x]
-    let idx = 0
-    if (tl > level) idx |= 8; if (tr > level) idx |= 4; if (br > level) idx |= 2; if (bl > level) idx |= 1
-    if (idx === 0 || idx === 15) continue
-    // edge crossing points in cell-space → data → px
-    const top: [number, number]    = [x + interp(tl, tr), y]
-    const right: [number, number]  = [x + 1, y + interp(tr, br)]
-    const bottom: [number, number] = [x + interp(bl, br), y + 1]
-    const left: [number, number]   = [x, y + interp(tl, bl)]
-    const seg = (a: [number, number], b: [number, number]) => {
-      const [ax, ay] = toPx(...cellToData(a[0], a[1])), [bx, by] = toPx(...cellToData(b[0], b[1]))
-      c.moveTo(ax, ay); c.lineTo(bx, by)
-    }
-    switch (idx) {
-      case 1: case 14: seg(left, bottom); break
-      case 2: case 13: seg(bottom, right); break
-      case 3: case 12: seg(left, right); break
-      case 4: case 11: seg(top, right); break
-      case 5: seg(left, top); seg(bottom, right); break
-      case 6: case 9: seg(top, bottom); break
-      case 7: case 8: seg(left, top); break
-      case 10: seg(left, bottom); seg(top, right); break
-    }
-  }
-  c.stroke()
+  const img = densityImageData(points, props.viewExtents, G)
+  const off = document.createElement('canvas'); off.width = G; off.height = G
+  const octx = off.getContext('2d')!
+  const idata = octx.createImageData(G, G); idata.data.set(img.data)   // avoids ImageData-ctor buffer typing
+  octx.putImageData(idata, 0, 0)
+  const { w, h } = size()
+  c.save()
+  c.globalAlpha = alpha; c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high'
+  c.drawImage(off, 0, 0, G, G, 0, 0, w, h)
+  c.restore()
 }
 
+// clean nested contour rings (d3-contour on the blurred grid). Outer levels faint → inner solid.
 function drawContours(points: Float32Array, colour: string) {
-  const z = densityGrid(points)
-  for (let i = 0; i < LEVELS.length; i++) {
-    ctx!.strokeStyle = colour
-    ctx!.globalAlpha = 0.45 + 0.55 * (i / (LEVELS.length - 1))   // outer faint → inner solid
-    ctx!.lineWidth = 1.2
-    strokeContour(z, LEVELS[i])
-  }
-  ctx!.globalAlpha = 1
+  const c = ctx!
+  const grid = densityGrid(points, props.viewExtents, G)
+  const levels = densityContours(grid, G, LEVELS)
+  c.strokeStyle = colour; c.lineWidth = 1.2; c.lineJoin = 'round'; c.lineCap = 'round'
+  levels.forEach((lvl, i) => {
+    c.globalAlpha = 0.5 + 0.5 * (i / Math.max(1, LEVELS.length - 1))
+    c.beginPath()
+    for (const ring of lvl.rings) {
+      if (ring.length < 2) continue
+      let [px, py] = gridToPx(ring[0][0], ring[0][1]); c.moveTo(px, py)
+      for (let k = 1; k < ring.length; k++) { [px, py] = gridToPx(ring[k][0], ring[k][1]); c.lineTo(px, py) }
+      c.closePath()
+    }
+    c.stroke()
+  })
+  c.globalAlpha = 1
 }
 
 function drawDots(points: Float32Array, colour: string, r = 1.5) {
   const c = ctx!; c.fillStyle = colour
-  const n = points.length / 2
-  const s = r * 2
+  const n = points.length / 2, s = r * 2
   for (let i = 0; i < n; i++) {
     const [px, py] = toPx(points[2 * i], points[2 * i + 1])
     c.fillRect(px - r, py - r, s, s)
   }
 }
-// "contour + outliers": individual dots for the sparse-tail points the contours don't enclose (R:
-// contour ± outliers). Kept subtle — small, faint sub-pixel dots — so the contours stay the main read.
+// "contour + outliers": the sparse-tail points the contours don't enclose, drawn as subtle dots
 function drawOutliers(points: Float32Array, colour: string) {
-  const pts = outlierPoints(points, props.viewExtents, G)
   ctx!.globalAlpha = 0.3
-  drawDots(pts, colour, 0.6)
+  drawDots(outlierPoints(points, props.viewExtents, G), colour, 0.6)
   ctx!.globalAlpha = 1
 }
 
-// paint the layer content (contours + pop overlay) with the current `ctx`; toPx uses size() (CSS px)
-// so it's resolution-independent — the transform on the target ctx sets the actual pixel density.
 function paintContent() {
   ctx!.lineJoin = 'round'
-  if (isContour() && props.basePoints?.length) {
-    drawContours(props.basePoints, '#cbd5e1')
-    if (props.renderMode === 'outliers') drawOutliers(props.basePoints, '#cbd5e1')
+  const mode = props.renderMode
+  // BASE population
+  if (props.basePoints?.length) {
+    if (mode === 'points') drawRaster(props.basePoints, props.showPops ? 0.4 : 1)   // dim under pop overlays
+    else {
+      drawContours(props.basePoints, '#cbd5e1')
+      if (mode === 'outliers') drawOutliers(props.basePoints, '#cbd5e1')
+    }
   }
+  // child POPULATION overlays
   if (props.showPops) {
     for (const pop of props.popLayers) {
       if (!pop.points?.length) continue
-      if (isContour()) {
-        drawContours(pop.points, pop.colour)
-        if (props.renderMode === 'outliers') drawOutliers(pop.points, pop.colour)
-      } else {
-        drawDots(pop.points, pop.colour)
-      }
+      if (mode === 'points') drawDots(pop.points, pop.colour)
+      else { drawContours(pop.points, pop.colour); if (mode === 'outliers') drawOutliers(pop.points, pop.colour) }
     }
   }
 }
+
 function draw() {
   if (!ctx || !canvasEl.value) return
   const dpr = window.devicePixelRatio || 1
@@ -142,9 +127,8 @@ function draw() {
   paintContent()
 }
 
-// hi-res export (see plots/export.ts): re-paint the same content onto a scale× offscreen canvas so
-// the contours/dots are crisp instead of the compositor upscaling the screen-DPR canvas. We swap the
-// module `ctx` to the offscreen context so the existing draw helpers target it, then restore.
+// hi-res export: re-paint the SAME 2D content onto a scale× offscreen canvas (crisp; a 2D canvas can't
+// clip like the old WebGL re-render). Swap the module ctx so the draw helpers target the offscreen.
 async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   if (!canvasEl.value) return null
   const { w, h } = size(); if (!w || !h) return null

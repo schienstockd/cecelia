@@ -111,8 +111,9 @@ function exportPng() {
 </script>
 
 <template>
+  <!-- auto-hide OFF: sibling of the gate-drawing panel; keep its controls in flow, not on hover -->
   <CanvasPanel :index="index" :active="props.active" :arrange="props.arrange" :title="`Pairs ${channels.length}×${channels.length}`"
-               :persist-key="props.persistKey"
+               :persist-key="props.persistKey" :auto-hide="false"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>

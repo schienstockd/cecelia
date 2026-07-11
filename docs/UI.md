@@ -621,6 +621,47 @@ gate-drawing surface into the registry.
 See **`docs/ANALYSIS.md`** for the Analysis board itself (tabs, comic-plate layout, persistence keys,
 the read-only cluster manager, and PDF/CSV export incl. the shared hi-res raster path).
 
+### Auto-hide panel controls (plot fills the whole box)
+
+`CanvasPanel` gives its **plot the whole box** and overlays the control surfaces, revealing them only on
+hover (or when pinned). This is why a board plot — and its PDF export — fills its slot instead of being
+squashed by a stack of dropdowns (the squashed plot exported as a clipped sliver; see `docs/ANALYSIS.md`).
+
+- **Default ON** (`autoHide` prop, default `true`). The `#actions` (top) and `#footer` (bottom) slots
+  render as absolute overlay strips over the body; a **pin** toggle (`pi-thumbtack`, next to the drag
+  icon) keeps them visible. Pin/collapse are transient local refs (chrome preferences), not persisted.
+- **Interactive views whose toolbar lives INSIDE the body** (`GatingStrategyView` `.gs-bar`, `UmapView`
+  `.uv-ctrl`, `ImageStripView` `.is-bar`) opt in by tagging that bar `.cc-panel-controls` **and** giving
+  their root `position: relative` — the global rule in `style.css` (`.panel:hover`/`.panel.controls-pinned`)
+  then auto-hides it by the same trigger. One mechanism for every control surface; don't add a second.
+- **Opt OUT with `:auto-hide="false"`** where you interact with the plot constantly and controls popping
+  over it would fight the tools — the gate-**drawing** panels (`GatePlotPanel`/`GatePairsPanel`) do this,
+  so their render-mode / gate tools stay in flow.
+- **Capture safety**: a `.capturing` ancestor (set on the board grid during export) force-hides every
+  `.cc-panel-controls`, so a pinned/hovered strip never leaks into a snapshot.
+
+### Canvas zoom (fit-to-view)
+
+Every plot canvas — the Analysis board's fixed grid AND the free-floating module canvases
+(`SummaryCanvas`, `GatingPlots`) — shares one visual zoom, so a big workspace fits the screen without
+hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom` ref + `fitWidth`/`fitHeight`;
+`components/canvas/CanvasZoomControl.vue` is the shared slider/fit/% control. It's a **CSS
+`transform: scale`** — purely visual: it never resizes a plot's own canvas or changes what's exported
+(the export re-renders at full logical resolution; the board neutralises the zoom during PDF capture).
+
+- **Fixed-grid board**: the grid scales inside a `.lc-zoom` footprint (sized to the scaled dims so the
+  viewport scrolls); auto-fits width on first render if the board would overflow.
+- **Free-floating canvases**: the panels scale inside a `.sc-zoom`/`.gp-zoom` layer; the population
+  manager sits OUTSIDE it so the control panel stays full-size. Because panels are dragged in screen px,
+  the host `provide()`s the zoom under `CANVAS_ZOOM_KEY` and `CanvasPanel` injects it into
+  `useFloatingPanel`, which divides drag deltas by the zoom (else a panel moves `zoom`× too fast).
+
+### Show/hide the population manager
+
+The floating population manager (`PopulationManager` on the gate/tracking pages, `SeriesPicker` on
+summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons, persisted per canvas in
+the `shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
+
 ---
 
 ## WS events — frontend side

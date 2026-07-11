@@ -12,7 +12,9 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
-import { computed, watch, ref, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { computed, watch, ref, provide, nextTick, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
+import CanvasZoomControl from './CanvasZoomControl.vue'
 import { plotHostToImageURL } from '../../plots/export'
 import { useProjectStore } from '../../stores/project'
 import { useProjectMetaStore } from '../../stores/projectMeta'
@@ -21,10 +23,12 @@ import { useSummaryData } from '../../composables/useSummaryData'
 import { useClusterContext } from '../../composables/useClusterContext'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
-import { UNIFORM_PRESETS, COMIC_PRESETS, uniform } from '../../plots/layoutTemplates'
+import { UNIFORM_PRESETS, COMIC_PRESETS, uniform, A4_PORTRAIT_ASPECT, A4_LANDSCAPE_ASPECT } from '../../plots/layoutTemplates'
 import type { SeriesTarget } from '../../plots/types'
 import SummaryPanel from './SummaryPanel.vue'
 import InteractivePanel from './InteractivePanel.vue'
+import PlateBuilder from './PlateBuilder.vue'
+import type { LayoutTemplate } from '../../plots/layoutTemplates'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
@@ -49,17 +53,67 @@ const entry = computed(() => layout.entries[props.canvasKey])
 // page if it's taller than the viewport. Default 320px/row.
 const rowHeight = computed({ get: () => entry.value.rowHeight ?? 320, set: v => (entry.value.rowHeight = v) })
 
+// A4 sheet lock — undefined (older boards) reads as portrait so the "board is too wide" fix applies
+// retroactively. In an A4 mode the board's WIDTH is derived from its height × the page aspect, so the
+// on-screen layout matches the exported PDF page exactly (capturePage's measured aspect becomes exact).
+const sheet = computed<'free' | 'a4-portrait' | 'a4-landscape'>({
+  get: () => entry.value.sheet ?? 'a4-portrait', set: v => (entry.value.sheet = v) })
+// only the plates that suit the current sheet orientation (all when Free); uniform grids are neutral
+const platePresets = computed(() => {
+  if (sheet.value === 'free') return COMIC_PRESETS
+  const want = sheet.value === 'a4-portrait' ? 'portrait' : 'landscape'
+  return COMIC_PRESETS.filter(t => (t.orient ?? 'any') === want || t.orient === 'any')
+})
+
 // grid size + height controls live in a ⚙ popover so the board bar doesn't crowd; close on outside click
 const optsOpen = ref(false)
 const optsRef = useTemplateRef<HTMLElement>('optsRef')
-function onDocClick(e: MouseEvent) { if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false }
+// custom plate builder popover (Phase 3)
+const builderOpen = ref(false)
+const builderRef = useTemplateRef<HTMLElement>('builderRef')
+function applyCustomPlate(t: LayoutTemplate) { layout.applyTemplate(props.canvasKey, t); builderOpen.value = false }
+function onDocClick(e: MouseEvent) {
+  const t = e.target as Node
+  if (optsOpen.value && optsRef.value && !optsRef.value.contains(t)) optsOpen.value = false
+  if (builderOpen.value && builderRef.value && !builderRef.value.contains(t)) builderOpen.value = false
+}
 onMounted(() => document.addEventListener('mousedown', onDocClick))
 onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
-const gridStyle = computed(() => ({
-  gridTemplateColumns: entry.value.colTracks ?? `repeat(${entry.value.cols}, minmax(0, 1fr))`,
-  gridTemplateRows: entry.value.rowTracks ?? `repeat(${entry.value.rows}, minmax(0, 1fr))`,
-  height: `${rowHeight.value * entry.value.rows + 8 * (entry.value.rows - 1)}px`,
-}))
+// board natural (unscaled) size — height from rows×rowHeight; width from the A4 page aspect (null in
+// Free mode, where the grid fills the available width).
+const boardH = computed(() => rowHeight.value * entry.value.rows + 8 * (entry.value.rows - 1))
+const boardW = computed<number | null>(() => {
+  if (sheet.value === 'a4-portrait') return boardH.value * A4_PORTRAIT_ASPECT
+  if (sheet.value === 'a4-landscape') return boardH.value * A4_LANDSCAPE_ASPECT
+  return null
+})
+const gridStyle = computed(() => {
+  const base: Record<string, string> = {
+    gridTemplateColumns: entry.value.colTracks ?? `repeat(${entry.value.cols}, minmax(0, 1fr))`,
+    gridTemplateRows: entry.value.rowTracks ?? `repeat(${entry.value.rows}, minmax(0, 1fr))`,
+    height: `${boardH.value}px`,
+  }
+  // A4: lock width to height × page aspect so the box IS the page. Free: leave width to CSS (fills).
+  if (boardW.value != null) { base.width = `${boardW.value}px`; base.flex = 'none' }
+  return base
+})
+
+// ── visual zoom (fit-to-view, Word/Illustrator style) — A4 modes only (Free already fills width) ──
+const canvasWrapRef = useTemplateRef<HTMLElement>('canvasWrapRef')
+const { zoom, fitWidth, fitHeight, fitWidthIfOverflow, setZoom, reset: resetZoom } =
+  useCanvasZoom(canvasWrapRef, () => ({ w: boardW.value, h: boardH.value }))
+provide(CANVAS_ZOOM_KEY, zoom)   // docked panels don't pixel-drag, but keep the contract uniform
+// neutralise zoom during PDF capture so the measured slot rects are at full 1:1 size (the transform
+// would otherwise scale getBoundingClientRect and throw off the hi-res composite)
+const effZoom = computed(() => (capturing.value ? 1 : zoom.value))
+const zoomWrapStyle = computed(() => boardW.value != null
+  ? { width: `${boardW.value * effZoom.value}px`, height: `${boardH.value * effZoom.value}px`, margin: '0 auto' }
+  : { width: '100%' })
+const gridZoomStyle = computed(() => (boardW.value != null && effZoom.value !== 1)
+  ? { transform: `scale(${effZoom.value})`, transformOrigin: 'top left' } : {})
+// first render (and image switch): fit-to-width if the board would overflow, so the whole board is
+// visible without hiding the sidebar; a board that already fits stays at 100%.
+watch(imageUid, () => nextTick(fitWidthIfOverflow), { immediate: true })
 
 // shared summary-plot data + view-state (same composable the free-floating canvas uses)
 const {
@@ -313,6 +367,15 @@ defineExpose({ capturePage, collectCsvs })
                 <span class="lc-val">{{ rowHeight }}</span></label>
             </div>
           </div>
+          <!-- A4 sheet lock: keep the board at page proportions (WYSIWYG with the PDF) or let it fill -->
+          <div class="seg" v-tooltip.bottom="'Sheet — A4 locks the board to page proportions (what you see is the exported page); Free fills the width'">
+            <button :class="{ on: sheet === 'a4-portrait' }" @click="sheet = 'a4-portrait'">A4 ↕</button>
+            <button :class="{ on: sheet === 'a4-landscape' }" @click="sheet = 'a4-landscape'">A4 ↔</button>
+            <button :class="{ on: sheet === 'free' }" @click="sheet = 'free'">Free</button>
+          </div>
+          <!-- fit-to-view zoom (visual only; the exported page is unchanged) -->
+          <CanvasZoomControl v-if="sheet !== 'free'" :zoom="zoom"
+                             @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
           <!-- clustering run: ONE per board (drives all cluster slots + the cluster pop manager) -->
           <div v-if="hasClusterSlot" class="lc-clust" v-tooltip.bottom="'Clustering run shown by this board’s cluster plots'">
             <span class="lc-lbl">cluster</span>
@@ -354,25 +417,37 @@ defineExpose({ capturePage, collectCsvs })
         </div>
         <div class="lc-row">
           <span class="lc-lbl">Plates</span>
-          <div class="seg seg-wrap" v-tooltip.bottom="'Comic plates — varied-size panels'">
-            <button v-for="t in COMIC_PRESETS" :key="t.id" @click="layout.applyTemplate(canvasKey, t)"
+          <div class="seg seg-wrap" v-tooltip.bottom="'Comic plates — varied-size panels, matched to the sheet orientation'">
+            <button v-for="t in platePresets" :key="t.id" @click="layout.applyTemplate(canvasKey, t)"
                     :class="{ on: entry.slotAreas.join('|') === t.slots.join('|') }">{{ t.label }}</button>
+          </div>
+          <!-- custom plate builder: drag cells to merge into varied-size panels -->
+          <div ref="builderRef" class="lc-opts">
+            <button class="cc-btn cc-btn-ghost lc-custom" :class="{ on: builderOpen }" @click="builderOpen = !builderOpen"
+                    v-tooltip.bottom="'Build a custom plate — drag cells to merge, click a merge to split'">
+              <i class="pi pi-th-large" /> Custom…</button>
+            <div v-if="builderOpen" class="lc-pop">
+              <PlateBuilder :cols="entry.cols" :rows="entry.rows" :slot-areas="entry.slotAreas"
+                            @apply="applyCustomPlate" @cancel="builderOpen = false" />
+            </div>
           </div>
         </div>
       </div>
 
       <div class="lc-body">
-        <!-- the grid of slots -->
-        <div ref="gridRef" class="lc-grid" :class="{ capturing }" :style="gridStyle">
+        <!-- scroll viewport → .lc-zoom (scaled footprint, centred) → the grid (visually scaled) -->
+        <div ref="canvasWrapRef" class="lc-canvas-wrap">
+        <div class="lc-zoom" :style="zoomWrapStyle">
+        <div ref="gridRef" class="lc-grid" :class="{ capturing }" :style="[gridStyle, gridZoomStyle]">
+          <!-- reorder drag: the drag SOURCE is the panel header's drag icon (CanvasPanel, docked);
+               its native dragstart bubbles here, so the grip lives IN the header (aligned with the
+               other buttons) instead of a fragile absolute overlay that collided with the pin. -->
           <div v-for="(area, i) in entry.slotAreas" :key="i" class="lc-slot"
                :class="{ active: i === entry.activeIndex, filled: !!entry.contents[i] }"
                :style="{ gridArea: area }"
+               @dragstart="dragFrom.i = i" @dragend="dragFrom.i = -1"
                @dragover.prevent @drop.prevent="onDrop(i)"
                @mousedown="layout.setActive(canvasKey, i)">
-            <!-- grip: the ONLY drag source, so dragging inside the plot never starts a reorder -->
-            <div v-if="entry.contents[i]" class="lc-grip" draggable="true"
-                 @dragstart="dragFrom.i = i" @dragend="dragFrom.i = -1"
-                 v-tooltip.bottom="'Drag to move / swap'"><i class="pi pi-arrows-alt" /></div>
             <!-- summary plot -->
             <SummaryPanel v-if="entry.contents[i]?.kind === 'summary' && specById[entry.contents[i]!.ref]"
                           :ref="el => setSummaryRef(i, el)"
@@ -419,6 +494,8 @@ defineExpose({ capturePage, collectCsvs })
             </div>
           </div>
         </div>
+        </div>
+        </div>
 
         <!-- docked pop manager (control, not content — excluded from PDF). Follows the ACTIVE slot:
              cluster PopulationManager for a cluster slot, else the summary SeriesPicker. -->
@@ -458,6 +535,8 @@ defineExpose({ capturePage, collectCsvs })
   border: 1px solid var(--cc-border); border-radius: 5px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   cursor: pointer; font-size: 0.72rem; }
 .lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
+.lc-custom { font-size: 11px; padding: 0.22rem 0.55rem; }
+.lc-custom.on { color: var(--cc-text); border-color: #7c3aed; }
 .lc-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 13rem;
   display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--cc-surface-1);
   border: 1px solid var(--cc-border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
@@ -479,21 +558,17 @@ defineExpose({ capturePage, collectCsvs })
 .seg button.on { background: #2d1b69; color: #c4b5fd; }
 /* the board sizes to its grid (rowHeight × rows); the page's panel-scroll handles overflow */
 .lc-body { display: flex; align-items: flex-start; gap: 8px; }
+/* scroll viewport for the board. .lc-zoom holds the (visually scaled) footprint: fixed-size + centred
+   via margin auto for an A4 board, full-width for a Free board (styled inline via zoomWrapStyle). */
+.lc-canvas-wrap { flex: 1; min-width: 0; overflow: auto; }
+.lc-zoom { display: block; }
 .lc-grid { flex: 1; display: grid; gap: 8px; padding: 4px; overflow: hidden; }
 .lc-slot { position: relative; border: 1px dashed var(--cc-border); border-radius: 6px; overflow: hidden;
   display: flex; min-width: 0; min-height: 0; background: var(--cc-bg); }
 .lc-slot.filled { border-style: solid; }
 .lc-slot.active { border-color: #7c3aed; }
-/* drag grip: sits in the docked panel header's empty spacer (left of the remove button) */
-.lc-grip { position: absolute; top: 5px; right: 2.3rem; z-index: 7; width: 1.4rem; height: 1.4rem;
-  display: flex; align-items: center; justify-content: center; cursor: grab; font-size: 0.62rem;
-  color: var(--cc-text-dim); background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: 4px; opacity: 0.4; transition: opacity 0.1s, color 0.1s; }
-.lc-slot:hover .lc-grip { opacity: 1; }
-.lc-grip:hover { color: var(--cc-text); border-color: #7c3aed; }
-.lc-grip:active { cursor: grabbing; }
-/* hide the drag grips while capturing so they don't appear in the exported PDF */
-.lc-grid.capturing .lc-grip { display: none; }
+/* reorder drag handle now lives IN the panel header (CanvasPanel docked drag icon); its native
+   dragstart bubbles to .lc-slot (@dragstart above). No absolute overlay grip here anymore. */
 .lc-add { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .lc-add-hint { color: var(--cc-text-dim); font-size: 11px; opacity: 0.6; }
 .lc-rail { flex-shrink: 0; width: 300px; overflow-y: auto; }
