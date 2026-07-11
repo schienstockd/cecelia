@@ -48,6 +48,13 @@ function inlineComputedStyles(src: Element, dst: Element) {
   const cs = getComputedStyle(src)
   let s = ''
   for (let i = 0; i < cs.length; i++) { const k = cs[i]; s += `${k}:${cs.getPropertyValue(k)};` }
+  // getComputedStyle().width/height are the CONTENT-box values. If the element is `box-sizing:border-box`
+  // (e.g. the gate plot's .plot-capture + the montage cells), inlining that content width UNDER
+  // border-box makes the clone TOTAL = content (padding eaten), shrinking it — and it compounds through
+  // each nested padded element. The cloned HTML axis overlay then renders SMALLER than the composited
+  // (live-rect) canvas → the gating-PDF "dots and axis on a different scale". Force content-box so
+  // width + padding + border reconstruct the original box. (Appended last so it wins.)
+  s += 'box-sizing:content-box;'
   dst.setAttribute('style', s)
   const sc = src.children, dc = dst.children
   for (let i = 0; i < sc.length; i++) inlineComputedStyles(sc[i], dc[i])
