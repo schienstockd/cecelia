@@ -199,7 +199,10 @@ function onDrop(i: number) { if (dragFrom.i >= 0) layout.swap(props.canvasKey, d
 const panelSel = (c: SlotContent) => scope.value === 'global' ? gSel.value : (st(c).sel ?? [])
 const panelVis = (c: SlotContent) => scope.value === 'global' ? gVis.value : (st(c).vis ?? defaultVis())
 const activeSel = computed(() => scope.value === 'global' ? gSel.value : (activeContent.value ? st(activeContent.value).sel : []))
-const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activeContent.value ? st(activeContent.value).vis : defaultVis()))
+// fall back to defaultVis() when the active slot has no local vis yet (matches ClusterPlots) — else the
+// pop manager's `vis` is undefined and the whole PlotOptions styling block is hidden (the "cluster-tracks
+// manager has no plot params" bug).
+const activeVis = computed(() => scope.value === 'global' ? gVis.value : (activeContent.value ? (st(activeContent.value).vis ?? defaultVis()) : defaultVis()))
 const toggle = (arr: string[], v: string) => arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v]
 function toggleTarget(valueName: string, pop: string, pt: string) {
   const k = tkey(pt, valueName, pop)

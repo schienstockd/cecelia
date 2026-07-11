@@ -71,7 +71,8 @@ export interface VisProps {
   // layout / scale
   logScale: boolean                          // log measure axis (R scaleLog10)
   grid: boolean                              // show gridlines (R noGrid inverted; default off = classic)
-  rotateXLabel: boolean                      // rotate x tick labels 45° (R rotateXLabel)
+  rotateXLabel: boolean                      // rotate x tick labels (R rotateXLabel); angle = rotateXAngle
+  rotateXAngle?: number                       // x tick-label rotation angle in degrees (default 45)
   rotate: boolean                            // flip plot 90° — measure on X, series on Y (R coord_flip)
   darkTheme: boolean                         // dark plot ground + light ink (R darkTheme)
   facet: boolean                             // small multiples — one panel per series (R faceting)
@@ -99,9 +100,16 @@ export function paletteRange(vis: Pick<VisProps, 'palette' | 'userColors'>, n: n
   const pal = PALETTES[vis.palette]
   return pal ? Array.from({ length: n }, (_, i) => pal[i % pal.length]) : null
 }
+// x tick-label rotation: the angle (negative = tilt down-right, ggplot-style) and the bottom margin
+// needed so the rotated labels aren't clipped. The base margin is per-chart (empirically fits 45°);
+// scale it with the angle (0.5×base at 0° → 1×base at 45° → 1.5×base at 90°).
+const xTickRotate = (o: { rotateXAngle?: number }) => -(o.rotateXAngle ?? 45)
+const xRotMargin = (base: number, o: { rotateXAngle?: number }) =>
+  Math.round(base * (0.5 + 0.5 * Math.abs(o.rotateXAngle ?? 45) / 45))
+
 export const defaultVis = (): VisProps => ({
   jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
-  legend: true, logScale: false, grid: false, rotateXLabel: false, rotate: false, darkTheme: true, facet: false,
+  legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
 })
 
@@ -119,6 +127,17 @@ export interface BuildOpts extends VisProps {
 
 // ── theme_classic look (ggplot) — applied as Plot top-level options ───────────────
 const FONT = 'Helvetica, Arial, sans-serif'
+
+// Measure rendered text width (memoised canvas) so margins fit labels exactly instead of guessing by
+// char count (which over-reserved and left a gap). Falls back to a rough estimate outside the browser.
+let _measCtx: CanvasRenderingContext2D | null = null
+function textWidth(text: string, fontPx: number): number {
+  if (typeof document === 'undefined') return text.length * fontPx * 0.55
+  if (!_measCtx) _measCtx = document.createElement('canvas').getContext('2d')
+  if (!_measCtx) return text.length * fontPx * 0.55
+  _measCtx.font = `${fontPx}px ${FONT}`
+  return _measCtx.measureText(text).width
+}
 const THEME = {
   style: { background: 'white', color: '#111', fontFamily: FONT, fontSize: '11px' },
   marginLeft: 56, marginBottom: 44, marginTop: 12, marginRight: 12,
@@ -323,9 +342,9 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
                      ...(o.labY ? { label: o.labY } : {}), ...(measDomain ? { domain: measDomain } : {}) }
   opts[posAxis] = { ...(opts[posAxis] as object ?? {}), grid: o.grid,
                     ...(o.labX ? { label: o.labX } : {}),
-                    ...(o.rotateXLabel && !o.rotate ? { tickRotate: -45 } : {}) }
+                    ...(o.rotateXLabel && !o.rotate ? { tickRotate: xTickRotate(o) } : {}) }
   // room for rotated x labels (else clipped by the panel border); room for series labels on Y when flipped
-  if (o.rotateXLabel && !o.rotate) opts.marginBottom = 76
+  if (o.rotateXLabel && !o.rotate) opts.marginBottom = xRotMargin(76, o)
   if (o.rotate) opts.marginLeft = 104
 
   // NB: the title is drawn by PlotChart as an overlay (NOT `opts.title`) — Plot's title forces an
@@ -383,10 +402,15 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   // reserve a top band for the colour-ramp legend (drawn top-right as an overlay) so it never covers
   // the top row of cells — and a touch more when a title (top-left) shares the band.
   const topPad = o.legend ? (o.title ? 52 : 46) : (o.title ? 34 : 12)
+  // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
+  // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
+  // over-reserved → a big left gap); +14 for the tick mark + gap, clamped so it never eats the plot.
+  const longestYW = (r.yLabels ?? []).reduce((m, s) => Math.max(m, textWidth(String(s), o.fontSize || 11)), 0)
+  const marginLeft = Math.round(Math.min(260, Math.max(48, longestYW + 14)))
   const opts: Record<string, unknown> = {
-    ...THEME, marginLeft: 120, marginBottom: 64, marginTop: topPad, marginRight: 16,
+    ...THEME, marginLeft, marginBottom: 64, marginTop: topPad, marginRight: 16,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: o.rotateXLabel ? -45 : 0 },
+    x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: o.rotateXLabel ? xTickRotate(o) : 0 },
     y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
     color: colorScale,
     marks: [
@@ -395,7 +419,7 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
       Plot.text(cells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) }),
     ],
   }
-  if (o.rotateXLabel) opts.marginBottom = 84
+  if (o.rotateXLabel) opts.marginBottom = xRotMargin(84, o)
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }
   return opts
@@ -511,12 +535,12 @@ function buildTrendLine(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Re
   const opts: Record<string, unknown> = {
     ...THEME, color, marginTop: topPad,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
-    x: { label: o.labX || r.groupBy || 't', grid: o.grid, ...(o.rotateXLabel ? { tickRotate: -45 } : {}) },
+    x: { label: o.labX || r.groupBy || 't', grid: o.grid, ...(o.rotateXLabel ? { tickRotate: xTickRotate(o) } : {}) },
     y: { label: o.labY || `${base} (loess)`, grid: o.grid,
          ...(o.logScale ? { type: 'log' } : {}), domain: [o.logScale ? 1 : 0, yhi > 0 ? yhi : 1] },
     marks,
   }
-  if (o.rotateXLabel) opts.marginBottom = 64
+  if (o.rotateXLabel) opts.marginBottom = xRotMargin(64, o)
   ;(opts as Record<string, unknown>)._legend = legend
   return opts
 }
