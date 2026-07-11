@@ -14,7 +14,7 @@ export const useAppControlStore = defineStore('appControl', () => {
 
   // dev-only: the repo's git worktrees, so the System panel can relaunch the backend from another
   // checkout without the console (backend/:8080 only — a frontend branch still needs its own Vite).
-  const worktrees = ref<{ path: string; branch: string; current: boolean }[]>([])
+  const worktrees = ref<{ path: string; branch: string; current: boolean; primary?: boolean }[]>([])
   const canSwitch = ref(false)   // server supervised → a switch can actually relaunch
 
   // read the dev flag from diagnostics (prod never sets CECELIA_DEV → false)
@@ -24,7 +24,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   async function refreshWorktrees() {
     try {
       const d = await (await fetch('/api/app/worktrees')).json() as {
-        worktrees?: { path: string; branch: string; current: boolean }[]; canSwitch?: boolean }
+        worktrees?: { path: string; branch: string; current: boolean; primary?: boolean }[]; canSwitch?: boolean }
       worktrees.value = d.worktrees ?? []
       canSwitch.value = !!d.canSwitch
     } catch { /* leave as-is */ }

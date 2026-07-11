@@ -68,7 +68,7 @@ end
 _git_toplevel(dir::AbstractString) =
     try; strip(readchomp(`git -C $dir rev-parse --show-toplevel`)); catch; ""; end
 
-# GET /api/app/worktrees → { worktrees: [{path, branch, current}], current, canSwitch }
+# GET /api/app/worktrees → { worktrees: [{path, branch, current, primary}], current, canSwitch }
 function api_app_worktrees(::HTTP.Request)
     here = _git_toplevel(pwd())
     out = Any[]
@@ -82,7 +82,10 @@ function api_app_worktrees(::HTTP.Request)
                 startswith(l, "branch ")   && (branch = replace(String(l[8:end]), "refs/heads/" => ""))
             end
             isempty(path) && continue
-            push!(out, (; path, branch, current = path == here))
+            # git lists the primary (main) worktree FIRST — flag it so the UI can identify the main
+            # checkout even when it's on a feature branch (the branch label alone can't, since no
+            # worktree need be on `main`). `primary = isempty(out)` → true only for the first entry.
+            push!(out, (; path, branch, current = path == here, primary = isempty(out)))
         end
     catch e
         return 200, JSON3.write((; worktrees = Any[], current = here, canSwitch = false,
