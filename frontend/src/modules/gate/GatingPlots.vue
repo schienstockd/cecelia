@@ -309,6 +309,8 @@ onUnmounted(() => ws.off('gating:popmap', onBroadcast))
 /* free-floating plot workspace: panels + manager are absolutely positioned within */
 .gp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating plot panels); transform inline */
-/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace */
-.gp-zoom { position: absolute; top: 0; left: 0; }
+/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
+   min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
+   lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
+.gp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

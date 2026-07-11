@@ -214,5 +214,8 @@ watch(segPops, () => { for (const p of panels.value) p.state.sel = p.state.sel.f
 .sc-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace (offsetParent for the floating panels); size + transform set inline by
    useCanvasWorkspace — grows to viewport/zoom when zoomed out so the whole page stays usable */
-.sc-zoom { position: absolute; top: 0; left: 0; }
+/* min 100% so the workspace always at least fills the viewport (like the old inset:0) even before the
+   JS size lands — else a 0 measurement collapses it and the panels' offsetParent is ~0-wide, pinning
+   drag to the top-left. useCanvasWorkspace only EXTENDS it (width/height) when zoomed out. */
+.sc-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>

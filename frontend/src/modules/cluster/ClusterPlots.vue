@@ -287,6 +287,8 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 .seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .cp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
-/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace */
-.cp-zoom { position: absolute; top: 0; left: 0; }
+/* scaled workspace (offsetParent for panels); size + transform set inline by useCanvasWorkspace.
+   min 100% so it always at least fills the viewport (like the old inset:0) even before the JS size
+   lands — else a 0 measurement collapses it and drag pins panels to the top-left. */
+.cp-zoom { position: absolute; top: 0; left: 0; min-width: 100%; min-height: 100%; }
 </style>
