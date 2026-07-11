@@ -115,10 +115,15 @@ export async function plotHostToImageURL(host: HTMLElement | null, bg: string,
   ctx.scale(scale, scale)
   if (bg && bg !== 'transparent') { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h) }
   const hr = host.getBoundingClientRect()
+  // getBoundingClientRect includes any ancestor CSS transform (the canvas ZOOM: scale()), but the
+  // composite + HTML overlay are sized from clientWidth (UNtransformed). Divide rect deltas by that
+  // scale so the canvas layers land in the same untransformed CSS-px space as the axis overlay — else a
+  // zoomed board/module (scale ≠ 1) exports the dots/gate at a different scale than the axis ticks.
+  const k = w ? hr.width / w : 1
   for (const cv of Array.from(host.querySelectorAll('canvas'))) {
     const r = cv.getBoundingClientRect()
     const hi = opts.hiRes ? await opts.hiRes(cv, scale) : null
-    try { ctx.drawImage(hi ?? cv, r.left - hr.left, r.top - hr.top, r.width, r.height) } catch { /* tainted/empty */ }
+    try { ctx.drawImage(hi ?? cv, (r.left - hr.left) / k, (r.top - hr.top) / k, r.width / k, r.height / k) } catch { /* tainted/empty */ }
   }
   const overlayUrl = await elementToImageURL(host, 'svg', 'transparent', { blankCanvases: true })
   if (overlayUrl) { const img = await loadImg(overlayUrl); if (img) ctx.drawImage(img, 0, 0, w, h) }
