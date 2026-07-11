@@ -165,6 +165,8 @@ const NOTE_KEY = '__note'
 // position: fixed from the cog so it escapes the table's horizontal scroll clipping.
 const runLogUid = ref<string | null>(null)
 const runLogPos = ref<Record<string, string>>({})
+// the image whose run-history popover is open (the popover is teleported to <body>, so it reads this)
+const runLogImg = computed(() => runLogUid.value ? (images.value.find(i => i.uid === runLogUid.value) ?? null) : null)
 const fmtRunAt = (at: string) => (at ?? '').replace('T', ' ')
 function toggleRunLog(uid: string, e: MouseEvent) {
   if (runLogUid.value === uid) { runLogUid.value = null; return }
@@ -173,7 +175,8 @@ function toggleRunLog(uid: string, e: MouseEvent) {
   runLogUid.value = uid
 }
 function onDocMouseDownRunLog(e: MouseEvent) {
-  if (runLogUid.value && !(e.target as HTMLElement).closest('.runlog-cell')) runLogUid.value = null
+  const t = e.target as HTMLElement
+  if (runLogUid.value && !t.closest('.runlog-cell') && !t.closest('.runlog-pop')) runLogUid.value = null
 }
 onMounted(() => document.addEventListener('mousedown', onDocMouseDownRunLog))
 onUnmounted(() => document.removeEventListener('mousedown', onDocMouseDownRunLog))
@@ -621,15 +624,6 @@ onUnmounted(stopResize)
               <button class="row-icon-btn runlog-cog" :class="{ on: runLogUid === img.uid }"
                 @click.stop="toggleRunLog(img.uid, $event)"
                 v-tooltip.right="'Functions run on this image'"><i class="pi pi-cog" /></button>
-              <div v-if="runLogUid === img.uid" class="runlog-pop" :style="runLogPos">
-                <div class="runlog-hd">Run history</div>
-                <div v-if="!img.runLog || !img.runLog.length" class="runlog-empty">No functions recorded yet.</div>
-                <div v-for="(e, i) in [...(img.runLog ?? [])].reverse()" :key="i" class="runlog-row">
-                  <span class="runlog-fun">{{ e.fun }}</span>
-                  <span v-if="e.valueName" class="runlog-vn">{{ e.valueName }}</span>
-                  <span class="runlog-at">{{ fmtRunAt(e.at) }}</span>
-                </div>
-              </div>
             </span>
           </span>
           <span class="uid-row">
@@ -732,6 +726,22 @@ onUnmounted(stopResize)
   <PhysicalSizeDialog v-if="physSizeDialogUid"
     :set-uid="setUid" :focus-uid="physSizeDialogUid" :selected-uids="[...selected]"
     @close="physSizeDialogUid = null" />
+
+  <!-- run-history popover — teleported to <body> so it escapes the table's scroll/transform
+       containing block (was clipped by the following row); positioned (fixed) from the cog rect -->
+  <Teleport to="body">
+    <!-- carry the theme tokens (--cc-*) on the popover itself: teleported to <body> it's outside the
+         shell's .cc-dark wrapper, so var(--cc-surface-1) etc. would otherwise be undefined (transparent) -->
+    <div v-if="runLogImg" class="runlog-pop cc-dark" :style="runLogPos">
+      <div class="runlog-hd">Run history</div>
+      <div v-if="!runLogImg.runLog || !runLogImg.runLog.length" class="runlog-empty">No functions recorded yet.</div>
+      <div v-for="(e, i) in [...(runLogImg.runLog ?? [])].reverse()" :key="i" class="runlog-row">
+        <span class="runlog-fun">{{ e.fun }}</span>
+        <span v-if="e.valueName" class="runlog-vn">{{ e.valueName }}</span>
+        <span class="runlog-at">{{ fmtRunAt(e.at) }}</span>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>

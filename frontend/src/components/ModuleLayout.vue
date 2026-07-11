@@ -302,7 +302,8 @@ const visibleUids = computed<string[]>(() =>
 
         <!-- scrollable body: image table + below-table content -->
         <div class="panel-scroll">
-          <CollapsibleSection label="Images" max-height="none">
+          <CollapsibleSection label="Images" max-height="none"
+            :storage-key="`cc-images-open:${module ?? 'default'}`">
             <div v-if="!activeSet" class="no-set">
               <i class="pi pi-folder-open" style="font-size:2rem; opacity:0.2" />
               <p>No set selected.</p>
