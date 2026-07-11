@@ -658,9 +658,10 @@ screen without hiding the sidebar. `composables/useCanvasZoom.ts` owns the `zoom
 
 ### Show/hide the population manager
 
-The floating population manager (`PopulationManager` on the gate/tracking pages, `SeriesPicker` on
-summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons, persisted per canvas in
-the `shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
+The floating population manager (`PopulationManager` on gate/tracking + cluster pages, `SeriesPicker`
+on summary pages) has a **toggle** (`pi-sitemap`) next to the arrange-windows icons on **every** module
+canvas that has one (`SummaryCanvas`, `GatingPlots`, `ClusterPlots`), persisted per canvas in the
+`shared` bag (`shared.showManager`, default shown). Wrap the manager `v-if="showManager"`.
 
 ---
 

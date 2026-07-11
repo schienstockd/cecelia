@@ -66,9 +66,9 @@ for (const p of panels.value) { const a = KIND_ALIASES[p.state.kind]; if (a) p.s
 // Highlighting the eye shows a pop on the UMAP (its colour, other clusters greyed) + breaks the
 // heatmap out per-population. `scope` mirrors gating: GLOBAL = one highlight set for every plot;
 // LOCAL = each plot (panel) has its own (state.hl). All persisted per canvas via the shared bag.
-const { suffix, highlighted, scope, vis: gVis } = useViewState(shared, {
+const { suffix, highlighted, scope, vis: gVis, showManager } = useViewState(shared, {
   suffix: 'default', highlighted: [] as string[], scope: 'global' as 'global' | 'local',
-  vis: defaultVis() as VisProps })
+  vis: defaultVis() as VisProps, showManager: true })
 
 // visual zoom (shared control): scale the free-floating cluster workspace; drag is zoom-corrected via
 // the injected zoom (CanvasPanel → useFloatingPanel). The population manager stays full-size (outside).
@@ -203,6 +203,12 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>
         </div>
+        <div class="seg">
+          <button :class="{ on: showManager }" @click="showManager = !showManager"
+                  v-tooltip.bottom="showManager ? 'Hide the population manager' : 'Show the population manager'">
+            <i class="pi pi-sitemap" />
+          </button>
+        </div>
         <CanvasZoomControl :zoom="zoom" @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
         <span class="cp-hint">drag plots by their title · resize from the corner</span>
       </div>
@@ -229,7 +235,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
       </div>
 
       <div ref="canvasRef" class="cp-canvas">
-        <PopulationManager v-if="validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
+        <PopulationManager v-if="showManager && validUids.length" :selected="selectedPop" :highlighted="activeHL" :scope="scope"
                            :line-width="1" :gate-labels="false" :axis-from-zero="false"
                            :pop-type="popType" :cluster-ids="clusterIds[suffix] ?? []" :suffix="suffix"
                            :vis="activeVis"
@@ -276,6 +282,7 @@ watch(ckey, () => { if (panels.value.length === 0) { addKind('umap'); addKind('h
 .seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 5px 9px; cursor: pointer; font-size: 12px; }
 .seg button + button { border-left: 1px solid var(--cc-border); }
 .seg button:hover { color: var(--cc-text); }
+.seg button.on { color: var(--cc-accent); background: var(--cc-surface-1); }
 .cp-canvas { position: relative; flex: 1; min-height: 70vh; }
 /* the scaled workspace fills the canvas (offsetParent for the floating panels); transform set inline */
 .cp-zoom { position: absolute; inset: 0; }
