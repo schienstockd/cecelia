@@ -259,12 +259,17 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
 .gm-grid.cc-light { --cc-text: #111; --cc-text-dim: #555; --cc-border: #c9ccd1; --cc-bg: #fff; --cc-surface-2: #f0f0f3; }
 .gm-cell { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--cc-border);
   border-radius: 5px; overflow: hidden; background: var(--cc-bg); }
-/* montage plot area is SQUARE. Cap the width in wrap mode so a wide column doesn't make it so tall the
-   x-axis label drops out of view; in matrix mode fill the column so the grid stays aligned. */
-.gm-plot { flex: none; width: 100%; max-width: 320px; aspect-ratio: 1; margin: 0 auto; }
-.gm-grid.matrix .gm-plot { max-width: none; }
+/* montage plot area is SQUARE — but the SQUARE is the DOTS (.panel-plot in GateScatterCell), not this
+   outer box: the capture's axis padding is asymmetric (room for the rotated y-name + the x-name below),
+   so squaring the OUTER box made the dots taller than wide ("flow plots elongate on export"). We size
+   the width here and let GateScatterCell square its .panel-plot; the outer box heights to fit. Cap the
+   width in wrap mode so a wide column doesn't grow the tile too tall.
+   EXCEPTION — the pairs MATRIX keeps a square OUTER box (aspect-ratio:1) so scatter tiles line up with
+   the square diagonal/correlation cells; its axis padding is tiny+near-symmetric so the dots stay square. */
+.gm-plot { flex: none; width: 100%; max-width: 320px; margin: 0 auto; }
+.gm-grid.matrix .gm-plot { max-width: none; aspect-ratio: 1; }
 .gm-grid.single .gm-cell { container-type: size; }
-.gm-grid.single .gm-plot { flex: none; aspect-ratio: 1; min-height: 0; max-width: none;
+.gm-grid.single .gm-plot { flex: none; min-height: 0; max-width: none;
   width: min(100cqw, calc(100cqh - 26px)); margin: 0 auto; }
 /* diagonal label cell (matrix): channel name centred, matches the tile square */
 .gm-diag { align-items: center; justify-content: center; aspect-ratio: 1; background: var(--cc-surface-2);
