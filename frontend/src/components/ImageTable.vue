@@ -10,6 +10,7 @@ import { isExcluded, isIncluded, includedUids } from '../utils/inclusion'
 import { timelapseDuration } from '../utils/imageTable'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
+import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
   setUid: string
@@ -162,24 +163,18 @@ async function saveNote(img: CciaImage, val: string) {
 const NOTE_KEY = '__note'
 
 // run-history popover (cog after the uid) — automatic per-image provenance (project store `runLog`).
-// position: fixed from the cog so it escapes the table's horizontal scroll clipping.
+// Uses the shared TeleportPopover (escapes the table's scroll clipping; positions from the cog).
 const runLogUid = ref<string | null>(null)
-const runLogPos = ref<Record<string, string>>({})
-// the image whose run-history popover is open (the popover is teleported to <body>, so it reads this)
+const runLogAnchor = ref<HTMLElement | null>(null)   // the clicked cog (drives popover placement)
 const runLogImg = computed(() => runLogUid.value ? (images.value.find(i => i.uid === runLogUid.value) ?? null) : null)
+// v-model for TeleportPopover: open when a uid is set; the component sets false on outside-click/Escape
+const runLogOpen = computed({ get: () => runLogUid.value !== null, set: v => { if (!v) runLogUid.value = null } })
 const fmtRunAt = (at: string) => (at ?? '').replace('T', ' ')
 function toggleRunLog(uid: string, e: MouseEvent) {
   if (runLogUid.value === uid) { runLogUid.value = null; return }
-  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-  runLogPos.value = { position: 'fixed', top: `${Math.round(r.bottom + 4)}px`, left: `${Math.round(r.left)}px` }
+  runLogAnchor.value = e.currentTarget as HTMLElement
   runLogUid.value = uid
 }
-function onDocMouseDownRunLog(e: MouseEvent) {
-  const t = e.target as HTMLElement
-  if (runLogUid.value && !t.closest('.runlog-cell') && !t.closest('.runlog-pop')) runLogUid.value = null
-}
-onMounted(() => document.addEventListener('mousedown', onDocMouseDownRunLog))
-onUnmounted(() => document.removeEventListener('mousedown', onDocMouseDownRunLog))
 async function setIncluded(img: CciaImage, included: boolean) {
   const projectUid = projectMeta.current?.uid
   if (!projectUid) return
@@ -727,12 +722,10 @@ onUnmounted(stopResize)
     :set-uid="setUid" :focus-uid="physSizeDialogUid" :selected-uids="[...selected]"
     @close="physSizeDialogUid = null" />
 
-  <!-- run-history popover — teleported to <body> so it escapes the table's scroll/transform
-       containing block (was clipped by the following row); positioned (fixed) from the cog rect -->
-  <Teleport to="body">
-    <!-- carry the theme tokens (--cc-*) on the popover itself: teleported to <body> it's outside the
-         shell's .cc-dark wrapper, so var(--cc-surface-1) etc. would otherwise be undefined (transparent) -->
-    <div v-if="runLogImg" class="runlog-pop cc-dark" :style="runLogPos">
+  <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
+       positions from the cog rect (was clipped by the following row) -->
+  <TeleportPopover v-model="runLogOpen" :anchor="runLogAnchor">
+    <div v-if="runLogImg" class="runlog-pop">
       <div class="runlog-hd">Run history</div>
       <div v-if="!runLogImg.runLog || !runLogImg.runLog.length" class="runlog-empty">No functions recorded yet.</div>
       <div v-for="(e, i) in [...(runLogImg.runLog ?? [])].reverse()" :key="i" class="runlog-row">
@@ -741,7 +734,7 @@ onUnmounted(stopResize)
         <span class="runlog-at">{{ fmtRunAt(e.at) }}</span>
       </div>
     </div>
-  </Teleport>
+  </TeleportPopover>
 </template>
 
 <style scoped>
@@ -938,9 +931,8 @@ th:hover .resize-handle::after { opacity: 1; }
 /* run-history cog + popover (fixed so it escapes the table's horizontal scroll) */
 .runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
 .runlog-cog.on { color: var(--cc-text); background: var(--cc-surface-2); opacity: 1; }
-.runlog-pop { z-index: 40; min-width: 15rem; max-height: 16rem; overflow-y: auto;
-  padding: 6px 8px; background: var(--cc-surface-1); border: 1px solid var(--cc-border);
-  border-radius: 5px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.4); }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.runlog-pop { min-width: 15rem; max-height: 16rem; overflow-y: auto; padding: 6px 8px; }
 .runlog-hd { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--cc-text-dim); margin-bottom: 4px; }
 .runlog-empty { font-size: 0.7rem; color: var(--cc-text-dim); }
 .runlog-row { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; font-size: 0.7rem; }

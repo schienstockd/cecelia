@@ -9,7 +9,8 @@
   GateMontage (feedback_use_existing_framework); the tiles come from the pure buildPairDefs.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, useTemplateRef } from 'vue'
+import TeleportPopover from '../../components/TeleportPopover.vue'
 import { useGatingStore } from '../../stores/gating'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -66,10 +67,7 @@ const reloadKey = computed(() =>
 
 // channel picker (compact popover)
 const pickOpen = ref(false)
-const pickRef = useTemplateRef<HTMLElement>('pickRef')
-function onDocClick(e: MouseEvent) { if (pickOpen.value && pickRef.value && !pickRef.value.contains(e.target as Node)) pickOpen.value = false }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+const pickBtn = useTemplateRef<HTMLElement>('pickBtn')   // anchor for the shared channel-picker popover
 const atCap = computed(() => channels.value.length >= MAX_CHANNELS)
 function toggleChannel(c: string) {
   const cur = channels.value
@@ -135,26 +133,28 @@ function exportPng() {
       </label>
       <div class="ax-row">
         <span class="ax-lbl">chans</span>
-        <div ref="pickRef" class="chan-pick">
-          <button class="chan-btn" :class="{ on: pickOpen }" @click="pickOpen = !pickOpen"
+        <div class="chan-pick">
+          <button ref="pickBtn" class="chan-btn" :class="{ on: pickOpen }" @click="pickOpen = !pickOpen"
                   v-tooltip.bottom="'Choose the channels to plot against each other'">
             {{ channels.length ? `${channels.length} selected` : 'select channels' }} <i class="pi pi-chevron-down" />
           </button>
-          <div v-if="pickOpen" class="chan-pop">
-            <div class="chan-pop-head">
-              <span>{{ channels.length }}/{{ MAX_CHANNELS }}</span>
-              <button class="chan-clear" :disabled="!channels.length" @click="clearChannels">clear</button>
+          <TeleportPopover v-model="pickOpen" :anchor="pickBtn">
+            <div class="chan-pop">
+              <div class="chan-pop-head">
+                <span>{{ channels.length }}/{{ MAX_CHANNELS }}</span>
+                <button class="chan-clear" :disabled="!channels.length" @click="clearChannels">clear</button>
+              </div>
+              <div class="chan-list">
+                <label v-for="c in g.columns" :key="c" class="chan-item"
+                       :class="{ disabled: !channels.includes(c) && atCap }">
+                  <input type="checkbox" :checked="channels.includes(c)"
+                         :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />
+                  <span>{{ g.colLabel(c) }}</span>
+                </label>
+              </div>
+              <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * (MAX_CHANNELS - 1) / 2 }} scatter plots). Clear one to swap.</div>
             </div>
-            <div class="chan-list">
-              <label v-for="c in g.columns" :key="c" class="chan-item"
-                     :class="{ disabled: !channels.includes(c) && atCap }">
-                <input type="checkbox" :checked="channels.includes(c)"
-                       :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />
-                <span>{{ g.colLabel(c) }}</span>
-              </label>
-            </div>
-            <div v-if="atCap" class="chan-cap">Max {{ MAX_CHANNELS }} channels ({{ MAX_CHANNELS * (MAX_CHANNELS - 1) / 2 }} scatter plots). Clear one to swap.</div>
-          </div>
+          </TeleportPopover>
         </div>
         <select class="tsel" :class="{ 'tsel-amber': coerced }" v-model="transform"
                 v-tooltip.bottom="'Axis transform (per channel; auto-linear where the range needs it)'">
@@ -202,9 +202,8 @@ function exportPng() {
   background: var(--cc-surface-2); color: var(--cc-text); border: 1px solid var(--cc-border);
   border-radius: 5px; padding: 3px 8px; cursor: pointer; font-size: 12px; }
 .chan-btn.on { border-color: var(--cc-accent); }
-.chan-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; width: 15rem; max-width: 80vw;
-  background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 6px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.35); padding: 6px; }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.chan-pop { width: 15rem; max-width: 80vw; padding: 6px; }
 .chan-pop-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 6px;
   color: var(--cc-text-dim); font-size: 11px; border-bottom: 1px solid var(--cc-border); }
 .chan-clear { background: none; border: none; color: var(--cc-accent); cursor: pointer; font-size: 11px; }

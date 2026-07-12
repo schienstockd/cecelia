@@ -12,7 +12,7 @@
   under this tab's `canvasKey`; the parent (TabbedCanvas) :keys us by it so a tab switch rebinds.
 -->
 <script setup lang="ts">
-import { computed, watch, ref, provide, nextTick, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { computed, watch, ref, provide, nextTick, useTemplateRef } from 'vue'
 import { useCanvasZoom, CANVAS_ZOOM_KEY } from '../../composables/useCanvasZoom'
 import CanvasZoomControl from './CanvasZoomControl.vue'
 import { plotHostToImageURL } from '../../plots/export'
@@ -32,6 +32,7 @@ import type { LayoutTemplate } from '../../plots/layoutTemplates'
 import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
+import TeleportPopover from '../TeleportPopover.vue'
 import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
@@ -66,19 +67,13 @@ const platePresets = computed(() => {
 })
 
 // grid size + height controls live in a ⚙ popover so the board bar doesn't crowd; close on outside click
+// grid-size + custom-plate popovers use the shared TeleportPopover (escape the bar's clipping; the
+// component handles outside-click/Escape dismiss). Anchor = each trigger button.
 const optsOpen = ref(false)
-const optsRef = useTemplateRef<HTMLElement>('optsRef')
-// custom plate builder popover (Phase 3)
+const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 const builderOpen = ref(false)
-const builderRef = useTemplateRef<HTMLElement>('builderRef')
+const builderBtn = useTemplateRef<HTMLElement>('builderBtn')
 function applyCustomPlate(t: LayoutTemplate) { layout.applyTemplate(props.canvasKey, t); builderOpen.value = false }
-function onDocClick(e: MouseEvent) {
-  const t = e.target as Node
-  if (optsOpen.value && optsRef.value && !optsRef.value.contains(t)) optsOpen.value = false
-  if (builderOpen.value && builderRef.value && !builderRef.value.contains(t)) builderOpen.value = false
-}
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 // board natural (unscaled) size — height from rows×rowHeight; width from the A4 page aspect (null in
 // Free mode, where the grid fills the available width).
 const boardH = computed(() => rowHeight.value * entry.value.rows + 8 * (entry.value.rows - 1))
@@ -367,23 +362,25 @@ defineExpose({ capturePage, collectCsvs })
             </button>
           </div>
           <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
-          <div ref="optsRef" class="lc-opts">
-            <button class="lc-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+          <div class="lc-opts">
+            <button ref="optsBtn" class="lc-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                     v-tooltip.bottom="'Grid size & slot height'"><i class="pi pi-sliders-h" /></button>
-            <div v-if="optsOpen" class="lc-pop">
-              <label class="lc-pop-row"><span>cols</span>
-                <input type="range" min="1" max="6" :value="entry.cols"
-                       @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
-                <span class="lc-val">{{ entry.cols }}</span></label>
-              <label class="lc-pop-row"><span>rows</span>
-                <input type="range" min="1" max="6" :value="entry.rows"
-                       @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
-                <span class="lc-val">{{ entry.rows }}</span></label>
-              <label class="lc-pop-row"><span>height</span>
-                <input type="range" min="160" max="720" step="10" :value="rowHeight"
-                       @input="rowHeight = +($event.target as HTMLInputElement).value" />
-                <span class="lc-val">{{ rowHeight }}</span></label>
-            </div>
+            <TeleportPopover v-model="optsOpen" :anchor="optsBtn">
+              <div class="lc-pop">
+                <label class="lc-pop-row"><span>cols</span>
+                  <input type="range" min="1" max="6" :value="entry.cols"
+                         @input="layout.applyTemplate(canvasKey, uniform(+($event.target as HTMLInputElement).value, entry.rows))" />
+                  <span class="lc-val">{{ entry.cols }}</span></label>
+                <label class="lc-pop-row"><span>rows</span>
+                  <input type="range" min="1" max="6" :value="entry.rows"
+                         @input="layout.applyTemplate(canvasKey, uniform(entry.cols, +($event.target as HTMLInputElement).value))" />
+                  <span class="lc-val">{{ entry.rows }}</span></label>
+                <label class="lc-pop-row"><span>height</span>
+                  <input type="range" min="160" max="720" step="10" :value="rowHeight"
+                         @input="rowHeight = +($event.target as HTMLInputElement).value" />
+                  <span class="lc-val">{{ rowHeight }}</span></label>
+              </div>
+            </TeleportPopover>
           </div>
           <!-- A4 sheet lock: keep the board at page proportions (WYSIWYG with the PDF) or let it fill -->
           <div class="seg" v-tooltip.bottom="'Sheet — A4 locks the board to page proportions (what you see is the exported page); Free fills the width'">
@@ -440,14 +437,16 @@ defineExpose({ capturePage, collectCsvs })
                     :class="{ on: entry.slotAreas.join('|') === t.slots.join('|') }">{{ t.label }}</button>
           </div>
           <!-- custom plate builder: drag cells to merge into varied-size panels -->
-          <div ref="builderRef" class="lc-opts">
-            <button class="cc-btn cc-btn-ghost lc-custom" :class="{ on: builderOpen }" @click="builderOpen = !builderOpen"
+          <div class="lc-opts">
+            <button ref="builderBtn" class="cc-btn cc-btn-ghost lc-custom" :class="{ on: builderOpen }" @click="builderOpen = !builderOpen"
                     v-tooltip.bottom="'Build a custom plate — drag cells to merge, click a merge to split'">
               <i class="pi pi-th-large" /> Custom…</button>
-            <div v-if="builderOpen" class="lc-pop">
-              <PlateBuilder :cols="entry.cols" :rows="entry.rows" :slot-areas="entry.slotAreas"
-                            @apply="applyCustomPlate" @cancel="builderOpen = false" />
-            </div>
+            <TeleportPopover v-model="builderOpen" :anchor="builderBtn">
+              <div class="lc-pop">
+                <PlateBuilder :cols="entry.cols" :rows="entry.rows" :slot-areas="entry.slotAreas"
+                              @apply="applyCustomPlate" @cancel="builderOpen = false" />
+              </div>
+            </TeleportPopover>
           </div>
         </div>
       </div>
@@ -562,9 +561,8 @@ defineExpose({ capturePage, collectCsvs })
 .lc-gear:hover, .lc-gear.on { color: var(--cc-text); border-color: #7c3aed; }
 .lc-custom { font-size: 11px; padding: 0.22rem 0.55rem; }
 .lc-custom.on { color: var(--cc-text); border-color: #7c3aed; }
-.lc-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 13rem;
-  display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.lc-pop { min-width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .lc-pop-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--cc-text-dim); }
 .lc-pop-row span:first-child { width: 3rem; }
 .lc-pop-row input[type="range"] { flex: 1; }

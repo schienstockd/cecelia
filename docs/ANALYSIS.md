@@ -124,7 +124,9 @@ reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out
     silently clipped to a sub-rectangle → dots cut off (was visible in the board PDF *and* the
     module-page PNG export, since both share `exportCanvas`).
 - **CSV**: each summary/cluster panel exposes `getCsv()` (the shown aggregated data); the standalone CSV
-  button collects them all (→ Prism).
+  button collects them across ALL boards into ONE `analysis_csvs.zip` (one CSV per plot, → Prism) via
+  the dependency-free `utils/zip.ts` (STORE method) — a single download instead of dozens of
+  individual "allow multiple downloads" prompts.
 
 ## Cross-references
 `docs/UI.md` (generic plot-integration contract, `docked`, canvas shell), `docs/PLOTS.md` (summary-plot
