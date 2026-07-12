@@ -15,6 +15,7 @@ import { useAnalysisTabsStore } from '../../stores/analysisTabs'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { exportTabsToPdf } from '../../plots/pdf'
 import { downloadBlob } from '../../plots/export'
+import { zipTextFiles } from '../../utils/zip'
 import { useLogStore } from '../../stores/log'
 import LayoutCanvas from './LayoutCanvas.vue'
 import ConfirmButton from '../ConfirmButton.vue'
@@ -95,28 +96,32 @@ async function exportPdf() {
   } finally { exporting.value = false }
 }
 
-// Export the shown data of every summary plot as one CSV per plot (ready to re-plot in Prism). Same
-// visit-each-tab dance as the PDF (only the active board is mounted); the browser may prompt once to
-// allow multiple downloads.
+// Export the shown data of every summary plot — collected across all boards into ONE .zip (one CSV
+// per plot, ready to re-plot in Prism). Same visit-each-tab dance as the PDF (only the active board is
+// mounted); a single zip download replaces the old dozens-of-CSVs "allow multiple downloads" prompt.
 async function exportCsv() {
   if (exporting.value || !group.value || !tabs.value.length) return
   exporting.value = true
   const original = group.value.activeId
   try {
-    let n = 0
+    const files: { name: string; text: string }[] = []
     for (const t of tabs.value) {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
       await new Promise(r => setTimeout(r, 600))   // let the board's plots fetch before reading their data
       for (const { name, csv } of layoutRef.value?.collectCsvs?.() ?? []) {
         if (!csv) continue
-        downloadBlob(`${safe(t.name)}_${safe(name)}.csv`, new Blob([csv], { type: 'text/csv' }))
-        n++
+        files.push({ name: `${safe(t.name)}_${safe(name)}.csv`, text: csv })
       }
     }
     tabsStore.setActive(groupKey, original)
     await nextTick()
-    log.info(n ? `Exported ${n} plot CSV${n === 1 ? '' : 's'}.` : 'No summary-plot data to export.', { source: 'analysis' })
+    if (files.length) {
+      downloadBlob('analysis_csvs.zip', zipTextFiles(files))
+      log.info(`Exported ${files.length} plot CSV${files.length === 1 ? '' : 's'} → analysis_csvs.zip.`, { source: 'analysis' })
+    } else {
+      log.info('No summary-plot data to export.', { source: 'analysis' })
+    }
   } catch (e) {
     log.error(`CSV export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
   } finally { exporting.value = false }

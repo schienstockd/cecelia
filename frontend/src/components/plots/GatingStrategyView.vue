@@ -11,7 +11,8 @@
   GateScatterCell as the Gate page. No second gate renderer, no store mutation.
 -->
 <script setup lang="ts">
-import { ref, computed, watch, useTemplateRef, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, useTemplateRef } from 'vue'
+import TeleportPopover from '../TeleportPopover.vue'
 import type { GateSpec, TransformSpec, PopNode, PopTree } from '../../stores/gating'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { orientGate } from '../../plots/gateGeometry'
@@ -39,12 +40,9 @@ const renderMode = computed({ get: () => props.state.renderMode ?? 'points', set
 const showHierarchy = computed({ get: () => props.state.showHierarchy ?? false, set: v => (props.state.showHierarchy = v) })
 const setImageUid = (v: string) => (props.state.imageUid = v)
 
-// size + the hierarchy toggle live in a ⚙ popover; close on an outside click.
+// size + the hierarchy toggle live in a ⚙ popover (shared TeleportPopover — no clip, self-dismissing).
 const optsOpen = ref(false)
-const optsRef = useTemplateRef<HTMLElement>('optsRef')
-function onDocClick(e: MouseEvent) { if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+const gearBtn = useTemplateRef<HTMLElement>('gearBtn')
 
 const valueNames = ref<string[]>([])
 // intensity columns + display names (aligned) → resolve raw axis keys (mean_intensity_2) to channel
@@ -198,14 +196,16 @@ defineExpose({ exportImage })
         <option v-for="p in flatPaths" :key="p" :value="p">{{ p }}</option>
       </select>
       <RenderModeToggle v-model="renderMode" />
-      <div ref="optsRef" class="gs-opts">
-        <button class="gs-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+      <div class="gs-opts">
+        <button ref="gearBtn" class="gs-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot size & hierarchy'"><i class="pi pi-cog" /></button>
-        <div v-if="optsOpen" class="gs-pop">
-          <label class="gs-check"><input type="checkbox" :checked="showHierarchy"
-                 @change="showHierarchy = ($event.target as HTMLInputElement).checked" />
-            show gating hierarchy</label>
-        </div>
+        <TeleportPopover v-model="optsOpen" :anchor="gearBtn" placement="bottom-end">
+          <div class="gs-pop">
+            <label class="gs-check"><input type="checkbox" :checked="showHierarchy"
+                   @change="showHierarchy = ($event.target as HTMLInputElement).checked" />
+              show gating hierarchy</label>
+          </div>
+        </TeleportPopover>
       </div>
     </div>
 
@@ -233,9 +233,8 @@ defineExpose({ exportImage })
 .gs-gear { background: var(--cc-surface-2); color: var(--cc-text-dim); border: 1px solid var(--cc-border);
   border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
 .gs-gear.on { background: var(--cc-accent); color: #fff; border-color: var(--cc-accent); }
-.gs-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 20; width: 13rem;
-  display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border); border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.gs-pop { width: 13rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 .gs-check { display: flex; align-items: center; gap: 6px; color: var(--cc-text); font-size: 12px; }
 .seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: 12px; }

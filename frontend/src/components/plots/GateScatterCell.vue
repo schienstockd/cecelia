@@ -211,6 +211,12 @@ defineExpose({ exportImage, hiRes, getHost: () => hostEl.value })
 /* compact tiles can be smaller than the full-size 150px plot floor — lift it so the plot shrinks to the
    (square) tile instead of overflowing and being clipped by the cell (the pairs matrix packs small tiles). */
 .plot-capture.compact .panel-plot { min-height: 0; }
+/* montage square (gm-plot carries aspect-ratio:1): a min-height OVERRIDES aspect-ratio, so when the
+   cell is narrower than the 218px floor (e.g. a slim slot in the A4-fit PDF export) the plot is pinned
+   tall and stops being square — the "flow plots elongate on export" bug. Drop the floors so the square
+   aspect-ratio always wins; the plot just gets smaller, never stretched. */
+.plot-capture.gm-plot { min-height: 0; }
+.plot-capture.gm-plot .panel-plot { min-height: 0; }
 /* no-axis (pairs matrix): no axis-name labels → drop the padding they lived in so the scatter fills
    the tile. Small uniform inset just for the axis lines / tick marks. */
 .plot-capture.no-axis { padding: 6px 6px 10px 12px; }

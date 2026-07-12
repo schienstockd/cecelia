@@ -10,8 +10,9 @@
   Rendered with Observable Plot (plots/plot.ts builds the options; PlotChart.vue renders + resizes).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted, useTemplateRef } from 'vue'
+import { ref, computed, watch, onMounted, useTemplateRef } from 'vue'
 import CanvasPanel from './CanvasPanel.vue'
+import TeleportPopover from '../TeleportPopover.vue'
 import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
@@ -207,40 +208,15 @@ const matrixCategory = computed<string>(() => {
 // the Category dropdown shows the effective default until the user picks one (then it persists).
 const categorySel = computed<string>({ get: () => matrixCategory.value, set: v => (groupBy.value = v) })
 
-// secondary-options popover (Split by + chart-specific control) — keeps the header bar uncluttered
+// secondary-options popover (Split by + chart-specific control) — keeps the header bar uncluttered.
+// Uses the shared TeleportPopover: escapes the panel's `overflow: hidden`, positions from the trigger
+// button, clamps to the viewport + flips above when needed, and self-dismisses. (Was a bespoke
+// fixed-position impl — folded into the one component so there's a single popover everywhere.)
 const optsOpen = ref(false)
-const optsRef = useTemplateRef<HTMLElement>('optsRef')
+const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 const hasOpts = computed(() => groupByOpts.value.length > 0
   || chartType.value === 'heatmap'
   || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
-// The options popover MUST escape the panel's `overflow: hidden` (the card clips the plot area), so it
-// is `position: fixed`, positioned from the trigger button on open and clamped to the viewport — never
-// clipped, regardless of where the (draggable) panel sits or which edge it's near. Any new plot popover
-// should follow this pattern rather than a plain absolute child of the panel. See docs/PLOTS.md §0.
-const popStyle = ref<Record<string, string>>({})
-watch(optsOpen, async open => {
-  if (!open) { popStyle.value = {}; return }
-  // stay OUT OF FLOW while measuring (fixed) so the popover never inflates the wrap — otherwise the
-  // anchor rect grows by the popover's own size and the placement is thrown off.
-  popStyle.value = { position: 'fixed', visibility: 'hidden' }
-  await nextTick()
-  const wrap = optsRef.value                        // inline-flex around just the button (popover is fixed)
-  const pop = wrap?.querySelector('.sp-pop') as HTMLElement | null
-  if (!wrap || !pop) return
-  const a = wrap.getBoundingClientRect(), w = pop.offsetWidth, h = pop.offsetHeight
-  const vw = window.innerWidth, vh = window.innerHeight
-  let left = a.right - w                            // right-aligned to the button…
-  if (left < 4) left = a.left                       // …flipped rightward if that clips the left edge
-  left = Math.max(4, Math.min(left, vw - w - 4))
-  let top = a.bottom + 4
-  if (top + h > vh - 4) top = Math.max(4, a.top - h - 4)   // open above if no room below
-  popStyle.value = { position: 'fixed', top: `${top}px`, left: `${left}px`, right: 'auto', visibility: 'visible' }
-})
-function onDocClick(e: MouseEvent) {
-  if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false
-}
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
 // friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
 const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked', trend: 'trend (mean/t)', count: 'count' }
 const chartLabel = (c: ChartType) => CHART_LABELS[c] ?? c
@@ -456,12 +432,13 @@ defineExpose({ getCsv, exportImage })
       </select>
 
       <!-- secondary options (split-by + chart-specific) tucked into a popover to keep the bar tidy -->
-      <div v-if="hasOpts" ref="optsRef" class="sp-pop-wrap">
-        <button class="sp-iconbtn" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
+      <div v-if="hasOpts" class="sp-pop-wrap">
+        <button ref="optsBtn" class="sp-iconbtn" type="button" :class="{ on: optsOpen }" @click.stop="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Plot options'">
           <i class="pi pi-sliders-h" />
         </button>
-        <div v-if="optsOpen" class="sp-pop" :style="popStyle" @click.stop>
+        <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-end">
+        <div class="sp-pop" @click.stop>
           <!-- generic split-by (sub-axis) for the per-series charts; the heatmap uses Category below -->
           <label v-if="chartType !== 'heatmap' && groupByOpts.length" class="sp-pop-row"
                  v-tooltip.left="'Split the measure by a categorical column (e.g. HMM state)'">
@@ -533,6 +510,7 @@ defineExpose({ getCsv, exportImage })
             </label>
           </template>
         </div>
+        </TeleportPopover>
       </div>
 
     </template>
@@ -609,9 +587,8 @@ defineExpose({ getCsv, exportImage })
    top/left are set inline on open (see the popStyle watcher). fixed here (not just inline) keeps it out
    of flow on the first render frame too, so it never inflates the anchor wrap. Only the box look + this
    positioning mode live here. New plot popovers should reuse this pattern (docs/PLOTS.md §0). */
-.sp-pop { position: fixed; z-index: 40; min-width: 11rem;
-  display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--cc-border);
-  border-radius: 6px; background: var(--cc-surface-2); box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
+/* inner layout only — TeleportPopover provides surface/border/shadow/position */
+.sp-pop { min-width: 11rem; display: flex; flex-direction: column; gap: 6px; padding: 8px; }
 .sp-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 12px; color: var(--cc-text-dim); }
 .sp-pop-row select { font-size: 12px; max-width: 7rem; }

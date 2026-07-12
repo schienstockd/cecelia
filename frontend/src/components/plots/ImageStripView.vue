@@ -7,8 +7,9 @@
   parallelograms — cheap because the slot stays rectangular and holds image-only content, decision 10).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, useTemplateRef, nextTick } from 'vue'
+import { ref, computed, watch, useTemplateRef, nextTick } from 'vue'
 import { elementToImageURL } from '../../plots/export'
+import TeleportPopover from '../TeleportPopover.vue'
 
 interface Cell { src?: string; caption?: string }
 const props = defineProps<{
@@ -36,10 +37,7 @@ watch(orientation, o => { if (o === 'v' && separator.value === 'angled') separat
 // separator options (angle / width) live in a ⚙ popover (like the heatmap panel's options) so they
 // never widen the toolbar; close on an outside click.
 const optsOpen = ref(false)
-const optsRef = useTemplateRef<HTMLElement>('optsRef')
-function onDocClick(e: MouseEvent) { if (optsOpen.value && optsRef.value && !optsRef.value.contains(e.target as Node)) optsOpen.value = false }
-onMounted(() => document.addEventListener('mousedown', onDocClick))
-onUnmounted(() => document.removeEventListener('mousedown', onDocClick))
+const gearEl = useTemplateRef<HTMLElement>('gearEl')   // anchor for the teleported settings popover
 
 const capturing = ref(-1)
 const err = ref('')
@@ -112,22 +110,24 @@ defineExpose({ exportImage })
                 @click="separator = 'angled'"
                 v-tooltip.bottom="orientation === 'v' ? 'Angled separators are horizontal-only' : ''">angled</button>
       </div>
-      <div ref="optsRef" class="is-opts">
-        <button class="is-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+      <div class="is-opts">
+        <button ref="gearEl" class="is-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
-        <div v-if="optsOpen" class="is-pop">
-          <label class="is-slider">caption
-            <input type="range" min="8" max="28" :value="capSize" @input="capSize = +($event.target as HTMLInputElement).value" />
-            <span class="is-val">{{ capSize }}</span></label>
-          <template v-if="separator === 'angled' && orientation === 'h'">
-            <label class="is-slider">angle
-              <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
-              <span class="is-val">{{ skew }}</span></label>
-            <label class="is-slider">width
-              <input type="range" min="1" max="12" :value="thick" @input="thick = +($event.target as HTMLInputElement).value" />
-              <span class="is-val">{{ thick }}</span></label>
-          </template>
-        </div>
+        <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
+          <div class="is-pop">
+            <label class="is-slider">caption
+              <input type="range" min="8" max="28" :value="capSize" @input="capSize = +($event.target as HTMLInputElement).value" />
+              <span class="is-val">{{ capSize }}</span></label>
+            <template v-if="separator === 'angled' && orientation === 'h'">
+              <label class="is-slider">angle
+                <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
+                <span class="is-val">{{ skew }}</span></label>
+              <label class="is-slider">width
+                <input type="range" min="1" max="12" :value="thick" @input="thick = +($event.target as HTMLInputElement).value" />
+                <span class="is-val">{{ thick }}</span></label>
+            </template>
+          </div>
+        </TeleportPopover>
       </div>
       <button class="is-btn" @click="addCell" v-tooltip.bottom="'Add a frame'"><i class="pi pi-plus" /> frame</button>
       <span v-if="err" class="is-err">{{ err }}</span>
@@ -168,9 +168,8 @@ defineExpose({ exportImage })
   border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   cursor: pointer; font-size: 0.72rem; }
 .is-gear:hover, .is-gear.on { color: var(--cc-text); border-color: #7c3aed; }
-.is-pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; display: flex; flex-direction: column; gap: 6px;
-  padding: 8px 10px; background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 6px;
-  box-shadow: 0 6px 24px rgba(0,0,0,0.4); }
+/* inner layout only — the teleported TeleportPopover shell provides surface/border/shadow/position */
+.is-pop { display: flex; flex-direction: column; gap: 6px; padding: 8px 10px; }
 .is-val { min-width: 1.2rem; text-align: right; font-weight: 700; color: var(--cc-text); }
 .is-err { color: #fca5a5; font-size: 11px; }
 .is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: 11px; }
@@ -204,9 +203,11 @@ defineExpose({ exportImage })
 .is-cap-input:focus { outline: none; background: rgba(0,0,0,0.35); }
 .is-cap-input::placeholder { color: rgba(255,255,255,0.55); font-weight: 400; }
 .is-cap-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* per-frame actions (recapture / remove): BOTTOM-right, above the auto-hide toolbar (z-index 6) which
-   overlays the TOP of the frame on hover and used to mask them (the "retake button is masked" bug) */
-.is-actions { position: absolute; bottom: 4px; right: 4px; display: flex; gap: 4px; z-index: 7; }
+/* per-frame actions (recapture / remove): TOP-right. The BOTTOM band is owned by the panel footer
+   overlay (Duplicate / Export) — the actions used to collide with the Duplicate button there. The top
+   band only holds the LEFT-aligned strip toolbar, so top-right is clear; z-index 7 keeps them above
+   the auto-hide toolbar (z-index 6) so hovering never masks them (the earlier "retake masked" bug). */
+.is-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; z-index: 7; }
 .is-mini { width: 1.4rem; height: 1.4rem; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--cc-border); border-radius: 3px; background: rgba(0,0,0,0.45); color: #fff;
   cursor: pointer; font-size: 0.6rem; }

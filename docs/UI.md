@@ -243,8 +243,21 @@ Every module page uses this same slot, so the plot canvas collapses identically 
 `CollapsibleSection` props:
 - `label` — section heading (uppercased in the toggle bar)
 - `defaultOpen` — whether open on mount (default: `true`)
-- `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth)
+- `maxHeight` — CSS `max-height` for the body (default: `'320px'`; pass `'none'` to allow full growth). With `'none'` the body is `overflow-y: visible` (not a scroll container) so a `position: sticky` descendant sticks to the outer page scroll instead of a box that never scrolls.
 - `storageKey` — when set, the open/closed state persists in localStorage under this key (the `#plots` wrapper uses this so a collapsed canvas stays collapsed across navigation)
+
+**Popovers — use `TeleportPopover`, don't hand-roll an absolute one.** Any ⚙/dropdown popover that
+lives inside a panel (canvas, table, plot) WILL be clipped by the panel's `overflow`/scroll/transform.
+`TeleportPopover` (`components/TeleportPopover.vue`) teleports to `<body>` so it escapes all of that,
+positions `fixed` from an anchor element, re-anchors on scroll/resize, carries the `.cc-dark` theme
+tokens, and dismisses on outside-click/Escape. Usage: `<TeleportPopover v-model="open" :anchor="btnEl"
+placement="bottom-end">…</TeleportPopover>` where `btnEl` is a template ref on the trigger. The
+popover owns only the shell (surface/border/shadow/position); the slot supplies the content + its own
+inner styling. It clamps to the viewport and flips above when there's no room below. Reuse this rather
+than another absolute/fixed popover that will clip or need its own dismiss/positioning logic — it is
+the single implementation, used by the image-strip settings, the image-table run-log cog, the board
+grid-size + custom-plate popovers, the summary-plot options, the gating-strategy options, and the
+gate-pairs channel picker.
 
 ### 2 — Register the route
 
