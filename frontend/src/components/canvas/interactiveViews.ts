@@ -17,12 +17,13 @@ export interface InteractiveView {
   component: Component
   clusterPage?: boolean     // offered on the Cluster module page's +Plot picker (UMAP only)
   analysisBoard?: boolean   // offered on the Analysis board's +Plot picker
+  square?: boolean          // coord-fixed plot → free-floating panel snaps to a 1:1 box (no blank space)
 }
 
 // `clusterPage` / `analysisBoard` are the surface "checkboxes": each host builds its picker by filtering
 // on its own flag, so a view appears on a surface with no host-side wiring (see docs/UI.md).
 export const INTERACTIVE_VIEWS: Record<string, InteractiveView> = {
-  umap: { label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true },
+  umap: { label: 'UMAP', component: UmapView, clusterPage: true, analysisBoard: true, square: true },
   gatingStrategy: { label: 'Gating strategy', component: GatingStrategyView, analysisBoard: true },
   filmstrip: { label: 'Image / strip', component: ImageStripView, analysisBoard: true },
 }

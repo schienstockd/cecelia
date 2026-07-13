@@ -221,6 +221,16 @@ defineExpose({ exportImage, hiRes, getHost: () => hostEl.value })
 .plot-capture.gm-plot:not(.no-axis), .plot-capture.compact:not(.no-axis) { flex: none; min-height: 0; align-items: flex-start; }
 .plot-capture.gm-plot:not(.no-axis) .panel-plot,
 .plot-capture.compact:not(.no-axis) .panel-plot { flex: none; width: 100%; min-height: 0; aspect-ratio: 1; }
+/* GATE MODULE PAGE (the default full-size cell — no gm-plot/compact/no-axis): the DOTS must be a 1:1
+   square too — SAME mechanism as the montage above (aspect-ratio on .panel-plot), so gating has ONE
+   dots-square method across its contexts. (aspect-ratio, not SquarePlot's container-query, because the
+   montage tiles have a content-driven height where cqh is indeterminate; using it here too keeps them
+   uniform. It also keeps .panel-plot a direct offset-child of .plot-capture, which the zoom-immune PNG
+   export relies on.) The square fills the capture width and centres; the panel itself is snapped 1:1 by
+   CanvasPanel :square, so there's no blank space. */
+.plot-capture:not(.gm-plot):not(.compact):not(.no-axis) { align-items: center; justify-content: center; }
+.plot-capture:not(.gm-plot):not(.compact):not(.no-axis) .panel-plot {
+  flex: none; width: 100%; min-height: 0; aspect-ratio: 1; }
 /* no-axis (pairs matrix): no axis-name labels → drop the padding they lived in so the scatter fills
    the tile. Small uniform inset just for the axis lines / tick marks. */
 .plot-capture.no-axis { padding: 6px 6px 10px 12px; }

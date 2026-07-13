@@ -111,22 +111,14 @@ function exportPng() {
 <template>
   <!-- auto-hide OFF: sibling of the gate-drawing panel; keep its controls in flow, not on hover -->
   <CanvasPanel :index="index" :active="props.active" :arrange="props.arrange" :title="`Pairs ${channels.length}×${channels.length}`"
-               :persist-key="props.persistKey" :auto-hide="false"
+               :persist-key="props.persistKey" :auto-hide="false" :square="true"
                @activate="emit('activate', $event)" @remove="emit('remove')">
+    <!-- controls FIXED (in-flow); CanvasPanel :square squares the plot region below them — see GatePlotPanel -->
     <template #actions>
       <span class="ro-tag" v-tooltip.bottom="'Read-only — compare channels; draw gates on a single plot'">read-only</span>
       <span class="ctrl-sep" />
       <RenderModeToggle v-model="renderMode" />
-    </template>
-    <template #footer>
-      <select class="gp-export" v-tooltip.top="'Export the matrix'" :disabled="!channels.length"
-              @change="($event.target as HTMLSelectElement).value === 'png' && exportPng(); ($event.target as HTMLSelectElement).value = ''">
-        <option value="">⤓ Export</option>
-        <option value="png">Image (PNG)</option>
-      </select>
-    </template>
-
-    <div class="panel-ctrl">
+      <div class="panel-ctrl">
       <label class="ax-row"><span class="ax-lbl">pop</span>
         <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to compare; its gates are shown'">
           <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
@@ -163,7 +155,15 @@ function exportPng() {
         <i v-if="coerced" class="pi pi-exclamation-triangle ax-warn"
            v-tooltip.bottom="`Some channels’ range is too small for ${transform} — those shown linear`" />
       </div>
-    </div>
+      </div>
+    </template>
+    <template #footer>
+      <select class="gp-export" v-tooltip.top="'Export the matrix'" :disabled="!channels.length"
+              @change="($event.target as HTMLSelectElement).value === 'png' && exportPng(); ($event.target as HTMLSelectElement).value = ''">
+        <option value="">⤓ Export</option>
+        <option value="png">Image (PNG)</option>
+      </select>
+    </template>
 
     <div v-if="heavy" class="pairs-warn" v-tooltip.bottom="heavyTip">
       <i class="pi pi-exclamation-triangle" /> Large matrix — may be slow to load
@@ -187,8 +187,8 @@ function exportPng() {
   color: var(--cc-warn, #f59e0b); background: color-mix(in srgb, var(--cc-warn, #f59e0b) 12%, transparent);
   border-bottom: 1px solid var(--cc-border); cursor: help; }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.panel-ctrl { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px;
-  border-bottom: 1px solid var(--cc-border); font-size: 12px; }
+/* axis controls now live in the auto-hide overlay (#actions) — full line below the icon tools */
+.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .ax-row { display: flex; align-items: center; gap: 6px; }
 .ax-lbl { width: 2.6rem; color: var(--cc-text-dim); flex-shrink: 0; }
 .ax-chan { width: 12rem; flex: none; }

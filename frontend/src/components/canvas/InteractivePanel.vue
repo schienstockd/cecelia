@@ -37,7 +37,7 @@ defineExpose({ exportImage })
 
 <template>
   <CanvasPanel :index="index" :active="active" :arrange="arrange" :persist-key="persistKey" :docked="docked"
-               :title="entry?.label ?? view"
+               :title="entry?.label ?? view" :square="entry?.square ?? false"
                @activate="emit('activate', $event)" @remove="emit('remove')">
     <component v-if="entry" :is="entry.component" ref="viewRef" v-bind="context" :state="state" />
     <div v-else class="ip-missing">Unknown interactive plot “{{ view }}”.</div>

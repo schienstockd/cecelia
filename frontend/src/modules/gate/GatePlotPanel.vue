@@ -289,9 +289,12 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
   <!-- auto-hide OFF: you draw gates on this canvas constantly, so the render-mode / gate tools stay
        in flow rather than popping over the plot on hover -->
   <CanvasPanel :index="index" :active="props.active" :arrange="props.arrange" :title="`Plot ${index + 1}`"
-               :persist-key="props.persistKey" :auto-hide="false"
+               :persist-key="props.persistKey" :auto-hide="false" :square="true"
                @activate="emit('activate', $event)" @remove="emit('remove')">
-    <!-- header tools (render mode + gate-draw tools) sit in the panel title bar -->
+    <!-- Controls are FIXED (in-flow, above the plot) — you draw gates with the cursor ON the plot, so
+         auto-hiding on hover would cover the very area you're drawing. CanvasPanel :square squares the
+         PLOT REGION (.panel-main) below these fixed controls, so the plot stays 1:1 with a visible
+         x-axis and no blank space. All controls sit in #actions (one in-flow block). -->
     <template #actions>
       <RenderModeToggle v-model="renderMode" />
       <span class="ctrl-sep" />
@@ -300,6 +303,25 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <button class="cc-btn cc-btn-ghost" :class="{ on: mode === 'polygon' }"
               v-tooltip.bottom="'Polygon gate (click vertices, double-click to close)'"
               @click="mode = mode === 'polygon' ? 'off' : 'polygon'"><i class="pi pi-share-alt" /></button>
+      <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
+      <div class="panel-ctrl">
+        <label class="ax-row"><span class="ax-lbl">X</span>
+          <select class="ax-chan" v-model="xChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
+          <select class="tsel" :class="{ 'tsel-amber': xCoerced }" v-model="xtSel" v-tooltip.bottom="'Axis transform'">
+            <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+          <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
+             v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
+        <label class="ax-row"><span class="ax-lbl">Y</span>
+          <select class="ax-chan" v-model="yChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
+          <select class="tsel" :class="{ 'tsel-amber': yCoerced }" v-model="ytSel" v-tooltip.bottom="'Axis transform'">
+            <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
+          <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
+             v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
+        <label class="ax-row"><span class="ax-lbl">pop</span>
+          <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
+          <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
+          <span v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</span></label>
+      </div>
     </template>
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->
     <template #footer>
@@ -309,26 +331,6 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
         <option value="png">Image (PNG)</option>
       </select>
     </template>
-    <!-- controls: one row per axis (X, Y) + the displayed population, stacked so they don't wrap -->
-    <div class="panel-ctrl">
-      <label class="ax-row"><span class="ax-lbl">X</span>
-        <select class="ax-chan" v-model="xChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
-        <select class="tsel" :class="{ 'tsel-amber': xCoerced }" v-model="xtSel" v-tooltip.bottom="'Axis transform'">
-          <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
-        <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
-           v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
-      <label class="ax-row"><span class="ax-lbl">Y</span>
-        <select class="ax-chan" v-model="yChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
-        <select class="tsel" :class="{ 'tsel-amber': yCoerced }" v-model="ytSel" v-tooltip.bottom="'Axis transform'">
-          <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
-        <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"
-           v-tooltip.bottom="`${g.colLabel(yChan)}’s range is too small for ${yt} — shown linear`" /></label>
-      <label class="ax-row"><span class="ax-lbl">pop</span>
-        <select class="ax-chan" v-model="parent" v-tooltip.bottom="'Population to display; new gates are its children'">
-        <option v-for="p in parentOptions" :key="p" :value="p">{{ p }}</option></select>
-        <!-- affordance beside the pop selector (out of the plot): the draw tool stays armed, hold Shift to grab/move/resize -->
-        <span v-if="mode !== 'off' && !pending" class="gate-hint">hold <kbd>Shift</kbd> to adjust gates</span></label>
-    </div>
     <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"
                      :x-ticks="xTicks" :y-ticks="yTicks" :gates="currentGates"
                      :x-label="g.colLabel(xChan)" :y-label="g.colLabel(yChan)"
@@ -359,9 +361,9 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
    below are gating-specific: the axis controls, the plot body, ticks/axes, and the header tools
    passed into CanvasPanel's #actions slot (.seg / .ctrl-sep / .cc-btn.on — slot content keeps
    this component's scoped styles). */
-/* one row per axis so the controls don't wrap into a floating line as the panel narrows */
-.panel-ctrl { display: flex; flex-direction: column; gap: 6px; padding: 6px 8px;
-  border-bottom: 1px solid var(--cc-border); font-size: 12px; }
+/* axis controls now live in the auto-hide overlay (#actions); take a full line below the icon tools
+   (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
+.panel-ctrl { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
 .ax-row { display: flex; align-items: center; gap: 6px; }
 .ax-lbl { width: 1.8rem; color: var(--cc-text-dim); flex-shrink: 0; }
 /* fixed widths so the controls don't stretch when the plot is resized */

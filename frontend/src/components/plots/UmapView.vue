@@ -25,6 +25,7 @@ import { paletteRange, type VisProps } from '../../plots/plot'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
+import SquarePlot from './SquarePlot.vue'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -34,17 +35,23 @@ const props = defineProps<{
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — we honour the dark-theme knob + the palette choice
   // colourBy: how to colour the embedding — 'cluster' (default), 'population' (membership of the picked
-  // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr). See
-  // docs/todo/UMAP_COLOUR_FACET_PLAN.md.
+  // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr).
+  // facetBy: split into small multiples — 'none' (default), 'attribute' (facetAttr) or 'population'.
+  // See docs/todo/UMAP_COLOUR_FACET_PLAN.md.
   state: { labels?: boolean; legend?: boolean
            colourBy?: 'cluster' | 'population' | 'attribute'
-           colourPops?: string[]; colourAttr?: string }
+           colourPops?: string[]; colourAttr?: string
+           facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
 }>()
 const log = useLogStore()
 const project = useProjectStore()
 const colourBy = computed({ get: () => props.state.colourBy ?? 'cluster', set: v => (props.state.colourBy = v) })
 const colourPops = computed<string[]>({ get: () => props.state.colourPops ?? [], set: v => (props.state.colourPops = v) })
 const colourAttr = computed({ get: () => props.state.colourAttr ?? '', set: v => (props.state.colourAttr = v) })
+const facetBy = computed({ get: () => props.state.facetBy ?? 'none', set: v => (props.state.facetBy = v) })
+const facetAttr = computed({ get: () => props.state.facetAttr ?? '', set: v => (props.state.facetAttr = v) })
+// the population dimension (popIdx) is needed whenever EITHER colour OR facet is by population
+const usePopIdx = computed(() => colourBy.value === 'population' || facetBy.value === 'population')
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
 // show/hide the population legend — persisted per panel (default on). On the Analysis canvas it can
 // eat ~half the plot, so let the user reclaim that space.
@@ -81,6 +88,9 @@ const PALETTE = [
   '#fb7185', '#2dd4bf', '#fbbf24', '#60a5fa',
 ]
 const UNCLUSTERED = '#555a6e'
+// faint whole-cloud backdrop behind each facet — dark grey on the dark ground, light grey on the light
+// (export) ground, so it always reads as a subtle "shape" layer rather than competing with the dots.
+const ghostColour = () => (dark.value ? '#3a3f4b' : '#d4d7dd')
 const points = ref<Float32Array | null>(null)
 const categories = ref<Float32Array | null>(null)
 const palette = ref<string[]>([])
@@ -105,27 +115,109 @@ function mapPx(x: number, y: number, w: number, h: number): [number, number] {
 const lx = (x: number) => `${mapPx(x, 0, boxW.value, boxH.value)[0]}px`
 const ly = (y: number) => `${mapPx(0, y, boxW.value, boxH.value)[1]}px`
 
+// ── faceting: split points into small multiples by an attribute value / population ──────────────────
+// facetBy='attribute' groups by each point's image attribute (facetAttr); 'population' by its popIdx;
+// 'none' → one facet. All facets share the SAME extents + colour map (comparable), and a single legend.
+const FACET_TITLE_H = 15   // px reserved at each cell's top for its title
+// facets present in the data (first-appearance order; the 'n/a'/'other' catch-all sorts last). The
+// per-point label source is precomputed once per pass (attr: per-IMAGE value; population: per-popIdx
+// label) so this stays O(n), not O(n·images).
+const facets = computed<{ label: string; idx: number[] }[]>(() => {
+  const pts = points.value, img = pointImg.value
+  if (!pts || facetBy.value === 'none') return [{ label: '', idx: [] }]   // idx unused when single
+  const n = pts.length / 2
+  const attrByImg = facetBy.value === 'attribute'
+    ? props.imageUids.map(uid => project.imageAttr(uid)[facetAttr.value] || 'n/a') : null
+  const popLabel = facetBy.value === 'population'
+    ? colourPops.value.map(k => popLabelForKey(k)) : null
+  const labelOf = (i: number): string => {
+    if (attrByImg) return attrByImg[img?.[i] ?? -1] ?? 'n/a'
+    if (popLabel) { const k = popIdxRef.value ? popIdxRef.value[i] : -1; return k >= 0 ? (popLabel[k] ?? 'other') : 'other' }
+    return ''
+  }
+  const order: string[] = [], byLabel = new Map<string, number[]>()
+  for (let i = 0; i < n; i++) {
+    const l = labelOf(i)
+    let a = byLabel.get(l); if (!a) { a = []; byLabel.set(l, a); order.push(l) }
+    a.push(i)
+  }
+  const tail = (l: string) => (l === 'n/a' || l === 'other' ? 1 : 0)
+  order.sort((a, b) => tail(a) - tail(b))
+  return order.map(l => ({ label: l, idx: byLabel.get(l)! }))
+})
+const facetGrid = (nf: number) => { const cols = Math.ceil(Math.sqrt(nf)); return { cols, rows: Math.ceil(nf / cols) } }
+// cell rect + inner plot sub-rect (below the title strip) for facet fi in a w×h box
+function facetCell(fi: number, nf: number, w: number, h: number) {
+  const { cols } = facetGrid(nf)
+  const col = fi % cols, row = Math.floor(fi / cols)
+  const cw = w / cols, ch = h / facetGrid(nf).rows
+  const ox = col * cw, oy = row * ch, th = nf > 1 ? FACET_TITLE_H : 0, pad = nf > 1 ? 4 : 0
+  return { ox, oy, cw, ch, px: ox + pad, py: oy + th, pw: cw - 2 * pad, ph: ch - th - pad }
+}
+// data→px into an arbitrary sub-rect, SHARED extents (uniform isotropic scale, letterboxed)
+function mapRect(x: number, y: number, r: { px: number; py: number; pw: number; ph: number }): [number, number] {
+  const { xMin, xMax, yMin, yMax } = extents.value
+  const xr = xMax > xMin ? xMax - xMin : 1, yr = yMax > yMin ? yMax - yMin : 1
+  const sc = Math.min(r.pw / xr, r.ph / yr) || 0
+  const offX = (r.pw - xr * sc) / 2, offY = (r.ph - yr * sc) / 2
+  return [r.px + offX + (x - xMin) * sc, r.py + offY + (yMax - y) * sc]
+}
+// facet titles as HTML overlay (CSS px), composited into the export like the centroid labels/legend
+const facetTitles = computed(() => {
+  const fs = facets.value
+  if (facetBy.value === 'none' || fs.length <= 1) return []
+  return fs.map((f, fi) => { const c = facetCell(fi, fs.length, boxW.value, boxH.value)
+    return { label: f.label, x: c.ox + c.cw / 2, y: c.oy + 1 } })
+})
+
 // ── 2D dot render (no WebGL) ──────────────────────────────────────────────────────────────────────
 // Draw each point via the SAME data→px map as the labels (lx/ly), so cluster labels sit exactly on
 // their dots — regl-scatterplot's aspectRatio fill drifted from the HTML-stretched labels. Colour by
 // category (palette index), bucketed so fillStyle is set once per cluster.
 const dotsEl = useTemplateRef<HTMLCanvasElement>('dotsEl')
+// the square plot box — ALWAYS rendered (unlike the canvas, which is behind v-if until data loads), so
+// the ResizeObserver attaches at mount and resizes actually fire redraw (the "labels don't reposition"
+// bug: the observer was on the conditional canvas and never attached when the panel started empty).
+const plotBoxEl = useTemplateRef<HTMLElement>('plotBoxEl')
 let dctx: CanvasRenderingContext2D | null = null
 let dro: ResizeObserver | null = null
 const DOT_R = 2
-function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
-  const pts = points.value, cats = categories.value, pal = palette.value
-  if (!pts || !cats || !pal.length) return
-  const n = pts.length / 2, s = DOT_R * 2
+// centroid labels + facet titles scale with the pop-manager font-size slider (vis.fontSize)
+const labelFont = computed(() => props.vis?.fontSize ?? 11)
+// paint a set of point indices via `toPx`, bucketed by category so fillStyle is set once per colour
+function paintInto(c: CanvasRenderingContext2D, idx: number[], toPx: (i: number) => [number, number]) {
+  const cats = categories.value!, pal = palette.value, s = DOT_R * 2
   const groups: number[][] = pal.map(() => [])
-  for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
-  c.globalAlpha = 0.9
+  for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
   for (let gi = 0; gi < pal.length; gi++) {
     const g = groups[gi]; if (!g.length) continue
     c.fillStyle = pal[gi]
-    for (const i of g) {
-      const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h)
-      c.fillRect(px - DOT_R, py - DOT_R, s, s)
+    for (const i of g) { const [px, py] = toPx(i); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+  }
+}
+function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
+  const pts = points.value, cats = categories.value, pal = palette.value
+  if (!pts || !cats || !pal.length) return
+  c.globalAlpha = 0.9
+  const fs = facets.value
+  if (facetBy.value === 'none' || fs.length <= 1) {
+    const n = pts.length / 2, groups: number[][] = pal.map(() => [])
+    for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
+    for (let gi = 0; gi < pal.length; gi++) {
+      const g = groups[gi]; if (!g.length) continue
+      c.fillStyle = pal[gi]
+      for (const i of g) { const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h); c.fillRect(px - DOT_R, py - DOT_R, DOT_R * 2, DOT_R * 2) }
+    }
+  } else {
+    const n = pts.length / 2
+    for (let fi = 0; fi < fs.length; fi++) {
+      const cell = facetCell(fi, fs.length, w, h)
+      // GHOST: the whole cloud in faint grey behind each facet, so the UMAP shape stays legible and
+      // facets are comparable (you see where this facet's points sit within the full embedding).
+      c.globalAlpha = 0.6; c.fillStyle = ghostColour()
+      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); c.fillRect(px - 1, py - 1, 2, 2) }
+      c.globalAlpha = 0.9
+      paintInto(c, fs[fi].idx, i => mapRect(pts[2 * i], pts[2 * i + 1], cell))
     }
   }
   c.globalAlpha = 1
@@ -162,11 +254,12 @@ let sumX = new Map<number, number>(), sumY = new Map<number, number>()   // per-
 // per-point POPULATION index (colour-by-population; -1 = in none of the picked pops) and per-point
 // IMAGE index into props.imageUids (colour-by-attribute joins this → the image's attr client-side).
 const popIdxRef = ref<Float32Array | null>(null)
-let pointImg: Uint16Array | null = null
+const pointImg = ref<Uint16Array | null>(null)   // reactive so facets/attr colouring recompute on load
 
 // ── colour-by pickers (populations + image attributes), reusing the shared endpoints/helpers ────────
-const pickerOpen = ref(false)
-const popPickBtn = useTemplateRef<HTMLElement>('popPickBtn')
+// colour + facet controls live in ONE options popover (the bar gets crowded, esp. docked on the board)
+const optsOpen = ref(false)
+const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 // populations available to colour by — GRANULARITY-matched to the embedding (trackclust → track-grained
 // pops, clust → cell-grained), clusters excluded (we colour by the INPUT cell-type pops, not the
 // clusters). Same /api/plots/populations picker the summary canvas uses.
@@ -228,7 +321,7 @@ function recolourByKey(keyArr: ArrayLike<number>, labelFor: (k: number) => strin
 // colour-by-attribute: build a per-point key from each point's image attribute value (distinct values
 // → 0..m-1, empty → -1), then colour by key. Uses the client-side uid→attr join (project store).
 function recolourByAttr() {
-  const img = pointImg, pts = points.value
+  const img = pointImg.value, pts = points.value
   if (!img || !pts) return
   const vals: string[] = [], keyOf = new Map<string, number>()
   const key = new Int32Array(pts.length / 2)
@@ -298,7 +391,7 @@ async function load() {
     // wire = flat Float32 [x, y, clusterCode, popIdx] per point (16 B). We fetch per image (so we can
     // tag each point with its image → colour/facet by attribute) and concatenate. colourPops (only in
     // population mode) asks the server to resolve per-point membership → popIdx.
-    const cp = colourBy.value === 'population' ? colourPops.value.map(popToken).filter(Boolean) : []
+    const cp = usePopIdx.value ? colourPops.value.map(popToken).filter(Boolean) : []
     const quads: number[] = []
     const imgOf: number[] = []
     for (let ui = 0; ui < props.imageUids.length; ui++) {
@@ -330,7 +423,7 @@ async function load() {
     points.value = pts
     codesRef.value = codes
     popIdxRef.value = popIdx
-    pointImg = img
+    pointImg.value = img
     countsMap = new Map<number, number>()
     for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
@@ -356,16 +449,28 @@ watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.cluster
 watch(() => [props.vis?.palette, props.vis?.userColors], recolour)
 // colour-by: switching to population needs the per-point popIdx (refetch); cluster/attribute just
 // recolour from cached data. Changing the picked populations refetches (server resolves membership).
-watch(colourBy, v => { v === 'population' ? load() : recolour() })
-watch(() => colourPops.value.join(','), () => { if (colourBy.value === 'population') load() })
+// colour-by re-colours from cached data; the fetch (for popIdx) is driven by usePopIdx below, so this
+// avoids a double load when switching to population also flips usePopIdx.
+watch(colourBy, () => recolour())
+watch(() => colourPops.value.join(','), () => { if (usePopIdx.value) load() })
 watch(colourAttr, () => { if (colourBy.value === 'attribute') recolour() })
-// lazily fill the population picker when that mode is first entered (attrs is a store-derived computed)
-watch(colourBy, v => { if (v === 'population' && !popGroups.value.length) loadPopGroups() }, { immediate: true })
-// redraw the 2D dots when the data / colouring / extents change
+// usePopIdx flips (colour OR facet by population toggled on/off) → refetch to get/drop popIdx
+watch(usePopIdx, () => load())
+// facet controls only re-partition + redraw (no refetch, except the popIdx case above); attribute
+// faceting reads the store-derived facets computed, so a redraw is enough
+watch([facetBy, facetAttr, facets], () => nextTick(redraw))
+// lazily fill the population picker when population mode (colour or facet) is first entered
+watch(usePopIdx, v => { if (v && !popGroups.value.length) loadPopGroups() }, { immediate: true })
+// redraw the 2D dots when the data / colouring / extents change; also on theme flip (the facet ghost
+// backdrop is theme-coloured — dark grey on dark, light grey on light/export)
 watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
+watch(dark, () => nextTick(redraw))
 onMounted(() => {
   load()
-  if (dotsEl.value) { dro = new ResizeObserver(redraw); dro.observe(dotsEl.value); redraw() }
+  // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
+  // the HTML labels/titles (which read boxW/boxH set in redraw)
+  if (plotBoxEl.value) { dro = new ResizeObserver(() => redraw()); dro.observe(plotBoxEl.value) }
+  nextTick(redraw)
 })
 onBeforeUnmount(() => { dro?.disconnect(); dro = null })
 
@@ -405,66 +510,84 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
               v-tooltip.bottom="'Toggle centroid labels'"><i class="pi pi-tag" /> #</button>
       <button class="cc-btn cc-btn-ghost" :class="{ on: showLegend }" @click="showLegend = !showLegend"
               v-tooltip.bottom="'Toggle the legend'"><i class="pi pi-list" /></button>
-      <!-- colour the embedding by cluster (default), by the picked populations' membership, or by an
-           image attribute — reproduces the paper's "where do the tracked pops / treatments fall". -->
-      <label class="uv-cby" v-tooltip.bottom="'Colour points by'">
-        <i class="pi pi-palette" />
-        <select v-model="colourBy">
-          <option value="cluster">cluster</option>
-          <option value="population">population</option>
-          <option value="attribute">attribute</option>
-        </select>
-      </label>
-      <!-- population mode: pick which populations to colour by (grouped by segmentation) -->
-      <template v-if="colourBy === 'population'">
-        <button ref="popPickBtn" class="cc-btn cc-btn-ghost" :class="{ on: pickerOpen }"
-                @click="pickerOpen = !pickerOpen" v-tooltip.bottom="'Choose populations'">
-          <i class="pi pi-sitemap" /> {{ colourPops.length || 'pick' }}
-        </button>
-        <TeleportPopover v-model="pickerOpen" :anchor="popPickBtn" placement="bottom-start">
-          <div class="uv-pop">
-            <div v-if="!popGroups.length" class="uv-pop-empty">No populations in the clustered segmentations.</div>
-            <template v-for="grp in popGroups" :key="grp.valueName">
-              <div v-if="grp.populations.length" class="uv-pop-head">{{ grp.valueName }}</div>
-              <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
-                   class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
-                   @click="togglePop(grp.valueName, p.path, p.popType)">
-                <i :class="isPopOn(grp.valueName, p.path, p.popType) ? 'pi pi-check-square' : 'pi pi-stop'" />
-                <span class="uv-pop-name">{{ p.name }}</span>
-                <span v-if="p.popType !== 'live'" class="uv-pop-tag">{{ p.popType }}</span>
-              </div>
-            </template>
-          </div>
-        </TeleportPopover>
-      </template>
-      <!-- attribute mode: pick which image attribute to colour by -->
-      <select v-else-if="colourBy === 'attribute'" v-model="colourAttr" class="uv-attr"
-              v-tooltip.bottom="'Image attribute'">
-        <option value="" disabled>attribute…</option>
-        <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
-      </select>
+      <!-- colour + facet controls live in a single options popover to keep the (often docked) bar tidy -->
+      <button ref="optsBtn" class="cc-btn cc-btn-ghost" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
+              v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
+      <TeleportPopover v-model="optsOpen" :anchor="optsBtn" placement="bottom-start">
+        <div class="uv-opts">
+          <label class="uv-opt"><span>Colour by</span>
+            <select v-model="colourBy">
+              <option value="cluster">cluster</option>
+              <option value="population">population</option>
+              <option value="attribute">attribute</option>
+            </select>
+          </label>
+          <label v-if="colourBy === 'attribute'" class="uv-opt"><span>Colour attribute</span>
+            <select v-model="colourAttr">
+              <option value="" disabled>attribute…</option>
+              <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
+            </select>
+          </label>
+          <label class="uv-opt"><span>Facet by</span>
+            <select v-model="facetBy">
+              <option value="none">no facet</option>
+              <option value="attribute">attribute</option>
+              <option value="population">population</option>
+            </select>
+          </label>
+          <label v-if="facetBy === 'attribute'" class="uv-opt"><span>Facet attribute</span>
+            <select v-model="facetAttr">
+              <option value="" disabled>attribute…</option>
+              <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
+            </select>
+          </label>
+          <!-- populations to colour/facet by (shown whenever EITHER uses population) -->
+          <template v-if="usePopIdx">
+            <div class="uv-opt-sep">Populations</div>
+            <div class="uv-pop">
+              <div v-if="!popGroups.length" class="uv-pop-empty">No populations in the clustered segmentations.</div>
+              <template v-for="grp in popGroups" :key="grp.valueName">
+                <div v-if="grp.populations.length" class="uv-pop-head">{{ grp.valueName }}</div>
+                <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
+                     class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
+                     @click="togglePop(grp.valueName, p.path, p.popType)">
+                  <i :class="isPopOn(grp.valueName, p.path, p.popType) ? 'pi pi-check-square' : 'pi pi-stop'" />
+                  <span class="uv-pop-name">{{ p.name }}</span>
+                  <span v-if="p.popType !== 'live'" class="uv-pop-tag">{{ p.popType }}</span>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </TeleportPopover>
       <span class="uv-spacer" />
       <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} {{ colourBy === 'cluster' ? 'clusters' : 'groups' }}</span>
     </div>
     <div ref="plotEl" class="uv-body">
-      <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
-           this opaque div OVER the transparent hi-res points (the points-missing bug). On-screen it
-           carries the scatter ground for the letterbox margins. -->
-      <!-- forceLight = board/PDF export: drop the plot's bounding-box border (+ rounding) so the
-           exported figure has no frame around the UMAP; on-screen it keeps the border. -->
-      <div class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround,
-                                     border: forceLight ? 'none' : undefined,
-                                     borderRadius: forceLight ? '0' : undefined }">
-        <template v-if="points && points.length">
-          <canvas ref="dotsEl" class="uv-canvas" />
-          <span v-for="c in centroids" v-show="labels" :key="c.label" class="uv-label"
-                :style="{ left: lx(c.x), top: ly(c.y), ...labelStyle }">{{ c.label }}</span>
-        </template>
-        <div v-else class="uv-empty">
-          <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
-          <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
+      <!-- SquarePlot keeps the embedding a 1:1 square (centred in the panel), so it never warps and the
+           HTML overlays (centroid labels / facet titles) line up with the canvas dots exactly. -->
+      <SquarePlot class="uv-square">
+        <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
+             this opaque div OVER the transparent hi-res points. forceLight = board/PDF export: drop the
+             bounding-box border so the exported figure has no frame; on-screen it keeps the border. -->
+        <div ref="plotBoxEl" class="uv-plot" :style="{ background: forceLight ? 'transparent' : scatterGround,
+                                       border: forceLight ? 'none' : undefined,
+                                       borderRadius: forceLight ? '0' : undefined }">
+          <template v-if="points && points.length">
+            <canvas ref="dotsEl" class="uv-canvas" />
+            <!-- centroid labels only when NOT faceted (their full-box positions don't map into cells) -->
+            <span v-for="c in centroids" v-show="labels && facetBy === 'none'" :key="c.label" class="uv-label"
+                  :style="{ left: lx(c.x), top: ly(c.y), fontSize: labelFont + 'px', ...labelStyle }">{{ c.label }}</span>
+            <!-- per-facet titles (small multiples) -->
+            <span v-for="(t, ti) in facetTitles" :key="'f'+ti" class="uv-facet-title"
+                  :style="{ left: t.x + 'px', top: t.y + 'px', fontSize: labelFont + 'px', color: legendInk }">{{ t.label }}</span>
+          </template>
+          <div v-else class="uv-empty">
+            <i :class="['pi', loading ? 'pi-spin pi-spinner' : 'pi-chart-scatter']" />
+            <p>{{ loading ? 'Loading…' : (err || 'Select clustered image(s) to view the UMAP.') }}</p>
+          </div>
         </div>
-      </div>
+      </SquarePlot>
       <div v-if="showLegend && legend.length" class="uv-legend" :style="{ color: legendInk, background: legendBg }">
         <div v-for="l in legend" :key="l.label" class="leg-row">
           <span class="leg-dot" :style="{ background: l.colour }" />
@@ -484,12 +607,14 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 .uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
-/* colour-by controls */
-.uv-cby { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); }
-.uv-cby select, .uv-attr { font-size: 12px; padding: 2px 4px; }
-.uv-attr { max-width: 9rem; }
-/* population picker popover (inner layout only — TeleportPopover gives surface/border/shadow) */
-.uv-pop { width: 15rem; max-height: 18rem; overflow-y: auto; }
+/* colour & facet options popover (inner layout only — TeleportPopover gives surface/border/shadow) */
+.uv-opts { width: 15rem; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
+.uv-opt { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--cc-text-dim); }
+.uv-opt select { font-size: 12px; padding: 2px 4px; max-width: 8.5rem; }
+.uv-opt-sep { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--cc-text-dim);
+  border-top: 1px solid var(--cc-border); padding-top: 6px; margin-top: 2px; }
+/* population checklist (inside the options popover) */
+.uv-pop { max-height: 14rem; overflow-y: auto; border: 1px solid var(--cc-border); border-radius: 5px; }
 .uv-pop-empty { padding: 10px; color: var(--cc-text-dim); font-size: 12px; }
 .uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; position: sticky; top: 0; }
@@ -499,10 +624,14 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 .uv-pop-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .uv-pop-tag { font-size: 9px; text-transform: uppercase; color: var(--cc-text-dim); border: 1px solid var(--cc-border); border-radius: 3px; padding: 0 3px; }
 .uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
-.uv-plot { position: relative; flex: 1; min-height: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
+/* .uv-square (SquarePlot) provides the centred 1:1 box; .uv-plot fills it and carries the ground/frame */
+.uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-.uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-size: 11px; font-weight: 700;
+.uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
   color: #111; background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.35); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
+/* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
+.uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
+  font-size: 10px; font-weight: 700; white-space: nowrap; }
 .uv-empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--cc-text-dim); text-align: center; padding: 1rem; }
 .uv-empty .pi { font-size: 1.4rem; opacity: 0.6; }
 .uv-empty p { margin: 0; font-size: 0.8rem; max-width: 22rem; }

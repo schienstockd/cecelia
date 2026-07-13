@@ -31,7 +31,11 @@ const props = withDefaults(defineProps<{
   // there and popping controls over the canvas would fight the gate tools. Interactive views whose
   // toolbar lives INSIDE the body opt in by tagging it `.cc-panel-controls` (see style.css / docs/UI.md).
   autoHide?: boolean
-}>(), { active: false, removable: true, arrange: null, docked: false, autoHide: true })
+  // coord-fixed plots (gate scatter, UMAP) want a 1:1 box so the square plot fills it with no blank
+  // space — snap the free-floating panel's height to its width on resize. No-op when docked (the board
+  // grid owns slot size) or collapsed.
+  square?: boolean
+}>(), { active: false, removable: true, arrange: null, docked: false, autoHide: true, square: false })
 const emit = defineEmits<{ activate: [number]; remove: [] }>()
 
 const collapsed = ref(false)
@@ -41,6 +45,7 @@ const pinned = ref(false)
 const slots = useSlots()
 const hasControls = computed(() => !!slots.actions || !!slots.footer)
 const root = useTemplateRef<HTMLElement>('root')
+const mainEl = useTemplateRef<HTMLElement>('mainEl')   // .panel-main — the plot region kept square by :square
 const store = useCanvasPanelsStore()
 const saved = props.persistKey ? store.getGeom(props.persistKey) : undefined
 // the host canvas may apply a visual zoom (transform:scale); inject it so drag deltas are zoom-correct
@@ -55,6 +60,16 @@ const { pos, startDrag } = useFloatingPanel(root, {
 
 // persist geometry (position + the CSS-resized size) so the layout survives navigation.
 let ro: ResizeObserver | null = null
+// keep the PLOT REGION (.panel-main) square by adjusting the box height, so a coord-fixed plot fills it
+// with no blank space AND fixed in-flow controls (e.g. the gate axis selectors) are accounted for — the
+// plot stays 1:1 and its x-axis is never clipped. Overlay (auto-hide) controls don't reserve height, so
+// this reduces to a square box for them. Guarded by a >1px diff so we don't loop the ResizeObserver.
+function enforceSquare() {
+  if (!props.square || props.docked || collapsed.value || !root.value || !mainEl.value) return
+  const chromeH = root.value.offsetHeight - mainEl.value.offsetHeight   // head + in-flow controls/footer + borders
+  const target = mainEl.value.offsetWidth + chromeH                     // → main becomes square (w × w)
+  if (Math.abs(root.value.offsetHeight - target) > 1) root.value.style.height = target + 'px'
+}
 function persist() {
   if (!props.persistKey || !root.value) return
   if (collapsed.value) return   // collapsed height is transient — don't overwrite the saved size
@@ -64,8 +79,9 @@ watch(pos, persist, { deep: true })           // covers drag + Tile/Cascade
 onMounted(() => {
   if (props.docked) return   // docked panels fill their slot; no saved geometry / resize tracking
   if (saved && root.value) { root.value.style.width = saved.w + 'px'; root.value.style.height = saved.h + 'px' }
+  enforceSquare()            // square an odd saved geometry on first mount
   if (props.persistKey && root.value && typeof ResizeObserver !== 'undefined') {
-    ro = new ResizeObserver(persist); ro.observe(root.value)   // covers manual resize
+    ro = new ResizeObserver(() => { enforceSquare(); persist() }); ro.observe(root.value)   // covers manual resize
   }
 })
 onBeforeUnmount(() => { ro?.disconnect(); ro = null })
@@ -104,7 +120,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
     <!-- IN-FLOW controls (auto-hide OFF, e.g. the gate-drawing page): own rows so they never clip -->
     <div v-if="!autoHide && slots.actions && !collapsed" class="panel-controls inflow"><slot name="actions" /></div>
     <!-- body always gets the whole box; in auto-hide mode the controls overlay it (see .cc-panel-controls) -->
-    <div v-show="!collapsed" class="panel-main">
+    <div v-show="!collapsed" ref="mainEl" class="panel-main">
       <div class="panel-body"><slot /></div>
       <template v-if="autoHide">
         <div v-if="slots.actions" class="panel-controls cc-panel-controls"><slot name="actions" /></div>
