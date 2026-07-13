@@ -118,28 +118,17 @@ class NapariState:
             unit = _read_unit_from_ome_xml(path)
             self._im_units = tuple(unit for _ in self._im_scale)
 
-        # napari rejects a list for `name` when channel_axis is None
-        name = channel_names
-        if isinstance(name, list) and self._channel_axis is None:
-            name = name[0] if name else None
-
-        self._viewer.add_image(
-            self._im_data,
-            channel_axis=self._channel_axis,
-            name=name,
-            colormap=channel_colormaps,
-            scale=self._im_scale,
-            units=self._im_units,
-            visible=visible,
+        # Delegate the actual layer creation to the SHARED generic helper (cecelia.utils.napari_utils,
+        # which coastal mirrors): per-channel colormaps, additive blending, contrast-from-sample and the
+        # list-name guard live there so both projects render identically. The bridge keeps all the
+        # disk/scale/units logic above. See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
+        from cecelia.utils import napari_utils
+        napari_utils.add_image(
+            self._viewer, self._im_data,
+            scale=self._im_scale, units=self._im_units,
+            channel_axis=self._channel_axis, channel_names=channel_names,
+            colormaps=channel_colormaps, contrast=True, visible=visible,
         )
-
-        # set contrast limits on all added layers
-        for layer in self._viewer.layers:
-            try:
-                if layer.visible:
-                    _set_contrast_from_sample(layer)
-            except Exception:
-                pass
 
         # label the viewer's sliders/axes with the dimension names (t/z/y/x) instead of the
         # default -1/-2/… indices. The viewer dims exclude the channel axis (split into layers).
@@ -270,10 +259,10 @@ class NapariState:
                     raise RuntimeError(f"no label arrays loaded from {labels_path}")
 
                 _remove_layer(self._viewer, layer_name)
-                layer = self._viewer.add_labels(
-                    arrays if len(arrays) > 1 else arrays[0],
-                    name=layer_name, scale=self._im_scale,
-                    units=self._im_units, opacity=0.7,
+                from cecelia.utils import napari_utils
+                layer = napari_utils.add_labels(
+                    self._viewer, arrays if len(arrays) > 1 else arrays[0],
+                    name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
                 )
                 print(f"[show_labels] added {layer_name}: shape={layer.data.shape} "
                       f"scale={self._im_scale}", flush=True)
@@ -642,18 +631,18 @@ class NapariState:
                 props = {"track_id": sub[:, 0].astype(int).tolist()}
                 if use_cby:
                     props[use_cby] = col_vals[mask].tolist()
-                # MUST pass scale AND units matching the image/Points layers — otherwise napari warns
-                # "Inconsistent units across layers" and disables unit-aware rendering for ALL layers.
-                kw = dict(color_by=(use_cby or "track_id"), tail_width=tail_width,
-                          tail_length=tail_length, blending="additive", visible=visible,
-                          scale=self._im_scale, units=self._im_units, properties=props)
-                # categorical colour-by → the per-level Okabe–Ito colormap (consistent with labels);
-                # otherwise a named colormap (viridis continuous / turbo by track_id)
-                if use_cby and col_cmaps_dict is not None:
-                    kw["colormaps_dict"] = col_cmaps_dict
-                else:
-                    kw["colormap"] = col_cmap or "turbo"
-                self._viewer.add_tracks(sub, name=name, **kw)
+                # Delegate to the shared helper (passes scale AND units so napari keeps unit-aware
+                # rendering across layers). Categorical colour-by → the per-level Okabe–Ito
+                # `colormaps_dict` (consistent with labels); otherwise a named colormap (viridis
+                # continuous / turbo by track_id). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
+                from cecelia.utils import napari_utils
+                napari_utils.add_tracks(
+                    self._viewer, sub, name=name,
+                    scale=self._im_scale, units=self._im_units, properties=props,
+                    color_by=(use_cby or "track_id"), tail_width=tail_width, tail_length=tail_length,
+                    colormap=(col_cmap or "turbo"),
+                    colormaps_dict=(col_cmaps_dict if use_cby else None),
+                )
             self._track_sigs[name] = sig
 
     # ── Spatial cell selection → POST back to Julia (linked brushing) ─────────
@@ -966,38 +955,8 @@ def _series_base(path: str) -> str:
     return path
 
 
-def _set_contrast_from_sample(layer) -> None:
-    """Compute contrast limits from a middle-z sample and set them directly.
-    Falls back to reset_contrast_limits() if sampling fails.
-    Avoids relying on napari's auto-contrast which can silently set [0, dtype_max]
-    for dask arrays that haven't been computed yet.
-    """
-    try:
-        raw = layer.data
-        if isinstance(raw, list):
-            raw = raw[-1]  # coarsest scale level — a contrast SAMPLE only, so read the
-                           # smallest pyramid level (orders of magnitude less I/O than the
-                           # full-res level, and per-channel this runs once per visible layer)
-        ndim = raw.ndim
-        # Build index that selects middle position along all axes except the last two (y, x)
-        idx = tuple(
-            n // 2 if ax < ndim - 2 else slice(None)
-            for ax, n in enumerate(raw.shape)
-        )
-        sample = np.asarray(raw[idx]).ravel()
-        valid  = sample[sample > 0]
-        if len(valid) > 100:
-            cmin = float(np.percentile(valid, 1.0))
-            cmax = float(np.percentile(valid, 99.9))
-            if cmax > cmin:
-                layer.contrast_limits = [cmin, cmax]
-                return
-    except Exception:
-        pass
-    try:
-        layer.reset_contrast_limits()
-    except Exception:
-        pass
+# contrast-from-sample moved to the shared cecelia.utils.napari_utils.set_contrast_from_sample
+# (open_image delegates via napari_utils.add_image(contrast=True)); coastal mirrors it.
 
 
 def _open_zarr_multiscale(path: str, as_dask: bool = True) -> list:

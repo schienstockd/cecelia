@@ -97,6 +97,24 @@ Errors are returned as `{"type": "error", "msg": "..."}` — `send()` raises on 
 
 ---
 
+## Shared layer helpers (`cecelia.utils.napari_utils`)
+
+The bridge keeps **all** its brain — disk load of label zarr / label-props HDF5, populations, per-layer
+reconciliation + signature caching, colour-by columns, timestamp, scale-bar, 3D — but the final
+`viewer.add_image` / `add_labels` / `add_tracks` calls are delegated to the **generic, array-level**
+helpers in `python/cecelia/utils/napari_utils.py` (`add_image`, `add_labels`, `add_tracks`,
+`set_contrast_from_sample`). Those take arrays + `scale`/`units` only (no disk, no project state) and
+own the display *conventions* — per-channel colormaps + additive blending, labels `opacity=0.7`, track
+colour/tail params, contrast-from-a-middle-sample.
+
+This exists so the conventions live in **one** place: the sibling **coastal** project imports the same
+helpers from `coastal/napari_viz.py` (coastal already installs cecelia editable and uses its IO
+helpers), so both viewers render identically without duplicating the logic. `napari_utils` imports only
+numpy at load and imports napari lazily inside the functions (napari is an environment dep, not in the
+`pip install cecelia` light tier). See `../coastal/docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md`.
+
+---
+
 ## Opening an image
 
 The full call chain for "eye button clicked":
