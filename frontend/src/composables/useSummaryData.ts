@@ -4,6 +4,7 @@ import { useDataRefresh } from './useDataRefresh'
 import { useViewState } from './useViewState'
 import { tkey, parseTkey } from '../plots/series'
 import { defaultVis, type VisProps } from '../plots/plot'
+import { fetchImageAttrs, type ImageAttr } from './useImageAttrs'
 import type { PlotSpec, PlotSeries, SegmentationPops } from '../plots/types'
 
 // Data + shared view-state for a summary-plot surface — the part that is IDENTICAL whether the plots
@@ -49,14 +50,12 @@ export function useSummaryData(opts: {
     compareMode.value === 'summarised' ? 'summarised' : 'per_image')
 
   // image attributes available across the set (for "by attribute" compare); the chosen one is sent as
-  // groupAttr so images sharing a value pool into one series labelled by the value.
-  const setAttrs = ref<{ name: string; values: string[] }[]>([])
+  // groupAttr so images sharing a value pool into one series labelled by the value. Fetch via the
+  // shared helper (same impl as the UMAP colour/facet-by-attribute picker).
+  const setAttrs = ref<ImageAttr[]>([])
   async function loadAttrs() {
-    if (!setUid.value || !canCompare.value) { setAttrs.value = []; return }
-    const p = new URLSearchParams({ projectUid: projectUid.value, setUid: setUid.value })
-    if (imageUids.value.length) p.set('imageUids', imageUids.value.join(','))
-    try { setAttrs.value = (await (await fetch(`/api/plots/attrs?${p}`)).json()).attrs ?? [] }
-    catch { setAttrs.value = [] }
+    setAttrs.value = canCompare.value
+      ? await fetchImageAttrs(projectUid.value, setUid.value, imageUids.value) : []
   }
   watch([compareMode, setAttrs, compareAttr], () => {
     if (compareMode.value === 'by_attr' && !compareAttr.value && setAttrs.value.length)

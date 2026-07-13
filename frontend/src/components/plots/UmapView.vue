@@ -1,10 +1,12 @@
 <!--
   UMAP interactive view (one entry in the interactive-view registry; see components/canvas/
-  interactiveViews.ts). Self-contained: fetches the joint embedding + cluster codes for the selected
-  image(s) (GET /api/plots/umap → binary Float32 [x,y,code,…]), renders a colour-by-cluster WebGL
-  scatter (ScatterGL `category` mode) with a legend, and owns its own controls (cluster-number label
-  toggle). Clustering is set-scope, so all selected images share one UMAP space + cluster numbering —
-  we fetch per image and concatenate.
+  interactiveViews.ts). Self-contained: fetches the joint embedding for the selected image(s)
+  (GET /api/plots/umap → binary Float32 [x, y, clusterCode, popIdx] per point), renders a 2D-canvas
+  scatter with a legend, and owns its own controls. Points can be coloured by CLUSTER (default),
+  by POPULATION (membership of the picked cell-type pops → popIdx, resolved server-side) or by an
+  image ATTRIBUTE (client-side uid→attr join) — "where do the tracked pops / treatments fall on the
+  embedding" (docs/todo/UMAP_COLOUR_FACET_PLAN.md). Clustering is set-scope, so all selected images
+  share one UMAP space; we fetch per image (tagging each point with its image) and concatenate.
 
   This is an INTERACTIVE plot (client/WebGL point cloud), distinct from SUMMARY plots (server-
   aggregated, drawn by PlotChart). It is hosted by the generic InteractivePanel, which gives it the
@@ -16,9 +18,13 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplateRef } from 'vue'
 import { useLogStore } from '../../stores/log'
+import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
 import { paletteRange, type VisProps } from '../../plots/plot'
+import { tkey, parseTkey } from '../../plots/series'
+import type { SegmentationPops } from '../../plots/types'
+import TeleportPopover from '../TeleportPopover.vue'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
@@ -27,9 +33,18 @@ const props = defineProps<{
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling — we honour the dark-theme knob + the palette choice
-  state: { labels?: boolean; legend?: boolean }
+  // colourBy: how to colour the embedding — 'cluster' (default), 'population' (membership of the picked
+  // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr). See
+  // docs/todo/UMAP_COLOUR_FACET_PLAN.md.
+  state: { labels?: boolean; legend?: boolean
+           colourBy?: 'cluster' | 'population' | 'attribute'
+           colourPops?: string[]; colourAttr?: string }
 }>()
 const log = useLogStore()
+const project = useProjectStore()
+const colourBy = computed({ get: () => props.state.colourBy ?? 'cluster', set: v => (props.state.colourBy = v) })
+const colourPops = computed<string[]>({ get: () => props.state.colourPops ?? [], set: v => (props.state.colourPops = v) })
+const colourAttr = computed({ get: () => props.state.colourAttr ?? '', set: v => (props.state.colourAttr = v) })
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
 // show/hide the population legend — persisted per panel (default on). On the Analysis canvas it can
 // eat ~half the plot, so let the user reclaim that space.
@@ -144,10 +159,98 @@ const codesRef = ref<Float32Array | null>(null)
 let countsMap = new Map<number, number>()
 let distinctCodes: number[] = []
 let sumX = new Map<number, number>(), sumY = new Map<number, number>()   // per-cluster centroid sums
+// per-point POPULATION index (colour-by-population; -1 = in none of the picked pops) and per-point
+// IMAGE index into props.imageUids (colour-by-attribute joins this → the image's attr client-side).
+const popIdxRef = ref<Float32Array | null>(null)
+let pointImg: Uint16Array | null = null
 
-// (re)compute the per-point colours + legend from the cached codes. When pops are shown, colour each
-// cluster by the population that owns it and grey the rest; otherwise plain colour-by-cluster.
+// ── colour-by pickers (populations + image attributes), reusing the shared endpoints/helpers ────────
+const pickerOpen = ref(false)
+const popPickBtn = useTemplateRef<HTMLElement>('popPickBtn')
+// populations available to colour by — GRANULARITY-matched to the embedding (trackclust → track-grained
+// pops, clust → cell-grained), clusters excluded (we colour by the INPUT cell-type pops, not the
+// clusters). Same /api/plots/populations picker the summary canvas uses.
+const popGroups = ref<SegmentationPops[]>([])
+async function loadPopGroups() {
+  if (!props.projectUid || !props.imageUids.length) { popGroups.value = []; return }
+  const p = new URLSearchParams({ projectUid: props.projectUid, popType: props.popType,
+    popScope: props.popType === 'trackclust' ? 'tracks' : 'cells', includeClusters: 'false' })
+  if (props.setUid) { p.set('setUid', props.setUid); p.set('imageUids', props.imageUids.join(',')) }
+  else p.set('imageUid', props.imageUids[0])
+  try { popGroups.value = await (await fetch(`/api/plots/populations?${p}`)).json() }
+  catch { popGroups.value = [] }
+}
+// attributes available to colour by — derived from the SAME client-side source (project store) the
+// colouring reads, so the picker can't offer an attr we can't resolve (and needs no setUid, unlike
+// GET /api/plots/attrs — which left the picker empty when the set wasn't the active one).
+const attrs = computed(() => project.imageAttrsFor(props.imageUids))
+// a colour-pop is stored as a tkey (popType::valueName+pop); the endpoint wants "popType~vnPrefixedPath"
+const popToken = (key: string) => { const t = parseTkey(key); return `${t.popType}~${t.valueName}${t.pop}` }
+const popLabelForKey = (key: string) => {
+  const t = parseTkey(key)
+  const grp = popGroups.value.find(g => g.valueName === t.valueName)
+  const nm = grp?.populations.find(pp => pp.path === t.pop)?.name ?? (t.pop.split('/').pop() || t.pop)
+  return `${t.valueName}·${nm}`
+}
+const togglePop = (vn: string, pop: string, pt: string) => {
+  const k = tkey(pt, vn, pop), cur = colourPops.value
+  colourPops.value = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k]
+}
+const isPopOn = (vn: string, pop: string, pt: string) => colourPops.value.includes(tkey(pt, vn, pop))
+
+// Generic key→colour path shared by colour-by-population and colour-by-attribute: colour each point by
+// an integer key (popIdx, or an attribute-value index), grey the "unassigned" bucket (key < 0), and
+// build the legend + centroids from the keys present. Honours the pop-manager palette choice
+// (paletteRange). Keeps ONE colouring impl instead of a bespoke one per mode.
+function recolourByKey(keyArr: ArrayLike<number>, labelFor: (k: number) => string, unassignedLabel: string) {
+  const pts = points.value; if (!pts) return
+  const n = keyArr.length
+  const counts = new Map<number, number>(), sX = new Map<number, number>(), sY = new Map<number, number>()
+  for (let i = 0; i < n; i++) {
+    const k = keyArr[i]
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+    sX.set(k, (sX.get(k) ?? 0) + pts[2 * i]); sY.set(k, (sY.get(k) ?? 0) + pts[2 * i + 1])
+  }
+  const distinct = [...counts.keys()].sort((a, b) => a - b)   // -1 (unassigned) sorts first
+  const pal = (props.vis ? paletteRange(props.vis, distinct.filter(k => k >= 0).length) : null) ?? PALETTE
+  const idxOf = new Map<number, number>(), colourFor = new Map<number, string>()
+  let pi = 0
+  distinct.forEach((k, i) => { idxOf.set(k, i); colourFor.set(k, k < 0 ? UNCLUSTERED : pal[pi++ % pal.length]) })
+  const cats = new Float32Array(n)
+  for (let i = 0; i < n; i++) cats[i] = idxOf.get(keyArr[i])!
+  palette.value = distinct.map(k => colourFor.get(k)!)
+  categories.value = cats
+  legend.value = distinct.map(k => ({ label: k < 0 ? unassignedLabel : labelFor(k), colour: colourFor.get(k)!, n: counts.get(k)! }))
+  centroids.value = distinct.filter(k => k >= 0)
+    .map(k => ({ label: labelFor(k), x: sX.get(k)! / counts.get(k)!, y: sY.get(k)! / counts.get(k)! }))
+}
+
+// colour-by-attribute: build a per-point key from each point's image attribute value (distinct values
+// → 0..m-1, empty → -1), then colour by key. Uses the client-side uid→attr join (project store).
+function recolourByAttr() {
+  const img = pointImg, pts = points.value
+  if (!img || !pts) return
+  const vals: string[] = [], keyOf = new Map<string, number>()
+  const key = new Int32Array(pts.length / 2)
+  for (let i = 0; i < key.length; i++) {
+    const v = project.imageAttr(props.imageUids[img[i]] ?? '')[colourAttr.value] ?? ''
+    if (!v) { key[i] = -1; continue }
+    let k = keyOf.get(v); if (k === undefined) { k = vals.length; vals.push(v); keyOf.set(v, k) }
+    key[i] = k
+  }
+  recolourByKey(key, k => vals[k], 'n/a')
+}
+
+// (re)compute the per-point colours + legend. Population / attribute modes go through the generic
+// key path; cluster mode keeps its shownPops-aware behaviour (colour each cluster by the population
+// that owns it and grey the rest; otherwise plain colour-by-cluster).
 function recolour() {
+  if (colourBy.value === 'population') {
+    const pk = popIdxRef.value
+    if (pk) recolourByKey(pk, k => popLabelForKey(colourPops.value[k] ?? ''), 'other')
+    return
+  }
+  if (colourBy.value === 'attribute') { recolourByAttr(); return }
   const codes = codesRef.value
   if (!codes) return
   const counts = countsMap, distinct = distinctCodes
@@ -192,25 +295,33 @@ async function load() {
   if (!props.projectUid || !props.imageUids.length) { points.value = null; codesRef.value = null; legend.value = []; centroids.value = []; return }
   loading.value = true
   try {
-    const triples: number[] = []
-    for (const uid of props.imageUids) {
-      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: uid, popType: props.popType, suffix: props.suffix })
+    // wire = flat Float32 [x, y, clusterCode, popIdx] per point (16 B). We fetch per image (so we can
+    // tag each point with its image → colour/facet by attribute) and concatenate. colourPops (only in
+    // population mode) asks the server to resolve per-point membership → popIdx.
+    const cp = colourBy.value === 'population' ? colourPops.value.map(popToken).filter(Boolean) : []
+    const quads: number[] = []
+    const imgOf: number[] = []
+    for (let ui = 0; ui < props.imageUids.length; ui++) {
+      const q = new URLSearchParams({ projectUid: props.projectUid, imageUid: props.imageUids[ui], popType: props.popType, suffix: props.suffix })
+      if (cp.length) q.set('colourPops', cp.join(','))
       const res = await fetch(`/api/plots/umap?${q}`)
       if (!res.ok) continue
       const f = new Float32Array(await res.arrayBuffer())
-      for (let i = 0; i < f.length; i++) triples.push(f[i])
+      for (let i = 0; i < f.length; i++) quads.push(f[i])
+      for (let i = 0; i < f.length / 4; i++) imgOf.push(ui)
     }
-    const n = Math.floor(triples.length / 3)
+    const n = Math.floor(quads.length / 4)
     if (n === 0) {
       points.value = null; categories.value = null; legend.value = []; centroids.value = []
       err.value = `No UMAP at suffix “${props.suffix}”. Run clustering with “Calculate UMAP” enabled.`
       return
     }
-    const pts = new Float32Array(n * 2), codes = new Float32Array(n)
+    const pts = new Float32Array(n * 2), codes = new Float32Array(n), popIdx = new Float32Array(n)
+    const img = new Uint16Array(n)
     let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity
     for (let i = 0; i < n; i++) {
-      const x = triples[3 * i], y = triples[3 * i + 1]
-      pts[2 * i] = x; pts[2 * i + 1] = y; codes[i] = triples[3 * i + 2]
+      const x = quads[4 * i], y = quads[4 * i + 1]
+      pts[2 * i] = x; pts[2 * i + 1] = y; codes[i] = quads[4 * i + 2]; popIdx[i] = quads[4 * i + 3]; img[i] = imgOf[i]
       if (x < xMin) xMin = x; if (x > xMax) xMax = x
       if (y < yMin) yMin = y; if (y > yMax) yMax = y
     }
@@ -218,6 +329,8 @@ async function load() {
     extents.value = { xMin: xMin - px, xMax: xMax + px, yMin: yMin - py, yMax: yMax + py }
     points.value = pts
     codesRef.value = codes
+    popIdxRef.value = popIdx
+    pointImg = img
     countsMap = new Map<number, number>()
     for (let i = 0; i < n; i++) countsMap.set(codes[i], (countsMap.get(codes[i]) ?? 0) + 1)
     distinctCodes = [...countsMap.keys()].sort((a, b) => a - b)
@@ -234,12 +347,20 @@ async function load() {
   } finally { loading.value = false }
 }
 
-watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix], load)
+watch([() => props.projectUid, () => props.imageUids.join(','), () => props.popType, () => props.suffix],
+  () => { load(); loadPopGroups() })
 useDataRefresh(() => props.imageUids, load)   // refetch when a task finishes on one of THESE images
 // highlight a pop / tick clusters → recolour from cached codes (no refetch)
 watch(() => JSON.stringify((props.shownPops ?? []).map(p => [p.colour, p.clusterIds])), recolour)
 // re-colour when the pop manager's palette choice changes (e.g. standard → distinct)
 watch(() => [props.vis?.palette, props.vis?.userColors], recolour)
+// colour-by: switching to population needs the per-point popIdx (refetch); cluster/attribute just
+// recolour from cached data. Changing the picked populations refetches (server resolves membership).
+watch(colourBy, v => { v === 'population' ? load() : recolour() })
+watch(() => colourPops.value.join(','), () => { if (colourBy.value === 'population') load() })
+watch(colourAttr, () => { if (colourBy.value === 'attribute') recolour() })
+// lazily fill the population picker when that mode is first entered (attrs is a store-derived computed)
+watch(colourBy, v => { if (v === 'population' && !popGroups.value.length) loadPopGroups() }, { immediate: true })
 // redraw the 2D dots when the data / colouring / extents change
 watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
 onMounted(() => {
@@ -281,11 +402,49 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
   <div class="uv">
     <div class="uv-ctrl cc-panel-controls">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
-              v-tooltip.bottom="'Toggle cluster-number labels'"><i class="pi pi-tag" /> #</button>
+              v-tooltip.bottom="'Toggle centroid labels'"><i class="pi pi-tag" /> #</button>
       <button class="cc-btn cc-btn-ghost" :class="{ on: showLegend }" @click="showLegend = !showLegend"
-              v-tooltip.bottom="'Toggle the population legend'"><i class="pi pi-list" /></button>
+              v-tooltip.bottom="'Toggle the legend'"><i class="pi pi-list" /></button>
+      <!-- colour the embedding by cluster (default), by the picked populations' membership, or by an
+           image attribute — reproduces the paper's "where do the tracked pops / treatments fall". -->
+      <label class="uv-cby" v-tooltip.bottom="'Colour points by'">
+        <i class="pi pi-palette" />
+        <select v-model="colourBy">
+          <option value="cluster">cluster</option>
+          <option value="population">population</option>
+          <option value="attribute">attribute</option>
+        </select>
+      </label>
+      <!-- population mode: pick which populations to colour by (grouped by segmentation) -->
+      <template v-if="colourBy === 'population'">
+        <button ref="popPickBtn" class="cc-btn cc-btn-ghost" :class="{ on: pickerOpen }"
+                @click="pickerOpen = !pickerOpen" v-tooltip.bottom="'Choose populations'">
+          <i class="pi pi-sitemap" /> {{ colourPops.length || 'pick' }}
+        </button>
+        <TeleportPopover v-model="pickerOpen" :anchor="popPickBtn" placement="bottom-start">
+          <div class="uv-pop">
+            <div v-if="!popGroups.length" class="uv-pop-empty">No populations in the clustered segmentations.</div>
+            <template v-for="grp in popGroups" :key="grp.valueName">
+              <div v-if="grp.populations.length" class="uv-pop-head">{{ grp.valueName }}</div>
+              <div v-for="p in grp.populations" :key="p.popType + grp.valueName + p.path"
+                   class="uv-pop-row" :class="{ on: isPopOn(grp.valueName, p.path, p.popType) }"
+                   @click="togglePop(grp.valueName, p.path, p.popType)">
+                <i :class="isPopOn(grp.valueName, p.path, p.popType) ? 'pi pi-check-square' : 'pi pi-stop'" />
+                <span class="uv-pop-name">{{ p.name }}</span>
+                <span v-if="p.popType !== 'live'" class="uv-pop-tag">{{ p.popType }}</span>
+              </div>
+            </template>
+          </div>
+        </TeleportPopover>
+      </template>
+      <!-- attribute mode: pick which image attribute to colour by -->
+      <select v-else-if="colourBy === 'attribute'" v-model="colourAttr" class="uv-attr"
+              v-tooltip.bottom="'Image attribute'">
+        <option value="" disabled>attribute…</option>
+        <option v-for="a in attrs" :key="a.name" :value="a.name">{{ a.name }}</option>
+      </select>
       <span class="uv-spacer" />
-      <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} clusters</span>
+      <span v-if="total" class="uv-count">{{ total.toLocaleString() }} {{ unit }} · {{ legend.length }} {{ colourBy === 'cluster' ? 'clusters' : 'groups' }}</span>
     </div>
     <div ref="plotEl" class="uv-body">
       <!-- during export the inner ground MUST be transparent, else the overlay pass (host→SVG) paints
@@ -325,6 +484,20 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 .uv-ctrl .cc-btn.on { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 .uv-spacer { flex: 1; }
 .uv-count { font-variant-numeric: tabular-nums; }
+/* colour-by controls */
+.uv-cby { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); }
+.uv-cby select, .uv-attr { font-size: 12px; padding: 2px 4px; }
+.uv-attr { max-width: 9rem; }
+/* population picker popover (inner layout only — TeleportPopover gives surface/border/shadow) */
+.uv-pop { width: 15rem; max-height: 18rem; overflow-y: auto; }
+.uv-pop-empty { padding: 10px; color: var(--cc-text-dim); font-size: 12px; }
+.uv-pop-head { padding: 4px 8px; background: var(--cc-surface-2); color: var(--cc-text-dim);
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; position: sticky; top: 0; }
+.uv-pop-row { display: flex; align-items: center; gap: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; color: var(--cc-text); }
+.uv-pop-row:hover { background: var(--cc-surface-2); }
+.uv-pop-row.on { color: var(--cc-accent); }
+.uv-pop-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uv-pop-tag { font-size: 9px; text-transform: uppercase; color: var(--cc-text-dim); border: 1px solid var(--cc-border); border-radius: 3px; padding: 0 3px; }
 .uv-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 0 6px 6px; }
 .uv-plot { position: relative; flex: 1; min-height: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }

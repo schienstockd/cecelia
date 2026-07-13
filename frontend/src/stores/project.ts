@@ -208,5 +208,25 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, setInclusion, removeLabelSet }
+  // per-image attribute map (uid → {attr: value}), used to colour/facet a plot by an image attribute
+  // client-side (e.g. the cluster UMAP tags each point with its image, then joins to the attr here).
+  function imageAttr(uid: string): Record<string, string> {
+    for (const s of sets.value) { const im = s.images.find(i => i.uid === uid); if (im) return im.attr ?? {} }
+    return {}
+  }
+  // union of attribute names (+ their distinct non-empty values) across the given images — the SAME
+  // client-side source `imageAttr` colours from, so a picker built on this can't offer an attr the
+  // colouring can't resolve (no setUid dependency, unlike GET /api/plots/attrs). First-appearance order.
+  function imageAttrsFor(uids: string[]): { name: string; values: string[] }[] {
+    const order: string[] = [], vals = new Map<string, Set<string>>()
+    for (const uid of uids) {
+      for (const [k, v] of Object.entries(imageAttr(uid))) {
+        if (!vals.has(k)) { vals.set(k, new Set()); order.push(k) }
+        if (v) vals.get(k)!.add(v)
+      }
+    }
+    return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
+  }
+
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })

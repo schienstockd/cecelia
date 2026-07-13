@@ -535,7 +535,10 @@ function api_gating_plotdata(req::HTTP.Request)
     200, collect(reinterpret(UInt8, buf))
 end
 
-# ── GET /api/plots/umap → binary Float32 [x,y,clusterCode, …] per point ───────
+# ── GET /api/plots/umap → binary Float32 [x, y, clusterCode, popIdx] per point ─
+# `popIdx` = index (0-based) into the requested `colourPops` list that this point belongs to (-1 = in
+# none / not requested), so the frontend can colour/facet the embedding by the individually-tracked
+# populations (docs/todo/UMAP_COLOUR_FACET_PLAN.md). `code` (cluster) is always present too.
 # The UMAP scatter for a clustering pop_type: the `obsm['X_umap.{suffix}']` embedding + the
 # `clusters.{suffix}` code per point (frontend colours by code). `clust` reads the cell table;
 # `trackclust` reads the per-track table (one point per track). Optionally subset to a population's
@@ -556,7 +559,31 @@ function api_plots_umap(req::HTTP.Request)
     vns = (!isempty(req_vn) && haskey(img.label_props, req_vn)) ? String[String(req_vn)] :
           co_clustered_value_names(img, suffix; granularity = track ? :track : :cell)
 
-    out = Float32[]   # [x, y, code] triples, concatenated across the co-clustered segmentations
+    # Optional per-point POPULATION membership for colour/facet-by-population: resolve the picked pops
+    # through pop_df — the canonical accessor already handles GRAIN (granularity=:track rolls a `live`
+    # cell pop up to its track_ids so it aligns with a trackclust embedding), value_name pooling, and
+    # derived pops. Each token is "popType~valueNamePrefixedPath" (e.g. "live~B/qc/_tracked"); popIdx =
+    # its 0-based index in the ordered list, so a pop keeps one colour across segments. A point → the
+    # FIRST picked pop it belongs to, else -1 (input pops are normally disjoint). See
+    # docs/todo/UMAP_COLOUR_FACET_PLAN.md.
+    colour_toks = String[String(t) for t in split(get(q, "colourPops", ""), ',') if !isempty(t)]
+    grain = track ? :track : :cell
+    pop_of = Dict{Tuple{String,Int},Int}()              # (value_name, label) → popIdx (0-based)
+    for (pi, tok) in enumerate(colour_toks)
+        parts = split(tok, '~'; limit = 2)
+        pt, path = length(parts) == 2 ? (String(parts[1]), String(parts[2])) : (pop_type, String(parts[1]))
+        df = try
+            pop_df(img, pt, [path]; granularity = grain, include_obs = false, include_x = false)
+        catch
+            continue                                    # a bad/foreign pop just contributes no colour
+        end
+        ("value_name" in names(df) && "label" in names(df)) || continue
+        for r in eachrow(df)
+            get!(pop_of, (String(r.value_name), Int(r.label)), pi - 1)
+        end
+    end
+
+    out = Float32[]   # [x, y, code, popIdx] quads, concatenated across the co-clustered segmentations
     for vn in vns
         path = track ? img_track_props_path(img, vn) : img_label_props_path(img, vn)
         isfile(path) || continue
@@ -572,17 +599,21 @@ function api_plots_umap(req::HTTP.Request)
             sel  = Set(cells_in_pop(m, pop))
             keep = BitVector(l in sel for l in cdf.label)
         end
+        # per-point popIdx from the resolved (value_name, label) → popIdx map (colour/facet-by-population)
+        popidx = isempty(pop_of) ? fill(-1, size(xy, 1)) :
+                 Int[get(pop_of, (String(vn), Int(l)), -1) for l in cdf.label]
         # drop rows with no embedding — cells/tracks outside the clustered set have NaN UMAP coords
         # (and NaN code); they'd otherwise render as a stray "NaN" cluster.
         @inbounds for i in 1:size(xy, 1)
             (isfinite(xy[i, 1]) && isfinite(xy[i, 2])) || (keep[i] = false)
         end
         idx = findall(keep)
-        base = length(out); resize!(out, base + 3 * length(idx))
+        base = length(out); resize!(out, base + 4 * length(idx))
         @inbounds for (j, i) in enumerate(idx)
-            out[base + 3j - 2] = Float32(xy[i, 1]); out[base + 3j - 1] = Float32(xy[i, 2])
+            out[base + 4j - 3] = Float32(xy[i, 1]); out[base + 4j - 2] = Float32(xy[i, 2])
             c = codes[i]
-            out[base + 3j]     = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+            out[base + 4j - 1] = (c isa Number && !ismissing(c)) ? Float32(c) : -1f0
+            out[base + 4j]     = Float32(popidx[i])
         end
     end
     isempty(out) && return _gerr(404, "No $umap_key — run clustering with UMAP enabled")
