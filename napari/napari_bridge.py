@@ -952,10 +952,39 @@ class NapariState:
             self._anim_widget, area="right", name="Animation Wizard")
         return True
 
+    # ── View snapshot (the "view state" atom) ───────────────────────────────────
+
+    def capture_view_state(self):
+        """A durable, JSON-safe snapshot of the current view (camera + dims + per-layer display props),
+        for zoom-to-source / animation. Delegates to the shared helper so the schema lives in one place
+        (cecelia.utils.napari_utils; coastal can reuse it). See docs/todo/ANIMATION_PLAN.md."""
+        from cecelia.utils import napari_utils
+        return napari_utils.capture_view_state(self._viewer)
+
+    def apply_view_state(self, snapshot):
+        """Re-apply a snapshot from `capture_view_state` to the current viewer (missing layers /
+        unsettable attrs are skipped). Delegates to the shared helper."""
+        from cecelia.utils import napari_utils
+        return napari_utils.apply_view_state(self._viewer, snapshot)
+
     # ── Screenshot ────────────────────────────────────────────────────────────
 
-    def save_screenshot(self, path: str, canvas_only: bool = True):
-        self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+    def save_screenshot(self, path: str, canvas_only: bool = True, scale=1, fit_data: bool = True):
+        """Capture the canvas to `path`.
+
+        `fit_data=True` (default) uses napari's `export_figure`: it tightly re-fits the view to the
+        DATA extent, so the figure has NO black margins and comes out at `scale`× the native data
+        resolution — i.e. the capture looks like the viewer (image filling the frame), not a tiny image
+        floating in a big black canvas. (napari's plain `screenshot(scale=…)` only enlarges the canvas
+        at a fixed zoom, which ADDS margins — the opposite of what we want here.) `export_figure`
+        restores the previous camera afterwards, so the view snapshot captured alongside is unaffected.
+
+        `fit_data=False` captures the current canvas as-shown (a plain canvas screenshot). Falls back to
+        that if there are no layers to fit."""
+        if fit_data and len(self._viewer.layers) > 0:
+            self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
+        else:
+            self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
 
     # ── Task dir (needed for labels / props) ──────────────────────────────────
 
@@ -1229,7 +1258,18 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             return {"type": "ok", "cmd": t, "active": state.toggle_animation_widget()}
 
         elif t == "save_screenshot":
-            state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True))
+            state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True),
+                                  scale=cmd.get("scale", 1), fit_data=cmd.get("fit_data", True))
+            # fold the view snapshot into the reply so a screenshot and its provenance are captured
+            # atomically (same view) — one round trip, no camera-moved-between-calls skew.
+            return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}
+
+        elif t == "capture_view_state":
+            return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}
+
+        elif t == "apply_view_state":
+            return {"type": "ok", "cmd": t,
+                    "applied": state.apply_view_state(cmd.get("view_state") or {})}
 
         elif t == "clear":
             state.clear()

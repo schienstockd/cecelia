@@ -98,6 +98,7 @@ export launch!, close!, restart!, send
 export open_image!, show_labels!
 export show_layer!, hide_layer!, remove_layer!, clear!
 export centre!, save_layer_props!, load_layer_props!, save_screenshot!, toggle_animation!
+export capture_view_state, apply_view_state!
 
 # ── Includes ──────────────────────────────────────────────────────────────────
 include("config.jl")

@@ -256,10 +256,14 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_projects_create(body_bytes)
         elseif path == "/api/projects/load"
             api_projects_load(body_bytes)
-        elseif path == "/api/projects/save"
-            api_projects_save(body_bytes)
+        elseif path == "/api/projects/boards"
+            api_projects_boards(body_bytes)
         elseif path == "/api/projects/canvases"
             api_projects_canvases(body_bytes)
+        elseif path == "/api/board-assets/save"
+            api_board_asset_save(body_bytes)
+        elseif path == "/api/board-assets/delete"
+            api_board_asset_delete(body_bytes)
         elseif path == "/api/projects/rename"
             api_projects_rename(body_bytes)
         elseif path == "/api/sets/create"
@@ -322,6 +326,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_close(body_bytes)
         elseif path == "/api/napari/screenshot"
             api_napari_screenshot(body_bytes)
+        elseif path == "/api/napari/apply-view-state"
+            api_napari_apply_view_state(body_bytes)
         elseif path == "/api/napari/toggle-animation"
             api_napari_toggle_animation(body_bytes)
         elseif path == "/api/napari/restart"
@@ -449,6 +455,24 @@ function try_serve_static(stream::HTTP.Stream, reqpath::AbstractString)::Bool
     true
 end
 
+# Serve a board-image sidecar (settings/board-assets/<assetId>.png) as image/png for an <img> src.
+# GET /api/board-assets?projectUid=…&assetId=…  — set the mime explicitly (the generic API response
+# path only does octet-stream/JSON). Returns true if it wrote a response.
+function try_serve_board_asset(stream::HTTP.Stream, target::AbstractString)::Bool
+    q = HTTP.queryparams(HTTP.URI(target))
+    uid = get(q, "projectUid", ""); aid = get(q, "assetId", "")
+    (isempty(uid) || isempty(aid) || !_valid_asset_id(aid)) && return false
+    f = joinpath(_board_assets_dir(String(uid)), String(aid) * ".png")
+    isfile(f) || return false
+    data = read(f)
+    HTTP.setstatus(stream, 200)
+    HTTP.setheader(stream, "Content-Type"                => "image/png")
+    HTTP.setheader(stream, "Access-Control-Allow-Origin" => "*")
+    HTTP.startwrite(stream)
+    write(stream, data)
+    true
+end
+
 # ── Mixed HTTP + WebSocket stream handler ─────────────────────────────────────
 
 function handle_stream(stream::HTTP.Stream)
@@ -472,7 +496,9 @@ function handle_stream(stream::HTTP.Stream)
     # when dist/ is absent (dev) or the path is /api/*.
     if req.method == "GET"
         spath = split(HTTP.URI(req.target).path, '?')[1]
-        if !startswith(spath, "/api/") && spath != "/ws"
+        if spath == "/api/board-assets"
+            try_serve_board_asset(stream, req.target) && return   # else falls through → 404 below
+        elseif !startswith(spath, "/api/") && spath != "/ws"
             try_serve_static(stream, spath) && return
         end
     end

@@ -144,3 +144,117 @@ def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colorm
   else:
     kw['colormap'] = colormap
   return viewer.add_tracks(tracks, **kw)
+
+
+# ── View snapshot (the "view state" atom) ─────────────────────────────────────
+# A durable, JSON-safe description of a viewer: camera + dims (incl. the T/Z slider) + each layer's
+# display props, all as SETTABLE SCALAR values (colormap by NAME, enums as strings, arrays as lists).
+# We own this schema rather than persisting napari's own ViewerState objects, whose captured dicts hold
+# napari enums / pint Units / ColorArrays that tie stored data to napari's internal types across
+# versions. Storing settable scalars keeps a snapshot durable, human-readable, GUI-editable, and
+# re-applied by plain setattr. See docs/todo/ANIMATION_PLAN.md (Decision 1). Reused by the bridge
+# (capture at screenshot / zoom-to-source) and available to coastal.
+
+_VIEW_CAMERA_KEYS = ('center', 'zoom', 'angles', 'perspective')
+# per-layer display props to capture/restore; guarded — a layer type lacking one is simply skipped
+_VIEW_LAYER_KEYS = ('visible', 'opacity', 'blending', 'gamma', 'contrast_limits', 'colormap',
+                    'rendering', 'interpolation2d', 'interpolation3d', 'depiction')
+
+
+def _json_scalar(v):
+  """Coerce a napari attribute to a JSON-safe scalar/list: ndarray/tuple → list, numpy number →
+  python number, Enum → its string value; everything else (str/int/float/bool/None) passes through."""
+  import enum
+  if isinstance(v, np.ndarray):
+    return v.tolist()
+  if isinstance(v, np.floating):
+    return float(v)
+  if isinstance(v, np.integer):
+    return int(v)
+  if isinstance(v, enum.Enum):
+    return v.value
+  if isinstance(v, (list, tuple)):
+    return [_json_scalar(x) for x in v]
+  if v is None or isinstance(v, (str, int, float, bool)):
+    return v
+  return str(v)  # last resort: never let an unexpected type break json.dumps of a snapshot
+
+
+def capture_view_state(viewer):
+  """Capture a JSON-safe view snapshot from ``viewer`` — camera, dims (incl. the T/Z slider position),
+  and each layer's display props (colormap by NAME, contrast, visibility, …). Duck-typed: reads only
+  public napari attributes and returns a plain dict ready for ``json.dumps``. Robust to missing
+  attributes (each read is guarded). See docs/todo/ANIMATION_PLAN.md Phase A."""
+  camera = {}
+  for k in _VIEW_CAMERA_KEYS:
+    try:
+      camera[k] = _json_scalar(getattr(viewer.camera, k))
+    except Exception:
+      pass
+  dims = {}
+  for k in ('ndisplay', 'order', 'current_step', 'point'):
+    try:
+      dims[k] = _json_scalar(getattr(viewer.dims, k))
+    except Exception:
+      pass
+  layers = {}
+  for layer in viewer.layers:
+    props = {}
+    for k in _VIEW_LAYER_KEYS:
+      if not hasattr(layer, k):
+        continue
+      val = getattr(layer, k)
+      if val is None:
+        continue
+      if k == 'colormap':
+        val = getattr(val, 'name', None)  # store the settable NAME, not the ColorArray object
+        if val is None:
+          continue
+      props[k] = _json_scalar(val)
+    layers[layer.name] = props
+  return {'camera': camera, 'dims': dims, 'layers': layers}
+
+
+def apply_view_state(viewer, snapshot):
+  """Re-apply a snapshot from ``capture_view_state`` to ``viewer``: camera, dims (the T/Z position,
+  clamped to this image's extent), and each PRESENT layer's display props. Missing layers and
+  unsettable attributes are skipped silently (every ``setattr`` is guarded), so a snapshot degrades
+  gracefully when the reopened image has fewer layers than when it was captured. Returns True."""
+  snapshot = snapshot or {}
+  for k, v in (snapshot.get('camera') or {}).items():
+    if k in _VIEW_CAMERA_KEYS:
+      try:
+        setattr(viewer.camera, k, v)
+      except Exception:
+        pass
+  dims = snapshot.get('dims') or {}
+  for k in ('ndisplay', 'order'):
+    if k in dims:
+      try:
+        setattr(viewer.dims, k, dims[k] if k == 'ndisplay' else tuple(dims[k]))
+      except Exception:
+        pass
+  step = dims.get('current_step')
+  if step is not None:
+    try:
+      cur = list(viewer.dims.current_step)
+      nsteps = viewer.dims.nsteps
+      for i in range(len(cur)):
+        if i < len(step) and i < len(nsteps):
+          cur[i] = max(0, min(int(step[i]), int(nsteps[i]) - 1))
+      viewer.dims.current_step = tuple(cur)
+    except Exception:
+      pass
+  layers = getattr(viewer, 'layers', None)
+  for name, props in (snapshot.get('layers') or {}).items():
+    if layers is None or name not in layers:
+      continue
+    layer = layers[name]
+    for k, v in props.items():
+      if v is None:
+        continue
+      try:
+        setattr(layer, k, v)
+      except Exception:
+        pass
+  return True

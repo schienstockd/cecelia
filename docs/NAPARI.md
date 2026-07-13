@@ -112,6 +112,25 @@ conda-forge**, because the conda build pulls numpy ≥2.1 which breaks the `cell
 
 ---
 
+## View snapshots (zoom-to-source / animation)
+
+A **view snapshot** is a durable, JSON-safe description of the current view — `camera` (center, zoom,
+angles, perspective), `dims` (ndisplay, order, the T/Z slider position) and per-layer display props
+(`visible`, `opacity`, `blending`, `gamma`, `contrast_limits`, `colormap` **by name**, rendering) —
+all as **settable scalar values**. `NapariState.capture_view_state()` / `apply_view_state()` delegate
+to the shared helpers `cecelia.utils.napari_utils.capture_view_state(viewer)` /
+`apply_view_state(viewer, snapshot)`; `apply` skips missing layers and unsettable attrs (guarded
+`setattr`), so a snapshot degrades gracefully when the reopened image has fewer layers.
+
+We store this **own schema**, not napari-animation's `ViewerState` objects, whose captured dicts hold
+napari enums / pint `Unit`s / `ColorArray`s that tie stored data to napari internals across versions —
+settable scalars stay durable, human-readable and GUI-editable. Commands: `capture_view_state`,
+`apply_view_state`; and the snapshot is **folded into the `save_screenshot` reply** so a screenshot and
+its provenance are captured atomically (same view). Foundation for zoom-to-source + movies — see
+`docs/todo/ANIMATION_PLAN.md`.
+
+---
+
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
 
 The bridge keeps **all** its brain — disk load of label zarr / label-props HDF5, populations, per-layer

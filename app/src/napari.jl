@@ -181,8 +181,28 @@ load_layer_props!(v::NapariViewer, path::String) =
 
 # ── Screenshot ────────────────────────────────────────────────────────────────
 
-save_screenshot!(v::NapariViewer, path::String; canvas_only::Bool=true) =
-    (send(v, Dict("type"=>"save_screenshot", "path"=>path, "canvas_only"=>canvas_only)); v)
+# Capture the canvas to `path` and RETURN the bridge reply — which carries the view snapshot folded in
+# (captured atomically with the shot). The caller reads the PNG from `path` and the snapshot from the
+# returned dict's "view_state".
+save_screenshot!(v::NapariViewer, path::String; canvas_only::Bool=true, fit_data::Bool=true,
+                 scale::Union{Real,Nothing}=nothing)::Dict{String,Any} = begin
+    cmd = Dict{String,Any}("type"=>"save_screenshot", "path"=>path,
+                           "canvas_only"=>canvas_only, "fit_data"=>fit_data)
+    # fit_data → tight-fit to the data extent at `scale`× native resolution (no black margins); scale
+    # only meaningful with fit_data (plain-screenshot scale would just add margins, so it's not sent).
+    scale !== nothing && (cmd["scale"] = scale)
+    send(v, cmd)
+end
+
+# ── View snapshot (zoom-to-source / animation atom) ─────────────────────────────
+
+# A durable, JSON-safe snapshot of the current view (camera + dims + per-layer display props).
+capture_view_state(v::NapariViewer)::Dict{String,Any} =
+    get(send(v, Dict("type"=>"capture_view_state")), "view_state", Dict{String,Any}())
+
+# Re-apply a snapshot to the running viewer (missing layers / unsettable attrs skipped by the bridge).
+apply_view_state!(v::NapariViewer, snapshot) =
+    (send(v, Dict("type"=>"apply_view_state", "view_state"=>snapshot)); v)
 
 # ── Animation recorder (napari-animation) ───────────────────────────────────────
 
