@@ -13,6 +13,7 @@ import { ref, computed, watch, useTemplateRef, nextTick, onMounted, onUnmounted 
 import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
 import { useWsStore } from '../../stores/ws'
+import { napariColormapHex } from '../../utils/napariColormap'
 
 const ws = useWsStore()
 
@@ -26,7 +27,7 @@ const ws = useWsStore()
 interface Cell { assetId?: string; src?: string; caption?: string; snapshot?: Record<string, unknown>; imageUid?: string | null }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; capSize?: number }
+  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; capSize?: number; showLegend?: boolean }
 }>()
 
 // seed defaults into the persisted state bag (the slot starts as {})
@@ -42,6 +43,8 @@ const skew = computed({ get: () => props.state.sepAngle ?? 22, set: v => (props.
 const thick = computed({ get: () => props.state.sepThick ?? 2, set: v => (props.state.sepThick = v) })
 // caption text size (px) — driven into the caption overlay via a CSS var
 const capSize = computed({ get: () => props.state.capSize ?? 13, set: v => (props.state.capSize = v) })
+// optional channel-colour legend, read from the frame's snapshot (napari layer colormaps). Off by default.
+const showLegend = computed({ get: () => props.state.showLegend ?? false, set: v => (props.state.showLegend = v) })
 // angled separators are horizontal-only (the clip leans across the row) — snap back to straight if the
 // strip is switched to vertical.
 watch(orientation, o => { if (o === 'v' && separator.value === 'angled') separator.value = 'straight' })
@@ -77,6 +80,20 @@ async function capture(i: number) {
     c.imageUid = data.imageUid ?? null
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { capturing.value = -1 }
+}
+
+// channel-colour legend for a frame, from its snapshot's napari layers: visible layers whose colormap
+// is a single-hue channel colour (skips continuous maps / labels / tracks). See docs/todo/ANIMATION_PLAN.md C.
+interface LegendItem { name: string; hex: string }
+function legendFor(c: Cell): LegendItem[] {
+  const layers = (c.snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
+  const out: LegendItem[] = []
+  for (const [name, l] of Object.entries(layers)) {
+    if (l?.visible === false) continue
+    const hex = napariColormapHex(l?.colormap)
+    if (hex) out.push({ name, hex })
+  }
+  return out
 }
 
 // resolve a cell's <img> src: during PDF export, the inlined data URL (html2canvas can't draw a served
@@ -236,6 +253,8 @@ defineExpose({ exportImage })
             <label class="is-slider">caption
               <input type="range" min="8" max="28" :value="capSize" @input="capSize = +($event.target as HTMLInputElement).value" />
               <span class="is-val">{{ capSize }}</span></label>
+            <label class="is-check"><input type="checkbox" :checked="showLegend"
+              @change="showLegend = ($event.target as HTMLInputElement).checked" /> channel legend</label>
             <template v-if="separator === 'angled' && orientation === 'h'">
               <label class="is-slider">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
@@ -254,7 +273,13 @@ defineExpose({ exportImage })
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
         <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="napari screenshot" />
-        <button v-else class="is-capture" @click="capture(i)" :disabled="capturing === i"
+        <!-- optional channel-colour legend (swatch + channel name), from the frame's snapshot -->
+        <div v-if="showLegend && (c.assetId || c.src) && legendFor(c).length" class="is-legend">
+          <span v-for="it in legendFor(c)" :key="it.name" class="is-legend-item">
+            <span class="is-swatch" :style="{ background: it.hex }" />{{ it.name }}
+          </span>
+        </div>
+        <button v-if="!(c.assetId || c.src)" class="is-capture" @click="capture(i)" :disabled="capturing === i"
                 v-tooltip.bottom="'Capture the current napari view'">
           <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
         </button>
@@ -295,6 +320,14 @@ defineExpose({ exportImage })
 .is-err { color: #fca5a5; font-size: 11px; }
 .is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: 11px; }
 .is-slider input[type="range"] { width: 4.5rem; }
+.is-check { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); font-size: 11px; }
+/* channel-colour legend: swatch + channel name, overlaid bottom-left of the frame (z above the
+   auto-hide toolbar like the caption/actions); included in the PDF export (not hidden while capturing). */
+.is-legend { position: absolute; bottom: 6px; left: 6px; display: flex; flex-direction: column; gap: 2px;
+  padding: 3px 5px; border-radius: 3px; background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7; }
+.is-legend-item { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 10px;
+  font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); white-space: nowrap; }
+.is-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
 .is-strip { flex: 1; min-height: 0; display: flex; padding: 6px; gap: 0; overflow: auto; }
 .is-strip.col { flex-direction: column; }
 /* straight: no box around each frame — just a thin rule BETWEEN frames */
