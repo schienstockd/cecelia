@@ -359,6 +359,22 @@ function api_napari_screenshot(body_bytes::Vector{UInt8})
     end  # _with_viewer
 end
 
+# ── REST: POST /api/napari/toggle-animation ───────────────────────────────────
+# Dock/undock napari-animation's recorder "wizard" widget in the running viewer (ports the old R
+# "add recorder" button). Returns the new state so the UI button can reflect it.
+function api_napari_toggle_animation(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            active = toggle_animation!(v)
+            200, JSON3.write((; ok = true, active = active))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 # ── REST: POST /api/napari/restart ────────────────────────────────────────────
 
 function api_napari_restart(body_bytes::Vector{UInt8})

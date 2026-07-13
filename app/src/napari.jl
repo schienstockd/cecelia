@@ -183,3 +183,9 @@ load_layer_props!(v::NapariViewer, path::String) =
 
 save_screenshot!(v::NapariViewer, path::String; canvas_only::Bool=true) =
     (send(v, Dict("type"=>"save_screenshot", "path"=>path, "canvas_only"=>canvas_only)); v)
+
+# ── Animation recorder (napari-animation) ───────────────────────────────────────
+
+# Dock/undock napari-animation's recorder "wizard" widget; returns whether it's now shown.
+toggle_animation!(v::NapariViewer)::Bool =
+    Bool(get(send(v, Dict("type"=>"toggle_animation")), "active", false))

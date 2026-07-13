@@ -51,6 +51,7 @@ btrack       = ">=0.7"
 # Leiden clustering (cells + tracks), CPU path. GPU (RAPIDS) is parked — see the gpu stub
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
+napari-animation = ">=0.0.10, <0.0.11"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared
