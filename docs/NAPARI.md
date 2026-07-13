@@ -97,6 +97,21 @@ Errors are returned as `{"type": "error", "msg": "..."}` — `send()` raises on 
 
 ---
 
+## Animation recorder (movies)
+
+The user records keyframe animations / exports movies with **napari-animation**'s own "wizard" dock
+widget — we don't re-implement the recorder, we just dock its widget (ports the old R "add recorder"
+button). `NapariState.toggle_animation_widget()` constructs `napari_animation.AnimationWidget(viewer)`
+and `add_dock_widget`s it (re-toggle removes it), returning whether it's now shown. It's driven by the
+`toggle_animation` command → `toggle_animation!(v)` → `POST /api/napari/toggle-animation` (returns
+`{active}`), surfaced as the video toggle in the viewer sidebar. Once docked, keyframe capture and movie
+export happen entirely inside napari. `napari-animation` is a heavy, napari-side dep, so it's imported
+lazily inside the method (like napari) and lives in `pixi.toml`'s `[pypi-dependencies]` — **PyPI, not
+conda-forge**, because the conda build pulls numpy ≥2.1 which breaks the `cellpose==3.1.1.2` pin
+(`numpy<2.1`). The dock persists across image switches (the viewer is reused, only its layers cleared).
+
+---
+
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
 
 The bridge keeps **all** its brain — disk load of label zarr / label-props HDF5, populations, per-layer

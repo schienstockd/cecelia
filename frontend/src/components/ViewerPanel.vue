@@ -22,6 +22,7 @@ async function _resError(res: Response): Promise<string> {
 const selectedValueName = ref('')
 const visibleLabels     = ref<Record<string, boolean>>({})
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
+const recorderActive    = ref(false)   // napari-animation "wizard" dock widget currently docked?
 
 // per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust)
 // belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
@@ -138,6 +139,22 @@ watch(() => settings.napariAutoSaveLayerProps, async enabled => {
     })
   } catch { /* napari not running */ }
 })
+
+// Recorder: dock/undock napari-animation's "wizard" widget inside the viewer (ports the old R
+// "add recorder" button). The animation UI + movie export live entirely in napari; we only toggle the
+// dock. Local state reflects the last-known dock state — if the user closes the dock from napari it can
+// desync, but a click self-heals (the bridge re-adds when its handle is cleared).
+async function toggleRecorder() {
+  try {
+    const res = await fetch('/api/napari/toggle-animation', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    })
+    if (!res.ok) { log.error(`Recorder toggle failed: ${await _resError(res)}`, { source: 'napari' }); return }
+    recorderActive.value = ((await res.json()) as { active?: boolean }).active ?? false
+  } catch (e) {
+    log.error(`Recorder toggle failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+  }
+}
 
 // Push a pop type's populations to napari as centroid points. The server shows EVERY segmentation's
 // pops at once (each as its own value_name-tagged layer), so `valueName` no longer selects which pops
@@ -438,89 +455,100 @@ onUnmounted(() => {
 
 <template>
   <div class="viewer-panel">
-    <template v-if="napariImage">
-      <div class="viewer-image">
-        <i class="pi pi-eye viewer-eye" />
-        <span class="viewer-name" :title="napariImage.name">{{ napariImage.name }}</span>
-      </div>
-      <select
-        v-if="valueNames.length"
-        class="viewer-select"
-        :value="selectedValueName"
-        @change="onValueNameChange"
-        v-tooltip.right="`Which image version to show in Napari`"
-      >
-        <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
-      </select>
-      <span v-else class="viewer-hint">No versions registered.</span>
+    <!-- ── View: viewer behaviour toggles (global prefs; apply on next open) ──
+         Top of the panel — these are always available, even before an image is open. -->
+    <!-- Convention: append new toggles at the END of the row. -->
+    <div class="viewer-section first">
+      <div class="viewer-section-title">View</div>
+      <div class="viewer-opts">
+        <button
+          class="opt-btn" :class="{ active: settings.napariUpdateImage }"
+          @click="settings.napariUpdateImage = !settings.napariUpdateImage"
+          v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
+        ><i class="pi pi-refresh" /></button>
 
-      <!-- ── Labels ─────────────────────────────────────────────────── -->
-      <div v-if="hasLabels" class="viewer-labels-list">
-        <div v-for="vn in labelNames" :key="vn" class="viewer-label-row">
-          <i class="pi pi-th-large viewer-label-icon" />
-          <span class="viewer-label-name" :title="vn">{{ vn }}</span>
-          <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
-               toggle stays visible so you can see what's shown without hovering -->
-          <button
-            class="opt-btn row-act" :class="{ active: visibleLabels[vn] }"
-            @click="toggleLabel(vn)"
-            v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
-          ><i class="pi pi-eye" /></button>
-          <button
-            class="opt-btn row-act" :class="{ active: trackVns[vn] }"
-            @click="toggleTrack(vn)"
-            v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
-          ><i class="pi pi-share-alt" /></button>
-          <ConfirmDeleteButton class="row-act"
-            title="Delete label set from disk"
-            armed-title="Click again to permanently delete this label set"
-            @confirm="deleteLabel(vn)" />
+        <button
+          class="opt-btn" :class="{ active: settings.napariResetOnReload }"
+          @click="settings.napariResetOnReload = !settings.napariResetOnReload"
+          v-tooltip.bottom="'Reset on reload: reopen the whole image (not just data) when reloading — needed when a task changed the image pixels (drift/denoise). Off = reload data only.'"
+        ><i class="pi pi-image" /></button>
+
+        <button
+          class="opt-btn" :class="{ active: settings.napariAutoSaveLayerProps }"
+          @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
+          v-tooltip.bottom="'Auto-save layer props: save brightness/contrast, colormap and the T/Z slider the moment you change them (survives navigation and crashes); reload on next open'"
+        ><i class="pi pi-bookmark" /></button>
+
+        <button
+          class="opt-btn" :class="{ active: show3D }" :disabled="!currentSetUid"
+          @click="show3D = !show3D"
+          v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
+        ><span class="opt-text">3D</span></button>
+
+        <button
+          class="opt-btn" :class="{ active: settings.napariAsDask }"
+          @click="settings.napariAsDask = !settings.napariAsDask"
+          v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
+        ><i class="pi pi-database" /></button>
+
+        <button
+          class="opt-btn" :class="{ active: recorderActive }" :disabled="!napariImage"
+          @click="toggleRecorder"
+          v-tooltip.bottom="'Movie recorder: dock napari-animation\'s wizard to record keyframes and export an animation (drive it inside Napari)'"
+        ><i class="pi pi-video" /></button>
+      </div>
+    </div>
+
+    <template v-if="napariImage">
+      <!-- ── Current image: what's open + its versions + segmentation label sets ── -->
+      <div class="viewer-section">
+        <div class="viewer-section-title">Current image</div>
+        <div class="viewer-image">
+          <i class="pi pi-eye viewer-eye" />
+          <span class="viewer-name" :title="napariImage.name">{{ napariImage.name }}</span>
+        </div>
+        <select
+          v-if="valueNames.length"
+          class="viewer-select"
+          :value="selectedValueName"
+          @change="onValueNameChange"
+          v-tooltip.right="`Which image version to show in Napari`"
+        >
+          <option v-for="vn in valueNames" :key="vn" :value="vn">{{ vn }}</option>
+        </select>
+        <span v-else class="viewer-hint">No versions registered.</span>
+
+        <!-- segmentation label sets: show labels / tracks, delete -->
+        <div v-if="hasLabels" class="viewer-labels-list">
+          <div v-for="vn in labelNames" :key="vn" class="viewer-label-row">
+            <i class="pi pi-th-large viewer-label-icon" />
+            <span class="viewer-label-name" :title="vn">{{ vn }}</span>
+            <!-- action icons are hidden until row hover (keeps the narrow sidebar tidy); an ACTIVE
+                 toggle stays visible so you can see what's shown without hovering -->
+            <button
+              class="opt-btn row-act" :class="{ active: visibleLabels[vn] }"
+              @click="toggleLabel(vn)"
+              v-tooltip.right="visibleLabels[vn] ? 'Hide labels in Napari' : 'Show labels in Napari'"
+            ><i class="pi pi-eye" /></button>
+            <button
+              class="opt-btn row-act" :class="{ active: trackVns[vn] }"
+              @click="toggleTrack(vn)"
+              v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
+            ><i class="pi pi-share-alt" /></button>
+            <ConfirmDeleteButton class="row-act"
+              title="Delete label set from disk"
+              armed-title="Click again to permanently delete this label set"
+              @confirm="deleteLabel(vn)" />
+          </div>
         </div>
       </div>
-    </template>
-    <span v-else class="viewer-hint">No image open in Napari.</span>
 
-    <!-- ── Viewer option toggles ──────────────────────────────────────── -->
-    <!-- Convention: append new toggles at the END of the row. -->
-    <div class="viewer-opts">
-      <button
-        class="opt-btn" :class="{ active: settings.napariUpdateImage }"
-        @click="settings.napariUpdateImage = !settings.napariUpdateImage"
-        v-tooltip.bottom="'Auto-update: refresh Napari whenever a task finishes on that image'"
-      ><i class="pi pi-refresh" /></button>
-
-      <button
-        class="opt-btn" :class="{ active: settings.napariResetOnReload }"
-        @click="settings.napariResetOnReload = !settings.napariResetOnReload"
-        v-tooltip.bottom="'Reset on reload: reopen the whole image (not just data) when reloading — needed when a task changed the image pixels (drift/denoise). Off = reload data only.'"
-      ><i class="pi pi-image" /></button>
-
-      <button
-        class="opt-btn" :class="{ active: settings.napariAutoSaveLayerProps }"
-        @click="settings.napariAutoSaveLayerProps = !settings.napariAutoSaveLayerProps"
-        v-tooltip.bottom="'Auto-save layer props: save brightness/contrast, colormap and the T/Z slider the moment you change them (survives navigation and crashes); reload on next open'"
-      ><i class="pi pi-bookmark" /></button>
-
-      <button
-        class="opt-btn" :class="{ active: show3D }" :disabled="!currentSetUid"
-        @click="show3D = !show3D"
-        v-tooltip.bottom="'3D view: open images in 3D where they have a z-axis (per experiment/set)'"
-      ><span class="opt-text">3D</span></button>
-
-      <button
-        class="opt-btn" :class="{ active: settings.napariAsDask }"
-        @click="settings.napariAsDask = !settings.napariAsDask"
-        v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
-      ><i class="pi pi-database" /></button>
-
-      <!-- Populations sub-menu: one toggle per pop type, shown as coloured centroid points in napari
-           (layers namespaced by pop type, so they coexist). Distinct from the Tracks-ribbon toggle. -->
-      <!-- population / overlay toggles: their OWN line (flex row break), led by a decorative dot at the
-           left — a distinct control group from the image-open options above, aligned with the
-           label/track-prop rows and the colour-by row below. -->
-      <div v-if="napariImage" class="opt-group">
-        <i class="pi pi-circle-fill opt-deco"
-           v-tooltip.bottom="'Toggles for the population types to show'" />
+    <!-- ── Populations & tracks: overlays on the open image ────────────────── -->
+    <!-- pop toggles show coloured centroid POINTS (layers namespaced by pop type, so they coexist);
+         the ribbon toggles show gated / cluster track populations as napari Tracks layers. -->
+    <div class="viewer-section">
+      <div class="viewer-section-title">Populations &amp; tracks</div>
+      <div class="viewer-opts">
         <button
           v-for="pt in POP_TYPES" :key="pt.key"
           class="opt-btn" :class="{ active: popVisible(pt.key) }"
@@ -528,7 +556,7 @@ onUnmounted(() => {
           v-tooltip.bottom="`${popVisible(pt.key) ? 'Hide' : 'Show'} ${pt.label} (points)`"
         ><i :class="['pi', pt.icon]" /></button>
         <!-- Tracks as ribbons (TEST/SDGF gated track pops); per-segmentation _tracked toggles live
-             in the labels list above (directions icon per row) -->
+             in the Segmentations list above (directions icon per row) -->
         <button
           class="opt-btn" :class="{ active: gatedTracksShown }"
           @click="toggleGatedTracks"
@@ -540,18 +568,19 @@ onUnmounted(() => {
           v-tooltip.bottom="popVisible('trackclust') ? 'Hide track-cluster ribbons' : 'Show track-cluster populations as ribbons'"
         ><i class="pi pi-sitemap" /></button>
       </div>
-      <!-- colour tracks + labels by an obs column (e.g. HMM state); '' = default colouring -->
-      <span
-        v-if="napariImage && obsCols.length" class="opt-colourby-wrap"
-        v-tooltip.bottom="'Colour tracks + labels by a cell property (e.g. HMM state)'"
-      >
-        <i class="pi pi-circle-fill" />
-        <select class="opt-colourby" :value="colourByCol" @change="onColourBy">
-          <option value="">colour: default</option>
+    </div>
+
+      <!-- ── Colour by: shade tracks + labels by an obs column (e.g. HMM state); '' = default ── -->
+      <div v-if="obsCols.length" class="viewer-section">
+        <div class="viewer-section-title">Colour by</div>
+        <select class="opt-colourby" :value="colourByCol" @change="onColourBy"
+                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state)'">
+          <option value="">default</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>
-      </span>
-    </div>
+      </div>
+    </template>
+    <div v-else class="viewer-section"><span class="viewer-hint">No image open in Napari.</span></div>
   </div>
 </template>
 
@@ -580,11 +609,29 @@ onUnmounted(() => {
 
 /* visual styling from the global form base (style.css) */
 .viewer-select { width: 100%; font-size: 0.72rem; }
-/* colour-by dropdown: full width on its OWN line (the sidebar is narrow, so inline it clipped),
-   with a leading palette icon so it doesn't read as a stray dropdown among the icon toggles */
-.opt-colourby-wrap { flex: 1 0 100%; display: flex; align-items: center; gap: 0.3rem; color: var(--cc-text-dim); min-width: 0; }
-.opt-colourby-wrap .pi { font-size: 0.72rem; flex-shrink: 0; }
-.opt-colourby { font-size: 0.7rem; flex: 1; min-width: 0; }
+/* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
+.opt-colourby { font-size: 0.7rem; width: 100%; min-width: 0; }
+
+/* ── Sections ────────────────────────────────────────────────────────────
+   Group the controls under short headings (Segmentations / View / Populations &
+   tracks / Colour by) so the narrow sidebar reads as labelled blocks rather than
+   a wall of icons. A hairline above each keeps the groups visually distinct. */
+.viewer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-top: 0.35rem;
+  border-top: 1px solid var(--cc-border);
+}
+/* the top section (View) sits flush against the panel top — no leading divider */
+.viewer-section.first { padding-top: 0; border-top: none; }
+.viewer-section-title {
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--cc-text-dim);
+}
 
 .viewer-hint {
   font-size: 0.72rem;
@@ -660,29 +707,4 @@ onUnmounted(() => {
   line-height: 1;
 }
 
-/* subtle divider between viewer-option toggles and population/overlay toggles */
-.opt-sep {
-  width: 1px;
-  align-self: stretch;
-  margin: 0.1rem 0.15rem;
-  background: var(--cc-border);
-  flex-shrink: 0;
-}
-/* population/overlay toggles on their own line (breaks the flex row), led by the dot at the left —
-   aligned with the label/track-prop rows above and the colour-by row below */
-.opt-group {
-  flex: 1 0 100%;
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-/* dot marking that group — matches the colour-by dot (.opt-colourby-wrap .pi): same colour + size, and
-   carries a tooltip. Non-interactive (no click), but hoverable so the tooltip shows. */
-.opt-deco {
-  color: var(--cc-text-dim);
-  font-size: 0.72rem;
-  margin-left: 0.05rem;
-  flex-shrink: 0;
-  cursor: default;
-}
 </style>

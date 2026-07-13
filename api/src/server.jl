@@ -322,6 +322,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_close(body_bytes)
         elseif path == "/api/napari/screenshot"
             api_napari_screenshot(body_bytes)
+        elseif path == "/api/napari/toggle-animation"
+            api_napari_toggle_animation(body_bytes)
         elseif path == "/api/napari/restart"
             api_napari_restart(body_bytes)
         elseif path == "/api/napari/gpu"

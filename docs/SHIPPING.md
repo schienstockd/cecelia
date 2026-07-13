@@ -247,6 +247,14 @@ run (reported by a tester on macOS-arm64). It is therefore declared in `[depende
 btrack's PyPI requirement so it is never built from source. This pulls the SuiteSparse stack
 (`libumfpack`, `suitesparse`, …) into the lock as conda packages.
 
+### napari-animation is PyPI, not conda-forge
+The in-viewer movie recorder (`docs/NAPARI.md` → *Animation recorder*) is **napari-animation**, declared
+in `[pypi-dependencies]`. The conda-forge build resolves numpy to ≥2.1, which violates the
+`cellpose==3.1.1.2` pin (`numpy<2.1`) and makes `pixi add`/`install` unsolvable. The PyPI resolve is
+constrained alongside cellpose, so numpy stays at 2.0.x and the recorder's own deps (imageio-ffmpeg for
+export, superqt, npe2) install cleanly. This is the mirror of the cvxopt case above: there conda-forge
+*avoids* a source build, here PyPI *avoids* a pin conflict — the right channel is per-package.
+
 ### GPU / RAPIDS is parked (CUDA-only)
 Leiden clustering ships CPU-only via `leidenalg` (cross-platform). The GPU backend (RAPIDS) is
 CUDA-only and lives as a commented `[feature.gpu]` stub in `pixi.toml`; when un-parked it becomes a
