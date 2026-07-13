@@ -1,8 +1,9 @@
 # Cluster UMAP — colour-by & facet-by (populations / image attributes)
 
-Status: in-progress — branch `feat/umap-colour-facet`. **Phase 1 + 2 built** (colour-by cluster /
-population / attribute); Phase 3 (facet small-multiples) pending. Works for BOTH `clust` (static/cell)
-and `trackclust` (track) embeddings — grain-matched via `pop_df`.
+Status: **all phases built.** Phase 1+2 (colour-by cluster / population / attribute) merged in #127.
+Phase 3 (facet small-multiples) on branch `feat/umap-facet`. Works for BOTH `clust` (static/cell) and
+`trackclust` (track) embeddings — grain-matched via `pop_df`. Promote the durable bits to a permanent
+doc (PLOTS.md / ANALYSIS.md) and delete this plan once Phase 3 merges.
 
 ## Goal
 
@@ -70,9 +71,13 @@ attribute} × **facet by** {none | attribute | population}.
   (persisted state). `population` → pop picker → refetch with `colourPops`, colour by `popIdx`,
   legend from `X-Colour-Pops`. `attribute` → attr picker (shared composable) → client uid→attr colour.
   Reuse `paletteRange` + the existing legend/centroid render.
-- **Phase 3 — facet-by (figure 2).** `facetBy: none | attribute | population` → partition points into
-  facets, render a grid of sub-plots on the one 2D canvas (shared extents + colour map + single
-  legend), titled per facet value. Export path already composites the canvas — extend to the grid.
+- **Phase 3 — facet-by (figure 2).** ✅ BUILT (branch `feat/umap-facet`). `facetBy: none | attribute |
+  population` partitions points into `facets` (a computed, O(n) via a precomputed per-image/per-popIdx
+  label source); `paintDots` draws each facet into a grid cell via `mapRect` (shared `extents` +
+  shared `categories`/`palette` → comparable + one legend); HTML `facetTitles` per cell (composited in
+  export like the centroid labels). Centroid labels are suppressed while faceting. `usePopIdx` (colour
+  OR facet by population) drives the `colourPops` fetch + pop-picker visibility, so figure 2 = colour
+  by population × facet by attribute works. No backend change (image-attr faceting is client-side).
 
 ## Invariants / notes
 - `api/src/*.jl` not Revise-tracked → restart to test Phase 1.

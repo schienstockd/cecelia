@@ -185,6 +185,27 @@ For a host with a **hover-reveal** row action, target the inner button with `:de
 `ViewerPanel`). The louder **named** text confirms for whole-image / whole-set deletion (`ImageTable`,
 `SetBar`: "Delete NAME? [Confirm] [Cancel]") are a deliberate higher tier and stay as-is.
 
+### Coord-fixed plots — 1:1 square
+
+Plots whose axes must stay isotropic (the cluster **UMAP**, the **gating** scatter) render as a
+**1:1 square**, so the embedding/flow cloud never warps and HTML overlays (centroid labels, facet
+titles, gate labels) line up with the canvas dots.
+
+- **`components/plots/SquarePlot.vue`** — the shared square *primitive*: a container-query box sized to
+  `min(100cqw, 100cqh)`, centred. Use it to square a plot whose canvas fills the box with no internal
+  padding (UMAP wraps its plot in it).
+- **Gating** can't use `SquarePlot`: (a) its axis labels live in the capture box's asymmetric padding
+  and the PNG export reads `.panel-plot`'s `offsetLeft/Top` (zoom-immune), so a positioned wrapper /
+  squaring the *outer* box would break the export or leave the *dots* rectangular; (b) `SquarePlot`'s
+  container-query needs a **definite parent height**, which the montage tiles (content-driven height)
+  don't have. So `GateScatterCell` squares **`.panel-plot`** with **`aspect-ratio: 1`** — ONE method
+  across both gating contexts (the gate module page *and* the montage tiles).
+- **`CanvasPanel :square="true"`** — the shared **resize-box** logic: snaps a *free-floating* panel's
+  height to its width on resize so the square plot fills it with no blank space. Used identically by the
+  gate plot + pairs panels (pass it directly) and the UMAP (opts in via `interactiveViews.ts` →
+  `square: true`, forwarded by `InteractivePanel`). No-op when docked (the board grid owns slot size) or
+  collapsed. This is the "same 1:1 resize box for gating and UMAP".
+
 ---
 
 ## Pinia array reactivity
