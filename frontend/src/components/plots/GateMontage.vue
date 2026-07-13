@@ -268,9 +268,19 @@ const corrFont = (r: number | null | undefined) => `${Math.round(13 + Math.abs(r
    the square diagonal/correlation cells; its axis padding is tiny+near-symmetric so the dots stay square. */
 .gm-plot { flex: none; width: 100%; max-width: 320px; margin: 0 auto; }
 .gm-grid.matrix .gm-plot { max-width: none; aspect-ratio: 1; }
+/* single tile (board gating-strategy): FILL the slot. The plot-capture fills the cell and CENTRES a
+   square sized to the cell's SMALLER dimension (like the UMAP square) — the old rule made a
+   width-square anchored to the TOP with big blank space below, and the full 84px y-name padding left
+   the dots tiny in a small slot. Tighter axis padding here so the dots reclaim the space. :deep reaches
+   into GateScatterCell (single mode is board-only, so this doesn't touch the matrix / gate page). */
 .gm-grid.single .gm-cell { container-type: size; }
-.gm-grid.single .gm-plot { flex: none; min-height: 0; max-width: none;
-  width: min(100cqw, calc(100cqh - 26px)); margin: 0 auto; }
+.gm-grid.single .gm-plot { flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0; }
+/* padding leaves room for the axis NAMES at their offsets (x-name bottom:-40, y-name left:-66) + ticks
+   so neither clips; the height budget below subtracts it so the square still fits the cell. */
+.gm-grid.single :deep(.plot-capture.gm-plot) {
+  flex: 1; min-height: 0; align-items: center; justify-content: center; padding: 12px 14px 46px 50px; }
+.gm-grid.single :deep(.plot-capture.gm-plot .panel-plot) {
+  flex: none; aspect-ratio: 1; min-height: 0; width: min(100%, calc(100cqh - 82px)); }
 /* diagonal label cell (matrix): channel name centred, matches the tile square */
 .gm-diag { align-items: center; justify-content: center; aspect-ratio: 1; background: var(--cc-surface-2);
   color: var(--cc-text); font-weight: 700; font-size: 12px; padding: 4px; text-align: center; word-break: break-word; }
