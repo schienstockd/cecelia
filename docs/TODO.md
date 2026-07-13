@@ -222,6 +222,52 @@ path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path
 
 ---
 
+## Figures & movies (animation)
+
+Full design + phased sequence: **`docs/todo/ANIMATION_PLAN.md`**. Build order
+`A → D → B + C → G → F1 → E → F2`. These supersede the ad-hoc image-strip items (#00032/#00036) by
+putting them on the shared **view-snapshot** foundation.
+
+**#00071** — **View snapshot atom (foundation)** — a durable, GUI-editable JSON describing a napari
+view (camera, T/Z, per-layer contrast/colormap-name/visibility, pops, split-by-feature). Bridge
+`capture_view_state()` + `apply_view_state()` (whitelist + sanitise to settable scalars, only-present
+layers). Generalises `save_layer_props`. Blocks everything below. See ANIMATION_PLAN Phase A + Decision 1.
+
+**#00072** — **Zoom-to-source** — store the snapshot + `{imageUid, valueName}` in each image-strip
+frame; a button reopens the image and re-applies the snapshot (durable across sessions). The
+"reconstruct my figure months later" path. Needs #00071. (Phase B; was the strip half of #00036.)
+
+**#00073** — **Image-strip colour legend** — render channel + population/feature colours (swatch +
+name / µm) below each frame, read from the snapshot; toggle in the ⚙ popover. Needs #00071 + #00076.
+(Phase C; was #00032.)
+
+**#00074** — **Capture quality** — D1: hi-res napari screenshot (`scale`/`size` on
+`viewer.screenshot`, currently captured at the tiny widget size). D2: fix edge clipping — the strip's
+`object-fit: cover` crops the frame so the scale bar/timestamp (at the edges) are cut; use
+`contain`/match aspect. Independent quick win. (Phase D.)
+
+**#00075** — **Scale bar / timestamp as figure overlays** — E1: a clean-capture toggle (hide napari's
+scale bar + timestamp for the shot) so figures aren't baked, per journal norms. E2 (stretch):
+Cecelia-draws its own vector scale bar (N µm + label) + timestamp beneath the frame, from
+`img_physical_sizes` + time interval. (Phase E + Decision 7.)
+
+**#00076** — **Split-by-feature colouring** — colour tracks/points by a categorical measure column →
+named groups each with a hex colour (ports R `splitTracks`/`splitPops`); a track pop may inherit its
+source pop's colour. Shared by the legend + both movie tiers; builds on colour-by-obs
+(`/api/napari/colour-labels`, show-tracks `colorBy`). (Phase G + Decision 5.)
+
+**#00077** — **Batch movie generation** (ports R `generateMovies`) — author a config (channels+colours,
+pops, split-by-feature, fps, resolution, version, attr-naming) → apply per selected/attr-filtered
+image (contrast from saved layer props, no `browser()`) → record the T-sweep → one attr-named `.mp4`
+per image. Runs as a task. The headline user win. Needs #00071 + #00076. (Phase F1 + Decisions 3–4.)
+
+**#00078** — **Keyframe animation page** — a board-like page holding a durable, editable ordered
+sequence of snapshots (keyframes) + per-transition duration/easing + output settings; hydrate →
+napari-animation `Animation` → render → encode. Edit a keyframe's colour in the GUI → regenerate.
+Needs #00071. (Phase F2 + Decision 2.)
+
+---
+
 ## Low priority
 
 **#00003** — **Re-enable interactive pan/zoom on gating plots**
