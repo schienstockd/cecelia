@@ -20,6 +20,7 @@ import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import PopulationPanelShell from './PopulationPanelShell.vue'
+import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import type { VisProps } from '../../plots/plot'
 
 const props = withDefaults(defineProps<{
@@ -171,10 +172,9 @@ async function addClusterPopulation() {
                   @click.stop="toggleNapari(p)">
             <i class="pi pi-images" />
           </button>
-          <button v-if="!p.transient && !readonly" class="pm-icon danger" v-tooltip.left="'Delete population'"
-                  @click.stop="g.deletePop(p.path)">
-            <i class="pi pi-trash" />
-          </button>
+          <ConfirmDeleteButton v-if="!p.transient && !readonly"
+                  title="Delete population" armed-title="Click again to delete this population"
+                  @confirm="g.deletePop(p.path)" />
           <!-- the napari selection is transient (never persisted) — this clears it so it doesn't
                linger forever; there's no persisted pop to delete. -->
           <button v-else class="pm-icon danger" v-tooltip.left="'Clear napari selection'"

@@ -5,6 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
+import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -299,22 +300,7 @@ async function toggleLabel(valueName: string) {
   }
 }
 
-// Inline two-click delete confirmation (no browser popup): first click arms the row (the trash flips
-// to a warning icon), a second click within a few seconds actually deletes; otherwise it disarms.
-const confirmDeleteVn = ref<string | null>(null)
-let confirmTimer: ReturnType<typeof setTimeout> | null = null
-function onDeleteClick(valueName: string) {
-  if (confirmDeleteVn.value === valueName) {        // second click → confirmed
-    if (confirmTimer) { clearTimeout(confirmTimer); confirmTimer = null }
-    confirmDeleteVn.value = null
-    deleteLabel(valueName)
-  } else {                                          // first click → arm, auto-disarm after 3.5s
-    confirmDeleteVn.value = valueName
-    if (confirmTimer) clearTimeout(confirmTimer)
-    confirmTimer = setTimeout(() => { confirmDeleteVn.value = null; confirmTimer = null }, 3500)
-  }
-}
-
+// two-click delete → the shared ConfirmDeleteButton (arms trash → warning, second click deletes).
 async function deleteLabel(valueName: string) {
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
@@ -485,11 +471,10 @@ onUnmounted(() => {
             @click="toggleTrack(vn)"
             v-tooltip.right="trackVns[vn] ? 'Hide this segmentation\'s tracks' : 'Show this segmentation\'s tracks'"
           ><i class="pi pi-share-alt" /></button>
-          <button
-            class="opt-btn danger row-act" :class="{ 'confirm': confirmDeleteVn === vn }"
-            @click="onDeleteClick(vn)"
-            v-tooltip.right="confirmDeleteVn === vn ? 'Click again to permanently delete this label set' : 'Delete label set from disk'"
-          ><i :class="confirmDeleteVn === vn ? 'pi pi-exclamation-triangle' : 'pi pi-trash'" /></button>
+          <ConfirmDeleteButton class="row-act"
+            title="Delete label set from disk"
+            armed-title="Click again to permanently delete this label set"
+            @confirm="deleteLabel(vn)" />
         </div>
       </div>
     </template>
@@ -634,9 +619,11 @@ onUnmounted(() => {
 /* row action icons (eye / directions / trash): hidden until the row is hovered to keep the narrow
    sidebar uncluttered; an ACTIVE toggle (shown layer/tracks) stays visible so state is readable */
 .row-act { opacity: 0; transition: opacity 0.12s; }
-.viewer-label-row:hover .row-act, .row-act.active, .row-act.confirm { opacity: 1; }
-/* armed delete: clearly red so the second-click-to-confirm state is obvious */
-.opt-btn.danger.confirm { color: #fff; background: #ef4444; border-color: #ef4444; }
+.viewer-label-row:hover .row-act, .row-act.active { opacity: 1; }
+/* the delete affordance is the shared ConfirmDeleteButton (its own .cc-del button); apply the same
+   hover-reveal to it via :deep, and keep it visible while armed so the confirm step never vanishes. */
+.viewer-label-row :deep(.cc-del) { opacity: 0; transition: opacity 0.12s; }
+.viewer-label-row:hover :deep(.cc-del), .viewer-label-row :deep(.cc-del.armed) { opacity: 1; }
 
 /* ── Option toggles ──────────────────────────────────────────────────── */
 

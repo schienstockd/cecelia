@@ -8,7 +8,7 @@ import { buildFieldRegex, buildLookaroundRegex, extractWith,
          type FieldPos, type CtxClass, type ExtractKind } from '../../utils/regexBuilder'
 import { usePanelResize } from '../../composables/usePanelResize'
 import PhysicalSizeDialog from '../../components/PhysicalSizeDialog.vue'
-import ConfirmButton from '../../components/ConfirmButton.vue'
+import ConfirmDeleteButton from '../../components/ConfirmDeleteButton.vue'
 
 // resizable sidebar width (persisted) — same behaviour as the TaskRunner functions panel
 const { width: panelWidth, onResizeStart } =
@@ -314,15 +314,10 @@ const flaggedCount = computed(() => setImages.value.filter(i => metadataWarning(
           <option value="">— select attribute —</option>
           <option v-for="n in attrNames" :key="n" :value="n">{{ n }}</option>
         </select>
-        <ConfirmButton @confirm="deleteAttr" v-slot="{ armed, arm, confirm, cancel }">
-          <button v-if="!armed" class="btn-danger btn-sm" :disabled="!selectedAttr" @click="arm"
-            v-tooltip.bottom="'Delete this attribute from all images.'"><i class="pi pi-trash" /></button>
-          <template v-else>
-            <button class="btn-danger btn-sm" @click="confirm"
-              v-tooltip.bottom="`Permanently delete '${selectedAttr}' from every image.`">Confirm</button>
-            <button class="btn-ghost btn-sm" @click="cancel">Cancel</button>
-          </template>
-        </ConfirmButton>
+        <ConfirmDeleteButton :disabled="!selectedAttr"
+          title="Delete this attribute from all images."
+          :armed-title="`Click again to permanently delete '${selectedAttr}' from every image.`"
+          @confirm="deleteAttr" />
       </div>
     </section>
 

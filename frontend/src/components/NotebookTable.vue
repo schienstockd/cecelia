@@ -4,6 +4,7 @@
 // examples are read-only (duplicate-into-project only). See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
 import { ref, onMounted, watch } from 'vue'
 import { useLogStore } from '../stores/log'
+import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
 const props = defineProps<{
   projectUid: string
@@ -142,10 +143,7 @@ async function restore(nb: Notebook) {
 }
 
 // Two-click delete confirm (no modal dependency).
-const confirmingDelete = ref<string | null>(null)
-async function remove(nb: Notebook) {
-  if (confirmingDelete.value !== nb.file) { confirmingDelete.value = nb.file; return }
-  confirmingDelete.value = null
+async function remove(nb: Notebook) {   // confirmation handled by ConfirmDeleteButton
   busy.value = true
   try {
     // force: the two-click confirm IS the user's confirmation; satisfies the server-running guard.
@@ -252,14 +250,9 @@ defineExpose({ refresh })
               <i class="pi pi-history" />
             </button>
 
-            <button v-if="nb.scope === 'project'"
-                    class="cc-btn cc-btn-ghost" :class="{ 'nbt-danger': confirmingDelete === nb.file }"
-                    :disabled="busy" @click="remove(nb)"
-                    v-tooltip.top="confirmingDelete === nb.file
-                      ? (serverRunning ? 'Server running — close this notebook in Pluto first, then click to confirm' : 'Click again to confirm')
-                      : 'Delete'">
-              <i class="pi" :class="confirmingDelete === nb.file ? 'pi-check' : 'pi-trash'" />
-            </button>
+            <ConfirmDeleteButton v-if="nb.scope === 'project'" :disabled="busy" title="Delete"
+                    :armed-title="serverRunning ? 'Server running — close this notebook in Pluto first, then click to confirm' : 'Click again to confirm'"
+                    @confirm="remove(nb)" />
           </td>
         </tr>
 
