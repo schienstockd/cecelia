@@ -17,6 +17,7 @@ import ChainLiveNode from '../components/ChainLiveNode.vue'
 import ChainLiveLabel from '../components/ChainLiveLabel.vue'
 import ChainQcNode from '../components/ChainQcNode.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
+import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
@@ -1188,14 +1189,10 @@ onActivated(async () => {
           >
             <i class="pi pi-plus" />
           </button>
-          <button
-            class="wb-btn wb-btn-danger"
-            :disabled="!activeChain"
-            @click="removeChain"
-            v-tooltip.right="'Delete this chain template from disk.'"
-          >
-            <i class="pi pi-trash" />
-          </button>
+          <ConfirmDeleteButton :disabled="!activeChain"
+            title="Delete this chain template from disk."
+            armed-title="Click again to permanently delete this chain"
+            @confirm="removeChain" />
           <button
             class="wb-btn"
             :disabled="!activeChain || hasStartNode"
@@ -1386,13 +1383,10 @@ onActivated(async () => {
 
         <div class="config-header">
           <div class="config-title">{{ selectedNode.type === 'start' ? 'Start node' : 'Node' }}</div>
-          <button
-            class="wb-btn wb-btn-danger"
-            @click="deleteSelectedNode"
-            v-tooltip.left="'Remove this node and its connections from the chain.'"
-          >
-            <i class="pi pi-trash" />
-          </button>
+          <ConfirmDeleteButton
+            title="Remove this node and its connections from the chain."
+            armed-title="Click again to remove this node"
+            @confirm="deleteSelectedNode" />
         </div>
 
         <div v-if="selectedNode.type === 'start'" class="config-section">

@@ -158,8 +158,32 @@ if direct children of the host.
 ```
 
 `needsConfirm=false` makes `arm` fire immediately with no arm step (e.g. closing an already-empty
-board). Used by the sidebar/Settings **Quit**, the board close in `TabbedCanvas`, and the
-metadata-attribute delete. For a bigger modal decision (not a single button), use `BaseModal`.
+board). Used by the sidebar/Settings **Quit** and the board close in `TabbedCanvas`. For a bigger
+modal decision (not a single button), use `BaseModal`.
+
+#### Delete affordance — `ConfirmDeleteButton` (the app-wide standard)
+
+For a **destructive icon delete** (label set, population, attribute, notebook, chain, node, …) use
+**`frontend/src/components/ConfirmDeleteButton.vue`** — the ONE delete affordance. It's a single icon
+button that arms on the first click (**trash → warning triangle, solid danger fill**) and fires
+`@confirm` on the second (the ViewerPanel labels pattern D picked as the standard). It **wraps**
+`ConfirmButton` for the arm/confirm/dismiss logic and renders its own self-contained chrome (`.cc-del`)
+— self-styled *because* it must look identical everywhere (and hosts' scoped `.opt-btn`/`.pm-icon`/
+`.wb-btn` classes can't reach a button rendered inside it anyway). Don't hand-roll a per-site
+icon-flip or a Confirm+Cancel pair for deletes; that inconsistency is exactly what this replaced.
+
+```vue
+<ConfirmDeleteButton title="Delete population"
+                     armed-title="Click again to delete this population"
+                     @confirm="deletePop(path)" />
+```
+
+Props: `title` / `armedTitle` (tooltips), `disabled`, `needsConfirm`, `autoDismissMs`; default slot →
+a text label beside the icon (e.g. "Delete set"). Tooltip position is PrimeVue's default + its
+out-of-bounds flip (a `tip` prop can't drive position — dynamic directive modifiers aren't possible).
+For a host with a **hover-reveal** row action, target the inner button with `:deep(.cc-del)` (see
+`ViewerPanel`). The louder **named** text confirms for whole-image / whole-set deletion (`ImageTable`,
+`SetBar`: "Delete NAME? [Confirm] [Cancel]") are a deliberate higher tier and stay as-is.
 
 ---
 
