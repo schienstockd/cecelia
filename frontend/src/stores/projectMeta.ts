@@ -103,28 +103,10 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     }
   }
 
-  async function saveProject(): Promise<void> {
-    if (!current.value) return
-    try {
-      // package the Analysis-canvas boards (tabs + per-tab grid layouts) for this project so they
-      // persist to analysisBoards.json alongside project.json
-      const groupKey = `analysis:${current.value.uid}`
-      const boards = {
-        tabs: useAnalysisTabsStore().serialize(groupKey),
-        layouts: useAnalysisLayoutStore().serialize(`${groupKey}:tab:`),
-      }
-      const res = await fetch('/api/projects/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uid: current.value.uid, boards }),
-      })
-      const body = await res.json().catch(() => ({})) as { error?: string }
-      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      log.info(`Project "${current.value.name}" saved.`, { source: 'project' })
-    } catch (e) {
-      log.error(`Failed to save project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
-    }
-  }
+  // NOTE: there is no manual "save project" anymore. The /analysis boards autosave (debounced) from the
+  // analysisLayout store; everything else (image metadata, inclusion/notes, attrs, gating pops, chains,
+  // module canvases, napari layer props) already persists immediately via its own routes; and
+  // `lastOpenedAt` is stamped on open (api_projects_load). See docs/todo/ANIMATION_PLAN.md.
 
   async function renameProject(name: string): Promise<boolean> {
     if (!current.value) return false
@@ -154,5 +136,5 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     log.info('Project closed.', { source: 'project' })
   }
 
-  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, saveProject, renameProject, closeProject }
+  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, closeProject }
 })

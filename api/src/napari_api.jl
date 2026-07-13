@@ -26,6 +26,8 @@ end
 # Track what's currently open so we can auto-save before switching images
 const _current_zarr_path = Ref{Union{String,Nothing}}(nothing)
 const _current_task_dir  = Ref{Union{String,Nothing}}(nothing)
+# which image uid is currently shown — stamped into screenshot provenance (zoom-to-source)
+const _current_image_uid = Ref{Union{String,Nothing}}(nothing)
 
 # Serialise all interaction with the single bridge process. Under `-t auto` two concurrent napari
 # requests would otherwise interleave command sequences on the one bridge (e.g. a screenshot mid-open,
@@ -160,6 +162,7 @@ function _execute_pending_open()
         _do_open!(v, zarr_path, task_dir, ch_names; show_3d = p_show_3d, as_dask = p_as_dask)
         _current_zarr_path[] = zarr_path
         _current_task_dir[]  = task_dir
+        _current_image_uid[] = pending.image_uid
 
         if p_show_labels && !isempty(p_all_labels)
             _show_all_labels!(v, p_all_labels, true)
@@ -287,6 +290,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
         _do_open!(v, zarr_path, task_dir, ch_names; show_3d, as_dask)
         _current_zarr_path[] = zarr_path
         _current_task_dir[]  = task_dir
+        _current_image_uid[] = image_uid
 
         if show_labels_req && !isempty(all_labels)
             _show_all_labels!(v, all_labels, true)
@@ -340,23 +344,58 @@ function api_napari_configure_autosave(body_bytes::Vector{UInt8})
 end
 
 # ── REST: POST /api/napari/screenshot ─────────────────────────────────────────
-# Capture the current napari CANVAS to a PNG and stream the bytes back (octet-stream, like the gating
-# binary routes). Used by the Analysis-canvas image / filmstrip slots. `send` is request-reply, so the
-# bridge has finished writing the file by the time `save_screenshot!` returns — read then delete it.
+# Capture the current napari CANVAS and return JSON `{ png(base64), viewState, imageUid }`. The view
+# snapshot (camera + dims + per-layer display props) is captured ATOMICALLY with the shot (folded into
+# the bridge's save_screenshot reply) so the strip frame carries its exact provenance for zoom-to-source
+# (docs/todo/ANIMATION_PLAN.md). Base64 (not octet-stream) so one response carries image + snapshot; the
+# frontend already turned the PNG into a data URL anyway. `send` is request-reply, so the file is written
+# by the time `save_screenshot!` returns — read then delete.
 function api_napari_screenshot(body_bytes::Vector{UInt8})
     v = _viewer()
     (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    data = try JSON3.read(String(body_bytes)) catch; nothing end
+    project_uid = data === nothing ? "" : String(get(data, :projectUid, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
     path = tempname() * ".png"
     _with_viewer() do
     try
-        save_screenshot!(v, path; canvas_only = true)
-        return 200, read(path)   # Vector{UInt8} → octet-stream (server.jl)
+        # fit_data → tight-fit to the data extent at native resolution: no black margins, and the figure
+        # matches the viewer (image fills the frame) instead of a tiny image in a big black canvas.
+        reply    = save_screenshot!(v, path; fit_data = true)
+        # store the PNG as a SIDECAR file (settings/board-assets/<id>.png), not base64 in the board JSON,
+        # so analysisBoards.json stays small (autosave-friendly). Return only the id + snapshot.
+        asset_id = _save_board_asset_file(project_uid, path)
+        return 200, JSON3.write((;
+            assetId   = asset_id,
+            viewState = get(reply, "view_state", Dict{String,Any}()),
+            imageUid  = _current_image_uid[],
+        ))
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     finally
         isfile(path) && rm(path; force = true)
     end
     end  # _with_viewer
+end
+
+# ── REST: POST /api/napari/apply-view-state ───────────────────────────────────
+# Re-apply a saved view snapshot to the running viewer (the zoom-to-source restore). Body:
+# `{ viewState }`. The image must already be open (the caller opens it first, then applies); the bridge
+# skips missing layers / unsettable attrs, so a snapshot degrades gracefully.
+function api_napari_apply_view_state(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    data = JSON3.read(String(body_bytes))
+    snap = get(data, :viewState, nothing)
+    isnothing(snap) && return 400, JSON3.write((; error = "viewState required"))
+    _with_viewer() do
+        try
+            apply_view_state!(v, snap)
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
 end
 
 # ── REST: POST /api/napari/toggle-animation ───────────────────────────────────

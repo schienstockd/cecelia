@@ -108,10 +108,7 @@ function isNavDisabled(item: NavItem): boolean {
             </span>
             <span class="proj-type">{{ projectMeta.current.type }}</span>
           </div>
-          <button class="proj-menu-btn" @click="projectMeta.saveProject()"
-            v-tooltip.right="'Save the current project state to disk.'">
-            <i class="pi pi-save" />
-          </button>
+          <!-- no manual save: the /analysis boards autosave; everything else persists on edit -->
           <button class="proj-menu-btn" @click="showPanel = true"
             v-tooltip.right="'Switch project or create a new one.'">
             <i class="pi pi-ellipsis-h" />

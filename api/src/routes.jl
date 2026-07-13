@@ -1,9 +1,24 @@
 using Dates
+import Base64   # decode base64 PNGs when migrating legacy inline board images to sidecar files
 
 # ── Chain template CRUD ───────────────────────────────────────────────────────
 
 # Per-project persisted UI config lives under `<proj>/settings/` (chains, analysis-canvas boards, …).
 _settings_dir_for_project(project_uid::String) = joinpath(projects_dir(), project_uid, "settings")
+
+# Analysis-board image assets (napari screenshots) live as SIDECAR PNGs under settings/board-assets/,
+# NOT base64 inside analysisBoards.json — so the board JSON stays small (autosave-friendly) and the
+# images are transparent on disk. See docs/todo/ANIMATION_PLAN.md.
+_board_assets_dir(project_uid::String) = joinpath(_settings_dir_for_project(project_uid), "board-assets")
+_valid_asset_id(id::AbstractString) = occursin(r"^[A-Za-z0-9_-]+$", id)   # guard against path traversal
+
+# Copy a captured PNG (temp file) into settings/board-assets/<id>.png; returns the new asset id.
+function _save_board_asset_file(project_uid::String, src_png::String)::String
+    dir = _board_assets_dir(project_uid); mkpath(dir)
+    id = gen_uid()
+    cp(src_png, joinpath(dir, id * ".png"); force = true)
+    id
+end
 
 function _chains_dir_for_project(project_uid::String)
     newdir = joinpath(_settings_dir_for_project(project_uid), "chains")
@@ -385,35 +400,67 @@ function api_projects_load(body_bytes::Vector{UInt8})
     200, JSON3.write((; project, sets, boards, moduleCanvases))
 end
 
-function api_projects_save(body_bytes::Vector{UInt8})
+# POST /api/projects/boards  { projectUid, boards: { tabs, layouts } }
+# Debounced AUTOSAVE of the /analysis boards (tabs + grid layouts + slot state incl. strip snapshots) →
+# settings/analysisBoards.json. Board IMAGES are sidecar files (board-assets/, see below), NOT base64
+# in this JSON, so it stays small and cheap to rewrite on every edit. Mirrors api_projects_canvases (the
+# module-page autosave). Opaque frontend JSON, stored verbatim. `lastOpenedAt` is stamped on project
+# OPEN (api_projects_load), so there's nothing to touch in project.json here. Replaces the old
+# api_projects_save + the manual save button.
+function api_projects_boards(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
     end
-    uid = String(get(body, :uid, ""))
-    isempty(uid) && return 400, JSON3.write((; error="uid required"))
-    proj_dir = joinpath(projects_dir(), uid)
-    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $uid"))
-
-    meta_file = joinpath(proj_dir, "project.json")
-    try
-        raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
-        raw["lastOpenedAt"] = string(now())
-        open(meta_file, "w") do io; JSON3.write(io, raw); end
-    catch e
-        @warn "Could not update project metadata" uid exception=e
-    end
-
-    # persist the Analysis-canvas boards (tabs + grid layouts + captured screenshots) under settings/ so
-    # they survive reopen. Opaque JSON owned by the frontend — we just store/return it verbatim.
+    uid = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
     boards = get(body, :boards, nothing)
     if boards !== nothing
         try
             settings = _settings_dir_for_project(uid); mkpath(settings)
             open(joinpath(settings, "analysisBoards.json"), "w") do io; JSON3.write(io, boards); end
         catch e
-            @warn "Could not save analysis boards" uid exception=e
+            return 500, JSON3.write((; error=sprint(showerror, e)))
         end
     end
+    200, JSON3.write((; ok=true))
+end
+
+# POST /api/board-assets/save  { projectUid, png(base64) }  → { assetId }
+# Write a board image to a sidecar PNG (settings/board-assets/<id>.png) and return its id. Used to
+# MIGRATE legacy boards that still carry inline base64 in a cell's `src` into a sidecar on first load.
+# (Fresh captures are saved directly by the screenshot endpoint — no base64 round-trip.)
+function api_board_asset_save(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, "")); png = String(get(body, :png, ""))
+    (isempty(uid) || isempty(png)) && return 400, JSON3.write((; error="projectUid and png required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    b64 = replace(png, r"^data:image/[^;]+;base64," => "")   # tolerate a data-URL prefix
+    bytes = try Base64.base64decode(b64) catch
+        return 400, JSON3.write((; error="Invalid base64 png"))
+    end
+    try
+        dir = _board_assets_dir(uid); mkpath(dir); id = gen_uid()
+        write(joinpath(dir, id * ".png"), bytes)
+        return 200, JSON3.write((; assetId = id))
+    catch e
+        return 500, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
+# POST /api/board-assets/delete  { projectUid, assetId }  → { ok }
+# Best-effort removal of a sidecar board image (when a frame/board is deleted). Missing file is fine.
+function api_board_asset_delete(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, "")); aid = String(get(body, :assetId, ""))
+    (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
+    _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
+    f = joinpath(_board_assets_dir(uid), aid * ".png")
+    isfile(f) && rm(f; force=true)
     200, JSON3.write((; ok=true))
 end
 

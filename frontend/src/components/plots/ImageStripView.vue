@@ -2,16 +2,28 @@
   Image / filmstrip slot for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
   slot holding N captioned images (a single image = a 1-cell strip) — for pipeline montages
   (raw → denoised → segmented → tracked). Each cell's image is a napari CANVAS screenshot
-  (POST /api/napari/screenshot → PNG bytes → stored as a data URL in the slot state, so it persists and
-  embeds straight into the PDF). Orientation H/V; separators STRAIGHT (gap + rule) or ANGLED (clip-path
-  parallelograms — cheap because the slot stays rectangular and holds image-only content, decision 10).
+  (POST /api/napari/screenshot → JSON {assetId, viewState, imageUid}). The PNG is a SIDECAR file
+  (settings/board-assets/, served via /api/board-assets) — NOT stored inline — so the board JSON stays
+  small and autosaves cheaply; the cell keeps only the assetId + the viewState snapshot + imageUid
+  (provenance for zoom-to-source). See docs/todo/ANIMATION_PLAN.md. Orientation H/V; separators STRAIGHT
+  (gap + rule) or ANGLED (clip-path parallelograms — cheap because the slot stays rectangular, decision 10).
 -->
 <script setup lang="ts">
-import { ref, computed, watch, useTemplateRef, nextTick } from 'vue'
+import { ref, computed, watch, useTemplateRef, nextTick, onMounted, onUnmounted } from 'vue'
 import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
+import { useWsStore } from '../../stores/ws'
 
-interface Cell { src?: string; caption?: string }
+const ws = useWsStore()
+
+// `snapshot` (napari view state) + `imageUid` are the frame's provenance — persisted with the board so
+// zoom-to-source can reopen the image and restore the exact camera/contrast/colours months later
+// (docs/todo/ANIMATION_PLAN.md). Captured atomically with the screenshot.
+// `assetId` → the frame's PNG is a sidecar file (settings/board-assets/), served on demand; NOT stored
+// inline, so the board JSON stays small (autosave-friendly). `src` is the legacy inline data-URL, kept
+// only for back-compat (migrated to a sidecar on load). `snapshot`+`imageUid` are the view provenance
+// for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
+interface Cell { assetId?: string; src?: string; caption?: string; snapshot?: Record<string, unknown>; imageUid?: string | null }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; capSize?: number }
@@ -41,15 +53,13 @@ const gearEl = useTemplateRef<HTMLElement>('gearEl')   // anchor for the telepor
 
 const capturing = ref(-1)
 const err = ref('')
+// assetId → data URL, populated ONLY during PDF export: html2canvas can't reliably draw a served
+// (network) <img> src, so we temporarily inline each sidecar frame as a data URL for the capture.
+const exportSrcs = ref<Record<string, string>>({})
 
-function toDataUrl(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf)
-  let bin = ''
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
-  return 'data:image/png;base64,' + btoa(bin)
-}
-
-// capture the current napari canvas into cell i
+// capture the current napari canvas into cell i. The endpoint returns JSON { png(base64), viewState,
+// imageUid } — the view snapshot is captured atomically with the shot, so the frame carries its exact
+// provenance (for zoom-to-source / animation). See docs/todo/ANIMATION_PLAN.md.
 async function capture(i: number) {
   capturing.value = i
   err.value = ''
@@ -59,12 +69,102 @@ async function capture(i: number) {
       body: JSON.stringify({ projectUid: props.projectUid }),
     })
     if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Screenshot failed'; return }
-    cells.value[i].src = toDataUrl(await res.arrayBuffer())
+    const data = (await res.json()) as { assetId?: string; png?: string; viewState?: Record<string, unknown>; imageUid?: string | null }
+    const c = cells.value[i]
+    if (data.assetId) { c.assetId = data.assetId; c.src = undefined }         // sidecar PNG (normal path)
+    else if (data.png) { c.src = 'data:image/png;base64,' + data.png; c.assetId = undefined }  // inline fallback
+    c.snapshot = data.viewState
+    c.imageUid = data.imageUid ?? null
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { capturing.value = -1 }
 }
+
+// resolve a cell's <img> src: during PDF export, the inlined data URL (html2canvas can't draw a served
+// URL); otherwise the sidecar asset served on demand, or the legacy inline data-URL.
+function cellSrc(c: Cell): string | undefined {
+  if (c.assetId) {
+    return exportSrcs.value[c.assetId]
+      ?? `/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(c.assetId)}`
+  }
+  return c.src
+}
+
+// Migrate legacy boards: a cell with an inline base64 `src` (and no assetId) is spilled to a sidecar
+// file once, then the inline copy is dropped — the mutation triggers the board autosave, which persists
+// the slimmed cell. Runs on mount; leaves the inline src in place if the migration call fails.
+async function migrateLegacyAssets() {
+  for (const c of cells.value) {
+    if (c.assetId || !c.src) continue
+    try {
+      const res = await fetch('/api/board-assets/save', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectUid: props.projectUid, png: c.src }),
+      })
+      if (!res.ok) continue
+      const { assetId } = (await res.json()) as { assetId?: string }
+      if (assetId) { c.assetId = assetId; c.src = undefined }
+    } catch { /* keep the inline src */ }
+  }
+}
+// ── Zoom to source ──────────────────────────────────────────────────────────
+// Reopen the frame's source image in napari and re-apply its saved snapshot (camera + T/Z + per-layer
+// contrast/colours) — the "reconstruct my figure months later" path. Open is async (napari may need to
+// start), and both open paths broadcast `napari:opened`, so we apply on that event (handles the already-
+// running AND cold-start cases uniformly) rather than racing the open response. See ANIMATION_PLAN B.
+const zooming = ref(-1)
+const pendingApply = ref<{ imageUid: string; snapshot: Record<string, unknown> } | null>(null)
+
+async function zoomToSource(i: number) {
+  const c = cells.value[i]
+  if (!c.imageUid || !c.snapshot) return
+  zooming.value = i
+  err.value = ''
+  pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot }
+  try {
+    const res = await fetch('/api/napari/open', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid }),
+    })
+    if (!res.ok && res.status !== 202) {
+      pendingApply.value = null
+      err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Open in Napari failed'
+    }
+  } catch (e) {
+    pendingApply.value = null
+    err.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    zooming.value = -1
+  }
+}
+
+// napari finished opening — if it's the image we're zooming to, apply the saved snapshot now (layers
+// exist). Fire-and-forget; the bridge skips any layers not present.
+async function onNapariOpened(payload: { imageUid?: string }) {
+  const p = pendingApply.value
+  if (!p || !payload?.imageUid || payload.imageUid !== p.imageUid) return
+  pendingApply.value = null
+  try {
+    await fetch('/api/napari/apply-view-state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewState: p.snapshot }),
+    })
+  } catch { /* best-effort restore */ }
+}
+onMounted(() => { ws.on('napari:opened', onNapariOpened); migrateLegacyAssets() })
+onUnmounted(() => ws.off('napari:opened', onNapariOpened))
+
 function addCell() { cells.value.push({}) }
-function removeCell(i: number) { if (cells.value.length > 1) cells.value.splice(i, 1) }
+function removeCell(i: number) {
+  if (cells.value.length <= 1) return
+  const c = cells.value[i]
+  if (c.assetId) {   // best-effort delete of the sidecar PNG so it doesn't orphan
+    fetch('/api/board-assets/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: props.projectUid, assetId: c.assetId }),
+    }).catch(() => {})
+  }
+  cells.value.splice(i, 1)
+}
 function setCaption(i: number, v: string) { cells.value[i].caption = v }
 
 // angled separators: clip each frame to a parallelogram leaning by `skew`; the WHITE strip background
@@ -88,11 +188,29 @@ const stripStyle = computed(() => ({
 // hides the in-frame controls; the strip is HTML + <img> (data URLs), so serialise via elementToImageURL.
 const stripRef = useTemplateRef<HTMLElement>('stripRef')
 const capturingStrip = ref(false)
+// fetch a sidecar asset and return it as a data URL (html2canvas-safe for the PDF export)
+async function assetToDataUrl(assetId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/board-assets?projectUid=${encodeURIComponent(props.projectUid)}&assetId=${encodeURIComponent(assetId)}`)
+    if (!res.ok) return null
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    let bin = ''
+    for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i])
+    return 'data:image/png;base64,' + btoa(bin)
+  } catch { return null }
+}
 async function exportImage(): Promise<string | null> {
+  // inline each sidecar frame as a data URL so html2canvas can draw it (a served <img> URL renders
+  // blank in the PDF), then serialise the strip DOM.
+  const map: Record<string, string> = {}
+  for (const c of cells.value) {
+    if (c.assetId) { const d = await assetToDataUrl(c.assetId); if (d) map[c.assetId] = d }
+  }
+  exportSrcs.value = map
   capturingStrip.value = true
   await nextTick()
   try { return await elementToImageURL(stripRef.value, 'png', '#ffffff') }
-  finally { capturingStrip.value = false }
+  finally { capturingStrip.value = false; exportSrcs.value = {} }
 }
 defineExpose({ exportImage })
 </script>
@@ -135,7 +253,7 @@ defineExpose({ exportImage })
 
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
-        <img v-if="c.src" :src="c.src" class="is-img" alt="napari screenshot" />
+        <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="napari screenshot" />
         <button v-else class="is-capture" @click="capture(i)" :disabled="capturing === i"
                 v-tooltip.bottom="'Capture the current napari view'">
           <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
@@ -149,7 +267,10 @@ defineExpose({ exportImage })
         </div>
         <!-- per-frame actions (hidden while capturing) -->
         <div v-if="!capturingStrip" class="is-actions">
-          <button v-if="c.src" class="is-mini" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
+          <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini" @click="zoomToSource(i)"
+                  :disabled="zooming === i" v-tooltip.top="'Zoom to source: reopen this image in Napari and restore the exact view'">
+            <i class="pi pi-directions" /></button>
+          <button v-if="c.assetId || c.src" class="is-mini" @click="capture(i)" v-tooltip.top="'Recapture'"><i class="pi pi-camera" /></button>
           <button v-if="cells.length > 1" class="is-mini" @click="removeCell(i)" v-tooltip.top="'Remove frame'"><i class="pi pi-times" /></button>
         </div>
       </div>
@@ -188,8 +309,11 @@ defineExpose({ exportImage })
 .is-strip.angled.row .is-cell + .is-cell { margin-left: calc(var(--sep-thick, 2px) - var(--sk, 22px)); }
 .is-cell { position: relative; flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column;
   overflow: hidden; background: var(--cc-bg); }
-/* cover (not contain) so the frame fills edge-to-edge — no black letterbox "border" around the image */
-.is-img { flex: 1; width: 100%; object-fit: cover; min-height: 0; }
+/* contain (not cover) so the WHOLE captured frame is shown — cover cropped the edges, cutting napari's
+   scale bar (bottom-right) and timestamp (top-left). Trade-off: letterbox bars when the cell aspect ≠
+   the image aspect; acceptable for figures (nothing is clipped). ANIMATION_PLAN E (clean capture +
+   Cecelia-drawn scale bar) will let frames go edge-to-edge again without losing the annotations. */
+.is-img { flex: 1; width: 100%; object-fit: contain; min-height: 0; }
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 12px; }
 .is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
@@ -208,10 +332,14 @@ defineExpose({ exportImage })
    band only holds the LEFT-aligned strip toolbar, so top-right is clear; z-index 7 keeps them above
    the auto-hide toolbar (z-index 6) so hovering never masks them (the earlier "retake masked" bug). */
 .is-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; z-index: 7; }
-.is-mini { width: 1.4rem; height: 1.4rem; display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid var(--cc-border); border-radius: 3px; background: rgba(0,0,0,0.45); color: #fff;
-  cursor: pointer; font-size: 0.6rem; }
-.is-mini:hover { background: rgba(0,0,0,0.7); }
+/* per-frame action buttons — match the app's icon buttons (like .is-gear / .opt-btn) rather than the
+   old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
+   solid surface reads cleanly. */
+.is-mini { width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
+  cursor: pointer; font-size: 0.7rem; transition: color 0.1s, border-color 0.1s, background 0.1s; }
+.is-mini:hover { color: var(--cc-text); border-color: #7c3aed; background: var(--cc-surface-1); }
+.is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
    exported strip is just the images + captions */
 .is-strip.capturing .is-mini, .is-strip.capturing .is-capture { display: none; }

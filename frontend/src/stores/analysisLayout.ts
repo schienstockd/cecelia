@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { uniform, type LayoutTemplate } from '../plots/layoutTemplates'
+import { useAnalysisTabsStore } from './analysisTabs'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
@@ -71,9 +72,47 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     for (const [k, v] of Object.entries(entries.value)) if (k.startsWith(prefix)) out[k] = v
     return out
   }
-  function load(map: Record<string, LayoutEntry> | null | undefined) {
-    for (const [k, v] of Object.entries(map ?? {})) entries.value[k] = v
+  // ── Board autosave (→ analysisBoards.json) ────────────────────────────────
+  // The /analysis board persisted on its own (no manual save button): a debounced, dirty-tracked POST
+  // of the WHOLE board payload {tabs, layouts} for the current project, mirroring the module-canvas
+  // autosave (canvasPanels). Board IMAGES are sidecar files (board-assets/), so this JSON stays small
+  // and cheap to rewrite. Triggered by any deep change to the layouts OR the tab list.
+  const _boardLastSaved: Record<string, string> = {}
+  const _restoring = ref(false)
+  let _boardTimer: ReturnType<typeof setTimeout> | null = null
+  function scheduleBoardAutosave() {
+    if (_restoring.value) return
+    // lazy import projectMeta to avoid a store-init cycle (projectMeta → analysisLayout)
+    import('./projectMeta').then(({ useProjectMetaStore }) => {
+      const uid = useProjectMetaStore().current?.uid
+      if (!uid) return
+      const groupKey = `analysis:${uid}`
+      if (_boardTimer) clearTimeout(_boardTimer)
+      _boardTimer = setTimeout(() => {
+        const boards = { tabs: useAnalysisTabsStore().serialize(groupKey), layouts: serialize(`${groupKey}:tab:`) }
+        const s = JSON.stringify(boards)
+        if (_boardLastSaved[uid] === s) return   // nothing changed → no request
+        _boardLastSaved[uid] = s
+        fetch('/api/projects/boards', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectUid: uid, boards }),
+        }).catch(() => {})
+      }, 800)
+    })
   }
+
+  function load(map: Record<string, LayoutEntry> | null | undefined) {
+    _restoring.value = true   // don't echo the just-loaded board straight back to disk
+    try {
+      for (const [k, v] of Object.entries(map ?? {})) entries.value[k] = v
+    } finally {
+      setTimeout(() => { _restoring.value = false }, 900)   // > the 800ms autosave debounce
+    }
+  }
+
+  // Autosave on any change to the grid layouts (slot contents incl. strip cells) or the tab list.
+  const tabsStore = useAnalysisTabsStore()
+  watch([entries, () => tabsStore.entries], scheduleBoardAutosave, { deep: true })
 
   return { entries, ensure, applyTemplate, setContent, setActive, swap, clear, serialize, load }
 })

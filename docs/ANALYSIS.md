@@ -22,10 +22,19 @@ separate:
 | `stores/canvasPanels.ts` | reused only for the summary/interactive **panel machinery** under the same tab canvas key | `${groupKey}:tab:${id}` |
 
 All three are **in-memory** (survive navigation, not a full reload) and cleared on project open/close
-(`stores/project.ts`). Durable persistence is with the project: the whole board set is dumped to
-`{proj}/…/settings/analysisBoards.json` (opaque frontend JSON) on save and restored on open — see
-`api/src/routes.jl` (`api_projects_save` / project-open payload's `boards`). **Backend restart** is
-needed the first time this route is active (`api/` is not Revise-tracked; see `CLAUDE.md`).
+(`stores/project.ts`). Durable persistence is with the project: the whole board set (tabs + layouts) is
+**autosaved** (debounced, dirty-tracked) to `{proj}/…/settings/analysisBoards.json` — `stores/analysisLayout.ts`
+watches the layouts + tab list and POSTs `/api/projects/boards` (`api_projects_boards`), mirroring the
+module-canvas autosave. There is **no manual save button** (removed): everything else already persists
+on edit via its own routes, and `lastOpenedAt` is stamped on open. Restored on open from the payload's
+`boards`. **Backend restart** is needed the first time these routes are active (`api/` is not
+Revise-tracked; see `CLAUDE.md`).
+
+**Image-strip frames are sidecar files, not inline.** A captured napari screenshot is written to
+`{proj}/…/settings/board-assets/<id>.png` and the cell keeps only `{assetId, snapshot, imageUid}` — so
+`analysisBoards.json` stays small (essential now that it autosaves). The `<img>` loads via
+`GET /api/board-assets?projectUid&assetId` (served `image/png`); legacy boards with inline base64 are
+migrated to sidecars on load. See `docs/todo/ANIMATION_PLAN.md`.
 
 Each tab renders through `components/canvas/LayoutCanvas.vue`: a **comic-plate** grid (templates in
 `plots/layoutTemplates.ts` — header banners, splits, hero+N) whose slots each hold one plot. A slot's
