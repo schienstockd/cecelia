@@ -1,6 +1,6 @@
 <!--
   Image / filmstrip slot for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase D). One
-  slot holding N captioned images (a single image = a 1-cell strip) — for pipeline montages
+  slot holding N images (a single image = a 1-cell strip) — for pipeline montages
   (raw → denoised → segmented → tracked). Each cell's image is a napari CANVAS screenshot
   (POST /api/napari/screenshot → JSON {assetId, viewState, imageUid}). The PNG is a SIDECAR file
   (settings/board-assets/, served via /api/board-assets) — NOT stored inline — so the board JSON stays
@@ -24,10 +24,10 @@ const ws = useWsStore()
 // inline, so the board JSON stays small (autosave-friendly). `src` is the legacy inline data-URL, kept
 // only for back-compat (migrated to a sidecar on load). `snapshot`+`imageUid` are the view provenance
 // for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
-interface Cell { assetId?: string; src?: string; caption?: string; snapshot?: Record<string, unknown>; imageUid?: string | null }
+interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; capSize?: number; showLegend?: boolean }
+  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean }
 }>()
 
 // seed defaults into the persisted state bag (the slot starts as {})
@@ -41,8 +41,6 @@ const separator = computed({ get: () => props.state.separator ?? 'straight', set
 // angled separators: `skew` = the horizontal lean (angle), `thick` = the white gap width between frames
 const skew = computed({ get: () => props.state.sepAngle ?? 22, set: v => (props.state.sepAngle = v) })
 const thick = computed({ get: () => props.state.sepThick ?? 2, set: v => (props.state.sepThick = v) })
-// caption text size (px) — driven into the caption overlay via a CSS var
-const capSize = computed({ get: () => props.state.capSize ?? 13, set: v => (props.state.capSize = v) })
 // optional channel-colour legend, read from the frame's snapshot (napari layer colormaps). Off by default.
 const showLegend = computed({ get: () => props.state.showLegend ?? false, set: v => (props.state.showLegend = v) })
 // angled separators are horizontal-only (the clip leans across the row) — snap back to straight if the
@@ -182,7 +180,6 @@ function removeCell(i: number) {
   }
   cells.value.splice(i, 1)
 }
-function setCaption(i: number, v: string) { cells.value[i].caption = v }
 
 // angled separators: clip each frame to a parallelogram leaning by `skew`; the WHITE strip background
 // shows through the `thick` gap between frames as the diagonal separator line. First/last frames keep
@@ -196,12 +193,11 @@ function clipFor(i: number): string | undefined {
   return `polygon(${tl} 0, 100% 0, ${br} 100%, 0 100%)`
 }
 const stripStyle = computed(() => ({
-  '--cap-size': `${capSize.value}px`,
   ...((separator.value === 'angled' && orientation.value === 'h')
     ? { '--sk': `${skew.value}px`, '--sep-thick': `${thick.value}px` } : {}),
 }))
 
-// PDF export: just the STRIP (frames + captions), no toolbar/per-frame buttons. The `capturing` class
+// PDF export: just the STRIP (frames), no toolbar/per-frame buttons. The `capturing` class
 // hides the in-frame controls; the strip is HTML + <img> (data URLs), so serialise via elementToImageURL.
 const stripRef = useTemplateRef<HTMLElement>('stripRef')
 const capturingStrip = ref(false)
@@ -250,9 +246,6 @@ defineExpose({ exportImage })
                 v-tooltip.bottom="'Caption size & separator'"><i class="pi pi-cog" /></button>
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
-            <label class="is-slider">caption
-              <input type="range" min="8" max="28" :value="capSize" @input="capSize = +($event.target as HTMLInputElement).value" />
-              <span class="is-val">{{ capSize }}</span></label>
             <label class="is-check"><input type="checkbox" :checked="showLegend"
               @change="showLegend = ($event.target as HTMLInputElement).checked" /> channel legend</label>
             <template v-if="separator === 'angled' && orientation === 'h'">
@@ -283,13 +276,6 @@ defineExpose({ exportImage })
                 v-tooltip.bottom="'Capture the current napari view'">
           <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
         </button>
-        <!-- caption: white centred text overlaid on the image (editable inline; plain text while
-             capturing since an <input>'s live value isn't cloned into the export) -->
-        <div class="is-cap">
-          <span v-if="capturingStrip" class="is-cap-text">{{ c.caption ?? '' }}</span>
-          <input v-else class="is-cap-input" :value="c.caption ?? ''" placeholder="caption…"
-                 @input="setCaption(i, ($event.target as HTMLInputElement).value)" />
-        </div>
         <!-- per-frame actions (hidden while capturing) -->
         <div v-if="!capturingStrip" class="is-actions">
           <button v-if="(c.assetId || c.src) && c.imageUid && c.snapshot" class="is-mini" @click="zoomToSource(i)"
@@ -350,16 +336,6 @@ defineExpose({ exportImage })
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 12px; }
 .is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
-/* caption overlay: white, centred, near the bottom of the image (legible via text-shadow). z-index
-   above the auto-hide toolbar (.cc-panel-controls, z-index 6) so it's never masked when hovering. */
-.is-cap { position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center;
-  padding: 0 3.4rem 0 10px; pointer-events: none; z-index: 7; }
-.is-cap-input, .is-cap-text { pointer-events: auto; max-width: 100%; text-align: center; color: #fff;
-  font-size: var(--cap-size, 13px); font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
-.is-cap-input { width: 100%; background: transparent; border: none; border-radius: 3px; padding: 1px 4px; }
-.is-cap-input:focus { outline: none; background: rgba(0,0,0,0.35); }
-.is-cap-input::placeholder { color: rgba(255,255,255,0.55); font-weight: 400; }
-.is-cap-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* per-frame actions (recapture / remove): TOP-right. The BOTTOM band is owned by the panel footer
    overlay (Duplicate / Export) — the actions used to collide with the Duplicate button there. The top
    band only holds the LEFT-aligned strip toolbar, so top-right is clear; z-index 7 keeps them above
@@ -374,7 +350,7 @@ defineExpose({ exportImage })
 .is-mini:hover { color: var(--cc-text); border-color: #7c3aed; background: var(--cc-surface-1); }
 .is-mini:disabled { opacity: 0.5; cursor: not-allowed; }
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
-   exported strip is just the images + captions */
+   exported strip is just the images */
 .is-strip.capturing .is-mini, .is-strip.capturing .is-capture { display: none; }
 .seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; }
