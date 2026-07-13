@@ -34,6 +34,12 @@ interface NavItem {
   requiresProject?: boolean
 }
 
+// Grouped by pipeline stage, not by "everything is analysis":
+//   Data        — get images in and ready (import → segment)
+//   Populations — the modules that DEFINE populations (gate / track / cluster cells / cluster tracks)
+//   Explore     — modules that USE those populations to explore their properties (phenotype/behaviour/spatial)
+//   Analysis    — the only free-form analysis surfaces (board + notebooks)
+//   Pipeline    — orchestration (tasks + whiteboard); Settings lives in the footer, not here.
 const groups: { heading: string; items: NavItem[] }[] = [
   {
     heading: 'Data',
@@ -41,21 +47,31 @@ const groups: { heading: string; items: NavItem[] }[] = [
       { to: '/import',   label: 'Import',   icon: 'pi-upload',   tip: 'Import microscopy images into your project.', requiresProject: true },
       { to: '/metadata', label: 'Metadata', icon: 'pi-tag',      tip: 'Edit channel names, colours and other image metadata.', requiresProject: true },
       { to: '/cleanup',  label: 'Cleanup',  icon: 'pi-sparkles', tip: 'Correct and denoise images before segmentation.', requiresProject: true },
+      { to: '/segment',  label: 'Segment',  icon: 'pi-th-large', tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
+    ],
+  },
+  {
+    heading: 'Populations',
+    items: [
+      { to: '/gate',    label: 'Gate',    icon: 'pi-chart-scatter', tip: 'FlowJo-style manual gating on segmented populations.', requiresProject: true },
+      { to: '/track',   label: 'Track',   icon: 'pi-share-alt',     tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
+      { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
+      { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap', tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
+    ],
+  },
+  {
+    heading: 'Explore',
+    items: [
+      { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise populations — counts / proportion of each population across images.', requiresProject: true },
+      { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar',  tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
+      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Spatial neighbourhood and proximity analysis.', disabled: true, soon: true },
     ],
   },
   {
     heading: 'Analysis',
     items: [
-      { to: '/segment', label: 'Segment', icon: 'pi-th-large',    tip: 'Run cell segmentation (Cellpose, StarDist, …).', requiresProject: true },
-      { to: '/gate',    label: 'Gate',    icon: 'pi-chart-scatter',tip: 'FlowJo-style manual gating on segmented populations.', requiresProject: true },
-      { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise gated-cell populations — counts / proportion of each population across images (the analysis counterpart to Gate).', requiresProject: true },
-      { to: '/track',   label: 'Track',   icon: 'pi-share-alt',   tip: 'Track segmented or gated cells over time (btrack).', requiresProject: true },
-      { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar', tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
-      { to: '/clust-cells',  label: 'Cluster cells',  icon: 'pi-palette', tip: 'Leiden cluster cells (intensities + morphology), then define populations from clusters.', requiresProject: true },
-      { to: '/clust-tracks', label: 'Cluster tracks', icon: 'pi-sitemap',      tip: 'Leiden cluster tracks (motility + HMM/behaviour), then define populations from clusters.', requiresProject: true },
-      { to: '/spatial', label: 'Spatial', icon: 'pi-map',          tip: 'Spatial neighbourhood and proximity analysis.', disabled: true, soon: true },
-      { to: '/analysis', label: 'Analysis board', icon: 'pi-clone', tip: 'Free-form canvas combining plots across modules, images and segmentations.', requiresProject: true },
-      { to: '/notebooks', label: 'Notebooks', icon: 'pi-book', tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
+      { to: '/analysis',  label: 'Analysis board', icon: 'pi-clone', tip: 'Free-form canvas combining plots across modules, images and segmentations.', requiresProject: true },
+      { to: '/notebooks', label: 'Notebooks',      icon: 'pi-book',  tip: 'Pure-Julia downstream analysis in Pluto notebooks (load objects, pop_df, plot, export).', requiresProject: true },
     ],
   },
   {
@@ -63,7 +79,6 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/tasks',    label: 'Tasks',      icon: 'pi-list-check', tip: 'View and manage all running and completed analysis tasks.' },
       { to: '/chain',    label: 'Whiteboard', icon: 'pi-cog',        tip: 'Visual chain editor — drag tasks, connect nodes, build pipelines.', requiresProject: true },
-      { to: '/settings', label: 'Settings',   icon: 'pi-sliders-h',  tip: 'Project name, ID, and interface preferences.' },
     ],
   },
 ]
@@ -147,23 +162,31 @@ function isNavDisabled(item: NavItem): boolean {
     </button>
     <ViewerPanel v-if="isOpen('Viewer')" />
 
-    <!-- ── Footer: quick app controls (bottom-left) ────────────────────────── -->
+    <!-- ── Footer: Settings on the left; app controls (quit / restart) on the right ──────────
+         Settings is an app preference, not a pipeline step, so it sits apart from the module nav
+         and opposite the destructive/lifecycle controls. -->
     <div class="sidebar-footer">
-      <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
-        <button v-if="!armed" class="footer-btn danger" :disabled="appCtl.busy" @click="arm"
-                v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
-          <i class="pi pi-power-off" />
+      <RouterLink to="/settings" class="footer-btn"
+                  v-tooltip.right="'Settings — project name, ID, and interface preferences'">
+        <i class="pi pi-sliders-h" />
+      </RouterLink>
+      <div class="footer-ctl">
+        <ConfirmButton @confirm="appCtl.quit()" v-slot="{ armed, arm, confirm, cancel }">
+          <button v-if="!armed" class="footer-btn danger" :disabled="appCtl.busy" @click="arm"
+                  v-tooltip.right="'Quit Cecelia — stop napari, notebooks and the backend'">
+            <i class="pi pi-power-off" />
+          </button>
+          <template v-else>
+            <button class="footer-btn danger" @click="confirm"
+                    v-tooltip.right="'Confirm quit — stops napari, notebooks and the backend'"><i class="pi pi-check" /></button>
+            <button class="footer-btn" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
+          </template>
+        </ConfirmButton>
+        <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
+                v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
+          <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />
         </button>
-        <template v-else>
-          <button class="footer-btn danger" @click="confirm"
-                  v-tooltip.right="'Confirm quit — stops napari, notebooks and the backend'"><i class="pi pi-check" /></button>
-          <button class="footer-btn" @click="cancel" v-tooltip.right="'Cancel'"><i class="pi pi-times" /></button>
-        </template>
-      </ConfirmButton>
-      <button v-if="appCtl.dev" class="footer-btn" :disabled="appCtl.busy" @click="appCtl.restartBackend()"
-              v-tooltip.right="'Restart the backend server (dev) — reconnects when it is back'">
-        <i :class="['pi', appCtl.busy ? 'pi-spin pi-cog' : 'pi-refresh']" />
-      </button>
+      </div>
     </div>
 
   </nav>
@@ -309,11 +332,19 @@ function isNavDisabled(item: NavItem): boolean {
 .sidebar-footer {
   margin-top: auto;                 /* push to the bottom of the flex column */
   display: flex;
+  align-items: center;
+  justify-content: space-between;   /* Settings on the left, quit/restart cluster on the right */
   gap: 0.4rem;
   padding: 0.5rem 0.6rem 0.2rem;
   border-top: 1px solid var(--cc-border);
 }
+.footer-ctl { display: flex; gap: 0.4rem; }   /* the right-hand quit + restart group */
+/* Settings link active state (RouterLink) — mark it when on /settings, like the nav items */
+.footer-btn.router-link-active { color: var(--cc-text); border-color: var(--cc-accent); }
 .footer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   background: var(--cc-surface-2);
   border: 1px solid var(--cc-border);
   color: var(--cc-text-dim);
@@ -321,6 +352,7 @@ function isNavDisabled(item: NavItem): boolean {
   padding: 0.35rem 0.55rem;
   cursor: pointer;
   font-size: 0.85rem;
+  text-decoration: none;            /* Settings is a RouterLink (<a>) — no underline */
   transition: background 0.12s, color 0.12s;
 }
 .footer-btn:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-1); }
