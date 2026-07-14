@@ -10,6 +10,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
+import { napariColormapHex } from '../utils/napariColormap'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 
 const projectMeta = useProjectMetaStore()
@@ -67,6 +68,10 @@ const cameraZoom = (s: AnimSnapshot) => {
   const z = (s.snapshot?.camera as { zoom?: number } | undefined)?.zoom
   return typeof z === 'number' ? z.toFixed(1) : '—'
 }
+// the "on" colour of a cell = the layer's real colour (channel colormap tint), else the accent — so a
+// green channel reads green, not a generic dot.
+const layerColour = (s: AnimSnapshot, name: string) =>
+  napariColormapHex(layersOf(s)[name]?.colormap) ?? '#a78bfa'
 
 // capture the CURRENT napari view as a new keyframe (a base "look")
 async function capture() {
@@ -81,6 +86,7 @@ async function capture() {
     const j = (await res.json()) as { assetId?: string; viewState?: Record<string, unknown>; imageUid?: string }
     const uid = j.imageUid ?? openImageUid.value
     anim.add({ id: crypto.randomUUID(), assetId: j.assetId, snapshot: j.viewState,
+               original: JSON.parse(JSON.stringify(j.viewState ?? {})),   // reset target
                imageUid: uid, imageName: imageName(uid), duration: 1 })
   } catch (e) {
     log.error(`Capture failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
@@ -91,11 +97,21 @@ async function capture() {
 function addKeyframe() {
   const last = frames.value[frames.value.length - 1]
   if (!last) { capture(); return }   // nothing yet → capture a base
+  const copy = JSON.parse(JSON.stringify(last.snapshot ?? {}))
   anim.add({
     id: crypto.randomUUID(), assetId: last.assetId, imageUid: last.imageUid, imageName: last.imageName,
     duration: last.duration ?? 1,
-    snapshot: JSON.parse(JSON.stringify(last.snapshot ?? {})),   // deep copy of the viewState
+    snapshot: copy,
+    original: JSON.parse(JSON.stringify(copy)),   // baseline = what it starts as; reset returns here
   })
+}
+
+// a keyframe is "edited" once its working viewState diverges from the captured baseline
+function isEdited(s: AnimSnapshot): boolean {
+  return !!s.original && JSON.stringify(s.snapshot) !== JSON.stringify(s.original)
+}
+function resetKeyframe(s: AnimSnapshot) {
+  if (s.original) s.snapshot = JSON.parse(JSON.stringify(s.original))
 }
 
 async function deleteKeyframe(s: AnimSnapshot) {
@@ -142,8 +158,8 @@ async function render() {
       </div>
       <div class="anim-head-ctl">
         <label class="anim-fps" v-tooltip.bottom="'Output frames per second'">
-          fps <input type="number" min="1" max="60" step="1" :value="anim.fps"
-                     @change="anim.fps = Math.min(60, Math.max(1, Number(($event.target as HTMLInputElement).value) || 15))" />
+          fps <input type="range" min="1" max="60" step="1" v-model.number="anim.fps" class="anim-range" />
+          <span class="anim-num">{{ anim.fps }}</span>
         </label>
         <button class="btn-primary" :disabled="!canRender" @click="render"
                 v-tooltip.bottom="canRender ? 'Render the timeline to an mp4'
@@ -176,47 +192,54 @@ async function render() {
         <table class="tl">
           <thead>
             <tr>
-              <th class="tl-rowhead"></th>
+              <th class="tl-rowhead tl-corner"></th>
               <th v-for="(f, i) in frames" :key="f.id" class="tl-col">
-                <div class="tl-thumb"><img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" /></div>
+                <div class="tl-thumb" :class="{ edited: isEdited(f) }">
+                  <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" />
+                  <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
+                </div>
                 <div class="tl-colctl">
                   <button class="tl-ico" :disabled="i === 0" @click="anim.move(f.id, -1)" v-tooltip.bottom="'Move earlier'"><i class="pi pi-chevron-left" /></button>
                   <span class="tl-kf">{{ i + 1 }}</span>
                   <button class="tl-ico" :disabled="i === frames.length - 1" @click="anim.move(f.id, 1)" v-tooltip.bottom="'Move later'"><i class="pi pi-chevron-right" /></button>
+                  <button class="tl-ico" :disabled="!isEdited(f)" @click="resetKeyframe(f)" v-tooltip.bottom="'Reset to the captured view'"><i class="pi pi-refresh" /></button>
                   <ConfirmDeleteButton title="Delete keyframe" armed-title="Click again to delete" @confirm="deleteKeyframe(f)" />
                 </div>
-                <label class="tl-dur" v-tooltip.bottom="'Seconds this keyframe tweens from the previous'">
-                  <input type="number" min="0.1" step="0.1" :value="f.duration ?? 1"
-                         @change="f.duration = Math.max(0.1, Number(($event.target as HTMLInputElement).value) || 1)" />s
-                </label>
+                <div class="tl-dur" v-tooltip.bottom="'Seconds this keyframe tweens from the previous'">
+                  <input type="range" min="0.1" max="10" step="0.1" :value="f.duration ?? 1" class="tl-durrange"
+                         @input="f.duration = Number(($event.target as HTMLInputElement).value)" />
+                  <span class="tl-durval">{{ (f.duration ?? 1).toFixed(1) }}s</span>
+                </div>
               </th>
             </tr>
           </thead>
           <tbody>
-            <tr class="tl-group"><td :colspan="frames.length + 1">Channels</td></tr>
-            <tr v-for="name in channelRows" :key="'c'+name">
+            <tr class="tl-group"><td class="tl-rowhead">Channels</td><td v-for="f in frames" :key="f.id" /></tr>
+            <tr v-for="name in channelRows" :key="'c'+name" class="tl-row">
               <td class="tl-rowhead" :title="name">{{ name }}</td>
               <td v-for="f in frames" :key="f.id" class="tl-cell">
                 <button v-if="cellState(f, name) !== null" class="tl-dot" :class="{ on: cellState(f, name) }"
+                        :style="cellState(f, name) ? { background: layerColour(f, name), borderColor: layerColour(f, name) } : undefined"
                         @click="toggleCell(f, name)" v-tooltip.bottom="cellState(f, name) ? 'Shown — click to hide' : 'Hidden — click to show'" />
                 <span v-else class="tl-absent">·</span>
               </td>
             </tr>
 
             <template v-if="popRows.length">
-              <tr class="tl-group"><td :colspan="frames.length + 1">Populations &amp; overlays</td></tr>
-              <tr v-for="name in popRows" :key="'p'+name">
+              <tr class="tl-group"><td class="tl-rowhead">Populations &amp; overlays</td><td v-for="f in frames" :key="f.id" /></tr>
+              <tr v-for="name in popRows" :key="'p'+name" class="tl-row">
                 <td class="tl-rowhead" :title="name">{{ name }}</td>
                 <td v-for="f in frames" :key="f.id" class="tl-cell">
                   <button v-if="cellState(f, name) !== null" class="tl-dot" :class="{ on: cellState(f, name) }"
+                          :style="cellState(f, name) ? { background: layerColour(f, name), borderColor: layerColour(f, name) } : undefined"
                           @click="toggleCell(f, name)" v-tooltip.bottom="cellState(f, name) ? 'Shown — click to hide' : 'Hidden — click to show'" />
                   <span v-else class="tl-absent">·</span>
                 </td>
               </tr>
             </template>
 
-            <tr class="tl-group"><td :colspan="frames.length + 1">Camera</td></tr>
-            <tr>
+            <tr class="tl-group"><td class="tl-rowhead">Camera</td><td v-for="f in frames" :key="f.id" /></tr>
+            <tr class="tl-row">
               <td class="tl-rowhead">zoom</td>
               <td v-for="f in frames" :key="f.id" class="tl-cell tl-cam">{{ cameraZoom(f) }}</td>
             </tr>
@@ -232,36 +255,48 @@ async function render() {
 .anim-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.8rem; }
 .anim-head h1 { font-size: 1.1rem; margin: 0 0 0.2rem; }
 .anim-sub { font-size: 0.8rem; color: var(--cc-text-dim); max-width: 46rem; margin: 0; }
-.anim-head-ctl { display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0; }
-.anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.3rem; }
-.anim-fps input { width: 3rem; font-size: 0.72rem; }
+.anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
+.anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
+.anim-range { width: 5rem; accent-color: #7c3aed; }
+.anim-num { font-size: 0.72rem; color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
 .anim-empty { font-size: 0.85rem; color: var(--cc-text-dim); margin-top: 1.5rem; }
-.anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.7rem; }
-.anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); }
+.anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
+.anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
 
-.anim-timeline { overflow-x: auto; }
-.tl { border-collapse: collapse; }
-.tl-rowhead { position: sticky; left: 0; background: var(--cc-bg); text-align: left; font-size: 0.68rem;
-  color: var(--cc-text-dim); padding: 0.2rem 0.6rem 0.2rem 0.2rem; max-width: 9rem; overflow: hidden;
+/* clean matrix (not a bordered table): sticky row labels, colour-coded toggle dots, rounded thumbs */
+.anim-timeline { overflow-x: auto; border: 1px solid var(--cc-border); border-radius: 0.6rem;
+  background: var(--cc-surface-1); padding: 0.6rem 0.7rem 0.8rem; }
+.tl { border-collapse: separate; border-spacing: 0; }
+.tl-rowhead { position: sticky; left: 0; background: var(--cc-surface-1); text-align: left; font-size: 0.72rem;
+  color: var(--cc-text); padding: 0.25rem 0.9rem 0.25rem 0.1rem; max-width: 11rem; overflow: hidden;
   text-overflow: ellipsis; white-space: nowrap; z-index: 1; }
-.tl-col { padding: 0 0.15rem 0.3rem; vertical-align: top; }
-.tl-thumb { width: 88px; height: 88px; background: #000; border-radius: 0.3rem; overflow: hidden; }
+.tl-corner { min-width: 7rem; }
+.tl-col { padding: 0 0.35rem 0.4rem; vertical-align: top; text-align: center; }
+.tl-thumb { position: relative; width: 96px; height: 96px; background: #000; border-radius: 0.5rem;
+  overflow: hidden; border: 1px solid var(--cc-border); transition: box-shadow 0.12s, border-color 0.12s; }
 .tl-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.15rem; margin-top: 0.15rem; }
-.tl-kf { font-size: 0.66rem; color: var(--cc-text-dim); min-width: 1rem; text-align: center; }
-.tl-ico { border: none; background: none; color: var(--cc-text-dim); cursor: pointer; padding: 0.1rem; font-size: 0.62rem; }
-.tl-ico:hover:not(:disabled) { color: var(--cc-text); }
+.tl-thumb.edited { border-color: #7c3aed; box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.45); }
+.tl-badge { position: absolute; top: 4px; right: 4px; font-size: 0.55rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #ddd6fe; background: rgba(124, 58, 237, 0.85); padding: 1px 5px; border-radius: 999px; }
+.tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
+.tl-kf { font-size: 0.66rem; color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
+.tl-ico { display: inline-flex; border: none; background: none; color: var(--cc-text-dim); cursor: pointer;
+  padding: 0.15rem; font-size: 0.62rem; border-radius: 0.25rem; }
+.tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
-.tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.15rem; font-size: 0.62rem; color: var(--cc-text-dim); margin-top: 0.1rem; }
-.tl-dur input { width: 2.6rem; font-size: 0.66rem; }
-.tl-group td { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-  color: var(--cc-text-dim); padding: 0.5rem 0.2rem 0.15rem; border-bottom: 1px solid var(--cc-border); }
-.tl-cell { text-align: center; padding: 0.18rem 0.15rem; }
-.tl-dot { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2); cursor: pointer; padding: 0; }
-.tl-dot.on { background: #7c3aed; border-color: #7c3aed; }
-.tl-absent { color: var(--cc-text-dim); opacity: 0.4; }
-.tl-cam { font-size: 0.66rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
+.tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }
+.tl-durrange { width: 68px; accent-color: #7c3aed; }
+.tl-durval { font-size: 0.62rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; min-width: 1.8rem; text-align: left; }
+.tl-group .tl-rowhead { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--cc-text-dim); padding-top: 0.7rem; padding-bottom: 0.2rem; }
+.tl-row:hover .tl-cell, .tl-row:hover .tl-rowhead { background: rgba(255, 255, 255, 0.03); }
+.tl-cell { text-align: center; padding: 0.22rem 0.35rem; }
+.tl-dot { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid var(--cc-border);
+  background: transparent; cursor: pointer; padding: 0; transition: transform 0.1s; }
+.tl-dot:hover { transform: scale(1.18); }
+.tl-dot.on { border-style: solid; }         /* on: filled with the layer colour (set inline) */
+.tl-absent { color: var(--cc-text-dim); opacity: 0.35; }
+.tl-cam { font-size: 0.68rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
 
 .btn-sm { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; padding: 0.35rem 0.6rem;
   border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-2); color: var(--cc-text); cursor: pointer; }

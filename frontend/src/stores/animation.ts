@@ -10,7 +10,8 @@ import { useProjectMetaStore } from './projectMeta'
 export interface AnimSnapshot {
   id: string
   assetId?: string                      // sidecar PNG id (served via /api/board-assets)
-  snapshot?: Record<string, unknown>    // napari view state (camera + dims + per-layer props) — the keyframe
+  snapshot?: Record<string, unknown>    // napari view state (camera + dims + per-layer props) — the keyframe (edited)
+  original?: Record<string, unknown>    // the captured baseline viewState — reset target; unchanged by row edits
   imageUid?: string | null              // the image this keyframe belongs to
   imageName?: string
   title?: string
