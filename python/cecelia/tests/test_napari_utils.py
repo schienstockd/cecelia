@@ -315,5 +315,48 @@ class TestBroadcastTrackToCells(unittest.TestCase):
         self.assertEqual(list(out), ['A', 'B', 'A'])
 
 
+class TestRecordTimelapse(unittest.TestCase):
+    """The T-sweep movie primitive — keyframes at first/last T + one interpolated frame per
+    timepoint, then animate(). Napari-free: we stub the Animation class and a duck-typed viewer."""
+
+    class _FakeAnim:
+        instances = []
+        def __init__(self, viewer):
+            self.viewer = viewer; self.keyframe_steps = []; self.animated = None
+            TestRecordTimelapse._FakeAnim.instances.append(self)
+        def capture_keyframe(self, steps=15, **kw): self.keyframe_steps.append(steps)
+        def animate(self, path, **kw): self.animated = (path, kw)
+
+    class _FakeDims:
+        def __init__(self, ndim): self.current_step = tuple([0] * ndim)
+
+    class _FakeViewer:
+        def __init__(self, ndim=3): self.dims = TestRecordTimelapse._FakeDims(ndim)
+
+    def _with_fake_anim(self, fn):
+        orig = napari_utils._require_napari_animation
+        self._FakeAnim.instances = []
+        napari_utils._require_napari_animation = lambda: self._FakeAnim
+        try: return fn()
+        finally: napari_utils._require_napari_animation = orig
+
+    def test_sweeps_full_range_and_animates(self):
+        v = self._FakeViewer(ndim=3)   # [t, y, x]
+        n = self._with_fake_anim(lambda: napari_utils.record_timelapse(
+            v, '/tmp/x.mp4', t_axis_index=0, n_timepoints=5, fps=10))
+        self.assertEqual(n, 5)                                   # 5 timepoints
+        anim = self._FakeAnim.instances[0]
+        self.assertEqual(anim.keyframe_steps, [15, 4])           # first (default) + steps = t1-t0 = 4
+        self.assertEqual(anim.animated[0], '/tmp/x.mp4')
+        self.assertEqual(anim.animated[1]['fps'], 10)
+        self.assertEqual(v.dims.current_step[0], 4)              # slider left at the last timepoint
+
+    def test_single_timepoint_raises(self):
+        # fails fast before the dep is required (no napari-animation needed)
+        with self.assertRaises(ValueError):
+            napari_utils.record_timelapse(self._FakeViewer(), '/tmp/x.mp4',
+                                          t_axis_index=0, n_timepoints=1)
+
+
 if __name__ == '__main__':
     unittest.main()

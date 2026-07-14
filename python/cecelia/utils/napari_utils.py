@@ -297,3 +297,50 @@ def apply_view_state(viewer, snapshot):
       except Exception:
         pass
   return True
+
+
+# ── Movie recording (timelapse T-sweep) ───────────────────────────────────────
+# Record a viewer's time axis to an .mp4 by interpolating the dims T slider between two keyframes.
+# The batch-movie ("generateMovies") building block: apply a view (channels/pops/colour-by) then call
+# this to sweep T → one attr-named file per image. Uses napari-animation (PyPI) + imageio-ffmpeg (both
+# in the pixi env); kept here (not the bridge) so it's a shared, testable primitive. See
+# docs/todo/ANIMATION_PLAN.md (Phase F1) and docs/NAPARI.md.
+
+def record_timelapse(viewer, path, *, t_axis_index, n_timepoints, fps=15,
+                     canvas_only=True, scale=1, t_start=0, t_end=None):
+  """Record ``viewer``'s T-sweep (dims slider index ``t_axis_index``) from ``t_start``..``t_end``
+  (default the full ``n_timepoints`` range) to ``path`` (an ``.mp4``), one frame per timepoint, at
+  ``fps``. ``canvas_only`` excludes the napari UI chrome; ``scale`` supersamples (2 = 2× resolution).
+  Returns the number of frames written. Raises ``ValueError`` for a single-timepoint stack. Ports the
+  old R ``generateMovies`` T-playback: two keyframes (first/last T) + linear slider interpolation."""
+  n = int(n_timepoints)
+  if n <= 1:
+    raise ValueError("record_timelapse needs a stack with >1 timepoint (no time axis to sweep)")
+  t0 = max(0, int(t_start))
+  t1 = (n - 1) if t_end is None else min(int(t_end), n - 1)
+  if t1 <= t0:
+    raise ValueError(f"record_timelapse: empty T range [{t0}, {t1}]")
+  Animation = _require_napari_animation()
+
+  def _set_t(t):
+    step = list(viewer.dims.current_step)
+    step[t_axis_index] = int(t)
+    viewer.dims.current_step = tuple(step)
+
+  anim = Animation(viewer)
+  _set_t(t0); anim.capture_keyframe()
+  _set_t(t1); anim.capture_keyframe(steps=(t1 - t0))   # one interpolated frame per timepoint between
+  anim.animate(path, fps=int(fps), canvas_only=canvas_only, scale_factor=scale)
+  return (t1 - t0) + 1
+
+
+def _require_napari_animation():
+  """Return napari-animation's ``Animation`` class, or raise a clear message (it's a PyPI env dep)."""
+  try:
+    from napari_animation import Animation
+  except ImportError as e:  # pragma: no cover - environment-dependent
+    raise ImportError(
+      "napari-animation is required to record movies — it ships in the pixi env (PyPI, not conda-forge); "
+      "`pip install cecelia` does not include it."
+    ) from e
+  return Animation

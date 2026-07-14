@@ -98,13 +98,6 @@ class NapariState:
         self._autosave_timer.setInterval(500)   # debounce window: one write ~500ms after the last change
         self._autosave_timer.timeout.connect(self._autosave_flush)
 
-        # ── animation recorder (napari-animation) ───────────────────────────────
-        # The "wizard" dock widget the user drives to record keyframes and export a movie. Ported from
-        # the old R "add recorder" button — we just dock/undock napari-animation's own widget; napari
-        # handles the whole animation UI + export. Persists across image switches (viewer is reused).
-        self._anim_dock = None         # QtViewerDockWidget handle while docked, else None
-        self._anim_widget = None       # the AnimationWidget instance (needed to remove the dock)
-
     # ── Viewer lifecycle ───────────────────────────────────────────────────────
 
     def clear(self):
@@ -1027,28 +1020,6 @@ class NapariState:
         finally:
             self._autosave_loading = False
 
-    # ── Animation recorder (napari-animation) ──────────────────────────────────
-
-    def toggle_animation_widget(self) -> bool:
-        """Dock (or undock) napari-animation's "wizard" recorder widget; return whether it's now shown.
-
-        Ports the old R "add recorder" button: we hand napari-animation's own AnimationWidget to the
-        viewer and let the user record keyframes / export the movie from within napari. napari-animation
-        is a heavy, napari-side dep (imageio-ffmpeg etc.) so it's imported lazily here, like napari."""
-        if self._anim_dock is not None:
-            try:
-                self._viewer.window.remove_dock_widget(self._anim_widget)
-            except Exception:
-                pass   # user may have already closed it via napari's dock X — treat as "now hidden"
-            self._anim_dock = None
-            self._anim_widget = None
-            return False
-        from napari_animation import AnimationWidget
-        self._anim_widget = AnimationWidget(self._viewer)
-        self._anim_dock = self._viewer.window.add_dock_widget(
-            self._anim_widget, area="right", name="Animation Wizard")
-        return True
-
     # ── View snapshot (the "view state" atom) ───────────────────────────────────
 
     def capture_view_state(self):
@@ -1082,6 +1053,24 @@ class NapariState:
             self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
         else:
             self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+
+    def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
+                         scale=1, t_start: int = 0, t_end=None):
+        """Record the open image's T-sweep to `path` (mp4). Resolves the T slider index from the image
+        axes and delegates to the shared `napari_utils.record_timelapse` (keyframe→animate). Returns the
+        frame count + path. Raises if the image has no time axis. Phase F1 of the batch-movie work
+        (docs/todo/ANIMATION_PLAN.md); F1.2/F1.3 add per-image config + batch."""
+        axes = self._display_axes()                       # non-channel axes, dims.current_step order
+        if "t" not in axes:
+            raise RuntimeError("this image has no time axis to record")
+        n_t = self._time_axis_len()
+        if not n_t or n_t <= 1:
+            raise RuntimeError("this image has a single timepoint — nothing to sweep")
+        from cecelia.utils import napari_utils
+        frames = napari_utils.record_timelapse(
+            self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
+            fps=fps, canvas_only=canvas_only, scale=scale, t_start=t_start, t_end=t_end)
+        return {"frames": frames, "path": path, "n_timepoints": n_t}
 
     # ── Task dir (needed for labels / props) ──────────────────────────────────
 
@@ -1355,8 +1344,12 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
         elif t == "configure_autosave":
             state.configure_autosave(cmd.get("path"), bool(cmd.get("enabled", False)))
 
-        elif t == "toggle_animation":
-            return {"type": "ok", "cmd": t, "active": state.toggle_animation_widget()}
+        elif t == "record_timelapse":
+            res = state.record_timelapse(cmd["path"], fps=cmd.get("fps", 15),
+                                         canvas_only=cmd.get("canvas_only", True),
+                                         scale=cmd.get("scale", 1),
+                                         t_start=cmd.get("t_start", 0), t_end=cmd.get("t_end"))
+            return {"type": "ok", "cmd": t, **res}
 
         elif t == "save_screenshot":
             state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True),

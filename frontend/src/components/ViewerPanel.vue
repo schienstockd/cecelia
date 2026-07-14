@@ -22,7 +22,7 @@ async function _resError(res: Response): Promise<string> {
 const selectedValueName = ref('')
 const visibleLabels     = ref<Record<string, boolean>>({})
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
-const recorderActive    = ref(false)   // napari-animation "wizard" dock widget currently docked?
+const recording         = ref(false)   // a one-click timelapse recording is in progress
 
 // per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust)
 // belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
@@ -70,6 +70,13 @@ const popVisible = (popType: string): boolean =>
   currentSetUid.value ? settings.getPopVisible(currentSetUid.value, popType) : false
 const setPopVisible = (popType: string, v: boolean) => {
   if (currentSetUid.value) settings.setPopVisible(currentSetUid.value, popType, v) }
+// timelapse-recording params (per set): frame rate + resolution supersample factor
+const movieFps = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).fps : 15,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { fps: v }) } })
+const movieScale = computed<number>({
+  get: () => currentSetUid.value ? settings.getMovieConfig(currentSetUid.value).scale : 1,
+  set: v => { if (currentSetUid.value) settings.setMovieConfig(currentSetUid.value, { scale: v }) } })
 
 
 watch(napariImage, (img) => {
@@ -142,19 +149,29 @@ watch(() => settings.napariAutoSaveLayerProps, async enabled => {
   } catch { /* napari not running */ }
 })
 
-// Recorder: dock/undock napari-animation's "wizard" widget inside the viewer (ports the old R
-// "add recorder" button). The animation UI + movie export live entirely in napari; we only toggle the
-// dock. Local state reflects the last-known dock state — if the user closes the dock from napari it can
-// desync, but a click self-heals (the bridge re-adds when its handle is cleared).
-async function toggleRecorder() {
+
+// One-click timelapse recording: sweep the open image's T axis in the CURRENT view (whatever channels/
+// populations/colour-by are shown) to an .mp4 under the project's movies/ folder. The backend picks the
+// path and returns it; we surface it in the log. Can take a while (one screenshot per timepoint), so the
+// button shows a spinner + is disabled meanwhile. (F1.1 — a config/batch UI comes in F1.2/F1.3.)
+async function recordTimelapse() {
+  const uid        = projectStore.napariImageUid
+  const projectUid = projectMeta.current?.uid
+  if (!uid || !projectUid || recording.value) return
+  recording.value = true
+  log.info('Recording timelapse… (this can take a moment)', { source: 'napari' })
   try {
-    const res = await fetch('/api/napari/toggle-animation', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    const res = await fetch('/api/napari/record-timelapse', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid, imageUid: uid, fps: movieFps.value, scale: movieScale.value }),
     })
-    if (!res.ok) { log.error(`Recorder toggle failed: ${await _resError(res)}`, { source: 'napari' }); return }
-    recorderActive.value = ((await res.json()) as { active?: boolean }).active ?? false
+    if (!res.ok) { log.error(`Record timelapse failed: ${await _resError(res)}`, { source: 'napari' }); return }
+    const j = (await res.json()) as { path?: string; frames?: number }
+    log.info(`Recorded ${j.frames ?? '?'} frames → ${j.path ?? 'movies/'}`, { source: 'napari' })
   } catch (e) {
-    log.error(`Recorder toggle failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+    log.error(`Record timelapse failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+  } finally {
+    recording.value = false
   }
 }
 
@@ -555,12 +572,6 @@ onUnmounted(() => {
           @click="settings.napariAsDask = !settings.napariAsDask"
           v-tooltip.bottom="'Lazy load (Dask): fast open, slices computed on demand. Untick to load full zarr into memory — slower to open but smoother viewing.'"
         ><i class="pi pi-database" /></button>
-
-        <button
-          class="opt-btn" :class="{ active: recorderActive }" :disabled="!napariImage"
-          @click="toggleRecorder"
-          v-tooltip.bottom="'Movie recorder: dock napari-animation\'s wizard to record keyframes and export an animation (drive it inside Napari)'"
-        ><i class="pi pi-video" /></button>
       </div>
     </div>
 
@@ -660,6 +671,26 @@ onUnmounted(() => {
                   v-tooltip.right="'Reset colours to population colours / the default palette'">reset</button>
         </div>
       </div>
+
+      <!-- ── Movie: record the CURRENT view over time → mp4 (project's movies/ folder) ──
+           Records exactly what's shown (channels, populations, tracks, colour-by). fps + resolution
+           are per-set; the fuller config (which channels/pops, T-range, batch) is F1.2/F1.3. -->
+      <div class="viewer-section">
+        <div class="viewer-section-title">Movie</div>
+        <div class="movie-row">
+          <span class="movie-lbl" v-tooltip.bottom="'Frames per second'">fps</span>
+          <input type="range" min="1" max="60" step="1" v-model.number="movieFps" class="movie-range" />
+          <span class="movie-val">{{ movieFps }}</span>
+          <span class="movie-lbl" v-tooltip.bottom="'Resolution supersample (2× = double resolution)'">res</span>
+          <input type="range" min="1" max="3" step="1" v-model.number="movieScale" class="movie-range" />
+          <span class="movie-val">{{ movieScale }}×</span>
+          <button class="opt-btn movie-rec" :class="{ active: recording }" :disabled="recording"
+                  @click="recordTimelapse"
+                  v-tooltip.bottom="'Record the current view over the time axis → mp4 in the project\'s movies/ folder'">
+            <i :class="['pi', recording ? 'pi-spin pi-spinner' : 'pi-video']" />
+          </button>
+        </div>
+      </div>
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint">No image open in Napari.</span></div>
   </div>
@@ -692,6 +723,13 @@ onUnmounted(() => {
 .viewer-select { width: 100%; font-size: 0.72rem; }
 /* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
 .opt-colourby { font-size: 0.7rem; width: 100%; min-width: 0; }
+/* movie recording params — one compact row: fps slider · res slider · record button */
+.movie-row { display: flex; align-items: center; gap: 0.3rem; }
+.movie-lbl { font-size: 0.6rem; color: var(--cc-text-dim); flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.04em; }
+.movie-range { flex: 1; min-width: 2.5rem; accent-color: #7c3aed; }
+.movie-val { font-size: 0.64rem; color: var(--cc-text); width: 1.4rem; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.movie-rec { margin-left: 0.1rem; }
+
 /* colour-by legend: value → swatch (a population's colour where one matches, else default) */
 .cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }
 .cby-item { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.66rem; color: var(--cc-text-dim); }

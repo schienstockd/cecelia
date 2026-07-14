@@ -137,6 +137,14 @@ matches how figures are actually made; F2 is the advanced follow-on.
 - **F1. Batch movie generation** *(needs A, G)* — author a config (table above) → apply per selected
   image (contrast from saved props) → record T-sweep → attr-named `.mp4` per image. "Generate movies"
   button; runs as a task (progress/cancel). *Checkpoint:* reproduce a `runAnimation.Rmd` example.
+  - **F1.1 — DONE.** The recording primitive: `napari_utils.record_timelapse` (keyframe→`animate`→mp4)
+    + bridge `record_timelapse` + `POST /api/napari/record-timelapse` + a one-click "Record timelapse"
+    button that records the open image's CURRENT view to `{project}/movies/{uid}_{valueName}.mp4`. See
+    docs/NAPARI.md → *One-click timelapse recording*.
+  - **F1.2** (next) — an authored config (channels/colormaps, pops, colour-by, T-range, fps, scale)
+    applied to the open image before recording.
+  - **F1.3** — batch the config across selected / attr-filtered images (one attr-named `.mp4` each),
+    run as a cancellable task.
 - **F2. Keyframe animation page** *(needs A; big)* — a board-like page: an ordered, persisted,
   editable sequence of snapshots (keyframes) + per-transition duration/easing + output settings;
   hydrate → napari-animation `Animation` → render → encode. Edit a keyframe's colour in the GUI →

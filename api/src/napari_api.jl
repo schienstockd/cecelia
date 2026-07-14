@@ -398,17 +398,38 @@ function api_napari_apply_view_state(body_bytes::Vector{UInt8})
     end
 end
 
-# ── REST: POST /api/napari/toggle-animation ───────────────────────────────────
-# Dock/undock napari-animation's recorder "wizard" widget in the running viewer (ports the old R
-# "add recorder" button). Returns the new state so the UI button can reflect it.
-function api_napari_toggle_animation(body_bytes::Vector{UInt8})
+# ── REST: POST /api/napari/record-timelapse ───────────────────────────────────
+# Record the open image's timelapse (T-sweep) to an mp4 under the project's `movies/` dir. F1.1 of the
+# batch-movie work (docs/todo/ANIMATION_PLAN.md): records the CURRENT view (whatever channels/pops/
+# colour-by are shown); F1.2/F1.3 add an authored config + batch over images. Returns the saved path.
+function api_napari_record_timelapse(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    fps         = Int(get(data, :fps, 15))
+    scale       = get(data, :scale, 1)
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+
     v = _viewer()
     (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+
+    # save under {project}/movies/{imageName}.mp4 (img._dir = {proj}/1/{uid}). Named by the IMAGE, not a
+    # segmentation — the recording captures the whole current view (which can show several segmentations'
+    # tracks/labels at once), so tagging it with one value_name would be misleading. Fall back to the uid
+    # if the name is blank / unsafe. (F1.3 will switch to attr-based names for batch runs.)
+    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
+    mkpath(movies_dir)
+    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
+    path = joinpath(movies_dir, (isempty(safe) ? image_uid : safe) * ".mp4")
+
     _with_viewer() do
         try
-            active = toggle_animation!(v)
-            200, JSON3.write((; ok = true, active = active))
+            resp = record_timelapse!(v, path; fps = fps, scale = scale)
+            200, JSON3.write((; ok = true, path = path,
+                frames = get(resp, "frames", 0), nTimepoints = get(resp, "n_timepoints", 0)))
         catch e
+            @warn "record_timelapse failed" exception = e
             500, JSON3.write((; error = sprint(showerror, e)))
         end
     end

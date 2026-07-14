@@ -204,8 +204,15 @@ capture_view_state(v::NapariViewer)::Dict{String,Any} =
 apply_view_state!(v::NapariViewer, snapshot) =
     (send(v, Dict("type"=>"apply_view_state", "view_state"=>snapshot)); v)
 
-# ── Animation recorder (napari-animation) ───────────────────────────────────────
+# ── Movie recording (napari-animation) ──────────────────────────────────────────
 
-# Dock/undock napari-animation's recorder "wizard" widget; returns whether it's now shown.
-toggle_animation!(v::NapariViewer)::Bool =
-    Bool(get(send(v, Dict("type"=>"toggle_animation")), "active", false))
+# Record the open image's timelapse (T-sweep) to `path` (mp4); returns the bridge reply (frame count +
+# path). `fps`/`scale` control frame rate + supersampling; `t_start`/`t_end` bound the range (default
+# the whole stack). Phase F1 batch-movie primitive — see docs/todo/ANIMATION_PLAN.md.
+record_timelapse!(v::NapariViewer, path::String; fps::Int=15, canvas_only::Bool=true,
+                  scale::Real=1, t_start::Int=0, t_end::Union{Int,Nothing}=nothing)::Dict{String,Any} = begin
+    cmd = Dict{String,Any}("type"=>"record_timelapse", "path"=>path, "fps"=>fps,
+                           "canvas_only"=>canvas_only, "scale"=>scale, "t_start"=>t_start)
+    t_end !== nothing && (cmd["t_end"] = t_end)
+    send(v, cmd)
+end
