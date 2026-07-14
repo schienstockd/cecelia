@@ -672,6 +672,11 @@ class NapariState:
 
         cby = color_by if color_by and color_by != "track_id" else ""
         legend = {}                                       # {value(str) -> '#hex'} for the colour-by legend
+        # fingerprint the colour overrides so a colour-ONLY change (recolour a category, or a pop colour
+        # edit) re-renders — otherwise the layer signature is unchanged and the layer is skipped, and the
+        # new colour never shows (the categorical colormap is built from `overrides`, but per-layer state
+        # like track_ids/visibility didn't change).
+        ov_sig = hash(tuple(sorted((overrides or {}).items())))
         # build the tracks matrix + colour-by values ONCE per segmentation (cached across pops)
         per_vn = {}
         for vn, _ in desired.values():
@@ -705,7 +710,7 @@ class NapariState:
             ids     = set(int(t) for t in pop.get("track_ids", []))
             visible = pop.get("show", True)
             use_cby = cby if col_vals is not None else ""
-            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby)
+            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig)
             existing = name in self._viewer.layers
             if existing and self._track_sigs.get(name) == sig:
                 continue
