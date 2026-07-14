@@ -1037,7 +1037,8 @@ class NapariState:
 
     # ── Screenshot ────────────────────────────────────────────────────────────
 
-    def save_screenshot(self, path: str, canvas_only: bool = True, scale=1, fit_data: bool = True):
+    def save_screenshot(self, path: str, canvas_only: bool = True, scale=1, fit_data: bool = True,
+                        clean: bool = False):
         """Capture the canvas to `path`.
 
         `fit_data=True` (default) uses napari's `export_figure`: it tightly re-fits the view to the
@@ -1048,11 +1049,29 @@ class NapariState:
         restores the previous camera afterwards, so the view snapshot captured alongside is unaffected.
 
         `fit_data=False` captures the current canvas as-shown (a plain canvas screenshot). Falls back to
-        that if there are no layers to fit."""
-        if fit_data and len(self._viewer.layers) > 0:
-            self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
-        else:
-            self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+        that if there are no layers to fit.
+
+        `clean=True` (Phase E1) hides napari's baked scale bar + timestamp overlay for the shot and
+        restores them after — a clean still for publication (add a vector scale bar / timestamp in
+        Illustrator, or Cecelia's own; see ANIMATION_PLAN.md Decision 7)."""
+        sb_was = ts_was = None
+        if clean:
+            try: sb_was = self._viewer.scale_bar.visible;    self._viewer.scale_bar.visible = False
+            except Exception: sb_was = None
+            try: ts_was = self._viewer.text_overlay.visible; self._viewer.text_overlay.visible = False
+            except Exception: ts_was = None
+        try:
+            if fit_data and len(self._viewer.layers) > 0:
+                self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
+            else:
+                self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+        finally:
+            if sb_was is not None:
+                try: self._viewer.scale_bar.visible = sb_was
+                except Exception: pass
+            if ts_was is not None:
+                try: self._viewer.text_overlay.visible = ts_was
+                except Exception: pass
 
     def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
                          scale=1, t_start: int = 0, t_end=None):
@@ -1367,7 +1386,8 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
 
         elif t == "save_screenshot":
             state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True),
-                                  scale=cmd.get("scale", 1), fit_data=cmd.get("fit_data", True))
+                                  scale=cmd.get("scale", 1), fit_data=cmd.get("fit_data", True),
+                                  clean=cmd.get("clean", False))
             # fold the view snapshot into the reply so a screenshot and its provenance are captured
             # atomically (same view) — one round trip, no camera-moved-between-calls skew.
             return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}

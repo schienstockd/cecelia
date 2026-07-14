@@ -13,10 +13,12 @@ import { ref, computed, watch, useTemplateRef, nextTick, onMounted, onUnmounted 
 import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
 import { useWsStore } from '../../stores/ws'
+import { useSettingsStore } from '../../stores/settings'
 import { channelLegend, viewLegendSections } from '../../utils/viewLegend'
 import ViewLegend from '../ViewLegend.vue'
 
 const ws = useWsStore()
+const settings = useSettingsStore()
 
 // `snapshot` (napari view state) + `imageUid` are the frame's provenance — persisted with the board so
 // zoom-to-source can reopen the image and restore the exact camera/contrast/colours months later
@@ -68,7 +70,7 @@ async function capture(i: number) {
   try {
     const res = await fetch('/api/napari/screenshot', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: props.projectUid }),
+      body: JSON.stringify({ projectUid: props.projectUid, clean: settings.cleanCapture }),
     })
     if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Screenshot failed'; return }
     const data = (await res.json()) as { assetId?: string; png?: string; viewState?: Record<string, unknown>; imageUid?: string | null }
@@ -243,6 +245,9 @@ defineExpose({ exportImage })
           <div class="is-pop">
             <label class="is-check"><input type="checkbox" :checked="showLegend"
               @change="showLegend = ($event.target as HTMLInputElement).checked" /> channel legend</label>
+            <label class="is-check" v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'">
+              <input type="checkbox" :checked="settings.cleanCapture"
+              @change="settings.cleanCapture = ($event.target as HTMLInputElement).checked" /> clean capture</label>
             <template v-if="separator === 'angled' && orientation === 'h'">
               <label class="is-slider">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />

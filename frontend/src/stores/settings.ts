@@ -17,6 +17,13 @@ export const useSettingsStore = defineStore('settings', () => {
     localStorage.getItem('cc.napariUpdateImage') === 'true'    // default false
   )
 
+  // Clean capture (E1): hide napari's baked scale bar + timestamp when taking a screenshot, for a clean
+  // publication still (add a vector scale bar / timestamp externally). Applies to strip + animation
+  // captures. Default false (keep the on-screen annotations). See docs/todo/ANIMATION_PLAN.md → E.
+  const cleanCapture = ref(
+    localStorage.getItem('cc.cleanCapture') === 'true'         // default false
+  )
+
   // Reload behaviour: reloading a shown image (the eye / a finished task) refreshes DATA only
   // (labels + population/track overlays, re-read from disk) — NOT the image pyramid. Tick "reset" to
   // reopen the image too (needed when a task changed the pixels: drift/denoise). Default false.
@@ -165,6 +172,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
   watch(napariUpdateImage,        v => localStorage.setItem('cc.napariUpdateImage',        String(v)))
+  watch(cleanCapture,             v => localStorage.setItem('cc.cleanCapture',             String(v)))
   watch(napariResetOnReload,      v => localStorage.setItem('cc.napariResetOnReload',      String(v)))
   watch(napariAutoSaveLayerProps, v => localStorage.setItem('cc.napariAutoSaveLayerProps', String(v)))
   watch(napariAsDask,             v => localStorage.setItem('cc.napariAsDask',             String(v)))
@@ -173,5 +181,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
 })

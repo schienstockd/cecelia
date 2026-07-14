@@ -175,6 +175,13 @@ settable scalars stay durable, human-readable and GUI-editable. Commands: `captu
 its provenance are captured atomically (same view). Foundation for zoom-to-source + movies — see
 `docs/todo/ANIMATION_PLAN.md`.
 
+**Clean capture (E1).** `save_screenshot(..., clean=True)` hides napari's baked scale bar + timestamp
+overlay for the shot and restores them after — a clean **publication still** (add a vector scale bar /
+timestamp externally, or Cecelia's own; Decision 7). Threaded `POST /api/napari/screenshot {clean}` →
+`save_screenshot!` → bridge; driven by the persisted **"clean capture"** toggle in the analysis-board
+image-strip ⚙ (`settings.cleanCapture`). Scoped to stills — animation keyframes keep the timestamp (a
+movie wants it). NB: a bridge change → **restart napari** (`pixi run stop-napari`) for it to take effect.
+
 ---
 
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
