@@ -21,7 +21,8 @@ import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
 import PopulationPanelShell from './PopulationPanelShell.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
-import type { VisProps } from '../../plots/plot'
+import TeleportPopover from '../TeleportPopover.vue'
+import { PALETTES, type VisProps } from '../../plots/plot'
 
 const props = withDefaults(defineProps<{
   selected: string
@@ -66,6 +67,25 @@ const napariPointSize = computed<number>({
 const optionsOpen = ref(false)     // gate / viewer options box (host-specific, in the shell #options slot)
 const editing = ref<string | null>(null)
 const editName = ref('')
+
+// pop colour picker: clicking a pop's swatch opens a small popover offering the Cecelia palette
+// (click a chip) plus the native picker for anything custom. A native <input type="color"> can't
+// carry preset swatches, so we anchor our own popover to the clicked swatch instead.
+const CECELIA_PALETTE = PALETTES.cecelia
+const colourPop = ref<string | null>(null)          // path of the pop whose picker is open
+const colourAnchor = ref<HTMLElement | null>(null)  // the clicked swatch (drives popover placement)
+const colourOpen = computed<boolean>({ get: () => colourPop.value !== null, set: v => { if (!v) colourPop.value = null } })
+const colourPopColour = computed(() => g.flat.find(p => p.path === colourPop.value)?.colour ?? '#ffffff')
+const eqColour = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+function openColour(p: FlatPop, e: MouseEvent) {
+  if (props.readonly || p.transient) return
+  colourAnchor.value = e.currentTarget as HTMLElement
+  colourPop.value = p.path
+}
+function setColour(c: string, close = true) {
+  if (colourPop.value) g.updatePop(colourPop.value, { colour: c })
+  if (close) colourPop.value = null
+}
 
 function pick(p: FlatPop) { emit('update:selected', p.path) }
 function beginRename(p: FlatPop) { editing.value = p.path; editName.value = p.name }
@@ -144,9 +164,9 @@ async function addClusterPopulation() {
              @click="pick(p)">
           <i v-if="p.transient" class="pi pi-map-marker pm-napari"
              v-tooltip.left="'Cells selected in napari (temporary)'" :style="{ color: p.colour }" />
-          <input v-else type="color" class="pm-swatch" :value="p.colour" :disabled="readonly"
-                 v-tooltip.left="readonly ? '' : 'Colour'"
-                 @click.stop @change="g.updatePop(p.path, { colour: ($event.target as HTMLInputElement).value })" />
+          <button v-else type="button" class="pm-swatch" :style="{ background: p.colour }" :disabled="readonly"
+                  v-tooltip.left="readonly ? '' : 'Colour'"
+                  @click.stop="openColour(p, $event)" />
 
           <span v-if="editing !== p.path" class="pm-name"
                 @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
@@ -195,6 +215,22 @@ async function addClusterPopulation() {
           <span v-if="!props.clusterIds.length" class="pm-chip-empty">no clusters at this suffix</span>
         </div>
       </template>
+
+      <!-- pop colour picker popover: Cecelia palette chips + a native picker for custom colours -->
+      <TeleportPopover v-model="colourOpen" :anchor="colourAnchor" placement="bottom-start">
+        <div class="pm-colours">
+          <div class="pm-colours-grid">
+            <button v-for="c in CECELIA_PALETTE" :key="c" type="button" class="pm-colour-chip"
+                    :class="{ on: eqColour(c, colourPopColour) }" :style="{ background: c }"
+                    v-tooltip.top="c" @click="setColour(c)" />
+          </div>
+          <label class="pm-colour-custom">
+            <span>custom</span>
+            <input type="color" :value="colourPopColour"
+                   @change="setColour(($event.target as HTMLInputElement).value, false)" />
+          </label>
+        </div>
+      </TeleportPopover>
 
     <!-- ── gate / viewer options (host-specific, #options slot). In cluster mode there are no gates
          (the plot group); trackclust has no viewer control either, so the whole block is hidden. ── -->
@@ -263,7 +299,17 @@ async function addClusterPopulation() {
 .pm-row.active { background: color-mix(in srgb, var(--cc-accent) 22%, transparent); }
 .pm-row.transient { font-style: italic; background: color-mix(in srgb, #22d3ee 8%, transparent); }
 .pm-napari { width: 16px; text-align: center; font-size: 13px; }
-.pm-swatch { width: 16px; height: 16px; padding: 0; border: none; background: none; cursor: pointer; }
+.pm-swatch { width: 16px; height: 16px; padding: 0; border: 1px solid var(--cc-border); border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+.pm-swatch:disabled { cursor: default; opacity: 0.7; }
+/* colour picker popover (Cecelia palette + native custom) — TeleportPopover gives surface/border */
+.pm-colours { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+.pm-colours-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+.pm-colour-chip { width: 22px; height: 22px; border: 1px solid var(--cc-border); border-radius: 4px; cursor: pointer; padding: 0; }
+.pm-colour-chip:hover { transform: scale(1.08); }
+.pm-colour-chip.on { outline: 2px solid var(--cc-text); outline-offset: 1px; }
+.pm-colour-custom { display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 12px; color: var(--cc-text-dim); border-top: 1px solid var(--cc-border); padding-top: 6px; }
+.pm-colour-custom input { width: 28px; height: 20px; padding: 0; border: none; background: none; cursor: pointer; }
 .pm-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pm-rename { flex: 1; background: var(--cc-bg); color: var(--cc-text); border: 1px solid var(--cc-accent); border-radius: 3px; padding: 1px 4px; }
 .pm-stat { color: var(--cc-text-dim); font-variant-numeric: tabular-nums; }
