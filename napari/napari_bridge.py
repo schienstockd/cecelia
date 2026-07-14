@@ -716,7 +716,15 @@ class NapariState:
                 continue
             mask = np.array([t in ids for t in all_tids]) if ids else np.zeros(len(all_tids), bool)
             sub = tracks[mask, :]
-            existing and _remove_layer(self._viewer, name)   # Tracks graph can't be mutated in place
+            # A Tracks graph can't be mutated in place, so a recolour / re-push removes + re-adds the
+            # layer — which would reset display props the user tuned by hand in napari (tail length,
+            # opacity, blending, …). Snapshot them off the existing layer and restore after re-adding so
+            # only the intended change (colour) actually changes. `tail_length` overrides our default.
+            prev = None
+            if existing:
+                ex = self._viewer.layers[name]
+                prev = {a: getattr(ex, a, None) for a in ("tail_length", "tail_width", "opacity", "blending")}
+                _remove_layer(self._viewer, name)
             if len(sub) > 0:
                 props = {"track_id": sub[:, 0].astype(int).tolist()}
                 if use_cby:
@@ -726,13 +734,18 @@ class NapariState:
                 # `colormaps_dict` (consistent with labels); otherwise a named colormap (viridis
                 # continuous / turbo by track_id). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
                 from cecelia.utils import napari_utils
-                napari_utils.add_tracks(
+                layer = napari_utils.add_tracks(
                     self._viewer, sub, name=name,
                     scale=self._im_scale, units=self._im_units, properties=props,
                     color_by=(use_cby or "track_id"), tail_width=tail_width, tail_length=tail_length,
                     colormap=(col_cmap or "turbo"),
                     colormaps_dict=(col_cmaps_dict if use_cby else None),
                 )
+                if prev is not None:                     # carry the user's manual layer tweaks over
+                    for attr, val in prev.items():
+                        if val is not None:
+                            try: setattr(layer, attr, val)
+                            except Exception: pass
             self._track_sigs[name] = sig
         return legend
 
