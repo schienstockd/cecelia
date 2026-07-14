@@ -14,11 +14,15 @@ import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
 import { useWsStore } from '../../stores/ws'
 import { useSettingsStore } from '../../stores/settings'
+import { useProjectStore } from '../../stores/project'
 import { channelLegend, viewLegendSections } from '../../utils/viewLegend'
+import { elapsedLabel } from '../../utils/stillOverlay'
 import ViewLegend from '../ViewLegend.vue'
+import StillOverlay from '../StillOverlay.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
+const project = useProjectStore()
 
 // `snapshot` (napari view state) + `imageUid` are the frame's provenance — persisted with the board so
 // zoom-to-source can reopen the image and restore the exact camera/contrast/colours months later
@@ -27,10 +31,11 @@ const settings = useSettingsStore()
 // inline, so the board JSON stays small (autosave-friendly). `src` is the legacy inline data-URL, kept
 // only for back-compat (migrated to a sidecar on load). `snapshot`+`imageUid` are the view provenance
 // for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
-interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null }
+interface ExtentUm { x?: number; y?: number; unit?: string | null }
+interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean }
+  state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean; showScaleBar?: boolean; showTimestamp?: boolean }
 }>()
 
 // seed defaults into the persisted state bag (the slot starts as {})
@@ -46,6 +51,19 @@ const skew = computed({ get: () => props.state.sepAngle ?? 22, set: v => (props.
 const thick = computed({ get: () => props.state.sepThick ?? 2, set: v => (props.state.sepThick = v) })
 // optional channel-colour legend, read from the frame's snapshot (napari layer colormaps). Off by default.
 const showLegend = computed({ get: () => props.state.showLegend ?? false, set: v => (props.state.showLegend = v) })
+// still overlays (E2): a vector scale bar (from the captured frame's physical extent) + an elapsed-time
+// timestamp — drawn crisp on the clean capture (napari's own hidden via E1). Off by default.
+const showScaleBar  = computed({ get: () => props.state.showScaleBar ?? false,  set: v => (props.state.showScaleBar = v) })
+const showTimestamp = computed({ get: () => props.state.showTimestamp ?? false, set: v => (props.state.showTimestamp = v) })
+// elapsed-time label for a frame: its snapshot T index × the source image's frame interval
+function frameTime(c: Cell): string {
+  const step = (c.snapshot?.dims as { current_step?: number[] } | undefined)?.current_step
+  const t = Array.isArray(step) ? step[0] : undefined
+  if (t === undefined || t === null) return ''
+  const img = project.sets.flatMap(s => s.images).find(im => im.uid === c.imageUid)
+  const lbl = elapsedLabel(t, img?.timeIncrement, img?.timeIncrementUnit)
+  return /^t\d/.test(lbl) ? '' : lbl        // hide the bare "t{N}" fallback (no real time on a still)
+}
 // angled separators are horizontal-only (the clip leans across the row) — snap back to straight if the
 // strip is switched to vertical.
 watch(orientation, o => { if (o === 'v' && separator.value === 'angled') separator.value = 'straight' })
@@ -73,12 +91,13 @@ async function capture(i: number) {
       body: JSON.stringify({ projectUid: props.projectUid, clean: settings.cleanCapture }),
     })
     if (!res.ok) { err.value = ((await res.json().catch(() => ({}))) as { error?: string }).error ?? 'Screenshot failed'; return }
-    const data = (await res.json()) as { assetId?: string; png?: string; viewState?: Record<string, unknown>; imageUid?: string | null }
+    const data = (await res.json()) as { assetId?: string; png?: string; viewState?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null }
     const c = cells.value[i]
     if (data.assetId) { c.assetId = data.assetId; c.src = undefined }         // sidecar PNG (normal path)
     else if (data.png) { c.src = 'data:image/png;base64,' + data.png; c.assetId = undefined }  // inline fallback
     c.snapshot = data.viewState
     c.imageUid = data.imageUid ?? null
+    c.extentUm = data.extentUm ?? null            // physical size → still scale bar (E2)
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { capturing.value = -1 }
 }
@@ -248,6 +267,12 @@ defineExpose({ exportImage })
             <label class="is-check" v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'">
               <input type="checkbox" :checked="settings.cleanCapture"
               @change="settings.cleanCapture = ($event.target as HTMLInputElement).checked" /> clean capture</label>
+            <label class="is-check" v-tooltip.bottom="'Draw a vector scale bar on each frame (from the image\'s physical pixel size)'">
+              <input type="checkbox" :checked="showScaleBar"
+              @change="showScaleBar = ($event.target as HTMLInputElement).checked" /> scale bar</label>
+            <label class="is-check" v-tooltip.bottom="'Draw the elapsed-time timestamp on each frame'">
+              <input type="checkbox" :checked="showTimestamp"
+              @change="showTimestamp = ($event.target as HTMLInputElement).checked" /> timestamp</label>
             <template v-if="separator === 'angled' && orientation === 'h'">
               <label class="is-slider">angle
                 <input type="range" min="0" max="80" :value="skew" @input="skew = +($event.target as HTMLInputElement).value" />
@@ -266,6 +291,10 @@ defineExpose({ exportImage })
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
         <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="napari screenshot" />
+        <!-- vector scale bar + timestamp (E2), drawn on the clean capture from the frame's physical extent -->
+        <StillOverlay v-if="(c.assetId || c.src) && (showScaleBar || showTimestamp)"
+                      :extent-um="c.extentUm" :time-label="frameTime(c)"
+                      :show-scale-bar="showScaleBar" :show-timestamp="showTimestamp" />
         <!-- optional view legend (channels now; pops + colour-by plug in later), from the frame snapshot -->
         <ViewLegend v-if="showLegend && (c.assetId || c.src) && legendSections(c).length"
                     :sections="legendSections(c)" :swatch="9" class="is-legend" />

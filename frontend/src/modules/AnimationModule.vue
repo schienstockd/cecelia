@@ -11,6 +11,7 @@ import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
 import { napariColormapHex } from '../utils/napariColormap'
+import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 
 const projectMeta = useProjectMetaStore()
@@ -113,12 +114,8 @@ function keyframeTime(s: AnimSnapshot): string {
   const step = (s.snapshot?.dims as { current_step?: number[] } | undefined)?.current_step
   const t = Array.isArray(step) ? step[0] : undefined
   if (t === undefined || t === null) return ''
-  const inc = openImage.value?.timeIncrement
-  if (!inc) return `t${t}`
-  const unit = openImage.value?.timeIncrementUnit ?? 'second'
-  const secs = /^min/i.test(unit) ? t * inc * 60 : t * inc
-  const h = Math.floor(secs / 3600), m = Math.round((secs % 3600) / 60)
-  return `t${t} · ${h > 0 ? `${h}h ${m}m` : `${m}m`}`
+  const e = elapsedLabel(t, openImage.value?.timeIncrement, openImage.value?.timeIncrementUnit)
+  return openImage.value?.timeIncrement ? `t${t} · ${e}` : `t${t}`   // shared formatter (utils/stillOverlay)
 }
 
 type Layers = Record<string, { visible?: boolean; colormap?: string }>

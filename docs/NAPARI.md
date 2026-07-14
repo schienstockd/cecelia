@@ -182,6 +182,15 @@ timestamp externally, or Cecelia's own; Decision 7). Threaded `POST /api/napari/
 image-strip ⚙ (`settings.cleanCapture`). Scoped to stills — animation keyframes keep the timestamp (a
 movie wants it). NB: a bridge change → **restart napari** (`pixi run stop-napari`) for it to take effect.
 
+**Vector scale bar + timestamp (E2).** The screenshot reply also carries `extent_um` — the captured
+frame's physical width/height (`_data_extent_um` = data shape × per-axis `_im_scale`; `export_figure`
+tight-fits to the data extent, so it *is* the frame's physical size). The strip draws its own crisp
+scale bar + elapsed-time timestamp on the clean capture via `components/StillOverlay.vue`: an SVG whose
+`viewBox` is the extent (µm) with `preserveAspectRatio="xMidYMid meet"` (matching the frame's
+`object-fit: contain`), so the bar length is correct-by-construction and stays aligned even when the
+frame is letterboxed. Scale-bar length picks a nice round step (`utils/stillOverlay.niceScaleBar`);
+the timestamp reuses `elapsedLabel` (shared with the animation timeline). Toggled per strip in the ⚙.
+
 ---
 
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
