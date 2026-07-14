@@ -98,6 +98,9 @@ export const useSettingsStore = defineStore('settings', () => {
     // the user can override the default palette; these win over pop/default when colouring. Per-column
     // so different colour-by columns keep independent schemes.
     colourByOverrides?: Record<string, Record<string, string>>
+    // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate,
+    // scale = supersample factor (2 = 2× resolution). Per-set like the other viewer prefs.
+    movie?: { fps?: number; scale?: number }
   }
   const _setPrefs = ref<Record<string, NapariSetPrefs>>(
     JSON.parse(localStorage.getItem('cc.napariSetPrefs') ?? '{}')
@@ -131,6 +134,14 @@ export const useSettingsStore = defineStore('settings', () => {
     delete all[column]
     _patchSet(setUid, { colourByOverrides: all })
   }
+  // timelapse-recording params (per set); defaults match the backend (fps 15, scale 1×)
+  const getMovieConfig = (setUid: string): { fps: number; scale: number } => ({
+    fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
+    scale: _setPrefs.value[setUid]?.movie?.scale ?? 1,
+  })
+  function setMovieConfig(setUid: string, patch: { fps?: number; scale?: number }) {
+    _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
+  }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
@@ -143,5 +154,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig }
 })

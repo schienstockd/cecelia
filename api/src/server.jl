@@ -328,8 +328,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_screenshot(body_bytes)
         elseif path == "/api/napari/apply-view-state"
             api_napari_apply_view_state(body_bytes)
-        elseif path == "/api/napari/toggle-animation"
-            api_napari_toggle_animation(body_bytes)
+        elseif path == "/api/napari/record-timelapse"
+            api_napari_record_timelapse(body_bytes)
         elseif path == "/api/napari/restart"
             api_napari_restart(body_bytes)
         elseif path == "/api/napari/gpu"

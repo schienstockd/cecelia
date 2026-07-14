@@ -97,18 +97,26 @@ Errors are returned as `{"type": "error", "msg": "..."}` — `send()` raises on 
 
 ---
 
-## Animation recorder (movies)
+## Movie recording (`record_timelapse`)
 
-The user records keyframe animations / exports movies with **napari-animation**'s own "wizard" dock
-widget — we don't re-implement the recorder, we just dock its widget (ports the old R "add recorder"
-button). `NapariState.toggle_animation_widget()` constructs `napari_animation.AnimationWidget(viewer)`
-and `add_dock_widget`s it (re-toggle removes it), returning whether it's now shown. It's driven by the
-`toggle_animation` command → `toggle_animation!(v)` → `POST /api/napari/toggle-animation` (returns
-`{active}`), surfaced as the video toggle in the viewer sidebar. Once docked, keyframe capture and movie
-export happen entirely inside napari. `napari-animation` is a heavy, napari-side dep, so it's imported
-lazily inside the method (like napari) and lives in `pixi.toml`'s `[pypi-dependencies]` — **PyPI, not
-conda-forge**, because the conda build pulls numpy ≥2.1 which breaks the `cellpose==3.1.1.2` pin
-(`numpy<2.1`). The dock persists across image switches (the viewer is reused, only its layers cleared).
+A **one-click "Record timelapse"** button (▶ in the viewer panel's View row) records the open image's
+**T-sweep of the current view** (whatever channels / populations / colour-by are shown) straight to an
+`.mp4`. (We used to dock napari-animation's interactive "wizard" widget too; that was **removed** — the
+one-click record + the authored batch config, F1.2/F1.3, cover the workflow without a separate keyframe
+UI to drive by hand.) `napari-animation` is still the engine — a heavy, napari-side dep in `pixi.toml`'s
+`[pypi-dependencies]` (**PyPI, not conda-forge**, because the conda build pulls numpy ≥2.1 which breaks
+the `cellpose==3.1.1.2` pin), imported lazily.
+
+`napari_utils.record_timelapse(viewer, path, *, t_axis_index, n_timepoints, …)`
+is the shared primitive: it captures a keyframe at the first T, another at the last (with
+`steps = n-1` → one interpolated frame per timepoint), and calls napari-animation's `Animation.animate`
+(mp4 via imageio-ffmpeg). The bridge (`NapariState.record_timelapse`) resolves the T slider index from
+the image axes and delegates; `record_timelapse!(v, path; fps, scale)` → `POST /api/napari/record-timelapse`
+saves to `{project}/movies/{imageName}.mp4` (named by the IMAGE — the view can show several
+segmentations at once — falling back to the uid) and returns the frame count + path. `fps` + resolution
+`scale` are per-set sliders in the viewer panel's Movie section. This is **F1.1**
+of the batch-movie work — F1.2 adds an authored config (channels/pops/colour-by/T-range/fps), F1.3 runs
+it across selected/attr-filtered images (see `docs/todo/ANIMATION_PLAN.md`).
 
 ---
 
