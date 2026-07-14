@@ -979,6 +979,49 @@ function api_napari_colour_labels(body_bytes::Vector{UInt8})
     end
 end
 
+# ── REST: POST /api/napari/overlay-legend ─────────────────────────────────────
+# Read-only legend for a captured still's overlays (Phase C) — pure Julia, no viewer touched, so it can't
+# disturb the live overlays. Returns, for the strip frame's populations + colour-by legend sections:
+#  • colourBy: for a categorical `colourBy` column, {value → pop colour + pop name} (a value a population
+#    FILTERS FOR on that column takes that pop's colour — the same rule as colour-labels/show-tracks; the
+#    common case is track/cell clusters, which ARE populations, so the legend reads the cluster names).
+#  • populations: for the requested point-pop layers ({valueName, popType, path}, parsed from the frame's
+#    overlay layer names), each pop's name + colour from its population map.
+function api_napari_overlay_legend(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    column      = String(get(data, :colourBy, ""))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+
+    # colour-by legend: pop colour + pop name per value on `column`, plus any user recolours
+    pt_all  = ("trackclust", "track", "clust", "flow")
+    colours = _merge_user_overrides!(_colour_overrides_for(img, column, pt_all), data)
+    labels  = _pop_labels_for(img, column, pt_all)
+    cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
+           for k in sort(collect(keys(colours)))]
+
+    # population point-pop legend: name + colour from each requested pop's map
+    pops = Vector{Dict{String,Any}}()
+    req  = get(data, :pointPops, nothing)
+    if req !== nothing
+        for pp in req
+            vn = String(get(pp, :valueName, ""))
+            pt = String(get(pp, :popType, ""))
+            path = String(get(pp, :path, ""))
+            (isempty(vn) || isempty(pt)) && continue
+            try
+                p = pop_at(_live_map(img, vn, pt), path)
+                push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
+            catch
+                # pop map / path unavailable → skip this entry
+            end
+        end
+    end
+    200, JSON3.write((; ok = true, colourBy = Dict("column" => column, "items" => cby), populations = pops))
+end
+
 # ── REST: POST /api/napari/start-selection ────────────────────────────────────
 # Producer direction: tell the bridge to add a "Cell selection" Shapes layer. When the user
 # draws on it, the bridge resolves which cell centroids fall inside and POSTs them back to

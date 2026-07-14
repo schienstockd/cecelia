@@ -40,9 +40,12 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
 // colourblind-safe) and Paul Tol's qualitative schemes. 'standard' = the population manager colours
 // (per-pop `colorOf`); the others assign by series order; 'user' = a comma-separated custom list.
 export const PALETTES: Record<string, string[]> = {
-  // the house palette ported from the old R behaviour figures (behaviourDTx.Rmd colPal + accents) — the
-  // cluster colours lead (yellow / steel-blue / crimson / grey, matching the published UMAPs).
-  'cecelia': ['#EBD441', '#4682B4', '#AA1F5E', '#B3BCC2', '#009FE3', '#E71D73', '#00C5FF', '#616161'],
+  // the house palette. The four leads are the behaviourDTx.Rmd `colPal` cluster colours (yellow /
+  // steel-blue / berry / grey, matching the published UMAPs) + a dark slate accent; the rest are muted,
+  // distinct hues chosen AROUND that theme (more blues/berries/greys + warm ochre/terracotta) so a
+  // larger domain stays on-brand instead of turning neon. 12 total.
+  'cecelia': ['#EBD441', '#4682B4', '#AA1F5E', '#B3BCC2', '#2F4F4F', '#5FB0B7',
+              '#C77DA6', '#D98E32', '#3E6D8E', '#8E4585', '#7A8B99', '#C1553E'],
   'okabe-ito': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000'],
   'tol-bright': ['#4477AA', '#EE6677', '#228833', '#CCBB44', '#66CCEE', '#AA3377', '#BBBBBB'],
   'tol-muted': ['#88CCEE', '#44AA99', '#117733', '#332288', '#DDCC77', '#999933', '#CC6677', '#882255', '#AA4499'],

@@ -1,10 +1,8 @@
 # Analysis figures & movies (animation)
 
-Status (updated 2026-07-14): **nearly complete.** A, B, D, E, G, F1 (all of F1.1–F1.3) and F2 (MVP +
-render engine + timeline editor) are **done/merged**. **C is the only remaining partial** — the channel
-legend is live; the populations + colour-by legend sections still need wiring into the strip. Supersedes
-the ad-hoc parts of the image-strip tasks (#00032 legend, #00036 zoom-to-source) by putting them on a
-shared foundation.
+Status (updated 2026-07-14): **complete.** A, B, C, D, E, G, F1 (F1.1–F1.3) and F2 (MVP + render engine
++ timeline editor) are all **done/merged**. Supersedes the ad-hoc parts of the image-strip tasks
+(#00032 legend, #00036 zoom-to-source) — both now live on the shared snapshot foundation.
 
 ## Goal
 
@@ -119,22 +117,25 @@ first-class, named, portable artifact.
 **A → D → B + C → G → F1 → E → F2.** A/B/C/D land value fast; F1 is the headline user win and
 matches how figures are actually made; F2 is the advanced follow-on.
 
-**Progress:** ~~A~~ · ~~B~~ · **C (partial — only piece left)** · ~~D~~ · ~~G~~ · ~~F1~~ · ~~E~~ · ~~F2~~.
+**Progress:** ~~A~~ · ~~B~~ · ~~C~~ · ~~D~~ · ~~G~~ · ~~F1~~ · ~~E~~ · ~~F2~~. **(all done)**
 
 - **~~A. Snapshot atom~~ — DONE** — `capture_view_state()` + `apply_view_state(json)` in the bridge
   (whitelist + sanitise + only-present-layers filter); capture folded into the screenshot reply;
   round-trip tested (incl. colormap change). Camera + T/Z + contrast + colormap restore.
-- **~~B. Zoom-to-source (#00036)~~ — DONE** — each strip frame stores `{imageUid, valueName, snapshot}`;
-  `ImageStripView.zoomToSource` reopens the image + `POST /api/napari/apply-view-state` restores the
-  exact view. Durable across sessions.
-- **C. Strip legend (#00032)** *(needs A, G)* — render channel + population/feature colours (swatch +
-  name / µm) below each frame, from the snapshot; toggle in the ⚙ popover.
-  - **~~Backbone (S1)~~ + ~~channel section~~ — DONE:** the shared legend model `utils/viewLegend.ts`
-    (`LegendSection`, `channelLegend`, `viewLegendSections`) + `components/ViewLegend.vue`; the image
-    strip renders the **channel** section live from the frame's snapshot. Unit-tested.
-  - **LEFT:** wire the **populations + colour-by** legend sections into the strip (the model already has
-    `viewLegendSections({populations, colourBy})`; the snapshot needs to carry those, or fetch them per
-    frame). Only remaining piece of C.
+- **~~B. Zoom-to-source (#00036)~~ — DONE** — each strip frame stores `{imageUid, valueName, snapshot,
+  colourBy}`; `ImageStripView.zoomToSource` reopens the image + `POST /api/napari/apply-view-state`
+  restores the exact view, then **re-pushes the tracks/pops** the frame had — derived from the snapshot's
+  overlay layer names (`utils/overlayLayers`) + the captured colour-by, via `utils/napariOverlays`
+  (show-tracks/show-populations/colour-labels). (Fixes: overlays weren't restored because the board's
+  ViewerPanel may be closed, so open alone only recreated channel layers.) Durable across sessions.
+- **~~C. Strip legend (#00032)~~ — DONE** *(needs A, G)* — channel + population + colour-by colour swatches
+  below each frame, from the snapshot + a read-only legend, toggled in the ⚙.
+  - **~~Backbone (S1)~~ + ~~channel section~~:** the shared model `utils/viewLegend.ts` + `ViewLegend.vue`.
+  - **~~Populations + colour-by sections~~:** captured with the screenshot via `POST /api/napari/overlay-legend`
+    (pure Julia, reuses `_colour_overrides_for`/`_pop_labels_for` + pop-map colours — no viewer touched):
+    populations = each shown point-pop's name+colour, colour-by = value→pop colour+name (clusters read as
+    their pop names). Stored on the frame (durable). Sections stack bottom-left with **channels at the
+    bottom, pops/colour-by above** (per the layout ask); timestamp top-left, scale bar bottom-right (E2).
 - **~~D. Capture quality~~ — DONE** — D1: the board screenshot uses napari `export_figure` (tight-fit to
   the data extent at native resolution → no black margins). D2: the strip went `object-fit: contain`
   (letterbox) so a scale bar / timestamp isn't cropped (E2's own vector scale bar will let frames go

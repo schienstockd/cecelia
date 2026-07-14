@@ -15,8 +15,10 @@ import TeleportPopover from '../TeleportPopover.vue'
 import { useWsStore } from '../../stores/ws'
 import { useSettingsStore } from '../../stores/settings'
 import { useProjectStore } from '../../stores/project'
-import { channelLegend, viewLegendSections } from '../../utils/viewLegend'
+import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
+import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
+import { restoreOverlays } from '../../utils/napariOverlays'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
 
@@ -32,7 +34,15 @@ const project = useProjectStore()
 // only for back-compat (migrated to a sidecar on load). `snapshot`+`imageUid` are the view provenance
 // for zoom-to-source. See docs/todo/ANIMATION_PLAN.md.
 interface ExtentUm { x?: number; y?: number; unit?: string | null }
-interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null }
+// captured overlay legend (populations + colour-by), fetched at capture from /api/napari/overlay-legend
+interface OverlaysLegend {
+  colourBy?: { column: string; items: { value: string; colour: string; label: string }[] }
+  populations?: { name: string; colour: string }[]
+}
+// `colourBy` = the colour-by measure the overlays were coloured by when captured (not encoded in the
+// snapshot's layer names), so zoom-to-source can restore the tracks/pops in the same colours.
+// `overlaysLegend` = the pop + colour-by legend for this frame (durable, drawn under the channels).
+interface Cell { assetId?: string; src?: string; snapshot?: Record<string, unknown>; imageUid?: string | null; extentUm?: ExtentUm | null; colourBy?: string; overlaysLegend?: OverlaysLegend }
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
   state: { cells?: Cell[]; orientation?: 'h' | 'v'; separator?: 'straight' | 'angled'; sepAngle?: number; sepThick?: number; showLegend?: boolean; showScaleBar?: boolean; showTimestamp?: boolean }
@@ -98,16 +108,45 @@ async function capture(i: number) {
     c.snapshot = data.viewState
     c.imageUid = data.imageUid ?? null
     c.extentUm = data.extentUm ?? null            // physical size → still scale bar (E2)
+    // remember the colour-by measure so zoom-to-source restores overlays in the same colours (it isn't
+    // encoded in the snapshot's layer names). Per the open image's set.
+    c.colourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
+    // capture the overlay legend (pops + colour-by) for this frame — read-only, durable (drawn below the
+    // channel legend). Point-pops parsed from the snapshot's overlay layer names.
+    if (c.imageUid) {
+      const pointPops = parseOverlays(c.snapshot?.layers as Record<string, unknown>)
+        .filter(o => !o.isTrack).map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
+      try {
+        const lr = await fetch('/api/napari/overlay-legend', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, pointPops }),
+        })
+        if (lr.ok) {
+          const j = await lr.json() as OverlaysLegend & { ok?: boolean }
+          c.overlaysLegend = { colourBy: j.colourBy, populations: j.populations }
+        }
+      } catch { /* legend is best-effort */ }
+    }
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { capturing.value = -1 }
 }
 
-// per-frame legend, built on the shared view-legend backbone (utils/viewLegend + <ViewLegend>). Today
-// it derives the CHANNEL section from the frame's snapshot layers; populations + colour-by sections plug
-// into the same model once the snapshot carries them. See docs/todo/ANIMATION_PLAN.md C.
+// per-frame legend (utils/viewLegend + <ViewLegend>): colour-by + populations from the captured overlay
+// legend, channels from the snapshot layers. Ordered colour-by → populations → CHANNELS so that, in the
+// bottom-anchored overlay, the sections pile UP from the bottom with channels lowest and pops/tracks
+// above them (docs/todo/ANIMATION_PLAN.md C). Section headings show only when >1 section.
 function legendSections(c: Cell) {
   const layers = (c.snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
-  return viewLegendSections({ channels: channelLegend(layers) })
+  const channels = channelLegend(layers)
+  const populations = (c.overlaysLegend?.populations ?? []).map(p => ({ label: p.name, colour: p.colour }))
+  const colourBy = (c.overlaysLegend?.colourBy?.items ?? [])
+    .filter(it => it.colour).map(it => ({ label: it.label, colour: it.colour }))
+  const cbyTitle = c.overlaysLegend?.colourBy?.column || 'Colour by'
+  const secs: { title: string; items: { label: string; colour: string }[] }[] = []
+  if (colourBy.length)    secs.push({ title: cbyTitle, items: colourBy })
+  if (populations.length) secs.push({ title: 'Populations', items: populations })
+  if (channels.length)    secs.push({ title: 'Channels', items: channels })
+  return secs
 }
 
 // resolve a cell's <img> src: during PDF export, the inlined data URL (html2canvas can't draw a served
@@ -143,14 +182,14 @@ async function migrateLegacyAssets() {
 // start), and both open paths broadcast `napari:opened`, so we apply on that event (handles the already-
 // running AND cold-start cases uniformly) rather than racing the open response. See ANIMATION_PLAN B.
 const zooming = ref(-1)
-const pendingApply = ref<{ imageUid: string; snapshot: Record<string, unknown> } | null>(null)
+const pendingApply = ref<{ imageUid: string; snapshot: Record<string, unknown>; colourBy?: string } | null>(null)
 
 async function zoomToSource(i: number) {
   const c = cells.value[i]
   if (!c.imageUid || !c.snapshot) return
   zooming.value = i
   err.value = ''
-  pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot }
+  pendingApply.value = { imageUid: c.imageUid, snapshot: c.snapshot, colourBy: c.colourBy }
   try {
     const res = await fetch('/api/napari/open', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -179,6 +218,13 @@ async function onNapariOpened(payload: { imageUid?: string }) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ viewState: p.snapshot }),
     })
+    // re-push the tracks/pops the frame had (open only recreates channel layers; overlays come from
+    // show-tracks/show-populations, which zoom-to-source must re-request). Derived from the snapshot's
+    // overlay layer names + the captured colour-by, so the overlays reappear as they were.
+    const cfg = overlayPushConfig(parseOverlays(p.snapshot.layers as Record<string, unknown>))
+    if (cfg.trackValueNames.length || cfg.showGatedTracks || cfg.showTrackclust || cfg.popTypes.length) {
+      await restoreOverlays(props.projectUid, p.imageUid, { ...cfg, colourBy: p.colourBy })
+    }
   } catch { /* best-effort restore */ }
 }
 onMounted(() => { ws.on('napari:opened', onNapariOpened); migrateLegacyAssets() })

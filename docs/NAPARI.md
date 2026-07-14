@@ -191,6 +191,16 @@ scale bar + elapsed-time timestamp on the clean capture via `components/StillOve
 frame is letterboxed. Scale-bar length picks a nice round step (`utils/stillOverlay.niceScaleBar`);
 the timestamp reuses `elapsedLabel` (shared with the animation timeline). Toggled per strip in the ⚙.
 
+**Strip overlay legend + zoom-to-source overlay restore.** A strip frame captures, alongside the
+snapshot, an overlay **legend** (`POST /api/napari/overlay-legend` — read-only Julia, reuses the
+population-colour rule) with a **populations** section (each shown point-pop's name+colour) and a
+**colour-by** section (value→pop colour+name; clusters read as their pop names). These stack below the
+channel legend bottom-left (channels lowest). Because a captured frame's overlays are napari *overlay*
+layers (added by show-tracks/show-populations, not by `open_image`), **zoom-to-source** re-pushes them
+after reopening: it parses which tracks/pops were shown from the snapshot's overlay layer names
+(`utils/overlayLayers`) + the captured colour-by and re-requests them (`utils/napariOverlays` → the
+same show-tracks/show-populations/colour-labels endpoints) — otherwise reopening only restored channels.
+
 ---
 
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
