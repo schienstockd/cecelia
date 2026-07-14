@@ -18,3 +18,18 @@ export function napariColormapHex(name: string | null | undefined): string | nul
   if (!name) return null
   return NAPARI_COLORMAP_HEX[name] ?? NAPARI_COLORMAP_HEX[name.toLowerCase()] ?? null
 }
+
+export interface ColormapOption { value: string; label: string; hex: string }
+
+/** A small, standard channel-colour palette for the batch-movie picker, rendered as swatches. Ordered
+ *  so adjacent entries are distinct hues; blue / cyan / orange / magenta / yellow / purple are the more
+ *  colour-blind-distinguishable set, with red + green kept for the classic channel assignments. Every
+ *  `value` is a valid napari colormap name (passed straight to the viewer); the `hex` is derived from
+ *  NAPARI_COLORMAP_HEX (one source of truth, no divergent colour list). */
+export const CHANNEL_COLORMAP_OPTIONS: ColormapOption[] = (
+  [
+    ['blue', 'blue'], ['cyan', 'cyan'], ['green', 'green'], ['yellow', 'yellow'],
+    ['bop orange', 'orange'], ['red', 'red'], ['magenta', 'magenta'],
+    ['bop purple', 'purple'], ['gray', 'gray'],
+  ] as [string, string][]
+).map(([value, label]) => ({ value, label, hex: napariColormapHex(value) ?? '#888888' }))

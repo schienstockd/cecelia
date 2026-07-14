@@ -145,10 +145,22 @@ matches how figures are actually made; F2 is the advanced follow-on.
     + bridge `record_timelapse` + `POST /api/napari/record-timelapse` + a one-click "Record timelapse"
     button that records the open image's CURRENT view to `{project}/movies/{uid}_{valueName}.mp4`. See
     docs/NAPARI.md → *One-click timelapse recording*.
-  - **F1.2** (next) — an authored config (channels/colormaps, pops, colour-by, T-range, fps, scale)
-    applied to the open image before recording.
-  - **F1.3** — batch the config across selected / attr-filtered images (one attr-named `.mp4` each),
-    run as a cancellable task.
+  - **F1.2 — DONE.** `_apply_movie_config!` (api/src/napari_api.jl) applies an authored config to an
+    image by REUSING the existing handlers (open with per-channel colormaps + visibility via a partial
+    view-state; `show_tracks`/`show_populations`/`colour_labels` for overlays + colour-by) — no divergent
+    re-implementation. Exposed as `POST /api/napari/apply-movie-config` (preview on the open image).
+    Contrast comes from each image's saved layer props (Decision 4). Config schema: `{ valueName,
+    channels:{name→colormap}, colourBy, showTracks, trackValueNames, tailWidth, showGatedTracks,
+    showTrackclust, showPopulations, popType, pointsSize, colourLabels, colourOverrides, tStart, tEnd }`.
+  - **F1.3 — DONE.** Batch the config across the selected images → one **attr-named** `.mp4` each
+    (`<attr1>_<attr2>_..._<uid>.mp4`, `_movie_basename`). WS-triggered (`movie:batch`), run async on the
+    ONE shared viewer sequentially under `_viewer_lock` (napari can't render offscreen — GL frames are
+    black — so it drives the live window; the page warns the user it's busy). Reports over the normal
+    task events (progress/log/status/result keyed by the client taskId) so it shows in the task list
+    with a progress bar + Cancel (a per-run flag, `request_batch_cancel!`, stops it after the current
+    image). Frontend: the **Batch movies** page (`/batch-movies`, `BatchMoviesModule.vue`) — image
+    multi-select + a config panel + Generate. NOT a scheduler task: napari is a single UI-serial viewer
+    in `api/`, not pooled headless compute (see the runner-architecture decision, 2026-07-14).
 - **F2. Animation page** *(needs A; big)* — the durable/editable page under the Analysis nav.
   - **MVP DONE (S2):** `/animation` route + nav entry; captures the current napari view as a **view
     snapshot** (screenshot sidecar + view state, the same path as the board strip) into a per-project

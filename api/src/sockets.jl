@@ -38,7 +38,11 @@ function handle_message(ws, raw::AbstractString)
         handle_task_run(ws, data)
     elseif type == "task:cancel"
         task_id = String(get(data, :taskId, ""))
-        isempty(task_id) || cancel_task!(task_id)
+        # also flag any in-flight batch-movie run with this id (it isn't a scheduler task, so
+        # cancel_task! doesn't reach it — request_batch_cancel! stops it after the current image)
+        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id))
+    elseif type == "movie:batch"
+        handle_movie_batch(ws, data)
     elseif type == "chain:run"
         handle_chain_run(ws, data)
     elseif type == "chain:cancel"
@@ -46,6 +50,39 @@ function handle_message(ws, raw::AbstractString)
         isempty(run_id) || cancel_chain_run!(run_id)
     else
         @warn "Unknown WS message type" type
+    end
+end
+
+# F1.3 batch movies: apply one authored config across the selected images → one attr-named mp4 each,
+# recorded on the single shared napari viewer. Runs async (recording is minutes-long) and reports over
+# the normal task events (task:progress/log/status/result) keyed by the client's taskId, so it appears
+# in the task list with a progress bar + a working Cancel (see request_batch_cancel!). Orchestrated in
+# api/ (napari_api.jl) because the viewer + its lock live there; not a scheduler task (it's UI-serial,
+# not pooled headless compute). See docs/todo/ANIMATION_PLAN.md → F1.3.
+function handle_movie_batch(ws, data)
+    task_id     = String(get(data, :taskId, ""))
+    project_uid = String(get(data, :projectUid, ""))
+    isempty(task_id) && return
+    uids_raw    = get(data, :imageUids, nothing)
+    image_uids  = uids_raw === nothing ? String[] : collect(String, uids_raw)
+    config      = get(data, :config, Dict{String,Any}())
+    attrs_raw   = get(data, :fileAttrs, nothing)
+    file_attrs  = attrs_raw === nothing ? String[] : collect(String, attrs_raw)
+    fps         = Int(get(data, :fps, 15))
+    scale       = get(data, :scale, 1)
+    if isempty(image_uids)
+        ws_log(ws, task_id, "[ERROR] no images selected for batch movies")
+        ws_status(ws, task_id, "failed", "")
+        return
+    end
+    _batch_register!(task_id)
+    @async try
+        run_batch_movies(task_id, project_uid, image_uids, config, file_attrs, fps, scale)
+    catch e
+        @warn "batch movies crashed" exception = e
+        ws_log(ws, task_id, "[ERROR] batch crashed: $(sprint(showerror, e))")
+        ws_status(ws, task_id, "failed", first(image_uids))
+        _batch_clear!(task_id)
     end
 end
 
