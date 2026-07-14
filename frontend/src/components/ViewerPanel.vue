@@ -37,6 +37,8 @@ const POP_TYPES: { key: string; icon: string; label: string }[] = [
 ]
 const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)
+const colourLegend      = ref<Record<string, string>>({})   // {category value → hex} for the colour-by legend
+const colourLegendLabels = ref<Record<string, string>>({})  // {category value → population name} where a pop defines it
 const obsCols           = ref<string[]>([])   // obs columns of the open segmentation (colour-by options)
 
 const napariImage = computed(() => {
@@ -197,8 +199,16 @@ async function pushTracks(): Promise<boolean> {
       body: JSON.stringify({ projectUid, imageUid: uid, valueNames: onTrackVns.value,
                              showGatedTracks: gatedTracksShown.value,
                              showTrackclust: popVisible('trackclust'),
-                             colorBy: colourByCol.value }),
+                             colorBy: colourByCol.value,
+                             colourOverrides: userColourOverrides() }),
     })
+    // capture the colour-by legend from the tracks response — the Labels layer may be hidden (then
+    // colour-labels returns none), so tracks are the only legend source when colouring tracks alone.
+    if (res.ok && colourByCol.value) {
+      const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
+      if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
+      if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
+    }
     return res.ok
   } catch { return false }   // napari not running, etc.
 }
@@ -237,7 +247,12 @@ async function loadObsCols() {
   try {
     const q = `projectUid=${projectUid}&imageUid=${uid}&valueName=${encodeURIComponent(vn)}`
     const res = await fetch(`/api/gating/channels?${q}`)
-    obsCols.value = res.ok ? ((await res.json() as { obsColumns?: string[] }).obsColumns ?? []) : []
+    if (res.ok) {
+      const j = await res.json() as { obsColumns?: string[]; trackColourColumns?: string[] }
+      // cell obs columns + track-level clusters.* (colour-by broadcasts a track column to its cells,
+      // so you can colour tracks by their cluster/population). Track columns last; de-duplicated.
+      obsCols.value = [...new Set([...(j.obsColumns ?? []), ...(j.trackColourColumns ?? [])])]
+    } else obsCols.value = []
   } catch { obsCols.value = [] }
   // this image's segmentation may not have the SET's colour-by column (segmentations differ across a
   // set) — don't select/apply it here, but do NOT clear the persisted per-set value: another image in
@@ -249,11 +264,18 @@ async function pushColourLabels(column: string): Promise<boolean> {
   const uid = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return false
+  if (!column) { colourLegend.value = {}; colourLegendLabels.value = {} }   // reset → no legend
   try {
     const res = await fetch('/api/napari/colour-labels', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, valueName: selectedValueName.value, column }),
+      body: JSON.stringify({ projectUid, imageUid: uid, valueName: selectedValueName.value, column,
+                             colourOverrides: userColourOverrides() }),
     })
+    if (res.ok && column) {   // categorical → {value: hex}; empty for continuous / hidden-labels
+      const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
+      if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
+      if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
+    }
     return res.ok
   } catch { return false }
 }
@@ -263,9 +285,52 @@ function onColourBy(e: Event) {
   const col = (e.target as HTMLSelectElement).value
   colourByCol.value = col
   if (currentSetUid.value) settings.setColourBy(currentSetUid.value, col)   // per-set
+  colourLegend.value = {}; colourLegendLabels.value = {}   // clear old column's legend; pushes below repopulate
   if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()   // re-push tracks w/ new color_by
   pushColourLabels(col)                       // recolour labels (or reset when col === '')
 }
+
+// user's per-set/per-column colour recolouring ({value → hex}); sent alongside the pop colours so the
+// bridge uses them (user wins). Empty when no set/column — the pop colours + default palette then apply.
+function userColourOverrides(): Record<string, string> {
+  return currentSetUid.value && colourByCol.value
+    ? settings.getColourOverrides(currentSetUid.value, colourByCol.value) : {}
+}
+// recolour a category value that has no population (its colour isn't defined anywhere) and re-push both
+// layers so the new colour shows immediately; persisted per set + column.
+function onRecolour(value: string, hex: string) {
+  if (!currentSetUid.value || !colourByCol.value) return
+  settings.setColourOverride(currentSetUid.value, colourByCol.value, value, hex)
+  if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()
+  pushColourLabels(colourByCol.value)
+}
+// clear this column's user recolours → back to population colours / the default palette
+function resetColours() {
+  if (!currentSetUid.value || !colourByCol.value) return
+  settings.clearColourOverrides(currentSetUid.value, colourByCol.value)
+  if (onTrackVns.value.length || gatedTracksShown.value) pushTracks()
+  pushColourLabels(colourByCol.value)
+}
+
+// Legend rows to render: pop-backed values are DEDUPED by population name — one population can be
+// defined by several category values (e.g. a "Meandering" pop spanning two clusters), which share the
+// pop's one colour, so they collapse to a single row. Values with no population stay one row each and
+// are recolourable (their colour isn't defined anywhere else). `value` is the wire key for recolouring.
+const legendItems = computed(() => {
+  const seenPop = new Set<string>()
+  const items: { key: string; label: string; hex: string; value: string; editable: boolean }[] = []
+  for (const [value, hex] of Object.entries(colourLegend.value)) {
+    const pop = colourLegendLabels.value[value]
+    if (pop) {
+      if (seenPop.has(pop)) continue            // same population, another cluster → one row only
+      seenPop.add(pop)
+      items.push({ key: `pop:${pop}`, label: pop, hex, value, editable: false })
+    } else {
+      items.push({ key: `val:${value}`, label: value, hex, value, editable: true })
+    }
+  }
+  return items
+})
 
 // Live update while gating: when the population tree changes for the image open in napari
 // (gate edit, pop add/remove/rename, cell selection, dot-size change), re-push so the overlay
@@ -574,10 +639,26 @@ onUnmounted(() => {
       <div v-if="obsCols.length" class="viewer-section">
         <div class="viewer-section-title">Colour by</div>
         <select class="opt-colourby" :value="colourByCol" @change="onColourBy"
-                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state)'">
+                v-tooltip.right="'Colour tracks + labels by a cell property (e.g. HMM state). Values matching a population use its colour.'">
           <option value="">default</option>
           <option v-for="c in obsCols" :key="c" :value="c">{{ c }}</option>
         </select>
+        <!-- legend for a categorical colour-by: value → colour (a population's colour where one matches) -->
+        <div v-if="legendItems.length" class="cby-legend">
+          <span v-for="item in legendItems" :key="item.key" class="cby-item"
+                v-tooltip.right="item.editable
+                  ? `${item.label} — click the swatch to recolour`
+                  : `population: ${item.label} — colour set in the population manager`">
+            <!-- pop-backed → static swatch (its colour is the population's, edit it there);
+                 value with no population → editable colour input (it's not defined anywhere else) -->
+            <span v-if="!item.editable" class="cby-swatch" :style="{ background: item.hex }" />
+            <input v-else type="color" class="cby-swatch cby-swatch-edit" :value="item.hex"
+                   @change="onRecolour(item.value, ($event.target as HTMLInputElement).value)" />
+            {{ item.label }}
+          </span>
+          <button class="cby-reset" @click="resetColours"
+                  v-tooltip.right="'Reset colours to population colours / the default palette'">reset</button>
+        </div>
       </div>
     </template>
     <div v-else class="viewer-section"><span class="viewer-hint">No image open in Napari.</span></div>
@@ -611,6 +692,20 @@ onUnmounted(() => {
 .viewer-select { width: 100%; font-size: 0.72rem; }
 /* colour-by dropdown: full width on its own line (the sidebar is narrow, so inline it clipped) */
 .opt-colourby { font-size: 0.7rem; width: 100%; min-width: 0; }
+/* colour-by legend: value → swatch (a population's colour where one matches, else default) */
+.cby-legend { display: flex; flex-wrap: wrap; gap: 0.15rem 0.5rem; margin-top: 0.25rem; }
+.cby-item { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.66rem; color: var(--cc-text-dim); }
+.cby-swatch { width: 0.7rem; height: 0.7rem; border-radius: 2px; flex-shrink: 0; border: 1px solid var(--cc-border); }
+/* editable swatch: a native colour input squeezed to swatch size (categories with no population) */
+.cby-swatch-edit { padding: 0; cursor: pointer; background: none; -webkit-appearance: none; appearance: none; }
+.cby-swatch-edit::-webkit-color-swatch-wrapper { padding: 0; }
+.cby-swatch-edit::-webkit-color-swatch { border: none; border-radius: 2px; }
+.cby-swatch-edit::-moz-color-swatch { border: none; border-radius: 2px; }
+.cby-reset {
+  font-size: 0.6rem; color: var(--cc-text-dim); background: none; border: none; cursor: pointer;
+  padding: 0 0.2rem; text-decoration: underline; align-self: center;
+}
+.cby-reset:hover { color: var(--cc-text); }
 
 /* ── Sections ────────────────────────────────────────────────────────────
    Group the controls under short headings (Segmentations / View / Populations &

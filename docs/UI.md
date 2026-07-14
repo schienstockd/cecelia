@@ -208,6 +208,29 @@ titles, gate labels) line up with the canvas dots.
 
 ---
 
+## Floating panels — `FloatingPanel`
+
+**A floating, draggable, resizable, collapsible box that floats above the app content
+(`position: fixed`).** Use it for tool controls that should be reachable on any page rather than
+pinned into the sidebar. `frontend/src/components/FloatingPanel.vue` is generic (not viewer-specific);
+the **napari Viewer controls** are its first consumer — mounted in `App.vue`, toggled by the sidebar's
+"Viewer controls" button (`settings.viewerPanelOpen`, persisted):
+
+```vue
+<FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
+               @close="settings.viewerPanelOpen = false">
+  <ViewerPanel />
+</FloatingPanel>
+```
+
+- **Parent owns visibility** (`v-if` + `@close`); the panel owns position/size/collapsed, persisted per
+  `storageKey` under `cc.floating.<storageKey>` (reopens where you left it). Drag by the header, resize
+  from the bottom-right grip, collapse to header-only. Position is clamped into the viewport on mount +
+  window resize so a stale/off-screen box always comes back.
+- **z-index 60** — above content and the right panel, below modals/console.
+- Rationale: the viewer controls grew (populations, tracks, colour-by + legend) and crowded the left
+  nav; a floating panel frees the nav and lets you place the controls beside the napari window.
+
 ## Pinia array reactivity
 
 Use `splice()` to mutate arrays in place inside setup stores.

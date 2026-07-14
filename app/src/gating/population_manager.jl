@@ -360,6 +360,96 @@ function _borrow_cluster_pop_map(img::CciaImage, value_name::AbstractString,
     nothing
 end
 
+# ── Categorical colour-by palette (the ONE colour-choice rule) ─────────────────────
+# Okabe–Ito colourblind-safe palette — the default categorical colours. Matches the frontend
+# (`plots/plot.ts` 'okabe-ito') and the napari bridge (`_CATEGORICAL_RGBA`) so a category reads the
+# same colour everywhere.
+const OKABE_ITO = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#000000"]
+
+_as_value_vec(x) = x === nothing ? Any[] : (x isa AbstractVector ? collect(x) : Any[x])
+# tolerant value equality: exact, string-wise, or numeric (a filter value stored as 2.0 == column 2)
+_val_eq(a, b) = a == b || string(a) == string(b) ||
+    (a isa Real && b isa Real && Float64(a) == Float64(b))
+
+# canonical string key for a category value on the wire (2.0 and 2 → "2") so Julia overrides and the
+# bridge's column values match regardless of Int/Float encoding.
+_val_key(v) = v isa Real ? (isinteger(v) ? string(Int(v)) : string(v)) : string(v)
+
+"""
+    pop_colour_overrides(m, column) -> Dict{String,String}
+
+The `{value => hex}` a user population imposes on `column`: for each pop whose `filter_measure == column`,
+its `filter_values` → the pop's `colour`, keyed by the value's canonical STRING form (survives JSON to
+the napari bridge). This is the "use the population's colour where one exists" half of the colour-choice
+rule — the bridge fills the remaining present values with defaults and returns the full legend. First
+pop in insertion order wins a shared value.
+"""
+function pop_colour_overrides(m::PopulationMap, column::AbstractString)::Dict{String,String}
+    col = String(column); out = Dict{String,String}()
+    for path in m.order
+        p = m.pops[path]
+        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
+        for fv in _as_value_vec(p.filter_values)
+            k = _val_key(fv)
+            haskey(out, k) || (out[k] = p.colour)
+        end
+    end
+    out
+end
+
+"""
+    pop_label_overrides(m, column) -> Dict{String,String}
+
+The `{value => population name}` companion to [`pop_colour_overrides`](@ref): for each pop whose
+`filter_measure == column`, its `filter_values` → the pop's `name`, keyed by the value's canonical
+STRING form. Lets a colour-by legend read the **population name** (e.g. "migratory") instead of the raw
+category value (e.g. "2") wherever a population defines that value. First pop in insertion order wins.
+"""
+function pop_label_overrides(m::PopulationMap, column::AbstractString)::Dict{String,String}
+    col = String(column); out = Dict{String,String}()
+    for path in m.order
+        p = m.pops[path]
+        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
+        for fv in _as_value_vec(p.filter_values)
+            k = _val_key(fv)
+            haskey(out, k) || (out[k] = p.name)
+        end
+    end
+    out
+end
+
+"""
+    colour_by_palette(m, column, values; default_palette=OKABE_ITO) -> Dict{Any,String}
+
+Canonical colour choice for colouring by a categorical `column`: a `value` that a **user-defined
+population filters for** on that column (`filter_measure == column` and the value ∈ its `filter_values`)
+takes **that population's colour**; every remaining value gets a default-palette colour by sorted
+position. This is the ONE "use the population's colour where one exists, else a sensible default" rule —
+general across clusters (a cluster pop is just a filter on `clusters.{suffix}`), HMM states, and any
+categorical measure — so tracks/points, legends and movies all colour a category identically. Pure.
+"""
+function colour_by_palette(m::PopulationMap, column::AbstractString, values;
+                           default_palette::Vector{String}=OKABE_ITO)::Dict{Any,String}
+    col = String(column)
+    out = Dict{Any,String}()
+    vals = collect(values)
+    # 1) values a user pop FILTERS for on this column → that pop's colour (first pop in insertion order
+    #    wins if two cover the same value)
+    for path in m.order
+        p = m.pops[path]
+        (p.filter_measure === nothing || String(p.filter_measure) != col) && continue
+        for fv in _as_value_vec(p.filter_values), v in vals
+            (!haskey(out, v) && _val_eq(v, fv)) && (out[v] = p.colour)
+        end
+    end
+    # 2) remaining values → default palette by sorted position (stable + colourblind-safe)
+    uncovered = sort!(unique(v for v in vals if !haskey(out, v)))
+    for (i, v) in enumerate(uncovered)
+        out[v] = default_palette[(i - 1) % length(default_palette) + 1]
+    end
+    out
+end
+
 function load_pop_map(img::CciaImage; value_name::AbstractString="default", pop_type::AbstractString="flow")
     m = load_pop_map(img._dir, value_name; pop_type=pop_type)
     # cluster pop_types with no own sidecar → try to borrow from a co-clustered sibling (auto-share)

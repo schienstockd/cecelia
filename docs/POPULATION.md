@@ -22,6 +22,18 @@ All types share: a population tree (name, colour, path, parent, show), a `pop_df
 accessor returning a filtered `DataFrame` regardless of type, and membership that is
 **derived**, never duplicated into the H5AD.
 
+### Colouring by a categorical measure — `colour_by_palette`
+
+The one colour-choice rule for colouring anything (napari tracks/labels, legends, movies) by a
+categorical column: **a value that a user population *filters for* on that column takes that
+population's colour; every other value gets an Okabe–Ito default** (by sorted position).
+`colour_by_palette(m, column, values)` returns the full `{value→hex}`; `pop_colour_overrides(m, column)`
+returns just the population-imposed `{value(str)→hex}` for the wire (the napari bridge fills the
+defaults and returns the legend). This generalises "use the population's colour where one exists" —
+a `clust`/`trackclust` pop is just a filter on `clusters.{suffix}`, so clusters, HMM states and any
+categorical measure resolve identically, and a track pop and its source cell pop share a colour when
+both filter the same value. `OKABE_ITO` matches the frontend (`plots/plot.ts`) + bridge palettes.
+
 ## Language boundaries (per `ARCHITECTURE.md`)
 
 - **Julia owns gating** — gate evaluation, logicle transform, tree recompute, `pop_df`.

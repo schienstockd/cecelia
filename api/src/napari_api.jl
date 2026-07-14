@@ -611,16 +611,66 @@ function api_napari_show_tracks(body_bytes::Vector{UInt8})
             end
         end
     end   # empty want + no gated + no trackclust → empty pops → bridge removes existing track layers
+    # colour-by overrides: where a user pop FILTERS on the `color_by` column, use its colour (the
+    # canonical "use the population's colour" rule); the bridge fills the rest with defaults. Scan ALL
+    # pop types — a track can be coloured by a cell-level column (flow/clust pop) or a track-level one
+    # (track/trackclust pop); `pop_colour_overrides` only matches pops that filter this exact column.
+    overrides = _merge_user_overrides!(
+        _colour_overrides_for(img, color_by, ("trackclust", "track", "clust", "flow")), data)
     _with_viewer() do
         try
-            send(v, Dict{String,Any}("type" => "show_tracks",
-                "tail_width" => tail_width, "color_by" => color_by, "pops" => pops))
-            200, JSON3.write((; ok = true, n = length(pops)))
+            resp = send(v, Dict{String,Any}("type" => "show_tracks",
+                "tail_width" => tail_width, "color_by" => color_by, "pops" => pops,
+                "colour_overrides" => overrides))
+            200, JSON3.write((; ok = true, n = length(pops),
+                legend = get(resp, "legend", Dict{String,Any}()),
+                legendLabels = _pop_labels_for(img, color_by, ("trackclust", "track", "clust", "flow"))))
         catch e
             @warn "show_tracks failed" exception = e
             500, JSON3.write((; error = sprint(showerror, e)))
         end
     end
+end
+
+# Gather a {value(str) => X} map for colouring by `column`, pooling every user population (across
+# segmentations, in the given pop_types) that FILTERS on `column` via `getter` (a `PopulationMap →
+# Dict` — `pop_colour_overrides` for hex, `pop_label_overrides` for the pop name). First pop (by
+# segmentation/type order) wins a shared value. Empty when `column` is blank / a special key.
+function _gather_pop_overrides(img, column::AbstractString, pop_types, getter)::Dict{String,String}
+    out = Dict{String,String}()
+    (isempty(column) || column == "track_id") && return out
+    for vn in versioned_keys(img.label_props)
+        is_reserved_value_name(vn) && continue
+        for pt in pop_types
+            try
+                for (k, val) in getter(_live_map(img, vn, pt), column)
+                    get!(out, k, val)
+                end
+            catch
+                # pop map for this (vn, pop_type) unavailable → nothing to contribute
+            end
+        end
+    end
+    out
+end
+# {value(str) => hex} — the population colour a value takes on `column` (bridge fills the rest).
+_colour_overrides_for(img, column::AbstractString, pop_types) =
+    _gather_pop_overrides(img, column, pop_types, pop_colour_overrides)
+# {value(str) => population name} — so the colour-by legend reads the pop name where one defines a value.
+_pop_labels_for(img, column::AbstractString, pop_types) =
+    _gather_pop_overrides(img, column, pop_types, pop_label_overrides)
+
+# Merge the client's user colour overrides ({value(str) => hex}, from recolouring a legend swatch) on
+# TOP of the pop-derived overrides — the user's explicit choice wins (categories with no population have
+# no colour defined anywhere, so this is the only source; for pop-backed values it's a display override).
+function _merge_user_overrides!(overrides::Dict{String,String}, data)::Dict{String,String}
+    user = get(data, :colourOverrides, nothing)
+    user === nothing && return overrides
+    for (k, v) in pairs(user)
+        (v === nothing || isempty(String(v))) && continue
+        overrides[String(k)] = String(v)
+    end
+    overrides
 end
 
 # ── REST: POST /api/napari/colour-labels ──────────────────────────────────────
@@ -639,10 +689,18 @@ function api_napari_colour_labels(body_bytes::Vector{UInt8})
 
     v = _viewer()
     isnothing(v) && return 400, JSON3.write((; error = "Napari not running"))
+    # colour overrides: any user pop that FILTERS on `column` supplies its colour. Scan ALL pop types —
+    # labels can be coloured by a cell-level column (flow/clust) OR a track-level one (track/trackclust,
+    # e.g. clusters.* broadcast to cells); `pop_colour_overrides` only matches pops filtering this column.
+    overrides = _merge_user_overrides!(
+        _colour_overrides_for(img, column, ("clust", "flow", "trackclust", "track")), data)
     _with_viewer() do
         try
-            send(v, Dict{String,Any}("type" => "colour_labels", "value_name" => vn, "column" => column))
-            200, JSON3.write((; ok = true))
+            resp = send(v, Dict{String,Any}("type" => "colour_labels", "value_name" => vn,
+                "column" => column, "colour_overrides" => overrides))
+            200, JSON3.write((; ok = true,
+                legend = get(resp, "legend", Dict{String,Any}()),
+                legendLabels = _pop_labels_for(img, column, ("clust", "flow", "trackclust", "track"))))
         catch e
             @warn "colour_labels failed" exception = e
             500, JSON3.write((; error = sprint(showerror, e)))

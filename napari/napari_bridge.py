@@ -36,6 +36,25 @@ _CATEGORICAL_RGBA = [
     (0.800, 0.475, 0.655, 1.0), (0.580, 0.580, 0.580, 1.0),
 ]
 
+
+def _hex_to_rgba(hex_str):
+    """'#rrggbb' → (r, g, b, 1.0) floats in 0..1. None/blank → None."""
+    if not hex_str:
+        return None
+    s = hex_str.lstrip('#')
+    if len(s) != 6:
+        return None
+    try:
+        return (int(s[0:2], 16) / 255., int(s[2:4], 16) / 255., int(s[4:6], 16) / 255., 1.0)
+    except ValueError:
+        return None
+
+
+def _rgba_to_hex(rgba):
+    """(r, g, b, a) floats → '#rrggbb'."""
+    return '#{:02x}{:02x}{:02x}'.format(
+        *(max(0, min(255, int(round(c * 255)))) for c in rgba[:3]))
+
 # The shared label-props reader (cecelia.utils.label_props_utils) resolves via the editable
 # `cecelia` install in the pixi env (python/pyproject.toml + the pixi `cecelia` dep) — no sys.path
 # manipulation needed. Launched via `pixi run napari`.
@@ -276,17 +295,25 @@ class NapariState:
             else:
                 _remove_layer(self._viewer, layer_name)
 
-    def _labels_color_dict(self, labels, vals, is_cat, percentile: float = 99.5):
-        """Per-label RGBA dict for a DirectLabelColormap. Categorical → the Okabe–Ito palette per
-        level; continuous → viridis normalised to the [100-p, p] percentile range (like the old R
-        `show_channel_intensity`). NaN, background (0) and unmapped (None) → transparent."""
+    def _labels_color_dict(self, labels, vals, is_cat, percentile: float = 99.5, overrides=None):
+        """Per-label RGBA dict for a DirectLabelColormap, plus a `{value(str) -> '#hex'}` legend for
+        the categorical case. Categorical → a user population's colour where one covers the level
+        (`overrides`), else the Okabe–Ito palette per level; continuous → viridis over the [100-p, p]
+        percentile range. NaN, background (0) and unmapped (None) → transparent. Returns
+        (color_dict, legend)."""
         import matplotlib.pyplot as plt
+        overrides = overrides or {}
         color_dict = {}
+        legend = {}
         finite = vals[~np.isnan(vals)]
         if is_cat and len(finite):
             levels = sorted({int(round(v)) for v in finite})
-            lvl_colour = {lvl: _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)]
-                          for i, lvl in enumerate(levels)}
+            lvl_colour = {}
+            for i, lvl in enumerate(levels):
+                ov = _hex_to_rgba(overrides.get(str(lvl)))                     # user pop colour, or…
+                rgba = ov if ov is not None else _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)]  # …default
+                lvl_colour[lvl] = rgba
+                legend[str(lvl)] = _rgba_to_hex(rgba)
             for lab, v in zip(labels, vals):
                 color_dict[int(lab)] = (0., 0., 0., 0.) if np.isnan(v) else lvl_colour[int(round(v))]
         elif len(finite):
@@ -301,9 +328,10 @@ class NapariState:
                     color_dict[int(lab)] = tuple(float(c) for c in plt.cm.viridis(t))
         color_dict[0] = (0., 0., 0., 0.)       # background label
         color_dict[None] = (0., 0., 0., 0.)    # any label not in the dict
-        return color_dict
+        return color_dict, legend
 
-    def colour_labels(self, value_name: str = "default", column: str = "", percentile: float = 99.5):
+    def colour_labels(self, value_name: str = "default", column: str = "", percentile: float = 99.5,
+                      overrides=None):
         """Recolour `value_name`'s Labels layer by an obs column via a DirectLabelColormap
         (continuous → viridis, categorical → palette per level). `column=""` restores the layer's
         original colormap. Ports the old `show_channel_intensity` (per-label color_dict), updated from
@@ -316,19 +344,20 @@ class NapariState:
         if not targets:
             targets = [l for l in self._viewer.layers if getattr(l, "name", "").endswith(") Labels")]
         if not targets:
-            return
+            return {}
         if not column:                                   # reset to the remembered default colormap
             for l in targets:
                 orig = self._labels_orig_cmap.pop(l.name, None)
                 if orig is not None:
                     l.colormap = orig
-            return
+            return {}
         lab, vals, is_cat = self._read_label_column(value_name, column)
-        cmap = napari.utils.DirectLabelColormap(
-            color_dict=self._labels_color_dict(lab, vals, is_cat, percentile))
+        color_dict, legend = self._labels_color_dict(lab, vals, is_cat, percentile, overrides)
+        cmap = napari.utils.DirectLabelColormap(color_dict=color_dict)
         for l in targets:
             self._labels_orig_cmap.setdefault(l.name, l.colormap)   # remember the original once
             l.colormap = cmap
+        return legend                                    # {value(str) -> '#hex'} for the UI legend
 
     # ── Populations (linked brushing with the flow plots) ─────────────────────
 
@@ -506,52 +535,99 @@ class NapariState:
         """Read an obs column aligned to cell labels → (labels:int[], values:float[], is_categorical).
         Non-numeric columns are factorised to integer codes (and treated as categorical); a numeric
         column with few integer-like levels is also categorical (e.g. an HMM state). NaN stays NaN.
-        Cached per (value_name, column). Mirrors the old `show_channel_intensity` value read."""
+        Cached per (value_name, column). Mirrors the old `show_channel_intensity` value read.
+
+        A column absent from the CELL table but present in the TRACK table (`{value_name}__tracks.h5ad`,
+        e.g. `clusters.*` from clustTracks) is read there — keyed by track_id — and broadcast to each
+        cell via its `track_id`, so colour-by shades cells + track vertices by the cell's TRACK
+        cluster/population (ports R `split_tracks`: colour each track by its cluster so you can see
+        which population a track is from). Untracked cells (no/zero track_id) → NaN → grey."""
         key = (value_name, column)
         if key in self._colcol_cache:
             return self._colcol_cache[key]
         import pandas as pd
         from cecelia.utils.label_props_utils import LabelPropsView
+        from cecelia.utils import napari_utils
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
-        df = view.view_cols([column]).as_df()        # label + column
+        df = view.view_cols([column, "track_id"]).as_df()   # label + column (+ track_id) if present
         view.close()
         labels = df["label"].to_numpy().astype(int)
-        raw = df[column]
+        if column in df.columns:                     # cell-level column → per-cell value directly
+            raw = df[column]
+        else:                                        # track-level column → broadcast via track_id
+            raw = self._read_track_level_column(value_name, column, df)
+            if raw is None:                          # absent from both tables → nothing to colour
+                res = (labels, np.full(len(labels), np.nan), False)
+                self._colcol_cache[key] = res
+                return res
+        raw = pd.Series(np.asarray(raw)).reset_index(drop=True)
         vals = pd.to_numeric(raw, errors="coerce").to_numpy(dtype=float)
         if np.count_nonzero(~np.isnan(vals)) == 0:   # non-numeric → factorise (categorical)
-            codes, _ = pd.factorize(raw.astype(str))
+            # factorise only the non-null values so NaN stays NaN (astype(str) would turn NaN into a
+            # spurious "nan" category — common now that broadcast track columns leave untracked cells NaN)
+            mask = raw.notna().to_numpy()
+            codes = np.full(len(raw), -1)
+            if mask.any():
+                c, _ = pd.factorize(raw[mask].astype(str))
+                codes[mask] = c
             vals = np.where(codes < 0, np.nan, codes.astype(float))
             is_cat = True
         else:
             uniq = np.unique(vals[~np.isnan(vals)])
-            is_cat = len(uniq) <= 12 and np.allclose(uniq, np.round(uniq))
+            is_cat = napari_utils.is_categorical_column(column, uniq)   # clusters.* name-rule + ≤20 cap
         res = (labels, vals, is_cat)
         self._colcol_cache[key] = res
         return res
 
-    def _categorical_track_colormap(self, present_values):
+    def _read_track_level_column(self, value_name: str, column: str, cell_df):
+        """Read a TRACK-level obs column from `{value_name}__tracks.h5ad` (keyed by track_id) and
+        broadcast it to cells via `cell_df["track_id"]`. Returns a per-cell numpy array aligned to
+        `cell_df` rows, or None if there's no track table / track_id / matching column."""
+        from cecelia.utils.label_props_utils import LabelPropsView
+        tpath = os.path.join(self._task_dir, "labelProps", f"{value_name}__tracks.h5ad")
+        if "track_id" not in cell_df.columns or not os.path.isfile(tpath):
+            return None
+        from cecelia.utils import napari_utils
+        tview = LabelPropsView(tpath)
+        tdf = tview.view_cols([column]).as_df()      # label (= track_id) + column
+        tview.close()
+        if column not in tdf.columns:
+            return None
+        return napari_utils.broadcast_track_to_cells(
+            cell_df["track_id"].to_numpy(),
+            tdf["label"].to_numpy().astype(int), tdf[column].to_numpy())
+
+    def _categorical_track_colormap(self, present_values, overrides=None):
         """A step napari Colormap over the present categorical values so a level gets the **same**
-        Okabe–Ito colour the labels use (consistent colour scheme across the Tracks and Labels layers
-        for the same column). Real levels (sorted) → `_CATEGORICAL_RGBA[i]`; missing (-1) → grey.
-        Returns None if there's nothing to map (caller falls back to a named colormap)."""
+        colour the labels use (consistent scheme across Tracks and Labels for one column). Real levels
+        (sorted) take a user population's colour where one covers them (`overrides` = {value(str) ->
+        '#hex'}), else `_CATEGORICAL_RGBA[i]`; missing (-1) → grey. Returns `(Colormap, legend)` where
+        legend is `{value(str) -> '#hex'}`; `(None, {})` if there's nothing to map."""
         import napari
+        overrides = overrides or {}
         pv = sorted({float(v) for v in present_values})
         if not pv:
-            return None
+            return None, {}
         reals = [v for v in pv if v >= 0]
-        cmap_of = {v: _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)] for i, v in enumerate(reals)}
+        cmap_of, legend = {}, {}
+        for i, v in enumerate(reals):
+            key = str(int(v)) if float(v).is_integer() else str(v)     # match Julia _val_key
+            ov = _hex_to_rgba(overrides.get(key))
+            rgba = ov if ov is not None else _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)]
+            cmap_of[v] = rgba
+            legend[key] = _rgba_to_hex(rgba)
         for v in pv:
             if v < 0:
                 cmap_of[v] = (0.6, 0.6, 0.6, 1.0)        # missing → grey (≈ labels' transparent)
         if len(pv) == 1:
             c = cmap_of[pv[0]]
-            return napari.utils.Colormap(colors=[c, c], controls=[0.0, 1.0], interpolation="zero")
+            return napari.utils.Colormap(colors=[c, c], controls=[0.0, 1.0], interpolation="zero"), legend
         lo, hi = pv[0], pv[-1]; span = (hi - lo) or 1.0
         pos = [(v - lo) / span for v in pv]
         colors = [cmap_of[v] for v in pv]                # one colour per value (step / 'zero' interp)
         controls = [0.0] + [(a + b) / 2 for a, b in zip(pos, pos[1:])] + [1.0]
-        return napari.utils.Colormap(colors=colors, controls=controls, interpolation="zero")
+        return napari.utils.Colormap(colors=colors, controls=controls, interpolation="zero"), legend
 
     @staticmethod
     def track_layer_name(value_name: str, path: str, pop_type: str = "track") -> str:
@@ -562,7 +638,7 @@ class NapariState:
 
     def show_tracks(self, pops, value_name: str = "default",
                     tail_width: int = 4, tail_length: int = 30, pop_type: str = "track",
-                    color_by: str = ""):
+                    color_by: str = "", overrides=None):
         """Render track populations as napari Tracks layers — one layer per pop, named by the pop's
         **segmentation** (`value_name`) so several segmentations show side by side. Each pop carries
         its own `value_name` + `track_ids`; the per-segmentation track vertices are read locally
@@ -592,9 +668,15 @@ class NapariState:
             _remove_layer(self._viewer, name)
             self._track_sigs.pop(name, None)
         if not desired:
-            return
+            return {}
 
         cby = color_by if color_by and color_by != "track_id" else ""
+        legend = {}                                       # {value(str) -> '#hex'} for the colour-by legend
+        # fingerprint the colour overrides so a colour-ONLY change (recolour a category, or a pop colour
+        # edit) re-renders — otherwise the layer signature is unchanged and the layer is skipped, and the
+        # new colour never shows (the categorical colormap is built from `overrides`, but per-layer state
+        # like track_ids/visibility didn't change).
+        ov_sig = hash(tuple(sorted((overrides or {}).items())))
         # build the tracks matrix + colour-by values ONCE per segmentation (cached across pops)
         per_vn = {}
         for vn, _ in desired.values():
@@ -609,11 +691,12 @@ class NapariState:
                     col_vals = np.nan_to_num(
                         np.array([vbl.get(int(l), np.nan) for l in all_vlabels], dtype=float), nan=-1.0)
                     if is_cat:
-                        # categorical → Okabe–Ito step colormap (matches the labels' colours); fall back
-                        # to turbo if it can't be built
-                        cm = self._categorical_track_colormap(col_vals)
+                        # categorical → step colormap (user pop colour where one covers a level, else
+                        # Okabe–Ito; matches the labels' colours); fall back to turbo if unbuildable
+                        cm, leg = self._categorical_track_colormap(col_vals, overrides)
                         if cm is not None:
                             col_cmaps_dict, col_cmap = {cby: cm}, None
+                            legend.update(leg)
                     else:
                         col_cmap = "viridis"             # continuous → viridis (matches labels)
                 except Exception as e:               # column missing for this segmentation → default colouring
@@ -627,7 +710,7 @@ class NapariState:
             ids     = set(int(t) for t in pop.get("track_ids", []))
             visible = pop.get("show", True)
             use_cby = cby if col_vals is not None else ""
-            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby)
+            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig)
             existing = name in self._viewer.layers
             if existing and self._track_sigs.get(name) == sig:
                 continue
@@ -651,6 +734,7 @@ class NapariState:
                     colormaps_dict=(col_cmaps_dict if use_cby else None),
                 )
             self._track_sigs[name] = sig
+        return legend
 
     # ── Spatial cell selection → POST back to Julia (linked brushing) ─────────
 
@@ -1188,11 +1272,13 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             )
 
         elif t == "colour_labels":
-            state.colour_labels(
+            legend = state.colour_labels(
                 value_name=cmd.get("value_name", "default"),
                 column=cmd.get("column", ""),
                 percentile=cmd.get("percentile", 99.5),
+                overrides=cmd.get("colour_overrides"),
             )
+            return {"type": "ok", "cmd": t, "legend": legend or {}}
 
         elif t == "set_task_dir":
             state.set_task_dir(cmd["path"])
@@ -1208,14 +1294,16 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
             )
 
         elif t == "show_tracks":
-            state.show_tracks(
+            legend = state.show_tracks(
                 pops=cmd.get("pops", []),
                 value_name=cmd.get("value_name", "default"),
                 tail_width=cmd.get("tail_width", 4),
                 tail_length=cmd.get("tail_length", 30),
                 pop_type=cmd.get("pop_type", "track"),
                 color_by=cmd.get("color_by", ""),
+                overrides=cmd.get("colour_overrides"),
             )
+            return {"type": "ok", "cmd": t, "legend": legend or {}}
 
         elif t == "start_cell_selection":
             state.start_cell_selection(
