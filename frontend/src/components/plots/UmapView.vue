@@ -21,7 +21,7 @@ import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
-import { paletteRange, type VisProps } from '../../plots/plot'
+import { paletteRange, PALETTES, type VisProps } from '../../plots/plot'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
 import TeleportPopover from '../TeleportPopover.vue'
@@ -38,7 +38,7 @@ const props = defineProps<{
   // populations — colourPops tkeys), or 'attribute' (each point's image attribute — colourAttr).
   // facetBy: split into small multiples — 'none' (default), 'attribute' (facetAttr) or 'population'.
   // See docs/todo/UMAP_COLOUR_FACET_PLAN.md.
-  state: { labels?: boolean; legend?: boolean
+  state: { labels?: boolean
            colourBy?: 'cluster' | 'population' | 'attribute'
            colourPops?: string[]; colourAttr?: string
            facetBy?: 'none' | 'attribute' | 'population'; facetAttr?: string }
@@ -53,9 +53,9 @@ const facetAttr = computed({ get: () => props.state.facetAttr ?? '', set: v => (
 // the population dimension (popIdx) is needed whenever EITHER colour OR facet is by population
 const usePopIdx = computed(() => colourBy.value === 'population' || facetBy.value === 'population')
 const labels = computed({ get: () => props.state.labels !== false, set: v => (props.state.labels = v) })
-// show/hide the population legend — persisted per panel (default on). On the Analysis canvas it can
-// eat ~half the plot, so let the user reclaim that space.
-const showLegend = computed({ get: () => props.state.legend !== false, set: v => (props.state.legend = v) })
+// show/hide the population legend — follows the picker's Legend option (vis.legend), like the other
+// plots, rather than a UMAP-only toggle. Default on when no vis is supplied.
+const showLegend = computed(() => props.vis?.legend !== false)
 const unit = computed(() => (props.popType === 'trackclust' ? 'tracks' : 'cells'))
 
 // `forceLight` flips to a light render for the board's PDF export (dark theme is on-screen only) —
@@ -72,20 +72,23 @@ const scatterGround = computed(() => (screenDark.value ? '#0d0b1a' : '#ffffff'))
 // the PNG background (points are drawn transparent, so this fill IS the exported ground).
 const dark = computed(() => !forceLight.value && screenDark.value)
 const ground = computed(() => (dark.value ? '#0d0b1a' : '#ffffff'))
-// label chip + legend ink follow the theme so they stay legible on the exported ground (a light
-// ground with the app's light legend ink was invisible — #00061 follow-up).
-const labelStyle = computed(() => dark.value
-  ? { color: '#111', background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.35)' }
-  : { color: '#f5f5f5', background: 'rgba(20,20,28,0.82)', borderColor: 'rgba(255,255,255,0.35)' })
+// cluster label chip: the ggplot `geom_label` look (white box, thin black border, black text) in BOTH
+// themes — it reads on the dark on-screen ground AND the white PDF export (the old light-export chip
+// was a dark box with white text, which didn't match the R figures). See geom_label_repel in
+// plotClustersUMAPServer.R.
+const labelStyle = computed(() => ({ color: '#111', background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.55)' }))
 const legendInk = computed(() => (dark.value ? '#e6e6e6' : '#111'))
 // legend box background follows the theme too — in light mode the dark ink sat on the app's dark
 // panel surface (unreadable on the canvas); give it a light box so the pop names are legible.
 const legendBg = computed(() => (dark.value ? 'transparent' : '#ffffff'))
 
+// default cluster colours = the Cecelia house palette (the R behaviour-figure colours: yellow /
+// steel-blue / crimson / grey lead), so the UMAP matches the published look out of the box. Extra
+// hues follow for runs with >8 clusters. The pop-manager palette knob still overrides via paletteRange.
 const PALETTE = [
-  '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
-  '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
-  '#fb7185', '#2dd4bf', '#fbbf24', '#60a5fa',
+  ...PALETTES.cecelia,
+  '#ef4444', '#10b981', '#a78bfa', '#f97316', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4',
+  '#a3e635', '#d946ef', '#fb7185', '#2dd4bf',
 ]
 const UNCLUSTERED = '#555a6e'
 // faint whole-cloud backdrop behind each facet — dark grey on the dark ground, light grey on the light
@@ -181,24 +184,33 @@ const dotsEl = useTemplateRef<HTMLCanvasElement>('dotsEl')
 const plotBoxEl = useTemplateRef<HTMLElement>('plotBoxEl')
 let dctx: CanvasRenderingContext2D | null = null
 let dro: ResizeObserver | null = null
-const DOT_R = 2
+// point radius + opacity follow the pop-manager knobs (vis.pointSize / vis.pointOpacity); the redraw
+// watch below fires when they change so the canvas repaints without a refetch.
+const dotR = computed(() => Math.max(0.5, props.vis?.pointSize ?? 2))
+const dotAlpha = computed(() => Math.min(1, Math.max(0.05, props.vis?.pointOpacity ?? 0.9)))
+const TAU = Math.PI * 2
+// draw one filled circle (fillStyle is set by the caller, once per colour bucket)
+function dot(c: CanvasRenderingContext2D, px: number, py: number, r: number) {
+  c.beginPath(); c.arc(px, py, r, 0, TAU); c.fill()
+}
 // centroid labels + facet titles scale with the pop-manager font-size slider (vis.fontSize)
 const labelFont = computed(() => props.vis?.fontSize ?? 11)
 // paint a set of point indices via `toPx`, bucketed by category so fillStyle is set once per colour
 function paintInto(c: CanvasRenderingContext2D, idx: number[], toPx: (i: number) => [number, number]) {
-  const cats = categories.value!, pal = palette.value, s = DOT_R * 2
+  const cats = categories.value!, pal = palette.value
   const groups: number[][] = pal.map(() => [])
   for (const i of idx) { const g = groups[cats[i]]; if (g) g.push(i) }
   for (let gi = 0; gi < pal.length; gi++) {
     const g = groups[gi]; if (!g.length) continue
     c.fillStyle = pal[gi]
-    for (const i of g) { const [px, py] = toPx(i); c.fillRect(px - DOT_R, py - DOT_R, s, s) }
+    for (const i of g) { const [px, py] = toPx(i); dot(c, px, py, dotR.value) }
   }
 }
 function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
   const pts = points.value, cats = categories.value, pal = palette.value
   if (!pts || !cats || !pal.length) return
-  c.globalAlpha = 0.9
+  const alpha = dotAlpha.value
+  c.globalAlpha = alpha
   const fs = facets.value
   if (facetBy.value === 'none' || fs.length <= 1) {
     const n = pts.length / 2, groups: number[][] = pal.map(() => [])
@@ -206,7 +218,7 @@ function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
     for (let gi = 0; gi < pal.length; gi++) {
       const g = groups[gi]; if (!g.length) continue
       c.fillStyle = pal[gi]
-      for (const i of g) { const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h); c.fillRect(px - DOT_R, py - DOT_R, DOT_R * 2, DOT_R * 2) }
+      for (const i of g) { const [px, py] = mapPx(pts[2 * i], pts[2 * i + 1], w, h); dot(c, px, py, dotR.value) }
     }
   } else {
     const n = pts.length / 2
@@ -215,8 +227,8 @@ function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
       // GHOST: the whole cloud in faint grey behind each facet, so the UMAP shape stays legible and
       // facets are comparable (you see where this facet's points sit within the full embedding).
       c.globalAlpha = 0.6; c.fillStyle = ghostColour()
-      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); c.fillRect(px - 1, py - 1, 2, 2) }
-      c.globalAlpha = 0.9
+      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); dot(c, px, py, 1) }
+      c.globalAlpha = alpha
       paintInto(c, fs[fi].idx, i => mapRect(pts[2 * i], pts[2 * i + 1], cell))
     }
   }
@@ -465,6 +477,8 @@ watch(usePopIdx, v => { if (v && !popGroups.value.length) loadPopGroups() }, { i
 // backdrop is theme-coloured — dark grey on dark, light grey on light/export)
 watch([points, categories, palette, extents], () => nextTick(redraw), { deep: true })
 watch(dark, () => nextTick(redraw))
+// styling knobs that only affect the canvas paint (no refetch): point size + opacity
+watch([() => props.vis?.pointSize, () => props.vis?.pointOpacity], () => nextTick(redraw))
 onMounted(() => {
   load()
   // observe the STABLE square box (present from mount) so a panel resize always repaints + repositions
@@ -508,8 +522,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
     <div class="uv-ctrl cc-panel-controls">
       <button class="cc-btn cc-btn-ghost" :class="{ on: labels }" @click="labels = !labels"
               v-tooltip.bottom="'Toggle centroid labels'"><i class="pi pi-tag" /> #</button>
-      <button class="cc-btn cc-btn-ghost" :class="{ on: showLegend }" @click="showLegend = !showLegend"
-              v-tooltip.bottom="'Toggle the legend'"><i class="pi pi-list" /></button>
+      <!-- legend visibility follows the picker's Legend option (vis.legend) — no separate toggle here -->
       <!-- colour + facet controls live in a single options popover to keep the (often docked) bar tidy -->
       <button ref="optsBtn" class="cc-btn cc-btn-ghost" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
               v-tooltip.bottom="'Colour & facet options'"><i class="pi pi-palette" /> options</button>
@@ -628,7 +641,7 @@ defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
 .uv-plot { position: absolute; inset: 0; background: #0d0b1a; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
 .uv-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .uv-label { position: absolute; transform: translate(-50%, -50%); pointer-events: none; font-weight: 700;
-  color: #111; background: rgba(255,255,255,0.85); border: 1px solid rgba(0,0,0,0.35); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
+  color: #111; background: rgba(255,255,255,0.9); border: 1px solid rgba(0,0,0,0.55); border-radius: 3px; padding: 0 4px; line-height: 1.4; z-index: 2; }
 /* small-multiples facet title: centred at the top of each cell (positioned in CSS px from facetTitles) */
 .uv-facet-title { position: absolute; transform: translateX(-50%); pointer-events: none; z-index: 2;
   font-size: 10px; font-weight: 700; white-space: nowrap; }

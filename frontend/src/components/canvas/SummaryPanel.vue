@@ -34,7 +34,7 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean }
+        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean }
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -182,7 +182,11 @@ const specPinnedMode = computed(() => !!props.spec.dataSource.matrix?.mode)
 const matrixMode = computed<'profile' | 'crosstab'>({
   get: () => (specPinnedMode.value ? props.spec.dataSource.matrix!.mode! : (props.ui.matrixMode ?? 'profile')),
   set: v => (props.ui.matrixMode = v) })
-const zscore = computed<boolean>({ get: () => props.ui.zscore ?? true, set: v => (props.ui.zscore = v) })
+// z-score OFF by default → per-feature 0–1 viridis (the old R heat-plot look); ON → diverging RdBu.
+const zscore = computed<boolean>({ get: () => props.ui.zscore ?? false, set: v => (props.ui.zscore = v) })
+// cell numbers: off by default for a profile signature (matches R), on for a crosstab (counts/probs).
+const heatmapValues = computed<boolean>({
+  get: () => props.ui.heatmapValues ?? (matrixMode.value === 'crosstab'), set: v => (props.ui.heatmapValues = v) })
 const matrixNormalize = computed<'none' | 'row' | 'col' | 'total'>({
   get: () => props.ui.matrixNormalize ?? 'row', set: v => (props.ui.matrixNormalize = v) })
 // effective category: the user's chosen column, else the spec's pinned hint (if available), else a
@@ -390,6 +394,7 @@ const buildOpts = computed<BuildOpts>(() => ({
   nonNegative: true,               // the measures plotted here are non-negative
   trend: timeSeries.value, smooth: smooth.value, interval: interval.value,
   ...vis.value,                    // logScale, legend, pointSize, pointOpacity
+  heatmapScale: zscore.value ? 'zscore' : 'minmax', heatmapValues: heatmapValues.value,
 }))
 
 // ── export: the shown DATA as CSV, or the rendered chart as PNG / SVG (like the R version) ──
@@ -468,7 +473,7 @@ defineExpose({ getCsv, exportImage })
               </select>
             </label>
             <label v-if="matrixMode === 'profile'" class="sp-pop-row"
-                   v-tooltip.left="'Standardise each measure row across categories (comparable signature)'">
+                   v-tooltip.left="'Off: rescale each feature to 0–1 (viridis). On: z-score rows → diverging above/below-mean (RdBu).'">
               <span>Z-score rows</span>
               <input type="checkbox" v-model="zscore" />
             </label>
@@ -480,6 +485,10 @@ defineExpose({ getCsv, exportImage })
                 <option value="total">total</option>
                 <option value="none">counts</option>
               </select>
+            </label>
+            <label class="sp-pop-row" v-tooltip.left="'Print the value in each cell'">
+              <span>Cell values</span>
+              <input type="checkbox" v-model="heatmapValues" />
             </label>
           </template>
           <label v-if="chartType === 'histogram'" class="sp-pop-row">

@@ -90,6 +90,7 @@ const has = (s: string) => props.sections.includes(s as 'layout')
         <label class="po-row"><span>Palette</span>
           <select class="po-sel" :value="vis.palette" @change="set({ palette: ($event.target as HTMLSelectElement).value as VisProps['palette'] })">
             <option value="standard">standard (population)</option><option value="distinct">distinct</option>
+            <option value="cecelia">Cecelia</option>
             <option value="okabe-ito">Okabe-Ito</option>
             <option value="tol-bright">Tol bright</option><option value="tol-muted">Tol muted</option>
             <option value="tol-light">Tol light</option><option value="user">user</option>

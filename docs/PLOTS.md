@@ -291,11 +291,17 @@ docs/TODO.md.)
    governed by the global/local scope (`VisProps`): legend, log scale, gridlines, rotate-X-labels
    (with an **angle slider**, `rotateXAngle`, 0–90°; the bottom margin scales with the angle),
    **facet** (small multiples per series), **dark theme**, Y-range override; jitter type
-   (beeswarm/random/none), colour-data, point size/opacity; **palette** (Okabe-Ito, Tol bright/
+   (beeswarm/random/none), colour-data, point size/opacity; **palette** (**`Cecelia`** house palette, Okabe-Ito, Tol bright/
    muted/light, `distinct`, user list); title, X/Y axis labels, font size. All builder ink is
-   `currentColor` so the dark theme flips with one `style.color`. The **cluster UMAP** (`UmapView`)
-   honours the same `palette` choice for colour-by-cluster (via `paletteRange`; `standard` falls back
-   to its built-in palette).
+   `currentColor` so the dark theme flips with one `style.color`. The `Cecelia` palette
+   (`PALETTES.cecelia` in `plot.ts`) is the old R behaviour-figure `colPal` (yellow / steel-blue /
+   crimson / grey) + accents; it is also offered as clickable swatches in the pop colour picker
+   (`PopulationManager`; the native picker is kept for custom colours). The **cluster UMAP**
+   (`UmapView`, a 2D canvas of **circular** points) honours the picker for the colour-by-cluster
+   **palette** (via `paletteRange`; the built-in fallback is now the Cecelia palette), **point
+   size/opacity**, **dark theme**, **legend** (`vis.legend` — no UMAP-only toggle) and label **font
+   size**. Jitter/log/grid/axis-label knobs are N/A (a fixed embedding, no measured axes); colour &
+   facet have richer UMAP-native controls.
 8. **Track populations in the picker** — a track-granularity plot's picker unions `live` (cell gates
    + derived `/_tracked`) and `track` gates (per-track-measure gates from `{vn}__tracks.json`), each
    tagged with its `popType`; the panel groups series by popType and fetches one `/api/plot_data` per
@@ -325,9 +331,15 @@ Observable Plot covers both natively.
 whole `pop_df` frame (every selected population/segmentation/image) into ONE grid — a composition view,
 not a per-series overlay. Two **modes** (generic, reusable for any data):
 - **profile** — rows = `measures` (the spec's `measureOptions`), columns = the levels of a categorical
-  `category` column; each cell = the **mean** of that measure for cells in that level. `zscore`
-  standardises each row across the levels (→ diverging RdBu pivoted at 0) so differently-scaled
-  measures are comparable: the **"state signature"** (what properties do cells in each HMM state have).
+  `category` column; each cell = the **mean** of that measure for cells in that level: the **"state
+  signature"** (what properties do cells in each HMM state have). Each row is normalised so
+  differently-scaled measures are comparable — two **scale** modes, chosen in the panel:
+  - **0–1** (default, `heatmapScale: 'minmax'`) — per-feature min-max to `[0,1]` on a **sequential
+    viridis** scale with a fixed 0–1 colourbar. Ports the old R heat plots (`normalit()` +
+    `scale_fill_viridis(limits=c(0,1))`). The rescale is `rescaleRows01` in `utils/heatmapScale.ts`
+    (pure + unit-tested); it is invariant under z-score, so it works whatever the fetch's `zscore` flag.
+  - **z-score** (`heatmapScale: 'zscore'`) — server-standardised rows on a **diverging RdBu** pivoted
+    at 0 (above/below the row mean).
 - **crosstab** — a single categorical `category` whose values encode a pair `"from<sep>to"` (HMM
   transitions `"1_2"`, or the cross-model hybrid `"1.2_3.4"` — the hybrid joins state columns with
   `.`, so the FIRST `sep` splits prev|cur). Cell = count, or a rate (`row` = P(to|from), `col` =
@@ -337,12 +349,14 @@ Backend: `_matrix_agg(df; mode, measures, category, separator, zscore, normalize
 `plot_data.jl`, dispatched from `_summary_agg` when `chart_type == "matrix"` (and threaded through all
 four `plot_summary_data` methods + `/api/plot_data` as `matrixMode`/`measures`/`category`/`separator`/
 `zscore`/`matrixNormalize`). Returns a flat `cells` `[{x,y,value,n|count}]` + ordered `xLabels`/
-`yLabels` + `valueLabel`. Frontend: `buildHeatmap` in `plot.ts` (`Plot.cell` + viridis/diverging
-scale + per-cell value text; continuous legend stashed in `_colorLegend` for `PlotChart` to draw as an
-overlay). The panel offers `heatmap` independent of the measure type (it's a grid, not a measure
-distribution); its options popover picks **Mode**, **Category** (from the discovered categorical obs
-columns — crosstab defaults to a `*transitions*` column, profile to a `*state*` column), and
-**z-score** (profile) / **Normalize** (crosstab). Plot defs: `state_signature.json` (profile) and
+`yLabels` + `valueLabel`. Frontend: `buildHeatmap` in `plot.ts` (`Plot.cell`, the colour scale per the
+mode above, **white** tile borders + a **black `theme_classic` L-axis**, tight margins; continuous
+legend stashed in `_colorLegend` for `PlotChart` to draw as an overlay). In-cell value text is a
+`heatmapValues` toggle — **off** by default for profile (matches R), on for crosstab. The panel offers
+`heatmap` independent of the measure type (it's a grid, not a measure distribution); its options
+popover picks **Mode**, **Category** (from the discovered categorical obs columns — crosstab defaults
+to a `*transitions*` column, profile to a `*state*` column), **Scale** (0–1 / z-score, profile) /
+**Normalize** (crosstab), and **Cell values**. Plot defs: `state_signature.json` (profile) and
 `transition_matrix.json` (crosstab).
 
 **Tiled / spatial map** (binned positions over the image field) — roadmap → `Plot.raster` /
