@@ -89,6 +89,28 @@ if ($Channel -eq 'dev') {
 }
 Remove-Item $Tmp
 
+# ── bioformats2raw (image import) ───────────────────────────────────────────────
+# ~190 MB, so fetched here rather than shipped in the bundle. The app resolves it at
+# <install>\bioformats2raw\bin (bioformats2raw_bin() in config.jl); Java comes from the Pixi env.
+# Skipped if a system bioformats2raw is already on PATH (the app falls back to PATH).
+if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
+  Say 'Using bioformats2raw already on PATH.'
+} else {
+  # Pinned version (reproducible installs — not their `latest`, so our import engine can't change
+  # under us on an upstream release). Override with $env:CECELIA_BIOFORMATS2RAW_VERSION.
+  $B2rVersion = if ($env:CECELIA_BIOFORMATS2RAW_VERSION) { $env:CECELIA_BIOFORMATS2RAW_VERSION } else { '0.12.1' }
+  $B2rUrl = "https://github.com/glencoesoftware/bioformats2raw/releases/download/v$B2rVersion/bioformats2raw-$B2rVersion.zip"
+  Say "Fetching bioformats2raw $B2rVersion (image import; ~190 MB)..."
+  $b2rZip = Join-Path ([System.IO.Path]::GetTempPath()) ('b2r-' + [System.IO.Path]::GetRandomFileName() + '.zip')
+  $b2rTmp = Join-Path ([System.IO.Path]::GetTempPath()) ('b2r-' + [System.IO.Path]::GetRandomFileName())
+  Invoke-WebRequest -Uri $B2rUrl -OutFile $b2rZip
+  Expand-Archive -Path $b2rZip -DestinationPath $b2rTmp -Force
+  $b2rSrc = Get-ChildItem -Path $b2rTmp -Directory | Where-Object { $_.Name -like 'bioformats2raw-*' } | Select-Object -First 1
+  Move-Item -Path $b2rSrc.FullName -Destination (Join-Path $InstallDir 'bioformats2raw')
+  Remove-Item $b2rZip; Remove-Item -Recurse -Force $b2rTmp
+  Say 'Installed bioformats2raw.'
+}
+
 # ── Provision ───────────────────────────────────────────────────────────────────
 Push-Location $InstallDir
 Say 'Installing the Python environment (downloads a few GB on first run)...'

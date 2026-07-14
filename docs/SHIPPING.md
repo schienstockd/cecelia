@@ -111,8 +111,16 @@ OS-independent:
    docs). It excludes `.pixi`/`node_modules`/`.CondaPkg` — those are provisioned/regenerated on the
    user's machine. **Note:** `python/` must ship — `run_py` resolves task scripts under
    `python/cecelia/` and the editable `cecelia` dep points there; omitting it breaks every Python
-   task on the installed app.
+   task on the installed app. The bundle is **~6 MB** (frontend/dist dominates).
 3. Publish a GitHub Release with `cecelia.tar.gz` + `install.sh` + `install.ps1` as assets.
+
+**bioformats2raw is NOT in the bundle.** The image-import binary (its `lib/` of Bio-Formats JARs +
+native codecs) is ~190 MB — it would have dwarfed the ~6 MB of actual app. Instead `install.sh` /
+`install.ps1` fetch the latest bioformats2raw release into `<install>/bioformats2raw/` at install
+time (skipped if one is already on PATH), where `bioformats2raw_bin()` (config.jl) resolves it. Java
+comes from the Pixi env, so only the JARs are downloaded. This also means the **`dev` channel now
+gets bioformats2raw too** — the branch tarball never contained it (it's not in git), so before this
+the dev channel had no working image import.
 
 Users bootstrap the installer from `raw.githubusercontent.com/…/main/install.{sh,ps1}` — **not**
 `releases/latest/download/…`. GitHub's `releases/latest` endpoint only ever resolves to a

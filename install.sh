@@ -95,6 +95,26 @@ else
   tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR"
 fi
 
+# ── bioformats2raw (image import) ─────────────────────────────────────────────
+# ~190 MB, so fetched here rather than shipped in the bundle. The app resolves it at
+# <install>/bioformats2raw/bin (bioformats2raw_bin() in config.jl); Java comes from the Pixi env.
+# Skipped if a system bioformats2raw is already on PATH (the app falls back to PATH).
+if have bioformats2raw; then
+  say "Using bioformats2raw already on PATH ($(command -v bioformats2raw))."
+else
+  have unzip || err "unzip is required to install bioformats2raw."
+  # Pinned version (reproducible installs — not their `latest`, so our import engine can't change
+  # under us on an upstream release). Override with CECELIA_BIOFORMATS2RAW_VERSION.
+  B2R_VERSION="${CECELIA_BIOFORMATS2RAW_VERSION:-0.12.1}"
+  B2R_URL="https://github.com/glencoesoftware/bioformats2raw/releases/download/v$B2R_VERSION/bioformats2raw-$B2R_VERSION.zip"
+  say "Fetching bioformats2raw $B2R_VERSION (image import; ~190 MB)…"
+  curl -fSL "$B2R_URL" -o "$TMP/b2r.zip" || err "bioformats2raw download failed ($B2R_URL)."
+  unzip -q "$TMP/b2r.zip" -d "$TMP/b2r"
+  mv "$TMP"/b2r/bioformats2raw-*/ "$INSTALL_DIR/bioformats2raw"
+  [ -x "$INSTALL_DIR/bioformats2raw/bin/bioformats2raw" ] || err "bioformats2raw missing after unpack."
+  say "Installed bioformats2raw."
+fi
+
 # ── Provision ────────────────────────────────────────────────────────────────
 cd "$INSTALL_DIR"
 say "Installing the Python environment (downloads a few GB on first run)…"
