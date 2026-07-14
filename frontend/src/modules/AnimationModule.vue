@@ -24,10 +24,64 @@ const openImageUid = computed(() => projectStore.napariImageUid)
 
 const capturing = ref(false)
 const rendering = ref(false)
+const updating = ref(false)
 const dragId = ref<string | null>(null)   // keyframe being dragged (drag-to-reorder)
+const selectedId = ref<string | null>(null)   // the currently-selected keyframe (the highlighted box)
+const syncNapari = ref(false)             // when on, selecting a keyframe applies its view to napari
 function onDrop(targetId: string) {
   if (dragId.value) anim.reorder(dragId.value, targetId)
   dragId.value = null
+}
+
+// apply a keyframe's saved view to the running napari viewer, so you SEE that snapshot (and can then
+// tweak it in napari + Update). No-op if napari isn't running / the image isn't open.
+async function applyToNapari(s: AnimSnapshot) {
+  if (!s.snapshot) return
+  try {
+    await fetch('/api/napari/apply-view-state', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ viewState: s.snapshot }),
+    })
+  } catch { /* napari not running */ }
+}
+// select a keyframe; if Sync is on, push it to napari
+function selectKeyframe(s: AnimSnapshot) {
+  selectedId.value = s.id
+  if (syncNapari.value) applyToNapari(s)
+}
+// toggling Sync on immediately mirrors the selected keyframe into napari
+function onToggleSync(on: boolean) {
+  syncNapari.value = on
+  const sel = frames.value.find(f => f.id === selectedId.value)
+  if (on && sel) applyToNapari(sel)
+}
+
+// Update the selected keyframe FROM the current napari view — re-screenshot and replace its snapshot +
+// thumbnail (and reset its baseline). This is how you "change" a snapshot: sync it, tweak in napari, save.
+async function updateSelected() {
+  const sel = frames.value.find(f => f.id === selectedId.value)
+  if (!sel || !projectUid.value || !openImageUid.value || updating.value) return
+  updating.value = true
+  try {
+    const res = await fetch('/api/napari/screenshot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value }),
+    })
+    if (!res.ok) { log.error(`Update failed: ${(await res.json().catch(() => ({}))).error ?? res.status}`, { source: 'napari' }); return }
+    const j = (await res.json()) as { assetId?: string; viewState?: Record<string, unknown> }
+    const oldAsset = sel.assetId
+    sel.snapshot = j.viewState
+    sel.original = JSON.parse(JSON.stringify(j.viewState ?? {}))   // new baseline (no longer "edited")
+    sel.assetId = j.assetId
+    if (oldAsset && oldAsset !== j.assetId && !anim.snapshots.some(o => o.assetId === oldAsset)) {
+      fetch('/api/board-assets/delete', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectUid: projectUid.value, assetId: oldAsset }),
+      }).catch(() => {})
+    }
+  } catch (e) {
+    log.error(`Update failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+  } finally { updating.value = false }
 }
 
 function imageName(uid: string | null | undefined): string {
@@ -42,8 +96,30 @@ function assetUrl(s: AnimSnapshot): string {
   return s.assetId ? `/api/board-assets?projectUid=${projectUid.value}&assetId=${s.assetId}` : ''
 }
 
+const openImage = computed(() => {
+  for (const set of projectStore.sets) {
+    const img = set.images.find(i => i.uid === openImageUid.value)
+    if (img) return img
+  }
+  return null
+})
+
 // a timeline is per-image: the keyframes of whichever image is open in napari, in list order
 const frames = computed(() => anim.snapshots.filter(s => s.imageUid === openImageUid.value))
+
+// where a snapshot sits in the timelapse — its T index + wall-clock (h/min) via the image's
+// TimeIncrement, so you can tell which frame it's from. T is the first dims axis for these stacks.
+function keyframeTime(s: AnimSnapshot): string {
+  const step = (s.snapshot?.dims as { current_step?: number[] } | undefined)?.current_step
+  const t = Array.isArray(step) ? step[0] : undefined
+  if (t === undefined || t === null) return ''
+  const inc = openImage.value?.timeIncrement
+  if (!inc) return `t${t}`
+  const unit = openImage.value?.timeIncrementUnit ?? 'second'
+  const secs = /^min/i.test(unit) ? t * inc * 60 : t * inc
+  const h = Math.floor(secs / 3600), m = Math.round((secs % 3600) / 60)
+  return `t${t} · ${h > 0 ? `${h}h ${m}m` : `${m}m`}`
+}
 
 type Layers = Record<string, { visible?: boolean; colormap?: string }>
 const layersOf = (s: AnimSnapshot) => (s.snapshot?.layers ?? {}) as Layers
@@ -163,7 +239,7 @@ async function render() {
       </div>
       <div class="anim-head-ctl">
         <label class="anim-fps" v-tooltip.bottom="'Output frames per second'">
-          fps <input type="range" min="1" max="60" step="1" v-model.number="anim.fps" class="anim-range" />
+          fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
           <span class="anim-num">{{ anim.fps }}</span>
         </label>
         <button class="btn-primary" :disabled="!canRender" @click="render"
@@ -188,6 +264,14 @@ async function render() {
                 v-tooltip.bottom="'Duplicate the last keyframe to vary it via the rows'">
           <i class="pi pi-plus" /> Add keyframe
         </button>
+        <button class="btn-sm" :disabled="!selectedId || updating" @click="updateSelected"
+                v-tooltip.bottom="'Replace the selected keyframe with the current napari view (re-capture)'">
+          <i :class="['pi', updating ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Update selected
+        </button>
+        <label class="anim-sync" v-tooltip.bottom="'Show the selected keyframe in napari when you click it (so you can see / tweak it)'">
+          <input type="checkbox" :checked="syncNapari" @change="onToggleSync(($event.target as HTMLInputElement).checked)" />
+          Sync napari
+        </label>
       </div>
 
       <p v-if="!frames.length" class="anim-empty">No keyframes yet — set up the view in napari and
@@ -200,12 +284,13 @@ async function render() {
               <th class="tl-rowhead tl-corner"></th>
               <th v-for="(f, i) in frames" :key="f.id" class="tl-col" :class="{ dragover: dragId && dragId !== f.id }"
                   @dragover.prevent @drop="onDrop(f.id)">
-                <div class="tl-thumb" :class="{ edited: isEdited(f), dragging: dragId === f.id }"
+                <div class="tl-thumb" :class="{ selected: selectedId === f.id, dragging: dragId === f.id }"
                      draggable="true" @dragstart="dragId = f.id" @dragend="dragId = null"
-                     v-tooltip.bottom="'Drag to reorder'">
+                     @click="selectKeyframe(f)" v-tooltip.bottom="'Click to select (drag to reorder)'">
                   <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" />
                   <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
                 </div>
+                <div v-if="keyframeTime(f)" class="tl-time">{{ keyframeTime(f) }}</div>
                 <div class="tl-colctl">
                   <button class="tl-ico" :disabled="i === 0" @click="anim.move(f.id, -1)" v-tooltip.bottom="'Move earlier'"><i class="pi pi-chevron-left" /></button>
                   <span class="tl-kf">{{ i + 1 }}</span>
@@ -270,6 +355,7 @@ async function render() {
 .anim-empty { font-size: 0.85rem; color: var(--cc-text-dim); margin-top: 1.5rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
 .anim-img { font-size: 0.78rem; font-weight: 600; color: var(--cc-text); margin-right: 0.2rem; }
+.anim-sync { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); cursor: pointer; }
 
 /* clean matrix (not a bordered table): sticky row labels, colour-coded toggle dots, rounded thumbs */
 .anim-timeline { overflow-x: auto; border: 1px solid var(--cc-border); border-radius: 0.6rem;
@@ -286,11 +372,12 @@ async function render() {
 .tl-thumb { cursor: grab; }
 .tl-thumb.dragging { opacity: 0.4; }
 .tl-col.dragover .tl-thumb { outline: 2px dashed var(--cc-selected); outline-offset: 2px; }
-/* "edited" highlight = the shared selection amber (--cc-selected), matching the plot panels' selected
-   state — one highlight colour for boxes across the app. */
-.tl-thumb.edited { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 45%, transparent); }
+/* selected keyframe = the highlighted box → amber ring (--cc-selected), matching the plot panels'
+   selected state. "edited" is a separate flag (the badge), not a ring. */
+.tl-thumb.selected { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 55%, transparent); }
 .tl-badge { position: absolute; top: 4px; right: 4px; font-size: 0.55rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-selected); padding: 1px 5px; border-radius: 999px; }
+  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-warn); padding: 1px 5px; border-radius: 999px; }
+.tl-time { font-size: 0.6rem; color: var(--cc-text-dim); text-align: center; margin-top: 0.15rem; font-variant-numeric: tabular-nums; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
 .tl-kf { font-size: 0.66rem; color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
 .tl-ico { display: inline-flex; border: none; background: none; color: var(--cc-text-dim); cursor: pointer;
