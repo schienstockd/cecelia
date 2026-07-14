@@ -398,6 +398,25 @@ function api_napari_apply_view_state(body_bytes::Vector{UInt8})
     end
 end
 
+# ── REST: POST /api/napari/view-state ─────────────────────────────────────────
+# Return the CURRENT view snapshot (camera/dims/per-layer colormap+visibility) of the open image, plus
+# which image it is. Lightweight (no screenshot / PNG side-effect — bridge `capture_view_state`); the
+# Batch movies page uses it to seed the config from the first selected image's live colours + overlays.
+function api_napari_view_state(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            resp = send(v, Dict{String,Any}("type" => "capture_view_state"))
+            200, JSON3.write((; ok = true,
+                viewState = get(resp, "view_state", Dict{String,Any}()),
+                imageUid  = something(_current_image_uid[], "")))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 # ── REST: POST /api/napari/record-timelapse ───────────────────────────────────
 # Record the open image's timelapse (T-sweep) to an mp4 under the project's `movies/` dir. F1.1 of the
 # batch-movie work (docs/todo/ANIMATION_PLAN.md): records the CURRENT view (whatever channels/pops/
@@ -468,6 +487,200 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
             500, JSON3.write((; error = sprint(showerror, e)))
         end
     end
+end
+
+# ── Batch movies (F1.2 config-apply + F1.3 batch) ─────────────────────────────
+# The "make a movie for all images" workflow (ports the R `generateMovies`, docs/todo/ANIMATION_PLAN.md
+# → F1). Instead of re-implementing open/show-tracks/show-populations/colour-labels, we build the SAME
+# request bodies and call the existing handlers — one code path per overlay, no divergent variant. The
+# batch drives the ONE shared viewer sequentially under `_viewer_lock` (napari can't render offscreen —
+# GL frames come out black — so it must use the live window; the frontend warns the user it's busy).
+
+# Call a same-module API handler with a Julia payload (NamedTuple/Dict) as its JSON body. Returns
+# (ok, parsed-response). Lets the batch reuse the exact endpoint logic (pop resolution, colour
+# overrides, legend) with zero re-implementation.
+function _call_napari_api(f::Function, payload)::Tuple{Bool,Any}
+    status, body = f(Vector{UInt8}(JSON3.write(payload)))
+    parsed = try; JSON3.read(body); catch; nothing; end
+    (status == 200, parsed)
+end
+
+# Attr-named output filename: <attr1>_<attr2>_..._<uid>.mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
+# Blank/missing attrs are dropped; the uid always terminates the name so batch outputs never collide.
+# Falls back to just the uid when no fileAttrs are given. Pure (attr dict + uid) → testable.
+function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Vector{String})::String
+    parts = String[]
+    for a in file_attrs
+        val = strip(String(get(attr, a, "")))
+        isempty(val) || push!(parts, val)
+    end
+    push!(parts, String(uid))
+    replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * ".mp4"
+end
+
+# Full attr-named output path under {proj}/movies/ (img._dir = {proj}/1/{uid}).
+function _movie_out_path(img, file_attrs::Vector{String})::String
+    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
+    mkpath(movies_dir)
+    joinpath(movies_dir, _movie_basename(img.attr, img.uid, file_attrs))
+end
+
+# Apply an authored movie config to ONE image already resolvable by uid (F1.2). Opens the image (contrast
+# from its saved layer props), sets each channel's colormap + visibility (only `channels` are shown, the
+# rest hidden), then overlays tracks / populations / colour-by exactly as the ViewerPanel does — by
+# calling the existing handlers. Caller holds `_with_viewer` so the whole sequence is atomic on the bridge.
+function _apply_movie_config!(project_uid::String, image_uid::String, img, config; do_open::Bool = true)::Nothing
+    vn_raw = strip(String(get(config, :valueName, "")))
+    vn     = isempty(vn_raw) ? nothing : vn_raw
+
+    # 1. open (auto-load saved props → per-image contrast, Decision 4; no auto-save — we're driving it).
+    #    SKIP the open when this exact image (active version) is already shown: re-opening re-samples the
+    #    channel contrast (add_image contrast=True), which would wipe the contrast the user set live if it
+    #    was never saved to props. Preview passes do_open=false (it applies to the open image only), and a
+    #    batch skips re-opening its first image when that's the one already open. Both preserve live contrast.
+    already_open = (_current_image_uid[] == image_uid) && isempty(vn_raw)
+    if do_open && !already_open
+        ok, _ = _call_napari_api(api_napari_open, (; projectUid = project_uid, imageUid = image_uid,
+            valueName = vn, autoLoadProps = true, autoSaveProps = false))
+        ok || error("could not open image in napari")
+    end
+
+    # 2. channel colormaps + visibility. `channels` = {name → colormap} for the channels to SHOW; every
+    #    other channel is hidden. Applied via a partial view-state (colormap/visible are whitelisted).
+    chans = get(config, :channels, nothing)
+    if chans isa AbstractDict && !isempty(chans)
+        wanted  = Dict(String(k) => String(v) for (k, v) in pairs(chans))
+        ch_all  = channel_names(img; value_name = vn)
+        layers  = Dict{String,Any}()
+        for ch in (ch_all === nothing ? collect(keys(wanted)) : ch_all)
+            layers[ch] = haskey(wanted, ch) ?
+                Dict{String,Any}("colormap" => wanted[ch], "visible" => true) :
+                Dict{String,Any}("visible" => false)
+        end
+        _call_napari_api(api_napari_apply_view_state, (; viewState = Dict{String,Any}("layers" => layers)))
+    end
+
+    color_by  = String(get(config, :colourBy, ""))
+    overrides = get(config, :colourOverrides, Dict{String,Any}())
+
+    # 3. tracks (coloured by the measure; user pops supply their colour where they cover a value)
+    if Bool(get(config, :showTracks, false))
+        _call_napari_api(api_napari_show_tracks, (; projectUid = project_uid, imageUid = image_uid,
+            valueNames      = collect(String, get(config, :trackValueNames, String[])),
+            colorBy         = color_by,
+            tailWidth       = get(config, :tailWidth, 4),
+            showGatedTracks = Bool(get(config, :showGatedTracks, false)),
+            showTrackclust  = Bool(get(config, :showTrackclust, false)),
+            colourOverrides = overrides))
+    end
+
+    # 4. populations as points
+    if Bool(get(config, :showPopulations, false))
+        _call_napari_api(api_napari_show_populations, (; projectUid = project_uid, imageUid = image_uid,
+            popType = String(get(config, :popType, "flow")),
+            pointsSize = get(config, :pointsSize, 6), show = true))
+    end
+
+    # 5. colour the Labels layer by the measure (optional; tracks/points already coloured above)
+    if Bool(get(config, :colourLabels, false)) && !isempty(color_by)
+        _call_napari_api(api_napari_colour_labels, (; projectUid = project_uid, imageUid = image_uid,
+            valueName = something(vn, ""), column = color_by, colourOverrides = overrides))
+    end
+    nothing
+end
+
+# ── REST: POST /api/napari/apply-movie-config ─────────────────────────────────
+# F1.2 preview: apply an authored movie config to the CURRENTLY open image (no recording). Lets the user
+# eyeball the look the batch will record before kicking off the whole run.
+function api_napari_apply_movie_config(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    config      = get(data, :config, nothing)
+    config === nothing && return 400, JSON3.write((; error = "config required"))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+    (isnothing(_viewer()) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            # preview applies to the CURRENTLY open image — never re-open (that would re-sample contrast)
+            _apply_movie_config!(project_uid, image_uid, img, config; do_open = false)
+            200, JSON3.write((; ok = true))
+        catch e
+            @warn "apply_movie_config failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── Batch cancel registry ─────────────────────────────────────────────────────
+# The batch is NOT a scheduler task (napari is a single UI-serial viewer in api/, not a pooled headless
+# job), so `cancel_task!` doesn't reach it. This lightweight flag, keyed by the client's taskId, is set
+# by the `task:cancel` WS handler and checked between images. A cancel can't interrupt an in-progress
+# record (the bridge blocks inside `animate`) — it takes effect after the current image finishes.
+const _batch_cancel      = Dict{String,Bool}()
+const _batch_cancel_lock = ReentrantLock()
+_batch_register!(id)      = lock(() -> (_batch_cancel[id] = false),                       _batch_cancel_lock)
+_batch_cancelled(id)      = lock(() -> get(_batch_cancel, id, false),                     _batch_cancel_lock)
+_batch_clear!(id)         = lock(() -> delete!(_batch_cancel, id),                        _batch_cancel_lock)
+request_batch_cancel!(id) = lock(() -> (haskey(_batch_cancel, id) && (_batch_cancel[id] = true); nothing), _batch_cancel_lock)
+
+# F1.3 batch runner — invoked async from the WS layer (`movie:batch`). For each image: apply the config,
+# record the T-sweep to an attr-named mp4, emit task:progress/log so it drives the existing task UI. `rep`
+# = representative uid for status/result. Errors on one image are logged and the batch continues.
+function run_batch_movies(task_id::String, project_uid::String, image_uids::Vector{String},
+                          config, file_attrs::Vector{String}, fps::Int, scale)
+    n   = length(image_uids)
+    rep = isempty(image_uids) ? "" : first(image_uids)
+    done = 0; errors = String[]
+    # fail fast (one clear message, not N per-image errors) if the viewer isn't up — the batch drives
+    # the live window, so napari must already be running.
+    if isnothing(_viewer()) || !_viewer_alive()
+        ws_log(nothing, task_id, "[ERROR] Napari is not running — open an image first, then generate")
+        ws_status(nothing, task_id, "failed", rep)
+        _batch_clear!(task_id)
+        return nothing
+    end
+    ws_status(nothing, task_id, "running", rep)
+    ws_progress(nothing, task_id, 0, n)
+    t_start = Int(get(config, :tStart, 0))
+    t_end_v = get(config, :tEnd, nothing)
+    t_end   = t_end_v === nothing ? nothing : Int(t_end_v)
+    for (i, uid) in enumerate(image_uids)
+        if _batch_cancelled(task_id)
+            ws_log(nothing, task_id, "[CANCELLED] stopped after $done/$n image(s)")
+            break
+        end
+        img, err = _gating_image(project_uid, uid)
+        if err !== nothing
+            push!(errors, uid)
+            ws_log(nothing, task_id, "[WARN] skip $uid — not a loadable image")
+            ws_progress(nothing, task_id, i, n); continue
+        end
+        try
+            path = _movie_out_path(img, file_attrs)
+            ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
+            _with_viewer() do
+                _apply_movie_config!(project_uid, uid, img, config)
+                v = _viewer()
+                v === nothing && error("Napari not running")
+                record_timelapse!(v, path; fps = fps, scale = scale, t_start = t_start, t_end = t_end)
+            end
+            done += 1
+            ws_log(nothing, task_id, "[$i/$n] done → $(basename(path))")
+        catch e
+            push!(errors, uid)
+            ws_log(nothing, task_id, "[ERROR] $uid: $(sprint(showerror, e))")
+        end
+        ws_progress(nothing, task_id, i, n)
+    end
+    cancelled = _batch_cancelled(task_id)
+    status    = cancelled ? "cancelled" : (isempty(errors) ? "done" : "failed")
+    ws_result(nothing, task_id, rep,
+        Dict{String,Any}("done" => done, "total" => n, "errors" => errors, "cancelled" => cancelled))
+    ws_status(nothing, task_id, status, rep; image_uids = image_uids)
+    _batch_clear!(task_id)
+    nothing
 end
 
 # ── REST: POST /api/napari/restart ────────────────────────────────────────────

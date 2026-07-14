@@ -123,8 +123,38 @@ per-timepoint recorder below is the simpler single-view case:
 saves to `{project}/movies/{imageName}.mp4` (named by the IMAGE — the view can show several
 segmentations at once — falling back to the uid) and returns the frame count + path. `fps` + resolution
 `scale` are per-set sliders in the viewer panel's Movie section. This is **F1.1**
-of the batch-movie work — F1.2 adds an authored config (channels/pops/colour-by/T-range/fps), F1.3 runs
-it across selected/attr-filtered images (see `docs/todo/ANIMATION_PLAN.md`).
+of the batch-movie work (see `docs/todo/ANIMATION_PLAN.md`).
+
+### Authored config + batch ("make a movie for all images", F1.2/F1.3)
+
+The **Batch movies** page (`/batch-movies`) authors ONE config and generates a timelapse for every
+selected image. `_apply_movie_config!` (`api/src/napari_api.jl`) applies a config to an image by
+**reusing the existing handlers** — no divergent re-implementation: it opens the image (contrast from its
+saved layer props), sets each channel's colormap + visibility via a partial `apply_view_state` (only the
+listed `channels` are shown; the rest hidden), then overlays tracks / populations / colour-by exactly as
+the ViewerPanel does by calling `show_tracks` / `show_populations` / `colour_labels`. **Contrast:** it
+does **not** re-open an image that's already shown (`do_open`/`already_open`) — re-opening re-samples the
+channel contrast (`add_image contrast=True`), which would wipe contrast the user set live but never saved.
+So **preview** (`do_open=false`) applies to the open image without touching contrast, and a batch skips
+re-opening its first image when that's the one already open. Other batch images take contrast from their
+saved layer props (Decision 4) — turn on layer-prop auto-save to persist contrast you tune per image. Config:
+`{ valueName, channels:{name→colormap}, colourBy, showTracks, trackValueNames, tailWidth,
+showGatedTracks, showTrackclust, showPopulations, popType, pointsSize, colourLabels, colourOverrides,
+tStart, tEnd }`. `POST /api/napari/apply-movie-config` previews it on the open image (no recording).
+
+**Batch (F1.3)** is WS-triggered (`movie:batch`) and runs **async on the single shared viewer,
+sequentially** — napari can't render offscreen (GL frames come out black), so it drives the live window;
+the page shows a "napari is busy generating movies" banner while it runs. Each image → one **attr-named**
+`.mp4` (`<attr1>_<attr2>_..._<uid>.mp4`, `_movie_basename`). The config **pre-fills** so it's never blank:
+from the first selected image's **live napari view** when that image is open (`POST /api/napari/view-state`
+→ `capture_view_state`: visible channels + their colormap, plus overlays detected from the layer-name
+prefixes), else a default swatch palette by channel order; colour-by seeds from the set's last colour-by.
+Channel colours are picked with a swatch dropdown (`SwatchSelect`, standard colour-blind-considered
+palette; `CHANNEL_COLORMAP_OPTIONS`). It reports over the normal task events
+(progress/log/status/result keyed by the client taskId) so it appears in the task list with a progress
+bar + Cancel (a per-run flag, `request_batch_cancel!`, stops it after the current image — an in-progress
+record can't be interrupted). It is **not** a scheduler task: napari is a single UI-serial viewer in
+`api/`, not pooled headless compute.
 
 ---
 

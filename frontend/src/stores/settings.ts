@@ -101,6 +101,19 @@ export const useSettingsStore = defineStore('settings', () => {
     // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate,
     // scale = supersample factor (2 = 2× resolution). Per-set like the other viewer prefs.
     movie?: { fps?: number; scale?: number }
+    // batch-movie authoring config (F1.3 "make a movie for all images"): one config applied across the
+    // selected images. `channels` = {channelName → colormap} for channels to SHOW (rest hidden). Per-set.
+    batchMovie?: {
+      valueName?: string                    // image version to open ('' = active)
+      channels?: Record<string, string>     // channelName → colormap (only these shown)
+      colourBy?: string                     // colour-by measure/obs column
+      showTracks?: boolean; trackValueNames?: string[]; tailWidth?: number
+      showGatedTracks?: boolean; showTrackclust?: boolean
+      showPopulations?: boolean; popType?: string; pointsSize?: number
+      colourLabels?: boolean
+      fileAttrs?: string[]                  // attr names composing the output filename
+      tStart?: number; tEnd?: number | null
+    }
   }
   const _setPrefs = ref<Record<string, NapariSetPrefs>>(
     JSON.parse(localStorage.getItem('cc.napariSetPrefs') ?? '{}')
@@ -142,6 +155,12 @@ export const useSettingsStore = defineStore('settings', () => {
   function setMovieConfig(setUid: string, patch: { fps?: number; scale?: number }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
+  // batch-movie authoring config (per set); the reactive bag the BatchMovies page drives via useViewState
+  type BatchMovieCfg = NonNullable<NapariSetPrefs['batchMovie']>
+  const getBatchMovieConfig = (setUid: string): BatchMovieCfg => _setPrefs.value[setUid]?.batchMovie ?? {}
+  function setBatchMovieConfig(setUid: string, patch: Partial<BatchMovieCfg>) {
+    _patchSet(setUid, { batchMovie: { ...(_setPrefs.value[setUid]?.batchMovie ?? {}), ...patch } })
+  }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
@@ -154,5 +173,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
 })

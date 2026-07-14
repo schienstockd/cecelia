@@ -262,3 +262,15 @@ end
     lo2, hi2 = _include_range((0.0, 10.0), -5.0, 8.0)            # exceeds low side only
     @test lo2 == -5.5 && hi2 == 10.0
 end
+
+@testset "API: batch-movie output naming" begin
+    attr = Dict("Day" => "3", "Treatment" => "CNO", "Blank" => "  ")
+    # attrs joined in the requested order, uid always terminates → unique name
+    @test _movie_basename(attr, "AbC123", ["Day", "Treatment"]) == "3_CNO_AbC123.mp4"
+    # no attrs → just the uid
+    @test _movie_basename(attr, "AbC123", String[]) == "AbC123.mp4"
+    # blank / missing attr values are dropped (never leaves a dangling separator)
+    @test _movie_basename(attr, "AbC123", ["Blank", "Missing", "Day"]) == "3_AbC123.mp4"
+    # unsafe characters in an attr value are sanitised to underscores
+    @test _movie_basename(Dict("T" => "a/b c:d"), "u1", ["T"]) == "a_b_c_d_u1.mp4"
+end

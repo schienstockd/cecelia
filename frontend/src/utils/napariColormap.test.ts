@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { napariColormapHex } from './napariColormap'
+import { napariColormapHex, CHANNEL_COLORMAP_OPTIONS } from './napariColormap'
 
 describe('napariColormapHex', () => {
   it('maps single-hue channel colormaps', () => {
@@ -26,5 +26,15 @@ describe('napariColormapHex', () => {
     expect(napariColormapHex('')).toBeNull()
     expect(napariColormapHex(null)).toBeNull()
     expect(napariColormapHex(undefined)).toBeNull()
+  })
+})
+
+describe('CHANNEL_COLORMAP_OPTIONS (batch-movie swatch palette)', () => {
+  it('every option has a valid napari colormap value + a real hex swatch (single source of truth)', () => {
+    expect(CHANNEL_COLORMAP_OPTIONS.length).toBeGreaterThan(0)
+    for (const o of CHANNEL_COLORMAP_OPTIONS) {
+      expect(o.hex).toMatch(/^#[0-9a-f]{6}$/i)
+      expect(o.hex).toBe(napariColormapHex(o.value))   // derived from NAPARI_COLORMAP_HEX, not a copy
+    }
   })
 })
