@@ -1002,9 +1002,11 @@ function api_napari_overlay_legend(body_bytes::Vector{UInt8})
     cby = [Dict{String,Any}("value" => k, "colour" => colours[k], "label" => get(labels, k, k))
            for k in sort(collect(keys(colours)))]
 
-    # population point-pop legend: name + colour from each requested pop's map
+    # population legend: name + colour from each requested pop's map — points AND track/track-cluster
+    # ribbons. Entries that aren't a named population (e.g. the whole-segmentation "/_tracked" layer) fail
+    # `pop_at` and are skipped, so only real pops get a legend row.
     pops = Vector{Dict{String,Any}}()
-    req  = get(data, :pointPops, nothing)
+    req  = get(data, :overlayPops, nothing)
     if req !== nothing
         for pp in req
             vn = String(get(pp, :valueName, ""))

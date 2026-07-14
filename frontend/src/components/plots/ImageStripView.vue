@@ -112,14 +112,16 @@ async function capture(i: number) {
     // encoded in the snapshot's layer names). Per the open image's set.
     c.colourBy = props.setUid ? settings.getColourBy(props.setUid) : ''
     // capture the overlay legend (pops + colour-by) for this frame — read-only, durable (drawn below the
-    // channel legend). Point-pops parsed from the snapshot's overlay layer names.
+    // channel legend). ALL pop overlays (points AND track/track-cluster ribbons) are sent, parsed from
+    // the snapshot's overlay layer names; the backend skips any that aren't a named population (e.g. the
+    // whole-segmentation "/_tracked" layer), so track-cluster + gated track pops get legend entries too.
     if (c.imageUid) {
-      const pointPops = parseOverlays(c.snapshot?.layers as Record<string, unknown>)
-        .filter(o => !o.isTrack).map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
+      const overlayPops = parseOverlays(c.snapshot?.layers as Record<string, unknown>)
+        .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
       try {
         const lr = await fetch('/api/napari/overlay-legend', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, pointPops }),
+          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, overlayPops }),
         })
         if (lr.ok) {
           const j = await lr.json() as OverlaysLegend & { ok?: boolean }
@@ -309,7 +311,7 @@ defineExpose({ exportImage })
         <TeleportPopover v-model="optsOpen" :anchor="gearEl" placement="bottom-end">
           <div class="is-pop">
             <label class="is-check"><input type="checkbox" :checked="showLegend"
-              @change="showLegend = ($event.target as HTMLInputElement).checked" /> channel legend</label>
+              @change="showLegend = ($event.target as HTMLInputElement).checked" /> legend (channels · pops · colour-by)</label>
             <label class="is-check" v-tooltip.bottom="'Hide napari\'s scale bar + timestamp when capturing, for a clean publication still (add your own externally)'">
               <input type="checkbox" :checked="settings.cleanCapture"
               @change="settings.cleanCapture = ($event.target as HTMLInputElement).checked" /> clean capture</label>
