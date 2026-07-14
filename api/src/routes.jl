@@ -366,6 +366,16 @@ function api_projects_load(body_bytes::Vector{UInt8})
     sets     = [_set_payload(s) for s in proj_obj._sets]
 
     # Analysis-canvas boards saved with the project (settings/); null when none saved yet.
+    # Animation page: captured view snapshots (settings/animations.json). Sidecar PNGs live in the same
+    # board-assets/ store as the board strip (shared capture path), so this JSON stays small.
+    animations = nothing
+    anim_file = joinpath(_settings_dir_for_project(uid), "animations.json")
+    if isfile(anim_file)
+        try; animations = JSON3.read(read(anim_file, String)); catch e
+            @warn "Could not read animations" uid exception=e
+        end
+    end
+
     boards = nothing
     boards_file = joinpath(_settings_dir_for_project(uid), "analysisBoards.json")
     if isfile(boards_file)
@@ -397,7 +407,7 @@ function api_projects_load(body_bytes::Vector{UInt8})
     end
 
     @info "Opened project" name=get(project, "name", "?") uid sets=length(sets)
-    200, JSON3.write((; project, sets, boards, moduleCanvases))
+    200, JSON3.write((; project, sets, boards, moduleCanvases, animations))
 end
 
 # POST /api/projects/boards  { projectUid, boards: { tabs, layouts } }
@@ -419,6 +429,29 @@ function api_projects_boards(body_bytes::Vector{UInt8})
         try
             settings = _settings_dir_for_project(uid); mkpath(settings)
             open(joinpath(settings, "analysisBoards.json"), "w") do io; JSON3.write(io, boards); end
+        catch e
+            return 500, JSON3.write((; error=sprint(showerror, e)))
+        end
+    end
+    200, JSON3.write((; ok=true))
+end
+
+# POST /api/projects/animations  { projectUid, animations }
+# Debounced AUTOSAVE of the Animation page's captured view snapshots → settings/animations.json. The
+# frame PNGs are sidecar files (board-assets/, shared with the board strip), so this JSON stays small.
+# Mirrors api_projects_boards. Opaque frontend JSON, stored verbatim.
+function api_projects_animations(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error="Project not found: $uid"))
+    animations = get(body, :animations, nothing)
+    if animations !== nothing
+        try
+            settings = _settings_dir_for_project(uid); mkpath(settings)
+            open(joinpath(settings, "animations.json"), "w") do io; JSON3.write(io, animations); end
         catch e
             return 500, JSON3.write((; error=sprint(showerror, e)))
         end
