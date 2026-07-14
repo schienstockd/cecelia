@@ -84,9 +84,10 @@ end
 
 projects_dir()::String = _cfg_dir("projects", "/path/to/projects")
 
-# Resolve the bioformats2raw launcher: explicit config override → bundled copy (vendored into
-# release bundles; Java comes from the Pixi env) → PATH → the (likely-missing) default. Run via
-# `pixi run` so the bundled `bioformats2raw` script finds `java`. See docs/SHIPPING.md.
+# Resolve the bioformats2raw launcher: explicit config override → the copy the installer fetched
+# alongside the app (`<install>/bioformats2raw/`; ~190 MB, so downloaded at install time rather than
+# shipped in the release bundle — Java comes from the Pixi env) → PATH → the (likely-missing)
+# default. Run via `pixi run` so the `bioformats2raw` script finds `java`. See docs/SHIPPING.md.
 function bioformats2raw_bin()::String
     exe = Sys.iswindows() ? "bioformats2raw.bat" : "bioformats2raw"
     d   = get(get(cecelia_conf(), "dirs", Dict{String,Any}()), "bioformats2raw", "")
