@@ -1,10 +1,10 @@
 # Analysis figures & movies (animation)
 
-Status (updated 2026-07-14): **mostly shipped.** A, B, D, G, F1 (all of F1.1–F1.3) and F2 (MVP +
-render engine + timeline editor) are **merged**. **C is partial** (channel legend live; the populations
-+ colour-by legend sections still to wire into the strip). **E is the only fully-open phase**
-(scale bar / timestamp for stills). Supersedes the ad-hoc parts of the image-strip tasks
-(#00032 legend, #00036 zoom-to-source) by putting them on a shared foundation.
+Status (updated 2026-07-14): **nearly complete.** A, B, D, E, G, F1 (all of F1.1–F1.3) and F2 (MVP +
+render engine + timeline editor) are **done/merged**. **C is the only remaining partial** — the channel
+legend is live; the populations + colour-by legend sections still need wiring into the strip. Supersedes
+the ad-hoc parts of the image-strip tasks (#00032 legend, #00036 zoom-to-source) by putting them on a
+shared foundation.
 
 ## Goal
 
@@ -119,7 +119,7 @@ first-class, named, portable artifact.
 **A → D → B + C → G → F1 → E → F2.** A/B/C/D land value fast; F1 is the headline user win and
 matches how figures are actually made; F2 is the advanced follow-on.
 
-**Progress:** ~~A~~ · ~~B~~ · C (partial) · ~~D~~ · ~~G~~ · ~~F1~~ · **E (open)** · ~~F2~~.
+**Progress:** ~~A~~ · ~~B~~ · **C (partial — only piece left)** · ~~D~~ · ~~G~~ · ~~F1~~ · ~~E~~ · ~~F2~~.
 
 - **~~A. Snapshot atom~~ — DONE** — `capture_view_state()` + `apply_view_state(json)` in the bridge
   (whitelist + sanitise + only-present-layers filter); capture folded into the screenshot reply;
@@ -139,10 +139,18 @@ matches how figures are actually made; F2 is the advanced follow-on.
   the data extent at native resolution → no black margins). D2: the strip went `object-fit: contain`
   (letterbox) so a scale bar / timestamp isn't cropped (E2's own vector scale bar will let frames go
   edge-to-edge again).
-- **E. Scale bar / timestamp for stills** — **the one open phase.** E1 clean-capture toggle (hide the
-  napari scale bar + timestamp for the shot); E2 (stretch) Cecelia-drawn **vector** scale bar (N µm +
-  label) + timestamp beneath the frame, from `img_physical_sizes` + time interval. (Movies may keep
-  baked overlays — this is specifically for publication stills; see Decision 7.)
+- **~~E. Scale bar / timestamp for stills~~ — DONE.**
+  - **~~E1 clean-capture toggle~~ — DONE:** `save_screenshot(clean=True)` hides napari's baked scale bar
+    + timestamp for the shot (restored after); threaded `POST /api/napari/screenshot {clean}` → the
+    persisted **"clean capture"** toggle in the image-strip ⚙ (`settings.cleanCapture`). Scoped to stills
+    (animation keyframes keep the timestamp). See docs/NAPARI.md → *Clean capture*.
+  - **~~E2 vector scale bar + timestamp~~ — DONE:** the screenshot reply carries `extent_um` (data shape ×
+    `_im_scale`; `export_figure` tight-fits to the data extent → the frame's physical size). The strip
+    draws its own crisp scale bar + elapsed-time timestamp on the clean capture via `StillOverlay.vue` —
+    an SVG whose `viewBox` is the extent (µm) with `preserveAspectRatio="xMidYMid meet"` (matches the
+    frame's `object-fit: contain`), so geometry is correct even when letterboxed. Toggled per strip in
+    the ⚙. `utils/stillOverlay` (`niceScaleBar`, `elapsedLabel` — shared with the timeline), unit-tested.
+    (Movies keep baked overlays — this is specifically for publication stills; see Decision 7.)
 - **~~G. Split-by-feature colouring~~ — DONE** — colour napari tracks/labels by a categorical measure
   (`/api/napari/colour-labels`, show-tracks `colorBy`); a value a population *filters for* takes that
   pop's colour (`_colour_overrides_for`/`pop_colour_overrides`), else Okabe–Ito; user recolours +

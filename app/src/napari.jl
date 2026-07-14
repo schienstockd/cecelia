@@ -185,11 +185,12 @@ load_layer_props!(v::NapariViewer, path::String) =
 # (captured atomically with the shot). The caller reads the PNG from `path` and the snapshot from the
 # returned dict's "view_state".
 save_screenshot!(v::NapariViewer, path::String; canvas_only::Bool=true, fit_data::Bool=true,
-                 scale::Union{Real,Nothing}=nothing)::Dict{String,Any} = begin
+                 scale::Union{Real,Nothing}=nothing, clean::Bool=false)::Dict{String,Any} = begin
     cmd = Dict{String,Any}("type"=>"save_screenshot", "path"=>path,
-                           "canvas_only"=>canvas_only, "fit_data"=>fit_data)
+                           "canvas_only"=>canvas_only, "fit_data"=>fit_data, "clean"=>clean)
     # fit_data → tight-fit to the data extent at `scale`× native resolution (no black margins); scale
     # only meaningful with fit_data (plain-screenshot scale would just add margins, so it's not sent).
+    # clean → hide napari's baked scale bar + timestamp for the shot (E1, publication stills).
     scale !== nothing && (cmd["scale"] = scale)
     send(v, cmd)
 end

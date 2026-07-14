@@ -196,6 +196,32 @@ class NapariState:
         except Exception:
             return None
 
+    def _data_extent_um(self):
+        """Physical (µm) size of the full data extent along x and y, from data shape × per-axis scale.
+        `export_figure` tight-fits the capture to the data extent, so this IS the captured frame's
+        physical width/height — the frontend draws a correct vector scale bar from it (Phase E2). Returns
+        `{"x": w, "y": h, "unit": …}` or None if scale/axes unknown. `_im_scale`/display axes exclude the
+        channel axis and share order, so the same index selects a shape value and its scale."""
+        if not self._axes or not self._im_data or self._im_scale is None:
+            return None
+        try:
+            low   = [a.lower() for a in self._axes]
+            disp  = [a for a in low if a != "c"]                              # matches _im_scale order
+            shape = self._im_data[0].shape
+            shape_noc = [s for i, s in enumerate(shape) if i != self._channel_axis]
+            out = {}
+            for ax in ("x", "y"):
+                if ax in disp:
+                    j = disp.index(ax)
+                    if j < len(shape_noc) and j < len(self._im_scale):
+                        out[ax] = float(shape_noc[j]) * float(self._im_scale[j])
+            if "x" not in out or "y" not in out:
+                return None
+            out["unit"] = self._im_units[0] if self._im_units else None
+            return out
+        except Exception:
+            return None
+
     def _setup_timestamp(self, path: str):
         """For timecourse data (a `t` axis), show an elapsed-time text overlay (top-left) that updates
         as the t slider moves — `t_index × frame_interval`, formatted H:MM:SS. The frame interval is
@@ -1037,7 +1063,8 @@ class NapariState:
 
     # ── Screenshot ────────────────────────────────────────────────────────────
 
-    def save_screenshot(self, path: str, canvas_only: bool = True, scale=1, fit_data: bool = True):
+    def save_screenshot(self, path: str, canvas_only: bool = True, scale=1, fit_data: bool = True,
+                        clean: bool = False):
         """Capture the canvas to `path`.
 
         `fit_data=True` (default) uses napari's `export_figure`: it tightly re-fits the view to the
@@ -1048,11 +1075,29 @@ class NapariState:
         restores the previous camera afterwards, so the view snapshot captured alongside is unaffected.
 
         `fit_data=False` captures the current canvas as-shown (a plain canvas screenshot). Falls back to
-        that if there are no layers to fit."""
-        if fit_data and len(self._viewer.layers) > 0:
-            self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
-        else:
-            self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+        that if there are no layers to fit.
+
+        `clean=True` (Phase E1) hides napari's baked scale bar + timestamp overlay for the shot and
+        restores them after — a clean still for publication (add a vector scale bar / timestamp in
+        Illustrator, or Cecelia's own; see ANIMATION_PLAN.md Decision 7)."""
+        sb_was = ts_was = None
+        if clean:
+            try: sb_was = self._viewer.scale_bar.visible;    self._viewer.scale_bar.visible = False
+            except Exception: sb_was = None
+            try: ts_was = self._viewer.text_overlay.visible; self._viewer.text_overlay.visible = False
+            except Exception: ts_was = None
+        try:
+            if fit_data and len(self._viewer.layers) > 0:
+                self._viewer.window.export_figure(path=path, scale=float(scale or 1), flash=False)
+            else:
+                self._viewer.window.screenshot(path, canvas_only=canvas_only, flash=False)
+        finally:
+            if sb_was is not None:
+                try: self._viewer.scale_bar.visible = sb_was
+                except Exception: pass
+            if ts_was is not None:
+                try: self._viewer.text_overlay.visible = ts_was
+                except Exception: pass
 
     def record_timelapse(self, path: str, fps: int = 15, canvas_only: bool = True,
                          scale=1, t_start: int = 0, t_end=None):
@@ -1367,10 +1412,13 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
 
         elif t == "save_screenshot":
             state.save_screenshot(cmd["path"], canvas_only=cmd.get("canvas_only", True),
-                                  scale=cmd.get("scale", 1), fit_data=cmd.get("fit_data", True))
+                                  scale=cmd.get("scale", 1), fit_data=cmd.get("fit_data", True),
+                                  clean=cmd.get("clean", False))
             # fold the view snapshot into the reply so a screenshot and its provenance are captured
-            # atomically (same view) — one round trip, no camera-moved-between-calls skew.
-            return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}
+            # atomically (same view) — one round trip, no camera-moved-between-calls skew. `extent_um` =
+            # the captured frame's physical size (for a vector scale bar on the still, Phase E2).
+            return {"type": "ok", "cmd": t, "view_state": state.capture_view_state(),
+                    "extent_um": state._data_extent_um()}
 
         elif t == "capture_view_state":
             return {"type": "ok", "cmd": t, "view_state": state.capture_view_state()}

@@ -356,12 +356,13 @@ function api_napari_screenshot(body_bytes::Vector{UInt8})
     data = try JSON3.read(String(body_bytes)) catch; nothing end
     project_uid = data === nothing ? "" : String(get(data, :projectUid, ""))
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    clean = data === nothing ? false : Bool(get(data, :clean, false))   # E1: hide baked scale bar/timestamp
     path = tempname() * ".png"
     _with_viewer() do
     try
         # fit_data → tight-fit to the data extent at native resolution: no black margins, and the figure
         # matches the viewer (image fills the frame) instead of a tiny image in a big black canvas.
-        reply    = save_screenshot!(v, path; fit_data = true)
+        reply    = save_screenshot!(v, path; fit_data = true, clean = clean)
         # store the PNG as a SIDECAR file (settings/board-assets/<id>.png), not base64 in the board JSON,
         # so analysisBoards.json stays small (autosave-friendly). Return only the id + snapshot.
         asset_id = _save_board_asset_file(project_uid, path)
@@ -369,6 +370,7 @@ function api_napari_screenshot(body_bytes::Vector{UInt8})
             assetId   = asset_id,
             viewState = get(reply, "view_state", Dict{String,Any}()),
             imageUid  = _current_image_uid[],
+            extentUm  = get(reply, "extent_um", nothing),   # captured frame physical size → still scale bar (E2)
         ))
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
