@@ -358,5 +358,40 @@ class TestRecordTimelapse(unittest.TestCase):
                                           t_axis_index=0, n_timepoints=1)
 
 
+class TestRecordKeyframes(unittest.TestCase):
+    """Keyframe animation render — apply each saved view + capture with `steps` tween frames from the
+    previous. Napari-free: stub the Animation class and apply_view_state."""
+
+    def _run(self, keyframes):
+        anim = TestRecordTimelapse._FakeAnim  # reuse the fake Animation (records keyframe steps)
+        anim.instances = []
+        applied = []
+        orig_a = napari_utils._require_napari_animation
+        orig_v = napari_utils.apply_view_state
+        napari_utils._require_napari_animation = lambda: anim
+        napari_utils.apply_view_state = lambda viewer, vs: applied.append(vs)
+        try:
+            n = napari_utils.record_keyframes(object(), '/tmp/a.mp4', keyframes, fps=12)
+        finally:
+            napari_utils._require_napari_animation = orig_a
+            napari_utils.apply_view_state = orig_v
+        return n, anim.instances[0], applied
+
+    def test_applies_each_view_and_tweens_from_previous(self):
+        n, anim, applied = self._run([
+            {'viewState': {'a': 1}},                 # first: starts the sequence (steps ignored)
+            {'viewState': {'a': 2}, 'steps': 10},
+            {'viewState': {'a': 3}, 'steps': 5},
+        ])
+        self.assertEqual(applied, [{'a': 1}, {'a': 2}, {'a': 3}])   # every view applied, in order
+        self.assertEqual(anim.keyframe_steps, [15, 10, 5])          # first default; then per-keyframe tween
+        self.assertEqual(anim.animated[1]['fps'], 12)
+        self.assertEqual(n, 10 + 5 + 1)                            # tween frames (skip first) + 1
+
+    def test_needs_two_keyframes(self):
+        with self.assertRaises(ValueError):
+            napari_utils.record_keyframes(object(), '/tmp/a.mp4', [{'viewState': {}}])
+
+
 if __name__ == '__main__':
     unittest.main()
