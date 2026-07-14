@@ -88,7 +88,7 @@ async function load() {
     const out: { group: string; state: string; freq: number }[] = []
     for (const s of r.series ?? []) {
       const g = labelOf(s)
-      cats.value.forEach((c, i) => out.push({ group: g, state: `state ${c}`, freq: (s.values ?? [])[i] ?? 0 }))
+      cats.value.forEach((c, i) => out.push({ group: g, state: `${c}`, freq: (s.values ?? [])[i] ?? 0 }))
     }
     rows.value = out
     render()
@@ -112,7 +112,7 @@ async function render() {
   const fg = effDark.value ? '#e6e6e6' : '#111'
   const bg = effDark.value ? '#1f2226' : 'white'
   // palette knob → explicit colours for the state levels; 'standard' (null) keeps a categorical scheme
-  const domain = cats.value.map(c => `state ${c}`)
+  const domain = cats.value.map(c => `${c}`)
   const range = paletteRange(o, domain.length)
   const colorScale = range ? { domain, range } : { scheme: 'Tableau10', domain }
   // NB: no inline `legend` — that wraps the chart in a <figure> whose swatch legend sits on a white

@@ -15,7 +15,8 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import type { PlotDataResponse, PlotSeries, ChartType } from './types'
+import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell } from './types'
+import { rescaleRows01 } from '../utils/heatmapScale'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
@@ -39,12 +40,15 @@ export function backendChart(c: ChartType): { chartType: string; rawPoints?: boo
 // colourblind-safe) and Paul Tol's qualitative schemes. 'standard' = the population manager colours
 // (per-pop `colorOf`); the others assign by series order; 'user' = a comma-separated custom list.
 export const PALETTES: Record<string, string[]> = {
+  // the house palette ported from the old R behaviour figures (behaviourDTx.Rmd colPal + accents) — the
+  // cluster colours lead (yellow / steel-blue / crimson / grey, matching the published UMAPs).
+  'cecelia': ['#EBD441', '#4682B4', '#AA1F5E', '#B3BCC2', '#009FE3', '#E71D73', '#00C5FF', '#616161'],
   'okabe-ito': ['#E69F00', '#56B4E9', '#009E73', '#F0E442', '#0072B2', '#D55E00', '#CC79A7', '#000000'],
   'tol-bright': ['#4477AA', '#EE6677', '#228833', '#CCBB44', '#66CCEE', '#AA3377', '#BBBBBB'],
   'tol-muted': ['#88CCEE', '#44AA99', '#117733', '#332288', '#DDCC77', '#999933', '#CC6677', '#882255', '#AA4499'],
   'tol-light': ['#77AADD', '#EE8866', '#EEDD88', '#FFAABB', '#99DDFF', '#44BB99', '#BBCC33', '#AAAA00'],
 }
-export type PaletteName = 'standard' | 'distinct' | 'okabe-ito' | 'tol-bright' | 'tol-muted' | 'tol-light' | 'user'
+export type PaletteName = 'standard' | 'distinct' | 'cecelia' | 'okabe-ito' | 'tol-bright' | 'tol-muted' | 'tol-light' | 'user'
 
 // N visually-distinct colours by even HCL-ish hue spacing (port of R randomcoloR::distinctColorPalette
 // intent — deterministic here so it's stable across renders). Golden-angle hue rotation, fixed S/L.
@@ -86,6 +90,9 @@ export interface VisProps {
   labX: string                               // x-axis label override (R labX)
   labY: string                               // y-axis label override (R labY)
   fontSize: number                           // base font size px (R adjFontSize; one knob, see note)
+  // heatmap (profile) look — ports the old R heat plots (behaviourDTx.Rmd / plotHeatmaps.R)
+  heatmapScale?: 'minmax' | 'zscore'         // per-feature min-max→[0,1] (viridis, R default) vs z-score (diverging)
+  heatmapValues?: boolean                    // print the value in each cell (default off for profile, matches R)
 }
 // Colour range for a categorical axis of `n` levels from the chosen palette (R adjustColors). Returns
 // an explicit colour list, or `null` for 'standard' — meaning "no palette override, use your default
@@ -111,6 +118,7 @@ export const defaultVis = (): VisProps => ({
   jitter: 'beeswarm', pointSize: 2, pointOpacity: 0.5, colorData: true,
   legend: true, logScale: false, grid: false, rotateXLabel: false, rotateXAngle: 45, rotate: false, darkTheme: true, facet: false,
   yMin: '', yMax: '', palette: 'standard', userColors: '', title: '', labX: '', labY: '', fontSize: 11,
+  heatmapScale: 'minmax', heatmapValues: false,
 })
 
 export interface BuildOpts extends VisProps {
@@ -375,56 +383,83 @@ export function buildPlotOptions(Plot: PlotModule, r: PlotDataResponse, o: Build
 }
 
 // ── matrix / heatmap (Plot.cell) ──────────────────────────────────────────────────
-// One pooled grid: xLabels × yLabels, fill = cell value. PROFILE (measures × category) uses a
-// sequential viridis scale, or a diverging RdBu pivoted at 0 when z-scored (rows standardised, so 0 =
-// the row mean — diverging reads "above/below average"). CROSSTAB (transition matrix) uses viridis.
-// Value text is overlaid per cell (white/black chosen for contrast). The continuous colour legend is
-// stashed in `_colorLegend` for PlotChart to draw as an overlay (like the discrete legend).
+// One pooled grid: xLabels × yLabels. PROFILE (measures × category) ports the old R heat plots
+// (behaviourDTx.Rmd / plotHeatmaps.R): each FEATURE (row) is min-max rescaled to [0,1] and shown on a
+// sequential viridis scale (`heatmapScale='minmax'`, the default) — a clean per-feature "low→high
+// across clusters" readout with a 0–1 colourbar. `heatmapScale='zscore'` instead keeps the raw
+// (server-standardised) values on a diverging RdBu pivoted at 0 ("above/below the row mean"). NB the
+// two agree on ordering — z-score is a positive affine per-row transform, so rescaling z-scores per
+// row gives the same [0,1] as rescaling the raw means; minmax works regardless of the fetch's zscore
+// flag. CROSSTAB (transition matrix) keeps viridis over the data range.
+// In-cell value text is off by default for profile (matches R) and on for crosstab; `heatmapValues`
+// overrides. The continuous colour legend is stashed in `_colorLegend` for PlotChart to draw.
 function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Record<string, unknown> | null {
   const cells = (r.cells ?? []).filter(c => Number.isFinite(c.value))
   if (!cells.length) return null
   const fg = o.darkTheme ? '#e6e6e6' : '#111'
   const bg = o.darkTheme ? '#1f2226' : 'white'
-  const diverging = r.matrixMode === 'profile' && !!r.zscore
+  const profile = r.matrixMode !== 'crosstab'
+  const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
+  const diverging = profile && !useMinmax   // z-score display → diverging RdBu
   const valLabel = r.valueLabel ?? 'value'
-  // colour scale: diverging pivots at 0 (z-score); else sequential viridis from the data range.
+  // per-feature (row) min-max → [0,1] (rescaleRows01, tested in utils); attach as `norm` on a COPY so
+  // the fill uses it while the tooltip/label still read the original value, and r.cells is untouched.
+  const drawCells: (MatrixCell & { norm?: number })[] = useMinmax
+    ? rescaleRows01(cells).map((norm, i) => ({ ...cells[i], norm }))
+    : cells
+  const fillCh = useMinmax ? 'norm' : 'value'
+  // colour scale: minmax → viridis over a fixed [0,1] (no legend title, like the R heat plots);
+  // z-score → diverging RdBu pivoted at 0; crosstab → sequential viridis over the data range.
   const vals = cells.map(c => c.value)
-  const colorScale: Record<string, unknown> = diverging
-    ? { scheme: 'rdbu', pivot: 0, reverse: true, label: valLabel }
-    : { scheme: 'viridis', label: valLabel,
-        domain: [Math.min(...vals), Math.max(...vals)] }
+  const colorScale: Record<string, unknown> = useMinmax
+    ? { scheme: 'viridis', domain: [0, 1] }
+    : diverging
+      ? { scheme: 'rdbu', pivot: 0, reverse: true, label: valLabel }
+      : { scheme: 'viridis', label: valLabel, domain: [Math.min(...vals), Math.max(...vals)] }
   // contrast ink for the value text: for viridis, light cells (high end) get dark text. Cheap split
   // at the scale midpoint (good enough — the labels are a readout, not a precise encoding).
   const lo = Math.min(...vals), hi = Math.max(...vals), mid = (lo + hi) / 2
-  const textInk = (c: { value: number }) =>
-    diverging ? '#111' : (c.value > mid ? '#111' : '#eee')
-  const xLab = r.matrixMode === 'crosstab' ? 'to' : (r.category ?? null)
+  const textInk = (c: { value: number; norm?: number }) =>
+    diverging ? '#111' : useMinmax ? ((c.norm ?? 0) > 0.5 ? '#111' : '#eee') : (c.value > mid ? '#111' : '#eee')
+  // profile heatmaps blank the category axis title (R uses xlab("")/ylab("")); crosstab keeps to/from.
+  const xLab = r.matrixMode === 'crosstab' ? 'to' : null
   const yLab = r.matrixMode === 'crosstab' ? 'from' : null
+  const showValues = o.heatmapValues ?? (r.matrixMode === 'crosstab')
+  // tile border: white (R's geom_tile colour="white") — a thin gap that reads on both the dark ground
+  // and the white export; never black (that framed every cell too heavily).
+  const tileStroke = '#ffffff'
   const valFmt = (c: { value: number }) => fmt(c.value)
   const tip = (c: { x: string; y: string; value: number; n?: number; count?: number }) =>
     `${r.matrixMode === 'crosstab' ? `${c.y} → ${c.x}` : `${c.y} · ${c.x}`}\n${valLabel}: ${fmt(c.value)}` +
     (c.count != null ? `\nn ${c.count}` : c.n != null ? `\nn ${c.n}` : '')
   // reserve a top band for the colour-ramp legend (drawn top-right as an overlay) so it never covers
   // the top row of cells — and a touch more when a title (top-left) shares the band.
-  const topPad = o.legend ? (o.title ? 52 : 46) : (o.title ? 34 : 12)
+  const topPad = o.legend ? (o.title ? 44 : 38) : (o.title ? 28 : 8)
   // left margin fits the longest y tick label (feature names like "live.track.meanTurningAngle" were
   // clipped at a fixed 120). MEASURE the rendered width so it fits exactly (a char-count estimate
-  // over-reserved → a big left gap); +14 for the tick mark + gap, clamped so it never eats the plot.
+  // over-reserved → a big left gap); +12 for the tick mark + gap, clamped so it never eats the plot.
   const longestYW = (r.yLabels ?? []).reduce((m, s) => Math.max(m, textWidth(String(s), o.fontSize || 11)), 0)
-  const marginLeft = Math.round(Math.min(260, Math.max(48, longestYW + 14)))
+  const marginLeft = Math.round(Math.min(240, Math.max(40, longestYW + 12)))
   const opts: Record<string, unknown> = {
-    ...THEME, marginLeft, marginBottom: 64, marginTop: topPad, marginRight: 16,
+    // tight margins (R heat plots are compact — fig.height 2 × width 4)
+    ...THEME, marginLeft, marginBottom: 48, marginTop: topPad, marginRight: 8,
     style: { background: bg, color: fg, fontFamily: FONT, fontSize: `${o.fontSize || 11}px` },
     x: { domain: r.xLabels ?? [], label: o.labX || xLab, tickRotate: o.rotateXLabel ? xTickRotate(o) : 0 },
     y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
     color: colorScale,
     marks: [
-      Plot.cell(cells, { x: 'x', y: 'y', fill: 'value', inset: 0.5, stroke: bg, strokeWidth: 0.5,
+      Plot.cell(drawCells, { x: 'x', y: 'y', fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
                          title: tip, tip: true }),
-      Plot.text(cells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) }),
+      ...(showValues
+        ? [Plot.text(drawCells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
+        : []),
+      // theme_classic L-shaped axis: a black (theme-ink) line on the left + bottom, matching the other
+      // charts (Observable Plot draws ticks/labels but no domain line for band scales).
+      Plot.frame({ anchor: 'bottom', stroke: 'currentColor', strokeWidth: 1 }),
+      Plot.frame({ anchor: 'left', stroke: 'currentColor', strokeWidth: 1 }),
     ],
   }
-  if (o.rotateXLabel) opts.marginBottom = xRotMargin(84, o)
+  if (o.rotateXLabel) opts.marginBottom = xRotMargin(72, o)
   // continuous legend (PlotChart draws it as an overlay, reading `_colorLegend`)
   ;(opts as Record<string, unknown>)._colorLegend = { color: colorScale }
   return opts

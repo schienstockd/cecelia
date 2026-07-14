@@ -29,7 +29,7 @@ const props = defineProps<{
   // the reload watch fires when the cluster→pop assignment changes (membership changes, same path).
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]
   vis?: VisProps                 // canvas plot styling (dark-theme etc.) — see ClusterPlots panelVis
-  state: { features?: string[] }
+  state: { features?: string[]; heatmapScale?: 'minmax' | 'zscore'; heatmapValues?: boolean }
   docked?: boolean               // fill a grid slot (Analysis board) instead of free-floating
 }>()
 const emit = defineEmits<{ activate: [number]; remove: []; duplicate: [] }>()
@@ -50,8 +50,15 @@ const loading = ref(false)
 const err = ref('')
 // merge the canvas vis (dark-theme, font size, legend, …) over the defaults so the pop-manager
 // styling knobs drive the heatmap too; the matrix-specific fields below stay fixed regardless.
+// scale/annotation controls (persisted in panel state) — default to the R look: per-feature 0–1
+// viridis, no in-cell numbers. `zscore` flips to the diverging above/below-mean view.
+const heatmapScale = computed<'minmax' | 'zscore'>({
+  get: () => props.state.heatmapScale ?? 'minmax', set: v => (props.state.heatmapScale = v) })
+const heatmapValues = computed<boolean>({
+  get: () => props.state.heatmapValues ?? false, set: v => (props.state.heatmapValues = v) })
 const opts = computed<BuildOpts>(() => ({
   ...defaultVis(), ...(props.vis ?? {}), chartType: 'heatmap', byImage: false, normalize: false, errorMetric: 'sd', colorOf: () => '#8888aa',
+  heatmapScale: heatmapScale.value, heatmapValues: heatmapValues.value,
 }))
 const label = (raw: string) => props.nameMap[raw] ?? raw
 
@@ -130,6 +137,14 @@ defineExpose({ exportImage, getCsv })
           <p v-if="!featureOptions.length" class="feat-empty">No recorded features — re-run clustering, or this run predates feature tracking.</p>
         </div>
       </details>
+      <select v-model="heatmapScale" class="hm-sel"
+              v-tooltip.bottom="'Colour scale: 0–1 rescales each feature to its min→max (viridis); z-score shows above/below the feature mean (diverging)'">
+        <option value="minmax">0–1</option>
+        <option value="zscore">z-score</option>
+      </select>
+      <label class="hm-chk" v-tooltip.bottom="'Print the value in each cell'">
+        <input type="checkbox" v-model="heatmapValues" /> values
+      </label>
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->
     <template #footer>
@@ -162,6 +177,8 @@ defineExpose({ exportImage, getCsv })
   background: var(--cc-surface-1); border: 1px solid var(--cc-border); border-radius: 5px; padding: 5px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); }
 .feat-row { display: flex; align-items: center; gap: 5px; padding: 2px 3px; color: var(--cc-text); white-space: nowrap; }
 .feat-empty { color: var(--cc-text-dim); font-size: 11px; margin: 4px; }
+.hm-sel { font-size: 12px; margin-left: 6px; }
+.hm-chk { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--cc-text-dim); margin-left: 6px; cursor: pointer; }
 .hm-iconbtn { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem;
   border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-1);
   color: var(--cc-text-dim); cursor: pointer; font-size: 0.7rem; }
