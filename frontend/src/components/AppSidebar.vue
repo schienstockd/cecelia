@@ -4,7 +4,6 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
 import ProjectPanel from './ProjectPanel.vue'
-import ViewerPanel from './ViewerPanel.vue'
 import ConfirmButton from './ConfirmButton.vue'
 
 const projectMeta = useProjectMetaStore()
@@ -152,12 +151,17 @@ function isNavDisabled(item: NavItem): boolean {
       </template>
     </template>
 
-    <!-- ── Viewer ──────────────────────────────────────────────────────── -->
-    <button class="group-heading" @click="toggleGroup('Viewer')">
-      <span>Viewer</span>
-      <i :class="['pi', isOpen('Viewer') ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />
+    <!-- ── Viewer ──────────────────────────────────────────────────────────
+         The viewer controls are a floating dockable panel (see App.vue / FloatingPanel), not a
+         sidebar section. This is a prominent call-to-action button (it drives most napari controls —
+         populations, tracks, colour-by — so it must be noticeable), not a dim group heading. -->
+    <button class="viewer-cta" :class="{ 'viewer-on': settings.viewerPanelOpen }"
+            @click="settings.viewerPanelOpen = !settings.viewerPanelOpen"
+            v-tooltip.right="'Napari viewer controls: populations, tracks, colour-by. Floating panel — drag it anywhere.'">
+      <i class="pi pi-sliders-h viewer-cta-icon" />
+      <span class="viewer-cta-title">Viewer controls</span>
+      <i :class="['pi', settings.viewerPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
     </button>
-    <ViewerPanel v-if="isOpen('Viewer')" />
 
     <!-- ── Footer: Settings on the left; app controls (quit / restart) on the right ──────────
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
@@ -282,6 +286,28 @@ function isNavDisabled(item: NavItem): boolean {
 }
 .group-heading:hover { color: var(--cc-text); }
 .group-chevron { font-size: 0.55rem; opacity: 0.6; }
+/* Viewer controls: a prominent call-to-action (it drives most napari controls, so it must stand out
+   from the dim nav headings — a bordered, filled button with a title + subtitle). */
+.viewer-cta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: calc(100% - 1rem);
+  margin: 0.6rem 0.5rem 0.2rem;
+  padding: 0.5rem 0.6rem;
+  background: var(--cc-surface-2);
+  border: 1px solid var(--cc-border);
+  border-radius: 0.4rem;
+  cursor: pointer;
+  color: var(--cc-text);
+  text-align: left;
+  transition: background 0.1s, border-color 0.1s, color 0.1s;
+}
+.viewer-cta:hover { border-color: #7c3aed; background: #241a44; }
+.viewer-cta.viewer-on { background: #2d1b69; border-color: #7c3aed; color: #ddd6fe; }
+.viewer-cta-icon { font-size: 0.95rem; color: #a78bfa; flex-shrink: 0; }
+.viewer-cta-title { flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 700; }
+.viewer-cta-state { font-size: 0.8rem; opacity: 0.75; flex-shrink: 0; }
 
 /* ── Nav items ────────────────────────────────────────────────────────────── */
 .nav-item {

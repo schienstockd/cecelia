@@ -6,6 +6,8 @@ import { useSettingsStore } from './stores/settings'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
+import FloatingPanel from './components/FloatingPanel.vue'
+import ViewerPanel from './components/ViewerPanel.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -54,6 +56,12 @@ const bare = computed(() => route.meta.bare === true)
         </RouterView>
       </main>
     </div>
+    <!-- napari viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
+         floating above the content so it's usable on any page while an image is open in napari -->
+    <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
+                   @close="settings.viewerPanelOpen = false">
+      <ViewerPanel />
+    </FloatingPanel>
     <ErrorConsole />
   </div>
 </template>

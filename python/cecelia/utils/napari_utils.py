@@ -146,6 +146,45 @@ def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colorm
   return viewer.add_tracks(tracks, **kw)
 
 
+# ── Categorical vs numeric obs column (the shared colour-by rule) ──────────────
+# Up to this many distinct integer levels reads as a categorical code set; above that an integer
+# column is a numeric count. MUST match Julia ``_MAX_CATEGORICAL_LEVELS``
+# (app/src/tracking/track_props.jl) so napari colour-by, the plots and the pop manager all agree.
+MAX_CATEGORICAL_LEVELS = 20
+
+
+def is_categorical_column(column, uniq):
+  """Whether an obs ``column`` (with distinct finite numeric values ``uniq``) is a categorical code
+  set. Mirrors Julia ``_is_categorical_col`` (app/src/tracking/track_props.jl) — the ONE rule, shared
+  so tracks/labels colour-by matches the rest of the app:
+
+    • ``clusters`` / ``clusters.*`` → always categorical (name-rule: a high-resolution run can exceed
+      the level cap, but cluster codes are never a count);
+    • otherwise an all-integer column with ≤ ``MAX_CATEGORICAL_LEVELS`` distinct levels
+      (e.g. ``hmm.state`` ∈ {1,2,3}).
+
+  Non-numeric columns (strings / anndata categoricals) are categorical too, but the caller detects
+  those before reaching here (they factorise to codes); this handles the numeric case."""
+  if column == 'clusters' or column.startswith('clusters.'):
+    return True
+  uniq = np.asarray(uniq)
+  return len(uniq) <= MAX_CATEGORICAL_LEVELS and np.allclose(uniq, np.round(uniq))
+
+
+def broadcast_track_to_cells(cell_track_ids, track_labels, track_values):
+  """Map each cell's ``track_id`` to its track's value (``track_labels[i] -> track_values[i]``) so a
+  TRACK-level obs column (e.g. ``clusters.*`` from clustTracks) can colour cells + track vertices by
+  the cell's track cluster/population. Cells with no / zero / absent track_id → ``np.nan`` (untracked
+  → grey). Returns an object array aligned to ``cell_track_ids``. Ports R ``split_tracks``' colour-by
+  -cluster; the bridge's colour-by uses it when a column is absent from the cell table."""
+  tmap = {int(l): v for l, v in zip(track_labels, track_values)}
+  out = np.empty(len(cell_track_ids), dtype=object)
+  for i, t in enumerate(cell_track_ids):
+    ok = t is not None and not (isinstance(t, float) and t != t) and int(t) > 0   # t != t → NaN
+    out[i] = tmap.get(int(t), np.nan) if ok else np.nan
+  return out
+
+
 # ── View snapshot (the "view state" atom) ─────────────────────────────────────
 # A durable, JSON-safe description of a viewer: camera + dims (incl. the T/Z slider) + each layer's
 # display props, all as SETTABLE SCALAR values (colormap by NAME, enums as strings, arrays as lists).

@@ -2076,6 +2076,45 @@ end
         @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
     end
 
+    @testset "colour_by_palette — pop colour else default" begin
+        # a value a user pop FILTERS for on the column → that pop's colour; the rest → OKABE_ITO by
+        # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is
+        # just a filter on clusters.{suffix}).
+        m = PopulationMap(pop_type="clust", value_name="B")
+        add_pop!(m, "directed";   filter_measure="clusters.mov", filter_fun="in", filter_values=[2],       colour="#ff1493")
+        add_pop!(m, "crawling";   filter_measure="clusters.mov", filter_fun="in", filter_values=[0, 3, 4], colour="#ffd700")
+        add_pop!(m, "unrelated";  filter_measure="clusters.other", filter_fun="in", filter_values=[1],     colour="#000001")
+
+        pal = colour_by_palette(m, "clusters.mov", [0, 1, 2, 3, 4])
+        @test pal[2] == "#ff1493"                 # user pop colour
+        @test pal[0] == "#ffd700" && pal[3] == "#ffd700" && pal[4] == "#ffd700"
+        @test pal[1] == OKABE_ITO[1]              # uncovered value 1 → first default
+        # a pop filtering a DIFFERENT column never leaks its colour in
+        @test pal[1] != "#000001"
+
+        # numeric tolerance: a filter value stored as 2.0 still matches integer column value 2
+        m3 = PopulationMap(pop_type="clust", value_name="B")
+        add_pop!(m3, "d"; filter_measure="clusters.mov", filter_fun="in", filter_values=[2.0], colour="#abcdef")
+        @test colour_by_palette(m3, "clusters.mov", [2])[2] == "#abcdef"
+
+        # no matching pop → all default, by sorted position (stable)
+        empty = PopulationMap(pop_type="clust", value_name="B")
+        p2 = colour_by_palette(empty, "clusters.mov", [5, 3, 3, 1])
+        @test p2[1] == OKABE_ITO[1] && p2[3] == OKABE_ITO[2] && p2[5] == OKABE_ITO[3]
+
+        # pop_colour_overrides: string-keyed {value => hex} for the wire (2.0/2 → "2"); only pops on
+        # the column contribute; no default fill (the bridge does that).
+        ov = pop_colour_overrides(m, "clusters.mov")
+        @test ov == Dict("2" => "#ff1493", "0" => "#ffd700", "3" => "#ffd700", "4" => "#ffd700")
+        @test pop_colour_overrides(m3, "clusters.mov") == Dict("2" => "#abcdef")   # 2.0 → "2"
+        @test isempty(pop_colour_overrides(m, "clusters.absent"))
+
+        # pop_label_overrides: same keying, value → the POP NAME (so the legend reads "directed", not "2")
+        lbl = pop_label_overrides(m, "clusters.mov")
+        @test lbl == Dict("2" => "directed", "0" => "crawling", "3" => "crawling", "4" => "crawling")
+        @test isempty(pop_label_overrides(m, "clusters.absent"))
+    end
+
     # ── Summary-canvas population picker (plot_pop_types / plot_population_groups) ──
     # The logic the /api/plots/populations route delegates to — pure, so tested here (the route is a
     # thin wrapper). Covers granularity→pop_type selection, cross-image + cross-pop_type union/dedup,

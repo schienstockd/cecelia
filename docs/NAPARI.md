@@ -506,6 +506,48 @@ state, a `live.track.*` measure, a cluster id) instead of their defaults. Ports 
   (`_labels_orig_cmap`) so `column=""` **resets** it. Routes: `POST /api/napari/colour-labels`
   (labels) and the `colorBy` field on `POST /api/napari/show-tracks`.
 
+**Categorical vs numeric — one shared rule.** Whether a column colours *categorically* (per-level
+palette) or *continuously* (viridis) is decided by **`napari_utils.is_categorical_column`**, the
+Python mirror of Julia `_is_categorical_col` (`app/src/tracking/track_props.jl`) — `clusters`/
+`clusters.*` are always categorical (name-rule), else an all-integer column with ≤ 20 distinct
+levels. Keeping this in the shared helper (not a bridge-local `≤12` heuristic) means napari, the
+plots and the pop manager never disagree on a column's type — e.g. a >12-cluster `clusters.*` column
+now renders as discrete clusters, not a viridis gradient.
+
+**Population colours + legend.** For a categorical colour-by, a value that a **user population
+filters for** on that column takes **that population's colour**; the rest get Okabe–Ito defaults
+(`colour_overrides` computed by `_colour_overrides_for` in `napari_api.jl` from the canonical
+`colour_by_palette`/`pop_colour_overrides` — see `docs/POPULATION.md`). Both `colour-labels` and
+`show-tracks` **return a `legend` `{value → hex}`**; the ViewerPanel shows it under the dropdown.
+Because `colour_labels` returns an empty legend when no Labels layer is shown, the **tracks** response
+is the legend source when colouring tracks alone — the UI merges whichever arrives.
+
+The legend response also carries **`legendLabels` `{value → population name}`** (`_pop_labels_for` ←
+`pop_label_overrides`) so the ViewerPanel legend reads the **population name** (e.g. "Meandering")
+instead of the raw category value, and **dedupes by population** — one population defined by several
+category values (e.g. two clusters) collapses to a single legend row (they share the pop's colour).
+
+**Editable colours (categories with no population).** Values *not* covered by a population have no
+colour defined anywhere, so the legend swatch for them is a native colour input — clicking it recolours
+that category. The choice persists per **set + column** (`settings.colourByOverrides`) and is sent back
+as `colourOverrides` on the next `show-tracks` / `colour-labels`; `_merge_user_overrides!` layers it on
+top of the pop colours (user wins) before the bridge builds the colormap. Pop-backed rows show a static
+swatch (their colour is the population's — edit it in the population manager). A "reset" link clears the
+column's overrides.
+
+**Track-level columns (colour tracks by their cluster/population).** A column absent from the cell
+table but present in the **track** table (`{value_name}__tracks.h5ad` — e.g. `clusters.*` from
+clustTracks) is read there (keyed by track_id) and **broadcast to each cell via its `track_id`**
+(`_read_track_level_column` → `napari_utils.broadcast_track_to_cells`). Every cell of a track gets the
+track's value, so the whole track is flat-coloured by its cluster/population and cells are shaded by
+their track's cluster; untracked cells (no/zero track_id) → NaN → grey. This is the point of colouring
+by track cluster — *see which population a track is from* — and ports R `split_tracks` (which drew one
+flat-coloured layer per cluster) as a single step-coloured layer. The **"Colour by" dropdown offers
+these**: `/api/gating/channels` returns `trackColourColumns` (the track table's `clusters.*`) alongside
+the cell `obsColumns`, and ViewerPanel merges both. Override pops are scanned across **all** pop types
+(`clust`/`flow`/`track`/`trackclust`) so a trackclust pop's colour applies whether you're colouring the
+labels or the tracks.
+
 > **Future (Leiden track clustering phase):** the old `show_tracks(split_tracks=…)` rendered ONE
 > layer per *cluster* value (each a flat colour, independently toggle-able) — that is for clustering
 > whole tracks, **not** the per-timepoint colour-by here. A code note in `show_tracks` marks where

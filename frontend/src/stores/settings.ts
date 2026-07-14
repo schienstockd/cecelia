@@ -43,6 +43,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // to free up working space. Both default expanded, both persist across sessions.
   const sidebarCollapsed = ref(localStorage.getItem('cc.sidebarCollapsed') === 'true')
   const rightPanelCollapsed = ref(localStorage.getItem('cc.rightPanelCollapsed') === 'true')
+  // the napari Viewer controls are a floating dockable panel (not a sidebar section) — this is its
+  // open/closed state, toggled from the sidebar "Viewer" button. Off by default (opt-in, no intrusion).
+  const viewerPanelOpen = ref(localStorage.getItem('cc.viewerPanelOpen') === 'true')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
   // unknown labels default to true; persisted across sessions
@@ -90,6 +93,11 @@ export const useSettingsStore = defineStore('settings', () => {
     showGatedTracks?: boolean               // overlay gated track populations
     pointSize?: number                      // population centroid point size in napari
     popVis?: Record<string, boolean>        // per-popType point-overlay visibility (flow/clust/track/trackclust)
+    // user recolouring of a categorical colour-by, keyed by column then category value → hex. For
+    // categories with no population (HMM states, raw clusters) there's no colour defined anywhere, so
+    // the user can override the default palette; these win over pop/default when colouring. Per-column
+    // so different colour-by columns keep independent schemes.
+    colourByOverrides?: Record<string, Record<string, string>>
   }
   const _setPrefs = ref<Record<string, NapariSetPrefs>>(
     JSON.parse(localStorage.getItem('cc.napariSetPrefs') ?? '{}')
@@ -111,6 +119,18 @@ export const useSettingsStore = defineStore('settings', () => {
   function setPopVisible(setUid: string, popType: string, v: boolean) {
     _patchSet(setUid, { popVis: { ...(_setPrefs.value[setUid]?.popVis ?? {}), [popType]: v } })
   }
+  // user colour-by recolouring, per column: {value → hex}
+  const getColourOverrides = (setUid: string, column: string): Record<string, string> =>
+    _setPrefs.value[setUid]?.colourByOverrides?.[column] ?? {}
+  function setColourOverride(setUid: string, column: string, value: string, hex: string) {
+    const all = _setPrefs.value[setUid]?.colourByOverrides ?? {}
+    _patchSet(setUid, { colourByOverrides: { ...all, [column]: { ...(all[column] ?? {}), [value]: hex } } })
+  }
+  function clearColourOverrides(setUid: string, column: string) {
+    const all = { ...(_setPrefs.value[setUid]?.colourByOverrides ?? {}) }
+    delete all[column]
+    _patchSet(setUid, { colourByOverrides: all })
+  }
 
   watch(taskListAutoFollow,       v => localStorage.setItem('cc.taskListAutoFollow',       String(v)))
   watch(autoRefreshOnTask,        v => localStorage.setItem('cc.autoRefreshOnTask',        String(v)))
@@ -121,6 +141,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(napariDiscreteGpu,        v => localStorage.setItem('cc.napariDiscreteGpu',        String(v)))
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
+  watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides }
 })

@@ -324,12 +324,19 @@ function api_gating_channels(req::HTTP.Request)
     versions = Dict{String,Any}(
         v => channel_names(img; value_name = v) for v in versioned_keys(img.im_channel_names))
     display = get(versions, _matching_channel_version(versions, length(chans)), String[])
+    # TRACK-level cluster columns (clusters.* in `{vn}__tracks.h5ad`, written by clustTracks). These
+    # aren't in the cell obs, but the napari colour-by broadcasts them to cells via track_id so you can
+    # colour tracks by their cluster/population (see docs/NAPARI.md). Offered alongside cell obs columns.
+    tpath = img_track_props_path(img, vn)
+    trackObs = isfile(tpath) ? col_names(label_props(tpath); data_type = :obs) : String[]
+    trackColourColumns = String[c for c in trackObs if startswith(c, "clusters.")]
     200, JSON3.write((;
         columns = cols,
         channels = chans,
         channelNames = display === nothing ? String[] : display,
         channelNameVersions = versions,
         obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
+        trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
         temporalColumns = temporal_columns(lp),          # obsm temporal col(s) (e.g. "t") — groupable for the per-timepoint QC view
         clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
         clusterFeatures = _clust_features(img_label_props_path(img, vn)),

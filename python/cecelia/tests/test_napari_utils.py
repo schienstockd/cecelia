@@ -262,5 +262,58 @@ class ApplyViewStateTest(unittest.TestCase):
         self.assertEqual(dst.dims.current_step, (4, 0, 0))     # clamped to nsteps-1
 
 
+class TestIsCategoricalColumn(unittest.TestCase):
+    """The shared colour-by categorical rule — MUST stay in step with Julia `_is_categorical_col`
+    (app/src/tracking/track_props.jl): clusters.* name-rule, else integer with ≤20 levels."""
+
+    def test_clusters_name_rule_always_categorical(self):
+        # a high-resolution cluster run exceeds the level cap, but codes are never a count
+        many = np.arange(50, dtype=float)
+        self.assertTrue(napari_utils.is_categorical_column('clusters', many))
+        self.assertTrue(napari_utils.is_categorical_column('clusters.default', many))
+        self.assertTrue(napari_utils.is_categorical_column('clusters.tracks', np.array([0., 1.])))
+
+    def test_small_integer_set_is_categorical(self):
+        self.assertTrue(napari_utils.is_categorical_column('live.cell.hmm.state', np.array([1., 2., 3.])))
+
+    def test_level_cap_boundary(self):
+        self.assertTrue(napari_utils.is_categorical_column('some.count', np.arange(20, dtype=float)))
+        self.assertFalse(napari_utils.is_categorical_column('some.count', np.arange(21, dtype=float)))
+
+    def test_continuous_is_numeric(self):
+        # non-integer floats → numeric
+        self.assertFalse(napari_utils.is_categorical_column('live.cell.speed',
+                                                            np.array([0.1, 1.2, 3.14, 9.9])))
+        # wide integer spread (e.g. area / neighbour counts, >20 distinct levels) → numeric.
+        # NB few integer levels (even {10, 250, 1200}) ARE categorical by the rule — only the level
+        # count matters for integer columns, not the spread.
+        self.assertFalse(napari_utils.is_categorical_column('area', np.arange(0., 100., 2.0)))
+
+
+class TestBroadcastTrackToCells(unittest.TestCase):
+    """Colour cells by their TRACK's value (clusters.* broadcast) — the track↔cell join behind
+    'colour tracks by their cluster/population' (ports R split_tracks)."""
+
+    def test_broadcasts_track_value_to_its_cells(self):
+        # tracks 1→cluster 0, 2→cluster 1; cells carry track_id
+        out = napari_utils.broadcast_track_to_cells(
+            np.array([1, 1, 2, 2, 2]), np.array([1, 2]), np.array([0, 1]))
+        self.assertEqual(list(out), [0, 0, 1, 1, 1])
+
+    def test_untracked_and_missing_are_nan(self):
+        # track_id 0 (untracked), NaN, and an id absent from the track table → NaN
+        out = napari_utils.broadcast_track_to_cells(
+            np.array([0.0, np.nan, 1.0, 99.0]), np.array([1, 2]), np.array([7, 8]))
+        self.assertTrue(np.isnan(float(out[0])))          # track_id 0 → untracked
+        self.assertTrue(np.isnan(float(out[1])))          # NaN track_id
+        self.assertEqual(out[2], 7)                       # track 1 → 7
+        self.assertTrue(np.isnan(float(out[3])))          # track 99 not in table
+
+    def test_string_track_values_preserved(self):
+        out = napari_utils.broadcast_track_to_cells(
+            np.array([1, 2, 1]), np.array([1, 2]), np.array(['A', 'B'], dtype=object))
+        self.assertEqual(list(out), ['A', 'B', 'A'])
+
+
 if __name__ == '__main__':
     unittest.main()
