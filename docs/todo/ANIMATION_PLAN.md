@@ -124,6 +124,10 @@ matches how figures are actually made; F2 is the advanced follow-on.
   a button reopens the image + applies the snapshot. Durable across sessions.
 - **C. Strip legend (#00032)** *(needs A, G)* — render channel + population/feature colours (swatch +
   name / µm) below each frame, from the snapshot; toggle in the ⚙ popover.
+  - **Backbone DONE (S1):** the shared legend model `utils/viewLegend.ts` (`LegendSection`,
+    `channelLegend`, `viewLegendSections`) + presentational `components/ViewLegend.vue`, reused by the
+    image strip (channel section, live now) and the animation page. Populations + colour-by sections
+    plug into the same model once the snapshot carries them (next). Unit-tested (`viewLegend.test.ts`).
 - **D. Capture quality** *(independent, quick)* — D1 hi-res screenshot (`scale`/`size` on
   `viewer.screenshot`); D2 fix edge clipping (strip `object-fit: cover` → `contain`/match aspect, so
   scale bar/timestamp aren't cropped).
