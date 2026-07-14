@@ -231,6 +231,24 @@ the **napari Viewer controls** are its first consumer — mounted in `App.vue`, 
 - Rationale: the viewer controls grew (populations, tracks, colour-by + legend) and crowded the left
   nav; a floating panel frees the nav and lets you place the controls beside the napari window.
 
+## View legend — `ViewLegend` + `utils/viewLegend`
+
+The shared **legend backbone** for describing what a napari view shows as colour swatches — image
+**channels** (by colormap), **populations**, and a categorical **colour-by**. One model, many consumers
+(the analysis-board image strip, the animation page, later movie overlays), so a colour reads the same
+everywhere.
+
+- **`utils/viewLegend.ts`** (pure, unit-tested) — `LegendItem`/`LegendSection` types; `channelLegend(layers)`
+  (visible single-hue channel layers → swatches, via `napariColormap.ts`); `viewLegendSections({channels,
+  populations, colourBy})` (drops empty groups, stable channel→pop→colour-by order).
+- **`components/ViewLegend.vue`** — presentational: renders `LegendSection[]` as grouped swatches.
+  Style-light (text inherits `color`, sizes with parent `font-size`), so each host styles it via its
+  container (e.g. the image-strip overlay makes it white-on-dark). Section headings show only when there
+  is more than one section.
+
+The viewer panel's **colour-by** legend is deliberately NOT this component — it's an *editor*
+(recolourable swatches), not a static legend.
+
 ## Pinia array reactivity
 
 Use `splice()` to mutate arrays in place inside setup stores.

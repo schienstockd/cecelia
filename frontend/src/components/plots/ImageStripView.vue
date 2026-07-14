@@ -13,7 +13,8 @@ import { ref, computed, watch, useTemplateRef, nextTick, onMounted, onUnmounted 
 import { elementToImageURL } from '../../plots/export'
 import TeleportPopover from '../TeleportPopover.vue'
 import { useWsStore } from '../../stores/ws'
-import { napariColormapHex } from '../../utils/napariColormap'
+import { channelLegend, viewLegendSections } from '../../utils/viewLegend'
+import ViewLegend from '../ViewLegend.vue'
 
 const ws = useWsStore()
 
@@ -80,18 +81,12 @@ async function capture(i: number) {
   finally { capturing.value = -1 }
 }
 
-// channel-colour legend for a frame, from its snapshot's napari layers: visible layers whose colormap
-// is a single-hue channel colour (skips continuous maps / labels / tracks). See docs/todo/ANIMATION_PLAN.md C.
-interface LegendItem { name: string; hex: string }
-function legendFor(c: Cell): LegendItem[] {
+// per-frame legend, built on the shared view-legend backbone (utils/viewLegend + <ViewLegend>). Today
+// it derives the CHANNEL section from the frame's snapshot layers; populations + colour-by sections plug
+// into the same model once the snapshot carries them. See docs/todo/ANIMATION_PLAN.md C.
+function legendSections(c: Cell) {
   const layers = (c.snapshot?.layers ?? {}) as Record<string, { colormap?: string; visible?: boolean }>
-  const out: LegendItem[] = []
-  for (const [name, l] of Object.entries(layers)) {
-    if (l?.visible === false) continue
-    const hex = napariColormapHex(l?.colormap)
-    if (hex) out.push({ name, hex })
-  }
-  return out
+  return viewLegendSections({ channels: channelLegend(layers) })
 }
 
 // resolve a cell's <img> src: during PDF export, the inlined data URL (html2canvas can't draw a served
@@ -266,12 +261,9 @@ defineExpose({ exportImage })
     <div ref="stripRef" class="is-strip" :class="[orientation === 'h' ? 'row' : 'col', separator, { capturing: capturingStrip }]" :style="stripStyle">
       <div v-for="(c, i) in cells" :key="i" class="is-cell" :style="{ clipPath: clipFor(i) }">
         <img v-if="c.assetId || c.src" :src="cellSrc(c)" class="is-img" alt="napari screenshot" />
-        <!-- optional channel-colour legend (swatch + channel name), from the frame's snapshot -->
-        <div v-if="showLegend && (c.assetId || c.src) && legendFor(c).length" class="is-legend">
-          <span v-for="it in legendFor(c)" :key="it.name" class="is-legend-item">
-            <span class="is-swatch" :style="{ background: it.hex }" />{{ it.name }}
-          </span>
-        </div>
+        <!-- optional view legend (channels now; pops + colour-by plug in later), from the frame snapshot -->
+        <ViewLegend v-if="showLegend && (c.assetId || c.src) && legendSections(c).length"
+                    :sections="legendSections(c)" :swatch="9" class="is-legend" />
         <button v-if="!(c.assetId || c.src)" class="is-capture" @click="capture(i)" :disabled="capturing === i"
                 v-tooltip.bottom="'Capture the current napari view'">
           <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
@@ -307,13 +299,12 @@ defineExpose({ exportImage })
 .is-slider { display: inline-flex; align-items: center; gap: 4px; color: var(--cc-text-dim); font-size: 11px; }
 .is-slider input[type="range"] { width: 4.5rem; }
 .is-check { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim); font-size: 11px; }
-/* channel-colour legend: swatch + channel name, overlaid bottom-left of the frame (z above the
-   auto-hide toolbar like the caption/actions); included in the PDF export (not hidden while capturing). */
-.is-legend { position: absolute; bottom: 6px; left: 6px; display: flex; flex-direction: column; gap: 2px;
-  padding: 3px 5px; border-radius: 3px; background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7; }
-.is-legend-item { display: flex; align-items: center; gap: 4px; color: #fff; font-size: 10px;
-  font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); white-space: nowrap; }
-.is-swatch { width: 9px; height: 9px; border-radius: 2px; flex-shrink: 0; }
+/* view legend (shared <ViewLegend>): overlaid bottom-left of the frame (z above the auto-hide toolbar
+   like the caption/actions); included in the PDF export (not hidden while capturing). The container
+   sets the on-image styling (white text, shadow, dark chip); ViewLegend inherits color + font-size. */
+.is-legend { position: absolute; bottom: 6px; left: 6px; padding: 3px 5px; border-radius: 3px;
+  background: rgba(0,0,0,0.45); pointer-events: none; z-index: 7;
+  color: #fff; font-size: 10px; font-weight: 600; text-shadow: 0 1px 2px rgba(0,0,0,0.85); }
 .is-strip { flex: 1; min-height: 0; display: flex; padding: 6px; gap: 0; overflow: auto; }
 .is-strip.col { flex-direction: column; }
 /* straight: no box around each frame — just a thin rule BETWEEN frames */
