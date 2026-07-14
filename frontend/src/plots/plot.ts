@@ -15,7 +15,8 @@
 //
 // buildPlotOptions takes the Plot module as a parameter so this module carries no eager dependency
 // on @observablehq/plot (PlotChart.vue lazy-imports it and passes it in).
-import type { PlotDataResponse, PlotSeries, ChartType } from './types'
+import type { PlotDataResponse, PlotSeries, ChartType, MatrixCell } from './types'
+import { rescaleRows01 } from '../utils/heatmapScale'
 
 // charts valid for each measure type (panel intersects with the spec's allowed `chartTypes`)
 export const NUMERIC_CHARTS: ChartType[] = ['histogram', 'boxplot', 'violin', 'bar', 'strip']
@@ -401,20 +402,11 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
   const useMinmax = profile && (o.heatmapScale ?? 'minmax') === 'minmax'
   const diverging = profile && !useMinmax   // z-score display → diverging RdBu
   const valLabel = r.valueLabel ?? 'value'
-  // per-feature (row) min-max → [0,1]; store as `norm` so the fill uses it while the tooltip/label
-  // still read the original value. Flat rows (max == min) sit mid-scale.
-  if (useMinmax) {
-    const rng = new Map<string, [number, number]>()
-    for (const c of cells) {
-      const e = rng.get(c.y)
-      if (!e) rng.set(c.y, [c.value, c.value])
-      else { if (c.value < e[0]) e[0] = c.value; if (c.value > e[1]) e[1] = c.value }
-    }
-    for (const c of cells as { y: string; value: number; norm?: number }[]) {
-      const [lo, hi] = rng.get(c.y)!
-      c.norm = hi > lo ? (c.value - lo) / (hi - lo) : 0.5
-    }
-  }
+  // per-feature (row) min-max → [0,1] (rescaleRows01, tested in utils); attach as `norm` on a COPY so
+  // the fill uses it while the tooltip/label still read the original value, and r.cells is untouched.
+  const drawCells: (MatrixCell & { norm?: number })[] = useMinmax
+    ? rescaleRows01(cells).map((norm, i) => ({ ...cells[i], norm }))
+    : cells
   const fillCh = useMinmax ? 'norm' : 'value'
   // colour scale: minmax → viridis over a fixed [0,1] (no legend title, like the R heat plots);
   // z-score → diverging RdBu pivoted at 0; crosstab → sequential viridis over the data range.
@@ -456,10 +448,10 @@ function buildHeatmap(Plot: PlotModule, r: PlotDataResponse, o: BuildOpts): Reco
     y: { domain: [...(r.yLabels ?? [])].reverse(), label: o.labY || yLab },   // first row at the top
     color: colorScale,
     marks: [
-      Plot.cell(cells, { x: 'x', y: 'y', fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
+      Plot.cell(drawCells, { x: 'x', y: 'y', fill: fillCh, inset: 0.5, stroke: tileStroke, strokeWidth: 0.5,
                          title: tip, tip: true }),
       ...(showValues
-        ? [Plot.text(cells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
+        ? [Plot.text(drawCells, { x: 'x', y: 'y', text: valFmt, fill: textInk, fontSize: Math.max(8, (o.fontSize || 11) - 2) })]
         : []),
       // theme_classic L-shaped axis: a black (theme-ink) line on the left + bottom, matching the other
       // charts (Observable Plot draws ticks/labels but no domain line for band scales).
