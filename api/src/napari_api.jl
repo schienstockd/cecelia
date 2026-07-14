@@ -435,6 +435,41 @@ function api_napari_record_timelapse(body_bytes::Vector{UInt8})
     end
 end
 
+# ── REST: POST /api/napari/record-animation ───────────────────────────────────
+# Render an interpolated keyframe animation (the timeline's ordered view snapshots) to an mp4 under the
+# project's movies/ dir. `keyframes` = [{viewState, steps}] in play order; each tweened `steps` frames
+# from the previous (camera/contrast/colour/T interpolation). F2 of the batch-movie work.
+function api_napari_record_animation(body_bytes::Vector{UInt8})
+    data        = JSON3.read(String(body_bytes))
+    project_uid = String(get(data, :projectUid, ""))
+    image_uid   = String(get(data, :imageUid, ""))
+    fps         = Int(get(data, :fps, 15))
+    keyframes   = get(data, :keyframes, nothing)
+    (keyframes === nothing || length(keyframes) < 2) &&
+        return 400, JSON3.write((; error = "need at least 2 keyframes"))
+    img, err = _gating_image(project_uid, image_uid)
+    err === nothing || return err
+
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+
+    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
+    mkpath(movies_dir)
+    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
+    path = joinpath(movies_dir, (isempty(safe) ? image_uid : safe) * "_animation.mp4")
+
+    _with_viewer() do
+        try
+            resp = record_keyframes!(v, path, keyframes; fps = fps)
+            200, JSON3.write((; ok = true, path = path,
+                frames = get(resp, "frames", 0), keyframes = get(resp, "keyframes", 0)))
+        catch e
+            @warn "record_keyframes failed" exception = e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 # ── REST: POST /api/napari/restart ────────────────────────────────────────────
 
 function api_napari_restart(body_bytes::Vector{UInt8})

@@ -155,10 +155,17 @@ matches how figures are actually made; F2 is the advanced follow-on.
     `animations.json` (`/api/projects/animations`, autosaved via `stores/animation.ts`); a gallery of
     snapshots each with its **`ViewLegend`** (S1 backbone) + a **Record movie** button (apply the
     snapshot to the open image → `record_timelapse`, enabled when that image is open).
-  - **Next:** feed populations + colour-by into the snapshot (so the legend is elaborate and the strip
-    reuses it); editable per-snapshot config (colours, fps, T-range); then the keyframe sequence
-    (ordered snapshots + per-transition duration/easing → napari-animation `Animation` → encode) and
-    batch across images.
+  - **Render engine DONE:** `napari_utils.record_keyframes` (apply each keyframe's `viewState` → capture
+    with `steps` tween frames from the previous → animate) + bridge + `record_keyframes!` +
+    `POST /api/napari/record-animation`. Interpolates camera/contrast/colour/T. Offscreen smoke-tested
+    (zoom + colormap tween → valid mp4); unit-tested.
+  - **Timeline editor (building):** a **row/track matrix** — columns = keyframes (captured `viewState`s
+    + duration), rows = **channels · populations · camera**, all *inferred from each `viewState`*
+    (layers by type + camera). Capture establishes a base "look" (contrast/colormap/framing); keyframes
+    are copies varied via per-cell overrides (toggle `layer.visible`, camera). Data model stays "ordered
+    list of `viewState`s" (what the render engine eats). Rows are a projection; a cell edit mutates that
+    column's `viewState`. Decision (2026-07-14): **timeline, not a node graph** — a movie is 1-D, so the
+    graph's branching buys nothing; see the row-matrix sketch in the session notes.
 
 ## References
 
