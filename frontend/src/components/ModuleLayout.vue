@@ -60,6 +60,7 @@ const props = withDefaults(defineProps<{
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
   plotsLabel?:  string
   noSetHint?:   string
+  rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
 }>(), {
   allowManage: false,
   allowDelete: false,
@@ -74,6 +75,26 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   selectionChange: [uids: string[]]
 }>()
+
+// #right panel width — resizable + persisted per module (so TaskRunner, batch-movies, etc. all share
+// one resizable base). null → sizes to content (the historical behaviour) unless a default is given.
+const _rwKey = props.module ? `cc.rightw.${props.module}` : ''
+const _rwSaved = _rwKey ? localStorage.getItem(_rwKey) : null
+const rightWidth = ref<number | null>(_rwSaved ? Number(_rwSaved) : (props.rightDefaultWidth ?? null))
+function startResize(e: MouseEvent) {
+  e.preventDefault()
+  const startX = e.clientX
+  const panel = (e.currentTarget as HTMLElement).parentElement as HTMLElement
+  const startW = rightWidth.value ?? panel.offsetWidth
+  const onMove = (ev: MouseEvent) => { rightWidth.value = Math.max(200, Math.min(680, startW + (startX - ev.clientX))) }
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove)
+    document.removeEventListener('mouseup', onUp)
+    if (_rwKey && rightWidth.value) localStorage.setItem(_rwKey, String(Math.round(rightWidth.value)))
+  }
+  document.addEventListener('mousemove', onMove)
+  document.addEventListener('mouseup', onUp)
+}
 
 const project    = useProjectStore()
 const settings   = useSettingsStore()
@@ -345,8 +366,12 @@ const visibleUids = computed<string[]>(() =>
         </div>
       </div>
 
-      <!-- ── Right: module-specific panel (collapsible to free up space) ── -->
-      <div v-if="$slots.right" class="right-panel" :class="{ collapsed: settings.rightPanelCollapsed }">
+      <!-- ── Right: module-specific panel (collapsible + resizable) ── -->
+      <div v-if="$slots.right" class="right-panel" :class="{ collapsed: settings.rightPanelCollapsed }"
+           :style="(!settings.rightPanelCollapsed && rightWidth) ? { width: rightWidth + 'px' } : undefined">
+        <!-- drag the left edge to resize (persisted per module); shared by TaskRunner + every panel -->
+        <div v-if="!settings.rightPanelCollapsed" class="right-resizer" @mousedown="startResize"
+             v-tooltip.left="'Drag to resize'" />
         <button class="right-handle"
           @click="settings.rightPanelCollapsed = !settings.rightPanelCollapsed"
           v-tooltip.left="settings.rightPanelCollapsed ? 'Show functions panel' : 'Hide functions panel'"
@@ -414,7 +439,10 @@ const visibleUids = computed<string[]>(() =>
 }
 .right-handle:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 .right-handle .pi { font-size: 0.7rem; }
-.right-slot { display: flex; min-height: 0; overflow: hidden; }
+/* drag strip on the panel's left edge to resize (col-resize); thin, highlights on hover */
+.right-resizer { flex-shrink: 0; width: 5px; cursor: col-resize; background: transparent; transition: background 0.12s; }
+.right-resizer:hover { background: var(--cc-accent); }
+.right-slot { flex: 1; display: flex; min-width: 0; min-height: 0; overflow-y: auto; }
 
 .action-bar {
   display: flex;

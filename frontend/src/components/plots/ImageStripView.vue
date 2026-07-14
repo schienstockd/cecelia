@@ -118,10 +118,14 @@ async function capture(i: number) {
     if (c.imageUid) {
       const overlayPops = parseOverlays(c.snapshot?.layers as Record<string, unknown>)
         .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
+      // include the set's user recolours for this colour-by so the captured legend matches what's shown
+      // (a recoloured category — e.g. an HMM state with no population — wins over the default colour).
+      const colourOverrides = (props.setUid && c.colourBy)
+        ? settings.getColourOverrides(props.setUid, c.colourBy) : {}
       try {
         const lr = await fetch('/api/napari/overlay-legend', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, overlayPops }),
+          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, overlayPops, colourOverrides }),
         })
         if (lr.ok) {
           const j = await lr.json() as OverlaysLegend & { ok?: boolean }
@@ -225,7 +229,8 @@ async function onNapariOpened(payload: { imageUid?: string }) {
     // overlay layer names + the captured colour-by, so the overlays reappear as they were.
     const cfg = overlayPushConfig(parseOverlays(p.snapshot.layers as Record<string, unknown>))
     if (cfg.trackValueNames.length || cfg.showGatedTracks || cfg.showTrackclust || cfg.popTypes.length) {
-      await restoreOverlays(props.projectUid, p.imageUid, { ...cfg, colourBy: p.colourBy })
+      const pointsSize = props.setUid ? settings.getPointSize(props.setUid) : undefined
+      await restoreOverlays(props.projectUid, p.imageUid, { ...cfg, colourBy: p.colourBy, pointsSize })
     }
   } catch { /* best-effort restore */ }
 }

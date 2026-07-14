@@ -1008,13 +1008,21 @@ function api_napari_overlay_legend(body_bytes::Vector{UInt8})
     pops = Vector{Dict{String,Any}}()
     req  = get(data, :overlayPops, nothing)
     if req !== nothing
-        for pp in req
+        seen = Set{String}()   # dedupe by pop NAME — the same cluster/pop spans segmentations (one layer
+        for pp in req          # each) but is ONE population in the legend (no "Meandering" ×N).
             vn = String(get(pp, :valueName, ""))
             pt = String(get(pp, :popType, ""))
             path = String(get(pp, :path, ""))
             (isempty(vn) || isempty(pt)) && continue
+            # whole-segmentation "all tracks" overlay isn't a named pop → one generic grey "tracks" row
+            if endswith(path, "_tracked")
+                if !("tracks" in seen); push!(seen, "tracks"); push!(pops, Dict{String,Any}("name" => "tracks", "colour" => "#9ca3af")); end
+                continue
+            end
             try
                 p = pop_at(_live_map(img, vn, pt), path)
+                p.name in seen && continue
+                push!(seen, p.name)
                 push!(pops, Dict{String,Any}("name" => p.name, "colour" => p.colour))
             catch
                 # pop map / path unavailable → skip this entry

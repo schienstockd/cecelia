@@ -295,7 +295,7 @@ async function previewOpen() {
 </template>
 
 <style scoped>
-.bm { display: flex; flex-direction: column; gap: 7px; }
+.bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
 .bm-hint { color: var(--cc-text-dim); font-size: 0.78rem; margin: 2px 0; }
 .bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 6px;
   background: color-mix(in srgb, var(--cc-warn) 16%, transparent); border: 1px solid var(--cc-warn);
