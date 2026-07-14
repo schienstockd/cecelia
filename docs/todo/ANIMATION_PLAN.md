@@ -1,6 +1,9 @@
 # Analysis figures & movies (animation)
 
-Status: **planning** (no branch yet). Supersedes the ad-hoc parts of the image-strip tasks
+Status (updated 2026-07-14): **mostly shipped.** A, B, D, G, F1 (all of F1.1–F1.3) and F2 (MVP +
+render engine + timeline editor) are **merged**. **C is partial** (channel legend live; the populations
++ colour-by legend sections still to wire into the strip). **E is the only fully-open phase**
+(scale bar / timestamp for stills). Supersedes the ad-hoc parts of the image-strip tasks
 (#00032 legend, #00036 zoom-to-source) by putting them on a shared foundation.
 
 ## Goal
@@ -116,31 +119,42 @@ first-class, named, portable artifact.
 **A → D → B + C → G → F1 → E → F2.** A/B/C/D land value fast; F1 is the headline user win and
 matches how figures are actually made; F2 is the advanced follow-on.
 
-- **A. Snapshot atom** *(blocks all)* — settle the JSON schema; bridge `capture_view_state()` +
-  `apply_view_state(json)` (whitelist + sanitise + only-present-layers filter); fold capture into the
-  screenshot reply. Reuse/extend `save_layer_props`. Round-trip test (incl. colormap change).
-  *Checkpoint:* capture → JSON → apply restores camera + T/Z + contrast + colormap.
-- **B. Zoom-to-source (#00036)** *(needs A)* — strip cell stores `{imageUid, valueName, snapshot}`;
-  a button reopens the image + applies the snapshot. Durable across sessions.
+**Progress:** ~~A~~ · ~~B~~ · C (partial) · ~~D~~ · ~~G~~ · ~~F1~~ · **E (open)** · ~~F2~~.
+
+- **~~A. Snapshot atom~~ — DONE** — `capture_view_state()` + `apply_view_state(json)` in the bridge
+  (whitelist + sanitise + only-present-layers filter); capture folded into the screenshot reply;
+  round-trip tested (incl. colormap change). Camera + T/Z + contrast + colormap restore.
+- **~~B. Zoom-to-source (#00036)~~ — DONE** — each strip frame stores `{imageUid, valueName, snapshot}`;
+  `ImageStripView.zoomToSource` reopens the image + `POST /api/napari/apply-view-state` restores the
+  exact view. Durable across sessions.
 - **C. Strip legend (#00032)** *(needs A, G)* — render channel + population/feature colours (swatch +
   name / µm) below each frame, from the snapshot; toggle in the ⚙ popover.
-  - **Backbone DONE (S1):** the shared legend model `utils/viewLegend.ts` (`LegendSection`,
-    `channelLegend`, `viewLegendSections`) + presentational `components/ViewLegend.vue`, reused by the
-    image strip (channel section, live now) and the animation page. Populations + colour-by sections
-    plug into the same model once the snapshot carries them (next). Unit-tested (`viewLegend.test.ts`).
-- **D. Capture quality** *(independent, quick)* — D1 hi-res screenshot (`scale`/`size` on
-  `viewer.screenshot`); D2 fix edge clipping (strip `object-fit: cover` → `contain`/match aspect, so
-  scale bar/timestamp aren't cropped).
-- **E. Scale bar / timestamp for stills** — E1 clean-capture toggle (hide napari scale bar +
-  timestamp for the shot); E2 (stretch) Cecelia-drawn vector scale bar (N µm + label) + timestamp
-  beneath the frame, from `img_physical_sizes` + time interval.
-- **G. Split-by-feature colouring** *(feeds C, F1, F2)* — categorical measure → palette applied to
-  napari tracks/points; track pop inherits source-pop colour; surface the pop-manager palette into
-  overlays + legend. Builds on the existing colour-by-obs (`/api/napari/colour-labels`,
-  show-tracks `colorBy`).
-- **F1. Batch movie generation** *(needs A, G)* — author a config (table above) → apply per selected
-  image (contrast from saved props) → record T-sweep → attr-named `.mp4` per image. "Generate movies"
-  button; runs as a task (progress/cancel). *Checkpoint:* reproduce a `runAnimation.Rmd` example.
+  - **~~Backbone (S1)~~ + ~~channel section~~ — DONE:** the shared legend model `utils/viewLegend.ts`
+    (`LegendSection`, `channelLegend`, `viewLegendSections`) + `components/ViewLegend.vue`; the image
+    strip renders the **channel** section live from the frame's snapshot. Unit-tested.
+  - **LEFT:** wire the **populations + colour-by** legend sections into the strip (the model already has
+    `viewLegendSections({populations, colourBy})`; the snapshot needs to carry those, or fetch them per
+    frame). Only remaining piece of C.
+- **~~D. Capture quality~~ — DONE** — D1: the board screenshot uses napari `export_figure` (tight-fit to
+  the data extent at native resolution → no black margins). D2: the strip went `object-fit: contain`
+  (letterbox) so a scale bar / timestamp isn't cropped (E2's own vector scale bar will let frames go
+  edge-to-edge again).
+- **E. Scale bar / timestamp for stills** — **the one open phase.** E1 clean-capture toggle (hide the
+  napari scale bar + timestamp for the shot); E2 (stretch) Cecelia-drawn **vector** scale bar (N µm +
+  label) + timestamp beneath the frame, from `img_physical_sizes` + time interval. (Movies may keep
+  baked overlays — this is specifically for publication stills; see Decision 7.)
+- **~~G. Split-by-feature colouring~~ — DONE** — colour napari tracks/labels by a categorical measure
+  (`/api/napari/colour-labels`, show-tracks `colorBy`); a value a population *filters for* takes that
+  pop's colour (`_colour_overrides_for`/`pop_colour_overrides`), else Okabe–Ito; user recolours +
+  editable schemes for categories with no population (HMM states); legend returns pop-name labels,
+  deduped. Reused by the viewer panel, F1 batch, and F2.
+- **~~F1. Batch movie generation~~ — DONE** *(needs A, G)* — author a config (table above) → apply per
+  selected image (contrast from saved props) → record T-sweep → attr-named `.mp4` per image, on the
+  **Batch movies** page (`/batch-movies`). *Reproduces the `runAnimation.Rmd` pattern.*
+  - **CHANGED from the original sketch:** runs **not** as a scheduler task but as a WS-orchestrated
+    async loop on the single shared viewer (`movie:batch`), because napari is a UI-serial viewer in
+    `api/`, not pooled headless compute. Output is **attr-named** (`<attr…>_<uid>.mp4`), not the
+    `{uid}_{valueName}.mp4` the schema sketch showed.
   - **F1.1 — DONE.** The recording primitive: `napari_utils.record_timelapse` (keyframe→`animate`→mp4)
     + bridge `record_timelapse` + `POST /api/napari/record-timelapse` + a one-click "Record timelapse"
     button that records the open image's CURRENT view to `{project}/movies/{uid}_{valueName}.mp4`. See
@@ -161,23 +175,21 @@ matches how figures are actually made; F2 is the advanced follow-on.
     image). Frontend: the **Batch movies** page (`/batch-movies`, `BatchMoviesModule.vue`) — image
     multi-select + a config panel + Generate. NOT a scheduler task: napari is a single UI-serial viewer
     in `api/`, not pooled headless compute (see the runner-architecture decision, 2026-07-14).
-- **F2. Animation page** *(needs A; big)* — the durable/editable page under the Analysis nav.
-  - **MVP DONE (S2):** `/animation` route + nav entry; captures the current napari view as a **view
+- **~~F2. Animation page~~ — DONE** *(needs A; big)* — the durable/editable page under the Analysis nav.
+  - **~~MVP (S2)~~ — DONE:** `/animation` route + nav entry; captures the current napari view as a **view
     snapshot** (screenshot sidecar + view state, the same path as the board strip) into a per-project
     `animations.json` (`/api/projects/animations`, autosaved via `stores/animation.ts`); a gallery of
-    snapshots each with its **`ViewLegend`** (S1 backbone) + a **Record movie** button (apply the
-    snapshot to the open image → `record_timelapse`, enabled when that image is open).
-  - **Render engine DONE:** `napari_utils.record_keyframes` (apply each keyframe's `viewState` → capture
-    with `steps` tween frames from the previous → animate) + bridge + `record_keyframes!` +
-    `POST /api/napari/record-animation`. Interpolates camera/contrast/colour/T. Offscreen smoke-tested
-    (zoom + colormap tween → valid mp4); unit-tested.
-  - **Timeline editor (building):** a **row/track matrix** — columns = keyframes (captured `viewState`s
-    + duration), rows = **channels · populations · camera**, all *inferred from each `viewState`*
-    (layers by type + camera). Capture establishes a base "look" (contrast/colormap/framing); keyframes
-    are copies varied via per-cell overrides (toggle `layer.visible`, camera). Data model stays "ordered
-    list of `viewState`s" (what the render engine eats). Rows are a projection; a cell edit mutates that
-    column's `viewState`. Decision (2026-07-14): **timeline, not a node graph** — a movie is 1-D, so the
-    graph's branching buys nothing; see the row-matrix sketch in the session notes.
+    snapshots each with its **`ViewLegend`** (S1 backbone) + a **Record movie** button.
+  - **~~Render engine~~ — DONE:** `napari_utils.record_keyframes` (apply each keyframe's `viewState` →
+    capture with `steps` tween frames from the previous → animate) + bridge + `record_keyframes!` +
+    `POST /api/napari/record-animation`. Interpolates camera/contrast/colour/T. Offscreen smoke-tested;
+    unit-tested.
+  - **~~Timeline editor~~ — DONE:** a **row/track matrix** — columns = keyframes (captured `viewState`s +
+    duration), rows = **channels · populations · camera** inferred from each `viewState`; per-cell edits
+    mutate that column's `viewState` (data model = ordered list of `viewState`s). Plus: keyframe select →
+    sync napari, update-from-napari, per-keyframe reset + "edited" badge, drag-reorder, timepoint (h/min),
+    fps 1–40, amber selection (`--cc-selected`). Decision (2026-07-14): **timeline, not a node graph** —
+    a movie is 1-D, so the graph's branching buys nothing.
 
 ## References
 
