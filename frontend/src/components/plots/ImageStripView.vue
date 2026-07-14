@@ -297,7 +297,7 @@ defineExpose({ exportImage })
                       :show-scale-bar="showScaleBar" :show-timestamp="showTimestamp" />
         <!-- optional view legend (channels now; pops + colour-by plug in later), from the frame snapshot -->
         <ViewLegend v-if="showLegend && (c.assetId || c.src) && legendSections(c).length"
-                    :sections="legendSections(c)" :swatch="9" class="is-legend" />
+                    :sections="legendSections(c)" :swatch="9" vertical class="is-legend" />
         <button v-if="!(c.assetId || c.src)" class="is-capture" @click="capture(i)" :disabled="capturing === i"
                 v-tooltip.bottom="'Capture the current napari view'">
           <i class="pi pi-camera" /> {{ capturing === i ? 'capturing…' : 'napari view' }}
