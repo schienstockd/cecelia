@@ -15,6 +15,9 @@
   /* borders / accents */
   --cc-border:     #30363d;
   --cc-accent:     #a78bfa;
+  /* selection/active highlight for BOXES (panels, cards, timeline keyframes) — amber, matching the
+     analysis-board plot panels. Distinct from --cc-accent (purple, form controls) and --cc-warn. */
+  --cc-selected:   #ff8c1a;
 
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;

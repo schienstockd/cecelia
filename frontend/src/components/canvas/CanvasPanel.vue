@@ -137,7 +137,7 @@ onBeforeUnmount(() => { ro?.disconnect(); ro = null })
   border-radius: 6px; background: var(--cc-surface-1); overflow: hidden; box-shadow: 0 4px 18px rgba(0,0,0,0.35);
   width: 460px; height: 440px; min-width: 340px; min-height: 320px; resize: both; z-index: 5;
   transition: border-color 0.12s, box-shadow 0.12s; }
-.panel.active { border-color: #ff8c1a; box-shadow: 0 0 0 1px #ff8c1a, 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
+.panel.active { border-color: var(--cc-selected); box-shadow: 0 0 0 1px var(--cc-selected), 0 6px 22px rgba(0,0,0,0.45); z-index: 6; }
 /* docked: fill the grid slot, no float/drag/resize/shadow */
 .panel.docked { position: static; width: 100%; height: 100%; min-width: 0; min-height: 0; resize: none;
   box-shadow: none; z-index: auto; }
