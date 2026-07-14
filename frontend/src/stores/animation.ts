@@ -65,5 +65,18 @@ export const useAnimationStore = defineStore('animation', () => {
   watch(snapshots, _save, { deep: true })
   watch(fps, _save)
 
-  return { snapshots, fps, load, add, remove, move }
+  // drag-and-drop: place the dragged keyframe at the target's position (both must be the same image —
+  // the timeline is per-image).
+  function reorder(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    const arr = [...snapshots.value]
+    const from = arr.findIndex(s => s.id === draggedId)
+    const to = arr.findIndex(s => s.id === targetId)
+    if (from < 0 || to < 0 || arr[from].imageUid !== arr[to].imageUid) return
+    const [item] = arr.splice(from, 1)
+    arr.splice(arr.findIndex(s => s.id === targetId), 0, item)
+    snapshots.value = arr
+  }
+
+  return { snapshots, fps, load, add, remove, move, reorder }
 })

@@ -24,6 +24,11 @@ const openImageUid = computed(() => projectStore.napariImageUid)
 
 const capturing = ref(false)
 const rendering = ref(false)
+const dragId = ref<string | null>(null)   // keyframe being dragged (drag-to-reorder)
+function onDrop(targetId: string) {
+  if (dragId.value) anim.reorder(dragId.value, targetId)
+  dragId.value = null
+}
 
 function imageName(uid: string | null | undefined): string {
   if (!uid) return '(unknown image)'
@@ -193,8 +198,11 @@ async function render() {
           <thead>
             <tr>
               <th class="tl-rowhead tl-corner"></th>
-              <th v-for="(f, i) in frames" :key="f.id" class="tl-col">
-                <div class="tl-thumb" :class="{ edited: isEdited(f) }">
+              <th v-for="(f, i) in frames" :key="f.id" class="tl-col" :class="{ dragover: dragId && dragId !== f.id }"
+                  @dragover.prevent @drop="onDrop(f.id)">
+                <div class="tl-thumb" :class="{ edited: isEdited(f), dragging: dragId === f.id }"
+                     draggable="true" @dragstart="dragId = f.id" @dragend="dragId = null"
+                     v-tooltip.bottom="'Drag to reorder'">
                   <img v-if="f.assetId" :src="assetUrl(f)" :alt="`keyframe ${i+1}`" />
                   <span v-if="isEdited(f)" class="tl-badge" v-tooltip.bottom="'Edited from the captured view — use ↺ to reset'">edited</span>
                 </div>
@@ -257,7 +265,7 @@ async function render() {
 .anim-sub { font-size: 0.8rem; color: var(--cc-text-dim); max-width: 46rem; margin: 0; }
 .anim-head-ctl { display: flex; align-items: center; gap: 0.9rem; flex-shrink: 0; }
 .anim-fps { font-size: 0.72rem; color: var(--cc-text-dim); display: inline-flex; align-items: center; gap: 0.4rem; }
-.anim-range { width: 5rem; accent-color: #7c3aed; }
+.anim-range { width: 5rem; accent-color: var(--cc-accent); }
 .anim-num { font-size: 0.72rem; color: var(--cc-text); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
 .anim-empty { font-size: 0.85rem; color: var(--cc-text-dim); margin-top: 1.5rem; }
 .anim-toolbar { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.9rem; }
@@ -275,9 +283,14 @@ async function render() {
 .tl-thumb { position: relative; width: 96px; height: 96px; background: #000; border-radius: 0.5rem;
   overflow: hidden; border: 1px solid var(--cc-border); transition: box-shadow 0.12s, border-color 0.12s; }
 .tl-thumb img { width: 100%; height: 100%; object-fit: contain; }
-.tl-thumb.edited { border-color: #7c3aed; box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.45); }
+.tl-thumb { cursor: grab; }
+.tl-thumb.dragging { opacity: 0.4; }
+.tl-col.dragover .tl-thumb { outline: 2px dashed var(--cc-selected); outline-offset: 2px; }
+/* "edited" highlight = the shared selection amber (--cc-selected), matching the plot panels' selected
+   state — one highlight colour for boxes across the app. */
+.tl-thumb.edited { border-color: var(--cc-selected); box-shadow: 0 0 0 2px color-mix(in srgb, var(--cc-selected) 45%, transparent); }
 .tl-badge { position: absolute; top: 4px; right: 4px; font-size: 0.55rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.04em; color: #ddd6fe; background: rgba(124, 58, 237, 0.85); padding: 1px 5px; border-radius: 999px; }
+  letter-spacing: 0.04em; color: #1f1400; background: var(--cc-selected); padding: 1px 5px; border-radius: 999px; }
 .tl-colctl { display: flex; align-items: center; justify-content: center; gap: 0.1rem; margin-top: 0.3rem; }
 .tl-kf { font-size: 0.66rem; color: var(--cc-text-dim); min-width: 0.9rem; text-align: center; }
 .tl-ico { display: inline-flex; border: none; background: none; color: var(--cc-text-dim); cursor: pointer;
@@ -285,7 +298,7 @@ async function render() {
 .tl-ico:hover:not(:disabled) { color: var(--cc-text); background: var(--cc-surface-2); }
 .tl-ico:disabled { opacity: 0.3; cursor: default; }
 .tl-dur { display: flex; align-items: center; justify-content: center; gap: 0.3rem; margin-top: 0.3rem; }
-.tl-durrange { width: 68px; accent-color: #7c3aed; }
+.tl-durrange { width: 68px; accent-color: var(--cc-accent); }
 .tl-durval { font-size: 0.62rem; color: var(--cc-text-dim); font-variant-numeric: tabular-nums; min-width: 1.8rem; text-align: left; }
 .tl-group .tl-rowhead { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--cc-text-dim); padding-top: 0.7rem; padding-bottom: 0.2rem; }
@@ -300,10 +313,10 @@ async function render() {
 
 .btn-sm { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; padding: 0.35rem 0.6rem;
   border: 1px solid var(--cc-border); border-radius: 0.3rem; background: var(--cc-surface-2); color: var(--cc-text); cursor: pointer; }
-.btn-sm:hover:not(:disabled) { border-color: #7c3aed; }
+.btn-sm:hover:not(:disabled) { border-color: var(--cc-accent); }
 .btn-sm:disabled { opacity: 0.55; cursor: default; }
 .btn-primary { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; padding: 0.4rem 0.8rem;
-  border: 1px solid #7c3aed; border-radius: 0.35rem; background: #2d1b69; color: #ddd6fe; cursor: pointer; }
-.btn-primary:hover:not(:disabled) { background: #3b2382; }
+  border: 1px solid var(--cc-accent); border-radius: 0.35rem; background: var(--cc-accent); color: #fff; cursor: pointer; }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 .btn-primary:disabled { opacity: 0.55; cursor: default; }
 </style>
