@@ -258,6 +258,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_projects_load(body_bytes)
         elseif path == "/api/projects/boards"
             api_projects_boards(body_bytes)
+        elseif path == "/api/projects/animations"
+            api_projects_animations(body_bytes)
         elseif path == "/api/projects/canvases"
             api_projects_canvases(body_bytes)
         elseif path == "/api/board-assets/save"

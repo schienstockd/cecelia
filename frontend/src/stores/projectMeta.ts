@@ -5,6 +5,7 @@ import { useProjectStore, type CciaSet } from './project'
 import { useAnalysisTabsStore } from './analysisTabs'
 import { useAnalysisLayoutStore } from './analysisLayout'
 import { useCanvasPanelsStore } from './canvasPanels'
+import { useAnimationStore } from './animation'
 
 export type ProjectType = 'static' | 'live' | 'flow'
 
@@ -74,6 +75,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
         sets?: CciaSet[]
         boards?: { tabs?: unknown; layouts?: Record<string, unknown> } | null
         moduleCanvases?: { entries?: Record<string, unknown>; geom?: Record<string, unknown> } | null
+        animations?: { snapshots?: unknown[] } | null
         error?: string
       }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
@@ -87,6 +89,9 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       }
       // rehydrate per-image module-page canvases (moduleCanvases.json)
       if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)
+      // rehydrate the Animation page's captured view snapshots (animations.json); always call so a
+      // project with none clears any leftover from the previously-open project
+      useAnimationStore().load(body.animations as never)
       await fetchRecent()
       const nSets   = body.sets?.length ?? 0
       const nImages = body.sets?.reduce((n, s) => n + s.images.length, 0) ?? 0

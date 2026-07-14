@@ -149,10 +149,16 @@ matches how figures are actually made; F2 is the advanced follow-on.
     applied to the open image before recording.
   - **F1.3** — batch the config across selected / attr-filtered images (one attr-named `.mp4` each),
     run as a cancellable task.
-- **F2. Keyframe animation page** *(needs A; big)* — a board-like page: an ordered, persisted,
-  editable sequence of snapshots (keyframes) + per-transition duration/easing + output settings;
-  hydrate → napari-animation `Animation` → render → encode. Edit a keyframe's colour in the GUI →
-  regenerate.
+- **F2. Animation page** *(needs A; big)* — the durable/editable page under the Analysis nav.
+  - **MVP DONE (S2):** `/animation` route + nav entry; captures the current napari view as a **view
+    snapshot** (screenshot sidecar + view state, the same path as the board strip) into a per-project
+    `animations.json` (`/api/projects/animations`, autosaved via `stores/animation.ts`); a gallery of
+    snapshots each with its **`ViewLegend`** (S1 backbone) + a **Record movie** button (apply the
+    snapshot to the open image → `record_timelapse`, enabled when that image is open).
+  - **Next:** feed populations + colour-by into the snapshot (so the legend is elaborate and the strip
+    reuses it); editable per-snapshot config (colours, fps, T-range); then the keyframe sequence
+    (ordered snapshots + per-transition duration/easing → napari-animation `Animation` → encode) and
+    batch across images.
 
 ## References
 
