@@ -201,12 +201,14 @@ after reopening: it parses which tracks/pops were shown from the snapshot's over
 (`utils/overlayLayers`) + the captured colour-by and re-requests them (`utils/napariOverlays` → the
 same show-tracks/show-populations/colour-labels endpoints) — otherwise reopening only restored channels.
 
-**Track pops render in their OWN colour.** `show_tracks` colours each track ribbon by the track
-population's colour (a solid single-colour colormap, the same `Colormap([c,c], interpolation="zero")`
-idiom as the categorical step map) when there's **no** colour-by column — exactly like point pops use
-`face_color`. A track pop defined in the pop manager (e.g. a Leiden track cluster) shows in the colour
-you gave it, not turbo-by-track_id; turbo/viridis only apply when a colour-by column IS set (categorical
-→ per-level pop colours, continuous → viridis). So the strip's populations legend matches the ribbons.
+**Track pops render in their OWN colour.** `show_tracks` colours each **named** track pop (a gated
+`track` / `trackclust` population defined in the pop manager, e.g. a Leiden track cluster) by that
+population's colour — a solid single-colour colormap (the `Colormap([c,c], interpolation="zero")` idiom),
+exactly like point pops use `face_color`. **Colour-by does NOT override a named pop's colour** — a pop's
+defined colour always wins. Colour-by applies **only to the whole-segmentation `_tracked` overlay** (all
+tracks, no per-pop colour): categorical → per-level pop colours, continuous → viridis, none → turbo. So
+a track cluster shows the colour you gave it even while the plain `_tracked` layer is shaded by a measure,
+and the strip's populations legend matches the ribbons. (Distinguished by `pop.path` ending `_tracked`.)
 
 **One overlay request-builder.** `utils/napariOverlays` (`pushTracks`/`pushPopulations`/`pushColourLabels`)
 is the single place that builds those three requests; the interactive ViewerPanel and the non-interactive
