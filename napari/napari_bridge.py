@@ -729,7 +729,12 @@ class NapariState:
             ids     = set(int(t) for t in pop.get("track_ids", []))
             visible = pop.get("show", True)
             use_cby = cby if col_vals is not None else ""
-            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig)
+            # No colour-by → colour the ribbons by the track POPULATION's own colour (solid), exactly
+            # like point pops use face_color: a track pop defined in the pop manager (e.g. a Leiden
+            # track cluster) renders in the colour you gave it, NOT turbo-by-track_id. Ports the R
+            # splitTracks behaviour. pop_colour is in the sig so a recolour re-renders.
+            pop_colour = pop.get("colour") or "#9ca3af"
+            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig, pop_colour)
             existing = name in self._viewer.layers
             if existing and self._track_sigs.get(name) == sig:
                 continue
@@ -753,12 +758,22 @@ class NapariState:
                 # `colormaps_dict` (consistent with labels); otherwise a named colormap (viridis
                 # continuous / turbo by track_id). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
                 from cecelia.utils import napari_utils
+                if use_cby:
+                    layer_cmap, layer_cmaps_dict = (col_cmap or "turbo"), col_cmaps_dict
+                else:
+                    # solid single-colour colormap from the pop colour (same idiom as the categorical
+                    # step colormap above: two identical stops, zero interpolation → one flat colour)
+                    try:
+                        c = _hex_to_rgba(pop_colour)
+                        layer_cmap = napari.utils.Colormap(colors=[c, c], controls=[0.0, 1.0], interpolation="zero")
+                    except Exception:
+                        layer_cmap = "turbo"
+                    layer_cmaps_dict = None
                 layer = napari_utils.add_tracks(
                     self._viewer, sub, name=name,
                     scale=self._im_scale, units=self._im_units, properties=props,
                     color_by=(use_cby or "track_id"), tail_width=tail_width, tail_length=tail_length,
-                    colormap=(col_cmap or "turbo"),
-                    colormaps_dict=(col_cmaps_dict if use_cby else None),
+                    colormap=layer_cmap, colormaps_dict=layer_cmaps_dict,
                 )
                 if prev is not None:                     # carry the user's manual layer tweaks over
                     for attr, val in prev.items():

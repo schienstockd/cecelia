@@ -201,6 +201,18 @@ after reopening: it parses which tracks/pops were shown from the snapshot's over
 (`utils/overlayLayers`) + the captured colour-by and re-requests them (`utils/napariOverlays` → the
 same show-tracks/show-populations/colour-labels endpoints) — otherwise reopening only restored channels.
 
+**Track pops render in their OWN colour.** `show_tracks` colours each track ribbon by the track
+population's colour (a solid single-colour colormap, the same `Colormap([c,c], interpolation="zero")`
+idiom as the categorical step map) when there's **no** colour-by column — exactly like point pops use
+`face_color`. A track pop defined in the pop manager (e.g. a Leiden track cluster) shows in the colour
+you gave it, not turbo-by-track_id; turbo/viridis only apply when a colour-by column IS set (categorical
+→ per-level pop colours, continuous → viridis). So the strip's populations legend matches the ribbons.
+
+**One overlay request-builder.** `utils/napariOverlays` (`pushTracks`/`pushPopulations`/`pushColourLabels`)
+is the single place that builds those three requests; the interactive ViewerPanel and the non-interactive
+callers (zoom-to-source, the strip) both go through it, so there's one request shape per endpoint, not
+two divergent inline copies (the ViewerPanel wrappers add only their legend-harvest on the reply).
+
 ---
 
 ## Shared layer helpers (`cecelia.utils.napari_utils`)
