@@ -950,6 +950,27 @@ function api_lablog_append(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true, block, entries=parse_lab_log(read_lab_log(proj))))
 end
 
+# capture → append an auto-generated [Cecelia] digest of run-log activity since the last capture.
+# Returns captured=false (and appends nothing) when there's no new activity. Backs the panel's
+# "Capture" button and the auto-on-open toggle.
+function api_lablog_capture(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    block = try
+        capture_context!(proj)
+    catch e
+        return 500, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, captured=(block !== nothing), block,
+                        entries=parse_lab_log(read_lab_log(proj))))
+end
+
 # Backfill physical-size/timing meta for images imported before this metadata was tracked (or
 # whose ccid.json lost these fields) — re-derives them from the already-converted OME-ZARR (same
 # reader ImportOmezarr uses) without touching the original source file or re-running

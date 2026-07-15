@@ -12,6 +12,7 @@ describe('labLog.authorKind', () => {
     expect(authorKind('User — correction')).toBe('correction')
     expect(authorKind('User')).toBe('user')
     expect(authorKind('Claude')).toBe('claude')
+    expect(authorKind('Cecelia')).toBe('cecelia')
     expect(authorKind('Someone else')).toBe('other')
   })
   it('is case/whitespace-insensitive', () => {

@@ -76,6 +76,15 @@ Append-only, dated, author-tagged entries. Never edit old entries — add a corr
 
 Author tag `[Claude]` or `[User]` on every entry block. Correction entries reference the original by date and author. Claude reads corrections and adjusts reasoning within the session.
 
+### App-generated context — `[Cecelia]` entries
+
+A third author tag, `[Cecelia]`, marks entries the **app** generated automatically — the *what* (activity) to complement the human *why*. So the log records not just decisions but the work that surrounded them, and returning to a project shows what happened without anyone having typed it.
+
+- **v1 source: the run logs.** `capture_context!(proj)` (`app/src/lab_log_context.jl`) rolls up per-image run-log activity (every task that ran — segmentation, tracking, clustering, measures) since the last capture into one dated `[Cecelia]` digest, e.g. `- segment.cellpose on 5 images (…)`. Idempotent via a `settings/lab-log-context.json` cutoff (max reported `at`), so repeat captures never re-report. Route: `POST /api/lablog/capture`.
+- **Triggers: manual + auto.** The panel has a "Capture activity" button and an "Auto" toggle (`labLogAutoContext`, default off) that captures on project open — both, so the user can feel out what's sensible before it runs unattended.
+- **Known v1 limitation:** run-log timestamps are second-granular and the cutoff compare is strict (`>`), so activity in the *same second* as a prior capture is skipped (negligible in practice — captures are minutes apart). Manual gate/population/cluster *edits* aren't timestamped centrally yet, so they're not in the digest; folding them in needs a per-project activity log (the next source).
+- Digests are ordinary appended entries — the user annotates by adding normal `[User]` notes (or a correction) around them.
+
 ---
 
 ## MCP tools
