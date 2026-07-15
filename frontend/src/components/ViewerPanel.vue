@@ -840,8 +840,8 @@ onUnmounted(() => {
       <div v-if="show3D" class="viewer-section">
         <div class="viewer-section-title">
           3D crop
-          <span class="wip-tag" v-tooltip.bottom="'Experimental / under construction — behaviour and UX are still changing.'">
-            <i class="pi pi-wrench" /> experimental
+          <span class="wip-tag" v-tooltip.bottom="'It works, but the workflow is still awkward — we\'re improving it.'">
+            <i class="pi pi-wrench" /> work in progress
           </span>
         </div>
         <div v-if="!cropping" class="viewer-opts">
