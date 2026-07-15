@@ -278,6 +278,20 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Lab log tuning ratings (entry-type feedback → config sidecar) ────────────
+    @testset "Lab log tuning" begin
+        proj = create_project!(name="tuning-test-$(rand(1000:9999))", kind="static")
+        @test read_tuning(proj) == Dict{String,String}()
+        set_tuning!(proj, "e1", "up")
+        set_tuning!(proj, "e2", "down")
+        @test read_tuning(proj) == Dict("e1" => "up", "e2" => "down")
+        set_tuning!(proj, "e1", "")                       # clear/toggle-off
+        @test read_tuning(proj) == Dict("e2" => "down")
+        @test read_tuning(load_project(proj.uid)) == Dict("e2" => "down")   # persists
+        @test_throws ErrorException set_tuning!(proj, "e3", "sideways")     # invalid vote
+        rm(proj.root; recursive=true)
+    end
+
     # ── Param validation ──────────────────────────────────────────────────────
     @testset "Param validation" begin
         task = ImportOmezarr()

@@ -59,6 +59,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // auto-capture app activity digests ([Cecelia] entries) when a project opens. Opt-in while we
   // feel out what's sensible; the panel also has a manual "Capture" button. Default off.
   const labLogAutoContext = ref(localStorage.getItem('cc.labLogAutoContext') === 'true')
+  // lab-log feedback mode: 'notes' → thumbs+comment judge the decision (recorded); 'tuning' → thumbs
+  // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
+  const labLogMode = ref<'notes' | 'tuning'>(
+    localStorage.getItem('cc.labLogMode') === 'tuning' ? 'tuning' : 'notes')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
   // unknown labels default to true; persisted across sessions
@@ -207,6 +211,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
+  watch(labLogMode,               v => localStorage.setItem('cc.labLogMode',               String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

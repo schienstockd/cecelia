@@ -89,6 +89,15 @@ A third author tag, `[Cecelia]`, marks entries the **app** generated automatical
 - **Known limits / to tune as we go:** run-log timestamps are second-granular and the cutoff compare is strict (`>`), so task activity in the *same second* as a prior capture is skipped (negligible — captures are minutes apart). Gate changes report only *that* a gate changed (by population), **not magnitude** (e.g. % of cells shifted) — that's a candidate refinement once we see whether these digests read as useful or noise. Threshold/geometry values themselves are intentionally excluded (that's the undo-list we don't want).
 - Digests are ordinary appended entries — the user annotates by adding normal `[User]` notes (or a correction) around them.
 
+### Interacting with auto/AI entries — two feedback modes
+
+On-hover, `[Cecelia]` and `[Claude]` entries expose 👍/👎 (and, in Notes mode, 💬). A **panel mode toggle** ("Rating: decisions | entry types") decides what a thumb *means* — the two are deliberately kept distinct so a thumbs-up is never ambiguous:
+
+- **Notes mode → judges the DECISION → recorded content.** 👍/👎 prefills a `[User]` note with the verdict + a reference (`👍 re 2026-07-15 [Cecelia]: `); the user adds the *why/outcome* and saves. This is genuine lab-notebook methodology — *"changed CD8 gate 👍 — got the separation I was after"*, *"changed seg params 👎 — 2 h to revert, didn't help"*. 💬 is the same, without a verdict. Lands in the log via `append_lab_log!`.
+- **Tuning mode → judges the ENTRY TYPE → config, not the log.** 👍/👎 records "this *kind* of auto-entry is useful/noise" to the `settings/lab-log-tuning.json` sidecar (keyed by a frontend-computed stable entry id; `POST /api/lablog/tune`). Clicking the active vote clears it; a rated entry keeps its thumb visible. This is the signal for dialling back noisy digest categories — it never pollutes the science record. (A 👎→"mute this kind" action is a deferred follow-up.)
+
+Only app/AI entries are ratable — you don't thumb your own `[User]` notes (they keep the plain "correct" affordance). Mode + which thumb is which are persisted (`labLogMode`).
+
 ---
 
 ## MCP tools
