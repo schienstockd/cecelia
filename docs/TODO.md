@@ -43,6 +43,27 @@ when a set-level mutating task lands.
 
 ## Medium priority
 
+**#00081** — **Clustered tracks (`trackclust`) don't show on napari open until the toggle is cycled**
+Opening an image in napari with the **cluster-tracks toggle already on** renders no ribbons; toggling
+it off then on shows them. Workaround exists (cycle the toggle), so medium, not high.
+Investigated (2026-07-15) — **ruled out**: bridge message ordering/prematurity (`send` is
+request-response and everything is single-flighted under `_viewer_lock`, so `open_image` fully
+completes before `napari:opened` is broadcast and before `show-tracks` is sent); frontend state
+staleness (`onNapariOpened`→`pushAllOverlays` runs after the `napariImage` watch flush; `popVisible`/
+`currentSetUid` are live computeds; trackclust ribbons ignore `color_by`); and the Julia handler
+(`api_napari_show_tracks` builds `track_ids` fresh each call). So the on-open push looks correct on
+paper — it's a timing/rendering effect. **Two live hypotheses:** (1) napari Tracks render timing —
+the Tracks layer is added in the same burst as the image open (with `as_dask` the canvas/dims may not
+have settled) so it lands but doesn't paint until a later re-add — the manual toggle *is* that re-add;
+(2) lazy membership cache — `_live_map(…, "trackclust")`/`cells_in_pop` returns empty on the first
+access after open (`isempty(ctids) && continue` skips the pop), warm on the second.
+**Next step:** add throwaway logs — bridge `show_tracks` (per-pop `len(track_ids)` + whether the layer
+was added) and the Julia handler (`ctids` count per trackclust pop) — reproduce once to tell (1) from
+(2). Fix if (1): a bridge-side `layer.refresh()`/canvas nudge after `add_tracks`, or one deferred
+re-push on open (mirrors the working toggle); if (2): warm/await membership before the first push.
+Also spotted while reading: `napari_bridge.show_tracks` sets `self._track_sigs[name] = sig` even when
+`len(sub)==0` (no layer added) — harmless today (the skip needs `existing`) but worth tidying.
+
 **#00057** — **Update README for the install / run / update flow (and switch to versioned releases)**
 Once the shipping functions are all in — the installer (constructor/pixi-pack), the `pixi run app`
 launcher (done), and the update path (`pixi run update` done; in-app button pending) — rewrite
