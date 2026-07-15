@@ -237,7 +237,7 @@ end
         cd3 = add_pop!(m, "CD3"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
         save_pop_map!(m, img1)
         bg = capture_context!(proj)
-        @test bg !== nothing && occursin("Gating img-1", bg) && occursin("added CD3", bg)
+        @test bg !== nothing && occursin("Populations img-1", bg) && occursin("added CD3", bg)
 
         # changing a gate → "gate changed on CD3" (net), never a re-add
         set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0))
@@ -246,6 +246,18 @@ end
         @test bg2 !== nothing && occursin("gate changed on CD3", bg2) && !occursin("added CD3", bg2)
 
         @test capture_context!(proj) === nothing            # no gating change → nothing
+
+        # ── filter/membership pop (e.g. cluster tracks): a DEFINITION change is captured too —
+        # generically, not just gates (this is the cluster-tracks bug fix). ──
+        mt = PopulationMap(; pop_type="trackclust", value_name="default")
+        tc = add_pop!(mt, "clust_a"; filter_measure="clusters.x", filter_values=[0, 1])
+        save_pop_map!(mt, img1)
+        @test capture_context!(proj) !== nothing            # baseline: added clust_a
+        mt.pops[tc].filter_values = [0, 1, 2]               # change WHICH clusters define it (no gate)
+        save_pop_map!(mt, img1)
+        bd = capture_context!(proj)
+        @test bd !== nothing && occursin("definition changed on clust_a", bd)
+        @test capture_context!(proj) === nothing            # net change reverts to none
 
         # ── exclusions: net change ──
         img2.included = false; save!(img2)
