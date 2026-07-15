@@ -22,6 +22,9 @@
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;
   --cc-danger:     #ef4444;
+  /* viewer accent (green) — the napari viewer controls button + its floating panel border, so the
+     viewer stands out distinctly from the purple form/accent chrome and amber selection boxes. */
+  --cc-viewer:     #22c55e;
 
   /* monospace */
   --cc-mono: ui-monospace, 'Cascadia Code', Consolas, monospace;

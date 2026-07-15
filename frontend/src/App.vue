@@ -59,7 +59,7 @@ const bare = computed(() => route.meta.bare === true)
     <!-- napari viewer controls: a floating dockable panel (toggled from the sidebar "Viewer" button),
          floating above the content so it's usable on any page while an image is open in napari -->
     <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
-                   @close="settings.viewerPanelOpen = false">
+                   accent="var(--cc-viewer)" @close="settings.viewerPanelOpen = false">
       <ViewerPanel />
     </FloatingPanel>
     <ErrorConsole />
