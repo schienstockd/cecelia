@@ -905,6 +905,51 @@ function api_images_inclusion_set(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# ── Lab log (per-project append-only markdown; see docs/ai-assist/LAB-LOG.md) ─────────────────────
+# read → raw content + parsed entries (newest-first) + file mtime (unix seconds, nothing if absent).
+function api_lablog_read(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    project_uid = get(query, "projectUid", "")
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    content = read_lab_log(proj)
+    p = lab_log_path(proj)
+    200, JSON3.write((; content, entries=parse_lab_log(content),
+                        mtime=(isfile(p) ? mtime(p) : nothing)))
+end
+
+# append → one dated, author-tagged block. Server injects date + author tag (append-only, lock-guarded
+# in append_lab_log!); body is {projectUid, author, lines: string | [string]}.
+function api_lablog_append(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    author      = String(get(body, :author, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(author)      && return 400, JSON3.write((; error="author required"))
+    lines_raw = get(body, :lines, nothing)
+    lines = if lines_raw isa AbstractString
+        [String(lines_raw)]
+    elseif lines_raw isa AbstractVector
+        String[String(l) for l in lines_raw]
+    else
+        return 400, JSON3.write((; error="lines required (string or array of strings)"))
+    end
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    block = try
+        append_lab_log!(proj, author, lines)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, block, entries=parse_lab_log(read_lab_log(proj))))
+end
+
 # Backfill physical-size/timing meta for images imported before this metadata was tracked (or
 # whose ccid.json lost these fields) — re-derives them from the already-converted OME-ZARR (same
 # reader ImportOmezarr uses) without touching the original source file or re-running

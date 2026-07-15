@@ -8,6 +8,7 @@ import AppSidebar from './components/AppSidebar.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
+import LabLogPanel from './components/LabLogPanel.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -61,6 +62,13 @@ const bare = computed(() => route.meta.bare === true)
     <FloatingPanel v-if="settings.viewerPanelOpen" title="Viewer" icon="pi-eye" storage-key="viewer"
                    accent="var(--cc-viewer)" @close="settings.viewerPanelOpen = false">
       <ViewerPanel />
+    </FloatingPanel>
+    <!-- lab log: per-project append-only analysis memory (human + Claude), reachable on any page -->
+    <FloatingPanel v-if="settings.labLogPanelOpen" title="Lab log" icon="pi-book" storage-key="lablog"
+                   accent="rgba(255, 255, 255, 0.6)"
+                   :default-x="300" :default-y="96" :default-w="340" :default-h="520"
+                   @close="settings.labLogPanelOpen = false">
+      <LabLogPanel />
     </FloatingPanel>
     <ErrorConsole />
   </div>

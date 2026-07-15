@@ -139,6 +139,60 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Lab log (per-project append-only markdown) ──────────────────────────────
+    @testset "Lab log" begin
+        proj = create_project!(name="lablog-test-$(rand(1000:9999))", kind="static")
+
+        @test read_lab_log(proj) == ""                     # empty before any entry
+        @test parse_lab_log("") == Dict{String,Any}[]
+
+        append_lab_log!(proj, "User", "CD4 gate lower bound ~0.25 for this tissue prep")
+        append_lab_log!(proj, "Claude", ["Image 7 gated to 23 cells (cohort mean 187)",
+                                         "User excluded image"])
+        content = read_lab_log(proj)
+        @test occursin("[User]", content) && occursin("[Claude]", content)
+
+        # parsed NEWEST-FIRST, date+author injected, bullets captured
+        entries = parse_lab_log(content)
+        @test length(entries) == 2
+        @test entries[1]["author"] == "Claude"             # newest first
+        @test entries[1]["lines"] == ["Image 7 gated to 23 cells (cohort mean 187)",
+                                      "User excluded image"]
+        @test entries[2]["author"] == "User"
+        @test occursin(r"^\d{4}-\d{2}-\d{2}$", entries[1]["date"])
+
+        # APPEND-ONLY: a later write never rewrites earlier bytes
+        before = read_lab_log(proj)
+        append_lab_log!(proj, "User — correction",
+                        "Corrects above: image 7 low count is real biology — keep it")
+        after = read_lab_log(proj)
+        @test startswith(after, before)
+        after_entries = parse_lab_log(after)
+        @test length(after_entries) == 3
+        @test after_entries[1]["author"] == "User — correction"
+
+        # persists across reload
+        @test length(parse_lab_log(read_lab_log(load_project(proj.uid)))) == 3
+
+        # a non-entry `## ` header (version boundary) is not parsed as an entry, and doesn't
+        # swallow the following real entry
+        marked = after * "\n## [Version boundary: v1 → v2, 2026-07-15]\n---\n"
+        append_lab_log!(proj, "User", "post-boundary note")
+        # (the boundary line lives in the file only if a user adds it; here we assert the parser)
+        @test length(parse_lab_log(marked)) == 3           # boundary line adds no entry
+
+        # empty / whitespace-only / no-author entries are rejected
+        @test_throws ErrorException append_lab_log!(proj, "User", ["   "])
+        @test_throws ErrorException append_lab_log!(proj, "Claude", String[])
+        @test_throws ErrorException append_lab_log!(proj, "   ", ["x"])
+
+        # returned block is a well-formed, header-injected markdown block
+        blk = append_lab_log!(proj, "Claude", "another note")
+        @test startswith(blk, "## ") && occursin("[Claude]", blk) && occursin("- another note", blk)
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Param validation ──────────────────────────────────────────────────────
     @testset "Param validation" begin
         task = ImportOmezarr()

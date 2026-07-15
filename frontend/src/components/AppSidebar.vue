@@ -165,6 +165,18 @@ function isNavDisabled(item: NavItem): boolean {
       <i :class="['pi', settings.viewerPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
     </button>
 
+    <!-- ── Lab log ──────────────────────────────────────────────────────────
+         Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
+         toggled here (see App.vue / LabLogPanel). -->
+    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen }"
+            style="margin-top: 0.4rem"
+            @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
+            v-tooltip.right="'Lab log: append-only analysis notes for this project (you + Claude). Floating panel — drag it anywhere.'">
+      <i class="pi pi-book viewer-cta-icon" />
+      <span class="viewer-cta-title">Lab log</span>
+      <i :class="['pi', settings.labLogPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
+    </button>
+
     <!-- ── Footer: Settings on the left; app controls (quit / restart) on the right ──────────
          Settings is an app preference, not a pipeline step, so it sits apart from the module nav
          and opposite the destructive/lifecycle controls. -->
@@ -312,6 +324,15 @@ function isNavDisabled(item: NavItem): boolean {
 .viewer-cta-icon { font-size: 0.95rem; color: var(--cc-viewer); flex-shrink: 0; }
 .viewer-cta-title { flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 700; }
 .viewer-cta-state { font-size: 0.8rem; opacity: 0.75; flex-shrink: 0; }
+/* Lab log CTA: a neutral/whiteish variant so it reads as its own thing, distinct from the coloured
+   Viewer control. Overrides the .viewer-cta base (defined above → these win on equal specificity). */
+.lablog-cta .viewer-cta-icon { color: #e6edf3; }
+.lablog-cta:hover { border-color: rgba(255, 255, 255, 0.55); background: rgba(255, 255, 255, 0.06); }
+.lablog-cta.viewer-on {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
 
 /* ── Nav items ────────────────────────────────────────────────────────────── */
 .nav-item {

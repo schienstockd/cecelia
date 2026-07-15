@@ -23,6 +23,7 @@ Sets group images for processing. An image belongs to one set but lives independ
 ```
 {projects_dir}/{proj_uid}/
   project.json              — project manifest (set_uids list)
+  lab-log.md                — append-only AI+human analysis memory (see docs/ai-assist/LAB-LOG.md)
   .cecelia.lock             — naive write lock (see Transactions)
   settings/                 — per-project UI config (persisted on Save project)
     chains/{name}.json      — chain/whiteboard templates (migrated from the legacy top-level chains/)

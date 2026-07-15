@@ -53,6 +53,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // the napari Viewer controls are a floating dockable panel (not a sidebar section) — this is its
   // open/closed state, toggled from the sidebar "Viewer" button. Off by default (opt-in, no intrusion).
   const viewerPanelOpen = ref(localStorage.getItem('cc.viewerPanelOpen') === 'true')
+  // the lab log is a floating dockable panel too (open/closed state, toggled from the sidebar).
+  // Off by default (opt-in). See components/LabLogPanel.vue, docs/ai-assist/LAB-LOG.md.
+  const labLogPanelOpen = ref(localStorage.getItem('cc.labLogPanelOpen') === 'true')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
   // unknown labels default to true; persisted across sessions
@@ -180,6 +183,7 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(sidebarCollapsed,         v => localStorage.setItem('cc.sidebarCollapsed',         String(v)))
   watch(rightPanelCollapsed,      v => localStorage.setItem('cc.rightPanelCollapsed',      String(v)))
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
+  watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
 })
