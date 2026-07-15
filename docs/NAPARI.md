@@ -425,6 +425,58 @@ if show_3d and (self._z_axis_len() or 0) > 1:
 
 ---
 
+## 3D crop (Imaris-style slicing → new image)
+
+Crop an image to a sub-region. The region is **drawn interactively** in napari; you can either **preview**
+it (view-only clipping planes) or **save** it as a **new image in the set** (a real, persistent crop).
+
+The hard part is *drawing* the region: napari only edits Shapes in 2-D, and drawing on a single z-slice
+is unusable — you can't see the structure. So the crop is drawn over a **max-intensity projection over
+z, channels AND time**, so the footprint you draw over covers the whole structure across the entire
+movie (the crop is spatial — it applies to every timepoint).
+
+### Draw (bridge)
+Commands `crop_start` / `crop_apply` / `crop_box` / `crop_clear` on `NapariState`:
+
+1. **`start_crop`** — drop to 2-D, hide the data layers, add the projection (`_z_mip`: max over z, channels
+   and a t-subsample of ≤16 frames at a coarse pyramid level — `_pick_mip_level` caps the long side at
+   ~1024 px so a full-res projection never stalls) and an editable full-extent rectangle (`Crop region`)
+   in `select` mode. You resize the rectangle over the visible footprint.
+2. **`apply_crop(z_lo, z_hi)`** — *preview only*: read the rectangle bbox (→ world µm) + z-range and set
+   `experimental_clipping_planes` on every data layer, drop the helper layers, return to 3-D. Nothing is
+   saved. Geometry is the shared, unit-tested `napari_utils.axis_aligned_clip_planes(layer, world_box,
+   display_axes)` — two planes per axis (keep `>= lo` / `<= hi`), converted into **each layer's own** data
+   coords from its `scale`/`translate`, so one world box clips image/labels/tracks/points consistently.
+   Layers whose type doesn't support clipping planes are skipped (logged, not fatal).
+3. **`crop_box(z_lo,z_hi,t_lo,t_hi)`** — *for saving*: convert the rectangle + z/t ranges into a
+   **full-resolution pixel bbox** `{x0,x1,y0,y1,z0?,z1?,t0?,t1?}` (half-open, clamped; z/t only when those
+   axes exist). View-only — doesn't touch layers.
+4. **`clear_crop`** — clear the clipping planes and remove leftover helper layers.
+
+### Save → new image (task)
+The Viewer panel's **Save** button calls `POST /api/napari/crop-box` for the pixel bbox, then runs the
+**`editImages.cropImage`** task (`app/src/tasks/editImages/cropImage.{jl,json}` +
+`python/cecelia/tasks/editImages/cropImage_run.py`). The task:
+- reads the source OME-ZARR, slices X/Y (and Z/T when cropped; **all channels, all un-cropped axes kept**)
+  via `crop_slice_tuple`, writes a new OME-ZARR with `create_multiscales` + `save_meta_in_zarr` (physical
+  sizes carry over, `SizeX/Y/Z/T` shrink);
+- registers a **new image** in the same set with `add_image!` (new uid, `{proj}/0|1/{uid}`, name
+  `{original} (cropped)`, meta records `crop_source_uid` + the box), copying the source channel names.
+
+The new image appears without a full reload: the task's `task:result` carries `{newImageUid, setUid}`, and
+`stores/ws.ts` fetches `/api/images/meta` and `addImagesFromApi`. The cropped image is **raw pixels only**
+(no labels/tracks) — you re-segment/track on it. **Segmentation carry-over is deliberately not done**
+(cropping labels + filtering cells + remapping tracks is a separate, much larger job).
+
+### Wire path
+`POST /api/napari/crop-start|crop-apply|crop-box|crop-clear` → `api_napari_crop_*`
+(`api/src/napari_api.jl`) → `start_crop!`/`apply_crop!`/`crop_box`/`clear_crop!` (`app/src/napari.jl`) →
+the bridge commands. The Viewer panel's **3D crop** section (shown when the set's 3D toggle is on) drives
+it; the z- and t-ranges persist per set (`cc.napariSetPrefs.cropZ`/`cropT`), the XY box is per-session (a
+region is image-specific). Pure range maths lives in `frontend/src/utils/crop3d.ts`.
+
+---
+
 ## Labels
 
 `show_labels` looks for `{task_dir}/{value_name}/labels.zarr` and adds it as a napari Labels layer. It uses `_im_scale` from the last `open_image` call, so `open_image` must always be called first.
@@ -732,6 +784,8 @@ From the old R/Shiny viewer options — not yet ported:
 - `show_branching` — branching structure overlay
 - `squeeze` — squeeze length-1 dimensions before display
 - `downsample_z` — subsample Z for faster 3D rendering
-- `as_mip` — maximum intensity projection along Z
+- `as_mip` — maximum intensity projection along Z *as a standalone display toggle*. A Z-MIP **is** now
+  computed (`_z_mip`) as the backdrop you draw the 3D crop over (see *3D crop*), but it isn't yet
+  exposed as a general "view this stack as a MIP" option.
 
 These will be added as separate toggle buttons and bridge commands as needed.

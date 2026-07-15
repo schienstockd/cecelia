@@ -257,6 +257,10 @@ remains the sole gate evaluator.
 | POST | `/api/napari/selection-scope` | `zMode,zWindow` | change the z scope of the **active** selection and re-evaluate the drawn polygon live (bridge re-runs point-in-polygon + z filter → POSTs the new labels). No-op when nothing is drawn (`200 {ok}`) |
 | POST | `/api/napari/stop-selection` | `projectUid,imageUid,valueName,popType` | clear the transient "Napari selection" pop (registry + re-broadcast) **and** remove the `Cell selection` Shapes layer from napari (best-effort). Backs the manager's trash button (`200 {ok}`) |
 | POST | `/api/napari/event` | `type:"cellSelection",projectUid,imageUid,valueName,popType,labels:[…]` | store the selected label IDs as the transient "Napari selection" pop and **broadcast `gating:popmap`** (empty `labels` clears it) |
+| POST | `/api/napari/crop-start` | — | 3D crop (Imaris-style slicing): drop napari to 2-D, hide data layers, show a Z max-projection + an editable rectangle to draw the XY crop footprint over the whole structure. `200 {ok}`; `400` if napari not running |
+| POST | `/api/napari/crop-apply` | `zLo?,zHi?` (fractions 0..1 of z depth) | **preview only** — read the drawn rectangle + z-range → set axis-aligned `experimental_clipping_planes` on image/labels/tracks/points, drop the helper layers, return to 3-D. Nothing saved. `200 {ok,worldBox}` |
+| POST | `/api/napari/crop-box` | `zLo?,zHi?,tLo?,tHi?` (fractions 0..1) | resolve the drawn rectangle + z/t ranges to a **full-res pixel bbox** `{x0,x1,y0,y1,z0?,z1?,t0?,t1?}` — the params for the `editImages.cropImage` task that writes the cropped image as a new image in the set. View-only. `200 {ok,box}` |
+| POST | `/api/napari/crop-clear` | — | remove the 3D crop (clear clipping planes + any leftover helper layers). `200 {ok}` |
 
 The transient pop appears in `gating:popmap` with `"transient": true` and explicit-label
 membership; it is queryable like any pop (`plotdata`/`stats`/`membership`) but is never

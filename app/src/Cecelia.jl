@@ -77,6 +77,7 @@ export BayesianTracking, TrackMeasures
 export ClustPops, ClustTracks
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
+export CropImage
 
 # ── Scheduler ─────────────────────────────────────────────────────────────────
 export ResourcePool, TaskRecord
@@ -132,6 +133,7 @@ include("tasks/importImages/remove.jl")
 include("tasks/cleanupImages/cellpose_correct.jl")
 include("tasks/cleanupImages/af_correct.jl")
 include("tasks/cleanupImages/drift_correct.jl")
+include("tasks/editImages/cropImage.jl")
 include("tasks/segment/cellpose.jl")
 include("tasks/segment/measure_labels.jl")
 include("tasks/tracking/bayesian_tracking.jl")

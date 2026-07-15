@@ -250,6 +250,20 @@ end
             ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    @testset "Param validation — CropImage" begin
+        @test _task_from_fun_name("editImages.cropImage") isa CropImage
+        # x0/x1/y0/y1 are int min=0 — negative must be rejected
+        @test_throws ParamValidationError validate_params(
+            CropImage(), Dict{String,Any}("x0" => -5, "x1" => 10, "y0" => 0, "y1" => 10))
+        # wrong type where int expected
+        @test_throws ParamValidationError validate_params(
+            CropImage(), Dict{String,Any}("x0" => "nope", "x1" => 10, "y0" => 0, "y1" => 10))
+        # a valid box (z/t bounds are extra params, not spec-declared — they pass through untouched)
+        @test validate_params(
+            CropImage(), Dict{String,Any}("x0" => 0, "x1" => 100, "y0" => 0, "y1" => 100,
+                                          "z0" => 2, "z1" => 8, "t0" => -1, "t1" => -1)) === nothing
+    end
+
     # ── Section-param flattening (whiteboard/chain stores section params NESTED) ───
     # Regression: a chain node saves `section` params under the section key (e.g.
     # measureOptions => {extendedMeasures: true}), but tasks read them flat. run_task must lift them.

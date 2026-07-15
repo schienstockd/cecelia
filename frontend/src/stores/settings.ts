@@ -111,6 +111,10 @@ export const useSettingsStore = defineStore('settings', () => {
     // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate,
     // scale = supersample factor (2 = 2× resolution). Per-set like the other viewer prefs.
     movie?: { fps?: number; scale?: number }
+    // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
+    // napari each time since a region is image-specific). Only the ranges persist, like other prefs.
+    cropZ?: { lo?: number; hi?: number }
+    cropT?: { lo?: number; hi?: number }
     // batch-movie authoring config (F1.3 "make a movie for all images"): one config applied across the
     // selected images. `channels` = {channelName → colormap} for channels to SHOW (rest hidden). Per-set.
     batchMovie?: {
@@ -165,6 +169,21 @@ export const useSettingsStore = defineStore('settings', () => {
   function setMovieConfig(setUid: string, patch: { fps?: number; scale?: number }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
+  // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)
+  const getCropZ = (setUid: string): { lo: number; hi: number } => ({
+    lo: _setPrefs.value[setUid]?.cropZ?.lo ?? 0,
+    hi: _setPrefs.value[setUid]?.cropZ?.hi ?? 100,
+  })
+  function setCropZ(setUid: string, patch: { lo?: number; hi?: number }) {
+    _patchSet(setUid, { cropZ: { ...(_setPrefs.value[setUid]?.cropZ ?? {}), ...patch } })
+  }
+  const getCropT = (setUid: string): { lo: number; hi: number } => ({
+    lo: _setPrefs.value[setUid]?.cropT?.lo ?? 0,
+    hi: _setPrefs.value[setUid]?.cropT?.hi ?? 100,
+  })
+  function setCropT(setUid: string, patch: { lo?: number; hi?: number }) {
+    _patchSet(setUid, { cropT: { ...(_setPrefs.value[setUid]?.cropT ?? {}), ...patch } })
+  }
   // batch-movie authoring config (per set); the reactive bag the BatchMovies page drives via useViewState
   type BatchMovieCfg = NonNullable<NapariSetPrefs['batchMovie']>
   const getBatchMovieConfig = (setUid: string): BatchMovieCfg => _setPrefs.value[setUid]?.batchMovie ?? {}
@@ -185,5 +204,5 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

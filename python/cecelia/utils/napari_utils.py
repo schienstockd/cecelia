@@ -146,6 +146,45 @@ def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colorm
   return viewer.add_tracks(tracks, **kw)
 
 
+# ── 3D crop (axis-aligned clipping planes) ────────────────────────────────────
+
+def axis_aligned_clip_planes(layer, world_box, display_axes):
+  """Build napari ``experimental_clipping_planes`` for an axis-aligned crop box, expressed in the
+  LAYER's own data coordinates.
+
+  ``world_box`` maps a spatial axis label (``'z'``/``'y'``/``'x'``) → ``(lo, hi)`` in WORLD (µm)
+  coordinates; ``display_axes`` is the viewer's non-channel axis order (e.g. ``['t','z','y','x']``).
+  Layers are right-aligned to the viewer dims, so a layer with fewer dims (e.g. no ``t``) still maps
+  correctly. Each axis contributes two planes — keep ``>= lo`` (normal ``+axis``) and ``<= hi`` (normal
+  ``-axis``); napari intersects all enabled planes, so the kept region is the box. Returns ``[]`` when
+  no requested axis lands inside the layer.
+
+  Pure geometry (no napari import): unit-testable with a lightweight stand-in exposing
+  ``ndim``/``scale``/``translate``. World→data uses the layer's own ``scale``/``translate`` (each layer
+  may differ — image, labels, tracks and points can carry distinct scales), so a single world box clips
+  them all consistently."""
+  nd = int(layer.ndim)
+  scale = np.asarray(layer.scale, dtype=float)
+  translate = np.asarray(layer.translate, dtype=float)
+  offset = len(display_axes) - nd            # dims are trailing-aligned to the viewer axes
+  planes = []
+  for ax, bounds in world_box.items():
+    if ax not in display_axes:
+      continue
+    ldim = display_axes.index(ax) - offset
+    if ldim < 0 or ldim >= nd:
+      continue
+    s = scale[ldim] if ldim < len(scale) and scale[ldim] else 1.0
+    tr = translate[ldim] if ldim < len(translate) else 0.0
+    lo_d = (float(bounds[0]) - tr) / s
+    hi_d = (float(bounds[1]) - tr) / s
+    for coord, sign in ((lo_d, 1.0), (hi_d, -1.0)):
+      pos = [0.0] * nd; pos[ldim] = coord
+      nrm = [0.0] * nd; nrm[ldim] = sign
+      planes.append({"position": tuple(pos), "normal": tuple(nrm), "enabled": True})
+  return planes
+
+
 # ── Categorical vs numeric obs column (the shared colour-by rule) ──────────────
 # Up to this many distinct integer levels reads as a categorical code set; above that an integer
 # column is a numeric count. MUST match Julia ``_MAX_CATEGORICAL_LEVELS``

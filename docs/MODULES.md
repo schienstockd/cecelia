@@ -370,6 +370,25 @@ include("tasks/task_registry.jl")   # already there — keep this order
 
 Both `app/src/` files are Revise-tracked. Adding a new struct requires a server restart; changing a function body does not.
 
+### Tasks launched outside a module page (computed params, new-image output)
+
+A task doesn't have to be driven by a module-page form. **`editImages.cropImage`** is launched from the
+napari **Viewer panel**: the user draws a crop box, the bridge computes the pixel bbox, and the frontend
+fires `task:run` with those params directly (no page fetches its category's definitions). Two patterns it
+demonstrates:
+
+- **Computed params, minimal spec.** Only `valueName` + `x0/x1/y0/y1` are declared in the JSON (for
+  validation); the optional `z0/z1/t0/t1` are sent as extra params and pass through untouched
+  (`_validate_params_against_spec` only iterates declared params). Use this when a UI computes params
+  rather than asking for them.
+- **Producing a NEW image (not a version).** A crop changes the extent, so it can't be a version of the
+  source. The handler recovers the parent set from `img._dir` (`load_project` → find the set containing
+  `img.uid`), calls `add_image!` (new uid + `{proj}/0|1/{uid}`), writes the zarr into the new image's zero
+  dir, then registers `filepath`/`imChannelNames` on the **new** image's `ccid.json`. It returns
+  `{newImageUid, setUid}`; the frontend adds the image live via `/api/images/meta` + `addImagesFromApi`
+  (see `stores/ws.ts`). Contrast with the correction tasks, which register a new **version** of the same
+  image via `versioned_set_field!`.
+
 ---
 
 ## 5. Composite tasks

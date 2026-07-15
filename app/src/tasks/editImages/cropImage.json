@@ -1,0 +1,23 @@
+{
+  "task": "cropImage",
+  "fun_name": "editImages.cropImage",
+  "label": "Crop image",
+  "category": "Edit",
+  "env": ["local"],
+  "resource_pool": "io",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Source image",
+      "type": "valueNameSelection",
+      "default": "default",
+      "field": "imFilepath",
+      "tip": "Which image version to crop."
+    },
+    { "key": "x0", "label": "X min", "type": "int", "min": 0, "default": 0, "required": true, "tip": "Crop X start (px)." },
+    { "key": "x1", "label": "X max", "type": "int", "min": 0, "default": 0, "required": true, "tip": "Crop X end (px, exclusive)." },
+    { "key": "y0", "label": "Y min", "type": "int", "min": 0, "default": 0, "required": true, "tip": "Crop Y start (px)." },
+    { "key": "y1", "label": "Y max", "type": "int", "min": 0, "default": 0, "required": true, "tip": "Crop Y end (px, exclusive)." }
+  ]
+}

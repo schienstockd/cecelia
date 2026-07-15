@@ -1114,6 +1114,77 @@ function api_napari_stop_selection(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true))
 end
 
+# ── REST: POST /api/napari/crop-start ─────────────────────────────────────────
+# 3D crop (Imaris-style slicing). `crop-start` drops napari to 2-D and shows a Z max-projection with an
+# editable rectangle — the user draws the XY footprint over the whole structure (not one slice), sets a
+# z-range, then `crop-apply` turns that into axis-aligned clipping planes on the image + overlays and
+# returns to 3-D. `crop-clear` removes it. See docs/NAPARI.md → "3D crop".
+function api_napari_crop_start(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "crop_start"))
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/crop-apply ─────────────────────────────────────────
+# Body `{ zLo, zHi }` — z-range as fractions in [0,1] of the z depth (the drawn rectangle supplies XY).
+function api_napari_crop_apply(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    data = try JSON3.read(String(body_bytes)) catch; nothing end
+    z_lo = data === nothing ? 0.0 : Float64(get(data, :zLo, 0.0))
+    z_hi = data === nothing ? 1.0 : Float64(get(data, :zHi, 1.0))
+    _with_viewer() do
+        try
+            resp = send(v, Dict{String,Any}("type" => "crop_apply", "z_lo" => z_lo, "z_hi" => z_hi))
+            200, JSON3.write((; ok = true, worldBox = get(resp, "world_box", nothing)))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/crop-box ───────────────────────────────────────────
+# Body `{ zLo?,zHi?,tLo?,tHi? }` (fractions 0..1). Returns the drawn rectangle + z/t ranges as a
+# full-res pixel bbox `{x0,x1,y0,y1,z0?,z1?,t0?,t1?}` — the params for the `editImages.cropImage` task
+# that writes the cropped image. View-only (does not modify layers). See docs/NAPARI.md → "3D crop".
+function api_napari_crop_box(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    data = try JSON3.read(String(body_bytes)) catch; nothing end
+    g(k, d) = data === nothing ? d : Float64(get(data, k, d))
+    _with_viewer() do
+        try
+            resp = send(v, Dict{String,Any}("type" => "crop_box",
+                "z_lo" => g(:zLo, 0.0), "z_hi" => g(:zHi, 1.0),
+                "t_lo" => g(:tLo, 0.0), "t_hi" => g(:tHi, 1.0)))
+            200, JSON3.write((; ok = true, box = get(resp, "box", nothing)))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
+# ── REST: POST /api/napari/crop-clear ─────────────────────────────────────────
+function api_napari_crop_clear(body_bytes::Vector{UInt8})
+    v = _viewer()
+    (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
+    _with_viewer() do
+        try
+            send(v, Dict{String,Any}("type" => "crop_clear"))
+            200, JSON3.write((; ok = true))
+        catch e
+            500, JSON3.write((; error = sprint(showerror, e)))
+        end
+    end
+end
+
 # ── REST: POST /api/napari/event ──────────────────────────────────────────────
 # Ingest a napari interaction. Currently `cellSelection`: store the label IDs as the transient
 # selection (keyed by task_dir+value_name) and broadcast the updated tree so the flow plots

@@ -159,6 +159,20 @@ hide_layer!(v::NapariViewer, name::String)   = (send(v, Dict("type"=>"hide_layer
 remove_layer!(v::NapariViewer, name::String) = (send(v, Dict("type"=>"remove_layer", "name"=>name)); v)
 clear!(v::NapariViewer)                      = (send(v, Dict("type"=>"clear")); v)
 
+# ── 3D crop (Imaris-style slicing via clipping planes) ──────────────────────────
+# start_crop! drops napari to 2-D and shows a Z max-projection with an editable rectangle to draw the
+# XY crop footprint; apply_crop! turns that rectangle + a z-range (fractions 0..1) into axis-aligned
+# clipping planes and returns to 3-D; clear_crop! removes the crop. See docs/NAPARI.md → "3D crop".
+
+start_crop!(v::NapariViewer) = (send(v, Dict("type" => "crop_start")); v)
+apply_crop!(v::NapariViewer; z_lo::Real = 0.0, z_hi::Real = 1.0) =
+    send(v, Dict{String,Any}("type" => "crop_apply", "z_lo" => Float64(z_lo), "z_hi" => Float64(z_hi)))
+clear_crop!(v::NapariViewer) = (send(v, Dict("type" => "crop_clear")); v)
+# Convert the drawn rectangle + z/t ranges (fractions 0..1) into a full-res pixel bbox for cropImage.
+crop_box(v::NapariViewer; z_lo::Real = 0.0, z_hi::Real = 1.0, t_lo::Real = 0.0, t_hi::Real = 1.0) =
+    get(send(v, Dict{String,Any}("type" => "crop_box", "z_lo" => Float64(z_lo), "z_hi" => Float64(z_hi),
+                                 "t_lo" => Float64(t_lo), "t_hi" => Float64(t_hi))), "box", Dict{String,Any}())
+
 # ── Camera ─────────────────────────────────────────────────────────────────────
 
 function centre!(v::NapariViewer, pos::Vector;

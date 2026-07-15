@@ -393,5 +393,52 @@ class TestRecordKeyframes(unittest.TestCase):
             napari_utils.record_keyframes(object(), '/tmp/a.mp4', [{'viewState': {}}])
 
 
+class _ClipLayer:
+    """Duck-typed layer for the pure clip-plane geometry (only ndim/scale/translate are read)."""
+    def __init__(self, ndim, scale, translate=None):
+        self.ndim = ndim
+        self.scale = scale
+        self.translate = translate if translate is not None else [0.0] * ndim
+
+
+class TestAxisAlignedClipPlanes(unittest.TestCase):
+    # display axes for a t,z,y,x viewer; the crop box only names spatial axes
+    DISP = ['t', 'z', 'y', 'x']
+
+    def test_two_planes_per_axis_in_data_coords(self):
+        # image layer (t,z,y,x), scale 1µm/px on t, 2 on z, 0.5 on y/x
+        layer = _ClipLayer(4, [1.0, 2.0, 0.5, 0.5])
+        box = {'z': (4.0, 20.0), 'y': (5.0, 50.0), 'x': (10.0, 100.0)}
+        planes = napari_utils.axis_aligned_clip_planes(layer, box, self.DISP)
+        self.assertEqual(len(planes), 6)                         # 2 planes × 3 axes
+        # z is layer dim 1: lo 4µm/2 = 2px (normal +), hi 20µm/2 = 10px (normal -)
+        z_lo, z_hi = planes[0], planes[1]
+        self.assertEqual(z_lo['position'][1], 2.0)
+        self.assertEqual(z_lo['normal'], (0.0, 1.0, 0.0, 0.0))
+        self.assertEqual(z_hi['position'][1], 10.0)
+        self.assertEqual(z_hi['normal'], (0.0, -1.0, 0.0, 0.0))
+        self.assertTrue(all(p['enabled'] for p in planes))
+
+    def test_trailing_alignment_for_fewer_dims(self):
+        # a (z,y,x) layer in a (t,z,y,x) viewer: dims are right-aligned, so 'z' is layer dim 0
+        layer = _ClipLayer(3, [2.0, 0.5, 0.5])
+        planes = napari_utils.axis_aligned_clip_planes(layer, {'z': (4.0, 20.0)}, self.DISP)
+        self.assertEqual(len(planes), 2)
+        self.assertEqual(planes[0]['position'][0], 2.0)          # 4µm / 2 = 2px at layer dim 0
+        self.assertEqual(planes[0]['normal'], (1.0, 0.0, 0.0))
+
+    def test_translate_offset_applied(self):
+        layer = _ClipLayer(2, [1.0, 1.0], translate=[10.0, 0.0])   # y translated +10µm
+        planes = napari_utils.axis_aligned_clip_planes(layer, {'y': (10.0, 30.0)}, ['y', 'x'])
+        self.assertEqual(planes[0]['position'][0], 0.0)           # (10-10)/1 = 0px
+        self.assertEqual(planes[1]['position'][0], 20.0)          # (30-10)/1 = 20px
+
+    def test_axis_absent_from_layer_is_skipped(self):
+        # a 2-D (y,x) layer can't be clipped on z → no z planes
+        layer = _ClipLayer(2, [0.5, 0.5])
+        planes = napari_utils.axis_aligned_clip_planes(layer, {'z': (0.0, 5.0)}, self.DISP)
+        self.assertEqual(planes, [])
+
+
 if __name__ == '__main__':
     unittest.main()
