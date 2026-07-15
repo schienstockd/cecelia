@@ -193,6 +193,48 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # ── Lab log context (auto [Cecelia] activity digest) ────────────────────────
+    @testset "Lab log context" begin
+        proj = create_project!(name="labctx-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="set-A")
+        img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+
+        # nothing run yet → no digest
+        @test capture_context!(proj) === nothing
+        @test isempty(parse_lab_log(read_lab_log(proj)))
+
+        # simulate task activity (what the run logs record)
+        append_run_log!(img1, "segment.cellpose", "default")
+        append_run_log!(img2, "segment.cellpose", "default")
+        append_run_log!(img1, "tracking.bayesian_tracking")
+
+        block = capture_context!(proj)
+        @test block !== nothing
+        @test occursin("[Cecelia]", block)
+        @test occursin("segment.cellpose on 2 images", block)
+        @test occursin("tracking.bayesian_tracking on 1 image", block)   # singular
+        @test occursin("img-1", block) && occursin("img-2", block)
+
+        entries = parse_lab_log(read_lab_log(proj))
+        @test length(entries) == 1 && entries[1]["author"] == "Cecelia"
+
+        # idempotent: no new activity → no second digest
+        @test capture_context!(proj) === nothing
+        @test length(parse_lab_log(read_lab_log(proj))) == 1
+
+        # new activity strictly after the cutoff → a fresh digest that doesn't repeat old activity
+        sleep(1)   # run-log timestamps are second-granular; ensure a strictly-later `at`
+        append_run_log!(img2, "behaviour.hmm")
+        block2 = capture_context!(proj)
+        @test block2 !== nothing
+        @test occursin("behaviour.hmm on 1 image", block2)
+        @test !occursin("segment.cellpose", block2)            # already reported, not repeated
+        @test length(parse_lab_log(read_lab_log(proj))) == 2
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Param validation ──────────────────────────────────────────────────────
     @testset "Param validation" begin
         task = ImportOmezarr()

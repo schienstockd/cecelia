@@ -300,6 +300,24 @@ end
         r = read_ll()
         @test occursin("[User]", r.content) && occursin("[Claude]", r.content)
         @test length(r.entries) == 2
+
+        # ── capture (auto [Cecelia] activity digest) ──
+        # no task activity yet → captured=false, nothing appended
+        let cap = JSON3.read(_post(api_lablog_capture, Dict("projectUid"=>uid))[2])
+            @test cap.ok == true && cap.captured == false
+        end
+        # add run-log activity, then capture → captured=true with a [Cecelia] entry
+        let s = add_set!(proj; name="set-A"),
+            img = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+            append_run_log!(img, "segment.cellpose", "default")
+            cap = JSON3.read(_post(api_lablog_capture, Dict("projectUid"=>uid))[2])
+            @test cap.captured == true
+            @test occursin("[Cecelia]", cap.block)
+            @test any(e -> e.author == "Cecelia", cap.entries)
+        end
+        # bad requests
+        @test _post(api_lablog_capture, Dict())[1] == 400              # projectUid missing
+        @test _post(api_lablog_capture, Dict("projectUid"=>"nope"))[1] == 404
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)

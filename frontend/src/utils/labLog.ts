@@ -11,11 +11,13 @@ export interface LabLogEntry {
   raw: string         // the full block markdown
 }
 
-export type AuthorKind = 'claude' | 'correction' | 'user' | 'other'
+export type AuthorKind = 'claude' | 'correction' | 'cecelia' | 'user' | 'other'
 
 // The author tags the panel submits. The backend wraps these into the `[author]` header.
 export const USER_AUTHOR = 'User'
 export const CORRECTION_AUTHOR = 'User — correction'
+// App-generated activity digests (backend author is CONTEXT_AUTHOR = "Cecelia").
+export const CECELIA_AUTHOR = 'Cecelia'
 
 /**
  * Classify an entry author for styling. Correction is checked BEFORE user because a correction
@@ -24,6 +26,7 @@ export const CORRECTION_AUTHOR = 'User — correction'
 export function authorKind(author: string): AuthorKind {
   const a = (author ?? '').trim().toLowerCase()
   if (a.includes('correction')) return 'correction'
+  if (a.includes('cecelia')) return 'cecelia'
   if (a.includes('claude')) return 'claude'
   if (a.includes('user')) return 'user'
   return 'other'
