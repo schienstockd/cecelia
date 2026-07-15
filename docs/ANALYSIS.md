@@ -113,6 +113,13 @@ hover toolbar appeared.
 reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out **exact A4** pages
 (per-board orientation) via `pdf-lib`.
 
+- **Wait for plots before capturing** (`utils/plotReady`): the export visits each tab and must capture
+  only once that board's plots have finished fetching + rendering — a fixed sleep captured slow plots
+  blank. Every plot host feeds a board-wide load counter through `useDelayedLoading` (the one spinner
+  composable they all use — no per-plot wiring), and `waitForPlotsIdle()` blocks until the counter has
+  been 0 for a continuous settle window (+2 RAF frames for the final WebGL/canvas paint), capped by a
+  timeout. Both the PDF and CSV export await it after switching tabs.
+
 - **Per-slot title (figure caption)**: each filled slot has an editable title line (`.lc-slot-cap`,
   persisted in the slot's `state.title`), shown above the plot on-screen and drawn above the slot image
   in the PDF (`pdf.ts` reserves `SLOT_TITLE_H` only when a title is set). Empty by default.

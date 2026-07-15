@@ -1,4 +1,5 @@
 import { ref, watch, onUnmounted, type Ref } from 'vue'
+import { beginPlotLoad, endPlotLoad } from '../utils/plotReady'
 
 /**
  * Delayed loading flag for plot spinners (docs/UI.md → "Plot loading state").
@@ -14,12 +15,21 @@ import { ref, watch, onUnmounted, type Ref } from 'vue'
 export function useDelayedLoading(loading: Ref<boolean>, delayMs = 350): Ref<boolean> {
   const show = ref(false)
   let timer: ReturnType<typeof setTimeout> | null = null
+  // also feed the board-wide load counter (utils/plotReady) so the PDF/CSV export can wait for genuine
+  // idle instead of a fixed sleep. `counted` guards against double increments and leaking the count.
+  let counted = false
   const clear = () => { if (timer !== null) { clearTimeout(timer); timer = null } }
+  const uncount = () => { if (counted) { counted = false; endPlotLoad() } }
   watch(loading, (v) => {
     clear()
-    if (v) timer = setTimeout(() => { show.value = true; timer = null }, delayMs)
-    else show.value = false
+    if (v) {
+      if (!counted) { counted = true; beginPlotLoad() }
+      timer = setTimeout(() => { show.value = true; timer = null }, delayMs)
+    } else {
+      show.value = false
+      uncount()
+    }
   }, { immediate: true })
-  onUnmounted(clear)
+  onUnmounted(() => { clear(); uncount() })   // unmounting mid-load must release its count
   return show
 }
