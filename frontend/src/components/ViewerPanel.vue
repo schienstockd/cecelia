@@ -5,6 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
+import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels } from '../utils/napariOverlays'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
 const projectStore = useProjectStore()
@@ -185,15 +186,9 @@ async function pushPopulations(popType: string, show: boolean, valueName?: strin
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return false
-  try {
-    const res = await fetch('/api/napari/show-populations', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid,
-                             valueName: valueName || undefined,   // blank → server uses active segmentation
-                             popType, show, pointsSize: pointSize.value }),
-    })
-    return res.ok
-  } catch { return false }   // napari not running, etc.
+  // one shared request builder (utils/napariOverlays) — same shape the strip/zoom uses
+  const res = await apiPushPopulations(projectUid, uid, { popType, show, valueName, pointsSize: pointSize.value })
+  return !!res?.ok
 }
 
 // Per-pop-type visibility toggle; the choice is remembered (persisted) so it carries across opens.
@@ -210,24 +205,21 @@ async function pushTracks(): Promise<boolean> {
   const uid        = projectStore.napariImageUid
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return false
-  try {
-    const res = await fetch('/api/napari/show-tracks', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, valueNames: onTrackVns.value,
-                             showGatedTracks: gatedTracksShown.value,
-                             showTrackclust: popVisible('trackclust'),
-                             colorBy: colourByCol.value,
-                             colourOverrides: userColourOverrides() }),
-    })
-    // capture the colour-by legend from the tracks response — the Labels layer may be hidden (then
-    // colour-labels returns none), so tracks are the only legend source when colouring tracks alone.
-    if (res.ok && colourByCol.value) {
+  const res = await apiPushTracks(projectUid, uid, {
+    valueNames: onTrackVns.value, showGatedTracks: gatedTracksShown.value,
+    showTrackclust: popVisible('trackclust'), colorBy: colourByCol.value,
+    colourOverrides: userColourOverrides(),
+  })
+  // capture the colour-by legend from the tracks response — the Labels layer may be hidden (then
+  // colour-labels returns none), so tracks are the only legend source when colouring tracks alone.
+  if (res?.ok && colourByCol.value) {
+    try {
       const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
       if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
       if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
-    }
-    return res.ok
-  } catch { return false }   // napari not running, etc.
+    } catch { /* legend harvest is best-effort */ }
+  }
+  return !!res?.ok
 }
 
 // Per-segmentation toggle: flip this segmentation's track overlay, persist, re-push the on-set.
@@ -282,19 +274,17 @@ async function pushColourLabels(column: string): Promise<boolean> {
   const projectUid = projectMeta.current?.uid
   if (!uid || !projectUid) return false
   if (!column) { colourLegend.value = {}; colourLegendLabels.value = {} }   // reset → no legend
-  try {
-    const res = await fetch('/api/napari/colour-labels', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid, imageUid: uid, valueName: selectedValueName.value, column,
-                             colourOverrides: userColourOverrides() }),
-    })
-    if (res.ok && column) {   // categorical → {value: hex}; empty for continuous / hidden-labels
+  const res = await apiPushColourLabels(projectUid, uid, {
+    valueName: selectedValueName.value, column, colourOverrides: userColourOverrides(),
+  })
+  if (res?.ok && column) {   // categorical → {value: hex}; empty for continuous / hidden-labels
+    try {
       const j = (await res.json()) as { legend?: Record<string, string>; legendLabels?: Record<string, string> }
       if (Object.keys(j.legend ?? {}).length) colourLegend.value = { ...colourLegend.value, ...j.legend }
       if (Object.keys(j.legendLabels ?? {}).length) colourLegendLabels.value = { ...colourLegendLabels.value, ...j.legendLabels }
-    }
-    return res.ok
-  } catch { return false }
+    } catch { /* legend harvest is best-effort */ }
+  }
+  return !!res?.ok
 }
 
 // user picked a colour-by column: persist, recolour the tracks (if shown) and the labels layer

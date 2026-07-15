@@ -10,7 +10,8 @@ import BatchMoviesPanel from './batchmovies/BatchMoviesPanel.vue'
 </script>
 
 <template>
-  <ModuleLayout module="batchMovies" :show-attrs="true" :show-filter="true" plots-label="Movies">
+  <ModuleLayout module="batchMovies" :show-attrs="true" :show-filter="true" plots-label="Movies"
+                :right-default-width="270">
     <template #right="{ selectedUids, selectedNames }">
       <BatchMoviesPanel :selected-uids="selectedUids" :selected-names="selectedNames" />
     </template>

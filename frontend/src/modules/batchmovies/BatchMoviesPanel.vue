@@ -210,26 +210,33 @@ async function previewOpen() {
 
       <!-- Overlays -->
       <section class="bm-sec">
-        <h4>Overlays</h4>
-        <label class="bm-chk"><input type="checkbox" v-model="showTracks" /> Tracks (all tracked segmentations)</label>
+        <h4>Overlays <span class="bm-sub">click to toggle</span></h4>
+        <div class="bm-toggles">
+          <button class="bm-tg" :class="{ on: showTracks }" @click="showTracks = !showTracks"
+                  v-tooltip.bottom="'Tracks — all tracked segmentations'"><i class="pi pi-directions" /></button>
+          <button class="bm-tg" :class="{ on: showTrackclust }" @click="showTrackclust = !showTrackclust"
+                  v-tooltip.bottom="'Track-cluster populations'"><i class="pi pi-sitemap" /></button>
+          <button class="bm-tg" :class="{ on: showGated }" @click="showGated = !showGated"
+                  v-tooltip.bottom="'Gated track populations'"><i class="pi pi-filter" /></button>
+          <button class="bm-tg" :class="{ on: showPops }" @click="showPops = !showPops"
+                  v-tooltip.bottom="'Populations (points)'"><i class="pi pi-chart-scatter" /></button>
+          <button class="bm-tg" :class="{ on: colourLabels }" @click="colourLabels = !colourLabels"
+                  v-tooltip.bottom="'Colour label masks by the colour-by measure'"><i class="pi pi-palette" /></button>
+        </div>
         <div v-if="showTracks" class="bm-inset">
           <span class="bm-lbl">tail</span>
           <input type="range" min="1" max="20" step="1" v-model.number="tailWidth" />
           <span class="bm-val">{{ tailWidth }}</span>
         </div>
-        <label class="bm-chk"><input type="checkbox" v-model="showTrackclust" /> Track-cluster populations</label>
-        <label class="bm-chk"><input type="checkbox" v-model="showGated" /> Gated track populations</label>
-        <label class="bm-chk"><input type="checkbox" v-model="showPops" /> Populations (points)</label>
         <div v-if="showPops" class="bm-inset">
-          <select v-model="popType">
-            <option value="flow">gating populations</option>
-            <option value="clust">cell-cluster populations</option>
+          <select v-model="popType" class="bm-mini">
+            <option value="flow">gating</option>
+            <option value="clust">clusters</option>
           </select>
           <span class="bm-lbl">size</span>
           <input type="range" min="1" max="20" step="1" v-model.number="pointsSize" />
           <span class="bm-val">{{ pointsSize }}</span>
         </div>
-        <label class="bm-chk"><input type="checkbox" v-model="colourLabels" /> Colour label masks by measure</label>
       </section>
 
       <!-- Colour by -->
@@ -288,13 +295,21 @@ async function previewOpen() {
 </template>
 
 <style scoped>
-.bm { display: flex; flex-direction: column; gap: 12px; }
-.bm-hint { color: var(--cc-text-dim); font-size: 0.8rem; margin: 2px 0; }
-.bm-busy { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px;
+.bm { display: flex; flex-direction: column; gap: 7px; flex: 1; min-width: 0; padding: 2px; }
+.bm-hint { color: var(--cc-text-dim); font-size: 0.78rem; margin: 2px 0; }
+.bm-busy { display: flex; align-items: center; gap: 8px; padding: 6px 9px; border-radius: 6px;
   background: color-mix(in srgb, var(--cc-warn) 16%, transparent); border: 1px solid var(--cc-warn);
-  color: var(--cc-text); font-size: 0.82rem; }
-.bm-sec { border: 1px solid var(--cc-border); border-radius: 6px; padding: 8px 10px; background: var(--cc-surface-1); }
-.bm-sec h4 { margin: 0 0 6px; font-size: 0.82rem; font-weight: 700; }
+  color: var(--cc-text); font-size: 0.8rem; }
+.bm-sec { border: 1px solid var(--cc-border); border-radius: 6px; padding: 6px 8px; background: var(--cc-surface-1); }
+.bm-sec h4 { margin: 0 0 4px; font-size: 0.8rem; font-weight: 700; }
+/* overlay icon toggles: compact square buttons (label lives in the tooltip) */
+.bm-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
+.bm-tg { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
+  border: 1px solid var(--cc-border); border-radius: 0.4rem; background: var(--cc-surface-2);
+  color: var(--cc-text-dim); cursor: pointer; font-size: 0.85rem; }
+.bm-tg:hover { color: var(--cc-text); border-color: #484f58; }
+.bm-tg.on { color: #fff; background: var(--cc-accent); border-color: var(--cc-accent); }
+.bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; font-size: 0.72rem; }
 .bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: 0.72rem; margin-left: 6px; }
 .bm-link { float: right; font-size: 0.7rem; color: var(--cc-accent); background: none; border: none;
   cursor: pointer; padding: 0; display: inline-flex; align-items: center; gap: 3px; }
@@ -305,7 +320,7 @@ async function previewOpen() {
 .bm-row select, .bm-sec > select { min-width: 150px; }
 .bm-chk { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin: 3px 0; cursor: pointer; }
 .bm-chk.inline { display: inline-flex; margin-right: 10px; }
-.bm-inset { display: flex; align-items: center; gap: 6px; margin: 2px 0 6px 22px; }
+.bm-inset { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }
 .bm-lbl { font-size: 0.72rem; color: var(--cc-text-dim); }
 .bm-val { font-size: 0.72rem; min-width: 1.6rem; }
 .bm-attrs { margin-top: 6px; }

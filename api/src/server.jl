@@ -332,6 +332,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_apply_view_state(body_bytes)
         elseif path == "/api/napari/view-state"
             api_napari_view_state(body_bytes)
+        elseif path == "/api/napari/overlay-legend"
+            api_napari_overlay_legend(body_bytes)
         elseif path == "/api/napari/record-timelapse"
             api_napari_record_timelapse(body_bytes)
         elseif path == "/api/napari/record-animation"
