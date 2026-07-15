@@ -1213,6 +1213,26 @@ end
 
 # ── REST: GET /api/napari/status ──────────────────────────────────────────────
 
+# Newest mtime among the sources the napari bridge loads at startup — its own file plus the cecelia
+# Python helpers it imports (napari/zarr/ome/dim/label-props utils). The bridge is a SEPARATE process,
+# NOT Revise-tracked, so ANY edit to these after it started means it's running old code — the "stale
+# bridge" that silently breaks new viewer features until you restart napari + reopen. mtime (not git)
+# so it also catches UNCOMMITTED edits (the common dev case: edit napari code, restart the backend but
+# not the bridge). Same machine → mtime and the bridge start time share a clock.
+function _napari_src_mtime()
+    root = dirname(dirname(@__DIR__))   # api/src → api → repo root
+    newest = 0.0
+    for d in (joinpath(root, "napari"), joinpath(root, "python", "cecelia", "utils"))
+        isdir(d) || continue
+        for (r, _, fs) in walkdir(d), f in fs
+            endswith(f, ".py") || continue
+            m = try; mtime(joinpath(r, f)); catch; 0.0; end
+            m > newest && (newest = m)
+        end
+    end
+    newest
+end
+
 function api_napari_status(req::HTTP.Request)
     # ping once (unlocked, like _viewer_alive — never blocks on a long op) and read the bridge's start
     # time from the reply, so the Settings panel can show bridge uptime and spot a STALE bridge (it
@@ -1229,8 +1249,12 @@ function api_napari_status(req::HTTP.Request)
         end
     end
     bridge_uptime = bridge_started === nothing ? nothing : round(Int, time() - Float64(bridge_started))
+    # stale = a napari source was edited AFTER the bridge started (1s guard against same-second noise)
+    bridge_stale = bridge_started !== nothing &&
+                   (try; _napari_src_mtime() > Float64(bridge_started) + 1.0; catch; false; end)
     200, JSON3.write((; alive = alive, starting = _viewer_starting[],
-                        bridgeStartedAt = bridge_started, bridgeUptimeSeconds = bridge_uptime))
+                        bridgeStartedAt = bridge_started, bridgeUptimeSeconds = bridge_uptime,
+                        bridgeStale = bridge_stale))
 end
 
 # ── REST: discrete-GPU toggle ─────────────────────────────────────────────────

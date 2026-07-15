@@ -29,15 +29,13 @@ _repl_available() = _repl_on[] && _host_is_loopback()
 # Process start time + short git commit — so the Diagnostics panel can tell a FRESHLY-restarted backend
 # from a STALE one still holding the port. A failed `pixi run dev` (port already bound) silently leaves
 # the old process serving old code; the panel otherwise looks identical either way (same port, same
-# fields). Captured once at load; git is best-effort (absent/empty in a packaged build without .git).
+# fields). `_GIT_COMMIT` is captured once at load (the code the process is RUNNING); diagnostics also
+# reads the live HEAD each request, and flags `stale` when they differ — i.e. the tree moved
+# (commit/merge/pull) but the backend wasn't restarted. git is best-effort ("" in a packaged build).
+const _REPO_ROOT = dirname(dirname(@__DIR__))
+_git_short(root) = try; String(strip(read(`git -C $root rev-parse --short HEAD`, String))); catch; ""; end
 const _STARTED_AT = time()
-const _GIT_COMMIT = let root = dirname(dirname(@__DIR__))
-    try
-        strip(read(`git -C $root rev-parse --short HEAD`, String))
-    catch
-        ""
-    end
-end
+const _GIT_COMMIT = _git_short(_REPO_ROOT)
 
 # POST /api/repl/config {enabled} — flip the runtime toggle. Not a security boundary (eval still needs a
 # loopback bind), so it's safe to accept from the UI; returns the resulting state.
@@ -99,11 +97,15 @@ end
 
 function api_diagnostics(::HTTP.Request)
     gb(x) = round(x / 2^30; digits = 2)
+    commit_now = _git_short(_REPO_ROOT)                  # live HEAD (this request) vs the running commit
+    stale = !isempty(_GIT_COMMIT) && !isempty(commit_now) && _GIT_COMMIT != commit_now
     200, JSON3.write((;
         threads     = Threads.nthreads(),
         julia       = string(VERSION),
         version     = _installed_version(),
-        commit      = _GIT_COMMIT,                       # short git SHA the backend is running (dev)
+        commit      = _GIT_COMMIT,                       # short git SHA the backend is RUNNING (dev)
+        commitCurrent = commit_now,                       # live HEAD on disk
+        stale       = stale,                              # running commit ≠ HEAD → restart to load latest
         startedAt   = _STARTED_AT,                        # epoch seconds — spot a stale/failed-restart backend
         uptimeSeconds = round(Int, time() - _STARTED_AT),
         projectsDir = projects_dir(),

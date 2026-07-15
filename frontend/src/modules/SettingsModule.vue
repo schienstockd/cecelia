@@ -86,7 +86,7 @@ onMounted(checkUpdates)
 
 // ── Diagnostics + debug console ──────────────────────────────────────────────
 interface Diag {
-  threads: number; julia: string; version: string; commit?: string; projectsDir: string
+  threads: number; julia: string; version: string; commit?: string; commitCurrent?: string; stale?: boolean; projectsDir: string
   startedAt?: number; uptimeSeconds?: number
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
@@ -145,7 +145,7 @@ onMounted(loadDiag)
 // Live status of the backend's child processes + per-component and global controls. Status is
 // ephemeral UI state (polled) → plain refs, not persisted view state. Pure status→state mapping
 // lives in utils/serviceStatus.ts (unit-tested); here we only poll, act, and pick which buttons show.
-const napariRaw = ref<{ alive?: boolean; starting?: boolean; bridgeUptimeSeconds?: number | null } | null>(null)
+const napariRaw = ref<{ alive?: boolean; starting?: boolean; bridgeUptimeSeconds?: number | null; bridgeStale?: boolean } | null>(null)
 const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
 const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
@@ -464,13 +464,28 @@ async function switchWt(path: string) {
 
       <div v-if="diag" class="diag-grid">
         <span>Version</span><span class="mono">{{ diag.version }}</span>
-        <span v-if="diag.commit">Commit</span><span v-if="diag.commit" class="mono">{{ diag.commit }}</span>
+        <span v-if="diag.commit">Commit</span>
+        <span v-if="diag.commit" class="mono" :class="{ 'diag-stale': diag.stale }">
+          {{ diag.commit }}
+          <span v-if="diag.stale" class="diag-stale-note"
+                v-tooltip.bottom="`Backend runs an older commit than your files (HEAD ${diag.commitCurrent}) — restart it to load the latest.`">
+            <i class="pi pi-exclamation-triangle" /> stale
+          </span>
+        </span>
         <span>Backend up</span><span class="mono">{{ formatUptime(diag.uptimeSeconds) }}</span>
+        <span>Napari bridge</span>
+        <span class="mono" :class="{ 'diag-stale': napariRaw?.bridgeStale }">
+          <template v-if="napariSt === 'running'">up {{ formatUptime(napariRaw?.bridgeUptimeSeconds) }}</template>
+          <template v-else>{{ stateInfo(napariSt).label }}</template>
+          <span v-if="napariRaw?.bridgeStale" class="diag-stale-note"
+                v-tooltip.bottom="'Napari is running old code — restart it (System panel above) and reopen the image.'">
+            <i class="pi pi-exclamation-triangle" /> stale
+          </span>
+        </span>
         <span>Server threads</span><span class="mono">{{ diag.threads }}</span>
         <span>Julia</span><span class="mono">{{ diag.julia }}</span>
         <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>
         <span>Host</span><span class="mono">{{ diag.host }}:{{ diag.port }}</span>
-        <span>Napari bridge</span><span class="mono">{{ napariSt === 'running' ? `up ${formatUptime(napariRaw?.bridgeUptimeSeconds)}` : stateInfo(napariSt).label }}</span>
         <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>
       </div>
 
@@ -692,6 +707,10 @@ async function switchWt(path: string) {
 .diag-grid > span:nth-child(odd) { color: var(--cc-text-dim); }
 .mono { font-family: var(--cc-mono); font-size: 0.74rem; word-break: break-all; }
 .field-hint code, .diag-grid code { font-family: var(--cc-mono); font-size: 0.72rem; }
+/* stale-process flag: amber value + a small chip (problem short; the action is in the tooltip) */
+.diag-stale { color: var(--cc-warn); }
+.diag-stale-note { margin-left: 0.4rem; font-size: 0.68rem; color: var(--cc-warn); white-space: nowrap; cursor: default; }
+.diag-stale-note .pi { font-size: 0.66rem; }
 
 /* debug console */
 .repl-log {

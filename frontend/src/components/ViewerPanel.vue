@@ -608,13 +608,38 @@ function onTaskResult(data: Record<string, unknown>) {
 // the image-table eye, clicked on the ALREADY-open image, asks us to reload it (data-only unless reset)
 watch(() => projectStore.napariReloadTick, () => reloadViewer())
 
+// Stale-bridge flag: napari is a separate process that survives a backend restart, so after editing
+// napari code you can be looking at old behaviour without knowing. Poll the backend (which compares the
+// bridge's start time to the napari source mtimes) and warn right here, where you'd act on it.
+const bridgeStale = ref(false)
+let bridgeTimer: number | undefined
+async function pollBridge() {
+  try {
+    const s = await (await fetch('/api/napari/status')).json() as { bridgeStale?: boolean }
+    bridgeStale.value = !!s.bridgeStale
+  } catch { bridgeStale.value = false }
+}
+async function restartNapari() {
+  try {
+    const res = await fetch('/api/napari/restart', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    if (res.ok) log.info('Napari restarting — reopen the image to reload it.', { source: 'napari' })
+    else log.error(`Napari restart failed: ${await _resError(res)}`, { source: 'napari' })
+  } catch (e) {
+    log.error(`Napari restart failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+  }
+  setTimeout(pollBridge, 1500)
+}
+
 onMounted(() => {
+  pollBridge(); bridgeTimer = window.setInterval(pollBridge, 5000)
   ws.on('napari:opened', onNapariOpened)
   ws.on('task:status', onTaskStatus)
   ws.on('task:result', onTaskResult)
   ws.on('gating:popmap', onGatingChange)
 })
 onUnmounted(() => {
+  if (bridgeTimer) clearInterval(bridgeTimer)
   ws.off('napari:opened', onNapariOpened)
   ws.off('task:status', onTaskStatus)
   ws.off('task:result', onTaskResult)
@@ -624,6 +649,14 @@ onUnmounted(() => {
 
 <template>
   <div class="viewer-panel">
+    <!-- stale-bridge warning: napari started before the latest napari-code changes (it survives a
+         backend restart). Brief here; the action is the Restart button + the tooltip. -->
+    <div v-if="bridgeStale" class="viewer-stale"
+         v-tooltip.bottom="'Napari started before your latest changes — restart it, then reopen the image.'">
+      <i class="pi pi-exclamation-triangle" />
+      <span class="viewer-stale-txt">Napari running old code</span>
+      <button class="viewer-stale-btn" @click="restartNapari">Restart</button>
+    </div>
     <!-- ── View: viewer behaviour toggles (global prefs; apply on next open) ──
          Top of the panel — these are always available, even before an image is open. -->
     <!-- Convention: append new toggles at the END of the row. -->
@@ -831,6 +864,32 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 0.35rem;
 }
+
+/* stale-bridge warning strip — amber, brief; the Restart button is the action */
+.viewer-stale {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid var(--cc-warn);
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--cc-warn) 14%, transparent);
+  color: var(--cc-warn);
+  font-size: 0.7rem;
+}
+.viewer-stale-txt { flex: 1; min-width: 0; }
+.viewer-stale-btn {
+  flex-shrink: 0;
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--cc-warn);
+  background: none;
+  color: var(--cc-warn);
+  cursor: pointer;
+}
+.viewer-stale-btn:hover { background: color-mix(in srgb, var(--cc-warn) 22%, transparent); }
 
 .viewer-image {
   display: flex;
