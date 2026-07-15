@@ -6,12 +6,14 @@
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useSettingsStore } from '../stores/settings'
 import {
   authorKind, correctionPrefill, draftToLines,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry,
 } from '../utils/labLog'
 
 const pm = useProjectMetaStore()
+const settings = useSettingsStore()
 const projectUid = computed(() => pm.current?.uid ?? '')
 
 const entries = ref<LabLogEntry[]>([])
@@ -19,6 +21,8 @@ const draft = ref('')
 const correcting = ref(false)      // next submit is a [User — correction] block
 const loading = ref(false)
 const busy = ref(false)            // an append is in flight
+const capturing = ref(false)       // an activity-capture is in flight
+const captureNote = ref('')        // transient result of the last manual capture
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 
@@ -38,8 +42,35 @@ async function load() {
   }
 }
 
-// (re)load whenever the open project changes, and on first mount
-watch(projectUid, load, { immediate: true })
+// Append an auto-generated [Cecelia] activity digest. `silent` (auto-on-open) suppresses the
+// "nothing new" note. Returns whether anything was captured.
+async function capture(silent = false) {
+  if (!projectUid.value || capturing.value) return
+  capturing.value = true
+  error.value = ''
+  if (!silent) captureNote.value = ''
+  try {
+    const r = await fetch('/api/lablog/capture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value }),
+    })
+    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
+    const body = await r.json()
+    entries.value = body.entries ?? entries.value
+    if (!silent) captureNote.value = body.captured ? 'Captured recent activity.' : 'No new activity.'
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    capturing.value = false
+  }
+}
+
+// (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
+watch(projectUid, async () => {
+  await load()
+  if (settings.labLogAutoContext) capture(true)
+}, { immediate: true })
 
 async function submit() {
   const lines = draftToLines(draft.value)
@@ -111,6 +142,18 @@ function cancelCorrection() {
       </div>
     </div>
 
+    <!-- activity capture: manual button + auto-on-open toggle -->
+    <div class="ll-toolbar">
+      <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
+              title="Append an app-generated [Cecelia] digest of recent activity (tasks run, …)">
+        <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
+      </button>
+      <label class="ll-auto" title="Automatically capture activity when this project opens">
+        <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
+      </label>
+      <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
+    </div>
+
     <div v-if="error" class="ll-error">{{ error }}</div>
 
     <!-- entries, newest-first -->
@@ -163,6 +206,20 @@ function cancelCorrection() {
 }
 .ll-save:disabled { opacity: 0.5; cursor: default; }
 
+.ll-toolbar {
+  display: flex; align-items: center; gap: 0.6rem;
+  padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
+}
+.ll-capture {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text);
+  border-radius: 0.35rem; padding: 0.2rem 0.5rem; font-size: 0.7rem; cursor: pointer;
+}
+.ll-capture:hover:not(:disabled) { border-color: #8b949e; }
+.ll-capture:disabled { opacity: 0.5; cursor: default; }
+.ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
+.ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
+
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
@@ -178,10 +235,12 @@ function cancelCorrection() {
 .ll-entry.k-claude { border-left-color: var(--cc-accent); }
 .ll-entry.k-user { border-left-color: #3fb950; }
 .ll-entry.k-correction { border-left-color: #d29922; }
+.ll-entry.k-cecelia { border-left-color: #8b949e; }   /* app-generated → muted/ambient */
 .ll-entry.k-other { border-left-color: var(--cc-text-dim); }
 .k-claude .ll-author { color: var(--cc-accent); }
 .k-user .ll-author { color: #3fb950; }
 .k-correction .ll-author { color: #d29922; }
+.k-cecelia .ll-author { color: #8b949e; }
 
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: 0.72rem; }

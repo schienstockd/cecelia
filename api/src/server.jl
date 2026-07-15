@@ -292,6 +292,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_inclusion_set(body_bytes)
         elseif path == "/api/lablog/append"
             api_lablog_append(body_bytes)
+        elseif path == "/api/lablog/capture"
+            api_lablog_capture(body_bytes)
         elseif path == "/api/images/meta/resync"
             api_images_meta_resync(body_bytes)
         elseif path == "/api/images/labels/delete"

@@ -76,6 +76,19 @@ Append-only, dated, author-tagged entries. Never edit old entries — add a corr
 
 Author tag `[Claude]` or `[User]` on every entry block. Correction entries reference the original by date and author. Claude reads corrections and adjusts reasoning within the session.
 
+### App-generated context — `[Cecelia]` entries
+
+A third author tag, `[Cecelia]`, marks entries the **app** generated automatically — the *what* (activity) to complement the human *why*. So the log records not just decisions but the work that surrounded them, and returning to a project shows what happened without anyone having typed it.
+
+- **Snapshot-diff, not an edit log.** `capture_context!(proj)` (`app/src/lab_log_context.jl`) reports the **net change since the last capture** — never per-edit keystrokes. A gating session with 50 polygon nudges that ends with one changed gate is *one* line; nudges that cancel out are nothing. Snapshots + a run-log cutoff live in `settings/lab-log-context.json`. Route: `POST /api/lablog/capture`. Three sources folded into one dated digest:
+  - **Tasks** — per-image run-log activity (segment/track/cluster/measures) since the cutoff, e.g. `segment.cellpose on 5 images (…)`.
+  - **Gating** — a per-pop fingerprint (name + a hash of the gate spec, read straight from the gating JSON files) diffed against the last snapshot → `Gating img-3: added CD8+; gate changed on CD3, CD8`. Populations added/removed and which pops' **gates** changed, by name.
+  - **Exclusions** — the excluded-image set diffed → `Excluded img-7` / `Re-included img-2`.
+- **First capture seeds the gating/exclusion baselines silently** (no giant retro dump of everything that already exists); only genuine deltas are reported thereafter.
+- **Triggers: manual + auto.** The panel has a "Capture activity" button and an "Auto" toggle (`labLogAutoContext`, default off) that captures on project open — both, so the user can feel out what's sensible before it runs unattended.
+- **Known limits / to tune as we go:** run-log timestamps are second-granular and the cutoff compare is strict (`>`), so task activity in the *same second* as a prior capture is skipped (negligible — captures are minutes apart). Gate changes report only *that* a gate changed (by population), **not magnitude** (e.g. % of cells shifted) — that's a candidate refinement once we see whether these digests read as useful or noise. Threshold/geometry values themselves are intentionally excluded (that's the undo-list we don't want).
+- Digests are ordinary appended entries — the user annotates by adding normal `[User]` notes (or a correction) around them.
+
 ---
 
 ## MCP tools
