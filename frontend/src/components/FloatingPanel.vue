@@ -9,11 +9,12 @@ const props = withDefaults(defineProps<{
   title: string
   storageKey: string            // localStorage namespace: cc.floating.<storageKey>
   icon?: string                 // optional PrimeIcons class (e.g. 'pi-eye')
+  accent?: string               // optional highlight colour (border + header icon) so a panel stands out
   defaultX?: number
   defaultY?: number
   defaultW?: number
   defaultH?: number
-}>(), { icon: '', defaultX: 240, defaultY: 84, defaultW: 290, defaultH: 460 })
+}>(), { icon: '', accent: '', defaultX: 240, defaultY: 84, defaultW: 290, defaultH: 460 })
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -71,9 +72,10 @@ function endGesture() {
 
 <template>
   <div class="fp" :style="{ left: st.x + 'px', top: st.y + 'px', width: st.w + 'px',
-                            height: st.collapsed ? 'auto' : st.h + 'px' }">
-    <div class="fp-header" @pointerdown="onHeaderDown">
-      <i v-if="icon" :class="['pi', icon, 'fp-icon']" />
+                            height: st.collapsed ? 'auto' : st.h + 'px',
+                            ...(accent ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}, 0 8px 28px rgba(0,0,0,0.55)` } : {}) }">
+    <div class="fp-header" :style="accent ? { borderBottomColor: accent } : undefined" @pointerdown="onHeaderDown">
+      <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
       <button class="fp-btn" @click="st.collapsed = !st.collapsed"
               v-tooltip.bottom="st.collapsed ? 'Expand' : 'Collapse'">

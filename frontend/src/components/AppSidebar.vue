@@ -305,9 +305,11 @@ function isNavDisabled(item: NavItem): boolean {
   text-align: left;
   transition: background 0.1s, border-color 0.1s, color 0.1s;
 }
-.viewer-cta:hover { border-color: #7c3aed; background: #241a44; }
-.viewer-cta.viewer-on { background: #2d1b69; border-color: #7c3aed; color: #ddd6fe; }
-.viewer-cta-icon { font-size: 0.95rem; color: #a78bfa; flex-shrink: 0; }
+/* GREEN accent (matches the viewer's floating-panel border, --cc-viewer) so the viewer controls read
+   as their own distinct thing, apart from the purple form/accent chrome. */
+.viewer-cta:hover { border-color: #16a34a; background: #14261a; }
+.viewer-cta.viewer-on { background: #0f3d24; border-color: var(--cc-viewer); color: #bbf7d0; }
+.viewer-cta-icon { font-size: 0.95rem; color: var(--cc-viewer); flex-shrink: 0; }
 .viewer-cta-title { flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 700; }
 .viewer-cta-state { font-size: 0.8rem; opacity: 0.75; flex-shrink: 0; }
 
