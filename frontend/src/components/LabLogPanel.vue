@@ -8,7 +8,7 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import {
-  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable,
+  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
@@ -29,6 +29,8 @@ const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (confi
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
 const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
 const mode = computed(() => settings.labLogMode)
+// chips include any orphaned mute (category since renamed/removed) so it can always be un-muted
+const muteableCategories = computed(() => muteChips(categories.value, mutes.value))
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
 
 async function load() {
@@ -222,7 +224,7 @@ async function toggleMute(category: string) {
     <!-- mute whole categories from future digests (Tuning mode) -->
     <div v-if="mode === 'tuning' && projectUid" class="ll-mutebar">
       <span class="ll-modelabel">Mute:</span>
-      <button v-for="c in categories" :key="c" class="ll-mutebtn"
+      <button v-for="c in muteableCategories" :key="c" class="ll-mutebtn"
               :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
               :title="mutes.includes(c) ? `${c} muted — click to log again` : `Stop logging ${c}`">
         <i :class="['pi', mutes.includes(c) ? 'pi-bell-slash' : 'pi-bell']" /> {{ c }}

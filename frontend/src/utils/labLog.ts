@@ -81,6 +81,16 @@ export function draftToLines(draft: string): string[] {
     .filter(l => l.length > 0)
 }
 
+/** Categories to show as mute chips: the canonical category list (in the backend's order) plus any
+ *  currently-muted category no longer in it (e.g. a task category later renamed/removed), appended
+ *  at the end. Without the union such an orphaned mute would render no chip and could never be
+ *  un-muted. */
+export function muteChips(categories: string[], mutes: string[]): string[] {
+  const cats = categories ?? []
+  const orphans = (mutes ?? []).filter(m => !cats.includes(m))
+  return [...cats, ...orphans]
+}
+
 /** Count entries authored by Claude that are newer than the last one the user has seen (by date +
  *  position). Used to badge unreviewed Claude entries. `seenRaw` is the `raw` of the newest entry
  *  the user has already seen; null/absent means everything is unseen. Entries are newest-first. */
