@@ -74,6 +74,17 @@ calls `/api/...` and `ws://<host>/ws` relatively, so it works identically whethe
 dev (:5173, proxying to :8080) or by the Julia server in production (:8080). No CORS, no API-base
 configuration, no second process for the user.
 
+### First-run configuration (setup wizard)
+
+An installed app has no `custom.toml`, so on first launch the backend reports `setupRequired` (via
+`/api/diagnostics`) and the frontend redirects to a `/setup` wizard that asks only for a projects
+directory, then writes it to the user's `custom.toml`. **Config is always per-user and lives at a
+fixed location — `~/.cecelia/custom.toml`** (`%USERPROFILE%\.cecelia\custom.toml` on Windows) —
+resolved by `Cecelia.config_dir()`, which never depends on install scope (so a future system-wide
+install needs no config-path changes). In a dev checkout, `CECELIA_DEV_DIR`/`.env` overrides that to
+the dev dir. The wizard removes the old terminal-editing barrier for non-technical users. Full design
++ the deferred system-wide install: `docs/todo/ONBOARDING_PLAN.md`.
+
 ---
 
 ## Components

@@ -25,6 +25,44 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     # installed-build provenance (.cecelia-version at the install root); a source checkout has no
     # such file → the fallback string. Either way the field must be present and non-empty.
     @test haskey(d, :version) && !isempty(String(d.version))
+    # first-launch setup flag drives the frontend /setup redirect
+    @test haskey(d, :setupRequired) && d.setupRequired isa Bool
+end
+
+@testset "API: setup wizard" begin
+    st, body = api_setup_defaults(HTTP.Request("GET", "/api/setup/defaults"))
+    @test st == 200
+    @test endswith(String(JSON3.read(body).projectsDir), "cecelia-projects")
+
+    # validate is a pure check (no side effects)
+    mktempdir() do tmp
+        st, body = api_setup_validate(HTTP.Request("GET", "/api/setup/validate?path=$tmp"))
+        d = JSON3.read(body)
+        @test st == 200 && d.ok == true && d.willCreate == false
+        st, body = api_setup_validate(HTTP.Request("GET", "/api/setup/validate?path=$(joinpath(tmp, "sub"))"))
+        d = JSON3.read(body)
+        @test d.ok == true && d.willCreate == true                 # child of an existing writable dir
+    end
+    @test JSON3.read(api_setup_validate(HTTP.Request("GET", "/api/setup/validate?path=notabsolute"))[2]).ok == false
+    @test JSON3.read(api_setup_validate(HTTP.Request("GET", "/api/setup/validate"))[2]).ok == false
+
+    # init writes custom.toml + hot-reloads config → isolate in a temp CECELIA_DEV_DIR, then restore
+    mktempdir() do tmp
+        proj = joinpath(tmp, "myprojects")
+        try
+            withenv("CECELIA_DEV_DIR" => tmp) do
+                st, body = api_setup_init(Vector{UInt8}(JSON3.write(Dict("projectsDir" => proj))))
+                d = JSON3.read(body)
+                @test st == 200 && d.ok == true && d.restartRequired == false
+                @test isdir(proj)                                  # created
+                @test String(d.projectsDir) == proj                # hot-reloaded, no restart
+                @test isfile(joinpath(tmp, "custom.toml"))
+                @test api_setup_init(Vector{UInt8}("{}"))[1] == 400 # missing projectsDir → 400
+            end
+        finally
+            init_cecelia!()   # restore the real dev/prod config regardless of outcome
+        end
+    end
 end
 
 @testset "API: app lifecycle" begin

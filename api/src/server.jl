@@ -19,6 +19,7 @@ include("update_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
 include("app_api.jl")
+include("setup_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
 
@@ -184,6 +185,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_version(req)
         elseif path == "/api/update/check"
             api_update_check(req)
+        elseif path == "/api/setup/defaults"
+            api_setup_defaults(req)
+        elseif path == "/api/setup/validate"
+            api_setup_validate(req)
         elseif path == "/api/projects"
             api_projects_list(req)
         elseif path == "/api/fs/list"
@@ -332,6 +337,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_notebooks_restart(body_bytes)
         elseif path == "/api/notebooks/build-sysimage"
             api_notebooks_build_sysimage(body_bytes)
+        elseif path == "/api/setup/init"
+            api_setup_init(body_bytes)
         elseif path == "/api/app/shutdown"
             api_app_shutdown(body_bytes)
         elseif path == "/api/app/restart"

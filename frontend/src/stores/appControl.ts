@@ -8,6 +8,9 @@ export const useAppControlStore = defineStore('appControl', () => {
   const dev = ref(false)        // dev server → the backend Restart control is offered (prod hides it)
   const busy = ref(false)       // a quit/restart is in flight (drives spinners in both places)
   const message = ref('')
+  // first-launch: no custom.toml / projects dir unset. null = not yet known (don't redirect until we
+  // know). The boot guard in main.ts sends the user to /setup while true. See docs/todo/ONBOARDING_PLAN.md.
+  const setupRequired = ref<boolean | null>(null)
 
   const _post = (url: string, body: unknown = {}) =>
     fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
@@ -21,6 +24,21 @@ export const useAppControlStore = defineStore('appControl', () => {
   async function refreshDev() {
     try { dev.value = !!(await (await fetch('/api/diagnostics')).json()).dev } catch { /* leave as-is */ }
   }
+
+  // boot check: learn dev + first-launch state in one diagnostics call. Returns whether setup is
+  // required so the router boot guard can redirect. Leaves setupRequired null on failure (the guard
+  // then lets the app load normally rather than trapping the user on /setup when the backend blips).
+  async function refreshStartup(): Promise<boolean> {
+    try {
+      const d = await (await fetch('/api/diagnostics')).json()
+      dev.value = !!d.dev
+      setupRequired.value = !!d.setupRequired
+    } catch { /* leave setupRequired as null → don't redirect */ }
+    return setupRequired.value === true
+  }
+
+  // wizard finished (POST /api/setup/init succeeded): clear the flag so the guard stops redirecting.
+  function completeSetup() { setupRequired.value = false }
   async function refreshWorktrees() {
     try {
       const d = await (await fetch('/api/app/worktrees')).json() as {
@@ -86,5 +104,6 @@ export const useAppControlStore = defineStore('appControl', () => {
     return null
   }
 
-  return { dev, busy, message, worktrees, canSwitch, refreshDev, refreshWorktrees, quit, restartBackend, switchWorktree }
+  return { dev, busy, message, setupRequired, worktrees, canSwitch,
+           refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
 })

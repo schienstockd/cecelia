@@ -7,6 +7,7 @@ import Aura from '@primeuix/themes/aura'
 import 'primeicons/primeicons.css'
 import './style.css'
 import App from './App.vue'
+import { useAppControlStore } from './stores/appControl'
 
 // Module pages are lazy-loaded so each becomes its own chunk fetched on navigation, instead of one
 // giant eager `index` bundle at boot (the heavy ones — ChainModule pulls @vue-flow, the canvas pages
@@ -36,7 +37,25 @@ const router = createRouter({
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },
     // bare = rendered full-window without the app shell (opened in its own window via window.open)
     { path: '/console',   component: () => import('./modules/ConsoleView.vue'),         meta: { label: 'Console', bare: true } },
+    // first-launch setup wizard — bare (clean welcome screen, no sidebar/header). The boot guard
+    // below routes here when the backend reports setupRequired. See docs/todo/ONBOARDING_PLAN.md.
+    { path: '/setup',     component: () => import('./modules/SetupModule.vue'),          meta: { label: 'Setup', bare: true } },
   ],
+})
+
+// First-launch boot guard: ask the backend once whether config setup is still needed. While it is,
+// every route redirects to /setup; once done, /setup bounces back to the app. `setupRequired` stays
+// null if the diagnostics call fails, so a backend blip never traps the user on /setup.
+let _startupChecked = false
+router.beforeEach(async (to) => {
+  const appCtl = useAppControlStore()
+  if (!_startupChecked) {
+    _startupChecked = true
+    await appCtl.refreshStartup()
+  }
+  if (appCtl.setupRequired === true && to.path !== '/setup') return '/setup'
+  if (appCtl.setupRequired === false && to.path === '/setup') return '/import'
+  return true
 })
 
 const app = createApp(App)

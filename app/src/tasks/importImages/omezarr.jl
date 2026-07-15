@@ -461,7 +461,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     bf2raw = bioformats2raw_bin()
     if !isfile(bf2raw)
         on_log("[ERROR] bioformats2raw not found at $bf2raw")
-        on_log("[ERROR] Set dirs.bioformats2raw in ~/cecelia-pineapple/dev/custom.toml")
+        on_log("[ERROR] Set dirs.bioformats2raw in $(custom_toml_path())")
         return nothing
     end
 

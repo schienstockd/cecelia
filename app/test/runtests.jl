@@ -53,6 +53,57 @@ end
         @test napari_discrete_gpu() isa Bool   # [napari].discreteGpu, default false
     end
 
+    # ── Config resolver (dev↔prod coordination) ─────────────────────────────────
+    # The single resolver both init_cecelia! (reader) and set_projects_dir! (writer) share.
+    # Order: explicit arg → CECELIA_DEV_DIR env → .env → ~/.cecelia. See docs/todo/ONBOARDING_PLAN.md.
+    @testset "Config resolver" begin
+        # pure resolution order, no env/file reads
+        @test Cecelia._resolve_config_dir("/x", "/y", "/z") == "/x"       # explicit wins
+        @test Cecelia._resolve_config_dir(nothing, "/y", "/z") == "/y"    # env beats .env
+        @test Cecelia._resolve_config_dir(nothing, nothing, "/z") == "/z" # .env beats default
+        @test Cecelia._resolve_config_dir(nothing, nothing, nothing) ==   # installed-app default
+              expanduser("~/.cecelia")
+        @test Cecelia._resolve_config_dir("~/foo", nothing, nothing) == expanduser("~/foo")
+        # public composition
+        @test config_dir("/tmp/ceceliatest") == "/tmp/ceceliatest"
+        @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
+    end
+
+    # ── First-launch setup wizard (isolated temp config dir) ────────────────────
+    # Uses its own CECELIA_DEV_DIR tempdir so it never touches the real dev/prod config; restores
+    # global config afterwards. Exercises setup_required + set_projects_dir! (merge + reload).
+    @testset "Config setup wizard" begin
+        prev_env = get(ENV, "CECELIA_DEV_DIR", nothing)
+        mktempdir() do tmp
+            ENV["CECELIA_DEV_DIR"] = tmp
+            try
+                init_cecelia!()                            # load the empty temp config
+                @test custom_toml_path() == joinpath(tmp, "custom.toml")
+                @test setup_required() == true             # no custom.toml yet
+
+                # a pre-existing key must survive the merge
+                write(custom_toml_path(), "[dirs]\npython = \"/opt/py\"\n")
+                @test setup_required() == true             # projects still unset → placeholder
+
+                proj = joinpath(tmp, "projects"); mkpath(proj)
+                stored = set_projects_dir!(proj)
+                @test stored == proj
+                @test isfile(custom_toml_path())
+                @test projects_dir() == proj               # hot-reloaded, no restart
+                @test setup_required() == false            # configured + dir exists
+                @test python_bin_path() == "/opt/py"       # merge preserved the other key
+
+                # a configured-but-missing dir re-triggers setup
+                rm(proj; recursive = true)
+                @test setup_required() == true
+            finally
+                prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
+                                       (ENV["CECELIA_DEV_DIR"] = prev_env)
+                init_cecelia!()                            # restore real dev/prod config
+            end
+        end
+    end
+
     # ── Napari discrete-GPU launch env ──────────────────────────────────────────
     # The bridge command gains the offload env only when discrete_gpu is on (Linux). DRI_PRIME is
     # always applied (safe on single-GPU); the NVIDIA GLX vendor var only when NVIDIA is present.

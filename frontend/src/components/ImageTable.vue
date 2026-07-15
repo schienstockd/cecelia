@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
@@ -27,6 +28,8 @@ const emit = defineEmits<{ (e: 'selectionChange', uids: string[]): void }>()
 const project     = useProjectStore()
 const projectMeta = useProjectMetaStore()
 const log         = useLogStore()
+const route       = useRoute()
+const router      = useRouter()
 const taskStore   = useTaskStore()
 
 // opens right where you are — no page navigation needed
@@ -479,8 +482,12 @@ onUnmounted(stopResize)
 
   <div v-if="images.length === 0" class="empty-state">
     <i class="pi pi-images empty-icon" />
-    <p class="empty-title">No images in this set</p>
-    <p class="empty-hint">Use <strong>Add images</strong> in the import module to add files.</p>
+    <p class="empty-title">No images yet</p>
+    <p class="empty-hint">Import your first image to get started.<br>
+      Cecelia reads OME-ZARR, CZI, LIF, ND2 and most microscopy formats (anything bioformats2raw can read).</p>
+    <button v-if="route.path !== '/import'" class="cc-btn cc-btn-primary empty-cta" @click="router.push('/import')">
+      <i class="pi pi-plus" /> Import image
+    </button>
   </div>
 
   <div v-else class="table-scroll">
@@ -753,6 +760,7 @@ onUnmounted(stopResize)
 .empty-icon  { font-size: 2.5rem; margin-bottom: 0.5rem; opacity: 0.3; }
 .empty-title { font-size: 0.95rem; font-weight: 600; color: var(--cc-text); margin: 0; }
 .empty-hint  { font-size: 0.8rem; margin: 0; text-align: center; }
+.empty-cta   { margin-top: 0.85rem; }
 
 /* ── Table ───────────────────────────────────────────────────────────────────── */
 

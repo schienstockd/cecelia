@@ -148,6 +148,16 @@ npm install
 
 ---
 
+## First launch — projects directory
+
+You do **not** hand-edit `custom.toml`. On first launch, if no config exists, Cecelia opens a
+one-screen setup wizard in the browser that asks where to store your projects and writes it for you.
+Config is per-user at `~/.cecelia/custom.toml` (`%USERPROFILE%\.cecelia\custom.toml` on Windows). In a
+dev checkout, `cecelia-pineapple/.env` (`CECELIA_DEV_DIR`) overrides that to your dev dir. The *why*
+and the config-resolution rules live in `docs/SHIPPING.md` and `docs/todo/ONBOARDING_PLAN.md`.
+
+---
+
 ## Platform notes
 
 ### Windows path separators

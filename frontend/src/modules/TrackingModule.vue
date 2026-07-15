@@ -8,7 +8,8 @@ const { defs: trackingDefs, reload: reloadDefs } = useTaskDefs('tracking')
 </script>
 
 <template>
-  <ModuleLayout module="tracking" :show-attrs="true" :show-filter="true" plots-label="Track gating">
+  <ModuleLayout module="tracking" :show-attrs="true" :show-filter="true" plots-label="Track gating"
+    hint-key="tracking" hint="Tracking links cells across timepoints. Run segmentation on all timepoints first.">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="trackingDefs"

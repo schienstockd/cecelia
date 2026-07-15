@@ -49,6 +49,7 @@ import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
+import HintCallout from './HintCallout.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -60,6 +61,8 @@ const props = withDefaults(defineProps<{
   singleSelect?: boolean   // radio-style image selection (e.g. gating works on one image)
   plotsLabel?:  string
   noSetHint?:   string
+  hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
+  hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
   rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
 }>(), {
   allowManage: false,
@@ -246,6 +249,9 @@ const visibleUids = computed<string[]>(() =>
 
       <!-- ── Left: image panel ─────────────────────────────────────── -->
       <div class="image-panel">
+
+        <!-- first-use hint (dismissed permanently per hintKey) -->
+        <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
 
         <!-- action bar: image count + (merged) filter toggle on the right -->
         <div class="action-bar">

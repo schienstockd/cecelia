@@ -5,6 +5,7 @@ import { useWsStore } from './stores/ws'
 import { useSettingsStore } from './stores/settings'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import HintCallout from './components/HintCallout.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
@@ -50,6 +51,9 @@ const bare = computed(() => route.meta.bare === true)
     <div class="cc-content">
       <AppSidebar />
       <main class="cc-main">
+        <!-- first-launch only: browsers don't stop the server on tab close -->
+        <HintCallout hint-key="shutdown"
+          text="When you're done, use the Quit button (bottom-left) — not the browser tab — to stop Cecelia cleanly." />
         <RouterView v-slot="{ Component }">
           <KeepAlive include="ChainModule">
             <component :is="Component" />
