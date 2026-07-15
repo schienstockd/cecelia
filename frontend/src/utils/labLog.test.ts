@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
-  entryId, decisionPrefill, isRatable,
+  entryId, decisionPrefill, isRatable, muteChips,
   type LabLogEntry,
 } from './labLog'
 
@@ -34,6 +34,21 @@ describe('labLog.draftToLines', () => {
     expect(draftToLines('a\n\n  b  \n')).toEqual(['a', 'b'])
     expect(draftToLines('   ')).toEqual([])
     expect(draftToLines('single')).toEqual(['single'])
+  })
+})
+
+describe('labLog.muteChips', () => {
+  it('keeps canonical order and appends orphaned mutes at the end', () => {
+    expect(muteChips(['Segment', 'Gating', 'Clustering'], ['Gating']))
+      .toEqual(['Segment', 'Gating', 'Clustering'])
+    // a muted category no longer in the canonical list is still shown (so it can be un-muted)
+    expect(muteChips(['Segment', 'Gating'], ['OldName', 'Gating']))
+      .toEqual(['Segment', 'Gating', 'OldName'])
+  })
+  it('handles empty / missing inputs', () => {
+    expect(muteChips([], [])).toEqual([])
+    expect(muteChips(undefined as any, undefined as any)).toEqual([])
+    expect(muteChips([], ['Stuck'])).toEqual(['Stuck'])
   })
 })
 
