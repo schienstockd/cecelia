@@ -53,6 +53,10 @@ function _spec_path(::DriftCorrect)
     joinpath(@__DIR__, "cleanupImages", "drift_correct.json")
 end
 
+function _spec_path(::CropImage)
+    joinpath(@__DIR__, "editImages", "cropImage.json")
+end
+
 function _spec_path(::TestImageTask)
     joinpath(@__DIR__, "testTasks", "imageTask.json")
 end
@@ -96,6 +100,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),
         "cleanupImages.afDriftCorrect"      => CompositeTask("cleanupImages.afDriftCorrect"),
+        "editImages.cropImage"              => CropImage(),
         "testTasks.imageTask"               => TestImageTask(),
         "testTasks.setTask"                 => TestSetTask(),
         "testTasks.incrementalPlotTask"     => IncrementalPlotTask(),

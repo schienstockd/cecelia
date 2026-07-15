@@ -366,6 +366,14 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_selection_scope(body_bytes)
         elseif path == "/api/napari/stop-selection"
             api_napari_stop_selection(body_bytes)
+        elseif path == "/api/napari/crop-start"
+            api_napari_crop_start(body_bytes)
+        elseif path == "/api/napari/crop-apply"
+            api_napari_crop_apply(body_bytes)
+        elseif path == "/api/napari/crop-box"
+            api_napari_crop_box(body_bytes)
+        elseif path == "/api/napari/crop-clear"
+            api_napari_crop_clear(body_bytes)
         elseif path == "/api/napari/event"
             api_napari_event(body_bytes)
         elseif path == "/api/gating/pop/add"

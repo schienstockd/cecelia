@@ -221,6 +221,21 @@ export const useWsStore = defineStore('ws', () => {
               }
             }
           }
+          // cropImage (and any task that produces a NEW image) reports the new uid + its set; pull the
+          // fresh image payload and add it to the set so it appears without a full project reload.
+          const newImageUid    = meta.newImageUid as string | undefined
+          const newImageSetUid = meta.setUid as string | undefined
+          if (newImageUid && newImageSetUid) {
+            const projectUid = String((data.projectUid as string | undefined) ?? '')
+              || useProjectMetaStore().current?.uid || ''
+            if (projectUid) {
+              fetch(`/api/images/meta?projectUid=${projectUid}&imageUid=${newImageUid}`)
+                .then(r => (r.ok ? r.json() : null))
+                .then(d => { if (d?.image) useProjectStore().addImagesFromApi(newImageSetUid, [d.image]) })
+                .catch(() => {})
+            }
+          }
+
           const labelValueName = meta.labelValueName as string | undefined
           const labelFiles     = meta.labelFiles as string[] | undefined
           if (labelValueName) {
