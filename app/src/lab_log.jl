@@ -124,3 +124,45 @@ function set_tuning!(proj::CciaProject, entry_id::AbstractString, vote::Abstract
     end
     r
 end
+
+# ── Muted digest categories ─────────────────────────────────────────────────────
+# "Mute this kind": stop emitting a whole category (a task-manager tag — Segment, Tracking, Gating, …)
+# of [Cecelia] auto-context line from future digests. Config (a sidecar list), not the log. Snapshots
+# still advance while muted (capture_context! only skips the LINES), so unmuting reports only future
+# change, never a backlog dump. Categories are the dynamic task-spec tags (see `lab_log_categories`),
+# so muting is deliberately lenient here — it stores any non-empty category the caller sends (the
+# panel offers only real ones); a stale/unknown key simply never matches a digest line. See
+# docs/ai-assist/LAB-LOG.md and lab_log_context.jl.
+
+_mutes_path(proj::CciaProject)::String = joinpath(proj.root, "settings", "lab-log-mutes.json")
+
+# the muted category keys; [] when none.
+function read_mutes(proj::CciaProject)::Vector{String}
+    p = _mutes_path(proj)
+    isfile(p) || return String[]
+    try
+        String[String(x) for x in JSON3.read(read(p, String), Vector{Any})]
+    catch
+        String[]
+    end
+end
+
+"""
+Mute (`muted=true`) or unmute a digest category. Lenient: any non-empty category string is accepted.
+Lock-guarded. Returns the updated muted-category list.
+"""
+function set_mute!(proj::CciaProject, category::AbstractString, muted::Bool)::Vector{String}
+    c = strip(String(category))
+    isempty(c) && error("mute category required")
+    s = Set(read_mutes(proj))
+    muted ? push!(s, c) : delete!(s, c)
+    out = sort(collect(s))
+    with_transaction(proj) do
+        p = _mutes_path(proj)
+        mkpath(dirname(p))
+        open(p, "w") do io
+            JSON3.write(io, out)
+        end
+    end
+    out
+end

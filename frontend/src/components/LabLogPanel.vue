@@ -26,6 +26,8 @@ const captureNote = ref('')        // transient result of the last manual captur
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (config, NOT the log)
+const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
+const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
 const mode = computed(() => settings.labLogMode)
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
 
@@ -39,6 +41,8 @@ async function load() {
     const body = await r.json()
     entries.value = body.entries ?? []
     tuning.value = body.tuning ?? {}
+    mutes.value = body.mutes ?? []
+    categories.value = body.categories ?? []
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -150,6 +154,22 @@ async function tune(entry: LabLogEntry, vote: Vote) {
     error.value = e instanceof Error ? e.message : String(e)
   }
 }
+
+// Mute/unmute a whole digest category from future captures (config sidecar, not the log).
+async function toggleMute(category: string) {
+  if (!projectUid.value) return
+  const muted = !mutes.value.includes(category)
+  try {
+    const r = await fetch('/api/lablog/mute', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, category, muted }),
+    })
+    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
+    mutes.value = (await r.json()).mutes ?? []
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
 </script>
 
 <template>
@@ -197,6 +217,16 @@ async function tune(entry: LabLogEntry, vote: Vote) {
               title="Thumbs + comment judge the DECISION → saved as a note in the log">decisions</button>
       <button class="ll-modebtn" :class="{ on: mode === 'tuning' }" @click="settings.labLogMode = 'tuning'"
               title="Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log">entry types</button>
+    </div>
+
+    <!-- mute whole categories from future digests (Tuning mode) -->
+    <div v-if="mode === 'tuning' && projectUid" class="ll-mutebar">
+      <span class="ll-modelabel">Mute:</span>
+      <button v-for="c in categories" :key="c" class="ll-mutebtn"
+              :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
+              :title="mutes.includes(c) ? `${c} muted — click to log again` : `Stop logging ${c}`">
+        <i :class="['pi', mutes.includes(c) ? 'pi-bell-slash' : 'pi-bell']" /> {{ c }}
+      </button>
     </div>
 
     <div v-if="error" class="ll-error">{{ error }}</div>
@@ -287,6 +317,18 @@ async function tune(entry: LabLogEntry, vote: Vote) {
   border-radius: 0.3rem; padding: 0.1rem 0.45rem; font-size: 0.66rem; cursor: pointer;
 }
 .ll-modebtn.on { color: var(--cc-text); border-color: #8b949e; background: rgba(139, 148, 158, 0.15); }
+
+.ll-mutebar {
+  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
+  padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; font-size: 0.68rem;
+}
+.ll-mutebtn {
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim);
+  border-radius: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.64rem; cursor: pointer;
+}
+.ll-mutebtn:hover { color: var(--cc-text); }
+.ll-mutebtn.muted { color: #d29922; border-color: #d29922; background: rgba(210, 153, 34, 0.12); }
 
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 

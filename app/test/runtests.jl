@@ -212,8 +212,9 @@ end
         block = capture_context!(proj)
         @test block !== nothing
         @test occursin("[Cecelia]", block)
-        @test occursin("segment.cellpose on 2 images", block)
-        @test occursin("tracking.bayesian_tracking on 1 image", block)   # singular
+        # grouped by module category (task-manager tags), fun prefix dropped
+        @test occursin("Segment — cellpose on 2 images", block)
+        @test occursin("Tracking — bayesian_tracking on 1 image", block)   # singular
         @test occursin("img-1", block) && occursin("img-2", block)
 
         entries = parse_lab_log(read_lab_log(proj))
@@ -228,8 +229,8 @@ end
         append_run_log!(img2, "behaviour.hmm")
         block2 = capture_context!(proj)
         @test block2 !== nothing
-        @test occursin("behaviour.hmm on 1 image", block2)
-        @test !occursin("segment.cellpose", block2)            # already reported, not repeated
+        @test occursin("Behaviour — hmm on 1 image", block2)
+        @test !occursin("cellpose", block2)                    # already reported, not repeated
         @test length(parse_lab_log(read_lab_log(proj))) == 2
 
         # ── gating: net change by population (snapshot-diff, not per-edit) ──
@@ -237,13 +238,13 @@ end
         cd3 = add_pop!(m, "CD3"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
         save_pop_map!(m, img1)
         bg = capture_context!(proj)
-        @test bg !== nothing && occursin("Populations img-1", bg) && occursin("added CD3", bg)
+        @test bg !== nothing && occursin("Gating — ", bg) && occursin("added: CD3", bg)
 
-        # changing a gate → "gate changed on CD3" (net), never a re-add
+        # changing a gate → "gate changed: CD3" (net), never a re-add
         set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0))
         save_pop_map!(m, img1)
         bg2 = capture_context!(proj)
-        @test bg2 !== nothing && occursin("gate changed on CD3", bg2) && !occursin("added CD3", bg2)
+        @test bg2 !== nothing && occursin("gate changed: CD3", bg2) && !occursin("added: CD3", bg2)
 
         @test capture_context!(proj) === nothing            # no gating change → nothing
 
@@ -256,13 +257,13 @@ end
         mt.pops[tc].filter_values = [0, 1, 2]               # change WHICH clusters define it (no gate)
         save_pop_map!(mt, img1)
         bd = capture_context!(proj)
-        @test bd !== nothing && occursin("definition changed on clust_a", bd)
+        @test bd !== nothing && occursin("Clustering — redefined: clust_a", bd)
         @test capture_context!(proj) === nothing            # net change reverts to none
 
         # ── exclusions: net change ──
         img2.included = false; save!(img2)
         be = capture_context!(proj)
-        @test be !== nothing && occursin("Excluded img-2", be)
+        @test be !== nothing && occursin("Manage images — excluded img-2", be)
         @test capture_context!(proj) === nothing            # no further change
 
         rm(proj.root; recursive=true)
@@ -285,7 +286,7 @@ end
         add_pop!(m2, "newpop"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
         save_pop_map!(m2, img)
         b = capture_context!(proj)
-        @test b !== nothing && occursin("added newpop", b)
+        @test b !== nothing && occursin("added: newpop", b)
 
         rm(proj.root; recursive=true)
     end
@@ -301,6 +302,41 @@ end
         @test read_tuning(proj) == Dict("e2" => "down")
         @test read_tuning(load_project(proj.uid)) == Dict("e2" => "down")   # persists
         @test_throws ErrorException set_tuning!(proj, "e3", "sideways")     # invalid vote
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Lab log mutes (suppress a digest category) ───────────────────────────────
+    @testset "Lab log mutes" begin
+        proj = create_project!(name="mutes-test-$(rand(1000:9999))", kind="static")
+        @test read_mutes(proj) == String[]
+        set_mute!(proj, "Gating", true)                                    # categories = task-manager tags
+        set_mute!(proj, "Segment", true)
+        @test Set(read_mutes(proj)) == Set(["Gating", "Segment"])
+        set_mute!(proj, "Gating", false)
+        @test read_mutes(proj) == ["Segment"]
+        @test read_mutes(load_project(proj.uid)) == ["Segment"]           # persists
+        @test_throws ErrorException set_mute!(proj, "  ", true)            # empty rejected (else lenient)
+        rm(proj.root; recursive=true)
+    end
+
+    @testset "Lab log mutes — capture filtering" begin
+        proj = create_project!(name="muteflt-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="set-A")
+        img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+
+        set_mute!(proj, "Segment", true)                    # category of segment.cellpose
+        append_run_log!(img, "segment.cellpose", "default")
+        @test capture_context!(proj) === nothing            # Segment muted → not reported
+
+        # unmute: the cutoff already advanced while muted, so the muted-while activity does NOT resurface
+        set_mute!(proj, "Segment", false)
+        @test capture_context!(proj) === nothing
+
+        # new activity in a non-muted category after unmute IS reported
+        sleep(1)                                            # strictly-later ISO timestamp
+        append_run_log!(img, "behaviour.hmm")
+        b = capture_context!(proj)
+        @test b !== nothing && occursin("Behaviour — hmm", b)
         rm(proj.root; recursive=true)
     end
 
