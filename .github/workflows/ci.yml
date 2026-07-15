@@ -73,6 +73,11 @@ jobs:
       - name: Python tests
         run: pixi run test-py
 
+      # MCP observer client tests (mcp/tests/*) — allow-list + URL/body building, HTTP mocked. Stdlib
+      # only; no server needed.
+      - name: MCP tests
+        run: pixi run test-mcp
+
       - name: Build frontend
         working-directory: frontend
         run: |

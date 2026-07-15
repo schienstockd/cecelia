@@ -188,8 +188,14 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_projects_list(req)
         elseif path == "/api/fs/list"
             api_fs_list(req)
+        elseif path == "/api/images"
+            api_images_list(req)
         elseif path == "/api/images/meta"
             api_images_meta(req)
+        elseif path == "/api/images/tasklog"
+            api_images_tasklog(req)
+        elseif path == "/api/tasks/history"
+            api_tasks_history(req)
         elseif path == "/api/lablog"
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"

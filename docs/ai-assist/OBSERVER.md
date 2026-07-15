@@ -141,11 +141,15 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
 
 ### 7. Build order
 
-1. New read routes: `get_task_log`, `read_lab_log`/`append_lab_log`, `get_task_history` (thin, no scheduler change).
-2. MCP server skeleton (`mcp/`) + the eight read tools + `append_lab_log`, allow-listed — satisfies "describe project state without being told" and the no-mutation verify.
-3. Attempt counter (§5) + `qc_flag_fired`/`image_note_added`/`lab_log_entry_added` events (§4) — enables the attempt pattern and QC surfacing.
+1. ✅ **DONE** — New read routes: `get_task_log` (`GET /api/images/tasklog`), `get_task_history` (`GET /api/tasks/history`), plus a read-only `GET /api/images` project listing (so `list_images`/`get_project_info` avoid `/projects/load`'s `lastOpenedAt` write). `read_lab_log`/`append_lab_log` already existed. Thin, no scheduler change.
+2. ✅ **DONE** — MCP server skeleton (`mcp/`, Python + FastMCP, stdio) + the eight read tools + `append_lab_log`, allow-listed in `cecelia_mcp/client.py` (the no-mutation guarantee; append is the sole write). `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`.
+3. Attempt counter (§5) + `qc_flag_fired`/`image_note_added`/`lab_log_entry_added` events (§4) — enables the attempt pattern and QC surfacing. **← next slice**
 4. Throttle + token reporting (§6).
 5. Cohort `get_qc_metrics` route once cohort stats land (`QC-PROCESS.md` step 3).
+
+> **Status (Slice A):** steps 1–2 landed. The observer can describe project state, read task logs +
+> history, read the lab log, and append `[Claude]` entries — and can do nothing else (allow-list
+> enforced + tested). Events / the 10-attempts pattern (step 3) and throttling (step 4) are the next slices.
 
 ## Verify
 
