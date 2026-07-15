@@ -16,6 +16,7 @@ import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { exportTabsToPdf } from '../../plots/pdf'
 import { downloadBlob } from '../../plots/export'
 import { zipTextFiles } from '../../utils/zip'
+import { waitForPlotsIdle } from '../../utils/plotReady'
 import { useLogStore } from '../../stores/log'
 import LayoutCanvas from './LayoutCanvas.vue'
 import ConfirmButton from '../ConfirmButton.vue'
@@ -82,8 +83,9 @@ async function exportPdf() {
     for (const t of tabs.value) {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
-      await new Promise(r => setTimeout(r, 1400))   // let the board's plots fetch + render before capture
-                                                    // (a mid-render WebGL frame exports sparse/blurry)
+      await waitForPlotsIdle()   // wait for THIS board's plots to finish fetching + rendering — a fixed
+                                 // sleep captured slow plots blank; idle-tracking waits exactly as long
+                                 // as needed (a mid-render WebGL frame exports sparse/blurry)
       const page = await layoutRef.value?.capturePage?.()
       if (page) pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
     }
@@ -108,7 +110,7 @@ async function exportCsv() {
     for (const t of tabs.value) {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
-      await new Promise(r => setTimeout(r, 600))   // let the board's plots fetch before reading their data
+      await waitForPlotsIdle()   // wait for the board's plots to finish fetching before reading their data
       for (const { name, csv } of layoutRef.value?.collectCsvs?.() ?? []) {
         if (!csv) continue
         files.push({ name: `${safe(t.name)}_${safe(name)}.csv`, text: csv })
