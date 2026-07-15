@@ -4,7 +4,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
-import { napariState, notebooksState, stateInfo, type ServiceState } from '../utils/serviceStatus'
+import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { useAppControlStore } from '../stores/appControl'
 
 const showPackages = ref(false)
@@ -86,7 +86,8 @@ onMounted(checkUpdates)
 
 // ── Diagnostics + debug console ──────────────────────────────────────────────
 interface Diag {
-  threads: number; julia: string; version: string; projectsDir: string
+  threads: number; julia: string; version: string; commit?: string; projectsDir: string
+  startedAt?: number; uptimeSeconds?: number
   memFreeGB: number; memTotalGB: number; gcLiveMB: number
   host: string; port: number; loopback: boolean
   replEnabled: boolean; replAvailable: boolean; dev: boolean
@@ -144,7 +145,7 @@ onMounted(loadDiag)
 // Live status of the backend's child processes + per-component and global controls. Status is
 // ephemeral UI state (polled) → plain refs, not persisted view state. Pure status→state mapping
 // lives in utils/serviceStatus.ts (unit-tested); here we only poll, act, and pick which buttons show.
-const napariRaw = ref<{ alive?: boolean; starting?: boolean } | null>(null)
+const napariRaw = ref<{ alive?: boolean; starting?: boolean; bridgeUptimeSeconds?: number | null } | null>(null)
 const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
 const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
@@ -463,10 +464,13 @@ async function switchWt(path: string) {
 
       <div v-if="diag" class="diag-grid">
         <span>Version</span><span class="mono">{{ diag.version }}</span>
+        <span v-if="diag.commit">Commit</span><span v-if="diag.commit" class="mono">{{ diag.commit }}</span>
+        <span>Backend up</span><span class="mono">{{ formatUptime(diag.uptimeSeconds) }}</span>
         <span>Server threads</span><span class="mono">{{ diag.threads }}</span>
         <span>Julia</span><span class="mono">{{ diag.julia }}</span>
         <span>Memory</span><span class="mono">{{ diag.memFreeGB }} / {{ diag.memTotalGB }} GB free · GC live {{ diag.gcLiveMB }} MB</span>
         <span>Host</span><span class="mono">{{ diag.host }}:{{ diag.port }}</span>
+        <span>Napari bridge</span><span class="mono">{{ napariSt === 'running' ? `up ${formatUptime(napariRaw?.bridgeUptimeSeconds)}` : stateInfo(napariSt).label }}</span>
         <span>Projects dir</span><span class="mono">{{ diag.projectsDir }}</span>
       </div>
 

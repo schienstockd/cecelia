@@ -1214,7 +1214,23 @@ end
 # ── REST: GET /api/napari/status ──────────────────────────────────────────────
 
 function api_napari_status(req::HTTP.Request)
-    200, JSON3.write((; alive = _viewer_alive(), starting = _viewer_starting[]))
+    # ping once (unlocked, like _viewer_alive — never blocks on a long op) and read the bridge's start
+    # time from the reply, so the Settings panel can show bridge uptime and spot a STALE bridge (it
+    # survives a backend restart). Same machine → same clock, so uptime is computed server-side.
+    v = _viewer()
+    alive = false
+    bridge_started = nothing
+    if v !== nothing
+        try
+            resp = send(v, Dict("type" => "ping"))
+            alive = true
+            bridge_started = get(resp, "started_at", nothing)
+        catch
+        end
+    end
+    bridge_uptime = bridge_started === nothing ? nothing : round(Int, time() - Float64(bridge_started))
+    200, JSON3.write((; alive = alive, starting = _viewer_starting[],
+                        bridgeStartedAt = bridge_started, bridgeUptimeSeconds = bridge_uptime))
 end
 
 # ── REST: discrete-GPU toggle ─────────────────────────────────────────────────
