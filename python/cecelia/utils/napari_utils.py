@@ -146,6 +146,22 @@ def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colorm
   return viewer.add_tracks(tracks, **kw)
 
 
+def solid_track_colormap(hex_colour, name='cc_pop'):
+  """A **black → colour** two-stop colormap for flat-colouring a Tracks layer in a single population
+  colour — the idiom the old R viewer used (``cmap_single(['#000000', colour])`` in
+  ``show_tracks(split_tracks=…)``). A napari Tracks layer colours ONLY via ``color_by`` + a colormap:
+  colouring by ``track_id`` keeps napari's built-in turbo (a custom colormap there is ignored), and a
+  same-colour "solid" map doesn't take either. The working recipe: colour by a helper property whose
+  value is a NONZERO constant, mapped through this black→colour map — the value lands at the colour end
+  (0 = black is never hit), so every track in the pop renders in ``hex_colour``. See old-R
+  ``inst/py/napari_utils.py::show_tracks``."""
+  require_napari()
+  import napari
+  s = str(hex_colour).lstrip('#')
+  rgba = (int(s[0:2], 16) / 255., int(s[2:4], 16) / 255., int(s[4:6], 16) / 255., 1.0)
+  return napari.utils.Colormap([(0.0, 0.0, 0.0, 1.0), rgba], name=name)
+
+
 # ── 3D crop (axis-aligned clipping planes) ────────────────────────────────────
 
 def axis_aligned_clip_planes(layer, world_box, display_axes):
@@ -159,11 +175,20 @@ def axis_aligned_clip_planes(layer, world_box, display_axes):
   ``-axis``); napari intersects all enabled planes, so the kept region is the box. Returns ``[]`` when
   no requested axis lands inside the layer.
 
+  napari clipping planes are **3-D constructs**: ``position``/``normal`` are always 3-vectors over the
+  DISPLAYED spatial dims (the layer's last 3 = z,y,x), regardless of the layer's ndim. Emitting
+  ndim-length vectors for a 4-D (t,z,y,x) layer makes napari reject them silently → nothing clips.
+  Returns ``[]`` for a layer with < 3 dims (clipping is a volume-render feature).
+
   Pure geometry (no napari import): unit-testable with a lightweight stand-in exposing
   ``ndim``/``scale``/``translate``. World→data uses the layer's own ``scale``/``translate`` (each layer
   may differ — image, labels, tracks and points can carry distinct scales), so a single world box clips
   them all consistently."""
   nd = int(layer.ndim)
+  if nd < 3:
+    return []                                # clipping planes are 3-D; a 2-D layer has no volume to clip
+  n_disp = 3                                  # position/normal are 3-vectors over the displayed z,y,x
+  disp_dims = list(range(nd - n_disp, nd))    # the last 3 layer dims = the displayed spatial axes
   scale = np.asarray(layer.scale, dtype=float)
   translate = np.asarray(layer.translate, dtype=float)
   offset = len(display_axes) - nd            # dims are trailing-aligned to the viewer axes
@@ -171,16 +196,17 @@ def axis_aligned_clip_planes(layer, world_box, display_axes):
   for ax, bounds in world_box.items():
     if ax not in display_axes:
       continue
-    ldim = display_axes.index(ax) - offset
-    if ldim < 0 or ldim >= nd:
-      continue
+    ldim = display_axes.index(ax) - offset   # this axis's index in the layer's own dims
+    if ldim not in disp_dims:
+      continue                               # not a displayed spatial dim (e.g. t) → can't clip on it
+    vi = disp_dims.index(ldim)               # its slot in the 3-vector
     s = scale[ldim] if ldim < len(scale) and scale[ldim] else 1.0
     tr = translate[ldim] if ldim < len(translate) else 0.0
     lo_d = (float(bounds[0]) - tr) / s
     hi_d = (float(bounds[1]) - tr) / s
     for coord, sign in ((lo_d, 1.0), (hi_d, -1.0)):
-      pos = [0.0] * nd; pos[ldim] = coord
-      nrm = [0.0] * nd; nrm[ldim] = sign
+      pos = [0.0] * n_disp; pos[vi] = coord
+      nrm = [0.0] * n_disp; nrm[vi] = sign
       planes.append({"position": tuple(pos), "normal": tuple(nrm), "enabled": True})
   return planes
 

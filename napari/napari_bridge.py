@@ -36,7 +36,6 @@ SELECTION_LAYER = "Cell selection"
 # transient helper layers for the 3D crop (drawn over a Z max-projection, removed once applied)
 CROP_LAYER = "Crop region"        # editable rectangle → the XY crop footprint
 CROP_MIP_LAYER = "Crop MIP"       # Z max-intensity projection you draw the rectangle over
-_MAX_MIP_T = 16                   # cap timepoints sampled for the crop MIP (a footprint needn't read every frame)
 
 # qualitative palette for colouring labels/tracks by a CATEGORICAL obs column (e.g. HMM state).
 # Okabe–Ito (colourblind-safe), as RGBA floats in 0..1 — matches the web canvas 'okabe-ito' palette.
@@ -766,28 +765,38 @@ class NapariState:
                 _remove_layer(self._viewer, name)
             if len(sub) > 0:
                 props = {"track_id": sub[:, 0].astype(int).tolist()}
+                from cecelia.utils import napari_utils
+                # Three colouring modes (napari Tracks colour ONLY via color_by + a colormap):
+                #   1. colour-by column (whole _tracked only) → categorical Okabe–Ito colormaps_dict /
+                #      continuous viridis, keyed by the column;
+                #   2. plain _tracked, no colour-by → napari's per-track turbo (distinguishes tracks);
+                #   3. a NAMED pop (gated track / trackclust) → its FLAT pop colour.
+                # For (3) we must colour by a CONSTANT helper property, NOT track_id: napari keeps its
+                # built-in turbo for `track_id` and ignores a custom colormap attached to it — that's why
+                # the pop colour never showed. A constant property mapped through a solid two-stop
+                # colormap gives one flat colour = the pop's.
                 if use_cby:
                     props[use_cby] = col_vals[mask].tolist()
-                # Delegate to the shared helper (passes scale AND units so napari keeps unit-aware
-                # rendering across layers). Categorical colour-by → the per-level Okabe–Ito
-                # `colormaps_dict` (consistent with labels); otherwise a named colormap (viridis
-                # continuous / turbo by track_id). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
-                from cecelia.utils import napari_utils
-                if use_cby:
-                    layer_cmap, layer_cmaps_dict = (col_cmap or "turbo"), col_cmaps_dict
+                    layer_color_by, layer_cmap, layer_cmaps_dict = use_cby, (col_cmap or "turbo"), col_cmaps_dict
+                elif is_whole:
+                    layer_color_by, layer_cmap, layer_cmaps_dict = "track_id", "turbo", None
                 else:
-                    # solid single-colour colormap from the pop colour (same idiom as the categorical
-                    # step colormap above: two identical stops, zero interpolation → one flat colour)
+                    # NAMED pop → flat pop colour, the old-R way (show_tracks split_tracks): colour a
+                    # NONZERO-constant helper property through a black→colour colormap. Colouring by
+                    # track_id keeps napari's turbo; a helper property + this colormap makes every track
+                    # render in the pop colour (value 1 → the colour end; 0=black is never hit).
                     try:
-                        c = _hex_to_rgba(pop_colour)
-                        layer_cmap = napari.utils.Colormap(colors=[c, c], controls=[0.0, 1.0], interpolation="zero")
+                        props["cc_pop"] = [1.0] * sub.shape[0]
+                        layer_color_by, layer_cmap = "cc_pop", None
+                        layer_cmaps_dict = {"cc_pop": napari_utils.solid_track_colormap(pop_colour)}
                     except Exception:
-                        layer_cmap = "turbo"
-                    layer_cmaps_dict = None
+                        layer_color_by, layer_cmap, layer_cmaps_dict = "track_id", "turbo", None
+                # Delegate to the shared helper (passes scale AND units so napari keeps unit-aware
+                # rendering across layers). See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
                 layer = napari_utils.add_tracks(
                     self._viewer, sub, name=name,
                     scale=self._im_scale, units=self._im_units, properties=props,
-                    color_by=(use_cby or "track_id"), tail_width=tail_width, tail_length=tail_length,
+                    color_by=layer_color_by, tail_width=tail_width, tail_length=tail_length,
                     colormap=layer_cmap, colormaps_dict=layer_cmaps_dict,
                 )
                 if prev is not None:                     # carry the user's manual layer tweaks over
@@ -947,11 +956,12 @@ class NapariState:
         self._on_selection_changed()   # re-run point-in-polygon (+ z filter) on the drawn shape
 
     # ── 3D crop (Imaris-style slicing via clipping planes) ─────────────────────
-    # Flow: `start_crop` drops to 2-D, hides the data layers and shows a Z max-projection with an
-    # editable full-extent rectangle — so you draw the XY footprint over the WHOLE structure, not one
-    # slice (napari only edits Shapes in 2-D). `apply_crop` reads the rectangle + a z-range and sets
+    # Flow: `start_crop` drops to 2-D, hides the data layers and shows a Z max-projection with an EMPTY
+    # rectangle layer in draw mode — you draw the XY footprint over the WHOLE structure, not one slice
+    # (napari only edits Shapes in 2-D). `apply_crop` reads the rectangle + a z-range and sets
     # axis-aligned `experimental_clipping_planes` on the image + overlays, then returns to 3-D.
-    # `clear_crop` removes the planes. See docs/NAPARI.md → "3D crop".
+    # `crop_box` resolves it to pixels for the save task. `clear_crop` removes the planes.
+    # See docs/NAPARI.md → "3D crop". The box readers use the LAST-drawn rectangle (a redraw wins).
 
     def start_crop(self):
         """Enter crop-draw mode (see class-level flow note)."""
@@ -967,22 +977,23 @@ class NapariState:
         for lyr in self._viewer.layers:
             lyr.visible = False
 
-        mip, (sy, sx), (h, w) = self._z_mip()
-        yx_unit = (self._im_units[-1], self._im_units[-1]) if self._im_units else None
+        mip, mip_scale, mip_units, (h, w) = self._z_mip()   # (t?,y,x) lazy dask + matching scale/units
         mip_layer = self._viewer.add_image(mip, name=CROP_MIP_LAYER, colormap="gray",
-                                           blending="translucent", scale=(sy, sx), units=yx_unit)
+                                           blending="translucent", scale=mip_scale, units=mip_units)
         from cecelia.utils import napari_utils
         napari_utils.set_contrast_from_sample(mip_layer)   # percentile contrast → the MIP isn't washed out
 
-        # a full-extent rectangle to shrink: grab the corner handles in "select" mode
-        rect = np.array([[0.0, 0.0], [0.0, w], [h, w], [h, 0.0]])
+        # EMPTY rectangle layer (2-D y,x) in draw mode — the user draws ONE rectangle (like cell
+        # selection's add_polygon). Deliberately NOT prefilled full-extent: a prefilled rect the user
+        # draws OVER leaves two shapes, and the box would span their union (= the full image → no crop).
+        sy, sx = mip_scale[-2], mip_scale[-1]
+        yx_unit = (mip_units[-2], mip_units[-1]) if (mip_units and mip_units[-1] is not None) else None
         shp_kwargs = dict(name=CROP_LAYER, edge_color="yellow", face_color="transparent",
                           edge_width=max(1.0, 0.004 * max(h, w)), ndim=2, scale=(sy, sx))
         if yx_unit is not None:
             shp_kwargs["units"] = yx_unit
-        layer = self._viewer.add_shapes([rect], shape_type="rectangle", **shp_kwargs)
-        layer.mode = "select"
-        layer.selected_data = {0}
+        layer = self._viewer.add_shapes(**shp_kwargs)
+        layer.mode = "add_rectangle"
         self._viewer.layers.selection.active = layer
         self._viewer.reset_view()
 
@@ -996,38 +1007,45 @@ class NapariState:
         return len(self._im_data) - 1
 
     def _z_mip(self):
-        """(Y, X) max-projection over z, channels AND time at a coarse pyramid level. Returns
-        ``(mip2d, (scale_y, scale_x) world µm/px, (H, W))``. Projecting over t too means the drawing
-        backdrop shows the whole spatial footprint across the WHOLE timelapse — the crop is spatial
-        (it applies to every timepoint), so there is deliberately no t slider while drawing. Max over
-        channels → one grey image (colour isn't needed to draw a box, and collapsing channels keeps it
-        fast). Ports the parked ``as_mip`` option (docs/NAPARI.md)."""
+        """LAZY projection for the crop backdrop. Max over CHANNELS (dropped) and over Z **with
+        keepdims** — so the layer keeps the SAME display axes as the data (``t, z=1, y, x``) and stays
+        aligned to the viewer's t/z sliders. This is the crux: a z-DROPPED (t,y,x) layer right-aligns
+        its first axis onto the viewer's Z (the hidden 4-D data layers keep the viewer 4-D), so the real
+        T slider wouldn't move it — "the MIP has no time". Keeping z as a singleton fixes the alignment.
+        t is kept so you can scrub timepoints; each frame computes on demand (dask). Returns
+        ``(mip, scale, units, (H, W))`` over the display axes. Coarse pyramid level (XY ~≤ max_px)."""
         axes = [a.lower() for a in self._axes]
         iy, ix = axes.index("y"), axes.index("x")
         iz = axes.index("z") if "z" in axes else None
-        it = axes.index("t") if "t" in axes else None
         ic = self._channel_axis
         level = self._pick_mip_level(iy, ix)
-        arr = self._im_data[level]
-        shapeL = arr.shape
-        shape0 = self._im_data[0].shape
+        arr = self._im_data[level]                      # dask; lazy
+        shape0, shapeL = self._im_data[0].shape, arr.shape
 
-        # subsample t on long movies (a footprint needn't read every frame), then max over t/z/c;
-        # process axes high→low so earlier index removals don't invalidate the still-pending lower ones
-        if it is not None and shapeL[it] > _MAX_MIP_T:
-            idx = np.linspace(0, shapeL[it] - 1, _MAX_MIP_T).astype(int)
-            arr = np.take(arr, idx, axis=it)
         a = arr
-        for ax in sorted([ax for ax in (it, iz, ic) if ax is not None], reverse=True):
-            a = a.max(axis=ax)
-        mip = np.asarray(a)   # small 2-D → compute eagerly (pyramid levels are lazy dask arrays)
+        if ic is not None:
+            a = a.max(axis=ic)                          # drop channel → array axes = the display order
+        if iz is not None:
+            z_disp = self._display_axes().index("z")    # z index within the (channel-dropped) display axes
+            a = a.max(axis=z_disp, keepdims=True)       # collapse z to a singleton, then...
+            # ...broadcast it back across the FULL z extent so the projection shows at ANY z-slider
+            # position. The hidden full-z data layers set the viewer's z range; a size-1 z would be blank
+            # at z>0 (the "blank image"). Lazy view — every z slice references the one projection.
+            tgt = list(a.shape); tgt[z_disp] = int(shape0[iz])
+            a = da.broadcast_to(a, tuple(tgt))
 
-        disp = self._display_axes()
-        sy0 = float(self._im_scale[disp.index("y")]) if self._im_scale else 1.0
-        sx0 = float(self._im_scale[disp.index("x")]) if self._im_scale else 1.0
-        sy = sy0 * (shape0[iy] / shapeL[iy])     # world µm/px at this coarse level
-        sx = sx0 * (shape0[ix] / shapeL[ix])
-        return mip, (sy, sx), (int(mip.shape[0]), int(mip.shape[1]))
+        disp = self._display_axes()                     # e.g. ['t','z','y','x'] — matches `a`'s axes now
+        def sc(al):
+            base = float(self._im_scale[disp.index(al)]) if (self._im_scale and al in disp) else 1.0
+            if al == "y":
+                return base * (shape0[iy] / shapeL[iy])  # coarse-level µm/px
+            if al == "x":
+                return base * (shape0[ix] / shapeL[ix])
+            return base
+        scale = tuple(sc(al) for al in disp)
+        unit  = self._im_units[0] if self._im_units else None
+        units = tuple(unit for _ in disp) if unit is not None else None
+        return a, scale, units, (int(shapeL[iy]), int(shapeL[ix]))
 
     def apply_crop(self, z_lo_frac=0.0, z_hi_frac=1.0):
         """Read the drawn rectangle + z-range → set axis-aligned clipping planes on the data layers,
@@ -1039,7 +1057,7 @@ class NapariState:
         shapes = [np.asarray(s) for s in layer.data if np.asarray(s).shape[0] >= 3]
         if not shapes:
             raise RuntimeError("no crop region drawn")
-        verts = np.concatenate(shapes, axis=0)[:, -2:]   # (…, y, x) data coords of the coarse MIP level
+        verts = shapes[-1][:, -2:]                        # LAST-drawn rectangle, (y, x) coarse-MIP coords
         sy, sx = float(layer.scale[-2]), float(layer.scale[-1])
         y0, x0 = verts.min(axis=0)
         y1, x1 = verts.max(axis=0)
@@ -1077,7 +1095,7 @@ class NapariState:
         shapes = [np.asarray(s) for s in layer.data if np.asarray(s).shape[0] >= 3]
         if not shapes:
             raise RuntimeError("no crop region drawn")
-        verts = np.concatenate(shapes, axis=0)[:, -2:]         # (…, y, x) coarse-level data coords
+        verts = shapes[-1][:, -2:]                              # LAST-drawn rectangle, (y, x) coarse coords
         sy, sx = float(layer.scale[-2]), float(layer.scale[-1])  # coarse µm/px
         disp = self._display_axes()
         axes = [a.lower() for a in self._axes]
