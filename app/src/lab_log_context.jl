@@ -56,28 +56,78 @@ function _summarise_images(names::Vector{String})::String
     length(u) > 6 ? string(join(u[1:6], ", "), ", +", length(u) - 6, " more") : join(u, ", ")
 end
 
-# ── tasks (run logs) ────────────────────────────────────────────────────────────
-# Returns (lines, max_at). Only run-log entries strictly after `cutoff` (ISO timestamps are
-# fixed-width, so a lexical `>` is a correct "happened after"). Second-granular + strict, so activity
-# in the same second as a prior capture is skipped (negligible — captures are minutes apart).
-function _task_lines(proj::CciaProject, cutoff::AbstractString)::Tuple{Vector{String},String}
-    by_fun = Dict{String,Vector{String}}()
+# ── category taxonomy ──────────────────────────────────────────────────────────────
+# The digest is CATEGORY-CENTRIC, using the SAME category tags the task manager shows (the task
+# specs' `category` field — "Segment", "Tracking", "Clustering", …) so labelling is consistent and
+# nothing has to be maintained here: a task's category is read from its spec, so new tasks/categories
+# appear automatically. Non-task activity maps to the nearest tag: gate pops → "Gating", cluster pops
+# → "Clustering" (matching the clustPops/clustTracks task category), exclusions → "Manage images".
+# Digest order + mute keys are these categories; muting is lenient (any category string).
+const CATEGORY_GATING = "Gating"
+const CATEGORY_IMAGES = "Manage images"
+# preferred display/mute order; categories not listed are appended alphabetically (stays general).
+const _CATEGORY_ORDER = ("import", "Manage images", "Cleanup", "Edit", "Segment",
+                         CATEGORY_GATING, "Tracking", "Clustering", "Behaviour")
+
+# a task's category, straight from its spec (the task-manager tag). Falls back to the fun's namespace.
+function _category_of_fun(fun::AbstractString)::String
+    task = try _task_from_fun_name(String(fun)) catch; nothing end
+    if task !== nothing
+        spec = try _task_spec(task) catch; nothing end
+        spec !== nothing && haskey(spec, "category") && return String(spec["category"])
+    end
+    uppercasefirst(String(split(fun, ".")[1]))
+end
+
+_category_of_pop_type(pt::AbstractString)::String =
+    String(pt) in ("clust", "trackclust") ? "Clustering" : CATEGORY_GATING
+
+"""All digest categories the app can emit — task categories (from the registry, generic) plus the
+non-task ones. Ordered by `_CATEGORY_ORDER`, extras appended. Backs the panel's per-category mutes."""
+function lab_log_categories()::Vector{String}
+    cats = Set{String}([CATEGORY_GATING, "Clustering", CATEGORY_IMAGES])
+    for (_fun, task) in _fun_name_map()
+        spec = try _task_spec(task) catch; nothing end
+        spec !== nothing && haskey(spec, "category") && push!(cats, String(spec["category"]))
+    end
+    ordered = String[c for c in _CATEGORY_ORDER if c in cats]
+    vcat(ordered, sort(String[c for c in cats if !(c in _CATEGORY_ORDER)]))
+end
+
+# rank for digest ordering (index in _CATEGORY_ORDER; unknown categories sort last, then alphabetical)
+_category_rank(c::AbstractString)::Int = (i = findfirst(==(String(c)), _CATEGORY_ORDER); i === nothing ? typemax(Int) : i)
+
+# "N images" for a big cohort, else the names — the collapse that turns per-image repetition into one.
+_where(names)::String = (n = length(names); n <= 2 ? join(sort(collect(names)), ", ") : "$n images")
+
+# ── tasks (run logs) → per-module items ───────────────────────────────────────────
+# Returns (module => [item…], max_at). Only run-log entries strictly after `cutoff` (ISO timestamps
+# are fixed-width, so a lexical `>` is a correct "happened after"; second-granular + strict, so
+# same-second-as-last-capture activity is skipped — negligible). The `category.` prefix is dropped
+# from the fun (the module header carries it): `segment.cellpose` → "cellpose on 5 images".
+function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},String}
+    by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
     max_at = String(cutoff)
     for img in images(proj)
         for e in read_run_log(img)
             at = String(get(e, "at", ""))
             at > cutoff || continue
-            push!(get!(by_fun, String(get(e, "fun", "?")), String[]), img.name)
+            fun  = String(get(e, "fun", "?"))
+            disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
+            push!(get!(get!(by_mod_fun, _category_of_fun(fun), Dict{String,Set{String}}()), disp, Set{String}()), img.name)
             at > max_at && (max_at = at)
         end
     end
-    lines = String[]
-    for fun in sort(collect(keys(by_fun)))
-        names = unique(by_fun[fun])
-        n = length(names)
-        push!(lines, "$fun on $n image$(n == 1 ? "" : "s") ($(_summarise_images(names)))")
+    out = Dict{String,Vector{String}}()
+    for (mod, funs) in by_mod_fun
+        items = String[]
+        for disp in sort(collect(keys(funs)))
+            n = length(funs[disp])
+            push!(items, "$disp on $n image$(n == 1 ? "" : "s") ($(_where(funs[disp])))")
+        end
+        out[mod] = items
     end
-    (lines, max_at)
+    (out, max_at)
 end
 
 # ── gating fingerprint + diff ─────────────────────────────────────────────────────
@@ -130,47 +180,62 @@ end
 _popname_of_key(k::AbstractString)::String = pop_name(String(split(k, "|")[end]))
 _key_pop_type(k::AbstractString)::String   = String(split(k, "|")[2])
 
-function _gating_lines(prev::AbstractDict, cur::AbstractDict, name_of)::Vector{String}
-    lines = String[]
-    for u in sort(collect(union(keys(prev), keys(cur))))
+# Populations → per-category items. Aggregates changes ACROSS images by (category, verb, popname) →
+# image-set, then collapses pops that share an image-set into one item — so a cohort-wide edit is one
+# line ("redefined: Directed, Meandering, Scanning (8 images)"), not one line per image.
+function _pop_items_by_module(prev::AbstractDict, cur::AbstractDict, name_of)::Dict{String,Vector{String}}
+    acc = Dict{String,Dict{Symbol,Dict{String,Set{String}}}}()   # category => verb => pop => image names
+    add!(cat, verb, pop, img) = push!(
+        get!(get!(get!(acc, cat, Dict{Symbol,Dict{String,Set{String}}}()), verb, Dict{String,Set{String}}()),
+             pop, Set{String}()), img)
+    for u in union(keys(prev), keys(cur))
+        nm = name_of(u)
         p = get(prev, u, Dict{String,Any}())
         c = get(cur, u, Dict{String,Any}())
-        added   = sort(unique(String[_popname_of_key(k) for k in keys(c) if !haskey(p, k)]))
-        removed = sort(unique(String[_popname_of_key(k) for k in keys(p) if !haskey(c, k)]))
-        changed_keys = String[k for k in keys(c) if haskey(p, k) && string(p[k]) != string(c[k])]
-        # gate pops (flow/track) → "gate changed"; filter/membership pops (clust/trackclust/…) →
-        # "definition changed" — wording only; the change detection above is identical + generic.
-        gate_ch = sort(unique(String[_popname_of_key(k) for k in changed_keys if is_gating_pop_type(_key_pop_type(k))]))
-        def_ch  = sort(unique(String[_popname_of_key(k) for k in changed_keys if !is_gating_pop_type(_key_pop_type(k))]))
-        (isempty(added) && isempty(removed) && isempty(gate_ch) && isempty(def_ch)) && continue
-        parts = String[]
-        isempty(added)   || push!(parts, "added "                 * join(added, ", "))
-        isempty(removed) || push!(parts, "removed "               * join(removed, ", "))
-        isempty(gate_ch) || push!(parts, "gate changed on "       * join(gate_ch, ", "))
-        isempty(def_ch)  || push!(parts, "definition changed on " * join(def_ch, ", "))
-        push!(lines, "Populations $(name_of(u)): " * join(parts, "; "))
+        for k in keys(c); haskey(p, k) || add!(_category_of_pop_type(_key_pop_type(k)), :added,   _popname_of_key(k), nm); end
+        for k in keys(p); haskey(c, k) || add!(_category_of_pop_type(_key_pop_type(k)), :removed, _popname_of_key(k), nm); end
+        for k in keys(c)
+            (haskey(p, k) && string(p[k]) != string(c[k])) || continue
+            verb = is_gating_pop_type(_key_pop_type(k)) ? :gate : :redef
+            add!(_category_of_pop_type(_key_pop_type(k)), verb, _popname_of_key(k), nm)
+        end
     end
-    lines
+    out = Dict{String,Vector{String}}()
+    for (cat, byverb) in acc
+        items = String[]
+        for (verb, label) in ((:added, "added"), (:removed, "removed"), (:gate, "gate changed"), (:redef, "redefined"))
+            haskey(byverb, verb) || continue
+            byset = Dict{Vector{String},Vector{String}}()   # shared image-set → pops
+            for (pop, imgs) in byverb[verb]
+                push!(get!(byset, sort(collect(imgs)), String[]), pop)
+            end
+            for (imgs, pops) in byset
+                push!(items, "$label: $(join(sort(pops), ", ")) ($(_where(imgs)))")
+            end
+        end
+        out[cat] = items
+    end
+    out
 end
 
 # ── exclusions ─────────────────────────────────────────────────────────────────
 _excluded_uids(proj::CciaProject)::Vector{String} =
     sort(String[img.uid for img in images(proj) if !image_included(img)])
 
-function _exclusion_lines(prev::Vector{String}, cur::Vector{String}, name_of)::Vector{String}
+function _exclusion_items(prev::Vector{String}, cur::Vector{String}, name_of)::Vector{String}
     ps, cs = Set(prev), Set(cur)
     newly_ex = sort(String[u for u in cur if !(u in ps)])
     newly_in = sort(String[u for u in prev if !(u in cs)])
-    lines = String[]
-    isempty(newly_ex) || push!(lines, "Excluded "    * join(String[name_of(u) for u in newly_ex], ", "))
-    isempty(newly_in) || push!(lines, "Re-included " * join(String[name_of(u) for u in newly_in], ", "))
-    lines
+    items = String[]
+    isempty(newly_ex) || push!(items, "excluded $(_where(String[name_of(u) for u in newly_ex]))")
+    isempty(newly_in) || push!(items, "re-included $(_where(String[name_of(u) for u in newly_in]))")
+    items
 end
 
 """
-Append a dated `[Cecelia]` digest of the NET change since the last capture (tasks run, gating
-population/gate changes, exclusions), and advance the stored snapshot. Returns the appended block, or
-`nothing` when there is no change. The first capture seeds the gating/exclusion baselines silently.
+Append a dated `[Cecelia]` digest of the NET change since the last capture, grouped by module
+category (the task-manager tags), collapsed across images. Advances the stored snapshot. Returns the
+appended block, or `nothing` when there is no (unmuted) change. First capture seeds baselines silently.
 """
 function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::Union{String,Nothing}
     state   = _read_context_state(proj)
@@ -178,24 +243,37 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     name_by = Dict(img.uid => img.name for img in images(proj))
     name_of(u) = get(name_by, String(u), String(u))
 
-    task_lines, max_at = _task_lines(proj, cutoff)
+    task_items, max_at = _task_items_by_module(proj, cutoff)
 
     cur_gating  = _gating_fingerprint(proj)
     prev_gating = get(state, "gating", nothing)          # absent → first capture → seed silently
-    gating_lines = prev_gating === nothing ? String[] : _gating_lines(prev_gating, cur_gating, name_of)
+    pop_items = prev_gating === nothing ? Dict{String,Vector{String}}() :
+                _pop_items_by_module(prev_gating, cur_gating, name_of)
 
     cur_excl  = _excluded_uids(proj)
     prev_excl = get(state, "excluded", nothing)
-    excl_lines = prev_excl === nothing ? String[] :
-                 _exclusion_lines(String[String(u) for u in prev_excl], cur_excl, name_of)
+    excl_items = prev_excl === nothing ? String[] :
+                 _exclusion_items(String[String(u) for u in prev_excl], cur_excl, name_of)
 
-    lines = vcat(task_lines, gating_lines, excl_lines)
+    # merge every source into per-category item lists
+    by_cat = Dict{String,Vector{String}}()
+    for (cat, its) in task_items; append!(get!(by_cat, cat, String[]), its); end
+    for (cat, its) in pop_items;  append!(get!(by_cat, cat, String[]), its); end
+    isempty(excl_items) || append!(get!(by_cat, CATEGORY_IMAGES, String[]), excl_items)
 
-    # always persist the advanced snapshot (seeds baselines on first capture)
+    # always advance the snapshot (seeds baselines on first capture, absorbs muted-while changes)
     state["lastCapturedAt"] = max_at
     state["gating"]   = cur_gating
     state["excluded"] = cur_excl
     _write_context_state!(proj, state)
+
+    # one bullet per category, in task-manager order, skipping muted categories
+    muted = Set(read_mutes(proj))
+    lines = String[]
+    for cat in sort(collect(keys(by_cat)); by = c -> (_category_rank(c), c))
+        (cat in muted || isempty(by_cat[cat])) && continue
+        push!(lines, "$cat — " * join(by_cat[cat], "; "))
+    end
 
     isempty(lines) && return nothing
     append_lab_log!(proj, CONTEXT_AUTHOR, lines; date = date)

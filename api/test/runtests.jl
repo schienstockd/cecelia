@@ -333,6 +333,21 @@ end
         @test _post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"x", "vote"=>"sideways"))[1] == 400
         @test _post(api_lablog_tune, Dict("projectUid"=>uid, "vote"=>"up"))[1] == 400   # id missing
         @test _post(api_lablog_tune, Dict("id"=>"x", "vote"=>"up"))[1] == 400           # projectUid missing
+
+        # ── mutes (category suppression → config sidecar); categories are task-manager tags ──
+        let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>true))[2])
+            @test m.ok == true && "Segment" in m.mutes
+        end
+        # read exposes both the mutes and the available category vocabulary (for the panel's chips)
+        let r = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2])
+            @test "Segment" in r.mutes
+            @test "Segment" in r.categories && "Gating" in r.categories   # dynamic from task specs
+        end
+        let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>false))[2])
+            @test !("Segment" in m.mutes)
+        end
+        @test _post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"", "muted"=>true))[1] == 400   # empty rejected
+        @test _post(api_lablog_mute, Dict("projectUid"=>uid, "muted"=>true))[1] == 400                   # category missing
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)

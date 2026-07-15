@@ -918,7 +918,7 @@ function api_lablog_read(req::HTTP.Request)
     content = read_lab_log(proj)
     p = lab_log_path(proj)
     200, JSON3.write((; content, entries=parse_lab_log(content),
-                        tuning=read_tuning(proj),
+                        tuning=read_tuning(proj), mutes=read_mutes(proj), categories=lab_log_categories(),
                         mtime=(isfile(p) ? mtime(p) : nothing)))
 end
 
@@ -942,6 +942,28 @@ function api_lablog_tune(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error=sprint(showerror, e)))
     end
     200, JSON3.write((; ok=true, tuning))
+end
+
+# mute → mute/unmute a whole digest CATEGORY (tasks|populations|exclusions) from future captures.
+# Config sidecar (settings/lab-log-mutes.json), not the log. Body {projectUid, category, muted}.
+function api_lablog_mute(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    category    = String(get(body, :category, ""))
+    muted       = Bool(get(body, :muted, false))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(category)    && return 400, JSON3.write((; error="category required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    mutes = try
+        set_mute!(proj, category, muted)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, mutes))
 end
 
 # append → one dated, author-tagged block. Server injects date + author tag (append-only, lock-guarded
