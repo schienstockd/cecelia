@@ -81,8 +81,29 @@ function _task_lines(proj::CciaProject, cutoff::AbstractString)::Tuple{Vector{St
 end
 
 # ── gating fingerprint + diff ─────────────────────────────────────────────────────
-# Per image: { "value_name|pop_type|pop_path" => gate_hash }. gate_hash = "" for a gateless pop; a
-# stable hash of the gate spec otherwise. Reads the gating JSON files on disk (the source of truth).
+# Per image: { "value_name|pop_type|pop_path" => defn_hash }. `defn_hash` hashes the pop's whole
+# MEMBERSHIP DEFINITION, not just its gate — so a change to a gate, a filter, cluster membership, or
+# any FUTURE definition field is caught. This is deliberately GENERIC (reflect over the struct's
+# fields, minus a small identity/cosmetic ignore-list) rather than enumerating fields, so new pop
+# types (clust/trackclust are filter-defined, gateless) and new fields need no change here — and it
+# needs no per-action trigger: the snapshot is read fresh at capture time.
+
+# Fields that identify/decorate a pop rather than define its membership — excluded so cosmetic edits
+# (colour, show) and identity (name/path/parent, in the key) don't read as "changed".
+const _POP_IGNORE_FIELDS = (:name, :path, :parent, :pop_type, :value_name, :colour, :show, :transient)
+
+# Stable hash of everything that DEFINES a pop's membership (gate via its canonical spec; all other
+# non-ignored fields as-is). Reflection over fieldnames → new fields are covered automatically.
+function _pop_defn_hash(pop)::String
+    d = Dict{String,Any}()
+    for f in fieldnames(typeof(pop))
+        f in _POP_IGNORE_FIELDS && continue
+        v = getfield(pop, f)
+        d[String(f)] = (f === :gate) ? (v === nothing ? nothing : gate_spec(v)) : v
+    end
+    string(hash(JSON3.write(d)))
+end
+
 function _gating_fingerprint(proj::CciaProject)::Dict{String,Any}
     fp = Dict{String,Any}()
     for img in images(proj)
@@ -98,9 +119,7 @@ function _gating_fingerprint(proj::CciaProject)::Dict{String,Any}
             end
             for path in pop_paths(m)
                 is_root(path) && continue
-                g = pop_at(m, path).gate
-                m_all["$(m.value_name)|$(m.pop_type)|$path"] =
-                    g === nothing ? "" : string(hash(JSON3.write(gate_spec(g))))
+                m_all["$(m.value_name)|$(m.pop_type)|$path"] = _pop_defn_hash(pop_at(m, path))
             end
         end
         isempty(m_all) || (fp[img.uid] = m_all)
@@ -109,6 +128,7 @@ function _gating_fingerprint(proj::CciaProject)::Dict{String,Any}
 end
 
 _popname_of_key(k::AbstractString)::String = pop_name(String(split(k, "|")[end]))
+_key_pop_type(k::AbstractString)::String   = String(split(k, "|")[2])
 
 function _gating_lines(prev::AbstractDict, cur::AbstractDict, name_of)::Vector{String}
     lines = String[]
@@ -117,14 +137,18 @@ function _gating_lines(prev::AbstractDict, cur::AbstractDict, name_of)::Vector{S
         c = get(cur, u, Dict{String,Any}())
         added   = sort(unique(String[_popname_of_key(k) for k in keys(c) if !haskey(p, k)]))
         removed = sort(unique(String[_popname_of_key(k) for k in keys(p) if !haskey(c, k)]))
-        changed = sort(unique(String[_popname_of_key(k) for k in keys(c)
-                                     if haskey(p, k) && string(p[k]) != string(c[k]) && !isempty(string(c[k]))]))
-        (isempty(added) && isempty(removed) && isempty(changed)) && continue
+        changed_keys = String[k for k in keys(c) if haskey(p, k) && string(p[k]) != string(c[k])]
+        # gate pops (flow/track) → "gate changed"; filter/membership pops (clust/trackclust/…) →
+        # "definition changed" — wording only; the change detection above is identical + generic.
+        gate_ch = sort(unique(String[_popname_of_key(k) for k in changed_keys if is_gating_pop_type(_key_pop_type(k))]))
+        def_ch  = sort(unique(String[_popname_of_key(k) for k in changed_keys if !is_gating_pop_type(_key_pop_type(k))]))
+        (isempty(added) && isempty(removed) && isempty(gate_ch) && isempty(def_ch)) && continue
         parts = String[]
-        isempty(added)   || push!(parts, "added "           * join(added, ", "))
-        isempty(removed) || push!(parts, "removed "         * join(removed, ", "))
-        isempty(changed) || push!(parts, "gate changed on " * join(changed, ", "))
-        push!(lines, "Gating $(name_of(u)): " * join(parts, "; "))
+        isempty(added)   || push!(parts, "added "                 * join(added, ", "))
+        isempty(removed) || push!(parts, "removed "               * join(removed, ", "))
+        isempty(gate_ch) || push!(parts, "gate changed on "       * join(gate_ch, ", "))
+        isempty(def_ch)  || push!(parts, "definition changed on " * join(def_ch, ", "))
+        push!(lines, "Populations $(name_of(u)): " * join(parts, "; "))
     end
     lines
 end
