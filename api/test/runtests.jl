@@ -354,6 +354,76 @@ end
     end
 end
 
+@testset "API: task log + history" begin
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir()
+    dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-tasklog", kind="static")
+        uid  = proj.uid
+        s    = add_set!(proj; name="set-A")
+        img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+
+        # ── image list (read-only, no lastOpenedAt bump) ──
+        let r = JSON3.read(api_images_list(HTTP.Request("GET", "/api/images?projectUid=$uid"))[2])
+            @test r.name == "api-tasklog" && r.count == 2
+            @test length(r.sets) == 1 && r.sets[1].imageCount == 2
+            names = [i.name for i in r.images]
+            @test "img-1" in names && "img-2" in names
+            @test all(i -> i.setName == "set-A", r.images)
+        end
+        @test api_images_list(HTTP.Request("GET", "/api/images"))[1] == 400          # projectUid missing
+        @test api_images_list(HTTP.Request("GET", "/api/images?projectUid=nope"))[1] == 404
+
+        # ── task log ──
+        tl(q) = api_images_tasklog(HTTP.Request("GET", "/api/images/tasklog?$q"))
+        # no log yet → exists=false, empty content
+        let r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=segment.cellpose")[2])
+            @test r.exists == false && r.content == ""
+        end
+        # write a log the way the scheduler's _wrap_log_with_file would, then read it back
+        logdir = joinpath(img1._dir, "logs"); mkpath(logdir)
+        write(joinpath(logdir, "segment.cellpose.log"), "[2026-07-15 10:00:00] running cellpose\n")
+        let r = JSON3.read(tl("projectUid=$uid&imageUid=$(img1.uid)&fun=segment.cellpose")[2])
+            @test r.exists == true && occursin("running cellpose", r.content)
+        end
+        # bad requests + path-traversal guard (%2F decodes to '/', so fun becomes "../secret")
+        @test tl("")[1] == 400                                             # projectUid missing
+        @test tl("projectUid=$uid&imageUid=$(img1.uid)")[1] == 400         # fun missing
+        @test tl("projectUid=$uid&imageUid=$(img1.uid)&fun=..%2Fsecret")[1] == 400   # traversal blocked
+        @test tl("projectUid=$uid&imageUid=nope&fun=x")[1] == 404          # image missing
+        @test tl("projectUid=nope&imageUid=$(img1.uid)&fun=x")[1] == 404   # project missing
+
+        # ── task history ──
+        hist(q) = api_tasks_history(HTTP.Request("GET", "/api/tasks/history?$q"))
+        # empty when no run-log activity
+        let r = JSON3.read(hist("projectUid=$uid")[2])
+            @test r.count == 0 && length(r.history) == 0
+        end
+        # activity across two images, aggregated
+        append_run_log!(img1, "segment.cellpose", "default")
+        append_run_log!(img2, "tracking.bayesian_tracking", "default")
+        let r = JSON3.read(hist("projectUid=$uid")[2])
+            @test r.count == 2
+            funs = [h.fun for h in r.history]
+            @test "segment.cellpose" in funs && "tracking.bayesian_tracking" in funs
+            @test all(h -> h.imageUid in (img1.uid, img2.uid), r.history)
+        end
+        # limit caps rows
+        @test JSON3.read(hist("projectUid=$uid&limit=1")[2]).count == 1
+        # bad requests
+        @test hist("")[1] == 400                     # projectUid missing
+        @test hist("projectUid=nope")[1] == 404
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: batch-movie output naming" begin
     attr = Dict("Day" => "3", "Treatment" => "CNO", "Blank" => "  ")
     # attrs joined in the requested order, uid always terminates → unique name

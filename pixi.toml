@@ -52,6 +52,9 @@ btrack       = ">=0.7"
 # below and docs/todo/CLUSTERING_PLAN.md.
 leidenalg    = ">=0.10"
 napari-animation = ">=0.0.10, <0.0.11"
+# MCP observer server (top-level mcp/ dir — read-only Claude access to a running project). Only the
+# `mcp` run task needs it; the client + its tests are stdlib-only. See mcp/README.md, docs/ai-assist/OBSERVER.md.
+mcp          = ">=1.2"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared
@@ -85,11 +88,17 @@ prod = { cmd = "julia --project -t auto src/server.jl", cwd = "api" }           
 
 # Tests — one whole suite per layer. Package (headless Cecelia) + API adapters (loaded with
 # CECELIA_NO_SERVE — no socket bound) + frontend (Vitest, pure logic from src/utils/*) + Python
-# analysis-env (unittest-discovered python/cecelia/tests/*, e.g. the zarr writer). All four run in CI.
+# analysis-env (unittest-discovered python/cecelia/tests/*, e.g. the zarr writer) + MCP observer
+# client (stdlib unittest, mocked HTTP). All run in CI.
 test-pkg      = { cmd = "julia --project test/runtests.jl", cwd = "app" }
 test-api      = { cmd = "julia --project test/runtests.jl", cwd = "api" }
 test-frontend = { cmd = "npm test", cwd = "frontend" }
 test-py       = { cmd = "python -m unittest discover -s python/cecelia/tests -p 'test_*.py' -v" }
+test-mcp      = { cmd = "python -m unittest discover -s tests -t . -v", cwd = "mcp", env = { PYTHONPATH = "." } }
+
+# MCP observer server (stdio) — read-only Claude access to the running project (needs `pixi run dev`
+# on :8080). See mcp/README.md for wiring into Claude Code. Override the API with CECELIA_API_URL.
+mcp           = { cmd = "python -m cecelia_mcp.server", cwd = "mcp", env = { PYTHONPATH = "." } }
 
 # Frontend — Vite (port 5173). NOTE: `pixi run dev` already starts this; run it standalone ONLY when
 # not using `pixi run dev` (e.g. previewing another worktree on a spare port), else two Vites clash.

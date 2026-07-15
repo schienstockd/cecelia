@@ -683,6 +683,85 @@ function api_images_meta(req::HTTP.Request)
     200, JSON3.write((; image=_image_payload(obj)))
 end
 
+# GET /api/images?projectUid → a read-only listing of the project's sets + images (uid, name,
+# per-image status). Unlike POST /api/projects/load this has NO side effects (load bumps
+# lastOpenedAt), so the MCP observer can enumerate images while keeping its no-mutation guarantee.
+# Backs the observer's get_project_info + list_images tools.
+function api_images_list(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    project_uid = get(query, "projectUid", "")
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    sets = [(; uid=s.uid, name=s.name, imageCount=length(s.image_uids)) for s in proj._sets]
+    imgs = Vector{Any}()
+    for s in proj._sets, img in images(s)
+        push!(imgs, (; uid=img.uid, name=img.name, status=img.status, setUid=s.uid, setName=s.name))
+    end
+    200, JSON3.write((; projectUid=project_uid, name=proj.name, kind=proj.kind,
+                        count=length(imgs), sets, images=imgs))
+end
+
+# GET /api/images/tasklog?projectUid&imageUid&fun → the raw task log for one fun on one image.
+# Reads {img._dir}/logs/{fun}.log (written by _wrap_log_with_file in the scheduler). Read-only;
+# backs the MCP observer's get_task_log tool. Returns exists=false + "" when no log exists yet.
+function api_images_tasklog(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    project_uid = get(query, "projectUid", "")
+    image_uid   = get(query, "imageUid", "")
+    fun         = get(query, "fun", "")
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(image_uid)   && return 400, JSON3.write((; error="imageUid required"))
+    isempty(fun)         && return 400, JSON3.write((; error="fun required"))
+    # fun becomes a filename ({fun}.log) — reject separators / traversal so it can't escape logs/
+    (occursin('/', fun) || occursin('\\', fun) || occursin("..", fun)) &&
+        return 400, JSON3.write((; error="invalid fun"))
+
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
+    img_dir = joinpath(proj_dir, "1", image_uid)
+    isfile(joinpath(img_dir, "ccid.json")) ||
+        return 404, JSON3.write((; error="Image not found: $image_uid"))
+
+    logfile = joinpath(img_dir, "logs", fun * ".log")
+    isfile(logfile) || return 200, JSON3.write((; projectUid=project_uid, imageUid=image_uid,
+                                                  fun, exists=false, content=""))
+    content = read(logfile, String)
+    200, JSON3.write((; projectUid=project_uid, imageUid=image_uid, fun,
+                        exists=true, content, bytes=sizeof(content)))
+end
+
+# GET /api/tasks/history?projectUid[&limit] → recent task runs across all images, newest first.
+# Aggregates each image's runlog.json (fun, valueName, timestamp) plus the image's current status.
+# Read-only; backs the MCP observer's get_task_history tool. (Attempt counts arrive with the
+# per-node counter in a later slice.) limit caps the returned rows (default 100).
+function api_tasks_history(req::HTTP.Request)
+    uri   = HTTP.URI(req.target)
+    query = HTTP.queryparams(uri)
+    project_uid = get(query, "projectUid", "")
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    parsed = tryparse(Int, get(query, "limit", ""))
+    limit  = (isnothing(parsed) || parsed <= 0) ? 100 : parsed
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    # run-log entries may deserialise with String or Symbol keys depending on the JSON3 path — try both
+    _rl(e, k) = (v = get(e, k, get(e, Symbol(k), nothing)); v === nothing ? "" : String(v))
+    rows = Vector{Any}()
+    for img in images(proj), e in read_run_log(img)
+        push!(rows, Dict{String,Any}(
+            "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,
+            "fun" => _rl(e, "fun"), "valueName" => _rl(e, "valueName"), "at" => _rl(e, "at")))
+    end
+    # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological
+    sort!(rows, by = r -> r["at"], rev = true)
+    length(rows) > limit && (rows = rows[1:limit])
+    200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
+end
+
 function api_images_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))

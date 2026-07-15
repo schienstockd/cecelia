@@ -247,6 +247,7 @@ cecelia-pineapple/
   python/       Installable Python package `cecelia` (pyproject.toml here) — the analysis/IO
                 helpers + Python task runners + writers. Top-level, sibling to app/.
   napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
+  mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
   pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
   docs/         Extended architecture and design reference
 ```
@@ -261,6 +262,7 @@ ecosystem — do not mix:
 | `frontend/` | Vue/TS | The browser UI. |
 | `python/` | Python | The installable **`cecelia`** package: `python/cecelia/utils/*` (zarr/OME/dim/label-props/… helpers), `python/cecelia/tasks/<cat>/<name>_run.py` (subprocess entry points), `python/cecelia/writers/*`. `python/pyproject.toml` defines it. |
 | `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
+| `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
 
 > **⚠️ Structural shift (2026-07): the Python helpers moved `app/py/` → top-level `python/cecelia/`
 > and were made a pip-installable package.** `app/` is now Julia-only. Reason: `app/` is a Julia
