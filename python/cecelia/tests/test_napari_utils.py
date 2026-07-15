@@ -290,6 +290,31 @@ class TestIsCategoricalColumn(unittest.TestCase):
         self.assertFalse(napari_utils.is_categorical_column('area', np.arange(0., 100., 2.0)))
 
 
+class TestHexRgbaConversion(unittest.TestCase):
+    """Colour hex↔RGBA float — the ONE parse shared across every napari colour path (labels/tracks
+    colormaps, points face_color, the solid track colormap); the bridge delegates here."""
+
+    def test_hex_to_rgba_parses(self):
+        self.assertEqual(napari_utils.hex_to_rgba('#ffffff'), (1.0, 1.0, 1.0, 1.0))
+        self.assertEqual(napari_utils.hex_to_rgba('#000000'), (0.0, 0.0, 0.0, 1.0))
+        r, g, b, a = napari_utils.hex_to_rgba('#ff8000')      # tolerates a missing leading '#' too
+        self.assertAlmostEqual(r, 1.0); self.assertAlmostEqual(b, 0.0); self.assertEqual(a, 1.0)
+        self.assertEqual(napari_utils.hex_to_rgba('ff8000'), napari_utils.hex_to_rgba('#ff8000'))
+
+    def test_hex_to_rgba_malformed_is_none(self):
+        for bad in (None, '', '#fff', '#gggggg', 'not-a-colour'):
+            self.assertIsNone(napari_utils.hex_to_rgba(bad))
+
+    def test_rgba_to_hex_clamps_and_drops_alpha(self):
+        self.assertEqual(napari_utils.rgba_to_hex((1.0, 1.0, 1.0, 1.0)), '#ffffff')
+        self.assertEqual(napari_utils.rgba_to_hex((0.0, 0.0, 0.0)), '#000000')
+        self.assertEqual(napari_utils.rgba_to_hex((2.0, -1.0, 0.5, 0.3)), '#ff0080')  # clamped to 0..255
+
+    def test_round_trip(self):
+        for hx in ('#123456', '#abcdef', '#00ff88'):
+            self.assertEqual(napari_utils.rgba_to_hex(napari_utils.hex_to_rgba(hx)), hx)
+
+
 class TestBroadcastTrackToCells(unittest.TestCase):
     """Colour cells by their TRACK's value (clusters.* broadcast) — the track↔cell join behind
     'colour tracks by their cluster/population' (ports R split_tracks)."""

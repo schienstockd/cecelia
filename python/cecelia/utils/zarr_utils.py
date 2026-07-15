@@ -33,8 +33,7 @@ def open_as_zarr(im_path, multiscales=None, as_dask=False, mode='r'):
 
 
 def open_zarr(zarr_path, mode='r', multiscales=None, as_dask=False):
-    zarr_data, zarr_group_info = zarr_data_to_list(
-        zarr_path, multiscales=multiscales, mode=mode, omezarr=zarr_path.endswith('.ome.zarr'))
+    zarr_data, zarr_group_info = zarr_data_to_list(zarr_path, multiscales=multiscales, mode=mode)
     if as_dask is True:
         zarr_data = zarr_data_to_dask(zarr_data)
     return zarr_data, zarr_group_info
@@ -88,50 +87,110 @@ def plane_chunks(shape, dim_utils=None, xy_tile=512):
     return tuple(min(int(s), xy_tile) if i in spatial else 1 for i, s in enumerate(shape))
 
 
-def open_labels_as_dask(filepath, multiscales=None):
-    zarr_data, zarr_group_info = open_labels_as_zarr(filepath, multiscales=multiscales)
-    return zarr_data_to_dask(zarr_data), zarr_group_info
-
-
-def open_labels_as_zarr(filepath, multiscales=None):
-    return zarr_data_to_list(filepath, multiscales=multiscales, data_group='labels')
+# NOTE: labels are opened the SAME way as images — open_as_zarr / open_zarr (a flat multiscales
+# store with numeric `datasets`; see segmentation_utils). The old `open_labels_as_zarr/_as_dask`
+# (data_group='labels') were a verbatim port from the R version, had NO callers here, and would
+# KeyError on current stores (which key multiscales under 'datasets', not 'labels') — removed.
 
 
 def zarr_data_to_dask(zarr_data):
     return [da.from_zarr(arr) for arr in zarr_data]
 
 
-def zarr_data_to_list(zarr_store, multiscales=None, data_group='datasets', mode='r', omezarr=False):
+def zarr_data_to_list(zarr_store, multiscales=None, mode='r'):
     if type(zarr_store) == str:
-        if os.path.exists(os.path.join(zarr_store, '.zarray')) and os.path.exists(os.path.join(zarr_store, '.group')):
+        # only mutate on a WRITE open — a stray leaf .zarray shadowing a group dir breaks a write.
+        # NEVER touch the store on a read (the napari bridge opens images strictly read-only).
+        if mode != 'r' and os.path.exists(os.path.join(zarr_store, '.zarray')) \
+                and os.path.exists(os.path.join(zarr_store, '.group')):
             os.unlink(os.path.join(zarr_store, '.zarray'))
+        # step into the bioformats2raw series wrapper (path/0) when that's where `multiscales`
+        # lives — detected by STRUCTURE (the attr), not the `.ome.zarr` suffix. Flat
+        # create_multiscales stores keep multiscales at the root; series_base returns them as-is.
+        zarr_store = series_base(zarr_store, mode=mode)
 
     zgroup = zarr.open(zarr_store, mode=mode)
-
-    if omezarr is True and 'multiscales' not in zgroup.attrs:
-        # bioformats2raw wraps arrays in a series group at "0/".
-        # Flat OME-ZARRs (written by create_multiscales) have multiscales at root.
-        zgroup = zgroup["0"]
 
     if 'multiscales' in zgroup.attrs and not isinstance(zgroup, zarr.Array):
         zarr_group_info = None
 
+        datasets = zgroup.attrs['multiscales'][0]['datasets']
         if multiscales is None:
             multiscale_slices = slice(None)
         else:
-            if multiscales > len(zgroup.attrs['multiscales'][0][data_group]):
-                multiscales = len(zgroup.attrs['multiscales'][0][data_group])
+            multiscales = min(multiscales, len(datasets))
             multiscale_slices = slice(0, multiscales, 1)
 
-        zarr_data = [
-            zgroup[dataset['path']]
-            for dataset in zgroup.attrs['multiscales'][0][data_group][multiscale_slices]
-        ]
+        zarr_data = [zgroup[dataset['path']] for dataset in datasets[multiscale_slices]]
     else:
         zarr_group_info = [dict(zgroup.info.obj.info_items())]
         zarr_data = [zgroup]
 
     return zarr_data, zarr_group_info
+
+
+# ── OME-ZARR structure + NGFF geometry (read-only; shared with the napari bridge) ──────────────
+# The single home for "where does this store keep its multiscales / axes / scale". The napari
+# bridge used to carry its own copies of all of these (napari/napari_bridge.py) — they now live
+# here so the bridge, the pipeline and any consumer (e.g. coastal) read OME-ZARR geometry ONE way.
+
+def series_base(path, mode='r'):
+    """The store path that holds the `multiscales` metadata: the bioformats2raw series wrapper
+    (``path/0``) when that's where multiscales lives, else ``path`` (a flat create_multiscales
+    store). STRUCTURE-based (checks the attr, not the ``.ome.zarr`` suffix) and read-only, so it
+    tells a nested series group at ``0/`` apart from a flat store's level-0 array also at ``0/``
+    (the latter has no ``multiscales`` attr). Works for zarr v2 (.zattrs) and v3 (zarr.json)."""
+    series = os.path.join(path, "0")
+    if not os.path.isdir(series):
+        return path
+    try:
+        g = zarr.open_group(series, mode=mode)
+        if g.attrs.get("multiscales"):
+            return series
+    except Exception:
+        pass
+    return path
+
+
+def read_multiscales_meta(path):
+    """First NGFF ``multiscales`` entry (dict) for a store, checking the series dir then the flat
+    root; ``{}`` if there is none."""
+    for candidate in (os.path.join(path, "0"), path):
+        if not os.path.isdir(candidate):
+            continue
+        try:
+            g = zarr.open_group(candidate, mode='r')
+            ms = g.attrs.get("multiscales")
+            if ms:
+                return ms[0] if isinstance(ms, list) else {}
+        except Exception:
+            continue
+    return {}
+
+
+def read_axes(path):
+    """NGFF axis names for a store (e.g. ``['t','c','z','y','x']``), or None."""
+    ms = read_multiscales_meta(path)
+    axes = ms.get("axes", [])
+    return [ax["name"] for ax in axes] if axes else None
+
+
+def read_scale(path):
+    """Per-axis physical scale (one value per axis) for a store: NGFF ``coordinateTransformations``
+    first, falling back to OME-XML physical sizes when the NGFF metadata carries no scale (e.g.
+    processed variants that omit it). None if neither is available."""
+    ms = read_multiscales_meta(path)
+    for dataset in ms.get("datasets", [])[:1]:
+        for t in dataset.get("coordinateTransformations", []):
+            if t.get("type") == "scale":
+                return t["scale"]
+    axes = read_axes(path)
+    if axes:
+        # lazy import: keeps `import zarr_utils` free of ome-types' pydantic build cost until a
+        # store actually needs the OME-XML fallback (no cycle — ome_xml_utils has no cecelia deps).
+        import cecelia.utils.ome_xml_utils as ome_xml_utils
+        return ome_xml_utils.read_scale_from_ome_xml(path, axes)
+    return None
 
 
 def save_dask_as_zarr_multiscales(image_array, im_path, nscales=1):

@@ -68,8 +68,9 @@ class MeasureUtils:
 
     def measure_from_zarr(self, label_zarrs: dict, im_dat, log):
         """
-        label_zarrs : {'base': zarr.Group, 'nuc': zarr.Group, …}  – multiscale groups
-        im_dat      : multiscale zarr group for the intensity image
+        label_zarrs : {'base': [level0, level1, …], 'nuc': […], …}  – multiscale level lists
+                      (as returned by zarr_utils.open_as_zarr; level 0 is full-res)
+        im_dat      : multiscale level list for the intensity image (im_dat[0] = full-res)
         log         : script_utils logfile helper (has .log(str))
 
         All label types are measured together and written to a single .h5ad file.
@@ -91,7 +92,7 @@ class MeasureUtils:
         label_dim_order = [ax for ax in dim_order if ax != 'C']
         l_la_t = label_dim_order.index('T') if 'T' in label_dim_order else None
 
-        base_arr = label_zarrs['base']['0']   # full-res array
+        base_arr = label_zarrs['base'][0]   # full-res array (level 0)
         im_arr   = im_dat[0]
 
         if is_3d and self.extended_measures and not _HAS_TRIMESH:
@@ -130,7 +131,7 @@ class MeasureUtils:
             for ltype, lzarr in label_zarrs.items():
                 if ltype == 'base':
                     continue
-                sec_vol = self._extract_t(lzarr['0'], l_la_t, t_idx)
+                sec_vol = self._extract_t(lzarr[0], l_la_t, t_idx)
                 morph_df = self._measure_secondary_intensities(
                     morph_df, sec_vol, im_vol, la_c, la_t, n_c, ltype)
 

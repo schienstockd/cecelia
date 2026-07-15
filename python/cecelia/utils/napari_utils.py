@@ -146,6 +146,29 @@ def add_tracks(viewer, tracks, *, scale, units=None, color_by='track_id', colorm
   return viewer.add_tracks(tracks, **kw)
 
 
+# ── Colour conversion (hex ↔ RGBA float) ──────────────────────────────────────
+# Shared so every napari colour path parses hex ONE way — labels/tracks colormaps, points
+# face_color, and the solid track colormap below. cecelia's bridge imports these; coastal can too.
+
+def hex_to_rgba(hex_colour):
+  """``'#rrggbb'`` → ``(r, g, b, 1.0)`` floats in 0..1. None / blank / malformed → None."""
+  if not hex_colour:
+    return None
+  s = str(hex_colour).lstrip('#')
+  if len(s) != 6:
+    return None
+  try:
+    return (int(s[0:2], 16) / 255., int(s[2:4], 16) / 255., int(s[4:6], 16) / 255., 1.0)
+  except ValueError:
+    return None
+
+
+def rgba_to_hex(rgba):
+  """``(r, g, b, a)`` floats in 0..1 → ``'#rrggbb'`` (alpha dropped, channels clamped to 0..255)."""
+  return '#{:02x}{:02x}{:02x}'.format(
+    *(max(0, min(255, int(round(c * 255)))) for c in rgba[:3]))
+
+
 def solid_track_colormap(hex_colour, name='cc_pop'):
   """A **black → colour** two-stop colormap for flat-colouring a Tracks layer in a single population
   colour — the idiom the old R viewer used (``cmap_single(['#000000', colour])`` in
@@ -155,10 +178,8 @@ def solid_track_colormap(hex_colour, name='cc_pop'):
   value is a NONZERO constant, mapped through this black→colour map — the value lands at the colour end
   (0 = black is never hit), so every track in the pop renders in ``hex_colour``. See old-R
   ``inst/py/napari_utils.py::show_tracks``."""
-  require_napari()
-  import napari
-  s = str(hex_colour).lstrip('#')
-  rgba = (int(s[0:2], 16) / 255., int(s[2:4], 16) / 255., int(s[4:6], 16) / 255., 1.0)
+  napari = require_napari()
+  rgba = hex_to_rgba(hex_colour) or (1.0, 1.0, 1.0, 1.0)   # malformed colour → white (never crash a render)
   return napari.utils.Colormap([(0.0, 0.0, 0.0, 1.0), rgba], name=name)
 
 

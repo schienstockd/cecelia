@@ -25,7 +25,6 @@ import sys
 import os
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 
-import zarr
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils
@@ -75,7 +74,9 @@ def run(params: dict):
             continue
         ltype = _label_type_from_filename(fname, out_vn)
         try:
-            label_zarrs[ltype] = zarr.open(fpath, mode='r')
+            # open labels through the shared reader (same as the image above) — a list of
+            # multiscale levels; measure_from_zarr takes level 0 (full-res). NOT hand-rolled zarr.
+            label_zarrs[ltype], _ = zarr_utils.open_as_zarr(fpath, as_dask=use_dask)
             log.log(f'>> opened label "{ltype}": {fpath}')
         except Exception as e:
             log.log(f'[WARN] Could not open {fpath}: {e}')

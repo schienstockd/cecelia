@@ -247,7 +247,9 @@ The full call chain for "eye button clicked":
    - Calls `_do_open!` → sends `set_task_dir` + `open_image` commands to bridge
    - If auto-load is on, sends `load_layer_props` after
    - Sends `configure_autosave {path, enabled}` last → the bridge live-saves this image on change (see *Layer props persistence*)
-3. Bridge `open_image`: loads zarr, reads axes/scale/unit from metadata, calls `viewer.add_image`, sets contrast limits, optionally enters 3D mode
+3. Bridge `open_image`: opens the store and reads axes/scale/unit **through the shared cecelia readers** (`zarr_utils.open_as_zarr` / `read_axes` / `read_scale`, `ome_xml_utils.read_pixel_unit`), calls `viewer.add_image`, sets contrast limits, optionally enters 3D mode
+
+> **The bridge does NOT hand-roll zarr/OME-XML access.** Opening a store and reading its NGFF/OME geometry go through `cecelia.utils.zarr_utils` + `ome_xml_utils` — the same readers the analysis pipeline uses. The bridge previously carried its own private copies (`_open_zarr_multiscale`, `_read_axes`, `_read_scale`, `_load_ome_xml`, …) that drifted from the shared ones; they were consolidated. See CLAUDE.md → *Image / OME-ZARR access — always go through `zarr_utils`*.
 
 ### Pending open
 
@@ -264,7 +266,7 @@ Two zarr layouts coexist and both must work:
 | `bioformats2raw` | Series wrapper: data at `zarr/0/0`, `zarr/0/1`, … | `zarr/0/.zattrs` |
 | `create_multiscales()` | Flat: data at `zarr/0`, `zarr/1`, … | root `.zattrs` |
 
-`_series_base(path)` detects which by checking whether `path/0` is a directory whose `.zattrs` contains `multiscales`. The rest of the bridge always works relative to the resolved base.
+`zarr_utils.series_base(path)` (shared reader) detects which by checking whether `path/0` is a directory whose metadata contains `multiscales` — structural, so it works regardless of the `.ome.zarr` suffix and for both zarr v2 (`.zattrs`) and v3 (`zarr.json`). All the shared readers work relative to the resolved base.
 
 ---
 
