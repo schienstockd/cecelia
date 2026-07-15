@@ -14,3 +14,12 @@ export function plotAxisSuffix(measure: string | undefined, groupBy: string | un
   if (groupBy) parts.push(`by_${groupBy}`)
   return parts.join('_')
 }
+
+// Was the data ACTUALLY split by the groupBy column? A groupBy can be requested but not apply — e.g. a
+// cell-level column (`live.cell.hmm.state.*`) on a track-level measure: the backend echoes the groupBy
+// but returns every series with `group=''`, so the plot renders by population. The CSV filename must
+// reflect what was plotted, not what was merely selected — so gate the `by_{groupBy}` suffix on this.
+// Mirrors the plot renderer's own "does it vary by group" check (see frontend/src/plots/plot.ts).
+export function seriesAreGrouped(series: ReadonlyArray<{ group?: string }> | undefined): boolean {
+  return !!series && series.some(s => (s.group ?? '') !== '')
+}
