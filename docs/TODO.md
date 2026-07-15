@@ -222,6 +222,23 @@ path a `TaskRecord` + `chain_run_id` so it's cancellable like the per-image path
 
 ---
 
+## Napari viewer
+
+**#00079** — **Improve the 3D-crop UX (works but awkward)**
+The 3D crop (draw over a projection → Preview / Save as a new cropped image) works, but the workflow
+is clunky — it's tagged **"work in progress"** in the Viewer panel + `docs/NAPARI.md`. Smooth it out:
+a less fiddly draw/preview/save flow, clearer z/t handling (Preview can't show a t-trim — clipping is
+spatial-only — which is confusing), and fewer forced napari restarts. Code: `napari/napari_bridge.py`
+(`start_crop`/`apply_crop`/`crop_box`/`_z_mip`), `ViewerPanel.vue` 3D-crop section,
+`app/src/tasks/editImages/cropImage.jl`.
+
+**#00080** — **Bridge relaunch-after-`stop-napari` gets stuck**
+After `stop-napari`, clicking an image should relaunch the bridge, but a hung/slow discrete-GPU launch
+leaves `_viewer_starting[]` stuck `true` (only cleared in the async `launch!` `finally`), so
+`_ensure_viewer!` returns `false` forever and every open is blocked until a **full server restart**.
+Fix: time-out the async launch (reset `_viewer_starting[]`/stale `_viewer_ref[]` on failure), and bump
+the discrete-GPU launch timeout. Code: `api/src/napari_api.jl::_ensure_viewer!`, `app/src/napari.jl::launch!`.
+
 ## Figures & movies (animation)
 
 Full design + phased sequence: **`docs/todo/ANIMATION_PLAN.md`**. Build order
