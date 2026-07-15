@@ -728,13 +728,16 @@ class NapariState:
                 continue
             ids     = set(int(t) for t in pop.get("track_ids", []))
             visible = pop.get("show", True)
-            use_cby = cby if col_vals is not None else ""
-            # No colour-by → colour the ribbons by the track POPULATION's own colour (solid), exactly
-            # like point pops use face_color: a track pop defined in the pop manager (e.g. a Leiden
-            # track cluster) renders in the colour you gave it, NOT turbo-by-track_id. Ports the R
-            # splitTracks behaviour. pop_colour is in the sig so a recolour re-renders.
+            # A NAMED track pop (gated `track` / `trackclust`, defined in the pop manager) always renders
+            # in ITS OWN colour — like point pops (face_color) — even when a colour-by column is active:
+            # colour-by must NOT override a population's defined colour. Colour-by applies ONLY to the
+            # whole-segmentation "_tracked" overlay (all tracks, no per-pop colour). So a Leiden track
+            # cluster shows the colour you gave it; the plain _tracked layer can be shaded by a measure.
+            is_whole = str(pop.get("path", "")).endswith("_tracked")
+            use_cby  = cby if (col_vals is not None and is_whole) else ""
+            # Not colour-by → solid pop colour (turbo only for an un-coloured _tracked with no colour-by).
             pop_colour = pop.get("colour") or "#9ca3af"
-            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig, pop_colour)
+            sig = (vn, hash(tuple(sorted(ids))), tail_width, tail_length, visible, use_cby, ov_sig, pop_colour, is_whole)
             existing = name in self._viewer.layers
             if existing and self._track_sigs.get(name) == sig:
                 continue
