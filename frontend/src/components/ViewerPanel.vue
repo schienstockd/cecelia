@@ -29,6 +29,9 @@ const visibleLabels     = ref<Record<string, boolean>>({})
 const gatedTracksShown  = ref(false)   // master "show gated track populations" toggle (TEST/SDGF)
 const recording         = ref(false)   // a one-click timelapse recording is in progress
 const cropping          = ref(false)   // 3D-crop draw mode active (transient — a drawn region is image-specific)
+const cropStarting      = ref(false)   // crop-start in flight (napari building the projection view)
+const cropSaving        = ref(false)   // the cropImage scheduler task is running (new image being written)
+let   cropTaskId: string | null = null // its task id, to clear cropSaving on completion
 
 // per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust)
 // belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
@@ -202,15 +205,20 @@ async function recordTimelapse() {
 // crop footprint over the whole structure (not one slice); applyCrop turns that + the z-range into
 // clipping planes and returns to 3D; clearCrop removes the crop. See docs/NAPARI.md → "3D crop".
 async function startCrop() {
+  if (cropStarting.value) return
+  cropStarting.value = true
+  log.info('Napari is preparing the crop view…', { source: 'napari' })
   try {
     const res = await fetch('/api/napari/crop-start', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
     if (res.ok) {
       cropping.value = true
-      log.info('Resize the yellow rectangle in Napari, set the z-range, then Apply crop.', { source: 'napari' })
+      log.info('Draw a rectangle over the projection in Napari, set the z/t range, then Save or Preview.', { source: 'napari' })
     } else log.error(`Start crop failed: ${await _resError(res)}`, { source: 'napari' })
   } catch (e) {
     log.error(`Start crop failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'napari' })
+  } finally {
+    cropStarting.value = false
   }
 }
 // Preview (view-only): apply the box as clipping planes so you SEE the cropped volume before committing.
@@ -255,7 +263,8 @@ async function saveCrop() {
       type: 'task:run', taskId: t2.id, funName: 'editImages.cropImage', params,
       imageUid: uid, projectUid, setUid, poolName: 'io',
     })
-    log.info('Cropping image → new image in the set… (Napari + IO for a moment)', { source: 'napari' })
+    cropSaving.value = true; cropTaskId = t2.id   // drives the "Cropping…" indicator until the task ends
+    log.info('Cropping image → new image in the set…', { source: 'napari' })
     // clear the draw overlay + leave crop mode; the new image lands on task completion
     await clearCrop()
   } catch (e) {
@@ -519,8 +528,14 @@ async function deleteLabel(valueName: string) {
 }
 
 function onTaskStatus(data: Record<string, unknown>) {
+  const status = String(data.status ?? '')
+  // clear the "Cropping…" indicator when the crop task reaches a terminal state (done/failed)
+  if (cropTaskId && String(data.taskId ?? '') === cropTaskId && (status === 'done' || status === 'failed')) {
+    cropSaving.value = false; cropTaskId = null
+    if (status === 'failed') log.error('Crop failed — see the task log.', { source: 'napari' })
+  }
   if (!settings.napariUpdateImage) return
-  if (String(data.status ?? '') !== 'done') return
+  if (status !== 'done') return
   const napariUid = projectStore.napariImageUid
   if (!napariUid || String(data.imageUid ?? '') !== napariUid) return
   reloadViewer()   // data-only unless the user ticked reset (task changed pixels → reopen)
@@ -581,6 +596,10 @@ function onTaskResult(data: Record<string, unknown>) {
   const imageUid = String(data.imageUid ?? '')
   if (!imageUid || imageUid !== projectStore.napariImageUid) return
   const meta = (data.meta ?? {}) as Record<string, unknown>
+
+  // crop finished → the new image is in the set (added by stores/ws.ts); confirm it in the log
+  const newImageName = meta.newImageName as string | undefined
+  if (newImageName) log.info(`Cropped image ready: "${newImageName}".`, { source: 'napari' })
 
   const addedValueName = meta.valueName as string | undefined
   if (addedValueName) {
@@ -656,6 +675,11 @@ onUnmounted(() => {
       <i class="pi pi-exclamation-triangle" />
       <span class="viewer-stale-txt">Napari running old code</span>
       <button class="viewer-stale-btn" @click="restartNapari">Restart</button>
+    </div>
+    <!-- crop task running (scheduler) → the new cropped image appears when it finishes -->
+    <div v-if="cropSaving" class="viewer-busy">
+      <i class="pi pi-spin pi-spinner" />
+      <span>Cropping image… new image appears when done</span>
     </div>
     <!-- ── View: viewer behaviour toggles (global prefs; apply on next open) ──
          Top of the panel — these are always available, even before an image is open. -->
@@ -814,11 +838,16 @@ onUnmounted(() => {
       <!-- ── 3D crop: Imaris-style slicing. Draw an XY rectangle over a Z max-projection, set the
            z-range, apply as clipping planes. Only meaningful when 3D is on. ── -->
       <div v-if="show3D" class="viewer-section">
-        <div class="viewer-section-title">3D crop</div>
+        <div class="viewer-section-title">
+          3D crop
+          <span class="wip-tag" v-tooltip.bottom="'It works, but the workflow is still awkward — we\'re improving it.'">
+            <i class="pi pi-wrench" /> work in progress
+          </span>
+        </div>
         <div v-if="!cropping" class="viewer-opts">
-          <button class="opt-btn" @click="startCrop"
-                  v-tooltip.bottom="'Crop the volume: shows a Z max-projection to draw an XY rectangle over, then Apply'">
-            <i class="pi pi-clone" />
+          <button class="opt-btn" :class="{ active: cropStarting }" :disabled="cropStarting" @click="startCrop"
+                  v-tooltip.bottom="cropStarting ? 'Napari is preparing the crop view…' : 'Crop the volume: shows a projection to draw an XY rectangle over, then Save or Preview'">
+            <i :class="['pi', cropStarting ? 'pi-spin pi-spinner' : 'pi-clone']" />
           </button>
           <button class="opt-btn" @click="clearCrop"
                   v-tooltip.bottom="'Remove the 3D crop (show the whole volume)'">
@@ -826,7 +855,7 @@ onUnmounted(() => {
           </button>
         </div>
         <template v-else>
-          <span class="viewer-hint">Resize the rectangle in Napari, set the z/t range, then Save (new image) or Preview.</span>
+          <span class="viewer-hint">Draw a rectangle in Napari, set the z/t range, then Save (new image) or Preview.</span>
           <div class="movie-row">
             <span class="movie-lbl" v-tooltip.bottom="'Keep this z-range (%)'">z</span>
             <RangeSlider v-model:lo="cropZLo" v-model:hi="cropZHi" />
@@ -890,6 +919,19 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .viewer-stale-btn:hover { background: color-mix(in srgb, var(--cc-warn) 22%, transparent); }
+
+/* crop-in-progress strip — accent-toned, brief; the new image lands when the scheduler task finishes */
+.viewer-busy {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.4rem;
+  border: 1px solid var(--cc-accent);
+  border-radius: 0.3rem;
+  background: color-mix(in srgb, var(--cc-accent) 12%, transparent);
+  color: var(--cc-accent);
+  font-size: 0.7rem;
+}
 
 .viewer-image {
   display: flex;
@@ -959,6 +1001,19 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   color: var(--cc-text-dim);
 }
+/* experimental / work-in-progress tag on a section header */
+.wip-tag {
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--cc-warn);
+  border-radius: 0.6rem;
+  color: var(--cc-warn);
+  font-size: 0.55rem;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  cursor: default;
+}
+.wip-tag .pi { font-size: 0.55rem; }
 
 .viewer-hint {
   font-size: 0.72rem;

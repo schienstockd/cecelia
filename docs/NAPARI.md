@@ -427,6 +427,9 @@ if show_3d and (self._z_axis_len() or 0) > 1:
 
 ## 3D crop (Imaris-style slicing → new image)
 
+> **Status: work in progress.** It works, but the workflow is still awkward and being improved (the
+> Viewer panel shows a "work in progress" tag).
+
 Crop an image to a sub-region. The region is **drawn interactively** in napari; you can either **preview**
 it (view-only clipping planes) or **save** it as a **new image in the set** (a real, persistent crop).
 
