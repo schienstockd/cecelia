@@ -1,0 +1,87 @@
+# Per-PROJECT LAB LOG — an append-only, human-and-AI-writable markdown file that is the persistent
+# cross-session memory for AI-assisted analysis: methodology, the "why", edge cases, corrections.
+# It complements, and does not duplicate, the two existing sidecars:
+#   • the per-image RUN LOG (run_log.jl) — machine-written task provenance, and
+#   • the per-image `note` field (model/image.jl) — quick per-image observations.
+# The lab log is per-PROJECT cross-image knowledge that would otherwise be lost between sessions.
+# Stored as `{proj.root}/lab-log.md`, at the project ROOT (not under settings/) so it is visible next
+# to the data — the first thing you see returning to a project. Full design: docs/ai-assist/LAB-LOG.md.
+#
+# Format: one `## YYYY-MM-DD [Author]` block per entry, followed by `-` bullet lines. Entries are
+# NEVER edited or deleted — a correction is a new appended `[User — correction]` block. Append-only is
+# enforced here (every write only ever appends) and guarded by the project lockfile (with_transaction)
+# so a human panel write and a Claude write cannot clobber each other. The date and author tag are
+# INJECTED on write — callers never supply the `## …` header — which keeps `[Claude]` entries
+# unforgeable and the on-disk format uniform.
+
+import Dates   # used at method-definition time (the `date::Dates.Date` default), not only at runtime
+
+const LAB_LOG_FILENAME = "lab-log.md"
+
+lab_log_path(proj::CciaProject)::String = joinpath(proj.root, LAB_LOG_FILENAME)
+
+# strip anything that would break the one-block-per-entry structure out of a tag/line
+_ll_clean(s::AbstractString)::String = strip(replace(string(s), r"[\r\n]+" => " "))
+
+# raw markdown content of the lab log; "" when the file doesn't exist yet.
+function read_lab_log(proj::CciaProject)::String
+    p = lab_log_path(proj)
+    isfile(p) ? read(p, String) : ""
+end
+
+"""
+Parse lab-log markdown into entry blocks, returned NEWEST-FIRST for efficient context loading.
+Each entry is a `Dict{String,Any}` with `date`, `author`, `lines::Vector{String}` and `raw::String`.
+A `## <date> [<author>]` line starts an entry; any other `## ` header (e.g. a `[Version boundary…]`
+marker) terminates the current entry without becoming one. Robust to hand-editing.
+"""
+function parse_lab_log(content::AbstractString)::Vector{Dict{String,Any}}
+    entries = Dict{String,Any}[]
+    cur = nothing
+    for line in split(content, '\n')
+        m = match(r"^##\s+(\S+)\s+\[(.*?)\]\s*$", line)
+        if m !== nothing
+            cur = Dict{String,Any}("date" => String(m.captures[1]),
+                                   "author" => String(m.captures[2]),
+                                   "lines" => String[], "raw" => String[String(line)])
+            push!(entries, cur)
+        elseif startswith(line, "## ")
+            cur = nothing   # a non-entry header — don't attach following lines to the prior entry
+        elseif cur !== nothing
+            push!(cur["raw"], String(line))
+            s = strip(line)
+            startswith(s, "- ") && push!(cur["lines"], String(strip(s[3:end])))
+        end
+    end
+    for e in entries
+        e["raw"] = strip(join(e["raw"], "\n"))
+    end
+    reverse(entries)   # newest-first
+end
+
+"""
+Append one dated, author-tagged block to the project's lab log and persist. The date and author tag
+are injected here (callers pass only the author name and the bullet lines). Append-only: existing
+content is never rewritten. Guarded by the project lockfile so concurrent human/AI writes don't
+clobber. `author` is typically "Claude", "User", or "User — correction"; `lines` is a string or an
+iterable of strings (blank lines are dropped — an entry needs at least one non-empty line). Returns
+the appended block text.
+"""
+function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
+                         date::Dates.Date = Dates.today())::String
+    lines_vec = lines isa AbstractString ? [lines] : collect(lines)
+    clean = filter!(!isempty, String[_ll_clean(l) for l in lines_vec])
+    isempty(clean) && error("lab log entry needs at least one non-empty line")
+    tag = strip(replace(_ll_clean(author), r"[\[\]]" => ""))
+    isempty(tag) && error("lab log entry needs an author")
+    body  = join(("- " * l for l in clean), "\n")
+    block = "## $(Dates.format(date, "yyyy-mm-dd")) [$(tag)]\n$(body)\n"
+    with_transaction(proj) do
+        p   = lab_log_path(proj)
+        sep = (isfile(p) && !isempty(read(p, String))) ? "\n" : ""   # blank line between blocks
+        open(p, "a") do io                                           # append-only, never rewrite
+            print(io, sep, block)
+        end
+    end
+    block
+end

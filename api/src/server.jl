@@ -190,6 +190,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_fs_list(req)
         elseif path == "/api/images/meta"
             api_images_meta(req)
+        elseif path == "/api/lablog"
+            api_lablog_read(req)
         elseif path == "/api/tasks/definitions"
             api_task_definitions(req)
         elseif path == "/api/tasks/funparams"
@@ -288,6 +290,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_meta_set(body_bytes)
         elseif path == "/api/images/inclusion/set"
             api_images_inclusion_set(body_bytes)
+        elseif path == "/api/lablog/append"
+            api_lablog_append(body_bytes)
         elseif path == "/api/images/meta/resync"
             api_images_meta_resync(body_bytes)
         elseif path == "/api/images/labels/delete"

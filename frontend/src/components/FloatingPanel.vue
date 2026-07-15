@@ -9,7 +9,7 @@ const props = withDefaults(defineProps<{
   title: string
   storageKey: string            // localStorage namespace: cc.floating.<storageKey>
   icon?: string                 // optional PrimeIcons class (e.g. 'pi-eye')
-  accent?: string               // optional highlight colour (border + header icon) so a panel stands out
+  accent?: string               // optional highlight colour applied to the panel border + header icon
   defaultX?: number
   defaultY?: number
   defaultW?: number
@@ -73,8 +73,8 @@ function endGesture() {
 <template>
   <div class="fp" :style="{ left: st.x + 'px', top: st.y + 'px', width: st.w + 'px',
                             height: st.collapsed ? 'auto' : st.h + 'px',
-                            ...(accent ? { borderColor: accent, boxShadow: `0 0 0 1px ${accent}, 0 8px 28px rgba(0,0,0,0.55)` } : {}) }">
-    <div class="fp-header" :style="accent ? { borderBottomColor: accent } : undefined" @pointerdown="onHeaderDown">
+                            ...(accent ? { borderColor: accent } : {}) }">
+    <div class="fp-header" @pointerdown="onHeaderDown">
       <i v-if="icon" :class="['pi', icon, 'fp-icon']" :style="accent ? { color: accent } : undefined" />
       <span class="fp-title">{{ title }}</span>
       <button class="fp-btn" @click="st.collapsed = !st.collapsed"

@@ -263,6 +263,49 @@ end
     @test lo2 == -5.5 && hi2 == 10.0
 end
 
+@testset "API: lab log" begin
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir()
+    dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-lablog", kind="static")
+        uid  = proj.uid
+        read_ll() = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2])
+
+        # empty to start
+        r0 = read_ll()
+        @test r0.content == "" && length(r0.entries) == 0
+
+        # bad requests
+        @test api_lablog_read(HTTP.Request("GET", "/api/lablog"))[1] == 400              # projectUid missing
+        @test _post(api_lablog_append, Dict("projectUid"=>uid))[1] == 400                # author+lines missing
+        @test _post(api_lablog_append, Dict("author"=>"User","lines"=>"x"))[1] == 400    # projectUid missing
+        @test _post(api_lablog_append, Dict("projectUid"=>"nope","author"=>"User","lines"=>"x"))[1] == 404
+
+        # append accepts a string OR an array; server injects the date + author tag
+        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"User","lines"=>"single line"))[1] == 200
+        st, body = _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"Claude","lines"=>["a","b"]))
+        @test st == 200
+        j = JSON3.read(body)
+        @test startswith(j.block, "## ") && occursin("[Claude]", j.block)
+        @test length(j.entries) == 2 && j.entries[1].author == "Claude"   # newest-first
+
+        # empty/whitespace-only content rejected by append_lab_log! → 400
+        @test _post(api_lablog_append, Dict("projectUid"=>uid,"author"=>"User","lines"=>["   "]))[1] == 400
+
+        # read reflects appends
+        r = read_ll()
+        @test occursin("[User]", r.content) && occursin("[Claude]", r.content)
+        @test length(r.entries) == 2
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: batch-movie output naming" begin
     attr = Dict("Day" => "3", "Treatment" => "CNO", "Blank" => "  ")
     # attrs joined in the requested order, uid always terminates → unique name

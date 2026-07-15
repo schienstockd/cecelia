@@ -24,6 +24,7 @@ export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path
 export read_run_log, append_run_log!, run_log_path
+export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export set_channel_names!, channel_names
 
 # ── Lockfile / transaction ────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")
+include("lab_log.jl")
 include("tasks/task.jl")
 include("tasks/testTasks/imageTask.jl")
 include("tasks/testTasks/setTask.jl")
