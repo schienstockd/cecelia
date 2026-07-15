@@ -142,7 +142,11 @@ reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out
 - **CSV**: each summary/cluster panel exposes `getCsv()` (the shown aggregated data); the standalone CSV
   button collects them across ALL boards into ONE `analysis_csvs.zip` (one CSV per plot, → Prism) via
   the dependency-free `utils/zip.ts` (STORE method) — a single download instead of dozens of
-  individual "allow multiple downloads" prompts.
+  individual "allow multiple downloads" prompts. Each CSV is named `{board}_{plotLabel}_{axis}.csv`
+  where the axis suffix is the summary panel's `csvName()` (its measure, plus `by_{groupBy}` when a
+  sub-axis is set) — so two same-type plots (e.g. two "Track measures" boxplots on different measures)
+  are distinguishable by filename, not just `Board_1_Track_measures`. `zip.ts` still disambiguates any
+  genuine remaining collision with a ` (2)` suffix.
 
 ## Cross-references
 `docs/UI.md` (generic plot-integration contract, `docked`, canvas shell), `docs/PLOTS.md` (summary-plot

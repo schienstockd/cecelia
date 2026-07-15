@@ -16,6 +16,7 @@ import TeleportPopover from '../TeleportPopover.vue'
 import PlotChart from '../plots/PlotChart.vue'
 import PlotSpinner from '../plots/PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
+import { plotAxisSuffix } from '../../utils/csvName'
 import { backendChart, chartsForMeasure, plotDataToCsv, defaultVis, type VisProps, type BuildOpts } from '../../plots/plot'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import type { PlotSpec, PlotDataResponse, PlotSeries, ChartType, SeriesTarget } from '../../plots/types'
@@ -416,9 +417,14 @@ function exportAs(kind: string) {
 }
 // the shown (aggregated) data as a CSV string — for embedding into the PDF export as an attachment
 function getCsv(): string | null { return result.value ? plotDataToCsv(result.value) : null }
+// a filename hint describing which measure(s)/axes this plot shows — appended to the board CSV export
+// filename so two same-type plots (e.g. two "Track measures" boxplots) are distinguishable by their
+// axis, not just "Board_1_Track_measures". Mirrors the single-panel export stem (`spec.id_measure`):
+// the measure is the plotted axis; a groupBy adds a sub-axis. '' for a measure-less population summary.
+function csvName(): string { return plotAxisSuffix(measure.value, groupBy.value, hasMeasure.value) }
 // a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
 async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
-defineExpose({ getCsv, exportImage })
+defineExpose({ getCsv, csvName, exportImage })
 </script>
 
 <template>
