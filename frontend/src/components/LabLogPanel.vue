@@ -8,8 +8,8 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import {
-  authorKind, correctionPrefill, draftToLines,
-  USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry,
+  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable,
+  USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
 const pm = useProjectMetaStore()
@@ -25,6 +25,9 @@ const capturing = ref(false)       // an activity-capture is in flight
 const captureNote = ref('')        // transient result of the last manual capture
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (config, NOT the log)
+const mode = computed(() => settings.labLogMode)
+const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
 
 async function load() {
   error.value = ''
@@ -33,7 +36,9 @@ async function load() {
   try {
     const r = await fetch(`/api/lablog?projectUid=${encodeURIComponent(projectUid.value)}`)
     if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    entries.value = (await r.json()).entries ?? []
+    const body = await r.json()
+    entries.value = body.entries ?? []
+    tuning.value = body.tuning ?? {}
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -114,6 +119,37 @@ function cancelCorrection() {
   correcting.value = false
   draft.value = ''
 }
+
+// Notes mode: a thumb on a decision → prefilled [User] note (verdict + a place for the why). The
+// note is the recorded content; submit() uses USER_AUTHOR (correcting stays false).
+async function rateDecision(entry: LabLogEntry, vote: Vote) {
+  correcting.value = false
+  draft.value = decisionPrefill(entry, vote)
+  await nextTick(); inputEl.value?.focus()
+}
+async function startComment(entry: LabLogEntry) {
+  correcting.value = false
+  draft.value = `re ${entry.date} [${entry.author}]: `
+  await nextTick(); inputEl.value?.focus()
+}
+
+// Tuning mode: a thumb rates the ENTRY TYPE (useful/noise) → config sidecar; clicking the active
+// vote again clears it. Never touches the log.
+async function tune(entry: LabLogEntry, vote: Vote) {
+  if (!projectUid.value) return
+  const id = entryId(entry.raw)
+  const next: '' | Vote = tuning.value[id] === vote ? '' : vote
+  try {
+    const r = await fetch('/api/lablog/tune', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, id, vote: next }),
+    })
+    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
+    tuning.value = (await r.json()).tuning ?? {}
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
 </script>
 
 <template>
@@ -154,6 +190,15 @@ function cancelCorrection() {
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
     </div>
 
+    <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
+    <div class="ll-modebar">
+      <span class="ll-modelabel">Rating:</span>
+      <button class="ll-modebtn" :class="{ on: mode === 'notes' }" @click="settings.labLogMode = 'notes'"
+              title="Thumbs + comment judge the DECISION → saved as a note in the log">decisions</button>
+      <button class="ll-modebtn" :class="{ on: mode === 'tuning' }" @click="settings.labLogMode = 'tuning'"
+              title="Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log">entry types</button>
+    </div>
+
     <div v-if="error" class="ll-error">{{ error }}</div>
 
     <!-- entries, newest-first -->
@@ -168,8 +213,20 @@ function cancelCorrection() {
           <div class="ll-entry-head">
             <span class="ll-author">{{ e.author }}</span>
             <span class="ll-date">{{ e.date }}</span>
-            <button class="ll-link ll-correct" title="Add a correction (never edits the original)"
-                    @click="startCorrection(e)">correct</button>
+            <span class="ll-actions">
+              <template v-if="isRatable(e.author)">
+                <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'up' }"
+                        :title="mode === 'notes' ? 'Good decision — add a note' : 'Useful entry type'"
+                        @click="mode === 'notes' ? rateDecision(e, 'up') : tune(e, 'up')">👍</button>
+                <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'down' }"
+                        :title="mode === 'notes' ? 'Bad decision — add a note' : 'Noisy entry type'"
+                        @click="mode === 'notes' ? rateDecision(e, 'down') : tune(e, 'down')">👎</button>
+                <button v-if="mode === 'notes'" class="ll-link" title="Comment (saved as a note)"
+                        @click="startComment(e)">💬</button>
+              </template>
+              <button v-else class="ll-link" title="Add a correction (never edits the original)"
+                      @click="startCorrection(e)">correct</button>
+            </span>
           </div>
           <ul class="ll-lines">
             <li v-for="(ln, j) in e.lines" :key="j">{{ ln }}</li>
@@ -220,6 +277,17 @@ function cancelCorrection() {
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
 .ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
 
+.ll-modebar {
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; font-size: 0.68rem;
+}
+.ll-modelabel { color: var(--cc-text-dim); }
+.ll-modebtn {
+  border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim);
+  border-radius: 0.3rem; padding: 0.1rem 0.45rem; font-size: 0.66rem; cursor: pointer;
+}
+.ll-modebtn.on { color: var(--cc-text); border-color: #8b949e; background: rgba(139, 148, 158, 0.15); }
+
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 
 .ll-list { flex: 1; overflow-y: auto; padding: 0.4rem 0.5rem 0.6rem; }
@@ -245,7 +313,15 @@ function cancelCorrection() {
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: 0.72rem; }
 .ll-date { color: var(--cc-text-dim); font-size: 0.68rem; }
-.ll-correct { margin-left: auto; }
+/* per-entry actions: hidden until hover; an active tuning vote stays visible so ratings show at a glance */
+.ll-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 0.15rem; visibility: hidden; }
+.ll-entry:hover .ll-actions { visibility: visible; }
+.ll-thumb {
+  border: none; background: none; cursor: pointer; font-size: 0.8rem; line-height: 1;
+  padding: 0 0.1rem; opacity: 0.8; filter: grayscale(0.5);
+}
+.ll-thumb:hover { opacity: 1; filter: none; }
+.ll-thumb.voted { visibility: visible; opacity: 1; filter: none; }   /* rated → always shown */
 .ll-lines { margin: 0; padding-left: 1rem; }
 .ll-lines li { margin: 0.05rem 0; line-height: 1.35; color: var(--cc-text); }
 

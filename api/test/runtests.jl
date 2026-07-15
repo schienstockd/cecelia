@@ -318,6 +318,21 @@ end
         # bad requests
         @test _post(api_lablog_capture, Dict())[1] == 400              # projectUid missing
         @test _post(api_lablog_capture, Dict("projectUid"=>"nope"))[1] == 404
+
+        # ── tuning ratings (entry-type feedback → config sidecar) ──
+        let t = JSON3.read(_post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"abc123", "vote"=>"down"))[2])
+            @test t.ok == true && t.tuning.abc123 == "down"
+        end
+        # surfaced on read
+        @test JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2]).tuning.abc123 == "down"
+        # clear
+        let t = JSON3.read(_post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"abc123", "vote"=>""))[2])
+            @test !haskey(t.tuning, :abc123)
+        end
+        # bad requests
+        @test _post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"x", "vote"=>"sideways"))[1] == 400
+        @test _post(api_lablog_tune, Dict("projectUid"=>uid, "vote"=>"up"))[1] == 400   # id missing
+        @test _post(api_lablog_tune, Dict("id"=>"x", "vote"=>"up"))[1] == 400           # projectUid missing
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)

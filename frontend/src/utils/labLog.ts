@@ -13,6 +13,38 @@ export interface LabLogEntry {
 
 export type AuthorKind = 'claude' | 'correction' | 'cecelia' | 'user' | 'other'
 
+// A thumbs verdict, and the panel's feedback mode.
+//  - 'notes'  → thumbs+comment judge the DECISION → recorded as a [User] log note.
+//  - 'tuning' → thumbs judge the ENTRY TYPE (useful/noise) → config sidecar, not the log.
+export type Vote = 'up' | 'down'
+export type FeedbackMode = 'notes' | 'tuning'
+
+/** Only app/AI entries get thumbs — you don't rate your own notes. */
+export function isRatable(author: string): boolean {
+  const k = authorKind(author)
+  return k === 'cecelia' || k === 'claude'
+}
+
+/**
+ * Stable content id for an entry (keys tuning ratings). FNV-1a 32-bit over the raw block, hex. Must
+ * be deterministic and stable across sessions — the backend is dumb storage keyed by whatever this
+ * returns, so it can't drift with a Julia hash-seed change. Entries are append-only, so `raw` (hence
+ * the id) never changes once written.
+ */
+export function entryId(raw: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < raw.length; i++) {
+    h ^= raw.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
+/** Notes-mode decision-assessment prefill: a verdict + reference the user completes with the why. */
+export function decisionPrefill(entry: Pick<LabLogEntry, 'date' | 'author'>, vote: Vote): string {
+  return `${vote === 'up' ? '👍' : '👎'} re ${entry.date} [${entry.author}]: `
+}
+
 // The author tags the panel submits. The backend wraps these into the `[author]` header.
 export const USER_AUTHOR = 'User'
 export const CORRECTION_AUTHOR = 'User — correction'

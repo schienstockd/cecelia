@@ -918,7 +918,30 @@ function api_lablog_read(req::HTTP.Request)
     content = read_lab_log(proj)
     p = lab_log_path(proj)
     200, JSON3.write((; content, entries=parse_lab_log(content),
+                        tuning=read_tuning(proj),
                         mtime=(isfile(p) ? mtime(p) : nothing)))
+end
+
+# tune → set/clear a "Tuning"-mode rating (useful/noise) for an entry id. Config sidecar, not the
+# log. Body {projectUid, id, vote} where vote ∈ "up"|"down"|"" (clear). Returns the updated map.
+function api_lablog_tune(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    entry_id    = String(get(body, :id, ""))
+    vote        = String(get(body, :vote, ""))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(entry_id)    && return 400, JSON3.write((; error="id required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    tuning = try
+        set_tuning!(proj, entry_id, vote)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, tuning))
 end
 
 # append → one dated, author-tagged block. Server injects date + author tag (append-only, lock-guarded

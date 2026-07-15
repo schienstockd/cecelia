@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
+  entryId, decisionPrefill, isRatable,
   type LabLogEntry,
 } from './labLog'
 
@@ -33,6 +34,32 @@ describe('labLog.draftToLines', () => {
     expect(draftToLines('a\n\n  b  \n')).toEqual(['a', 'b'])
     expect(draftToLines('   ')).toEqual([])
     expect(draftToLines('single')).toEqual(['single'])
+  })
+})
+
+describe('labLog.entryId', () => {
+  it('is stable and distinct per content', () => {
+    expect(entryId('## 2026-07-15 [Cecelia]\n- a')).toBe(entryId('## 2026-07-15 [Cecelia]\n- a'))
+    expect(entryId('a')).not.toBe(entryId('b'))
+    expect(entryId('x')).toMatch(/^[0-9a-f]{8}$/)   // 8-hex, zero-padded
+  })
+})
+
+describe('labLog.isRatable', () => {
+  it('only app/AI entries are ratable', () => {
+    expect(isRatable('Cecelia')).toBe(true)
+    expect(isRatable('Claude')).toBe(true)
+    expect(isRatable('User')).toBe(false)
+    expect(isRatable('User — correction')).toBe(false)
+  })
+})
+
+describe('labLog.decisionPrefill', () => {
+  it('carries the verdict + a reference to complete', () => {
+    expect(decisionPrefill({ date: '2026-07-15', author: 'Cecelia' }, 'up'))
+      .toBe('👍 re 2026-07-15 [Cecelia]: ')
+    expect(decisionPrefill({ date: '2026-07-15', author: 'Cecelia' }, 'down'))
+      .toBe('👎 re 2026-07-15 [Cecelia]: ')
   })
 })
 

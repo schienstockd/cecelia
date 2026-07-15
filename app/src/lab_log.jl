@@ -85,3 +85,42 @@ function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
     end
     block
 end
+
+# ── Tuning ratings ────────────────────────────────────────────────────────────
+# "Tuning" mode feedback: a 👍/👎 on an auto-entry meaning *this kind of entry is useful / noise* —
+# distinct from a "Notes"-mode decision assessment (which is a real [User] log entry). Tuning ratings
+# are disposable config, NOT science, so they live in a sidecar keyed by a frontend-computed entry id
+# (a stable hash of the entry text) — never in the lab log itself. This is the signal for dialling
+# back noisy digest categories. See docs/ai-assist/LAB-LOG.md.
+
+_tuning_path(proj::CciaProject)::String = joinpath(proj.root, "settings", "lab-log-tuning.json")
+
+# { entry_id => "up" | "down" }; {} when none.
+function read_tuning(proj::CciaProject)::Dict{String,String}
+    p = _tuning_path(proj)
+    isfile(p) || return Dict{String,String}()
+    try
+        Dict{String,String}(String(k) => String(v) for (k, v) in JSON3.read(read(p, String), Dict{String,Any}))
+    catch
+        Dict{String,String}()
+    end
+end
+
+"""
+Set (or clear) the tuning rating for an entry id. `vote` ∈ `"up"`, `"down"`, or `""` (clear).
+Lock-guarded. Returns the updated map.
+"""
+function set_tuning!(proj::CciaProject, entry_id::AbstractString, vote::AbstractString)::Dict{String,String}
+    v = String(vote)
+    (v in ("up", "down", "")) || error("tuning vote must be \"up\", \"down\", or \"\" (clear)")
+    r = read_tuning(proj)
+    isempty(v) ? delete!(r, String(entry_id)) : (r[String(entry_id)] = v)
+    with_transaction(proj) do
+        p = _tuning_path(proj)
+        mkpath(dirname(p))
+        open(p, "w") do io
+            JSON3.write(io, r)
+        end
+    end
+    r
+end
