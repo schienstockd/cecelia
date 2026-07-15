@@ -427,6 +427,9 @@ if show_3d and (self._z_axis_len() or 0) > 1:
 
 ## 3D crop (Imaris-style slicing → new image)
 
+> **Status: experimental / under construction.** The behaviour and UX are still changing (the Viewer
+> panel shows an "experimental" tag). Treat as a preview feature.
+
 Crop an image to a sub-region. The region is **drawn interactively** in napari; you can either **preview**
 it (view-only clipping planes) or **save** it as a **new image in the set** (a real, persistent crop).
 

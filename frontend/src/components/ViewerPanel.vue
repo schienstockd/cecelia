@@ -838,7 +838,12 @@ onUnmounted(() => {
       <!-- ── 3D crop: Imaris-style slicing. Draw an XY rectangle over a Z max-projection, set the
            z-range, apply as clipping planes. Only meaningful when 3D is on. ── -->
       <div v-if="show3D" class="viewer-section">
-        <div class="viewer-section-title">3D crop</div>
+        <div class="viewer-section-title">
+          3D crop
+          <span class="wip-tag" v-tooltip.bottom="'Experimental / under construction — behaviour and UX are still changing.'">
+            <i class="pi pi-wrench" /> experimental
+          </span>
+        </div>
         <div v-if="!cropping" class="viewer-opts">
           <button class="opt-btn" :class="{ active: cropStarting }" :disabled="cropStarting" @click="startCrop"
                   v-tooltip.bottom="cropStarting ? 'Napari is preparing the crop view…' : 'Crop the volume: shows a projection to draw an XY rectangle over, then Save or Preview'">
@@ -996,6 +1001,19 @@ onUnmounted(() => {
   letter-spacing: 0.06em;
   color: var(--cc-text-dim);
 }
+/* experimental / work-in-progress tag on a section header */
+.wip-tag {
+  margin-left: 0.4rem;
+  padding: 0.02rem 0.3rem;
+  border: 1px solid var(--cc-warn);
+  border-radius: 0.6rem;
+  color: var(--cc-warn);
+  font-size: 0.55rem;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  cursor: default;
+}
+.wip-tag .pi { font-size: 0.55rem; }
 
 .viewer-hint {
   font-size: 0.72rem;
