@@ -232,6 +232,49 @@ end
         @test !occursin("segment.cellpose", block2)            # already reported, not repeated
         @test length(parse_lab_log(read_lab_log(proj))) == 2
 
+        # ── gating: net change by population (snapshot-diff, not per-edit) ──
+        m = PopulationMap(; pop_type="flow", value_name="default")
+        cd3 = add_pop!(m, "CD3"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        save_pop_map!(m, img1)
+        bg = capture_context!(proj)
+        @test bg !== nothing && occursin("Gating img-1", bg) && occursin("added CD3", bg)
+
+        # changing a gate → "gate changed on CD3" (net), never a re-add
+        set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0))
+        save_pop_map!(m, img1)
+        bg2 = capture_context!(proj)
+        @test bg2 !== nothing && occursin("gate changed on CD3", bg2) && !occursin("added CD3", bg2)
+
+        @test capture_context!(proj) === nothing            # no gating change → nothing
+
+        # ── exclusions: net change ──
+        img2.included = false; save!(img2)
+        be = capture_context!(proj)
+        @test be !== nothing && occursin("Excluded img-2", be)
+        @test capture_context!(proj) === nothing            # no further change
+
+        rm(proj.root; recursive=true)
+    end
+
+    @testset "Lab log context — first capture seeds silently" begin
+        proj = create_project!(name="labctx-seed-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="set-A")
+        img  = add_image!(s; name="imgB", meta=Dict{String,Any}("ori_path"=>"/tmp/c.tif"))
+        m    = PopulationMap(; pop_type="flow", value_name="default")
+        add_pop!(m, "preexisting"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        save_pop_map!(m, img)
+
+        # gating already present at first capture → baseline seeded, NOT reported (no retro dump)
+        @test capture_context!(proj) === nothing
+        @test isempty(parse_lab_log(read_lab_log(proj)))
+
+        # a subsequent addition IS reported
+        m2 = load_pop_map(img; value_name="default", pop_type="flow")
+        add_pop!(m2, "newpop"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        save_pop_map!(m2, img)
+        b = capture_context!(proj)
+        @test b !== nothing && occursin("added newpop", b)
+
         rm(proj.root; recursive=true)
     end
 
