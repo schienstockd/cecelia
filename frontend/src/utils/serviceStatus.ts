@@ -19,6 +19,18 @@ export function notebooksState(s: { running?: boolean; starting?: boolean } | nu
   return s.running ? 'running' : 'stopped'
 }
 
+/** Human uptime from a whole-second count: "45s", "12m", "3h 4m". "—" for missing/invalid. Used to show
+ *  how long the backend / napari bridge has been up (spotting a stale process that didn't restart). */
+export function formatUptime(seconds: number | null | undefined): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—'
+  const s = Math.floor(seconds)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return `${h}h ${m % 60}m`
+}
+
 /** Display label + colour tone for a state pill. */
 export function stateInfo(state: ServiceState): { label: string; tone: Tone } {
   switch (state) {

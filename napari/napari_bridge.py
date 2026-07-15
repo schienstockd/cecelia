@@ -13,6 +13,7 @@ import pickle
 import queue
 import sys
 import threading
+import time
 import urllib.request
 from functools import lru_cache
 
@@ -24,6 +25,10 @@ from qtpy.QtCore import QTimer
 
 HOST = "localhost"
 PORT = 7655
+
+# bridge process start time — reported in the ping reply so the backend/Settings panel can show the
+# bridge's uptime and spot a STALE bridge (it survives a backend restart; see docs/NAPARI.md restart rules)
+_STARTED_AT = time.time()
 
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
@@ -1531,7 +1536,7 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
     t = cmd.get("type")
     try:
         if t == "ping":
-            return {"type": "pong"}
+            return {"type": "pong", "started_at": _STARTED_AT}
 
         elif t == "gl_info":
             return {"type": "gl_info", **_gl_info()}
