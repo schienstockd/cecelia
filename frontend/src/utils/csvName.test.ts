@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { plotAxisSuffix } from './csvName'
+import { plotAxisSuffix, seriesAreGrouped } from './csvName'
 
 describe('plotAxisSuffix', () => {
   it('uses the measure as the axis descriptor', () => {
@@ -23,5 +23,23 @@ describe('plotAxisSuffix', () => {
   it('drops an empty measure even when hasMeasure is true', () => {
     expect(plotAxisSuffix('', 'track_state', true)).toBe('by_track_state')
     expect(plotAxisSuffix('', '', true)).toBe('')
+  })
+})
+
+describe('seriesAreGrouped', () => {
+  it('is true when any series carries a non-empty group level', () => {
+    expect(seriesAreGrouped([{ group: 'A' }, { group: 'B' }])).toBe(true)
+    expect(seriesAreGrouped([{ group: '' }, { group: 'A' }])).toBe(true)  // one real level is enough
+  })
+
+  it('is false when the groupBy was echoed but not applied (all group empty)', () => {
+    // the track-measure case: groupBy set on the request but every series comes back group=''
+    expect(seriesAreGrouped([{ group: '' }, { group: '' }])).toBe(false)
+    expect(seriesAreGrouped([{}, {}])).toBe(false)                        // group omitted entirely
+  })
+
+  it('is false for no/empty series', () => {
+    expect(seriesAreGrouped([])).toBe(false)
+    expect(seriesAreGrouped(undefined)).toBe(false)
   })
 })
