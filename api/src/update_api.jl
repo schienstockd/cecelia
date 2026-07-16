@@ -22,8 +22,23 @@ function _running_version()::String
     "dev"
 end
 
-# Installed bundle (safe to self-update) vs dev checkout (must not be clobbered).
-_is_installed()::Bool = isfile(joinpath(_APP_ROOT, "VERSION")) && !isdir(joinpath(_APP_ROOT, ".git"))
+# Installed bundle (safe to self-update) vs dev checkout (must not be clobbered). `root` param is for
+# tests; production always uses the real install root.
+_is_installed(root::AbstractString = _APP_ROOT)::Bool =
+    isfile(joinpath(root, "VERSION")) && !isdir(joinpath(root, ".git"))
+
+# Install scope for update purposes:
+#   "dev"    — git/source checkout: never self-update (would clobber source).
+#   "system" — shared system-wide install (/opt, /Applications, Program Files): the app files are
+#              admin-owned/read-only, so in-app apply is refused — an admin re-runs install-system.
+#   "user"   — per-user install: self-update is fine.
+# The installer writes `.cecelia-scope` ("system"/"user") at the install root; absent → "user".
+# (Config location does NOT use this — it's always per-user ~/.cecelia; see docs/todo/ONBOARDING_PLAN.md D1.)
+function _install_scope(root::AbstractString = _APP_ROOT)::String
+    _is_installed(root) || return "dev"
+    f = joinpath(root, ".cecelia-scope")
+    (isfile(f) && strip(read(f, String)) == "system") ? "system" : "user"
+end
 
 # "v0.1.0-rc1" → VersionNumber; nothing if unparseable (e.g. "dev").
 function _parse_ver(tag::AbstractString)
@@ -60,12 +75,17 @@ function api_update_check(::HTTP.Request)
     end
     cur = _parse_ver(current)
     avail = best_ver !== nothing && cur !== nothing && best_ver > cur
-    200, JSON3.write((; current, latest = best_tag, updateAvailable = avail, url = best_url))
+    # scope tells the UI whether the user can apply in-app: only "user" installs self-update; a
+    # "system" install shows an admin note, a "dev" checkout hides the control entirely.
+    200, JSON3.write((; current, latest = best_tag, updateAvailable = avail, url = best_url,
+                        scope = _install_scope()))
 end
 
 # POST /api/update/apply {version} — download + stage the target release bundle. The launcher
 # applies it on the next restart. Refused in a dev/git checkout.
 function api_update_apply(body_bytes::Vector{UInt8})
+    _install_scope() == "system" && return 403, JSON3.write((;
+        error = "This is a shared (system-wide) installation — updates must be run by an administrator (re-run the install-system script)."))
     _is_installed() || return 400, JSON3.write((;
         error = "Updates apply only to an installed copy, not a dev/git checkout."))
     body = try JSON3.read(String(body_bytes)) catch; Dict{Symbol,Any}() end

@@ -70,19 +70,25 @@ calls `init_cecelia!()` to reload in place — no restart needed for the common 
 `restart_required: true` in the response contract as a fallback the frontend already handles (poll
 `/api/health`), but the expected path is hot-reload.
 
-### D4 — System-wide install is OUT of this phase (→ SHIPPING follow-on)
+### D4 — System-wide install ✅ DONE (single script, `CECELIA_INSTALL_SCOPE=system`)
 
-Multi-user / system-wide install (`install-system.sh`, `/opt`, `Program Files`, `PIXI_HOME` as a
-*system* env var, admin-only updates) is **distribution work, not onboarding UX**. It doubles an
-install-script matrix that isn't even verified on Windows yet (`install.ps1` per SHIPPING). It lands
-later as a SHIPPING item and benefits for free from D1 (config is already per-user regardless of
-scope). Not blocked by this phase; just sequenced after it.
+Built into the existing `install.sh` / `install.ps1` (one script, scope via env — *not* a second
+`install-system` script, to avoid doubling the matrix). System scope installs to `/opt/cecelia` ·
+`/Applications/cecelia` · `%ProgramFiles%\cecelia`, provisions Pixi + Juliaup + the multi-GB env
+*inside* the install dir (shared runtime via `PIXI_HOME`/`JULIAUP_DEPOT_PATH` + a launcher wrapper),
+writes a `.cecelia-scope` marker, and installs an all-users menu shortcut. Config + projects stay
+per-user for free (D1). Updates are admin-only (see D5). Full model + **verification status** (the
+system path is authored-not-verified — no Windows/multi-user box here): `docs/SHIPPING.md` → *Install
+scope*.
 
-### D5 — Update UI is OWNED by SHIPPING Phase 3, not re-specified here
+### D5 — In-app update ✅ DONE (reused existing backend; added badge + admin-note)
 
-SHIPPING Phase 3 already plans the Vue "Update" control + `/api/update`, which depends on the repo
-migration + release stream existing first. This plan does **not** build it. Shutdown, by contrast, IS
-in scope because the backend route already exists (see P5) — but as education only, no new control.
+The update backend (`/api/update/check` + `/api/update/apply` staging, applied by `app.py` on restart)
+and the Settings → Software UI **already existed** — so this did **not** rebuild them. It added: (1)
+scope awareness — `_install_scope()` on `/api/update/check`; apply returns 403 on a `system` install;
+(2) an app-wide **header badge** surfacing the check (click → Settings; × = remind-me-later, session);
+(3) the **admin note** shown instead of the Update button on a system install. Update state is
+centralised in the `appControl` store so the badge and Settings share one check (no duplicate fetch).
 
 ### D6 — No native directory picker; validated free-text path
 
@@ -181,11 +187,14 @@ browser tab — to stop Cecelia cleanly." No new shutdown UI.
 - First-use hints appear once and stay dismissed.
 - The shutdown hint points at the existing bottom-left Quit button (no new control added).
 - Network-share `dirs.projects` path works (labs point all users at one location — no extra setup).
+- `CECELIA_INSTALL_SCOPE=system` installs to the shared location, writes `.cecelia-scope`, and shares
+  one runtime; config + projects stay per-user. *(system path unverified on any multi-user box —
+  Linux/macOS/Windows all apply; macOS is the primary target)*
+- Update badge appears when a newer release exists; a `user` install offers Update, a `system` install
+  shows the admin note, `/api/update/apply` returns 403 on `system`.
 
 ## Out of scope
 
-- **System-wide / multi-user install** (→ SHIPPING follow-on, D4).
-- **In-app update UI** (→ SHIPPING Phase 3, D5).
 - Multi-project-folder support; user accounts / auth; any analysis-workflow change.
 
 ## Docs to update in the same change

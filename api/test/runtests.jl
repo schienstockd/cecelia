@@ -29,6 +29,27 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test haskey(d, :setupRequired) && d.setupRequired isa Bool
 end
 
+@testset "API: update scope" begin
+    # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
+    # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.
+    mktempdir() do root
+        @test _install_scope(root) == "dev"                              # bare dir → not installed
+        write(joinpath(root, "VERSION"), "v9.9.9")
+        @test _install_scope(root) == "user"                             # installed, no marker → user
+        write(joinpath(root, ".cecelia-scope"), "system\n")
+        @test _install_scope(root) == "system"
+        write(joinpath(root, ".cecelia-scope"), "user\n")
+        @test _install_scope(root) == "user"
+        mkdir(joinpath(root, ".git"))
+        @test _install_scope(root) == "dev"                              # source checkout → never installed
+    end
+    # apply must be refused outside a user install — in this (dev/git) checkout that's a 4xx, and it
+    # must NOT reach the network or stage anything.
+    st, body = api_update_apply(Vector{UInt8}(JSON3.write(Dict("version" => "v9.9.9"))))
+    @test st in (400, 403)
+    @test haskey(JSON3.read(body), :error)
+end
+
 @testset "API: setup wizard" begin
     st, body = api_setup_defaults(HTTP.Request("GET", "/api/setup/defaults"))
     @test st == 200

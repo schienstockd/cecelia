@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 
 // App-level lifecycle actions (global Quit + dev backend Restart), shared by BOTH the Settings → System
 // panel and the sidebar footer so the shutdown/restart logic lives in ONE place (no divergent
@@ -39,6 +39,48 @@ export const useAppControlStore = defineStore('appControl', () => {
 
   // wizard finished (POST /api/setup/init succeeded): clear the flag so the guard stops redirecting.
   function completeSetup() { setupRequired.value = false }
+
+  // ── Software updates (single source; consumed by Settings → Software AND the header badge) ──
+  // The check/apply/staging backend + Settings UI already exist; this store centralises the STATE so
+  // the header badge and the Settings panel never re-implement the fetch. See docs/todo/ONBOARDING_PLAN.md D5.
+  const updateCurrent   = ref('')
+  const updateLatest    = ref<string | null>(null)
+  const updateAvailable = ref(false)
+  const updateScope     = ref<'user' | 'system' | 'dev' | ''>('')  // system → admin-only; dev → no apply
+  const updateChecking  = ref(false)
+  const updateBusy      = ref(false)
+  const updateMsg       = ref('')
+  const updateDismissed = ref(false)                               // header badge "remind me later" (session)
+  // in-app apply is only offered for a per-user install (not a shared system install or dev checkout)
+  const canApplyUpdate  = computed(() => updateScope.value === 'user')
+
+  async function checkUpdate() {
+    updateChecking.value = true; updateMsg.value = ''
+    try {
+      const d = await (await fetch('/api/update/check')).json()
+      updateCurrent.value   = d.current ?? ''
+      updateLatest.value    = d.latest ?? null
+      updateAvailable.value = !!d.updateAvailable
+      updateScope.value     = d.scope ?? ''
+      if (d.error) updateMsg.value = d.error
+    } catch { updateMsg.value = 'Could not reach the update server.' }
+    finally { updateChecking.value = false }
+  }
+
+  async function applyUpdate() {
+    if (!updateLatest.value || updateBusy.value) return
+    updateBusy.value = true; updateMsg.value = ''
+    try {
+      const res = await _post('/api/update/apply', { version: updateLatest.value })
+      const d = await res.json().catch(() => ({} as { message?: string; error?: string }))
+      updateMsg.value = res.ok ? (d.message ?? `Update ${updateLatest.value} staged — restart Cecelia to finish.`)
+                               : (d.error ?? 'Update failed.')
+      if (res.ok) updateAvailable.value = false
+    } catch { updateMsg.value = 'Update failed (could not reach the server).' }
+    finally { updateBusy.value = false }
+  }
+
+  function dismissUpdate() { updateDismissed.value = true }
   async function refreshWorktrees() {
     try {
       const d = await (await fetch('/api/app/worktrees')).json() as {
@@ -105,5 +147,7 @@ export const useAppControlStore = defineStore('appControl', () => {
   }
 
   return { dev, busy, message, setupRequired, worktrees, canSwitch,
+           updateCurrent, updateLatest, updateAvailable, updateScope, updateChecking, updateBusy,
+           updateMsg, updateDismissed, canApplyUpdate, checkUpdate, applyUpdate, dismissUpdate,
            refreshDev, refreshStartup, completeSetup, refreshWorktrees, quit, restartBackend, switchWorktree }
 })

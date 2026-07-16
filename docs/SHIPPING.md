@@ -80,10 +80,10 @@ An installed app has no `custom.toml`, so on first launch the backend reports `s
 `/api/diagnostics`) and the frontend redirects to a `/setup` wizard that asks only for a projects
 directory, then writes it to the user's `custom.toml`. **Config is always per-user and lives at a
 fixed location — `~/.cecelia/custom.toml`** (`%USERPROFILE%\.cecelia\custom.toml` on Windows) —
-resolved by `Cecelia.config_dir()`, which never depends on install scope (so a future system-wide
-install needs no config-path changes). In a dev checkout, `CECELIA_DEV_DIR`/`.env` overrides that to
-the dev dir. The wizard removes the old terminal-editing barrier for non-technical users. Full design
-+ the deferred system-wide install: `docs/todo/ONBOARDING_PLAN.md`.
+resolved by `Cecelia.config_dir()`, which never depends on install scope (so per-user vs system-wide
+install needs no config-path changes — see *Install scope* below). In a dev checkout,
+`CECELIA_DEV_DIR`/`.env` overrides that to the dev dir. The wizard removes the old terminal-editing
+barrier for non-technical users. Full design: `docs/todo/ONBOARDING_PLAN.md`.
 
 ---
 
@@ -214,10 +214,43 @@ truth for version state; each release ships the platform installers as assets.
 | Windows | `.exe` (constructor) | default browser | secondary target |
 | Linux | `.sh` (constructor) | default browser | tertiary target |
 
-**Multi-user / lab machines:** for a shared install, point the env at a shared location (e.g. set a
-system-wide `PIXI_HOME` / conda prefix like `C:\ProgramData\cecelia` on Windows) so the multi-GB env
-is shared across accounts rather than reinstalled per-user — the same concern as a shared conda/Docker
-install. The menuinst shortcut can be installed per-user or system-wide.
+### Install scope (per-user vs system-wide)
+
+`CECELIA_INSTALL_SCOPE` selects where the app installs — same pattern as `CECELIA_CHANNEL`. The
+install *script* is identical; only the location, the runtime home, and the shortcut differ.
+
+| Scope | Linux | macOS | Windows | Needs |
+|---|---|---|---|---|
+| `user` (default) | `~/.local/share/cecelia` | `~/.local/share/cecelia` | `%LOCALAPPDATA%\cecelia` | nothing |
+| `system` | `/opt/cecelia` | `/Applications/cecelia` | `%ProgramFiles%\cecelia` | root / Administrator |
+
+```
+curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh      # Linux/macOS
+# Windows: run an elevated PowerShell, then set $env:CECELIA_INSTALL_SCOPE='system' before irm|iex
+```
+
+**Shared runtime, per-user data.** In system scope the installer provisions Pixi, Juliaup **and** the
+multi-GB env *inside* the install dir (via `PIXI_HOME` / `JULIAUP_DEPOT_PATH`), so every account shares
+one runtime instead of reinstalling it. A generated launcher wrapper (`cecelia-launch.sh` /
+`.cmd`, referenced by the all-users menu shortcut) exports those vars so any user's `pixi run app`
+finds the shared env regardless of their own PATH. Crucially, **config and projects stay per-user** —
+always `~/.cecelia/custom.toml` + the wizard-chosen projects dir — because `config_dir()` never depends
+on install scope (see `docs/todo/ONBOARDING_PLAN.md` D1). So a shared workstation needs no per-user
+setup beyond each user running the first-launch wizard once.
+
+**Updates on a system install are admin-only.** The app files are root-owned, so the in-app updater
+refuses to self-update: the installer writes `.cecelia-scope` at the install root, `/api/update/check`
+reports it, `/api/update/apply` returns 403 for a `system` scope, and Settings → Software (plus the
+header badge) show an "updates must be run by an administrator (re-run the install-system script)"
+note instead of the Update button. Re-running `install.sh` as root updates the shared install.
+
+> **Verification status.** The user-scope path is verified on Linux. The **system-scope path is
+> authored but not yet verified on any real multi-user box — Linux, macOS, or Windows.** All three
+> are multi-user, and macOS is the *primary* target, so this matters most there. Unverified in
+> particular: the shared Pixi/Juliaup relocation (`PIXI_HOME`/`JULIAUP_DEPOT_PATH`, and the juliaup
+> `--path`), whether a non-admin account can `pixi run` a root-owned read-only env, and the
+> all-users launchers (`/usr/share/applications`, `/Applications/Cecelia.command`, the CommonPrograms
+> shortcut). First real test is a shared account on each OS.
 
 ---
 

@@ -104,6 +104,9 @@ Settings → Debug console UI shows a note to this effect.
 | GET | `/api/setup/defaults` | `{projectsDir}` — OS-correct pre-fill for the first-launch wizard (`joinpath(homedir(), "cecelia-projects")`). (`api/src/setup_api.jl`) |
 | GET | `/api/setup/validate?path=` | `{ok, message, willCreate}` — live projects-dir feedback (pure check, no side effects). |
 | POST | `/api/setup/init` | `{projectsDir}` → `{ok, projectsDir, restartRequired}` \| `400`. Validate → `mkpath` → write `custom.toml` (`Cecelia.set_projects_dir!`) → hot-reload config. `restartRequired` is `false` on the normal path (config reloads in place). Drives the `/setup` wizard; `/api/diagnostics` exposes `setupRequired` to trigger it. See `docs/todo/ONBOARDING_PLAN.md`. |
+| GET | `/api/version` | `{version, installed}` — running version + whether this is an installed bundle (vs dev checkout). (`api/src/update_api.jl`) |
+| GET | `/api/update/check` | `{current, latest, updateAvailable, url, scope}` vs the newest GitHub release. `scope` ∈ `user`\|`system`\|`dev` gates the UI: `user` self-updates, `system` shows an admin note, `dev` hides it. |
+| POST | `/api/update/apply` | `{version}` → downloads + **stages** the release bundle (`app.py` applies it on next restart). `403` on a `system` install (admin-only), `400` on a dev checkout. |
 | — | **Gating** (below) | population manager + gating |
 
 Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTTP — see
