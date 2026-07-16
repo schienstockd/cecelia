@@ -35,8 +35,15 @@ $Scope   = if ($env:CECELIA_INSTALL_SCOPE) { $env:CECELIA_INSTALL_SCOPE } else {
 function Say($m) { Write-Host "[cecelia] $m" -ForegroundColor Cyan }
 
 # ── Install location + scope ────────────────────────────────────────────────────
+# CECELIA_HOME overrides either default. Expand a leading ~ / ~\ / ~/ ourselves — PowerShell doesn't
+# expand a tilde inside a plain string, so without this a literal `~` directory would be created.
 if ($env:CECELIA_HOME) {
-  $InstallDir = $env:CECELIA_HOME
+  $override = $env:CECELIA_HOME
+  if ($override -eq '~' -or $override.StartsWith('~/') -or $override.StartsWith('~\')) {
+    $InstallDir = Join-Path $HOME ($override.Substring(1).TrimStart('/', '\'))
+  } else {
+    $InstallDir = $override
+  }
 } elseif ($Scope -eq 'system') {
   $InstallDir = Join-Path $env:ProgramFiles 'cecelia'
 } else {

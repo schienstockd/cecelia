@@ -41,9 +41,15 @@ have curl || err "curl is required."
 have tar  || err "tar is required."
 
 # ── Install location + scope ──────────────────────────────────────────────────
-# CECELIA_HOME overrides either default.
+# CECELIA_HOME overrides either default. Expand a leading ~ / ~/ ourselves: a quoted or
+# assignment-context value (CECELIA_HOME="~/x" / CECELIA_HOME=~/x sh install.sh) skips the shell's
+# tilde expansion, so without this a literal `~` directory would be created instead of $HOME.
 if [ -n "${CECELIA_HOME:-}" ]; then
-  INSTALL_DIR="$CECELIA_HOME"
+  case "$CECELIA_HOME" in
+    "~")   INSTALL_DIR="$HOME" ;;
+    "~/"*) INSTALL_DIR="$HOME/${CECELIA_HOME#\~/}" ;;
+    *)     INSTALL_DIR="$CECELIA_HOME" ;;
+  esac
 elif [ "$SCOPE" = "system" ]; then
   case "$OS" in
     Darwin) INSTALL_DIR="/Applications/cecelia" ;;
