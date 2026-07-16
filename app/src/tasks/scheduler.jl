@@ -189,6 +189,16 @@ function _kill_tree(pid::Int)
     end
 end
 
+# Kill a live process AND its child tree, given the Julia Process handle. `Base.Process` has no
+# `.pid` field, so get the OS pid via libuv, kill the tree (subprocesses — napari/Qt, bioformats —
+# spawn children), then SIGKILL the handle itself. Best-effort; callers wrap in try/catch where a
+# dead/reused handle is possible. One place for the `uv_process_get_pid` + `_kill_tree` + `kill` dance.
+function _kill_proc_tree(proc::Base.Process)
+    pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
+    _kill_tree(pid)
+    kill(proc, Base.SIGKILL)
+end
+
 # Kill whatever process is LISTENING on a TCP port (+ its tree). Cross-platform, best-effort. Used to
 # guarantee a clean app shutdown even for a child we only ADOPTED or that outlived a crash (no process
 # handle to `kill`) — napari :7655, notebooks :7660 — mirroring `pixi run stop`. There is no libuv API
@@ -225,9 +235,7 @@ function cancel_task!(task_id::String)
     proc = @atomic rec.proc
     isnothing(proc) && return
     try
-        pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
-        _kill_tree(pid)
-        kill(proc, Base.SIGKILL)
+        _kill_proc_tree(proc)
     catch e
         @warn "Error killing task $task_id" exception = e
     end
@@ -271,11 +279,7 @@ function _execute_job!(job::TaskJob)
                       # was nothing when cancel_task! ran, so the kill was skipped. Kill
                       # here now that we hold the process handle.
                       if is_cancelled(job.id)
-                          try
-                              pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
-                              _kill_tree(pid)
-                              kill(proc, Base.SIGKILL)
-                          catch; end
+                          try; _kill_proc_tree(proc); catch; end
                       end
                       Base.invokelatest(job.on_process, proc)
                   end)

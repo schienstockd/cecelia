@@ -3,6 +3,12 @@
 // (position: fixed). Position/size/collapsed persist per `storageKey` so it reopens where you left it.
 // The parent owns visibility (v-if) and handles @close; the panel owns everything else. Reusable —
 // not viewer-specific — so any tool that wants a floating box uses this one component.
+//
+// NOT the same as `composables/useFloatingPanel.ts` — that drives the *canvas* panels (position:
+// absolute inside a zoomable offsetParent, mouse-drag with zoom compensation + tile/cascade arrange,
+// size owned by CSS `resize`, no persistence). This is a top-level viewport window (position: fixed,
+// pointer-drag + resize handle + collapse + localStorage). Different coordinate system, event model,
+// and feature set — a deliberate split, not duplication to merge (see INVENTORY.md).
 import { reactive, onMounted, onUnmounted, watch } from 'vue'
 
 const props = withDefaults(defineProps<{

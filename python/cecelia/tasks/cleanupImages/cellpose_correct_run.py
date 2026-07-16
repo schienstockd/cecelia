@@ -22,10 +22,9 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
+from cecelia.utils.gpu_utils import torch_device
 
 from cellpose import denoise
-import torch
-import ome_types
 import numpy as np
 
 
@@ -48,15 +47,7 @@ def run(params):
     log.log(f'>> models: {models}')
 
     # Auto-detect GPU: prefer CUDA, fall back to MPS (Apple Silicon), then CPU.
-    if torch.cuda.is_available():
-        use_gpu    = True
-        gpu_device = torch.device('cuda')
-    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-        use_gpu    = True
-        gpu_device = torch.device('mps')
-    else:
-        use_gpu    = False
-        gpu_device = None
+    use_gpu, gpu_device = torch_device()
     log.log(f'>> GPU: {gpu_device if gpu_device else "none (CPU)"}')
 
     # Load the full resolution level into RAM (or keep as Dask for large images).
@@ -66,8 +57,9 @@ def run(params):
         output_image = zarr_utils.fortify(im_dat[0])
 
     # Physical pixel size (µm/px); divides the user-supplied µm diameter to get pixels.
+    # Normalise to µm — DimUtils reports the stored unit ('um' after µ→u, 'mm', …).
     scaling_factor = dim_utils.im_physical_size('x')
-    if dim_utils.omexml.images[0].pixels.physical_size_x_unit == ome_types.model.UnitsLength.MILLIMETER:
+    if dim_utils.im_physical_unit('x') == 'mm':
         scaling_factor *= 1000
 
     # Rescale factor to convert the normalised cellpose output back to the

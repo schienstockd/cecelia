@@ -61,7 +61,7 @@ Construct a lazy `LabelProps` view. The image form resolves the `.h5ad` under
 tests / REPL use.
 """
 function label_props(img::CciaImage; value_name=nothing)
-    filename = isnothing(value_name) ? active(img.label_props) :
+    filename = isnothing(value_name) ? versioned_get(img.label_props) :
                get(img.label_props, string(value_name), nothing)
     isnothing(filename) && error("No labelProps for value_name=$(value_name) on image $(img.uid)")
     path = joinpath(img_label_props_dir(img), filename)

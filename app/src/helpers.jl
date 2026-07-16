@@ -84,3 +84,11 @@ end
 function versioned_keys(d::AbstractDict)::Vector{String}
     [string(k) for k in keys(d) if string(k) != VERSIONED_ACTIVE_KEY]
 end
+
+# Read a ccid.json / project.json into a String-keyed Dict{String,Any} ready for the versioned_*
+# helpers. JSON3 yields Symbol keys that make `get(d, "field", …)` silently miss (see the JSON3
+# gotcha in CLAUDE.md); this is the one place that normalizes them. Use it instead of hand-rolling
+# `Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String)))`.
+function read_ccid_raw(path::AbstractString)::Dict{String,Any}
+    Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(path, String)))
+end

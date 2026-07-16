@@ -19,7 +19,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import zarr
 import skimage.measure as skmeas
 import skimage.filters as skfilt
 import anndata as ad

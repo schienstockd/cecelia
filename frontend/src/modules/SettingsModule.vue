@@ -5,6 +5,7 @@ import { useSettingsStore } from '../stores/settings'
 import PackagesDialog from '../components/PackagesDialog.vue'
 import ConfirmButton from '../components/ConfirmButton.vue'
 import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
+import { notebooksApi, napariApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 
 const showPackages = ref(false)
@@ -136,7 +137,7 @@ async function toggleGpu() {
     })
     const d = await res.json()
     if (d.needsRestart) {
-      await svcPost('/api/napari/restart')
+      await napariApi.restart()
       svcMsg.value = `Napari restarting on the ${which} GPU — reopen the image to reload its layers.`
     } else {
       svcMsg.value = `Napari will use the ${which} GPU next time it starts.`
@@ -155,13 +156,10 @@ let svcTimer: number | undefined
 onMounted(() => { pollServices(); svcTimer = window.setInterval(pollServices, 4000) })
 onUnmounted(() => { if (svcTimer) window.clearInterval(svcTimer) })
 
-const svcPost = (url: string, body?: object) =>
-  fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) })
-
 async function napariAction(kind: 'restart' | 'stop') {
   svcBusy.value = 'napari'; svcMsg.value = ''
   try {
-    await svcPost(kind === 'restart' ? '/api/napari/restart' : '/api/napari/close')
+    await (kind === 'restart' ? napariApi.restart() : napariApi.close())
     svcMsg.value = kind === 'restart' ? 'Napari restarting — reopen the image to reload its layers.' : 'Napari stopped.'
   } catch { svcMsg.value = 'Napari action failed.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }
@@ -169,8 +167,9 @@ async function napariAction(kind: 'restart' | 'stop') {
 async function notebooksAction(kind: 'start' | 'stop' | 'restart') {
   svcBusy.value = 'notebooks'; svcMsg.value = ''
   try {
-    if (kind === 'stop') await svcPost('/api/notebooks/shutdown')
-    else await svcPost(kind === 'start' ? '/api/notebooks/launch' : '/api/notebooks/restart', { projectUid: projectUid.value })
+    if (kind === 'stop') await notebooksApi.shutdown()
+    else if (kind === 'start') await notebooksApi.launch(projectUid.value)
+    else await notebooksApi.restart(projectUid.value)
     svcMsg.value = kind === 'stop' ? 'Notebooks stopped.' : kind === 'start' ? 'Notebooks starting…' : 'Notebooks restarting…'
   } catch { svcMsg.value = 'Notebooks action failed.' }
   finally { svcBusy.value = ''; setTimeout(pollServices, 500) }

@@ -1,21 +1,8 @@
 using JSON3
 
-# ── Versioned path dict helpers ────────────────────────────────────────────────
-
-function active(d::Dict{String,String})::Union{String,Nothing}
-    key = get(d, "_active", "default")
-    get(d, key, nothing)
-end
-
-function set_active!(d::Dict{String,String}, filename::String, name::String="default")
-    d[name]      = filename
-    d["_active"] = name
-    d
-end
-
-function value_names(d::Dict{String,String})::Vector{String}
-    filter(k -> k != "_active", collect(keys(d)))
-end
+# Versioned path-dict access (active entry, list value names, …) goes through the shared
+# `versioned_*` helpers in helpers.jl — one family for both the String→String path dicts here and
+# the Any/JSON3 raw ccid.json dicts. Don't add a second variant.
 
 # ── CciaImage ──────────────────────────────────────────────────────────────────
 
@@ -61,7 +48,7 @@ end
 
 """Absolute path to the active (or named) filepath version. Resolves into the 0 (image) dir."""
 function img_filepath(img::CciaImage, name::Union{String,Nothing}=nothing)::Union{String,Nothing}
-    filename = isnothing(name) ? active(img.filepath) : get(img.filepath, name, nothing)
+    filename = isnothing(name) ? versioned_get(img.filepath) : get(img.filepath, name, nothing)
     isnothing(filename) ? nothing : joinpath(img_zero_dir(img), filename)
 end
 

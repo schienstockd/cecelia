@@ -148,7 +148,7 @@ function _execute_pending_open()
         # Re-resolve _active at fire time — a task may have completed between the
         # eye-button click and Napari becoming ready.
         meta_file = joinpath(pending.proj_dir, "1", pending.image_uid, "ccid.json")
-        raw       = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+        raw       = read_ccid_raw(meta_file)
         filename  = versioned_get_field(raw, "filepath", nothing)   # nothing → _active
         zarr_path = joinpath(pending.proj_dir, "0", pending.image_uid, string(something(filename, "")))
         ch_raw    = versioned_get_field(raw, "imChannelNames", nothing)
@@ -245,7 +245,7 @@ function api_napari_open(body_bytes::Vector{UInt8})
     isdir(proj_dir)   || return 404, JSON3.write((; error = "Project not found: $project_uid"))
     isfile(meta_file) || return 404, JSON3.write((; error = "Image metadata not found: $image_uid"))
 
-    raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+    raw = read_ccid_raw(meta_file)
 
     filename = versioned_get_field(raw, "filepath", value_name)
     if isnothing(filename)
@@ -439,10 +439,7 @@ function api_napari_record_timelapse(body_bytes::Vector{UInt8})
     # segmentation — the recording captures the whole current view (which can show several segmentations'
     # tracks/labels at once), so tagging it with one value_name would be misleading. Fall back to the uid
     # if the name is blank / unsafe. (F1.3 will switch to attr-based names for batch runs.)
-    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
-    mkpath(movies_dir)
-    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
-    path = joinpath(movies_dir, (isempty(safe) ? image_uid : safe) * ".mp4")
+    path = _movie_named_path(img, image_uid)
 
     _with_viewer() do
         try
@@ -474,10 +471,7 @@ function api_napari_record_animation(body_bytes::Vector{UInt8})
     v = _viewer()
     (isnothing(v) || !_viewer_alive()) && return 400, JSON3.write((; error = "Napari not running"))
 
-    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
-    mkpath(movies_dir)
-    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
-    path = joinpath(movies_dir, (isempty(safe) ? image_uid : safe) * "_animation.mp4")
+    path = _movie_named_path(img, image_uid; suffix = "_animation")
 
     _with_viewer() do
         try
@@ -507,6 +501,22 @@ function _call_napari_api(f::Function, payload)::Tuple{Bool,Any}
     (status == 200, parsed)
 end
 
+# {proj}/movies/ for an image (img._dir = {proj}/1/{uid}); created if missing. One place the movies
+# dir is derived — the single-image recorders and the batch path all go through here.
+function _movies_dir(img)::String
+    d = joinpath(dirname(dirname(img._dir)), "movies")
+    mkpath(d)
+    d
+end
+
+# Movie output path named by the IMAGE (not attrs) — used by the single-image recorders. Sanitises
+# img.name, falls back to the uid when blank/unsafe. `suffix` distinguishes timelapse ("") from
+# animation ("_animation").
+function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = "")::String
+    safe = replace(strip(img.name), r"[^A-Za-z0-9._-]+" => "_")
+    joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
+end
+
 # Attr-named output filename: <attr1>_<attr2>_..._<uid>.mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
 # Blank/missing attrs are dropped; the uid always terminates the name so batch outputs never collide.
 # Falls back to just the uid when no fileAttrs are given. Pure (attr dict + uid) → testable.
@@ -520,11 +530,9 @@ function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Ve
     replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * ".mp4"
 end
 
-# Full attr-named output path under {proj}/movies/ (img._dir = {proj}/1/{uid}).
+# Full attr-named output path under {proj}/movies/.
 function _movie_out_path(img, file_attrs::Vector{String})::String
-    movies_dir = joinpath(dirname(dirname(img._dir)), "movies")
-    mkpath(movies_dir)
-    joinpath(movies_dir, _movie_basename(img.attr, img.uid, file_attrs))
+    joinpath(_movies_dir(img), _movie_basename(img.attr, img.uid, file_attrs))
 end
 
 # Apply an authored movie config to ONE image already resolvable by uid (F1.2). Opens the image (contrast

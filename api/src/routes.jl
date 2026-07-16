@@ -354,7 +354,7 @@ function api_projects_load(body_bytes::Vector{UInt8})
     # Update lastOpenedAt
     meta_file = joinpath(proj_dir, "project.json")
     try
-        raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+        raw = read_ccid_raw(meta_file)
         raw["lastOpenedAt"] = string(now())
         open(meta_file, "w") do io; JSON3.write(io, raw); end
         project["lastOpenedAt"] = raw["lastOpenedAt"]
@@ -583,7 +583,7 @@ function api_projects_rename(body_bytes::Vector{UInt8})
 
     meta_file = joinpath(proj_dir, "project.json")
     try
-        raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(meta_file, String)))
+        raw = read_ccid_raw(meta_file)
         raw["name"] = name
         open(meta_file, "w") do io; JSON3.write(io, raw); end
     catch
@@ -895,7 +895,7 @@ function api_images_delete_labels(body_bytes::Vector{UInt8})
     isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
     isfile(ccid)    || return 404, JSON3.write((; error="Image not found"))
 
-    raw = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
+    raw = read_ccid_raw(ccid)
 
     # Delete zarr files registered under labels[valueName]
     labels_dict = get(raw, "labels", Dict{String,Any}())
@@ -1192,7 +1192,7 @@ function _image_payload(img::CciaImage)
         fps["default"] = "ccidImage.ome.zarr"
     end
     active_vn = versioned_active(img.filepath)
-    active_fn = something(active(img.filepath), get(fps, VERSIONED_DEFAULT_VAL, ""))
+    active_fn = something(versioned_get(img.filepath), get(fps, VERSIONED_DEFAULT_VAL, ""))
     ch        = channel_names(img)
     (;
         uid             = img.uid,

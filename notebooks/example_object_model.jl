@@ -75,7 +75,7 @@ img = (proj === nothing || isempty(img_uid)) ? nothing : init_object(proj_uid, i
 img === nothing ? md"_(no image resolved)_" :
     md"""
     **$(img.name)** (`$(img_uid)`)
-    - segmentations: **$(join([v for v in value_names(img.label_props) if v != "_active"], ", "))**
+    - segmentations: **$(join(versioned_keys(img.label_props), ", "))**
     - active: **$(get(img.label_props, "_active", "—"))**
     """
 

@@ -193,17 +193,6 @@ def read_scale(path):
     return None
 
 
-def save_dask_as_zarr_multiscales(image_array, im_path, nscales=1):
-    shutil.rmtree(im_path)
-    multiscales_zarr = zarr.open(im_path, mode='w')
-    multiscales_zarr.attrs['multiscales'] = [{'datasets': [
-        {'path': f'{x}'} for x in range(0, nscales)
-    ]}]
-    for i in range(nscales):
-        new_scale = image_array[::(2**i), ::(2**i)]
-        new_scale.to_zarr(os.path.join(im_path, str(i)), overwrite=True)
-
-
 def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks=None,
                              store_path=None, ignore_channel=False, ignore_time=False,
                              copy_values=True, remove_previous=False):
@@ -243,6 +232,34 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
     return new_zarr, im_chunks
 
 
+def multiscales_metadata(axes, nscales, scale_for_axis=None, keyword='datasets'):
+    """Build the NGFF ``multiscales`` attr value (a 1-element list) shared by every multiscale
+    writer — the image writer (`create_multiscales`) and the label writer
+    (`segmentation_utils._write_labels_zarr`). One place that decides the datasets/axes/scale
+    shape, so the layout can't drift between the two.
+
+    ``axes``: ordered axis letters for the stored array (e.g. ``['T','C','Y','X']``, or the
+    channel-dropped label axes). Empty → no ``axes`` key and no scale (legacy no-metadata store).
+    ``scale_for_axis``: maps an axis letter → base physical scale (missing → 1.0). None → omit
+    ``coordinateTransformations``. XY axes are downsampled by ``2**level``; all other axes keep
+    the base scale.
+    ``keyword``: the datasets key (``'datasets'``)."""
+    axes = list(axes or [])
+    datasets = []
+    for lvl in range(nscales):
+        entry = {'path': str(lvl)}
+        if axes and scale_for_axis is not None:
+            entry['coordinateTransformations'] = [{'type': 'scale', 'scale': [
+                float(scale_for_axis.get(ax, 1.0)) * (2 ** lvl if ax in ('X', 'Y') else 1.0)
+                for ax in axes
+            ]}]
+        datasets.append(entry)
+    ms_entry = {keyword: datasets}
+    if axes:
+        ms_entry['axes'] = [{'name': ax.lower()} for ax in axes]
+    return [ms_entry]
+
+
 def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
                        x_idx=None, y_idx=None, nscales=1, keyword='datasets',
                        ignore_channel=False, reference_zarr=None, mode='w',
@@ -250,28 +267,17 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
     # Write zarr v2 format so napari and zarr_data_to_list can read .zattrs directly.
     multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
 
-    # Build datasets entries; include physical scale in coordinateTransformations when available.
-    scale_base = None
-    if dim_utils is not None and dim_utils.im_dim_order:
-        raw = dim_utils.im_scale()
-        scale_base = [float(s) if s is not None else 1.0 for s in raw]
-
-    datasets = []
-    for lvl in range(nscales):
-        entry = {'path': str(lvl)}
-        if scale_base is not None:
-            # XY axes are downsampled by 2^level; all other axes keep base scale.
-            level_scale = [
-                s * (2 ** lvl) if dim_utils.im_dim_order[i] in ('X', 'Y') else s
-                for i, s in enumerate(scale_base)
-            ]
-            entry['coordinateTransformations'] = [{'type': 'scale', 'scale': level_scale}]
-        datasets.append(entry)
-
-    ms_entry = {keyword: datasets}
-    if dim_utils is not None and dim_utils.im_dim_order:
-        ms_entry['axes'] = [{'name': ax.lower()} for ax in dim_utils.im_dim_order]
-    multiscales_zarr.attrs['multiscales'] = [ms_entry]
+    # Build the multiscales metadata (shared builder — see multiscales_metadata). Axes and the
+    # per-axis base scale come from dim_utils, mapped by axis NAME (letters are unique).
+    axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
+    scale_for_axis = None
+    if axes:
+        scale_for_axis = {
+            ax: (float(s) if s is not None else 1.0)
+            for ax, s in zip(axes, dim_utils.im_scale())
+        }
+    multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
+        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
 
     if isinstance(im_array, dask.array.core.Array):
         # Write into the group so the sub-array inherits zarr v2 format. Chunk PER PLANE — NOT with the
