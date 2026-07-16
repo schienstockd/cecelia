@@ -484,12 +484,10 @@ Two layouts coexist — the reader handles both:
 | bioformats2raw | Series wrapper: data at `zarr/0/[level]` | `zarr/0/.zattrs` |
 | `create_multiscales()` | Flat: data at `zarr/[level]` | root `.zattrs` |
 
-Detection in `zarr_utils.py` → `open_as_zarr`:
-```python
-if omezarr is True and 'multiscales' not in zgroup.attrs:
-    zgroup = zgroup["0"]   # step into bioformats2raw series wrapper
-```
-Never assume one format — always detect.
+Detection is **structural** in `zarr_utils.py` → `series_base` (checks whether `path/0` carries a
+`multiscales` attr, not the `.ome.zarr` suffix); `zarr_data_to_list` resolves through it, so
+`open_as_zarr`/`open_zarr` handle both layouts. Never assume one format — always go through the
+readers (see *Image / OME-ZARR access — always go through `zarr_utils`* above).
 
 **Exception, and a trap:** `read_ome_metadata` (`app/src/tasks/importImages/omezarr.jl`) does **not**
 do this detection — it hardcodes the bioformats2raw nested layout (`zarr/0/.zattrs`), because it

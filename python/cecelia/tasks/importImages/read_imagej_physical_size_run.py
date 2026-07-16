@@ -18,8 +18,7 @@ usable to correct (not a TIFF, no ImageJ metadata, no `spacing`, or unit already
 
 import json
 
-import tifffile
-
+import cecelia.utils.ome_xml_utils as ome_xml_utils
 import cecelia.utils.script_utils as script_utils
 
 # ImageJ calibration unit → micrometers
@@ -40,8 +39,7 @@ def run(params):
     result = {}
 
     try:
-        with tifffile.TiffFile(im_path) as tif:
-            meta = tif.imagej_metadata
+        meta = ome_xml_utils.read_imagej_metadata(im_path)
     except Exception as e:
         meta = None
         log.log(f'>> not a readable TIFF, skipping ImageJ Z-spacing check: {e}')
