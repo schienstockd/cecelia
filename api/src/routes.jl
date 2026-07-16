@@ -686,6 +686,84 @@ function api_images_register(body_bytes::Vector{UInt8})
     200, JSON3.write((; images=registered))
 end
 
+# POST /api/import/scan-legacy {sourceProjectDir, rscript?, imageUids?} → read-only preview manifest
+# of a legacy R/Shiny cecelia project (what will/won't transfer per image). See
+# python/cecelia/tasks/importImages/scan_legacy_run.py and docs/todo/LEGACY_MIGRATION_PLAN.md.
+function api_import_scan_legacy(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body")) end
+    src = String(get(body, :sourceProjectDir, ""))
+    isempty(src) && return 400, JSON3.write((; error="sourceProjectDir required"))
+    abs_src = isabspath(src) ? src : joinpath(FS_ROOT, src)
+    isdir(joinpath(abs_src, "ANALYSIS")) ||
+        return 400, JSON3.write((; error="Not a legacy cecelia project (no ANALYSIS/ dir): $abs_src"))
+
+    run_dir     = mktempdir()
+    result_file = joinpath(run_dir, "scan.result.json")
+    params = Dict{String,Any}("sourceProjectDir" => abs_src, "resultPath" => result_file,
+                              "rscript" => String(get(body, :rscript, "Rscript")))
+    haskey(body, :imageUids) && (params["imageUids"] = [String(u) for u in body.imageUids])
+    logs = String[]
+    ok = try
+        Cecelia.run_py("tasks/importImages/scan_legacy_run.py", params, run_dir; on_log = l -> push!(logs, l))
+    catch e
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="scan failed: $(sprint(showerror, e))"))
+    end
+    if !(ok && isfile(result_file))
+        tail = isempty(logs) ? "no output (is Rscript available? try the Rscript path option)" :
+               join(last(logs, 8), " | ")
+        rm(run_dir; recursive=true, force=true)
+        return 500, JSON3.write((; error="Scan failed: $tail"))
+    end
+    manifest = read(result_file, String)
+    rm(run_dir; recursive=true, force=true)
+    200, manifest   # already JSON
+end
+
+# POST /api/import/register-legacy {projectUid, setUid, sourceProjectDir, images:[{uid,name,kind}]}
+# Registers a placeholder image per legacy image, PRESERVING its UID and stashing the source in meta,
+# so the per-image importImages.migrateLegacy task can run. Mirrors api_images_register.
+function api_import_register_legacy(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body")) end
+    project_uid = String(get(body, :projectUid, ""))
+    set_uid     = String(get(body, :setUid, ""))
+    src         = String(get(body, :sourceProjectDir, ""))
+    rsc         = String(get(body, :rscript, ""))
+    imgs_in     = get(body, :images, [])
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(set_uid)     && return 400, JSON3.write((; error="setUid required"))
+    isempty(src)         && return 400, JSON3.write((; error="sourceProjectDir required"))
+    abs_src = isabspath(src) ? src : joinpath(FS_ROOT, src)
+
+    proj_dir = joinpath(projects_dir(), project_uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found: $project_uid"))
+    proj = load_project(project_uid)
+    si   = findfirst(s -> s.uid == set_uid, proj._sets)
+    isnothing(si) && return 404, JSON3.write((; error="Set not found in project: $set_uid"))
+    s = proj._sets[si]
+
+    task_dirs = get(get(cecelia_conf(), "dirs", Dict()), "tasks", Dict())
+    registered = Dict{String,Any}[]
+    for im in imgs_in
+        uid  = String(get(im, :uid, ""))
+        isempty(uid) && continue
+        name = String(get(im, :name, uid))
+        kind = String(get(im, :kind, "static"))
+        meta = Dict{String,Any}("legacySourceDir" => abs_src, "legacySourceUid" => uid)
+        isempty(rsc) || (meta["legacyRscript"] = rsc)
+        img = add_image!(s; name=name, kind=kind, uid=uid, meta=meta)
+        for subdir in values(task_dirs)
+            mkpath(joinpath(proj_dir, "1", img.uid, string(subdir)))
+        end
+        push!(registered, Dict{String,Any}(
+            "uid" => img.uid, "name" => img.name, "kind" => img.kind, "status" => "pending"))
+    end
+    @info "Registered legacy images" count=length(registered) set=set_uid
+    200, JSON3.write((; images=registered))
+end
+
 function api_images_meta(req::HTTP.Request)
     uri   = HTTP.URI(req.target)
     query = HTTP.queryparams(uri)

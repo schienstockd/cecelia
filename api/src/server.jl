@@ -289,6 +289,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_sets_delete(body_bytes)
         elseif path == "/api/images/register"
             api_images_register(body_bytes)
+        elseif path == "/api/import/scan-legacy"
+            api_import_scan_legacy(body_bytes)
+        elseif path == "/api/import/register-legacy"
+            api_import_register_legacy(body_bytes)
         elseif path == "/api/images/delete"
             api_images_delete(body_bytes)
         elseif path == "/api/images/attr/create"

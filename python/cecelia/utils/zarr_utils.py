@@ -175,6 +175,76 @@ def read_axes(path):
     return [ax["name"] for ax in axes] if axes else None
 
 
+# NGFF axis-type by name; unit-abbreviation → NGFF (UDUNITS) name napari/read_ome_metadata expect.
+_NGFF_AXIS_TYPE = {'t': 'time', 'c': 'channel', 'z': 'space', 'y': 'space', 'x': 'space'}
+_NGFF_UNIT = {'µm': 'micrometer', 'um': 'micrometer', 'nm': 'nanometer', 'mm': 'millimeter',
+              's': 'second', 'ms': 'millisecond', 'min': 'minute',
+              'micrometer': 'micrometer', 'second': 'second'}
+
+
+def set_ngff_axes(path, axis_names, scale=None, units=None, channels=None):
+    """Create/overwrite NGFF ``multiscales`` ``axes`` (+ per-level ``coordinateTransformations`` scale,
+    axis ``unit``s, and optional ``omero.channels``) on an EXISTING store. Used to upgrade a legacy
+    bioformats2raw *v0.2 stub* (which carries no ``axes``) so the new stack — napari, ``dim_utils``,
+    ``read_axes``/``read_scale`` — recognises the dimensions (esp. the channel axis).
+
+    ``axis_names`` is the ARRAY order, lowercase (bioformats2raw is ``['t','c','z','y','x']``).
+    ``scale``/``units`` are dicts keyed by axis name (units may be abbreviations, mapped to NGFF
+    names). Writes to whichever group carries the ``multiscales`` attr (series ``/0`` or flat root),
+    matching ``read_multiscales_meta``. Returns ``True`` on success. Sanctioned structural writer —
+    the migration analogue of ``create_multiscales`` for an already-materialised store."""
+    grp_path = next((c for c in (os.path.join(path, "0"), path)
+                     if os.path.isdir(c) and _has_multiscales(c)), None)
+    if grp_path is None:
+        return False
+    g = zarr.open_group(grp_path, mode='r+')
+    ms = g.attrs.get("multiscales")
+    ms0 = (ms[0] if isinstance(ms, list) else ms) or {}
+    # NGFF uses `datasets`; legacy cecelia label stores used a non-standard `labels` key for the
+    # pyramid levels — read either, always write `datasets` (and drop the legacy key).
+    datasets = ms0.get("datasets") or ms0.get("labels") or [{"path": "0"}]
+    ms0.pop("labels", None)
+
+    # sanity: the level-0 array's ndim must match the axis list we're about to annotate
+    try:
+        arr = zarr.open_array(os.path.join(grp_path, str(datasets[0].get("path", "0"))), mode='r')
+        if arr.ndim != len(axis_names):
+            return False
+    except Exception:
+        return False
+
+    axes = []
+    for nm in axis_names:
+        ax = {"name": nm, "type": _NGFF_AXIS_TYPE.get(nm, "space")}
+        u = (units or {}).get(nm)
+        u and ax.update(unit=_NGFF_UNIT.get(u, u))
+        axes.append(ax)
+
+    new_datasets = []
+    for lvl, d in enumerate(datasets):
+        entry = {"path": str(d.get("path", lvl))}
+        if scale:
+            # x/y halve each pyramid level (bioformats2raw power-of-two downsampling); t/c/z fixed
+            entry["coordinateTransformations"] = [{"type": "scale", "scale": [
+                float(scale.get(nm, 1.0)) * (2 ** lvl if nm in ("x", "y") else 1)
+                for nm in axis_names]}]
+        new_datasets.append(entry)
+
+    ms0["axes"] = axes
+    ms0["datasets"] = new_datasets
+    g.attrs["multiscales"] = [ms0] if isinstance(ms, list) or ms is None else ms0
+    if channels:
+        g.attrs["omero"] = {"channels": [{"label": str(c), "active": True} for c in channels]}
+    return True
+
+
+def _has_multiscales(candidate):
+    try:
+        return bool(zarr.open_group(candidate, mode='r').attrs.get("multiscales"))
+    except Exception:
+        return False
+
+
 def read_scale(path):
     """Per-axis physical scale (one value per axis) for a store: NGFF ``coordinateTransformations``
     first, falling back to OME-XML physical sizes when the NGFF metadata carries no scale (e.g.

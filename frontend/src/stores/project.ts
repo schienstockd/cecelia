@@ -158,6 +158,20 @@ export const useProjectStore = defineStore('project', () => {
     }
   }
 
+  // Re-pull an image's metadata from the backend and merge it into the store. A completed task may
+  // have changed the on-disk ccid.json (new filepaths / labels / value_names / channel names) — e.g.
+  // legacy migration, import, segmentation, tracking — that the store's in-memory copy doesn't know
+  // about, leaving the viewer/table stale (versions + segmentations missing). Called on task:done.
+  async function refreshImageMeta(projectUid: string, imageUid: string) {
+    try {
+      const res = await fetch(
+        `/api/images/meta?projectUid=${encodeURIComponent(projectUid)}&imageUid=${encodeURIComponent(imageUid)}`)
+      if (!res.ok) return
+      const body = await res.json() as { image?: Partial<CciaImage> }
+      if (body.image) updateImageMeta(imageUid, body.image)
+    } catch { /* leave the store as-is on any error */ }
+  }
+
   // Add an attr key (empty string value) to all images in a set.
   function addAttrKey(setUid: string, attrName: string) {
     const set = sets.value.find(s => s.uid === setUid)
@@ -228,5 +242,5 @@ export const useProjectStore = defineStore('project', () => {
     return order.map(n => ({ name: n, values: [...vals.get(n)!] }))
   }
 
-  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
+  return { sets, activeSetUid, napariImageUid, napariReloadTick, requestNapariReload, dataVersion, bumpDataVersion, dataVersionFor, activeSet, setUidOfImage, getImageSelection, setImageSelection, loadFromApi, clear, addSetFromApi, deleteSet, addImages, addImagesFromApi, deleteImage, updateImageStatus, updateImageMeta, refreshImageMeta, addAttrKey, removeAttrKey, setAttrValues, imageAttr, imageAttrsFor, setInclusion, removeLabelSet }
 })
