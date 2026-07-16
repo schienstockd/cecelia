@@ -35,7 +35,8 @@ const props = defineProps<{
   // per-panel chart options, PERSISTED in the host's panel state (so chart type/measure/bins survive
   // navigation). Seeded lazily from the spec's defaults; written back on user change.
   ui: { chartType?: ChartType; measure?: string; bins?: number; normalize?: boolean; errorMetric?: 'sd' | 'sem' | 'ci95'; groupBy?: string;
-        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean }
+        matrixMode?: 'profile' | 'crosstab'; zscore?: boolean; heatmapValues?: boolean; matrixNormalize?: 'none' | 'row' | 'col' | 'total'; smooth?: number; interval?: boolean;
+        statUnit?: 'individual' | 'image'; imageAgg?: 'mean' | 'median' }   // datapoint = each cell/track, or each image's mean/median (one dot per image)
   collapseSeries?: boolean             // pool across pops & images → series by the groupBy level only
   reloadToken?: number                 // bumped by the host to force a refetch (live gate updates)
   persistKey?: string                  // CanvasPanel geometry persistence key
@@ -124,6 +125,13 @@ function applyExplode() {
 const bins = computed<number>({ get: () => props.ui.bins ?? Number(param('bins', 30)), set: v => (props.ui.bins = v) })
 const normalize = computed<boolean>({ get: () => props.ui.normalize ?? Boolean(param('normalize', true)), set: v => (props.ui.normalize = v) })
 const errorMetric = computed<'sd' | 'sem' | 'ci95'>({ get: () => props.ui.errorMetric ?? 'ci95', set: v => (props.ui.errorMetric = v) })
+// statistical unit: plot each cell/track ('individual') or each IMAGE's mean ('image' — one dot per
+// image, the pseudoreplication-safe view). Only meaningful for the "each dot" charts with a measure.
+const statUnit = computed<'individual' | 'image'>({ get: () => props.ui.statUnit ?? 'individual', set: v => (props.ui.statUnit = v) })
+// how each image is collapsed to its one point when statUnit==='image' (mean = average; median = robust)
+const imageAgg = computed<'mean' | 'median'>({ get: () => props.ui.imageAgg ?? 'mean', set: v => (props.ui.imageAgg = v) })
+const canStatUnit = computed(() => crossImage.value && hasMeasure.value
+  && ['boxplot', 'violin', 'strip', 'bar'].includes(chartType.value))
 // groupBy: split the measure by a categorical column (generic sub-axis, e.g. HMM state). '' = none.
 // Options are DISCOVERED from the actual obs columns of the selected image+segmentation (so we never
 // offer a column that doesn't exist — that produced an "ignoring unknown columns" warning and an
@@ -221,6 +229,7 @@ const optsOpen = ref(false)
 const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 const hasOpts = computed(() => groupByOpts.value.length > 0
   || chartType.value === 'heatmap'
+  || canStatUnit.value
   || (['histogram', 'bar', 'frequency', 'count'] as ChartType[]).includes(chartType.value))
 // friendly menu labels (the internal ChartType value stays as-is, e.g. 'strip' renders a beeswarm)
 const CHART_LABELS: Partial<Record<ChartType, string>> = { strip: 'beeswarm', stacked100: '100% stacked', trend: 'trend (mean/t)', count: 'count' }
@@ -342,6 +351,7 @@ async function fetchData() {
         normalize: be.normalize ?? normalize.value,
         rawPoints: be.rawPoints ?? false,
         ...(groupBy.value ? { groupBy: groupBy.value } : {}),
+        ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
         ...(props.collapseSeries ? { collapseSeries: true } : {}),
         ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
       }
@@ -372,7 +382,7 @@ async function fetchData() {
 // (count/bar) but isn't otherwise a fetch input; matrixCategory drives the heatmap category.
 watch([() => props.series.map(t => `${t.popType}:${t.valueName}${t.pop}`).join('|'),
        measure, chartType, bins, normalize, groupBy, timeSeries, () => props.collapseSeries,
-       matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
+       statUnit, imageAgg, matrixMode, zscore, matrixNormalize, matrixCategory, colsReady,
        () => props.imageUid, () => props.setUid, () => (props.groupAttr ?? []).join(','),
        () => (props.imageUids ?? []).join(','), () => props.scope, () => props.reloadToken],
       scheduleFetch)
@@ -404,19 +414,59 @@ function downloadBlob(name: string, blob: Blob) {
   const a = document.createElement('a'); a.href = url; a.download = name; a.click()
   URL.revokeObjectURL(url)
 }
+// true while an export (raw-CSV fetch or image render) is in flight — drives the export control's
+// busy state so a slower raw-datapoint pull gives the user feedback instead of a dead-looking menu.
+const exporting = ref(false)
 function exportAs(kind: string) {
   const stem = `${props.spec.id}_${measure.value}`.replace(/[^\w.-]+/g, '_')
   if (kind === 'csv') {
-    if (result.value) downloadBlob(`${stem}.csv`, new Blob([plotDataToCsv(result.value)], { type: 'text/csv' }))
+    exporting.value = true
+    fetchRawCsv().then(csv => {
+      if (csv) downloadBlob(`${stem}.csv`, new Blob([csv], { type: 'text/csv' }))
+    }).finally(() => { exporting.value = false })
   } else if (kind === 'png' || kind === 'svg') {
+    exporting.value = true
     plotRef.value?.toImageURL(kind).then(url => {
       if (!url) return
       const a = document.createElement('a'); a.href = url; a.download = `${stem}.${kind}`; a.click()
-    })
+    }).finally(() => { exporting.value = false })
   }
 }
-// the shown (aggregated) data as a CSV string — for embedding into the PDF export as an attachment
-function getCsv(): string | null { return result.value ? plotDataToCsv(result.value) : null }
+// The raw per-datapoint rows behind this plot, fetched on demand for the CSV export so the data can be
+// re-plotted elsewhere (Prism etc). This is NOT the render path: it asks the backend for ALL points
+// (identity — uID/label/track_id/value_name/pop — + the groupBy level + the measure value), a one-off
+// export cost rather than a per-render one. Mirrors fetchData's per-popType request grouping. Heatmaps
+// have no per-datapoint form, so they export their aggregated grid as before.
+async function fetchRawCsv(): Promise<string | null> {
+  if (!props.series.length) return null
+  if (!crossImage.value && !props.imageUid) return null
+  if (chartType.value === 'heatmap') return result.value ? plotDataToCsv(result.value) : null
+  const byType = new Map<string, SeriesTarget[]>()
+  for (const t of props.series) (byType.get(t.popType) ?? byType.set(t.popType, []).get(t.popType)!).push(t)
+  const requests = [...byType.entries()].map(async ([pt, targets]) => {
+    const body: Record<string, unknown> = {
+      projectUid: props.projectUid,
+      popType: pt, granularity: props.spec.dataSource.granularity,
+      chartType: backendChart(chartType.value).chartType, raw: true,
+      ...(chartType.value === 'count' || !hasMeasure.value ? {} : { measure: measure.value }),
+      series: targets.map(t => ({ valueName: t.valueName, pop: t.pop })),
+      normalize: normalize.value,
+      ...(groupBy.value ? { groupBy: groupBy.value } : {}),
+      ...(canStatUnit.value && statUnit.value === 'image' ? { statUnit: 'image', imageAgg: imageAgg.value } : {}),
+      ...(props.groupAttr?.length && crossImage.value ? { groupAttr: props.groupAttr } : {}),
+    }
+    applyImageSelector(body)
+    const res = await fetch('/api/plot_data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+    if (!res.ok) throw new Error((await res.json()).error ?? res.statusText)
+    return await res.json() as PlotDataResponse
+  })
+  const parts = await Promise.all(requests)
+  return plotDataToCsv({ ...parts[0], rows: parts.flatMap(p => p.rows ?? []) })
+}
+// raw per-datapoint CSV string — for the board zip export and the PDF attachment (data → Prism)
+function getCsv(): Promise<string | null> { return fetchRawCsv() }
 // a filename hint describing which measure(s)/axes this plot shows — appended to the board CSV export
 // filename so two same-type plots (e.g. two "Track measures" boxplots) are distinguishable by their
 // axis, not just "Board_1_Track_measures". Mirrors the single-panel export stem (`spec.id_measure`):
@@ -464,6 +514,23 @@ defineExpose({ getCsv, csvName, exportImage })
             <select v-model="groupBy">
               <option value="">none</option>
               <option v-for="g in groupByOpts" :key="g" :value="g">{{ g }}</option>
+            </select>
+          </label>
+          <!-- statistical unit: each cell/track, or one point per image (its mean) — "each dot an image" -->
+          <label v-if="canStatUnit" class="sp-pop-row"
+                 v-tooltip.left="'Individual: every cell/track is a datapoint. Image mean: each image contributes one point (its mean) — one dot per image (n = images, pseudoreplication-safe).'">
+            <span>Datapoint</span>
+            <select v-model="statUnit">
+              <option value="individual">individual</option>
+              <option value="image">image</option>
+            </select>
+          </label>
+          <label v-if="canStatUnit && statUnit === 'image'" class="sp-pop-row"
+                 v-tooltip.left="'How to collapse each image to its one point: mean (average) or median (robust to outliers).'">
+            <span>Per image</span>
+            <select v-model="imageAgg">
+              <option value="mean">mean</option>
+              <option value="median">median</option>
             </select>
           </label>
           <!-- heatmap (matrix) controls: mode · category · z-score (profile) / normalize (crosstab).
@@ -562,9 +629,9 @@ defineExpose({ getCsv, csvName, exportImage })
         </div>
       </div>
       <!-- per-plot export is dropped in a slot (the whole page exports to PDF); keep it when floating -->
-      <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result"
+      <select v-if="!docked" class="sp-export" v-tooltip.top="'Export the shown plot'" :disabled="!result || exporting"
               @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-        <option value="">⤓ Export</option>
+        <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
         <option value="csv">Data (CSV)</option>
         <option value="png">Image (PNG)</option>
         <option value="svg">Image (SVG)</option>

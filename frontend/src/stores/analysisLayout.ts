@@ -63,6 +63,20 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     const t = e.contents[a]; e.contents[a] = e.contents[b]; e.contents[b] = t
   }
 
+  // Deep-clone a board's whole layout (template, slot contents incl. their state, shared view-state)
+  // onto a new key — backs "duplicate board". Autosave then persists the new key. Falls back to a fresh
+  // default board if the source has no layout yet. NB: any sidecar assets referenced in slot state
+  // (filmstrip/image assetIds) are still SHARED after this raw clone — the caller must re-copy them to
+  // new ids so the duplicate is independent (see TabbedCanvas.duplicateBoard).
+  function duplicateEntry(srcKey: string, tgtKey: string) {
+    const src = entries.value[srcKey]
+    if (src) entries.value[tgtKey] = JSON.parse(JSON.stringify(src))
+    else ensure(tgtKey)
+  }
+
+  // Drop ONE board's layout (e.g. closing a tab) so it doesn't linger in the store / autosaved JSON.
+  function drop(key: string) { delete entries.value[key] }
+
   function clear() { entries.value = {} }
 
   // persistence with the project (analysisBoards.json): dump/restore the tab layouts for a project
@@ -114,5 +128,5 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
   const tabsStore = useAnalysisTabsStore()
   watch([entries, () => tabsStore.entries], scheduleBoardAutosave, { deep: true })
 
-  return { entries, ensure, applyTemplate, setContent, setActive, swap, clear, serialize, load }
+  return { entries, ensure, applyTemplate, setContent, setActive, swap, duplicateEntry, drop, clear, serialize, load }
 })

@@ -292,7 +292,7 @@ function labelFor(c: SlotContent): string {
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
-type SummaryRef = { getCsv(): string | null; csvName?(): string; exportImage(): Promise<string | null> }
+type SummaryRef = { getCsv(): string | null | Promise<string | null>; csvName?(): string; exportImage(): Promise<string | null> }
 type ExportRef = { exportImage(): Promise<string | null> }
 const summaryRefs = new Map<number, SummaryRef>()
 const interactiveRefs = new Map<number, ExportRef>()
@@ -324,7 +324,7 @@ async function capturePage() {
       if (summaryLike) png = await summaryRefs.get(i)?.exportImage() ?? null
       else if (c.kind === 'interactive') png = await interactiveRefs.get(i)?.exportImage?.() ?? null
       if (!png) png = await plotHostToImageURL(el, '#ffffff')
-      const csv = summaryLike ? (summaryRefs.get(i)?.getCsv() ?? null) : null
+      const csv = summaryLike ? (await summaryRefs.get(i)?.getCsv?.() ?? null) : null
       const sr = el.getBoundingClientRect()
       const rect = { x: (sr.left - gr.left) / gr.width, y: (sr.top - gr.top) / gr.height,
                      w: sr.width / gr.width, h: sr.height / gr.height }
@@ -336,13 +336,14 @@ async function capturePage() {
 // the shown (aggregated) data for every summary slot — for the standalone CSV export (data → Prism).
 // Append the panel's axis descriptor (measure ± groupBy) to the plot label so two same-type plots are
 // distinguishable in the zip — "Track_measures" alone can't tell you WHICH track measure it is.
-function collectCsvs(): { name: string; csv: string | null }[] {
+async function collectCsvs(): Promise<{ name: string; csv: string | null }[]> {
   const out: { name: string; csv: string | null }[] = []
   for (let i = 0; i < entry.value.contents.length; i++) {
     const c = entry.value.contents[i]
     if (c && (c.kind === 'summary' || isClusterPanel(c.ref))) {
       const axis = summaryRefs.get(i)?.csvName?.() ?? ''
-      out.push({ name: axis ? `${labelFor(c)}_${axis}` : labelFor(c), csv: summaryRefs.get(i)?.getCsv() ?? null })
+      out.push({ name: axis ? `${labelFor(c)}_${axis}` : labelFor(c),
+                 csv: await summaryRefs.get(i)?.getCsv?.() ?? null })
     }
   }
   return out

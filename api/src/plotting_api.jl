@@ -158,6 +158,9 @@ function api_plot_data(body_bytes::Vector{UInt8})
     scope     = Symbol(string(get(body, "scope", "per_image")))
     vn_req    = string(get(body, "valueName", ""))
     raw_pts   = Bool(get(body, "rawPoints", false))
+    raw       = Bool(get(body, "raw", false))          # export mode: per-datapoint rows, not summaries
+    stat_unit = Symbol(string(get(body, "statUnit", "individual")))   # individual cell/track, or per-image agg
+    image_agg = Symbol(string(get(body, "imageAgg", "mean")))         # per-image collapse: mean | median
     gb_v      = get(body, "groupBy", nothing)
     group_by  = (gb_v === nothing || isempty(string(gb_v))) ? nothing : string(gb_v)
     collapse  = Bool(get(body, "collapseSeries", false))   # pool pops/images → series by groupBy only
@@ -187,6 +190,8 @@ function api_plot_data(body_bytes::Vector{UInt8})
 
     gran in (:cell, :track) || return _gerr(400, "granularity must be cell or track")
     scope in (:per_image, :summarised) || return _gerr(400, "scope must be per_image or summarised")
+    stat_unit in (:individual, :image) || return _gerr(400, "statUnit must be individual or image")
+    image_agg in (:mean, :median) || return _gerr(400, "imageAgg must be mean or median")
 
     # population targets: explicit (value_name, pop) pairs, or the legacy single-segmentation form.
     # `targets === nothing` → use the legacy `pops` + resolved `value_name` path.
@@ -228,14 +233,14 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   [string(p) for p in get(body, "pops", String[])], chart;
                                   scope = scope, value_name = isempty(vn_req) ? nothing : vn_req,
                                   granularity = gran, measure = measure, nbins = nbins,
-                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts,
+                                  normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map) :
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
                                   nbins = nbins, normalize = normalize, group_by = group_by,
-                                  collapse_series = collapse, raw_points = raw_pts,
+                                  collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
                                   attr_map = attr_map)
@@ -248,12 +253,12 @@ function api_plot_data(body_bytes::Vector{UInt8})
             plot_summary_data(img, pop_type, [string(p) for p in get(body, "pops", String[])], chart;
                               value_name = _resolve_vn(img, vn_req), granularity = gran,
                               measure = measure, nbins = nbins, normalize = normalize,
-                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts,
+                              group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize) :
             plot_summary_data(img, pop_type, targets, chart;
                               granularity = gran, measure = measure, nbins = nbins,
-                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts,
+                              normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
                               separator = separator, zscore = zscore, matrix_normalize = matrix_normalize)
         return 200, JSON3.write(_json_safe(result))

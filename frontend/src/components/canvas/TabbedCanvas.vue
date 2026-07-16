@@ -1,9 +1,9 @@
 <!--
-  Multipage canvas: a tab bar over N independent boards, each an isolated SummaryCanvas
+  Multipage canvas: a tab bar over N independent boards, each a comic-plate LayoutCanvas
   (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A). The tab LIST lives in the `analysisTabs` store; each
-  board's plots persist in `canvasPanels` under the canvas key `${groupKey}:tab:${id}`, so tabs reuse
-  the whole existing canvas machinery. Only the ACTIVE board is mounted (keyed by its canvas key, so
-  switching tabs re-binds that board's stored panels); inactive boards persist in the store.
+  board's grid + slot contents persist in `analysisLayout` under the canvas key `${groupKey}:tab:${id}`.
+  Only the ACTIVE board is mounted (keyed by its canvas key, so switching tabs re-binds that board's
+  stored layout); inactive boards persist in the store.
 
   Boards are per-project (`groupKey = analysis:{projectUid}`); the parent MUST `:key` this component by
   projectUid so a project switch remounts it. Add / rename (double-click) / drag-reorder / close tabs.
@@ -12,11 +12,12 @@
 import { ref, computed, nextTick, useTemplateRef } from 'vue'
 import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useAnalysisTabsStore } from '../../stores/analysisTabs'
-import { useCanvasPanelsStore } from '../../stores/canvasPanels'
+import { useAnalysisLayoutStore } from '../../stores/analysisLayout'
 import { exportTabsToPdf } from '../../plots/pdf'
 import { downloadBlob } from '../../plots/export'
 import { zipTextFiles } from '../../utils/zip'
 import { waitForPlotsIdle } from '../../utils/plotReady'
+import { walkAssetRefs, collectAssetIds } from '../../utils/boardAssets'
 import { useLogStore } from '../../stores/log'
 import LayoutCanvas from './LayoutCanvas.vue'
 import ConfirmButton from '../ConfirmButton.vue'
@@ -25,7 +26,7 @@ const props = defineProps<{ imageUids: string[]; module?: string | null }>()
 
 const meta = useProjectMetaStore()
 const tabsStore = useAnalysisTabsStore()
-const panelsStore = useCanvasPanelsStore()
+const layoutStore = useAnalysisLayoutStore()
 const log = useLogStore()
 
 const projectUid = computed(() => meta.current?.uid ?? '')
@@ -50,10 +51,48 @@ function commitRename() {
 
 function addTab() { tabsStore.addTab(groupKey) }
 
-const plotCount = (id: number) => panelsStore.entries[canvasKey(id)]?.panels.length ?? 0
+// Duplicate a board: a new tab with a deep clone of the source board's layout (all plots + their
+// state). Sidecar assets (filmstrip/image PNGs) are re-copied to fresh ids so the two boards are
+// independent — deleting a frame in one must not orphan the other. Best-effort: a failed asset copy
+// leaves that frame sharing the original (still renders). addTab already activates the new board.
+async function duplicateBoard(id: number) {
+  const src = tabs.value.find(t => t.id === id)
+  const newId = tabsStore.addTab(groupKey, src ? `${src.name} copy` : undefined)
+  layoutStore.duplicateEntry(canvasKey(id), canvasKey(newId))
+  const e = layoutStore.entries[canvasKey(newId)]
+  if (e && projectUid.value) await Promise.all(e.contents.map(c => c ? remapAssets(c.state) : Promise.resolve()))
+}
+// Copy every referenced asset PNG to a new id and rewrite the id in place (so the clone is independent).
+async function remapAssets(state: unknown): Promise<void> {
+  const jobs: Promise<void>[] = []
+  walkAssetRefs(state, (rec, key, id) => {
+    jobs.push((async () => {
+      try {
+        const res = await fetch('/api/board-assets/copy', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ projectUid: projectUid.value, assetId: id }),
+        })
+        if (res.ok) { const d = await res.json() as { assetId?: string }; if (d.assetId) rec[key] = d.assetId }
+      } catch { /* keep the shared id on failure — the frame still renders */ }
+    })())
+  })
+  await Promise.all(jobs)
+}
+
+// # plots on a board = its non-empty slots (board content lives in `analysisLayout`, keyed per tab).
+const plotCount = (id: number) => layoutStore.entries[canvasKey(id)]?.contents.filter(Boolean).length ?? 0
 // no native confirm — the close button is a ConfirmButton that arms only when the board has plots
-function closeTab(id: number) {
-  panelsStore.drop(canvasKey(id))
+async function closeTab(id: number) {
+  // delete the board's own sidecar assets (duplicated boards own independent ones) so they don't orphan
+  const e = layoutStore.entries[canvasKey(id)]
+  if (e && projectUid.value) {
+    const ids = e.contents.flatMap(c => c ? collectAssetIds(c.state) : [])
+    await Promise.all(ids.map(aid => fetch('/api/board-assets/delete', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, assetId: aid }),
+    }).catch(() => {})))
+  }
+  layoutStore.drop(canvasKey(id))
   tabsStore.removeTab(groupKey, id)
 }
 
@@ -71,7 +110,7 @@ function onDrop(targetId: number) {
 // restore the original tab. (Timing is a fixed settle delay — plots have no unified "loaded" signal.)
 type CapturedPage = { aspect: number; slots: { rect: { x: number; y: number; w: number; h: number }; png: string | null; name?: string; csv?: string | null }[] }
 const layoutRef = useTemplateRef<{ capturePage: () => Promise<CapturedPage>
-  collectCsvs: () => { name: string; csv: string | null }[] }>('layoutRef')
+  collectCsvs: () => Promise<{ name: string; csv: string | null }[]> }>('layoutRef')
 const exporting = ref(false)
 const safe = (s: string) => s.replace(/[^\w.-]+/g, '_')
 async function exportPdf() {
@@ -111,7 +150,7 @@ async function exportCsv() {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
       await waitForPlotsIdle()   // wait for the board's plots to finish fetching before reading their data
-      for (const { name, csv } of layoutRef.value?.collectCsvs?.() ?? []) {
+      for (const { name, csv } of (await layoutRef.value?.collectCsvs?.()) ?? []) {
         if (!csv) continue
         files.push({ name: `${safe(t.name)}_${safe(name)}.csv`, text: csv })
       }
@@ -153,6 +192,8 @@ async function exportCsv() {
         />
         <template v-else>
           <span class="tab-name">{{ t.name }}</span>
+          <button class="tab-close tab-dup" type="button" @click.stop="duplicateBoard(t.id)"
+                  v-tooltip.bottom="'Duplicate board (plots + layout)'" aria-label="Duplicate board"><i class="pi pi-copy" /></button>
           <ConfirmButton v-if="tabs.length > 1" :needs-confirm="plotCount(t.id) > 0" @confirm="closeTab(t.id)"
                          v-slot="{ armed, arm, confirm, cancel }">
             <span @click.stop>
@@ -175,8 +216,8 @@ async function exportCsv() {
         <i class="pi pi-file-pdf" /> {{ exporting ? 'exporting…' : 'PDF' }}
       </button>
       <button class="tab-csv" type="button" @click="exportCsv" :disabled="exporting"
-              v-tooltip.bottom="'Export the shown data of every summary plot as CSV (one file per plot)'">
-        <i class="pi pi-file-excel" /> CSV
+              v-tooltip.bottom="'Export the raw datapoints of every summary plot as CSV (one file per plot, → Prism)'">
+        <i :class="exporting ? 'pi pi-spin pi-spinner' : 'pi pi-file-excel'" /> {{ exporting ? 'exporting…' : 'CSV' }}
       </button>
     </div>
 

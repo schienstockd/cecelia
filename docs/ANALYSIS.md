@@ -39,7 +39,11 @@ migrated to sidecars on load. See `docs/todo/ANIMATION_PLAN.md`.
 Each tab renders through `components/canvas/LayoutCanvas.vue`: a **comic-plate** grid (templates in
 `plots/layoutTemplates.ts` — header banners, splits, hero+N) whose slots each hold one plot. A slot's
 content is `{ kind, ref, state }`; the `⚙` popover tunes cols/rows/row-height. `TabbedCanvas.vue` wraps
-it with the tab bar + the PDF/CSV export buttons.
+it with the tab bar + the PDF/CSV export buttons. Each tab has a **duplicate** action (`pi-copy`):
+`analysisTabs.addTab('… copy')` + `analysisLayout.duplicateEntry` deep-clones the source board's whole
+layout (plots + their state + shared view-state); sidecar assets (filmstrip/image PNGs) are re-copied
+to fresh ids via `/api/board-assets/copy` so the two boards are independent (deleting a frame in one
+can't orphan the other). Autosave persists the new board — no backend board change.
 
 ### A4 sheet lock + plates
 
@@ -139,7 +143,17 @@ reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out
     hi-DPI screen at a high scale (small board plots hit ~14×) overflows the cap and the render is
     silently clipped to a sub-rectangle → dots cut off (was visible in the board PDF *and* the
     module-page PNG export, since both share `exportCanvas`).
-- **CSV**: each summary/cluster panel exposes `getCsv()` (the shown aggregated data); the standalone CSV
+- **CSV**: each summary/cluster panel exposes `getCsv()` — which, for a summary plot, fires a fresh
+  `POST /api/plot_data` with `raw:true` to fetch the **per-datapoint rows behind the plot** (not the
+  on-screen box stats), so the export can be re-plotted externally (Prism etc.). Each row carries the
+  identity needed to reproduce the plot: `uID` (source image), `label` (cell id) / `track_id`,
+  `value_name`, `pop`, the `groupBy` level (when split), and the measure value; a measure-less
+  count/proportion plot exports per-image counts. **Only useful columns are emitted** — `label` is
+  cell-table only (it duplicates `track_id` on the track table), `group` only when the groupBy was
+  actually applied, and any column left empty for every row (single-image `uID`, a summary's `label`)
+  is dropped — so the CSV never carries dead/empty columns. `getCsv()` is therefore **async** (`collectCsvs()`
+  and `capturePage()` await it); non-finite values are dropped to mirror the plotted distribution;
+  heatmaps have no per-datapoint form and export their grid. The standalone CSV
   button collects them across ALL boards into ONE `analysis_csvs.zip` (one CSV per plot, → Prism) via
   the dependency-free `utils/zip.ts` (STORE method) — a single download instead of dozens of
   individual "allow multiple downloads" prompts. Each CSV is named `{board}_{plotLabel}_{axis}.csv`

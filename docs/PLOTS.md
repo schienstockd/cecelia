@@ -178,6 +178,21 @@ the universal board's summary canvas resolves ONE popType (from its specs), so o
 population-summary surfaces its pops there — the popType is properly sorted on the per-module pages.
 The frontend hides the measure picker for a measure-less (population) spec and never sends a measure.
 
+### Statistical unit — cell/track vs per-image mean (`statUnit`)
+
+Orthogonal to the data source: for a measure plot, choose whether a **datapoint is a cell/track**
+(`statUnit:"individual"`, default) or an **image** (`statUnit:"image"` — collapse each image to its
+per-series MEAN or MEDIAN, per `imageAgg:"mean"|"median"`, one dot per image). Image-unit is the pseudoreplication-safe view biologists expect
+(n = images/animals, not cells): the boxplot/beeswarm/bar becomes "each dot is an image". `plot_data.jl`'s
+`_image_mean_frame` collapses the pop_df to one row per `(value_name, pop, uID[, groupBy-level])` mean,
+then the normal distribution builders run over those per-image means — the same trick as
+`_population_metric_frame`, but averaging a measure instead of counting membership. Images pool into ONE
+series unless grouping by an image attribute (`groupAttr`), where each attribute value stays its own
+box with its images as points. Box/beeswarm/strip/bar + a numeric measure only (v1; categorical
+proportions per image are a follow-up). Per-plot, persisted in the panel's `ui.statUnit`/`ui.imageAgg`;
+the raw CSV export honours it (rows become the per-image means/medians). Surfaced as the **Datapoint**
+control (+ a **Per image** mean/median select when set to image) in the plot options popover.
+
 ### Segmentation QC plot
 
 The segmentation-integrity plot is a **normal registry plot**, not a bespoke preset (see *Hosting*

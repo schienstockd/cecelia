@@ -85,8 +85,17 @@ export interface SegmentationPops {
 // one heatmap cell — value is the mean (profile) / count|rate (crosstab); n/count carry the sample size
 export interface MatrixCell { x: string; y: string; value: number; n?: number; count?: number }
 
+// one raw datapoint row (chartType "raw") — the per-cell/track value behind a plot, with the identity
+// needed to reproduce it externally (Prism etc): source image, label/track id, segmentation, pop, and
+// the optional groupBy level. `value` is numeric for a continuous measure, a category string otherwise.
+export interface RawRow {
+  uID: string; value_name: string; pop: string
+  label?: string; track_id?: string; group?: string   // only present where meaningful (label = cell id)
+  value: number | string
+}
+
 export interface PlotDataResponse {
-  chartType: ChartType | 'points' | 'matrix'
+  chartType: ChartType | 'points' | 'matrix' | 'raw'
   measure: string
   measureType?: 'numeric' | 'categorical'   // auto-detected; drives which charts the panel offers
   granularity: string
@@ -100,6 +109,7 @@ export interface PlotDataResponse {
   xLabels?: string[]
   yLabels?: string[]
   cells?: MatrixCell[]
+  rows?: RawRow[]          // chartType "raw": per-datapoint export rows (identity + value)
   valueLabel?: string      // colour-scale label ("mean" / "z-score" / "count" / "P(to|from)" …)
   zscore?: boolean         // profile: rows standardised → diverging colour scale
   normalize?: string       // crosstab normalisation (none|row|col|total)

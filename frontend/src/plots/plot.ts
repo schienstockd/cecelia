@@ -862,6 +862,22 @@ export function plotDataToCsv(r: PlotDataResponse): string {
       return tbl([yH, xH, r.valueLabel ?? 'value', 'n'],
                  cells.map(c => [c.y, c.x, c.value, c.count ?? c.n]))
     }
+    case 'raw': {
+      // one row per datapoint (cell/track) with the identity needed to re-plot elsewhere. We keep ONLY
+      // columns that actually carry data — an identity column that's empty for every row (single-image
+      // uID, a population summary's label, a groupBy that wasn't applied) is dropped so the CSV holds no
+      // dead columns. The value column (always kept) is named after the measure (or count/proportion).
+      const rows = r.rows ?? []
+      const gb = r.groupBy || ''
+      const candidates: { key: 'uID' | 'label' | 'track_id' | 'value_name' | 'pop' | 'group'; header: string }[] = [
+        { key: 'uID', header: 'uID' }, { key: 'label', header: 'label' }, { key: 'track_id', header: 'track_id' },
+        { key: 'value_name', header: 'value_name' }, { key: 'pop', header: 'pop' },
+      ]
+      if (gb) candidates.push({ key: 'group', header: gb })
+      const idCols = candidates.filter(c => rows.some(x => { const v = x[c.key]; return v != null && v !== '' }))
+      const header = [...idCols.map(c => c.header), r.measure || 'value']
+      return tbl(header, rows.map(x => [...idCols.map(c => x[c.key] ?? ''), x.value]))
+    }
     default: return ''
   }
 }

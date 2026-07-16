@@ -3157,6 +3157,111 @@ end
         @test by3f["A/q"]["n"] == 2 && by3f["A/q"]["median"] ≈ 1/6
     end
 
+    @testset "plot raw (per-datapoint export)" begin
+        # raw=true → one tidy row per datapoint (identity + value) for re-plotting externally, instead of
+        # collapsing to box stats. Deterministic frame with label + a groupBy column; last row NaN measure.
+        df = DataFrame("value_name" => fill("A", 5), "pop" => fill("/p", 5),
+                       "uID" => ["x","x","y","y","y"], "label" => [1, 2, 3, 4, 5],
+                       "m"  => [1.0, 2.0, 3.0, 4.0, NaN],
+                       "st" => [1.0, 1.0, 2.0, 2.0, 2.0])
+        r = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                 normalize=:none, by_image=true, group_by="st", raw=true)
+        @test r["chartType"] == "raw" && r["measure"] == "m" && r["groupBy"] == "st"
+        @test length(r["rows"]) == 4                       # the NaN-measure row is dropped
+        row1 = r["rows"][1]
+        @test row1["uID"] == "x" && row1["label"] == "1" && row1["value_name"] == "A"
+        @test row1["pop"] == "/p" && row1["value"] == 1.0 && row1["group"] == "1"
+        @test [rw["value"] for rw in r["rows"]] == [1.0, 2.0, 3.0, 4.0]
+        @test [rw["group"] for rw in r["rows"]] == ["1", "1", "2", "2"]
+
+        # measure-less count chart → raw collapses to per-(image, pop) counts (no label column populated)
+        dfc = DataFrame("value_name" => fill("A", 5), "pop" => ["/p","/p","/p","/q","/q"],
+                        "uID" => ["x","x","x","x","x"])
+        rc = Cecelia._summary_agg(dfc, "count"; measure=nothing, granularity=:cell, nbins=0,
+                                  normalize=:none, by_image=true, raw=true)
+        @test rc["chartType"] == "raw" && rc["measure"] == "count"
+        cbyp = Dict(rw["pop"] => rw["value"] for rw in rc["rows"])
+        @test cbyp["/p"] == 3.0 && cbyp["/q"] == 2.0 && all(!haskey(rw, "label") for rw in rc["rows"])
+
+        # TRACK granularity: `label` duplicates `track_id` in the track table → drop it, keep track_id.
+        dft = DataFrame("value_name" => fill("A", 3), "pop" => fill("/_tracked", 3),
+                        "uID" => ["x","x","y"], "label" => [10, 11, 12], "track_id" => [10, 11, 12],
+                        "m" => [1.0, 2.0, 3.0])
+        rt = Cecelia._summary_agg(dft, "boxplot"; measure="m", granularity=:track, nbins=10,
+                                  normalize=:none, by_image=true, raw=true)
+        @test all(!haskey(rw, "label") for rw in rt["rows"])            # no meaningless label
+        @test [rw["track_id"] for rw in rt["rows"]] == ["10", "11", "12"]
+
+        # groupBy that ISN'T applied (its column isn't in the frame) → groupBy null + no group column,
+        # so the export never carries an empty, misleading category column.
+        rna = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                   normalize=:none, by_image=true, group_by="not_a_column", raw=true)
+        @test rna["groupBy"] === nothing && all(!haskey(rw, "group") for rw in rna["rows"])
+    end
+
+    @testset "plot statUnit=image (per-image mean = each dot an image)" begin
+        # collapse each image to its mean, then plot those per-image means (n = #images). Deterministic
+        # frame: image x cells [1,3,5] (mean 3), image y cells [10,20,30] (mean 20).
+        df = DataFrame("value_name" => fill("A", 6), "pop" => fill("/p", 6),
+                       "uID" => ["x","x","x","y","y","y"], "m" => [1.0, 3.0, 5.0, 10.0, 20.0, 30.0])
+        r = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                 normalize=:none, by_image=true, stat_unit=:image)
+        @test length(r["series"]) == 1                     # images pooled into ONE box
+        @test r["series"][1]["n"] == 2                      # two datapoints = two images
+        @test r["series"][1]["median"] == 11.5 && r["series"][1]["mean"] == 11.5   # of [3, 20]
+        # default (individual) + per-image scope → one box PER image, each over its own cells (n = 3);
+        # image-mean instead pools those into a single box whose points are the two image means.
+        r0 = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true)
+        @test length(r0["series"]) == 2 && all(s["n"] == 3 for s in r0["series"])
+        # bar over per-image means → mean of the image means
+        rb = Cecelia._summary_agg(df, "bar"; measure="m", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true, stat_unit=:image)
+        @test rb["series"][1]["value"] == 11.5 && rb["series"][1]["n"] == 2
+
+        # with groupBy: per-image mean WITHIN each level → each level's points are its image means.
+        df2 = DataFrame("value_name" => fill("A", 8), "pop" => fill("/p", 8),
+                        "uID" => ["x","x","y","y","x","x","y","y"],
+                        "m"  => [2.0, 4.0, 6.0, 8.0, 20.0, 20.0, 30.0, 10.0],
+                        "st" => [1.0, 1.0, 1.0, 1.0, 2.0,  2.0,  2.0,  2.0])
+        r2 = Cecelia._summary_agg(df2, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true, group_by="st", stat_unit=:image)
+        byg = Dict(s["group"] => s for s in r2["series"])
+        @test byg["1"]["n"] == 2 && byg["1"]["median"] == 5.0     # st1: x[2,4]→3, y[6,8]→7 → [3,7]
+        @test byg["2"]["n"] == 2 && byg["2"]["median"] == 20.0    # st2: x[20,20]→20, y[30,10]→20
+
+        # with attr_map: one series PER ATTRIBUTE value, points = the images in it.
+        dfa = DataFrame("value_name" => fill("A", 6), "pop" => fill("/p", 6),
+                        "uID" => ["x","x","y","y","z","z"], "m" => [2.0, 4.0, 6.0, 8.0, 100.0, 100.0])
+        am = Dict("x" => "ctrl", "y" => "ctrl", "z" => "treat")
+        ra = Cecelia._summary_agg(dfa, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true, stat_unit=:image, attr_map=am)
+        bya = Dict(s["uID"] => s for s in ra["series"])
+        @test Set(keys(bya)) == Set(["ctrl", "treat"])
+        @test bya["ctrl"]["n"] == 2 && bya["ctrl"]["median"] == 5.0   # images x(3), y(7) → [3,7]
+        @test bya["treat"]["n"] == 1                                  # image z only
+
+        # raw export honours it too: rows are the per-image means (label empty, value = the mean)
+        rr = Cecelia._summary_agg(df, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                  normalize=:none, by_image=true, stat_unit=:image, raw=true)
+        @test [rw["value"] for rw in rr["rows"]] == [3.0, 20.0]
+        @test all(!haskey(rw, "label") for rw in rr["rows"]) && Set(rw["uID"] for rw in rr["rows"]) == Set(["x","y"])
+
+        # image_agg=:median collapses each image by MEDIAN, not mean — distinguishable on skewed images:
+        # x cells [1,2,9] (mean 4, median 2), y [10,20,90] (mean 40, median 20).
+        dfs = DataFrame("value_name" => fill("A", 6), "pop" => fill("/p", 6),
+                        "uID" => ["x","x","x","y","y","y"], "m" => [1.0, 2.0, 9.0, 10.0, 20.0, 90.0])
+        rmean = Cecelia._summary_agg(dfs, "bar"; measure="m", granularity=:cell, nbins=10,
+                                     normalize=:none, by_image=true, stat_unit=:image, image_agg=:mean)
+        rmed  = Cecelia._summary_agg(dfs, "bar"; measure="m", granularity=:cell, nbins=10,
+                                     normalize=:none, by_image=true, stat_unit=:image, image_agg=:median)
+        @test rmean["series"][1]["value"] == 22.0   # mean of image means [4, 40]
+        @test rmed["series"][1]["value"] == 11.0    # mean of image medians [2, 20]
+        rmedraw = Cecelia._summary_agg(dfs, "boxplot"; measure="m", granularity=:cell, nbins=10,
+                                       normalize=:none, by_image=true, stat_unit=:image, image_agg=:median, raw=true)
+        @test [rw["value"] for rw in rmedraw["rows"]] == [2.0, 20.0]   # per-image medians
+    end
+
     @testset "plot matrix (heatmap: profile + crosstab)" begin
         # PROFILE: rows = measures, cols = category levels; cell = mean(measure | level). Pools the whole
         # frame into one grid (no series). Deterministic synthetic frame — no fixture.
