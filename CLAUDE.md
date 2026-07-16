@@ -4,6 +4,7 @@ Cecelia is an immunological image analysis tool (Nature Communications 2025).
 Stack: **Julia** (backend/WS server) · **Vue 3 + TypeScript** (frontend) · **Python/Napari** (image viewer)
 
 See also:
+- [`INVENTORY.md`](INVENTORY.md) — living index of what already exists and where (canonical readers/helpers, shared Vue components, API handlers, cross-cutting flows). **Check it before building anything** — see *Before implementing anything* below.
 - [`FAQ.md`](FAQ.md) — root-level, reader-facing highlight doc: the *counterintuitive* "why" (AI-written, no Rust, browser-not-Electron, three languages). Punch lines, not prose. Keep it a highlight reel — do NOT expand it into a summary of the `docs/`; add new detail to the relevant `docs/` file and only promote a genuinely surprising one-liner up to the FAQ.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layer boundaries, WS protocol, data model contracts, Napari lifecycle
 - [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
@@ -61,6 +62,22 @@ See also:
 > Same reflex for going in circles or losing the thread: if two+ rounds pass on one question without
 > clear progress, or an important aspect keeps being deferred/glossed over, surface it explicitly for
 > the user to decide (or add it to `docs/TODO.md` and move on) rather than pushing through.
+
+## Before implementing anything — mandatory discovery step
+
+Fresh context windows don't know what already exists — which is how we ended up with duplicates
+(two shutdown buttons, hand-rolled zarr access, a private napari reader stack). Before writing any
+code, find the existing implementation of everything the task touches:
+
+1. Check [`INVENTORY.md`](INVENTORY.md) for the canonical component/helper — use it, don't rebuild it.
+2. Grep/find for the specific function, component, or pattern (e.g. a reader, a store, a base component).
+3. Report what you found before writing code.
+4. Build on what exists — only write new if the search genuinely comes up empty.
+5. If in doubt: search, don't build.
+
+Using a hand-rolled solution when a util or component already exists is a bug, not a style choice —
+this is the concrete, do-this-first version of the divergent-re-implementation warning above. When
+you add a significant new shared component, add a line to `INVENTORY.md` in the same change.
 
 ## Previous prompts
 
@@ -166,8 +183,8 @@ tasks, the napari bridge, and any external consumer (e.g. coastal).
 - **Reads are read-only.** `zarr_data_to_list` only ever mutates a store on a WRITE-mode open —
   never on `mode='r'`.
 - **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
-  producing task's job, via `zarr_utils.create_multiscales` / `save_dask_as_zarr_multiscales` (or
-  the segmentation writer), not a hand-rolled `zarr.open(..., 'w')`.
+  producing task's job, via `zarr_utils.create_multiscales` (or the segmentation writer), not a
+  hand-rolled `zarr.open(..., 'w')`.
 
 ---
 
@@ -225,14 +242,10 @@ the updated `pixi.toml` + `pixi.lock`.
 | `zarr>=3.0` | lower bound | v3 API: string keys only (`"0"` not `0`), `create_array` not `create_dataset`, `zarr.Array` not `zarr.core.Array`. `zarr_utils.py` is already updated. |
 
 ### GPU detection (cellpose tasks)
-Auto-detected in Python — no user checkbox needed:
+Auto-detected in Python — no user checkbox needed. Use the one helper, don't inline the branch:
 ```python
-if torch.cuda.is_available():
-    use_gpu, gpu_device = True, torch.device('cuda')
-elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-    use_gpu, gpu_device = True, torch.device('mps')
-else:
-    use_gpu, gpu_device = False, None
+from cecelia.utils.gpu_utils import torch_device
+use_gpu, gpu_device = torch_device()   # CUDA → MPS (Apple Silicon) → CPU
 ```
 Do not add a `useGPU` param to task JSON or Julia handlers.
 
@@ -247,11 +260,11 @@ use the named helper, don't re-derive the platform branch inline:
   `Sys.iswindows()`, never hardcode one.
 - **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
   `.bat` vs no-extension.
-- **Process killing** — use `_kill_tree(pid)` in `api/src/sockets.jl`; never write
+- **Process killing** — use `_kill_tree(pid)` in `app/src/tasks/scheduler.jl`; never write
   `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
   handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia
   process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
-  port** instead of process name.
+  port** instead of process name (via `_kill_listeners_on_port`, same file).
 - **`proc.exitcode == 0` doesn't mean success on cancel** — libuv sets it to 0 for signal-killed
   processes too. Always check `proc.termsignal == 0` as well (see *Task system* below).
 - **Directory size** — use `_dir_bytes(path)` in `app/src/utils.jl`, not a hardcoded `du`/`walkdir`.
@@ -431,7 +444,7 @@ OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
 - Strings: double quotes only (single quotes = `Char`)
 - Multiple dispatch: separate method per type, not OOP overloading
 - `@infiltrate` = `browser()` from R
-- Shell commands: always platform-safe. Use `_kill_tree` (`api/src/sockets.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
+- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/tasks/scheduler.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
 - **Don't `export` generic names that collide with common deps or Base.** Exports land in any
   user's namespace; if Cecelia and another `using`'d package both export the same name, Julia
   leaves it *unbound* (ambiguous), breaking unqualified calls. In particular avoid clashing with

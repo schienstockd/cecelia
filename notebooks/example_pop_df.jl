@@ -41,7 +41,7 @@ img = (isempty(proj_uid) || isempty(uid)) ? nothing : init_object(proj_uid, uid)
 
 # ╔═╡ b4000000-0000-0000-0000-000000000000
 # `label_props` keys are the segmentations (value_names); `_active` is the default one.
-segs = img === nothing ? String[] : [v for v in value_names(img.label_props) if v != "_active"]
+segs = img === nothing ? String[] : versioned_keys(img.label_props)
 
 # ╔═╡ b5000000-0000-0000-0000-000000000000
 img === nothing ? md"➡️ set `proj_uid` + `uid` above (or `CECELIA_EXAMPLE_PROJ`/`_UID`)." :

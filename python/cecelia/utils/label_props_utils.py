@@ -33,6 +33,7 @@ class LabelPropsView:
         self._pending_obs = None     # staged obs columns to write; flushed by save()
         self._pending_drop = None    # staged obs column names to delete; flushed by save()
         self._pending_obsm = None    # staged obsm matrices to write; flushed by save()
+        self._pending_cat = None     # staged categorical/string obs columns; flushed by save()
 
     # ── metadata ────────────────────────────────────────────────────────────────
     def labels(self) -> np.ndarray:
@@ -141,6 +142,28 @@ class LabelPropsView:
                 self._pending_obs[k] = np.asarray(v)
         return self
 
+    def add_categorical_obs(self, name, labels, values):
+        """Stage a categorical / string obs column (HMM states, HMM transitions like ``"1_2"``,
+        cluster ids), aligned by label like ``add_obs``. Encoded as a pandas ``Categorical``
+        (anndata's categories + integer codes) rather than a float array — this is the encoding
+        Julia's ``LabelProps`` writer can't produce (it writes float64 obs only), so categorical
+        writes come through here. ``values`` is aligned to ``labels``; labels absent from the file,
+        or with a null value, are left unset (category code -1). Repeated calls accumulate.
+        Terminal verb is ``save()``."""
+        if self._pending_cat is None:
+            self._pending_cat = {}
+        row_labels = self.adata.obs.index.astype(np.int64).to_numpy()
+        rowof = {int(l): i for i, l in enumerate(row_labels)}
+        arr = np.full(len(row_labels), None, dtype=object)
+        for lab, v in zip(labels, values):
+            if v is None:
+                continue
+            r = rowof.get(int(lab))
+            if r is not None:
+                arr[r] = str(v)
+        self._pending_cat[name] = pd.Categorical(arr)
+        return self
+
     def drop_obs(self, names):
         """Stage obs columns to delete (by name). Names absent from the file are ignored
         (idempotent). Mirror of the Julia `drop_obs`. Use to invalidate derived columns whose
@@ -170,13 +193,16 @@ class LabelPropsView:
         """Terminal write: flush staged obs adds/drops + obsm matrices into the .h5ad via anndata.
         No-op if nothing is staged. Drops are applied before adds (so a column can be dropped and
         re-added in one chain)."""
-        if not self._pending_obs and not self._pending_drop and not self._pending_obsm:
+        if (not self._pending_obs and not self._pending_drop
+                and not self._pending_obsm and not self._pending_cat):
             return self
         labels = self.adata.obs.index.astype(np.int64).to_numpy()
         for c in (self._pending_drop or []):
             if c in self.adata.obs.columns:
                 del self.adata.obs[c]
         for k, v in (self._pending_obs or {}).items():
+            self.adata.obs[k] = v
+        for k, v in (self._pending_cat or {}).items():
             self.adata.obs[k] = v
         for key, (lab, vals) in (self._pending_obsm or {}).items():
             rowof = {int(l): i for i, l in enumerate(labels)}
@@ -190,6 +216,7 @@ class LabelPropsView:
         self._pending_obs = None
         self._pending_drop = None
         self._pending_obsm = None
+        self._pending_cat = None
         return self
 
     def close(self):

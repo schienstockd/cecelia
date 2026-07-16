@@ -13,6 +13,12 @@ export interface ArrangeCmd { x: number; y: number; w: number; h: number; seq: n
  *
  * Extracted verbatim from the duplicated logic in GatePlotPanel + PopulationManager so every
  * floating panel behaves identically and there is one place to fix the clamp maths.
+ *
+ * NOT the same as the `components/FloatingPanel.vue` component — that is a top-level viewport window
+ * (position: fixed, pointer-drag + resize handle + collapse + localStorage persistence). This drives
+ * the zoomable-canvas panels (position: absolute, mouse-drag with zoom compensation + tile/cascade
+ * arrange, size via CSS `resize`). Different coordinate system, event model, and feature set — a
+ * deliberate split, not duplication to merge (see INVENTORY.md).
  */
 export function useFloatingPanel(
   el: Ref<HTMLElement | null>,

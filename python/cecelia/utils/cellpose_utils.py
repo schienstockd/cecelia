@@ -5,11 +5,11 @@ Implements predict_slice() using the cellpose CellposeModel API.
 """
 
 import numpy as np
-import torch
 from scipy import ndimage
 from skimage import filters
 
 from cecelia.utils.segmentation_utils import SegmentationUtils
+from cecelia.utils.gpu_utils import torch_device
 
 
 class CellposeUtils(SegmentationUtils):
@@ -17,15 +17,7 @@ class CellposeUtils(SegmentationUtils):
     def __init__(self, params, dim_utils):
         super().__init__(params, dim_utils)
 
-        if torch.cuda.is_available():
-            self.use_gpu    = True
-            self.gpu_device = torch.device('cuda')
-        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-            self.use_gpu    = True
-            self.gpu_device = torch.device('mps')
-        else:
-            self.use_gpu    = False
-            self.gpu_device = None
+        self.use_gpu, self.gpu_device = torch_device()
 
         # Physical pixel size for µm → pixel diameter conversion
         self.phys_size_x = dim_utils.im_physical_size('x', default=1.0)

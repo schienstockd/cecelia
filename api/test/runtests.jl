@@ -494,3 +494,18 @@ end
     # unsafe characters in an attr value are sanitised to underscores
     @test _movie_basename(Dict("T" => "a/b c:d"), "u1", ["T"]) == "a_b_c_d_u1.mp4"
 end
+
+# The single-image recorders (timelapse / animation) name by IMAGE via the shared _movies_dir +
+# _movie_named_path (img._dir = {proj}/1/{uid} → {proj}/movies/). Mock img with a NamedTuple.
+@testset "API: single-image movie naming" begin
+    mktempdir() do tmp
+        img = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "My Image")
+        @test _movie_named_path(img, "uid7") == joinpath(tmp, "proj", "movies", "My_Image.mp4")
+        @test _movie_named_path(img, "uid7"; suffix = "_animation") ==
+              joinpath(tmp, "proj", "movies", "My_Image_animation.mp4")
+        @test isdir(joinpath(tmp, "proj", "movies"))   # _movies_dir created it
+        # blank / unsafe name falls back to the uid
+        blank = (; _dir = joinpath(tmp, "proj", "1", "uid7"), name = "   ")
+        @test _movie_named_path(blank, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
+    end
+end

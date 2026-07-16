@@ -612,6 +612,26 @@ end
         rm(proj.root; recursive=true)
     end
 
+    # read_ccid_raw is the one ccid.json read+Symbol-key-normalize helper (used by the api layer).
+    # versioned_get is the single active-value accessor for both String→String path dicts and the
+    # Any/JSON3 raw dicts (replaced the removed image.jl `active`).
+    @testset "read_ccid_raw + versioned_get on path dicts" begin
+        mktempdir() do d
+            p = joinpath(d, "ccid.json")
+            write(p, """{"filepath":{"default":"x.ome.zarr","_active":"default"},"class":"CciaImage"}""")
+            raw = read_ccid_raw(p)
+            @test raw isa Dict{String,Any}
+            @test all(k -> k isa String, keys(raw))
+            @test raw["class"] == "CciaImage"
+            # readable via the exact helper the api/tasks use (nothing → active entry)
+            @test versioned_get_field(raw, "filepath") == "x.ome.zarr"
+        end
+        # versioned_get on a concrete String→String versioned dict (the img.filepath / img.label_props shape)
+        d = Dict{String,String}("default" => "a.zarr", "v2" => "b.zarr", "_active" => "v2")
+        @test versioned_get(d) == "b.zarr"                 # active entry
+        @test sort(versioned_keys(d)) == ["default", "v2"] # excludes _active
+    end
+
     # ── Destructive ops ──────────────────────────────────────────────────────────
     @testset "delete_image! / delete_set!" begin
         proj = create_project!(name="del-test-$(rand(1000:9999))", kind="static")

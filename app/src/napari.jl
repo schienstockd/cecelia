@@ -99,7 +99,8 @@ function _log_gl_info(v::NapariViewer)
 end
 
 function close!(v::NapariViewer)
-    v.proc !== nothing && kill(v.proc)
+    # Kill the whole tree — napari/Qt spawns children a bare `kill(v.proc)` would orphan.
+    v.proc !== nothing && try; _kill_proc_tree(v.proc); catch; end
     v.proc = nothing
 end
 

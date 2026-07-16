@@ -13,6 +13,8 @@ import shutil
 import numpy as np
 import zarr
 
+import cecelia.utils.zarr_utils as zarr_utils
+
 from skimage import morphology, segmentation
 from scipy import ndimage
 
@@ -425,26 +427,14 @@ class SegmentationUtils:
 
         dim_utils = self.dim_utils
         full_scale = dim_utils.im_scale()  # one value per image axis (including C)
+        # Map base scale by axis NAME so it survives the label array dropping the channel axis.
         ax_to_scale = {ax: full_scale[i] for i, ax in enumerate(dim_utils.im_dim_order)}
 
-        def level_scale(lvl):
-            return [
-                ax_to_scale.get(ax, 1.0) * (2 ** lvl if ax in ('Y', 'X') else 1.0)
-                for ax in label_axes
-            ]
-
         g = zarr.open_group(out_path, mode='w', zarr_format=2)
-        datasets = [
-            {
-                'path': str(lvl),
-                'coordinateTransformations': [{'type': 'scale', 'scale': level_scale(lvl)}],
-            }
-            for lvl in range(nscales)
-        ]
-        g.attrs['multiscales'] = [{
-            'axes': [{'name': ax.lower()} for ax in label_axes],
-            'datasets': datasets,
-        }]
+        # Shared multiscales builder (see zarr_utils.multiscales_metadata) — one layout for
+        # image and label stores. label_axes already excludes C.
+        g.attrs['multiscales'] = zarr_utils.multiscales_metadata(
+            label_axes, nscales, scale_for_axis=ax_to_scale)
 
         chunks = self._label_chunks(arr.shape, label_axes)
         g.create_array('0', data=arr.astype(self.LABEL_DTYPE), chunks=chunks)

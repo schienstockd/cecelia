@@ -10,13 +10,15 @@ docs/ARCHITECTURE.md). The Julia reader already decodes categoricals on read.
 Invoked as a subprocess by a Julia task (see ``write_categorical_obs`` in label_props.jl).
 """
 
-import anndata as ad
-import numpy as np
-import pandas as pd
+from cecelia.utils.label_props_utils import LabelPropsView
 
 
 def write_categorical_obs(params, log=None):
     """Write/replace categorical obs columns in an existing ``.h5ad``, aligned by label.
+
+    Thin driver over ``LabelPropsView.add_categorical_obs`` — the one Python h5ad-open path
+    (docs/DATAMODEL.md). This module owns the param contract + logging; the view owns the
+    encoding and file I/O.
 
     params:
       - ``filepath``: target ``.h5ad`` (must exist).
@@ -32,30 +34,19 @@ def write_categorical_obs(params, log=None):
     columns = params.get("columns", []) or []
     drop = params.get("drop", []) or []
 
-    adata = ad.read_h5ad(filepath)
-    obs_labels = adata.obs.index.astype(np.int64).to_numpy()
-    rowof = {int(l): i for i, l in enumerate(obs_labels)}
-
-    for c in drop:
-        if c in adata.obs.columns:
-            del adata.obs[c]
-            _log(f"[INFO] dropped obs column {c}")
+    view = LabelPropsView(filepath)
+    if drop:
+        view.drop_obs(drop)
+        _log(f"[INFO] dropping obs columns: {', '.join(drop)}")
 
     for col in columns:
         name = col["name"]
         labels = col.get("labels", [])
         values = col.get("values", [])
-        arr = np.full(len(obs_labels), None, dtype=object)
-        for lab, v in zip(labels, values):
-            if v is None:
-                continue
-            r = rowof.get(int(lab))
-            if r is not None:
-                arr[r] = str(v)
-        adata.obs[name] = pd.Categorical(arr)
-        n_set = int(np.sum(arr != np.array(None)))
-        n_cat = len(adata.obs[name].cat.categories)
-        _log(f"[INFO] wrote categorical obs '{name}': {n_set}/{len(arr)} labelled, {n_cat} categories")
+        view.add_categorical_obs(name, labels, values)
+        n_set = sum(1 for v in values if v is not None)
+        n_cat = len({str(v) for v in values if v is not None})
+        _log(f"[INFO] wrote categorical obs '{name}': {n_set} labelled, {n_cat} categories")
 
-    adata.write_h5ad(filepath)
+    view.save()
     _log(f"[INFO] saved {filepath}")

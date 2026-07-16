@@ -6,6 +6,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import NotebookTable from '../components/NotebookTable.vue'
+import { notebooksApi } from '../utils/serviceApi'
 
 const projectMeta = useProjectMetaStore()
 
@@ -88,13 +89,7 @@ async function launch() {
   errorMsg.value = ''
   server.value = 'starting'
   try {
-    const res = await fetch('/api/notebooks/launch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value }),
-    })
-    const d = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+    const d = await notebooksApi.launch(projectUid.value)
     url.value = d.url ?? url.value
     secret.value = d.secret ?? ''
     if (!d.starting) { server.value = 'running'; return }
@@ -110,13 +105,7 @@ async function restart() {
   errorMsg.value = ''
   server.value = 'starting'
   try {
-    const res = await fetch('/api/notebooks/restart', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value }),
-    })
-    const d = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(d.error ?? `HTTP ${res.status}`)
+    const d = await notebooksApi.restart(projectUid.value)
     url.value = d.url ?? url.value
     secret.value = d.secret ?? ''
     if (!d.starting) { server.value = 'running'; return }
@@ -130,11 +119,7 @@ async function restart() {
 async function shutdown() {
   stopPoll()
   try {
-    const res = await fetch('/api/notebooks/shutdown', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-    })
-    const d = await res.json().catch(() => ({}))
-    if (!res.ok) errorMsg.value = d.error ?? `HTTP ${res.status}`
+    await notebooksApi.shutdown()
   } catch (e) {
     errorMsg.value = e instanceof Error ? e.message : String(e)
   }
