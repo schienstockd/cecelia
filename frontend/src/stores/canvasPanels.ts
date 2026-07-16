@@ -25,8 +25,9 @@ export const useCanvasPanelsStore = defineStore('canvasPanels', () => {
   const getGeom = (k: string): PanelGeom | undefined => geom.value[k]
   const setGeom = (k: string, g: PanelGeom) => { geom.value[k] = g }
   const delGeom = (k: string) => { delete geom.value[k] }
-  // drop ONE canvas: its entry + every panel-geometry key prefixed `${key}:` (e.g. closing an
-  // Analysis-canvas tab, so its board doesn't linger in the store).
+  // drop ONE module canvas: its entry + every panel-geometry key prefixed `${key}:`, so a discarded
+  // canvas doesn't linger in the store. (The `/analysis` board lives in `analysisLayout`, which has its
+  // own `drop` — closing a board tab goes through that, not here.)
   function drop(key: string) {
     delete entries.value[key]
     for (const k of Object.keys(geom.value)) if (k.startsWith(`${key}:`)) delete geom.value[k]

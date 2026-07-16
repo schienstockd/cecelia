@@ -497,6 +497,27 @@ function api_board_asset_delete(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true))
 end
 
+# POST /api/board-assets/copy  { projectUid, assetId }  → { assetId }
+# Duplicate a sidecar board image to a NEW id — so a duplicated board owns independent asset files
+# (deleting a frame in one board must not orphan the copy that shares it). Missing source → 404.
+function api_board_asset_copy(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :projectUid, "")); aid = String(get(body, :assetId, ""))
+    (isempty(uid) || isempty(aid)) && return 400, JSON3.write((; error="projectUid and assetId required"))
+    _valid_asset_id(aid) || return 400, JSON3.write((; error="Invalid assetId"))
+    src = joinpath(_board_assets_dir(uid), aid * ".png")
+    isfile(src) || return 404, JSON3.write((; error="Asset not found: $aid"))
+    try
+        dir = _board_assets_dir(uid); mkpath(dir); id = gen_uid()
+        cp(src, joinpath(dir, id * ".png"); force=true)
+        return 200, JSON3.write((; assetId = id))
+    catch e
+        return 500, JSON3.write((; error=sprint(showerror, e)))
+    end
+end
+
 # POST /api/projects/canvases  { projectUid, objects: { <objUid>: {entries, geom} } }
 # Autosaved module-page canvas layouts, written PER OBJECT to 1/{objUid}/moduleCanvases.json (the
 # object = the image or set the canvas is scoped to; frontend groups by canvas key). Stored with the

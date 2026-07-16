@@ -2,9 +2,8 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 // Tab metadata for the multipage Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A). Each
-// "tab" is an independent board; its plots live in the `canvasPanels` store under the canvas key
-// `${groupKey}:tab:${id}` (so tabs reuse the whole existing SummaryCanvas persistence machinery —
-// this store only owns the tab LIST + names + which one is active).
+// "tab" is an independent board; its grid + slot contents live in the `analysisLayout` store under the
+// canvas key `${groupKey}:tab:${id}` — this store only owns the tab LIST + names + which one is active.
 //
 // Keyed per group (`analysis:${projectUid}`) so boards are per-project. In-memory like `canvasPanels`
 // (survives navigation, not a full reload); cleared on project open/close from `stores/project.ts`.
@@ -40,8 +39,8 @@ export const useAnalysisTabsStore = defineStore('analysisTabs', () => {
     if (t) t.name = name.trim() || t.name
   }
 
-  // Remove a tab; caller drops the tab's canvas panels (canvasPanels.drop) since this store doesn't
-  // know the canvas-key mapping. Keeps at least one board.
+  // Remove a tab; caller drops the tab's layout (analysisLayout.drop) + its sidecar assets since this
+  // store doesn't know the canvas-key mapping. Keeps at least one board.
   function removeTab(groupKey: string, id: number) {
     const g = entries.value[groupKey]
     if (!g || g.tabs.length <= 1) return

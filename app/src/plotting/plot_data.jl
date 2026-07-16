@@ -191,6 +191,45 @@ function _population_metric_frame(df::DataFrame; normalize::Symbol=:none,
     DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, String(col) => vals)
 end
 
+# IMAGE as the statistical unit: collapse each image to ONE datapoint per series — the MEAN (or MEDIAN,
+# per `agg`) of `measure` within each (value_name, pop, uID[, group-level]) group. Feeding these
+# per-image summaries to the distribution builders (boxplot/strip/bar) makes each IMAGE a data point
+# (n = #images) instead of each cell/track — "each dot is an image", the pseudoreplication-safe view
+# where the image is the unit (biologists' n = animals/images, not cells). Rows with a missing/non-finite
+# measure (or group level) are dropped. `group_col` is preserved so the caller can still split the
+# resulting points by that level. `uID` absent (single image) → one row per (value_name, pop[, group]).
+# Mirrors `_population_metric_frame`.
+function _image_agg_frame(df::DataFrame, measure::AbstractString;
+                          group_col::Union{Nothing,AbstractString}=nothing, agg::Symbol=:mean)::DataFrame
+    m = String(measure)
+    (nrow(df) == 0 || !(m in names(df))) && return DataFrame()
+    reduce_fn = agg == :median ? median : mean
+    has_uid = :uID in propertynames(df); has_vn = :value_name in propertynames(df)
+    gcol = (group_col !== nothing && String(group_col) in names(df)) ? String(group_col) : nothing
+    acc = Dict{NTuple{4,String},Vector{Float64}}(); order = NTuple{4,String}[]
+    for i in 1:nrow(df)
+        v = df[i, m]
+        (ismissing(v) || !(v isa Real) || !isfinite(v)) && continue
+        g = ""
+        if gcol !== nothing
+            gv = df[i, gcol]
+            (ismissing(gv) || (gv isa Real && !isfinite(gv))) && continue
+            g = _catkey(gv)
+        end
+        k = (has_vn ? String(df.value_name[i]) : "", String(df.pop[i]),
+             has_uid ? String(df.uID[i]) : "", g)
+        haskey(acc, k) || (acc[k] = Float64[]; push!(order, k))
+        push!(acc[k], Float64(v))
+    end
+    vns = String[]; pops = String[]; uids = String[]; grps = String[]; vals = Float64[]
+    for k in order
+        push!(vns, k[1]); push!(pops, k[2]); push!(uids, k[3]); push!(grps, k[4]); push!(vals, reduce_fn(acc[k]))
+    end
+    out = DataFrame("value_name" => vns, "pop" => pops, "uID" => uids, m => vals)
+    gcol === nothing || (out[!, gcol] = grps)
+    out
+end
+
 # Shared aggregation core over an already-built pop_df frame. `by_image` → one series per source
 # image (cross-image comparison); else images (if any) are pooled. Used by both the single-image
 # and the multi-image `plot_summary_data` methods so the chart logic lives in one place.
@@ -199,7 +238,8 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
                       nbins::Int, normalize::Symbol, by_image::Bool,
                       var_cols::Set{String}=Set{String}(),
                       group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                      raw_points::Bool=false, max_points::Int=1500,
+                      raw_points::Bool=false, max_points::Int=1500, raw::Bool=false,
+                      stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
                       matrix_mode::Union{AbstractString,Nothing}=nothing,
                       measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                       category::Union{AbstractString,Nothing}=nothing,
@@ -227,6 +267,14 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
         measure = metric_label
         by_image = false           # pool images into the pop series as individual points
         normalize = :none
+    elseif stat_unit == :image && measure !== nothing && chart_type in ("boxplot", "points", "bar")
+        # IMAGE is the statistical unit: collapse each image to its per-series MEAN/MEDIAN, then plot
+        # those per-image summaries (each dot = one image). Pool images into ONE series (by_image=false)
+        # unless grouping by an image attribute — then keep one series per attribute value, points = its
+        # images.
+        df = _image_agg_frame(df, String(measure);
+                              group_col = (group_by === nothing ? nothing : String(group_by)), agg = image_agg)
+        by_image = attr_map !== nothing
     end
     # `group` is the optional categorical sub-axis level (e.g. an HMM state) — "" when not grouping.
     base(g) = Dict{String,Any}("pop" => g.sid, "value_name" => g.vn, "uID" => g.uid, "group" => g.grp)
@@ -238,6 +286,51 @@ function _summary_agg(df::DataFrame, chart_type::AbstractString;
     mtype = (measure !== nothing && String(measure) in names(df)) ?
             (String(measure) in var_cols ? "numeric" :                        # var = quantitative, always
              _is_categorical_col(df[!, String(measure)], String(measure)) ? "categorical" : "numeric") : "numeric"
+    # RAW EXPORT: emit the tidy per-datapoint rows behind the plot — identity (uID, label/track_id,
+    # value_name, pop) + the optional groupBy level + the measure value — so the board CSV export can
+    # be re-plotted in external software (Prism etc). Not an on-screen path: fired only on export, so
+    # payload size (all N points) is a deliberate one-off, not a per-render cost. A measure-less `count`
+    # chart collapses to per-image counts (the boxplot/violin/… population summary already substituted a
+    # metric above); non-finite/missing values are dropped to mirror the plotted distribution. Matrix is
+    # handled earlier and never reaches here.
+    if raw
+        rdf = df; mcol = measure === nothing ? nothing : String(measure)
+        if mcol === nothing
+            mcol = normalize in (:fraction, :total) ? "proportion" : "count"
+            rdf = _population_metric_frame(df; normalize=normalize, col=mcol)
+        end
+        nms = names(rdf)
+        # only emit columns that carry real identity: `label` is the CELL id (meaningless for the track
+        # table, where it duplicates `track_id`), so drop it for track granularity; `track_id` only when
+        # present; `group` only when the groupBy column was actually applied (a cell-level groupBy on a
+        # track measure is echoed but never applied — it would be an empty column). The frontend also
+        # drops any column left all-empty (single-image uID, population-summary label) as a backstop.
+        gb_applied = gb !== nothing && gb in nms
+        emit_label = granularity == :cell && "label" in nms
+        emit_track = "track_id" in nms
+        rows = Vector{Dict{String,Any}}()
+        for i in 1:nrow(rdf)
+            v = rdf[i, mcol]
+            (ismissing(v) || (v isa Real && !isfinite(v))) && continue
+            rec = Dict{String,Any}(
+                "uID"        => ("uID" in nms) ? String(rdf[i, "uID"]) : "",
+                "value_name" => ("value_name" in nms) ? String(rdf[i, "value_name"]) : "",
+                "pop"        => ("pop" in nms) ? String(rdf[i, "pop"]) : "",
+                # keep the actual number for a numeric measure (so Prism etc. read it as numeric); a
+                # genuinely non-numeric (string) category is emitted as its label.
+                "value"      => (v isa Real ? Float64(v) : _catkey(v)))
+            emit_label && (rec["label"] = _catkey(rdf[i, "label"]))
+            emit_track && (rec["track_id"] = _catkey(rdf[i, "track_id"]))
+            if gb_applied
+                gv = rdf[i, gb]
+                rec["group"] = (ismissing(gv) || (gv isa Real && !isfinite(gv))) ? "" : _catkey(gv)
+            end
+            push!(rows, rec)
+        end
+        return Dict{String,Any}("chartType" => "raw", "measure" => mcol, "measureType" => mtype,
+                                "granularity" => String(granularity),
+                                "groupBy" => (gb_applied ? gb : nothing), "rows" => rows)
+    end
     if chart_type == "points"
         # raw (downsampled) values per series — the data source for strip/jitter and (client-side
         # density) violin charts. No server aggregation beyond the per-group downsample.
@@ -538,7 +631,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -556,7 +649,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, value_name),
-                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
+                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
 end
@@ -568,7 +661,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -591,7 +684,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
                           group_by=group_by, var_cols=_var_measure_set(imgs, value_name),
                           collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map)
@@ -629,7 +722,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -642,7 +735,7 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString,
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
                  var_cols=_var_measure_set(img, isempty(targets) ? nothing : first(targets)[1]),
-                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points,
+                 collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
 end
@@ -655,7 +748,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
                            nbins::Int=30, normalize::Symbol=:none,
                            group_by::Union{AbstractString,Nothing}=nothing, collapse_series::Bool=false,
-                           raw_points::Bool=false, max_points::Int=1500,
+                           raw_points::Bool=false, max_points::Int=1500, raw::Bool=false, stat_unit::Symbol=:individual, image_agg::Symbol=:mean,
                            matrix_mode::Union{AbstractString,Nothing}=nothing,
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
@@ -671,7 +764,7 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                           group_by=group_by,
                           var_cols=_var_measure_set(imgs, isempty(targets) ? nothing : first(targets)[1]),
                           collapse_series=collapse_series,
-                          raw_points=raw_points, max_points=max_points,
+                          raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                           matrix_mode=matrix_mode, measures=measures, category=category,
                           separator=separator, zscore=zscore, matrix_normalize=matrix_normalize,
                           attr_map=attr_map)
