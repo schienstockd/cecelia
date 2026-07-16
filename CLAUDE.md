@@ -353,6 +353,14 @@ CECELIA_DEV_DIR=~/cecelia-pineapple/dev
 ```
 This file is git-ignored (machine-specific). `init_cecelia!` reads it automatically — no env var export needed. The `CECELIA_DEV_DIR` env var still overrides it if set.
 
+**Where `custom.toml` lives — dev vs prod (one resolver).** `config_dir()` in `app/src/config.jl`
+resolves the config dir in order: explicit arg → `CECELIA_DEV_DIR` env → `CECELIA_DEV_DIR` in `.env`
+→ **`~/.cecelia`** (the installed-app default). The presence of `.env`/`CECELIA_DEV_DIR` *is* the dev
+signal; an installed app has neither and falls through to `~/.cecelia/custom.toml`, so a dev run never
+touches a real user's config and the path never depends on install scope. Both the reader
+(`init_cecelia!`) and the writer (`set_projects_dir!`, used by the first-launch setup wizard) call
+this one resolver — don't re-derive the path. See `docs/todo/ONBOARDING_PLAN.md`.
+
 ```bash
 pixi run dev        # Julia server (Revise hot-reload) → :8080
 pixi run frontend   # Vite → http://localhost:5173

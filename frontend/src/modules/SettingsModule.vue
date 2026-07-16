@@ -37,52 +37,9 @@ function copyUid() {
 }
 
 // ── Software updates ───────────────────────────────────────────────────────
-const verCurrent = ref('')
-const verLatest = ref<string | null>(null)
-const updateAvailable = ref(false)
-const checking = ref(false)
-const updateBusy = ref(false)
-const updateMsg = ref('')
-
-async function checkUpdates() {
-  checking.value = true
-  updateMsg.value = ''
-  try {
-    const d = await (await fetch('/api/update/check')).json()
-    verCurrent.value = d.current ?? ''
-    verLatest.value = d.latest ?? null
-    updateAvailable.value = !!d.updateAvailable
-    if (d.error) updateMsg.value = d.error
-  } catch {
-    updateMsg.value = 'Could not reach the update server.'
-  } finally {
-    checking.value = false
-  }
-}
-
-async function applyUpdate() {
-  if (!verLatest.value || updateBusy.value) return
-  updateBusy.value = true
-  updateMsg.value = ''
-  try {
-    const res = await fetch('/api/update/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ version: verLatest.value }),
-    })
-    const d = await res.json()
-    updateMsg.value = res.ok
-      ? (d.message ?? `Update ${verLatest.value} staged — restart Cecelia to finish.`)
-      : (d.error ?? 'Update failed.')
-    if (res.ok) updateAvailable.value = false
-  } catch {
-    updateMsg.value = 'Update failed (could not reach the server).'
-  } finally {
-    updateBusy.value = false
-  }
-}
-
-onMounted(checkUpdates)
+// State + actions live in the shared appControl store — the SAME source the header badge reads, so
+// there's one update check, not a per-surface re-implementation. Re-check when this panel opens.
+onMounted(() => appCtl.checkUpdate())
 
 // ── Diagnostics + debug console ──────────────────────────────────────────────
 interface Diag {
@@ -318,35 +275,42 @@ async function switchWt(path: string) {
       <div class="field">
         <label class="field-label">Version</label>
         <div class="field-row">
-          <input class="field-input mono" :value="verCurrent || '—'" readonly />
+          <input class="field-input mono" :value="appCtl.updateCurrent || '—'" readonly />
           <button
             class="save-btn"
-            :disabled="checking"
-            @click="checkUpdates"
+            :disabled="appCtl.updateChecking"
+            @click="appCtl.checkUpdate"
             v-tooltip.right="'Check GitHub for a newer release'"
           >
-            <i :class="['pi', checking ? 'pi-spin pi-cog' : 'pi-refresh']" />
-            {{ checking ? 'Checking…' : 'Check' }}
+            <i :class="['pi', appCtl.updateChecking ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            {{ appCtl.updateChecking ? 'Checking…' : 'Check' }}
           </button>
         </div>
-        <span v-if="!updateAvailable && verCurrent && !updateMsg" class="field-hint">
+        <span v-if="!appCtl.updateAvailable && appCtl.updateCurrent && !appCtl.updateMsg" class="field-hint">
           You're on the latest version.
         </span>
       </div>
 
-      <div v-if="updateAvailable" class="field">
+      <!-- per-user install: in-app update -->
+      <div v-if="appCtl.updateAvailable && appCtl.canApplyUpdate" class="field">
         <button
           class="save-btn"
-          :disabled="updateBusy"
-          @click="applyUpdate"
-          v-tooltip.right="`Download ${verLatest} and stage it; restart Cecelia to finish.`"
+          :disabled="appCtl.updateBusy"
+          @click="appCtl.applyUpdate"
+          v-tooltip.right="`Download ${appCtl.updateLatest} and stage it; restart Cecelia to finish.`"
         >
-          <i :class="['pi', updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
-          {{ updateBusy ? 'Updating…' : `Update to ${verLatest}` }}
+          <i :class="['pi', appCtl.updateBusy ? 'pi-spin pi-cog' : 'pi-download']" />
+          {{ appCtl.updateBusy ? 'Updating…' : `Update to ${appCtl.updateLatest}` }}
         </button>
       </div>
 
-      <span v-if="updateMsg" class="field-hint">{{ updateMsg }}</span>
+      <!-- shared system-wide install: updates are admin-only (see docs/todo/ONBOARDING_PLAN.md D4/D5) -->
+      <span v-else-if="appCtl.updateAvailable && appCtl.updateScope === 'system'" class="field-hint">
+        {{ appCtl.updateLatest }} is available. This is a shared installation — updates must be run by
+        an administrator (re-run the install-system script).
+      </span>
+
+      <span v-if="appCtl.updateMsg" class="field-hint">{{ appCtl.updateMsg }}</span>
     </section>
 
     </div>

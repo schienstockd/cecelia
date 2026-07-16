@@ -109,6 +109,7 @@ function api_diagnostics(::HTTP.Request)
         startedAt   = _STARTED_AT,                        # epoch seconds — spot a stale/failed-restart backend
         uptimeSeconds = round(Int, time() - _STARTED_AT),
         projectsDir = projects_dir(),
+        setupRequired = setup_required(),   # first-launch: no custom.toml / projects dir unset → route to /setup
         memFreeGB   = gb(Sys.free_memory()),
         memTotalGB  = gb(Sys.total_memory()),
         gcLiveMB    = round(Base.gc_live_bytes() / 2^20; digits = 1),

@@ -1,9 +1,18 @@
 <script setup lang="ts">
+import { useRouter } from 'vue-router'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
+import { useAppControlStore } from '../stores/appControl'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
+const appCtl = useAppControlStore()
+const router = useRouter()
+
+// Update-available badge: surfaces the shared appControl update check app-wide (Settings owns the
+// actual control). Click → Settings → Software updates. The × dismisses for this session only
+// ("remind me later"). See docs/todo/ONBOARDING_PLAN.md (D5).
+function openUpdate() { router.push('/settings') }
 
 const statusLabel: Record<string, string> = {
   connected:    'Connected',
@@ -29,6 +38,19 @@ const statusTip: Record<string, string> = {
     <span class="logo">🍍 Cecelia</span>
 
     <span class="spacer" />
+
+    <span v-if="appCtl.updateAvailable && !appCtl.updateDismissed" class="update-badge"
+          @click="openUpdate"
+          v-tooltip.bottom="appCtl.updateScope === 'system'
+            ? 'Update available — a shared installation must be updated by an administrator'
+            : `Update available — ${appCtl.updateLatest}. Open Settings to install.`">
+      <i class="pi pi-arrow-circle-up" />
+      Update{{ appCtl.updateLatest ? ' ' + appCtl.updateLatest : '' }}
+      <button class="update-x" @click.stop="appCtl.dismissUpdate()"
+              v-tooltip.bottom="'Remind me later'" aria-label="Dismiss update notice">
+        <i class="pi pi-times" />
+      </button>
+    </span>
 
     <span
       class="ws-badge"
@@ -100,4 +122,32 @@ const statusTip: Record<string, string> = {
 .ws-badge.disconnected .dot { background: #52525b; }
 .ws-badge.error        { background: #7f1d1d33; color: #fca5a5; }
 .ws-badge.error .dot   { background: #ef4444; box-shadow: 0 0 5px #ef4444; }
+
+.update-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.4rem 0.2rem 0.6rem;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--cc-accent) 22%, transparent);
+  color: var(--cc-accent);
+}
+.update-badge:hover { background: color-mix(in srgb, var(--cc-accent) 34%, transparent); }
+.update-badge .pi-arrow-circle-up { font-size: 0.8rem; }
+.update-x {
+  display: inline-flex;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  padding: 0 0.1rem;
+  border-radius: 0.25rem;
+}
+.update-x:hover { opacity: 1; }
+.update-x .pi { font-size: 0.6rem; }
 </style>

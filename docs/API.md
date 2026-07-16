@@ -69,7 +69,7 @@ Settings → Debug console UI shows a note to this effect.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | liveness |
-| GET | `/api/diagnostics` | server health: threads, Julia version, **installed version** (`.cecelia-version`), memory, bound host/port, projects dir, debug-console state — powers Settings → Diagnostics |
+| GET | `/api/diagnostics` | server health: threads, Julia version, **installed version** (`.cecelia-version`), memory, bound host/port, projects dir, **`setupRequired`** (first-launch flag → `/setup` redirect), debug-console state — powers Settings → Diagnostics |
 | GET | `/api/diagnostics/packages` | installed-package inventory: `{julia, python, pythonError}` — Julia via in-process `Pkg.dependencies()`, Python via `pixi list --json` (lazy; backs the Settings → Diagnostics "Packages…" dialog) |
 | POST | `/api/repl` | `{code}` — evaluate Julia in the server's `Main` (value + captured stdout/stderr + error). **Gated**: only when the debug console is toggled on AND the server is loopback-bound; a `0.0.0.0` bind always refuses it. Localhost-only dev tool (`repl_api.jl`) |
 | POST | `/api/repl/config` | `{enabled}` — flip the runtime debug-console toggle (Settings → Developer). Not a security boundary; eval is still loopback-gated |
@@ -101,6 +101,12 @@ Settings → Debug console UI shows a note to this effect.
 | POST | `/api/app/shutdown` | the global "Quit everything" (Settings → System). Best-effort stops children (napari `close!`, notebook server) then `exit(0)` from a detached task so the response flushes first. Dev: ends `pixi run dev`; packaged: server exit ends `app.py`. (`api/src/app_api.jl`) |
 | POST | `/api/app/restart` | **dev-only** backend restart (button gated on `diag.dev`). Stops children then `exit(42)` (`RESTART_EXIT_CODE`); the **supervisor** relaunches in place — `api/dev.jl` in dev, `app.py`'s loop in prod. `409` when not supervised (no `CECELIA_SUPERVISED` — a bare `julia src/server.jl`). Replaced the old detached-relauncher, which couldn't reattach to a foreground terminal. |
 | GET | `/api/logs/recent` | `{logs: [{level,message}]}` — the server-log ring buffer (last 500), so a freshly-opened console **window** backfills recent lines. Fed by the `BroadcastLogger` tee that also emits the `server:log` WS event (see below). |
+| GET | `/api/setup/defaults` | `{projectsDir}` — OS-correct pre-fill for the first-launch wizard (`joinpath(homedir(), "cecelia-projects")`). (`api/src/setup_api.jl`) |
+| GET | `/api/setup/validate?path=` | `{ok, message, willCreate}` — live projects-dir feedback (pure check, no side effects). |
+| POST | `/api/setup/init` | `{projectsDir}` → `{ok, projectsDir, restartRequired}` \| `400`. Validate → `mkpath` → write `custom.toml` (`Cecelia.set_projects_dir!`) → hot-reload config. `restartRequired` is `false` on the normal path (config reloads in place). Drives the `/setup` wizard; `/api/diagnostics` exposes `setupRequired` to trigger it. See `docs/todo/ONBOARDING_PLAN.md`. |
+| GET | `/api/version` | `{version, installed}` — running version + whether this is an installed bundle (vs dev checkout). (`api/src/update_api.jl`) |
+| GET | `/api/update/check` | `{current, latest, updateAvailable, url, scope}` vs the newest GitHub release. `scope` ∈ `user`\|`system`\|`dev` gates the UI: `user` self-updates, `system` shows an admin note, `dev` hides it. |
+| POST | `/api/update/apply` | `{version}` → downloads + **stages** the release bundle (`app.py` applies it on next restart). `403` on a `system` install (admin-only), `400` on a dev checkout. |
 | — | **Gating** (below) | population manager + gating |
 
 Task execution + status flow over **WS** (`task:run`/`task:status`/…), not HTTP — see

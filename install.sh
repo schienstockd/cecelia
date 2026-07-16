@@ -13,14 +13,25 @@
 #   curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 #   curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | CECELIA_CHANNEL=dev sh
 #
+# Two install scopes (CECELIA_INSTALL_SCOPE):
+#   user (default) — installs into your account only (~/.local/share/cecelia); no root needed.
+#   system         — one shared install for all users (/opt/cecelia; /Applications/cecelia on macOS);
+#                    needs root. Pixi, Juliaup and the multi-GB env are provisioned INSIDE the install
+#                    dir so every account shares one runtime — set via a launcher wrapper that exports
+#                    PIXI_HOME + JULIAUP_DEPOT_PATH. Per-user config + projects still live in
+#                    ~/.cecelia (never shared). Updates are then admin-only (re-run this as root).
+#
+#   curl -LsSf .../install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh
+#
 # Env overrides:  CECELIA_CHANNEL=stable|dev  CECELIA_VERSION=v0.1.0  CECELIA_BRANCH=main
-#                 CECELIA_HOME=~/.local/share/cecelia
+#                 CECELIA_INSTALL_SCOPE=user|system  CECELIA_HOME=<dir>
 set -eu
 
 REPO="schienstockd/cecelia"
-INSTALL_DIR="${CECELIA_HOME:-$HOME/.local/share/cecelia}"
 CHANNEL="${CECELIA_CHANNEL:-stable}"
 VERSION="${CECELIA_VERSION:-latest}"
+SCOPE="${CECELIA_INSTALL_SCOPE:-user}"
+OS="$(uname -s)"
 
 say() { printf '\033[1;36m[cecelia]\033[0m %s\n' "$1"; }
 err() { printf '\033[1;31m[cecelia] error:\033[0m %s\n' "$1" >&2; exit 1; }
@@ -29,26 +40,31 @@ have() { command -v "$1" >/dev/null 2>&1; }
 have curl || err "curl is required."
 have tar  || err "tar is required."
 
-# ── Pixi (Python env manager) ────────────────────────────────────────────────
-PIXI="$(command -v pixi 2>/dev/null || true)"
-if [ -z "$PIXI" ]; then
-  if [ -x "$HOME/.pixi/bin/pixi" ]; then
-    PIXI="$HOME/.pixi/bin/pixi"
-  else
-    say "Installing Pixi…"
-    curl -fsSL https://pixi.sh/install.sh | bash
-    PIXI="$HOME/.pixi/bin/pixi"
-  fi
+# ── Install location + scope ──────────────────────────────────────────────────
+# CECELIA_HOME overrides either default.
+if [ -n "${CECELIA_HOME:-}" ]; then
+  INSTALL_DIR="$CECELIA_HOME"
+elif [ "$SCOPE" = "system" ]; then
+  case "$OS" in
+    Darwin) INSTALL_DIR="/Applications/cecelia" ;;
+    *)      INSTALL_DIR="/opt/cecelia" ;;
+  esac
+else
+  INSTALL_DIR="$HOME/.local/share/cecelia"
 fi
-[ -x "$PIXI" ] || have pixi || err "Pixi not found after install."
 
-# ── Julia (via Juliaup) ──────────────────────────────────────────────────────
-if ! have julia && [ ! -x "$HOME/.juliaup/bin/julia" ]; then
-  say "Installing Julia (juliaup)…"
-  curl -fsSL https://install.julialang.org | sh -s -- --yes
+# In system scope every tool + env lives under the shared install dir (so all accounts share one
+# runtime) and the write needs root. In user scope, Pixi/Juliaup keep their usual per-user homes.
+if [ "$SCOPE" = "system" ]; then
+  [ "$(id -u)" = "0" ] || err "System-wide install writes to $INSTALL_DIR and needs root. Re-run:
+       curl -LsSf https://raw.githubusercontent.com/$REPO/main/install.sh | CECELIA_INSTALL_SCOPE=system sudo -E sh"
+  PIXI_HOME="$INSTALL_DIR/pixi"                       # Pixi installer + tools honour PIXI_HOME
+  JULIAUP_DEPOT_PATH="$INSTALL_DIR/juliaup"           # shared Julia versions + juliaup state
+  JULIA_DEPOT_PATH="$INSTALL_DIR/juliaup/depot"       # shared Julia package depot (Manifest)
+  export PIXI_HOME JULIAUP_DEPOT_PATH JULIA_DEPOT_PATH
+else
+  PIXI_HOME="${PIXI_HOME:-$HOME/.pixi}"; export PIXI_HOME
 fi
-JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
-[ -x "$JULIA" ] || err "Julia not found after install — open a new terminal and re-run."
 
 # ── Fetch Cecelia (release bundle, or branch source for the dev channel) ─────
 TMP="$(mktemp -d)"
@@ -88,12 +104,50 @@ say "Installing to $INSTALL_DIR"
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 # A release bundle extracts flat (api/, app/, …); a branch archive wraps everything in one
-# `<repo>-<branch>/` dir, so strip that leading component for the dev channel only.
+# `<repo>-<branch>/` dir, so strip that leading component for the dev channel only. Extract BEFORE
+# provisioning tools so the shared runtime (system scope) can be placed inside INSTALL_DIR.
 if [ "$CHANNEL" = "dev" ]; then
   tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR" --strip-components=1
 else
   tar -xzf "$TMP/cecelia.tar.gz" -C "$INSTALL_DIR"
 fi
+
+# ── Pixi (Python env manager) ────────────────────────────────────────────────
+# System scope: always into the shared $PIXI_HOME. User scope: reuse one on PATH / in ~/.pixi.
+if [ "$SCOPE" = "system" ]; then
+  if [ -x "$PIXI_HOME/bin/pixi" ]; then PIXI="$PIXI_HOME/bin/pixi"; else
+    say "Installing Pixi into the shared runtime ($PIXI_HOME)…"
+    curl -fsSL https://pixi.sh/install.sh | bash
+    PIXI="$PIXI_HOME/bin/pixi"
+  fi
+else
+  PIXI="$(command -v pixi 2>/dev/null || true)"
+  if [ -z "$PIXI" ]; then
+    if [ -x "$PIXI_HOME/bin/pixi" ]; then PIXI="$PIXI_HOME/bin/pixi"; else
+      say "Installing Pixi…"
+      curl -fsSL https://pixi.sh/install.sh | bash
+      PIXI="$PIXI_HOME/bin/pixi"
+    fi
+  fi
+fi
+[ -x "$PIXI" ] || have pixi || err "Pixi not found after install."
+
+# ── Julia (via Juliaup) ──────────────────────────────────────────────────────
+# System scope: install into the shared depot; user scope: reuse one on PATH / in ~/.juliaup.
+if [ "$SCOPE" = "system" ]; then
+  if [ ! -x "$JULIAUP_DEPOT_PATH/bin/julia" ]; then
+    say "Installing Julia (juliaup) into the shared runtime ($JULIAUP_DEPOT_PATH)…"
+    curl -fsSL https://install.julialang.org | sh -s -- --yes --path "$JULIAUP_DEPOT_PATH"
+  fi
+  JULIA="$JULIAUP_DEPOT_PATH/bin/julia"
+else
+  if ! have julia && [ ! -x "$HOME/.juliaup/bin/julia" ]; then
+    say "Installing Julia (juliaup)…"
+    curl -fsSL https://install.julialang.org | sh -s -- --yes
+  fi
+  JULIA="$(command -v julia 2>/dev/null || echo "$HOME/.juliaup/bin/julia")"
+fi
+[ -x "$JULIA" ] || err "Julia not found after install — open a new terminal and re-run."
 
 # ── bioformats2raw (image import) ─────────────────────────────────────────────
 # ~190 MB, so fetched here rather than shipped in the bundle. The app resolves it at
@@ -131,16 +185,63 @@ if [ "$CHANNEL" = "dev" ]; then
   ( cd "$INSTALL_DIR/frontend" && npm install && npm run build )
 fi
 
-# Record what was installed (channel + tag/commit) for provenance and bug reports.
+# Record what was installed (channel + tag/commit) for provenance and bug reports, plus the scope so
+# the in-app updater knows whether it may self-update (user) or must defer to an admin (system).
 printf '%s\n' "$PROVENANCE" > "$INSTALL_DIR/.cecelia-version"
-say "Installed: $PROVENANCE"
+printf '%s\n' "$SCOPE"       > "$INSTALL_DIR/.cecelia-scope"
+say "Installed: $PROVENANCE ($SCOPE scope)"
 
-# ── Desktop launcher ─────────────────────────────────────────────────────────
+# ── Launcher ───────────────────────────────────────────────────────────────────
 ICON="$INSTALL_DIR/frontend/dist/favicon.svg"
-case "$(uname -s)" in
-  Linux)
-    APPS="$HOME/.local/share/applications"; mkdir -p "$APPS"
-    cat > "$APPS/cecelia.desktop" <<EOF
+
+if [ "$SCOPE" = "system" ]; then
+  # A wrapper any account runs: it exports the shared runtime env so `pixi run app` finds the shared
+  # Pixi env + Julia depot regardless of the caller's own PATH/home. World-readable + executable.
+  LAUNCH="$INSTALL_DIR/cecelia-launch.sh"
+  cat > "$LAUNCH" <<EOF
+#!/bin/sh
+export PIXI_HOME="$PIXI_HOME"
+export JULIAUP_DEPOT_PATH="$JULIAUP_DEPOT_PATH"
+export JULIA_DEPOT_PATH="$JULIA_DEPOT_PATH"
+export PATH="$PIXI_HOME/bin:$JULIAUP_DEPOT_PATH/bin:\$PATH"
+cd "$INSTALL_DIR" && exec "$PIXI" run app
+EOF
+  chmod 755 "$LAUNCH"
+  chmod -R a+rX "$INSTALL_DIR"          # ensure every account can read/execute the shared tree
+  case "$OS" in
+    Linux)
+      APPS="/usr/share/applications"; mkdir -p "$APPS"
+      cat > "$APPS/cecelia.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Cecelia
+Comment=Image analysis
+Exec=$LAUNCH
+Icon=$ICON
+Terminal=true
+Categories=Science;Education;
+EOF
+      say "Installed a system-wide 'Cecelia' application-menu entry."
+      ;;
+    Darwin)
+      # macOS is multi-user too: put the launcher at the top of /Applications (all-users, root-owned,
+      # world-executable) rather than buried inside the install dir, mirroring the Linux all-users
+      # /usr/share/applications entry. Points at the shared-runtime wrapper.
+      CMD="/Applications/Cecelia.command"
+      cat > "$CMD" <<EOF
+#!/bin/sh
+exec "$LAUNCH"
+EOF
+      chmod 755 "$CMD"
+      say "Installed /Applications/Cecelia.command — any user can double-click to launch."
+      ;;
+  esac
+  say "Done (system-wide). Any user can launch Cecelia; updates are admin-only (re-run this as root)."
+else
+  case "$OS" in
+    Linux)
+      APPS="$HOME/.local/share/applications"; mkdir -p "$APPS"
+      cat > "$APPS/cecelia.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=Cecelia
@@ -150,18 +251,18 @@ Icon=$ICON
 Terminal=true
 Categories=Science;Education;
 EOF
-    say "Installed a 'Cecelia' entry in your application menu."
-    ;;
-  Darwin)
-    mkdir -p "$HOME/Applications"
-    CMD="$HOME/Applications/Cecelia.command"
-    cat > "$CMD" <<EOF
+      say "Installed a 'Cecelia' entry in your application menu."
+      ;;
+    Darwin)
+      mkdir -p "$HOME/Applications"
+      CMD="$HOME/Applications/Cecelia.command"
+      cat > "$CMD" <<EOF
 #!/bin/sh
 cd "$INSTALL_DIR" && exec "$PIXI" run app
 EOF
-    chmod +x "$CMD"
-    say "Installed ~/Applications/Cecelia.command — double-click to launch."
-    ;;
-esac
-
-say "Done. Launch Cecelia from your menu, or run:  cd \"$INSTALL_DIR\" && \"$PIXI\" run app"
+      chmod +x "$CMD"
+      say "Installed ~/Applications/Cecelia.command — double-click to launch."
+      ;;
+  esac
+  say "Done. Launch Cecelia from your menu, or run:  cd \"$INSTALL_DIR\" && \"$PIXI\" run app"
+fi

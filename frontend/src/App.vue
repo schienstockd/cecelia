@@ -3,8 +3,10 @@ import { onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWsStore } from './stores/ws'
 import { useSettingsStore } from './stores/settings'
+import { useAppControlStore } from './stores/appControl'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import HintCallout from './components/HintCallout.vue'
 import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
@@ -12,8 +14,10 @@ import LabLogPanel from './components/LabLogPanel.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
+const appCtl = useAppControlStore()
 onMounted(async () => {
   ws.connect()
+  appCtl.checkUpdate()   // surfaces the header update badge app-wide (fire-and-forget)
   // Reconcile the discrete-GPU flag with the backend once at startup. The flag is a launch-time
   // decision (the bridge starts lazily on first open), so it must be right before then.
   //  - explicit user choice saved → push it, so the backend uses it even after a backend restart
@@ -50,6 +54,9 @@ const bare = computed(() => route.meta.bare === true)
     <div class="cc-content">
       <AppSidebar />
       <main class="cc-main">
+        <!-- first-launch only: browsers don't stop the server on tab close -->
+        <HintCallout hint-key="shutdown"
+          text="When you're done, use the Quit button (bottom-left) — not the browser tab — to stop Cecelia cleanly." />
         <RouterView v-slot="{ Component }">
           <KeepAlive include="ChainModule">
             <component :is="Component" />

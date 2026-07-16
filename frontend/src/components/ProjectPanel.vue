@@ -25,15 +25,13 @@ const typeOptions: { value: ProjectType; label: string; tip: string }[] = [
   { value: 'flow',    label: 'Flow',      tip: 'Flow or mass cytometry (no image data).' },
 ]
 
-function validate(): boolean {
-  nameError.value = ''
-  if (!newName.value.trim()) { nameError.value = 'Name is required.'; return false }
-  return true
-}
-
 async function createProject() {
-  if (!validate()) return
-  const ok = await projectMeta.createProject(newName.value.trim(), newType.value)
+  nameError.value = ''
+  // First-ever project: don't block on naming — fall back to a default (onboarding). Later projects
+  // still require an explicit name. See docs/todo/ONBOARDING_PLAN.md (P3).
+  const name = newName.value.trim() || (projectMeta.recent.length === 0 ? 'My first project' : '')
+  if (!name) { nameError.value = 'Name is required.'; return }
+  const ok = await projectMeta.createProject(name, newType.value)
   if (ok) emit('close')
 }
 
@@ -50,6 +48,7 @@ onMounted(async () => {
   await projectMeta.fetchRecent()
   if (projectMeta.recent.length === 0) {
     tab.value = 'new'
+    newName.value = 'My first project'   // first-project pre-fill; user can rename (P3)
   } else {
     // Auto-select the most recent project (first in the sorted list)
     selectedUid.value = projectMeta.current?.uid ?? projectMeta.recent[0].uid
@@ -106,7 +105,7 @@ const typeColour: Record<ProjectType, string> = {
 
         <div v-if="projectMeta.recent.length === 0" class="pp-empty">
           <i class="pi pi-folder" style="font-size:2rem; opacity:0.2" />
-          <p>No recent projects.</p>
+          <p>No projects yet.<br>A project holds all your images and analysis for one experiment.</p>
           <button class="btn-ghost btn-sm" @click="tab = 'new'">
             <i class="pi pi-plus" /> Create your first project
           </button>

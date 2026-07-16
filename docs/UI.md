@@ -402,6 +402,25 @@ The frontend never maintains a copy of task definitions — they're fetched from
 
 ---
 
+## Onboarding — setup wizard, first-use hints, empty states
+
+New-user UX (see `docs/todo/ONBOARDING_PLAN.md`):
+
+- **First-launch setup wizard** — `frontend/src/modules/SetupModule.vue`, a `bare` route `/setup`
+  (full-window, no shell). The boot guard in `main.ts` (`router.beforeEach`) asks the backend once via
+  `appControl.refreshStartup()` (reads `/api/diagnostics` `setupRequired`); while setup is required
+  every route redirects to `/setup`, and once done `/setup` bounces back to `/import`. The wizard
+  picks a projects dir (`GET /api/setup/defaults`, live `GET /api/setup/validate`, `POST
+  /api/setup/init`); the backend writes `custom.toml` (`Cecelia.set_projects_dir!`).
+- **First-use hints** — `frontend/src/components/HintCallout.vue`: a one-line, dismiss-permanently
+  callout keyed by id in `localStorage` (`cc.hint.<id>`). Module pages declare one via `ModuleLayout`'s
+  `hint` + `hint-key` props (don't hand-roll it per page); the global "use the bottom-left Quit button,
+  not the browser tab" hint is in `App.vue`.
+- **Empty states** — already exist: `ProjectPanel.vue` `.pp-empty` (no projects) and `ImageTable.vue`
+  `.empty-state` (no images). Enrich the copy there; don't add a parallel component.
+- **Shutdown** — reuse the existing sidebar-footer Quit (bottom-left) / Settings control
+  (`appControl.quit()`); do **not** add another. Onboarding only *points at* it via the hint.
+
 ## ModuleLayout component
 
 `frontend/src/components/ModuleLayout.vue`

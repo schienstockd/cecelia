@@ -12,37 +12,51 @@
 #   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex"
 #   powershell -ExecutionPolicy Bypass -c "$env:CECELIA_CHANNEL='dev'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex"
 #
+# Two install scopes ($env:CECELIA_INSTALL_SCOPE):
+#   user (default) — installs into your account only (%LOCALAPPDATA%\cecelia); no admin needed.
+#   system         — one shared install for all users (%ProgramFiles%\cecelia); run PowerShell as
+#                    Administrator. Pixi, Julia and the multi-GB env are provisioned inside the
+#                    install dir so every account shares one runtime; per-user config + projects
+#                    still live in %USERPROFILE%\.cecelia. Updates are then admin-only.
+#
 # NOTE: authored on Linux and not yet verified on Windows hardware — first real test is a
-# Windows CI runner. See docs/SHIPPING.md.
+# Windows CI runner. The system-scope path especially needs a real multi-user box. See docs/SHIPPING.md.
 #
 # Env overrides:  $env:CECELIA_CHANNEL = 'stable'|'dev' ;  $env:CECELIA_VERSION = 'v0.1.0' ;
-#                 $env:CECELIA_BRANCH = 'main' ;  $env:CECELIA_HOME = 'C:\path'
+#                 $env:CECELIA_BRANCH = 'main' ;  $env:CECELIA_INSTALL_SCOPE = 'user'|'system' ;
+#                 $env:CECELIA_HOME = 'C:\path'
 $ErrorActionPreference = 'Stop'
 
-$Repo       = 'schienstockd/cecelia'
-$InstallDir = if ($env:CECELIA_HOME) { $env:CECELIA_HOME } else { Join-Path $env:LOCALAPPDATA 'cecelia' }
-$Channel    = if ($env:CECELIA_CHANNEL) { $env:CECELIA_CHANNEL } else { 'stable' }
-$Version    = if ($env:CECELIA_VERSION) { $env:CECELIA_VERSION } else { 'latest' }
+$Repo    = 'schienstockd/cecelia'
+$Channel = if ($env:CECELIA_CHANNEL) { $env:CECELIA_CHANNEL } else { 'stable' }
+$Version = if ($env:CECELIA_VERSION) { $env:CECELIA_VERSION } else { 'latest' }
+$Scope   = if ($env:CECELIA_INSTALL_SCOPE) { $env:CECELIA_INSTALL_SCOPE } else { 'user' }
 
 function Say($m) { Write-Host "[cecelia] $m" -ForegroundColor Cyan }
 
-# ── Pixi ──────────────────────────────────────────────────────────────────────
-$Pixi = (Get-Command pixi -ErrorAction SilentlyContinue).Source
-if (-not $Pixi) {
-  $Pixi = Join-Path $env:USERPROFILE '.pixi\bin\pixi.exe'
-  if (-not (Test-Path $Pixi)) {
-    Say 'Installing Pixi...'
-    powershell -ExecutionPolicy Bypass -c "irm -useb https://pixi.sh/install.ps1 | iex"
-  }
+# ── Install location + scope ────────────────────────────────────────────────────
+if ($env:CECELIA_HOME) {
+  $InstallDir = $env:CECELIA_HOME
+} elseif ($Scope -eq 'system') {
+  $InstallDir = Join-Path $env:ProgramFiles 'cecelia'
+} else {
+  $InstallDir = Join-Path $env:LOCALAPPDATA 'cecelia'
 }
 
-# ── Julia (juliaup via winget / MS Store) ──────────────────────────────────────
-$Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
-if (-not $Julia -and -not (Test-Path (Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe'))) {
-  Say 'Installing Julia (juliaup)...'
-  winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
+# System scope writes under Program Files and provisions a shared runtime inside the install dir, so
+# it needs an elevated shell. User scope keeps Pixi/Juliaup in their usual per-user homes.
+if ($Scope -eq 'system') {
+  $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+  if (-not $admin) { throw "System-wide install writes to $InstallDir and must be run from an elevated (Administrator) PowerShell." }
+  $PixiHome = Join-Path $InstallDir 'pixi'
+  $JuliaupDepot = Join-Path $InstallDir 'juliaup'
+  $env:PIXI_HOME = $PixiHome
+  $env:JULIAUP_DEPOT_PATH = $JuliaupDepot
+  $env:JULIA_DEPOT_PATH = (Join-Path $JuliaupDepot 'depot')
+} else {
+  $PixiHome = if ($env:PIXI_HOME) { $env:PIXI_HOME } else { Join-Path $env:USERPROFILE '.pixi' }
+  $env:PIXI_HOME = $PixiHome
 }
-if (-not $Julia) { $Julia = Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe' }
 
 # ── Fetch Cecelia (release bundle, or branch source for the dev channel) ───────
 if ($Channel -eq 'dev') {
@@ -81,7 +95,8 @@ if (Test-Path $InstallDir) { Remove-Item -Recurse -Force $InstallDir }
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 # A release bundle extracts flat (api\, app\, …); a branch archive wraps everything in one
 # `<repo>-<branch>\` dir, so strip that leading component for the dev channel only. bsdtar ships
-# with Windows 10+.
+# with Windows 10+. Extract BEFORE provisioning tools so the shared runtime (system scope) lands
+# inside InstallDir.
 if ($Channel -eq 'dev') {
   tar -xzf $Tmp -C $InstallDir --strip-components=1
 } else {
@@ -89,15 +104,34 @@ if ($Channel -eq 'dev') {
 }
 Remove-Item $Tmp
 
+# ── Pixi ──────────────────────────────────────────────────────────────────────
+# System scope: always into the shared $PixiHome. User scope: reuse one on PATH / in ~\.pixi.
+$Pixi = Join-Path $PixiHome 'bin\pixi.exe'
+if (-not (Test-Path $Pixi)) {
+  $onPath = if ($Scope -eq 'system') { $null } else { (Get-Command pixi -ErrorAction SilentlyContinue).Source }
+  if ($onPath) {
+    $Pixi = $onPath
+  } else {
+    if ($Scope -eq 'system') { Say "Installing Pixi into the shared runtime ($PixiHome)..." } else { Say "Installing Pixi ($PixiHome)..." }
+    powershell -ExecutionPolicy Bypass -c "irm -useb https://pixi.sh/install.ps1 | iex"
+  }
+}
+
+# ── Julia (juliaup via winget / MS Store) ──────────────────────────────────────
+# System scope threads a shared depot via $env:JULIAUP_DEPOT_PATH (set above). Windows julia
+# resolution is the least-verified path — see the note at the top of this file.
+$Julia = (Get-Command julia -ErrorAction SilentlyContinue).Source
+if (-not $Julia -and -not (Test-Path (Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe'))) {
+  Say 'Installing Julia (juliaup)...'
+  winget install --id 9NJNWW8PVKMN -e --source msstore --accept-package-agreements --accept-source-agreements
+}
+if (-not $Julia) { $Julia = Join-Path $env:USERPROFILE '.juliaup\bin\julia.exe' }
+
 # ── bioformats2raw (image import) ───────────────────────────────────────────────
-# ~190 MB, so fetched here rather than shipped in the bundle. The app resolves it at
-# <install>\bioformats2raw\bin (bioformats2raw_bin() in config.jl); Java comes from the Pixi env.
-# Skipped if a system bioformats2raw is already on PATH (the app falls back to PATH).
 if (Get-Command bioformats2raw -ErrorAction SilentlyContinue) {
   Say 'Using bioformats2raw already on PATH.'
 } else {
-  # Pinned version (reproducible installs — not their `latest`, so our import engine can't change
-  # under us on an upstream release). Override with $env:CECELIA_BIOFORMATS2RAW_VERSION.
+  # Pinned version (reproducible installs). Override with $env:CECELIA_BIOFORMATS2RAW_VERSION.
   $B2rVersion = if ($env:CECELIA_BIOFORMATS2RAW_VERSION) { $env:CECELIA_BIOFORMATS2RAW_VERSION } else { '0.12.1' }
   $B2rUrl = "https://github.com/glencoesoftware/bioformats2raw/releases/download/v$B2rVersion/bioformats2raw-$B2rVersion.zip"
   Say "Fetching bioformats2raw $B2rVersion (image import; ~190 MB)..."
@@ -130,18 +164,41 @@ if ($Channel -eq 'dev') {
 }
 Pop-Location
 
-# Record what was installed (channel + tag/commit) for provenance and bug reports.
+# Record provenance + scope (scope tells the in-app updater whether it may self-update).
 Set-Content -Path (Join-Path $InstallDir '.cecelia-version') -Value $Provenance
-Say "Installed: $Provenance"
+Set-Content -Path (Join-Path $InstallDir '.cecelia-scope')   -Value $Scope
+Say "Installed: $Provenance ($Scope scope)"
 
 # ── Start Menu shortcut ───────────────────────────────────────────────────────
-$Lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'Cecelia.lnk'
-$Shell = New-Object -ComObject WScript.Shell
-$Shortcut = $Shell.CreateShortcut($Lnk)
-$Shortcut.TargetPath       = $Pixi
-$Shortcut.Arguments        = 'run app'
-$Shortcut.WorkingDirectory = $InstallDir
-$Shortcut.Save()
-Say "Installed a 'Cecelia' Start Menu shortcut."
+if ($Scope -eq 'system') {
+  # A wrapper any account runs: exports the shared runtime env, then `pixi run app`. The shortcut goes
+  # in the All-Users Start Menu (CommonPrograms).
+  $Launch = Join-Path $InstallDir 'cecelia-launch.cmd'
+  @"
+@echo off
+set "PIXI_HOME=$PixiHome"
+set "JULIAUP_DEPOT_PATH=$JuliaupDepot"
+set "JULIA_DEPOT_PATH=$JuliaupDepot\depot"
+set "PATH=$PixiHome\bin;%PATH%"
+cd /d "$InstallDir" && "$Pixi" run app
+"@ | Set-Content -Path $Launch -Encoding ASCII
+  $Programs = [Environment]::GetFolderPath('CommonPrograms')
+  $Lnk = Join-Path $Programs 'Cecelia.lnk'
+  $Shell = New-Object -ComObject WScript.Shell
+  $Shortcut = $Shell.CreateShortcut($Lnk)
+  $Shortcut.TargetPath       = $Launch
+  $Shortcut.WorkingDirectory = $InstallDir
+  $Shortcut.Save()
+  Say "Installed an all-users 'Cecelia' Start Menu shortcut. Updates are admin-only (re-run this elevated)."
+} else {
+  $Lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'Cecelia.lnk'
+  $Shell = New-Object -ComObject WScript.Shell
+  $Shortcut = $Shell.CreateShortcut($Lnk)
+  $Shortcut.TargetPath       = $Pixi
+  $Shortcut.Arguments        = 'run app'
+  $Shortcut.WorkingDirectory = $InstallDir
+  $Shortcut.Save()
+  Say "Installed a 'Cecelia' Start Menu shortcut."
+}
 
-Say "Done. Launch Cecelia from the Start Menu, or run:  cd `"$InstallDir`"; & `"$Pixi`" run app"
+Say "Done. Launch Cecelia from the Start Menu."
