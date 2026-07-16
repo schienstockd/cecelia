@@ -15,13 +15,20 @@ import sys
 import threading
 import time
 import urllib.request
-from functools import lru_cache
 
 import dask.array as da
 import napari
 import numpy as np
-import zarr
 from qtpy.QtCore import QTimer
+
+# Shared cecelia readers/helpers — the bridge delegates to these instead of hand-rolling its own.
+#   napari_utils : generic viewer.add_* / colormap / view-state / clip-plane / movie builders
+#                  (shared with coastal); only needs numpy, so top-level.
+#   zarr_utils   : the ONE way to open an OME-ZARR + read its NGFF axes/scale (open_as_zarr,
+#                  read_axes, read_scale); light deps, so top-level.
+# ome_xml_utils (read_pixel_unit / read_time_increment) is imported LAZILY where used, so ome-types'
+# pydantic build cost is paid on first image open rather than at bridge startup.
+from cecelia.utils import napari_utils, zarr_utils
 
 HOST = "localhost"
 PORT = 7655
@@ -46,27 +53,15 @@ _CATEGORICAL_RGBA = [
 ]
 
 
-def _hex_to_rgba(hex_str):
-    """'#rrggbb' → (r, g, b, 1.0) floats in 0..1. None/blank → None."""
-    if not hex_str:
-        return None
-    s = hex_str.lstrip('#')
-    if len(s) != 6:
-        return None
-    try:
-        return (int(s[0:2], 16) / 255., int(s[2:4], 16) / 255., int(s[4:6], 16) / 255., 1.0)
-    except ValueError:
-        return None
+# Colour hex↔RGBA conversion lives in the shared toolkit (napari_utils.hex_to_rgba / rgba_to_hex)
+# so every napari colour path parses hex ONE way; the bridge just calls it.
 
-
-def _rgba_to_hex(rgba):
-    """(r, g, b, a) floats → '#rrggbb'."""
-    return '#{:02x}{:02x}{:02x}'.format(
-        *(max(0, min(255, int(round(c * 255)))) for c in rgba[:3]))
-
-# The shared label-props reader (cecelia.utils.label_props_utils) resolves via the editable
-# `cecelia` install in the pixi env (python/pyproject.toml + the pixi `cecelia` dep) — no sys.path
-# manipulation needed. Launched via `pixi run napari`.
+# The shared helpers (cecelia.utils.napari_utils generic layer/colour builders, and
+# cecelia.utils.label_props_utils for cell data) resolve via the editable `cecelia` install in the
+# pixi env (python/pyproject.toml + the pixi `cecelia` dep) — no sys.path manipulation needed.
+# napari_utils is imported at module top (it only needs numpy); the heavier cecelia data readers
+# (label_props_utils → anndata) stay lazily imported inside the methods that use them. Launched via
+# `pixi run napari`.
 
 
 # ── State class (mirrors NapariUtils) ─────────────────────────────────────────
@@ -127,11 +122,16 @@ class NapariState:
         self._sel_ctx = None
         self._crop_prev_visible = None   # any in-progress crop draw is void once a new image loads
 
-        self._im_data = _open_zarr_multiscale(path, as_dask=as_dask)
+        # open the store + read its geometry through the shared cecelia readers (the same code the
+        # analysis pipeline uses) — one implementation of "open an OME-ZARR, read its axes/scale".
+        # ome_xml_utils is imported lazily so ome-types' pydantic build cost is paid on first open,
+        # not at bridge startup.
+        from cecelia.utils import ome_xml_utils
+        self._im_data, _ = zarr_utils.open_as_zarr(path, as_dask=as_dask)
 
-        # read axes and scale from .zattrs (series-level, set by bioformats2raw)
-        self._axes = _read_axes(path)
-        full_scale = _read_scale(path)   # one value per axis, e.g. [t, c, z, y, x]
+        # read axes and scale from the NGFF metadata (series-level, set by bioformats2raw)
+        self._axes = zarr_utils.read_axes(path)
+        full_scale = zarr_utils.read_scale(path)   # one value per axis, e.g. [t, c, z, y, x]
 
         # channel axis index and scale without channel dimension
         self._channel_axis = None
@@ -145,14 +145,13 @@ class NapariState:
                 self._im_scale = [s for i, s in enumerate(full_scale)
                                   if i != self._channel_axis]
         if self._im_scale is not None:
-            unit = _read_unit_from_ome_xml(path)
+            unit = ome_xml_utils.read_pixel_unit(path)
             self._im_units = tuple(unit for _ in self._im_scale)
 
         # Delegate the actual layer creation to the SHARED generic helper (cecelia.utils.napari_utils,
         # which coastal mirrors): per-channel colormaps, additive blending, contrast-from-sample and the
         # list-name guard live there so both projects render identically. The bridge keeps all the
         # disk/scale/units logic above. See docs/todo/CECELIA_NAPARI_UPSTREAM_PLAN.md.
-        from cecelia.utils import napari_utils
         napari_utils.add_image(
             self._viewer, self._im_data,
             scale=self._im_scale, units=self._im_units,
@@ -259,7 +258,8 @@ class NapariState:
             ov.visible = False
             return
         t_idx = axes.index("t")
-        interval = _read_time_increment(path)        # seconds per frame, or None
+        from cecelia.utils import ome_xml_utils
+        interval = ome_xml_utils.read_time_increment(path)   # seconds per frame, or None
         def _update(event=None):
             try:
                 step = self._viewer.dims.current_step
@@ -289,7 +289,6 @@ class NapariState:
         if label_files is None:
             label_files = [f"{value_name}.zarr"]
 
-        import os
         for label_filename in label_files:
             # name by the value_name (drop the ".zarr") → "(C) Labels", not "(C.zarr) Labels"
             stem = label_filename[:-5] if label_filename.endswith(".zarr") else label_filename
@@ -302,20 +301,16 @@ class NapariState:
                     print(f"[show_labels] skip: not on disk: {labels_path}", flush=True)
                     continue
 
-                store = zarr.open(labels_path, mode="r")
-                n_levels = len(self._im_data) if self._im_data else 1
-                arrays, lvl = [], 0
-                while lvl < n_levels and str(lvl) in store:
-                    arrays.append(da.from_zarr(store[str(lvl)]))
-                    lvl += 1
-                if not arrays:
-                    arrays = [da.from_zarr(store)]
+                # labels are a flat multiscales store (segmentation_utils writes axes + numeric
+                # `datasets`), same layout as an image — open via the shared reader. Cap to the
+                # image's level count so label pyramid levels line up with the image's.
+                n_levels = len(self._im_data) if self._im_data else None
+                arrays, _ = zarr_utils.open_zarr(labels_path, multiscales=n_levels, as_dask=True)
                 # a present-but-unreadable label set is a real error — surface it, don't no-op.
                 if not arrays:
                     raise RuntimeError(f"no label arrays loaded from {labels_path}")
 
                 _remove_layer(self._viewer, layer_name)
-                from cecelia.utils import napari_utils
                 layer = napari_utils.add_labels(
                     self._viewer, arrays if len(arrays) > 1 else arrays[0],
                     name=layer_name, scale=self._im_scale, units=self._im_units, opacity=0.7,
@@ -340,10 +335,10 @@ class NapariState:
             levels = sorted({int(round(v)) for v in finite})
             lvl_colour = {}
             for i, lvl in enumerate(levels):
-                ov = _hex_to_rgba(overrides.get(str(lvl)))                     # user pop colour, or…
+                ov = napari_utils.hex_to_rgba(overrides.get(str(lvl)))         # user pop colour, or…
                 rgba = ov if ov is not None else _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)]  # …default
                 lvl_colour[lvl] = rgba
-                legend[str(lvl)] = _rgba_to_hex(rgba)
+                legend[str(lvl)] = napari_utils.rgba_to_hex(rgba)
             for lab, v in zip(labels, vals):
                 color_dict[int(lab)] = (0., 0., 0., 0.) if np.isnan(v) else lvl_colour[int(round(v))]
         elif len(finite):
@@ -577,7 +572,6 @@ class NapariState:
             return self._colcol_cache[key]
         import pandas as pd
         from cecelia.utils.label_props_utils import LabelPropsView
-        from cecelia.utils import napari_utils
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
         df = view.view_cols([column, "track_id"]).as_df()   # label + column (+ track_id) if present
@@ -618,7 +612,6 @@ class NapariState:
         tpath = os.path.join(self._task_dir, "labelProps", f"{value_name}__tracks.h5ad")
         if "track_id" not in cell_df.columns or not os.path.isfile(tpath):
             return None
-        from cecelia.utils import napari_utils
         tview = LabelPropsView(tpath)
         tdf = tview.view_cols([column]).as_df()      # label (= track_id) + column
         tview.close()
@@ -634,7 +627,6 @@ class NapariState:
         (sorted) take a user population's colour where one covers them (`overrides` = {value(str) ->
         '#hex'}), else `_CATEGORICAL_RGBA[i]`; missing (-1) → grey. Returns `(Colormap, legend)` where
         legend is `{value(str) -> '#hex'}`; `(None, {})` if there's nothing to map."""
-        import napari
         overrides = overrides or {}
         pv = sorted({float(v) for v in present_values})
         if not pv:
@@ -643,10 +635,10 @@ class NapariState:
         cmap_of, legend = {}, {}
         for i, v in enumerate(reals):
             key = str(int(v)) if float(v).is_integer() else str(v)     # match Julia _val_key
-            ov = _hex_to_rgba(overrides.get(key))
+            ov = napari_utils.hex_to_rgba(overrides.get(key))
             rgba = ov if ov is not None else _CATEGORICAL_RGBA[i % len(_CATEGORICAL_RGBA)]
             cmap_of[v] = rgba
-            legend[key] = _rgba_to_hex(rgba)
+            legend[key] = napari_utils.rgba_to_hex(rgba)
         for v in pv:
             if v < 0:
                 cmap_of[v] = (0.6, 0.6, 0.6, 1.0)        # missing → grey (≈ labels' transparent)
@@ -765,7 +757,6 @@ class NapariState:
                 _remove_layer(self._viewer, name)
             if len(sub) > 0:
                 props = {"track_id": sub[:, 0].astype(int).tolist()}
-                from cecelia.utils import napari_utils
                 # Three colouring modes (napari Tracks colour ONLY via color_by + a colormap):
                 #   1. colour-by column (whole _tracked only) → categorical Okabe–Ito colormaps_dict /
                 #      continuous viridis, keyed by the column;
@@ -980,7 +971,6 @@ class NapariState:
         mip, mip_scale, mip_units, (h, w) = self._z_mip()   # (t?,y,x) lazy dask + matching scale/units
         mip_layer = self._viewer.add_image(mip, name=CROP_MIP_LAYER, colormap="gray",
                                            blending="translucent", scale=mip_scale, units=mip_units)
-        from cecelia.utils import napari_utils
         napari_utils.set_contrast_from_sample(mip_layer)   # percentile contrast → the MIP isn't washed out
 
         # EMPTY rectangle layer (2-D y,x) in draw mode — the user draws ONE rectangle (like cell
@@ -1142,7 +1132,6 @@ class NapariState:
         self._restore_crop_visibility()
 
     def _apply_clip_planes(self, world_box):
-        from cecelia.utils import napari_utils
         disp = self._display_axes()
         for lyr in self._viewer.layers:
             if lyr.name in (CROP_LAYER, CROP_MIP_LAYER, SELECTION_LAYER):
@@ -1302,13 +1291,11 @@ class NapariState:
         """A durable, JSON-safe snapshot of the current view (camera + dims + per-layer display props),
         for zoom-to-source / animation. Delegates to the shared helper so the schema lives in one place
         (cecelia.utils.napari_utils; coastal can reuse it). See docs/todo/ANIMATION_PLAN.md."""
-        from cecelia.utils import napari_utils
         return napari_utils.capture_view_state(self._viewer)
 
     def apply_view_state(self, snapshot):
         """Re-apply a snapshot from `capture_view_state` to the current viewer (missing layers /
         unsettable attrs are skipped). Delegates to the shared helper."""
-        from cecelia.utils import napari_utils
         return napari_utils.apply_view_state(self._viewer, snapshot)
 
     # ── Screenshot ────────────────────────────────────────────────────────────
@@ -1361,7 +1348,6 @@ class NapariState:
         n_t = self._time_axis_len()
         if not n_t or n_t <= 1:
             raise RuntimeError("this image has a single timepoint — nothing to sweep")
-        from cecelia.utils import napari_utils
         frames = napari_utils.record_timelapse(
             self._viewer, path, t_axis_index=axes.index("t"), n_timepoints=n_t,
             fps=fps, canvas_only=canvas_only, scale=scale, t_start=t_start, t_end=t_end)
@@ -1372,7 +1358,6 @@ class NapariState:
         applied + captured with `steps` tween frames from the previous one (camera/contrast/colour/T
         interpolation). The "connect animation steps" render — see docs/todo/ANIMATION_PLAN.md (F2).
         Delegates to the shared `napari_utils.record_keyframes`. Needs ≥2 keyframes."""
-        from cecelia.utils import napari_utils
         frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps, canvas_only=canvas_only)
         return {"frames": frames, "path": path, "keyframes": len(keyframes)}
 
@@ -1382,165 +1367,10 @@ class NapariState:
         self._task_dir = path
 
 
-# ── OME-ZARR helpers ──────────────────────────────────────────────────────────
-
-def _series_base(path: str) -> str:
-    """Return the path containing resolution-level directories.
-    bioformats2raw: multiscales lives in path/0  → return path/0
-    flat OME-ZARR:  multiscales lives in path    → return path
-    Uses zarr API so it works for both zarr v2 (.zattrs) and zarr v3 (zarr.json).
-    """
-    import os
-    series = os.path.join(path, "0")
-    if not os.path.isdir(series):
-        return path
-    try:
-        g = zarr.open_group(series, mode='r')
-        if g.attrs.get("multiscales"):
-            return series
-    except Exception:
-        pass
-    return path
-
-
-# contrast-from-sample moved to the shared cecelia.utils.napari_utils.set_contrast_from_sample
-# (open_image delegates via napari_utils.add_image(contrast=True)); coastal mirrors it.
-
-
-def _open_zarr_multiscale(path: str, as_dask: bool = True) -> list:
-    """Return list of arrays, one per resolution level.
-    as_dask=True (default): lazy dask arrays — chunked, computed on demand.
-    as_dask=False: raw zarr arrays — direct chunk access, no dask overhead.
-    """
-    import os
-    base = _series_base(path)
-    store = zarr.open_group(base, mode='r')
-    arrays, level = [], 0
-    while str(level) in store:
-        arr = store[str(level)]
-        if as_dask:
-            arr = da.from_array(arr, chunks=arr.chunks)
-        arrays.append(arr)
-        level += 1
-    if not arrays:
-        root = zarr.open_group(path, mode='r')
-        arr = root[next(iter(root))] if len(root) else zarr.open(path, mode='r')
-        if as_dask:
-            arr = da.from_array(arr, chunks=arr.chunks)
-        arrays.append(arr)
-    return arrays
-
-
-def _read_multiscales_meta(path: str) -> dict:
-    """Return the first multiscales entry, checking series dir first.
-    Uses zarr API to handle both zarr v2 (.zattrs) and zarr v3 (zarr.json).
-    """
-    import os
-    for candidate in [os.path.join(path, "0"), path]:
-        if not os.path.isdir(candidate):
-            continue
-        try:
-            g = zarr.open_group(candidate, mode='r')
-            ms = g.attrs.get("multiscales")
-            if ms:
-                return ms[0] if isinstance(ms, list) else {}
-        except Exception:
-            continue
-    return {}
-
-
-def _read_axes(path: str):
-    ms = _read_multiscales_meta(path)
-    axes = ms.get("axes", [])
-    return [ax["name"] for ax in axes] if axes else None
-
-
-@lru_cache(maxsize=64)
-def _parse_ome_xml(xml_path: str, _mtime: float):
-    """Parse one OME-XML file. Cached on (path, mtime) — a long-lived bridge parses each store's
-    metadata at most once (mtime in the key invalidates it if the file is rewritten). `ome_types`
-    is imported lazily here so its pydantic model-build cost is paid on first use, not at import."""
-    from ome_types import from_xml
-    with open(xml_path) as f:
-        return from_xml(f.read())
-
-
-def _load_ome_xml(path: str):
-    """Locate and parse a store's OME-XML (OME/METADATA.ome.xml or METADATA.ome.xml), or None.
-    Shared by the readers below so a single open parses the file once instead of two or three times."""
-    import os
-    for candidate in (
-        os.path.join(path, "OME", "METADATA.ome.xml"),
-        os.path.join(path, "METADATA.ome.xml"),
-    ):
-        if os.path.isfile(candidate):
-            try:
-                return _parse_ome_xml(candidate, os.path.getmtime(candidate))
-            except Exception:
-                return None
-    return None
-
-
-def _read_unit_from_ome_xml(path: str) -> str:
-    """Read physical pixel unit from OME-XML metadata. Returns 'µm' as default."""
-    omexml = _load_ome_xml(path)
-    if omexml is not None:
-        try:
-            unit = omexml.images[0].pixels.physical_size_x_unit
-            if unit is not None:
-                return unit.value  # e.g. 'µm', 'nm', 'mm'
-        except Exception:
-            pass
-    return 'µm'
-
-
-def _read_scale_from_ome_xml(path: str, axes):
-    """Read physical pixel scale from OME-XML metadata, returning values in axis order."""
-    omexml = _load_ome_xml(path)
-    if omexml is None:
-        return None
-    try:
-        pixels = omexml.images[0].pixels
-        sizes = {
-            'x': pixels.physical_size_x,
-            'y': pixels.physical_size_y,
-            'z': pixels.physical_size_z,
-        }
-        return [float(sizes.get(ax.lower()) or 1.0) for ax in axes]
-    except Exception:
-        return None
-
-
-def _read_scale(path: str):
-    """Return scale list (one value per axis, physical units) or None."""
-    ms = _read_multiscales_meta(path)
-    for dataset in ms.get("datasets", [])[:1]:
-        for t in dataset.get("coordinateTransformations", []):
-            if t.get("type") == "scale":
-                return t["scale"]
-    # Fallback: read from OME-XML when zarr metadata has no coordinateTransformations.
-    axes = _read_axes(path)
-    if axes:
-        return _read_scale_from_ome_xml(path, axes)
-    return None
-
-
-def _read_time_increment(path: str):
-    """Seconds between timepoints from OME-XML `pixels.time_increment` (with its unit), or None.
-    Used for the timecourse timestamp overlay. Converts ms/min/h to seconds where the unit says so."""
-    omexml = _load_ome_xml(path)
-    if omexml is None:
-        return None
-    try:
-        pixels = omexml.images[0].pixels
-        inc = pixels.time_increment
-        if inc is None:
-            return None
-        secs = float(inc)
-        unit = getattr(getattr(pixels, "time_increment_unit", None), "value", None)
-        return {"ms": secs / 1000.0, "min": secs * 60.0, "h": secs * 3600.0}.get(unit, secs)
-    except Exception:
-        return None
+# OME-ZARR store opening + NGFF/OME-XML geometry reading now live in the shared cecelia readers
+# (cecelia.utils.zarr_utils: open_as_zarr/open_zarr, series_base, read_axes, read_scale;
+# cecelia.utils.ome_xml_utils: read_pixel_unit, read_time_increment). The bridge used to carry
+# its own copies — they were consolidated so images are opened ONE way. See docs/NAPARI.md.
 
 
 def _remove_layer(viewer: napari.Viewer, name: str):

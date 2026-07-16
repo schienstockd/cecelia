@@ -143,6 +143,34 @@ labeled DataFrame — one idiom, no guessing.
 
 ---
 
+## Image / OME-ZARR access — always go through `zarr_utils`
+
+**The same rule as H5AD above, for image data. Never hand-roll opening an image or reading its
+geometry — no bare `zarr.open` / `da.from_zarr` / `tifffile.imread` on image or label stores, and
+no reading NGFF `.zattrs` or OME-XML yourself.** There is ONE set of readers in
+`python/cecelia/utils/zarr_utils.py` (+ `ome_xml_utils.py`); use them everywhere — the pipeline
+tasks, the napari bridge, and any external consumer (e.g. coastal).
+
+| Need | Use |
+|---|---|
+| Open an OME-ZARR (image **or** labels) as a level list | `zarr_utils.open_as_zarr(path, as_dask=…)` / `open_zarr(path, multiscales=N, as_dask=…)` |
+| Resolve the series wrapper (bioformats2raw `0/` vs flat root) | `zarr_utils.series_base(path)` — structural (checks the `multiscales` attr, not the `.ome.zarr` suffix), read-only |
+| NGFF axes / per-axis scale | `zarr_utils.read_axes(path)` / `read_scale(path)` — NGFF-first, OME-XML fallback |
+| OME-XML parse / pixel unit / frame interval | `ome_xml_utils.load_ome_xml(path)` / `read_pixel_unit(path)` / `read_scale_from_ome_xml(path, axes)` / `read_time_increment(path)` |
+
+- **Do not** copy these readers into a new module or re-open a store you already opened. The napari
+  bridge did exactly that — a full private zarr/OME reader stack (`_open_zarr_multiscale`,
+  `_read_axes`, `_read_scale`, `_load_ome_xml`, …) that silently **drifted** from the shared ones —
+  and it has been consolidated back. One implementation; the second is the bug (see the divergent
+  re-implementation warning above).
+- **Reads are read-only.** `zarr_data_to_list` only ever mutates a store on a WRITE-mode open —
+  never on `mode='r'`.
+- **One sanctioned exception — file *creation*.** Writing a *new* multiscales store is the
+  producing task's job, via `zarr_utils.create_multiscales` / `save_dask_as_zarr_multiscales` (or
+  the segmentation writer), not a hand-rolled `zarr.open(..., 'w')`.
+
+---
+
 ## Spawning Python — always go through `run_py`
 
 **Never spawn a Python subprocess by hand. There is one launcher — `run_py` in `app/src/py_runner.jl`

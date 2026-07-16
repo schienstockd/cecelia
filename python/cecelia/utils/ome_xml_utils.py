@@ -7,6 +7,8 @@ or TIFF files.  The canonical on-disk location for OME-ZARR is:
 """
 
 import os
+from functools import lru_cache
+
 import tifffile
 from ome_types import from_xml, from_tiff, to_xml
 
@@ -223,23 +225,87 @@ def parse_meta_from_tiff(im_path):
 Parse metadata from zarr
 """
 def parse_meta_from_zarr(zarr_path):
-  # open XML file
-  # (I) at the moment, the XML is in the Zarr directory
-  # https://github.com/zarr-developers/zarr-specs/issues/112
-  # https://github.com/ome/ngff/issues/27
-  xml_path = os.path.join(zarr_path, "METADATA.ome.xml")
-  
-  if os.path.isfile(xml_path) is False:
-    xml_path = os.path.join(zarr_path, "OME", "METADATA.ome.xml")
-  
-  # https://codecap.org/typeerror-a-bytes-like-object-is-required-not-str/
-  with open(xml_path, "rb") as f:
-    xml_lines = f.readlines()
-    
-  # decode bytes
-  xml_lines = [x.decode() for x in xml_lines]
-  
-  return from_xml(xml_path)
+  # the canonical OME-XML location for an OME-ZARR store is {store}/OME/METADATA.ome.xml (older
+  # stores kept it at the root); load_ome_xml checks both. Raise if neither exists so callers that
+  # rely on metadata fail loudly rather than on a None dereference downstream.
+  omexml = load_ome_xml(zarr_path)
+  if omexml is None:
+    raise FileNotFoundError(f"no OME-XML metadata under {zarr_path}")
+  return omexml
+
+
+@lru_cache(maxsize=64)
+def _parse_ome_xml_cached(xml_path, _mtime):
+  """Parse one OME-XML file, cached on (path, mtime) so a long-lived reader (e.g. the napari
+  bridge) parses each store's metadata at most once; a rewrite (new mtime) invalidates the entry.
+  ome-types is already imported at module top, so the pydantic model-build cost is paid on the
+  first parse regardless."""
+  with open(xml_path) as f:
+    return from_xml(f.read())
+
+
+def load_ome_xml(path):
+  """Locate + parse a store's OME-XML (OME/METADATA.ome.xml, else the legacy root METADATA.ome.xml),
+  or None if absent/unparseable. The ONE OME-XML reader — the napari bridge and the pipeline both
+  go through here instead of re-opening the file themselves."""
+  for candidate in (
+      os.path.join(path, "OME", "METADATA.ome.xml"),
+      os.path.join(path, "METADATA.ome.xml"),
+  ):
+    if os.path.isfile(candidate):
+      try:
+        return _parse_ome_xml_cached(candidate, os.path.getmtime(candidate))
+      except Exception:
+        return None
+  return None
+
+
+def read_pixel_unit(path, default="µm"):
+  """Physical pixel unit from a store's OME-XML (physical_size_x_unit), e.g. 'µm'/'nm'/'mm'. The
+  RAW unit string is preserved (NOT normalised to 'um') so napari's unit-aware rendering matches
+  the image. Returns `default` when the metadata is absent."""
+  omexml = load_ome_xml(path)
+  if omexml is not None:
+    try:
+      unit = omexml.images[0].pixels.physical_size_x_unit
+      if unit is not None:
+        return unit.value
+    except Exception:
+      pass
+  return default
+
+
+def read_scale_from_ome_xml(path, axes):
+  """Per-axis physical pixel scale from OME-XML, in the given `axes` order (an axis with no size →
+  1.0), or None if there's no metadata. The fallback for stores whose NGFF metadata carries no
+  `coordinateTransformations` (see zarr_utils.read_scale)."""
+  omexml = load_ome_xml(path)
+  if omexml is None:
+    return None
+  try:
+    pixels = omexml.images[0].pixels
+    sizes = {"x": pixels.physical_size_x, "y": pixels.physical_size_y, "z": pixels.physical_size_z}
+    return [float(sizes.get(ax.lower()) or 1.0) for ax in axes]
+  except Exception:
+    return None
+
+
+def read_time_increment(path):
+  """Seconds between timepoints from a store's OME-XML `pixels.time_increment` (converting a
+  ms/min/h unit to seconds), or None. Used for the timecourse timestamp overlay."""
+  omexml = load_ome_xml(path)
+  if omexml is None:
+    return None
+  try:
+    pixels = omexml.images[0].pixels
+    inc = pixels.time_increment
+    if inc is None:
+      return None
+    secs = float(inc)
+    unit = getattr(getattr(pixels, "time_increment_unit", None), "value", None)
+    return {"ms": secs / 1000.0, "min": secs * 60.0, "h": secs * 3600.0}.get(unit, secs)
+  except Exception:
+    return None
 
 """
 Parse metadata from zarr file
