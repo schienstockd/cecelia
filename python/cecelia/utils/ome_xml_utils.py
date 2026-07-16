@@ -222,6 +222,17 @@ def parse_meta_from_tiff(im_path):
   return from_tiff(im_path)
 
 """
+Read ImageJ's own metadata (the ImageDescription tag) from a tiff
+"""
+def read_imagej_metadata(im_path):
+  """ImageJ's own metadata dict (the ImageDescription tag: `unit`, `spacing`, …) from a TIFF, or
+  None if the file carries no ImageJ metadata. DISTINCT from OME-XML (`parse_meta`) — ImageJ
+  calibration lives in its own tag. The single place a TIFF's ImageJ tags are read; raises if
+  `im_path` isn't a readable TIFF (a caller wanting a soft skip wraps it in try/except)."""
+  with tifffile.TiffFile(im_path) as tif:
+    return tif.imagej_metadata
+
+"""
 Parse metadata from zarr
 """
 def parse_meta_from_zarr(zarr_path):

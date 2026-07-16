@@ -17,6 +17,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import tifffile
 import zarr
 
 import cecelia.utils.zarr_utils as zu
@@ -146,6 +147,33 @@ class OmeXmlReaderTest(unittest.TestCase):
 
     def test_time_increment_seconds(self):
         self.assertEqual(ox.read_time_increment(self.store), 30.0)
+
+
+class ImageJMetadataTest(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.d, ignore_errors=True)
+
+    def test_reads_imagej_calibration(self):
+        p = os.path.join(self.d, "stack.tif")
+        tifffile.imwrite(p, np.zeros((4, 8, 8), dtype=np.uint16), imagej=True,
+                         metadata={"unit": "nm", "spacing": 0.5})
+        meta = ox.read_imagej_metadata(p)
+        self.assertIsNotNone(meta)
+        self.assertEqual(meta.get("unit"), "nm")
+        self.assertAlmostEqual(meta.get("spacing"), 0.5)
+
+    def test_plain_tiff_has_no_imagej_metadata(self):
+        p = os.path.join(self.d, "plain.tif")
+        tifffile.imwrite(p, np.zeros((8, 8), dtype=np.uint16))   # not imagej=True
+        self.assertIsNone(ox.read_imagej_metadata(p))
+
+    def test_non_tiff_raises(self):
+        # a soft skip is the caller's job (it wraps in try/except) — the helper surfaces the error
+        with self.assertRaises(Exception):
+            ox.read_imagej_metadata(os.path.join(self.d, "nope.tif"))
 
 
 if __name__ == "__main__":
