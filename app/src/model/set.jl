@@ -63,9 +63,10 @@ end
 function add_image!(s::CciaSet;
     name::String,
     kind::String           = s.kind,
-    meta::Dict{String,Any} = Dict{String,Any}()
+    meta::Dict{String,Any} = Dict{String,Any}(),
+    uid::String            = gen_uid()   # override to preserve a UID (e.g. legacy migration)
 )::CciaImage
-    img      = CciaImage(name=name, kind=kind)
+    img      = CciaImage(uid=uid, name=name, kind=kind)
     # s._dir = {proj}/1/{set_uid}  →  dirname×2 = {proj}
     proj_dir = dirname(dirname(s._dir))
     meta_dir = joinpath(proj_dir, "1", img.uid)

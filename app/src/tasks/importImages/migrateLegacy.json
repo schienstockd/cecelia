@@ -1,0 +1,28 @@
+{
+  "task": "migrateLegacy",
+  "fun_name": "importImages.migrateLegacy",
+  "label": "Migrate legacy image",
+  "category": "import",
+  "env": ["local"],
+  "resource_pool": "io",
+  "params": [
+    {
+      "key": "mode",
+      "label": "Image data",
+      "type": "select",
+      "default": "copy",
+      "options": [
+        { "value": "copy", "label": "Copy (self-contained)" },
+        { "value": "symlink", "label": "Link (keep on source drive)" }
+      ],
+      "tip": "Copy the image/label zarr into the new project (self-contained), or symlink it (smaller, but stays coupled to the source drive)."
+    },
+    {
+      "key": "rscript",
+      "label": "Rscript path (optional)",
+      "type": "string",
+      "default": "",
+      "tip": "Override the Rscript used to read the legacy ccid.rds. Leave blank to use what you set when importing (or 'Rscript' on PATH); set to point at your old cecelia renv Rscript."
+    }
+  ]
+}

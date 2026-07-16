@@ -115,6 +115,11 @@ export const useWsStore = defineStore('ws', () => {
             const uids = Array.isArray(data.imageUids) && data.imageUids.length
               ? (data.imageUids as string[]) : (imageUid ? [imageUid] : [])
             for (const u of uids) useProjectStore().bumpDataVersion(u)
+            // the task may have changed on-disk metadata (filepaths/labels/value_names) the store
+            // doesn't know yet — refresh the touched image so the viewer/table aren't stale (fixes
+            // legacy-migrate showing "No versions registered"; also import/segmentation/tracking).
+            const projectUid = useProjectMetaStore().current?.uid
+            if (projectUid && imageUid) useProjectStore().refreshImageMeta(projectUid, imageUid)
           }
         }
       }

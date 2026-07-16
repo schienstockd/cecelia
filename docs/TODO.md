@@ -43,6 +43,13 @@ when a set-level mutating task lands.
 
 ## Medium priority
 
+**#00082** — **User-drop-in custom modules (restore the old R capability)** 🔹 needs-input
+Let users add custom task/module functions by dropping files into their user dir (beside
+`custom.toml`, resolved by `config_dir()`) — no package edit/rebuild — like old R cecelia's
+`modules/` folder. The UI half is already directory-driven; the executable/registration half needs a
+runtime registry + `register_task!` + a discovery scan. Full design (locked decisions, phases, open
+questions) parked in [`docs/todo/CUSTOM_MODULES_PLAN.md`](todo/CUSTOM_MODULES_PLAN.md).
+
 **#00081** — **Clustered tracks (`trackclust`) don't show on napari open until the toggle is cycled**
 Opening an image in napari with the **cluster-tracks toggle already on** renders no ribbons; toggling
 it off then on shows them. Workaround exists (cycle the toggle), so medium, not high.
