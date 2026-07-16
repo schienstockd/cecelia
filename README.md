@@ -20,89 +20,79 @@ data. It is a ground-up reimplementation of the original R/Shiny
 
 ## Install & run
 
-Pick your operating system and follow it top to bottom: **install**, **point Cecelia at your projects
-folder**, then **run**. Image import works out of the box — **bioformats2raw and Java are bundled** in
-the release, so there is nothing extra to install for it.
+**Install**, then **run** — Cecelia asks where to keep your projects on first launch, so there's
+nothing to configure by hand. Image import works out of the box too — **bioformats2raw and Java are
+bundled** in the release.
 
 The installer sets up [Pixi](https://pixi.sh) + [Julia](https://julialang.org) if they're missing,
 downloads the latest release, and provisions the environment (a few GB on first run; later launches
-are fast).
+are fast). By default it installs **just for you** (no admin rights, into your account). For a shared
+lab machine, see [System-wide install](#system-wide-install-shared-machines) below.
 
 ### Linux
 
-**1 · Install** — in a terminal:
+Install — in a terminal:
 ```sh
 curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 ```
-
-**2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
-```sh
-mkdir -p ~/cecelia ~/cecelia-projects
-cat > ~/cecelia/custom.toml <<'EOF'
-[dirs]
-projects = "~/cecelia-projects"
-EOF
-```
-(`~/cecelia-projects` can be any folder; `~` is your home folder.)
-
-**3 · Run** — launch **Cecelia** from your applications menu (or `cd ~/.local/share/cecelia && pixi run app`).
-It opens in your browser at <http://localhost:8080>. Image import is ready to use.
+Run — launch **Cecelia** from your applications menu (or `cd ~/.local/share/cecelia && pixi run app`).
 
 ### macOS
 
-**1 · Install** — in Terminal:
+Install — in Terminal:
 ```sh
 curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh | sh
 ```
-
-**2 · Point at your projects folder** — create `~/cecelia/custom.toml`:
-```sh
-mkdir -p ~/cecelia ~/cecelia-projects
-cat > ~/cecelia/custom.toml <<'EOF'
-[dirs]
-projects = "~/cecelia-projects"
-EOF
-```
-(`~/cecelia-projects` can be any folder; `~` is your home folder.)
-
-**3 · Run** — open **Cecelia** from `~/Applications` (or `cd ~/.local/share/cecelia && pixi run app`).
-It opens in your browser at <http://localhost:8080>. Image import is ready to use.
+Run — open **Cecelia** from `~/Applications` (or `cd ~/.local/share/cecelia && pixi run app`).
 
 ### Windows
 
-**1 · Install** — in PowerShell (no admin rights needed; everything installs in your user account):
+Install — in PowerShell (no admin rights needed):
 ```powershell
 irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 | iex
 ```
+Run — launch **Cecelia** from the Start Menu.
 
-**2 · Point at your projects folder** — create `C:\Users\<you>\cecelia\custom.toml`:
-```powershell
-New-Item -ItemType Directory -Force "$HOME\cecelia","$HOME\cecelia-projects" | Out-Null
-Set-Content "$HOME\cecelia\custom.toml" "[dirs]`nprojects = `"~/cecelia-projects`""
-```
-*(No PowerShell? In Notepad, save the two lines below as `C:\Users\<you>\cecelia\custom.toml` with
-**"Save as type" → "All Files"** so it isn't saved as `.txt`; use forward slashes inside.)*
-```toml
-[dirs]
-projects = "~/cecelia-projects"
-```
+### First launch — pick your projects folder
 
-**3 · Run** — launch **Cecelia** from the Start Menu. It opens in your browser at
-<http://localhost:8080>. Image import is ready to use.
+Cecelia opens in your browser at <http://localhost:8080>. The **first** time, a one-screen setup
+wizard asks where to store your projects — type or accept a folder (it's created if it doesn't exist)
+and you're done. Image import is ready to use.
 
-> **After editing `custom.toml`, restart Cecelia** (close its window and open it again). The launcher
-> window then shows `projects_dir = …your folder…` instead of the placeholder.
->
-> **Advanced:** `custom.toml` lives in `~/cecelia`; point elsewhere with `CECELIA_DEV_DIR`. To use
-> your *own* bioformats2raw instead of the bundled one, add `bioformats2raw = "/path/to/bioformats2raw"`
-> under `[dirs]`. Every setting is listed in the bundled `app/config.toml`.
+Your choice is saved to **`~/.cecelia/custom.toml`** (`%USERPROFILE%\.cecelia\custom.toml` on
+Windows) — a per-user file you never have to edit by hand. To move the folder later, delete that file
+and relaunch to get the wizard again, or edit `dirs.projects` in it directly.
+
+> **Advanced:** to use your *own* bioformats2raw instead of the bundled one, add
+> `bioformats2raw = "/path/to/bioformats2raw"` under `[dirs]` in `~/.cecelia/custom.toml`. Every
+> setting is listed in the bundled `app/config.toml`.
+
+### System-wide install (shared machines)
+
+For a shared or lab workstation, install **once as an administrator** and every account uses the same
+copy. Pixi, Julia and the environment are provisioned inside the install directory so all users share
+one runtime — but each user still gets **their own** projects folder and settings (config always
+stays per-user in `~/.cecelia`, so every account runs its own setup wizard on first launch).
+
+Set `CECELIA_INSTALL_SCOPE=system` and run elevated:
+
+| OS | Command | Installs to |
+|----|---------|-------------|
+| Linux | `curl -LsSf https://raw.githubusercontent.com/schienstockd/cecelia/main/install.sh \| CECELIA_INSTALL_SCOPE=system sudo -E sh` | `/opt/cecelia` |
+| macOS | *(same command as Linux)* | `/Applications/cecelia` |
+| Windows | in an **elevated** PowerShell: `$env:CECELIA_INSTALL_SCOPE='system'; irm https://raw.githubusercontent.com/schienstockd/cecelia/main/install.ps1 \| iex` | `%ProgramFiles%\cecelia` |
+
+Every account gets a launcher (application menu / Start Menu). Because the files are admin-owned,
+**updates are admin-only**: the in-app Update button defers to an administrator, who re-runs the same
+command elevated. (The default per-user install can self-update in-app.)
 
 ---
 
 ## Updating
 
 Re-run the install command for your OS, run `pixi run update` from the install directory, or use the
-in-app **Update** button when a new release is available.
+in-app **Update** button when a new release is available. (In-app update applies to a per-user
+install; a system-wide install is updated by re-running the installer as an administrator.)
 
 ---
 
