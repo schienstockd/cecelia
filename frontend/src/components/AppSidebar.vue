@@ -193,12 +193,16 @@ function isNavDisabled(item: NavItem): boolean {
     <!-- ── Lab log ──────────────────────────────────────────────────────────
          Per-project append-only analysis memory (you + Claude). Like the viewer, a floating panel
          toggled here (see App.vue / LabLogPanel). -->
-    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen }"
+    <button class="viewer-cta lablog-cta" :class="{ 'viewer-on': settings.labLogPanelOpen, 'lablog-unseen': !!settings.labLogUnseen }"
             style="margin-top: 0.4rem"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
-            v-tooltip.right="'Lab log: append-only analysis notes for this project (you + Claude). Floating panel — drag it anywhere.'">
+            v-tooltip.right="settings.labLogUnseen
+              ? ('Claude noted: ' + settings.labLogUnseen)
+              : 'Lab log: append-only analysis notes for this project (you + Claude). Floating panel — drag it anywhere.'">
       <i class="pi pi-book viewer-cta-icon" />
       <span class="viewer-cta-title">Lab log</span>
+      <!-- badge: Claude added something while the panel was closed (cleared on open) -->
+      <i v-if="settings.labLogUnseen" class="pi pi-sparkles lablog-badge" />
       <i :class="['pi', settings.labLogPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
     </button>
 
@@ -349,6 +353,9 @@ function isNavDisabled(item: NavItem): boolean {
 .viewer-cta-icon { font-size: 0.95rem; color: var(--cc-viewer); flex-shrink: 0; }
 .viewer-cta-title { flex: 1; min-width: 0; font-size: 0.78rem; font-weight: 700; }
 .viewer-cta-state { font-size: 0.8rem; opacity: 0.75; flex-shrink: 0; }
+/* badge: Claude added a lab-log note while the panel was closed */
+.lablog-badge { font-size: 0.8rem; color: var(--cc-accent); flex-shrink: 0; margin-left: 0.2rem; }
+.lablog-cta.lablog-unseen { border-color: var(--cc-accent); }
 /* Lab log CTA: a neutral/whiteish variant so it reads as its own thing, distinct from the coloured
    Viewer control. Overrides the .viewer-cta base (defined above → these win on equal specificity). */
 .lablog-cta .viewer-cta-icon { color: #e6edf3; }

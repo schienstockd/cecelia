@@ -4,7 +4,9 @@
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useWsStore } from '../stores/ws'
+import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES } from '../utils/observerAuto'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import {
@@ -107,7 +109,14 @@ async function askClaude() {
       observerNote.value = res.error ?? 'Assistant unavailable.'
     } else if (res.ok) {
       observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
+      const claudeBefore = entries.value.filter(e => authorKind(e.author) === 'claude').length
       await load()   // surface any new [Claude] entry the assistant appended
+      const claudeNow = entries.value.filter(e => authorKind(e.author) === 'claude')
+      // if it actually appended AND the panel is closed, flag the sidebar badge with a preview
+      if (claudeNow.length > claudeBefore && !settings.labLogPanelOpen) {
+        const line = (claudeNow[0]?.lines ?? []).find(l => l.trim()) ?? 'added a note'
+        settings.labLogUnseen = line.replace(/^[-*]\s*/, '').trim()
+      }
     } else {
       observerNote.value = res.error ?? 'The assistant could not complete.'
     }
@@ -117,6 +126,29 @@ async function askClaude() {
     observerBusy.value = false
   }
 }
+
+// ── "sit next to me" auto-mode: a finished task triggers a debounced observer pass ──────────────
+// Frontend-driven (fires while the app is open); subscribes to task/chain terminal frames only while
+// the toggle is on + an assistant is available. Debounced so a burst of completions → one pass.
+const ws = useWsStore()
+const AUTO_DEBOUNCE_MS = 8000
+let autoTimer: ReturnType<typeof setTimeout> | null = null
+function onTaskFrame(frame: any) {
+  if (!settings.labLogObserverAuto || !observerAvailable.value || !projectUid.value) return
+  if (!isObserverTrigger(frame)) return
+  if (autoTimer) clearTimeout(autoTimer)
+  autoTimer = setTimeout(() => {
+    autoTimer = null
+    if (settings.labLogObserverAuto && observerAvailable.value && !observerBusy.value) askClaude()
+  }, AUTO_DEBOUNCE_MS)
+}
+watch(() => settings.labLogObserverAuto, (on) => {
+  OBSERVER_AUTO_FRAME_TYPES.forEach(t => on ? ws.on(t, onTaskFrame) : ws.off(t, onTaskFrame))
+}, { immediate: true })
+onUnmounted(() => {
+  OBSERVER_AUTO_FRAME_TYPES.forEach(t => ws.off(t, onTaskFrame))
+  if (autoTimer) clearTimeout(autoTimer)
+})
 
 // Clear context: reset the project's assistant session + token totals (next run starts fresh).
 async function clearContext() {
@@ -274,6 +306,10 @@ async function toggleMute(category: string) {
                 : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
+      <label v-if="observerAvailable" class="ll-auto"
+             title="Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)">
+        <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
+      </label>
       <span v-if="observerTokens" class="ll-tokens"
             title="Assistant token use for this project's observer session (real usage)">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
