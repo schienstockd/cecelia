@@ -24,6 +24,7 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_valu
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
+export cohort_qc!, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_tuning, set_tuning!
@@ -128,6 +129,7 @@ include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
 include("model/set.jl")
 include("model/project.jl")
+include("qc_cohort.jl")   # after CciaSet (set.jl) — cohort QC dispatches on it
 include("lab_log.jl")
 include("lab_log_context.jl")
 include("tasks/task.jl")
