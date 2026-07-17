@@ -292,15 +292,18 @@ function labelFor(c: SlotContent): string {
 }
 // panel instances by slot index, so we can ask each for a PLOT-ONLY, LIGHT-theme image (no chrome) and
 // pull the summary plot's aggregated CSV. Both panel types expose exportImage(); summary also getCsv().
-type SummaryRef = { getCsv(): string | null | Promise<string | null>; csvName?(): string; exportImage(): Promise<string | null> }
-type ExportRef = { exportImage(): Promise<string | null> }
+type SummaryRef = { getCsv(): string | null | Promise<string | null>; csvName?(): string; exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
+type ExportRef = { exportImage(): Promise<string | null>; exportSvg?(): string | null | Promise<string | null> }
 const summaryRefs = new Map<number, SummaryRef>()
 const interactiveRefs = new Map<number, ExportRef>()
 function setSummaryRef(i: number, el: unknown) { if (el) summaryRefs.set(i, el as SummaryRef); else summaryRefs.delete(i) }
 function setInteractiveRef(i: number, el: unknown) { if (el) interactiveRefs.set(i, el as ExportRef); else interactiveRefs.delete(i) }
 
-type PdfSlotOut = { rect: { x: number; y: number; w: number; h: number }; png: string | null; name: string; title?: string; csv?: string | null }
-async function capturePage() {
+type PdfSlotOut = { rect: { x: number; y: number; w: number; h: number }; png: string | null; svg?: string | null; name: string; title?: string; csv?: string | null }
+// `vector` (board→SVG export): additionally capture each slot's true-vector SVG where the panel offers
+// one (summary/heatmap/UMAP/gating); slots without `exportSvg` (image/filmstrip, HMM) leave `svg` null
+// and the board embeds their PNG as raster (docs/ANALYSIS.md). PNG is always captured as the fallback.
+async function capturePage(vector = false) {
   const gridEl = gridRef.value
   if (!gridEl) return { aspect: 1, slots: [] as PdfSlotOut[] }
   const slotEls = Array.from(gridEl.querySelectorAll('.lc-slot')) as HTMLElement[]
@@ -320,15 +323,17 @@ async function capturePage() {
       // summary + cluster-heatmap panels expose exportImage()/getCsv() (summaryRefs); other interactive
       // views expose exportImage() (interactiveRefs); anything else → white-ground DOM snapshot.
       const summaryLike = c.kind === 'summary' || isClusterPanel(c.ref)
+      const ref = summaryLike ? summaryRefs.get(i) : c.kind === 'interactive' ? interactiveRefs.get(i) : undefined
       let png: string | null = null
-      if (summaryLike) png = await summaryRefs.get(i)?.exportImage() ?? null
-      else if (c.kind === 'interactive') png = await interactiveRefs.get(i)?.exportImage?.() ?? null
+      let svg: string | null = null
+      if (vector) svg = (await ref?.exportSvg?.()) ?? null    // vector when the panel provides it
+      png = (await ref?.exportImage?.()) ?? null              // always capture the raster fallback
       if (!png) png = await plotHostToImageURL(el, '#ffffff')
       const csv = summaryLike ? (await summaryRefs.get(i)?.getCsv?.() ?? null) : null
       const sr = el.getBoundingClientRect()
       const rect = { x: (sr.left - gr.left) / gr.width, y: (sr.top - gr.top) / gr.height,
                      w: sr.width / gr.width, h: sr.height / gr.height }
-      slots.push({ rect, png, name: labelFor(c), title: (c.state.title as string) || undefined, csv })
+      slots.push({ rect, png, svg, name: labelFor(c), title: (c.state.title as string) || undefined, csv })
     }
   } finally { capturing.value = false }
   return { aspect: gr.width / Math.max(1, gr.height), slots }

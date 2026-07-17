@@ -35,8 +35,8 @@ match ggplot `theme_classic` (the old R look — `plotHelpers.R`), jitter/beeswa
 and resize is just "re-call `Plot.plot()` with a new width/height" (no signal graph). It also renders
 native SVG (so SVG export is "serialize the node") and does **heatmaps/tiled maps natively** (`Plot.cell`
 / `Plot.raster`) — both on the roadmap (§9). Plot is summaries only, where data is server-aggregated
-and small. regl-scatterplot now owns **UMAP only**; the **gating** scatter is a **2D density raster**
-(no WebGL) — see below.
+and small. Both the **UMAP** and the **gating** scatter are now **2D canvas** dot plots (no WebGL;
+regl-scatterplot is a leftover dep, not imported) — see below.
 
 **Gating scatter = 2D pseudocolour DOT plot (no WebGL).** The gating point cloud is non-interactive
 (fixed camera; gate *drawing* is the only interaction, on the canvas2D overlay), so it renders on a 2D
@@ -52,6 +52,24 @@ WebGL hi-res screengrab that clipped dots. Re-renders on data/extent change (aut
 image switch). Base contour/outlier ink comes from the themed `--cc-text-dim` var (so it flips
 dark-on-white for the light PDF, not an invisible grey). Tune: `DOT_GRID`/`DOT_BLUR_*`/`DOT_R` (dot
 detail/size), `CONTOUR_LEVELS`, the outlier alpha/size.
+
+**True-vector SVG export (dot plots).** UMAP + gating scatter/pairs export a real vector `.svg` — every
+categorical dot is an editable element **grouped by colour** (one `<g fill=…>` per cluster/population),
+so a figure opens in Illustrator and a whole cluster recolours in one selection (the driving
+requirement). This is **export-time only** — the on-screen render stays 2D canvas (fast on 100k–1M-point
+clouds); the Export→SVG action re-emits the same points as `<circle>`s via the SAME data→px maps. Shared
+string builders live in `frontend/src/plots/export.ts` (`svgDoc`/`svgCircles`/`svgPolygon`/`svgPath`/
+`svgText`/`svgLine`/`svgRect`/`svgImage`/`downloadText`, tested in `export.test.ts`) — the ONE place all
+dot plots serialise, alongside `rowsToCsv`/`svgToImageURL`. Per-plot emitters: `UmapView.exportSvg`,
+`PlotLayers.exportSvgContent` + `GateOverlay.exportSvgContent` composed by `GateScatterCell.exportSvg`
+(vector axis from the same `drawAxes` math), stitched into a grid by `GateMontage.exportSvg`. **One
+deliberate raster exception:** the gating *points-mode density base* (a blue-heat heatmap of 100k–1M
+events — not categorical, not something you recolour) embeds as a raster `<image>` (`svgImage`) rather
+than a million circles; contour/outlier bases are already vector paths, and the categorical pop-overlay
+dots + gate outlines are always true vector. CSV: UMAP already had `x,y,cluster`; gating now exports a
+per-event CSV (channel values + population, Prism-ready) via the same `rowsToCsv`. The whole Analysis
+**board** can also export as one vector SVG (each slot nested via `nestSvg`, raster fallback for
+image/HMM slots) — see `docs/ANALYSIS.md` → *Export*.
 
 Code: `frontend/src/plots/plot.ts` (`buildPlotOptions(Plot, r, o)` — one builder per chart type,
 returns a `Plot.plot()` options object; takes the Plot module as a param so it carries no eager import)

@@ -32,7 +32,10 @@ const FMT_LABEL: Record<string, string> = { png: 'Image (PNG)', svg: 'Image (SVG
 function onExport(kind: string) { if (kind) viewRef.value?.exportAs?.(kind) }
 // plot-only, light-theme PNG for the PDF export — delegated to the view if it implements exportImage
 async function exportImage(): Promise<string | null> { return (await viewRef.value?.exportImage?.()) ?? null }
-defineExpose({ exportImage })
+// full vector <svg> for the board→SVG export — forwarded to the view (UMAP/gating strategy). Views
+// without it (none currently, but future raster-only views) return null → board falls back to raster.
+async function exportSvg(): Promise<string | null> { return (await viewRef.value?.exportSvg?.()) ?? null }
+defineExpose({ exportImage, exportSvg })
 </script>
 
 <template>

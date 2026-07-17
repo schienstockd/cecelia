@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import type { GateSpec } from '../../stores/gating'
+import { svgPolygon, svgEsc } from '../../plots/export'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 const props = withDefaults(defineProps<{
@@ -213,6 +214,43 @@ function paintGates() {
     if (props.showLabels) drawGateLabel(spec, g.path, g.colour || '#fafafa', g.label)
   }
 }
+// ── TRUE-VECTOR SVG export (docs/PLOTS.md) ──────────────────────────────────────────────────────────
+// The committed gate outlines (+ labels) as SVG in LOCAL plot-area coords [0..w,0..h] — <polygon> per
+// gate, reusing rectCorners/vertices + dataToPx (same geometry as strokeShape). Handles / in-progress
+// shapes are interaction-only and never exported. The host translates this into the capture.
+function gateLabelSvg(g: GateSpec, path: string, colour: string, label: string | undefined, h: number): string {
+  const pts = (g.kind === 'rectangle' ? rectCorners(g) : (g.vertices ?? [])).map(p => dataToPx(p[0], p[1]))
+  if (!pts.length) return ''
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+  const cx = (Math.min(...xs) + Math.max(...xs)) / 2
+  const top = Math.min(...ys), bottom = Math.max(...ys)
+  const name = label ?? (path.split('/').filter(Boolean).pop() ?? '')
+  if (!name) return ''
+  const LABEL_H = 15, SIZE = 12
+  // mirror drawGateLabel placement: above the gate; below if it'd clip the top; else just inside the top
+  let y: number
+  if (top - 4 >= LABEL_H) y = top - 4
+  else if (bottom + 4 + LABEL_H <= h) y = bottom + 4 + SIZE
+  else y = top + 4 + SIZE
+  const r1 = (n: number) => Math.round(n * 10) / 10
+  // paint-order:stroke → dark halo BEHIND the coloured fill (legible over dense dots), like the canvas
+  return `<text x="${r1(cx)}" y="${r1(y)}" font-family="system-ui, sans-serif" font-size="${SIZE}" ` +
+         `font-weight="bold" text-anchor="middle" paint-order="stroke" stroke="rgba(0,0,0,0.7)" ` +
+         `stroke-width="3" stroke-linejoin="round" fill="${colour}">${svgEsc(name)}</text>`
+}
+function exportSvgContent(): string {
+  const { w, h } = size(); if (!w || !h) return ''
+  let body = ''
+  for (const g of props.gates ?? []) {
+    const pts = (g.gate.kind === 'rectangle' ? rectCorners(g.gate) : (g.gate.vertices ?? []))
+      .map(p => dataToPx(p[0], p[1])) as [number, number][]
+    if (pts.length < 2) continue
+    body += svgPolygon(pts, { stroke: gateColour(g.colour), width: props.lineWidth })
+    if (props.showLabels) body += gateLabelSvg(g.gate, g.path, g.colour || '#fafafa', g.label, h)
+  }
+  return body
+}
+
 function draw() {
   if (!ctx || !canvasEl.value) return
   const dpr = window.devicePixelRatio || 1
@@ -261,7 +299,7 @@ async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   ctx = saved                                  // the live canvas's context object was never touched
   return off
 }
-defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
+defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
 // ── editing: apply a handle drag to the draft ──
 function applyEdit(p: [number, number]) {

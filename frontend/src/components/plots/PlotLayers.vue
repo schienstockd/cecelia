@@ -16,6 +16,7 @@ import { watch, onMounted, onBeforeUnmount, useTemplateRef } from 'vue'
 import { densityGrid, pointDensities, outlierPoints, DENSITY_GRID, CONTOUR_LEVELS, type Ext } from '../../plots/density'
 import { densityContours } from '../../plots/contour'
 import { BLUE_HEAT_RGB } from '../../plots/flowColors'
+import { svgImage, svgCircles, svgPath } from '../../plots/export'
 
 export interface PopLayer { path: string; colour: string; points: Float32Array }
 
@@ -161,7 +162,71 @@ async function exportCanvas(scale: number): Promise<HTMLCanvasElement | null> {
   ctx = saved                                  // the live canvas's context object was never touched
   return off
 }
-defineExpose({ exportCanvas, getCanvas: () => canvasEl.value })
+// ── TRUE-VECTOR SVG export (docs/PLOTS.md) ──────────────────────────────────────────────────────────
+// Emit this layer's content as an SVG body in LOCAL plot-area coords [0..w, 0..h] (the host translates
+// it into the capture). The DENSITY BASE is a blue-heat heatmap, not categorical — in points mode it's
+// embedded as a raster <image> (decision: don't vectorise 100k–1M events); contour/outlier bases are
+// already vector paths. CATEGORICAL child-population overlays are always TRUE VECTOR (one <g fill=…> per
+// pop → recolourable in Illustrator). Reuses the same toPx/gridToPx maps as the on-screen paint.
+const svgR1 = (n: number) => Math.round(n * 10) / 10
+// render ONLY the density base to an offscreen canvas → PNG data URL (points-mode raster base layer)
+function renderBaseRasterUrl(scale = 4): string | null {
+  if (!canvasEl.value || props.renderMode !== 'points' || !props.basePoints?.length) return null
+  const { w, h } = size(); if (!w || !h) return null
+  const off = document.createElement('canvas')
+  off.width = Math.max(1, Math.round(w * scale)); off.height = Math.max(1, Math.round(h * scale))
+  const octx = off.getContext('2d'); if (!octx) return null
+  const saved = ctx; ctx = octx
+  octx.setTransform(scale, 0, 0, scale, 0, 0); octx.clearRect(0, 0, w, h)
+  drawDensityDots(props.basePoints, props.showPops ? 0.4 : 1)   // base only (same as paintContent points branch)
+  ctx = saved
+  return off.toDataURL('image/png')
+}
+// contour rings of `points` as vector <path>s (outer faint → inner solid), same levels/opacity as canvas
+function contoursSvg(points: Float32Array, colour: string): string {
+  const grid = densityGrid(points, props.viewExtents, G)
+  const levels = densityContours(grid, G, LEVELS)
+  let out = ''
+  levels.forEach((lvl, i) => {
+    const op = 0.5 + 0.5 * (i / Math.max(1, LEVELS.length - 1))
+    let d = ''
+    for (const ring of lvl.rings) {
+      if (ring.length < 2) continue
+      let [px, py] = gridToPx(ring[0][0], ring[0][1]); d += `M${svgR1(px)} ${svgR1(py)}`
+      for (let k = 1; k < ring.length; k++) { [px, py] = gridToPx(ring[k][0], ring[k][1]); d += `L${svgR1(px)} ${svgR1(py)}` }
+      d += 'Z'
+    }
+    out += svgPath(d, { stroke: colour, width: 1.2, opacity: op })
+  })
+  return out
+}
+// a set of points as a true-vector circle group (child-pop dots + the outlier tail)
+function dotsSvg(points: Float32Array, colour: string, r: number, opacity = 1): string {
+  const n = points.length / 2, pxs: [number, number][] = new Array(n)
+  for (let i = 0; i < n; i++) pxs[i] = toPx(points[2 * i], points[2 * i + 1])
+  return svgCircles(pxs, { fill: colour, r, opacity })
+}
+function exportSvgContent(): string {
+  const { w, h } = size(); if (!w || !h) return ''
+  const mode = props.renderMode
+  let body = ''
+  if (props.basePoints?.length) {
+    if (mode === 'points') { const url = renderBaseRasterUrl(); if (url) body += svgImage(url, 0, 0, w, h) }
+    else {
+      body += contoursSvg(props.basePoints, ink())
+      if (mode === 'outliers') body += dotsSvg(outlierPoints(props.basePoints, props.viewExtents, G), ink(), 1.3, 0.8)
+    }
+  }
+  if (props.showPops) {
+    for (const pop of props.popLayers) {
+      if (!pop.points?.length) continue
+      if (mode === 'points') body += dotsSvg(pop.points, pop.colour, 1.5)     // categorical → vector
+      else { body += contoursSvg(pop.points, pop.colour); if (mode === 'outliers') body += dotsSvg(outlierPoints(pop.points, props.viewExtents, G), pop.colour, 1.3, 0.8) }
+    }
+  }
+  return body
+}
+defineExpose({ exportCanvas, getCanvas: () => canvasEl.value, exportSvgContent })
 
 watch(() => [props.viewExtents, props.renderMode, props.basePoints, props.popLayers, props.showPops, props.viewTick],
       draw, { deep: true })

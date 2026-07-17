@@ -172,9 +172,14 @@ watch([valueName], loadTree)
 useDataRefresh(() => [imageUid.value], () => { loadChannels().then(loadTree) })
 
 // PDF export: delegate to the shared montage renderer (single cell hi-res, or the whole grid on white).
-const montageRef = useTemplateRef<{ exportImage(bg?: string, light?: boolean): Promise<string | null> }>('montageRef')
+const montageRef = useTemplateRef<{
+  exportImage(bg?: string, light?: boolean): Promise<string | null>
+  exportSvg(bg?: string, light?: boolean): string
+}>('montageRef')
 async function exportImage(): Promise<string | null> { return (await montageRef.value?.exportImage('#ffffff', true)) ?? null }
-defineExpose({ exportImage })
+// full vector <svg> for the board→SVG export — the montage stitches its read-only tiles (Phase A)
+function exportSvg(): string | null { return montageRef.value?.exportSvg('#ffffff', true) || null }
+defineExpose({ exportImage, exportSvg })
 </script>
 
 <template>

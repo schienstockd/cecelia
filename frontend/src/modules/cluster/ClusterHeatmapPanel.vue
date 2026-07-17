@@ -118,8 +118,14 @@ watch(() => props.featureOptions, opts => {
 
 // docked (Analysis board) export: plot-only LIGHT-theme PNG + the shown cells as CSV (like SummaryPanel)
 async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
+// full vector <svg> for the board→SVG export — decode PlotChart's SVG data URL (like SummaryPanel)
+async function exportSvg(): Promise<string | null> {
+  const url = await plotRef.value?.toImageURL('svg', true)
+  if (!url) return null
+  const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
+}
 function getCsv(): string | null { return heatmap.value ? plotDataToCsv(heatmap.value) : null }
-defineExpose({ exportImage, getCsv })
+defineExpose({ exportImage, getCsv, exportSvg })
 </script>
 
 <template>

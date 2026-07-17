@@ -20,7 +20,8 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick, useTemplate
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useDataRefresh } from '../../composables/useDataRefresh'
-import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv } from '../../plots/export'
+import { plotHostToImageURL, rasterPlotToImageURL, downloadDataUrl, downloadBlob, rowsToCsv,
+         svgDoc, svgCircles, svgText, svgRect, downloadText, svgSizeWarning } from '../../plots/export'
 import { paletteRange, PALETTES, type VisProps } from '../../plots/plot'
 import { tkey, parseTkey } from '../../plots/series'
 import type { SegmentationPops } from '../../plots/types'
@@ -497,6 +498,14 @@ const hiRes = async (cv: HTMLCanvasElement, scale: number) =>
 function exportAs(kind: string) {
   const stem = `umap_${props.suffix}`.replace(/[^\w.-]+/g, '_')
   if (kind === 'png') plotHostToImageURL(plotEl.value, ground.value, { hiRes }).then(url => url && downloadDataUrl(`${stem}.png`, url))
+  else if (kind === 'svg') {
+    const svg = exportSvg()
+    if (svg) {
+      const warn = svgSizeWarning(svg, `UMAP (${total.value.toLocaleString()} ${unit.value})`)
+      if (warn) log.warn(warn, { source: 'cluster' })
+      downloadText(`${stem}.svg`, svg, 'image/svg+xml')
+    }
+  }
   else if (kind === 'csv') {
     const pts = points.value, codes = codesRef.value
     if (!pts || !codes) return
@@ -504,6 +513,63 @@ function exportAs(kind: string) {
       ({ x: pts[2 * i], y: pts[2 * i + 1], cluster: codes[i] < 0 ? '' : codes[i] }))
     downloadBlob(`${stem}.csv`, new Blob([rowsToCsv(rows)], { type: 'text/csv' }))
   }
+}
+
+// TRUE-VECTOR SVG export (docs/PLOTS.md): re-emit the SAME colour-bucketed dots as `<circle>`s grouped
+// by cluster/population — one `<g fill=…>` per group, so selecting a group in Illustrator and changing
+// its fill recolours that whole cluster at once. Uses the identical mapPx/mapRect maps + facet layout as
+// the on-screen paint, so the vector output matches the canvas 1:1. Always light-themed (figure on white).
+function exportSvg(): string {
+  const pts = points.value, cats = categories.value, pal = palette.value
+  if (!pts || !cats || !pal.length) return ''
+  const S = Math.round(boxH.value || boxW.value || 600)   // square plot area (vector = resolution-free)
+  const LW = (showLegend.value && legend.value.length) ? 150 : 0
+  const alpha = dotAlpha.value, r = dotR.value, fsz = labelFont.value
+  const ghostLight = '#d4d7dd'
+  // ggplot geom_label look: white box + thin dark border + dark text (matches labelStyle, both themes)
+  const chip = (px: number, py: number, s: string): string => {
+    const w = s.length * fsz * 0.6 + 8, h = fsz + 6
+    return svgRect(px - w / 2, py - h / 2, w, h, { fill: '#ffffff', stroke: 'rgba(0,0,0,0.55)', width: 0.8, rx: 3, opacity: 0.9 }) +
+           svgText(px, py + fsz * 0.35, s, { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
+  }
+  let body = ''
+  const fs = facets.value
+  if (facetBy.value === 'none' || fs.length <= 1) {
+    const n = pts.length / 2, groups: number[][] = pal.map(() => [])
+    for (let i = 0; i < n; i++) { const g = groups[cats[i]]; if (g) g.push(i) }
+    for (let gi = 0; gi < pal.length; gi++) {
+      const g = groups[gi]; if (!g.length) continue
+      body += svgCircles(g.map(i => mapPx(pts[2 * i], pts[2 * i + 1], S, S)),
+                         { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
+    }
+    if (labels.value) for (const c of centroids.value) { const [px, py] = mapPx(c.x, c.y, S, S); body += chip(px, py, c.label) }
+  } else {
+    const n = pts.length / 2
+    for (let fi = 0; fi < fs.length; fi++) {
+      const cell = facetCell(fi, fs.length, S, S)
+      const ghost: [number, number][] = []
+      for (let i = 0; i < n; i++) ghost.push(mapRect(pts[2 * i], pts[2 * i + 1], cell))
+      body += svgCircles(ghost, { fill: ghostLight, opacity: 0.6, r: 1, label: 'ghost' })
+      const groups: number[][] = pal.map(() => [])
+      for (const i of fs[fi].idx) { const g = groups[cats[i]]; if (g) g.push(i) }
+      for (let gi = 0; gi < pal.length; gi++) {
+        const g = groups[gi]; if (!g.length) continue
+        body += svgCircles(g.map(i => mapRect(pts[2 * i], pts[2 * i + 1], cell)),
+                           { fill: pal[gi], opacity: alpha, r, label: legend.value[gi]?.label })
+      }
+      body += svgText(cell.ox + cell.cw / 2, cell.oy + fsz, fs[fi].label, { fill: '#111', size: fsz, anchor: 'middle', weight: 700 })
+    }
+  }
+  // legend column (swatch + label + count per row) as vector, right of the plot
+  if (LW) {
+    let ly0 = 14
+    for (const l of legend.value) {
+      body += svgRect(S + 8, ly0 - 8, 9, 9, { fill: l.colour, rx: 1 })
+      body += svgText(S + 21, ly0, `${l.label}  (${l.n.toLocaleString()})`, { fill: '#111', size: 11 })
+      ly0 += 15
+    }
+  }
+  return svgDoc({ width: S + LW, height: S, background: '#ffffff', body })
 }
 // board export (surfaced by InteractivePanel.exportImage → the PDF): a plot-only, LIGHT-theme, HI-RES
 // PNG via the SHARED raster-export helper (rasterPlotToImageURL — the same crisp fixed-resolution path
@@ -514,7 +580,7 @@ async function exportImage(): Promise<string | null> {
   try { return await rasterPlotToImageURL(plotEl.value, ground.value, hiRes) }
   finally { forceLight.value = false }
 }
-defineExpose({ exportFormats: ['png', 'csv'], exportAs, exportImage })
+defineExpose({ exportFormats: ['png', 'svg', 'csv'], exportAs, exportImage })
 </script>
 
 <template>

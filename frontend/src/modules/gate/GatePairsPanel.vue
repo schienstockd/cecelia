@@ -17,7 +17,7 @@ import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateMontage from '../../components/plots/GateMontage.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import { buildPairDefs, reconcileChannels, estimateMatrixLoad } from '../../plots/pairsMatrix'
-import { downloadDataUrl } from '../../plots/export'
+import { downloadDataUrl, downloadText } from '../../plots/export'
 import { useDataRefresh } from '../../composables/useDataRefresh'
 
 type Kind = 'linear' | 'log' | 'asinh' | 'logicle'
@@ -101,10 +101,16 @@ const heavyTip = computed(() => {
   return `${load.value.fetches} scatter plots${pts}. Pick fewer channels or a smaller population to speed up.`
 })
 
-const montageRef = useTemplateRef<{ exportImage(bg?: string, light?: boolean): Promise<string | null> }>('montageRef')
-function exportPng() {
-  const stem = `pairs_${channels.value.map(c => g.colLabel(c)).join('_')}`.replace(/[^\w.-]+/g, '_').slice(0, 80)
-  montageRef.value?.exportImage('#0d0b1a', false).then(url => url && downloadDataUrl(`${stem || 'pairs'}.png`, url))
+const montageRef = useTemplateRef<{
+  exportImage(bg?: string, light?: boolean): Promise<string | null>
+  exportSvg(bg?: string, light?: boolean): string
+  exportCsv(): string
+}>('montageRef')
+function exportAs(kind: string) {
+  const stem = (`pairs_${channels.value.map(c => g.colLabel(c)).join('_')}`.replace(/[^\w.-]+/g, '_').slice(0, 80)) || 'pairs'
+  if (kind === 'png') montageRef.value?.exportImage('#0d0b1a', false).then(url => url && downloadDataUrl(`${stem}.png`, url))
+  else if (kind === 'svg') { const svg = montageRef.value?.exportSvg('#ffffff', true); if (svg) downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
+  else if (kind === 'csv') { const csv = montageRef.value?.exportCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }
 }
 </script>
 
@@ -159,9 +165,11 @@ function exportPng() {
     </template>
     <template #footer>
       <select class="gp-export" v-tooltip.top="'Export the matrix'" :disabled="!channels.length"
-              @change="($event.target as HTMLSelectElement).value === 'png' && exportPng(); ($event.target as HTMLSelectElement).value = ''">
+              @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
+        <option value="csv">Data (CSV)</option>
         <option value="png">Image (PNG)</option>
+        <option value="svg">Image (SVG)</option>
       </select>
     </template>
 
