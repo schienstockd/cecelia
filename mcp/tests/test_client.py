@@ -78,14 +78,14 @@ class ClientTest(unittest.TestCase):
         self.assertIn("/api/qc/cohort?", url)
         self.assertIn("setUid=set1", url)
         self.assertIn("funName=segment.measureLabels", url)
-        self.assertNotIn("sdThreshold", url)          # unset optional dropped
+        self.assertNotIn("threshold", url)            # unset optional dropped
         # explicit optionals are passed through
         with _patch_urlopen({"metrics": {}}) as u:
             self.c.get_cohort_qc("p", "set1", "tracking.bayesian_tracking",
-                                 value_name="A", sd_threshold=3.0)
+                                 value_name="A", threshold=3.0)
         url = u.call_args[0][0].full_url
         self.assertIn("valueName=A", url)
-        self.assertIn("sdThreshold=3.0", url)
+        self.assertIn("threshold=3.0", url)
 
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)

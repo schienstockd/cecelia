@@ -945,9 +945,10 @@ function api_tasks_history(req::HTTP.Request)
     200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
 end
 
-# GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&sdThreshold]
+# GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&threshold]
 # Recompute the cohort QC summary for one (task, output) across a set's included images and return
-# it (also writes the sidecar). Feeds the MCP get_qc_metrics cohort view + the morning summary.
+# it (also writes the sidecar). `threshold` is the robust modified-z cutoff (default 3.5). Feeds the
+# MCP get_cohort_qc tool + the morning summary.
 function api_qc_cohort(req::HTTP.Request)
     q = HTTP.queryparams(HTTP.URI(req.target))
     project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
@@ -958,7 +959,7 @@ function api_qc_cohort(req::HTTP.Request)
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
     value_name = get(q, "valueName", VERSIONED_DEFAULT_VAL)
-    sd = something(tryparse(Float64, get(q, "sdThreshold", "")), 2.0)
+    thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
     set = try
         obj = init_object(project_uid, set_uid)
         obj isa CciaSet || error("Not a set: $set_uid")
@@ -967,7 +968,7 @@ function api_qc_cohort(req::HTTP.Request)
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
     doc = try
-        cohort_qc_for!(set, fun_name, value_name; sd_threshold = sd)
+        cohort_qc_for!(set, fun_name, value_name; threshold = thr)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end

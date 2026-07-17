@@ -89,10 +89,11 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
       - "tracking.bayesian_tracking" → nTracks, meanTrackLength, nTrackedCells
     `value_name` is the output variant (default "default").
 
-    Returns {funName, valueName, nIncluded, metrics: {<key>: {n, mean, sd, sdThreshold,
-    outliers: {imageUid: {value, z}}}}}. An `outliers` map with entries is the flag worth a note
-    (name the image, its value, and the cohort mean — numbers in the detail). `n` < 3 ⇒ too few
-    images to judge (never call an outlier then). Advisory only; reads current data (nothing cached)."""
+    Returns {funName, valueName, nIncluded, metrics: {<key>: {n, median, mad, mean, sd, threshold,
+    outliers: {imageUid: {value, z}}}}}. Outliers use a robust modified z-score (median/MAD), so `z`
+    is that score (not a plain SD z) and a clear outlier flags even at n=3. An `outliers` map with
+    entries is the flag worth a note (name the image, its value, and the cohort median — numbers in
+    the detail). `n` < 3 ⇒ too few images to judge. Advisory only; reads current data (nothing cached)."""
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 

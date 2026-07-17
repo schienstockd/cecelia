@@ -109,13 +109,13 @@ class CeceliaClient:
         )
 
     def get_cohort_qc(self, project_uid: str, set_uid: str, fun_name: str,
-                      value_name: str | None = None, sd_threshold: float | None = None):
+                      value_name: str | None = None, threshold: float | None = None):
         return self._request(
             "GET",
             "/api/qc/cohort",
             {
                 "projectUid": project_uid, "setUid": set_uid, "funName": fun_name,
-                "valueName": value_name, "sdThreshold": sd_threshold,
+                "valueName": value_name, "threshold": threshold,
             },
         )
 
