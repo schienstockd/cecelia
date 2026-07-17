@@ -72,6 +72,17 @@ struct _TestCustomTask <: CciaTask end
         @test custom_toml_path("/tmp/ceceliatest") == joinpath("/tmp/ceceliatest", "custom.toml")
     end
 
+    @testset "run_py custom-modules PYTHONPATH (config_dir not shadowed)" begin
+        # Regression: run_py's task-dir parameter was named `config_dir`, which shadowed the
+        # config_dir() function, so the custom-modules PYTHONPATH line `joinpath(config_dir(), …)`
+        # called the task-dir STRING as a function → every Python task died with
+        # `MethodError(<task dir>, (), …)` before Python was ever spawned. The call now lives in a
+        # standalone helper with no shadowing param in scope. This asserts it resolves via the real
+        # config_dir() function (equality would fail if it ever called anything else).
+        @test Cecelia._custom_modules_pydir() == joinpath(config_dir(), "modules", "python")
+        @test endswith(Cecelia._custom_modules_pydir(), joinpath("modules", "python"))
+    end
+
     # ── First-launch setup wizard (isolated temp config dir) ────────────────────
     # Uses its own CECELIA_DEV_DIR tempdir so it never touches the real dev/prod config; restores
     # global config afterwards. Exercises setup_required + set_projects_dir! (merge + reload).
