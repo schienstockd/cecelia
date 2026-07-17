@@ -25,10 +25,16 @@ function task_run_dir(base_dir::AbstractString)::String
     joinpath(base_dir, string(sub))
 end
 
-"""
-    run_py(script_rel, params, config_dir; on_log, on_progress, on_process) -> Bool
+# The user modules python dir (`<config_dir>/modules/python`) — put on PYTHONPATH for run_py so a
+# custom (drop-in) task's `_run.py` can import its siblings. Standalone (NOT inlined in run_py) on
+# purpose: run_py's `task_dir` param must never be able to shadow the `config_dir()` function again —
+# that shadow silently made `config_dir()` call the task-dir string, breaking EVERY Python task.
+_custom_modules_pydir()::String = joinpath(config_dir(), "modules", "python")
 
-Run `python/cecelia/<script_rel>` as a subprocess with a JSON `params` file written to `config_dir` (the
+"""
+    run_py(script_rel, params, task_dir; on_log, on_progress, on_process) -> Bool
+
+Run `python/cecelia/<script_rel>` as a subprocess with a JSON `params` file written to `task_dir` (the
 run's task dir — see `task_run_dir`; never a temp dir) and passed via `--params`, which the script
 reads then deletes (so a clean run leaves nothing behind; a crashed one leaves the params for
 inspection — matching the legacy behaviour). Streams stdout/stderr line-by-line: `[PROGRESS] n/total`
@@ -38,7 +44,7 @@ termsignal == 0` — libuv reports 0 exitcode for signal-killed procs, so both a
 is set to python/ so the script can `import cecelia.*` with no sys.path manipulation. This is the one place
 Cecelia spawns a Python subprocess — the Julia analogue of the old R `self\$pyScript(name, params)`.
 """
-function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
+function run_py(script_rel::AbstractString, params, task_dir::AbstractString;
                 on_log::Function      = line -> println(line),
                 on_progress::Function = (n, t) -> nothing,
                 on_process::Function  = _ -> nothing)::Bool
@@ -49,9 +55,9 @@ function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
                 joinpath(py_root, "cecelia", script_rel)
     isfile(py_script) || (on_log("[ERROR] Python script not found: $py_script"); return false)
 
-    mkpath(config_dir)
+    mkpath(task_dir)
     stem        = splitext(basename(String(script_rel)))[1]
-    params_file = joinpath(config_dir, "$stem.$(string(rand(UInt32); base = 16)).params.json")
+    params_file = joinpath(task_dir, "$stem.$(string(rand(UInt32); base = 16)).params.json")
     open(params_file, "w") do io
         JSON3.write(io, params)
     end
@@ -59,7 +65,7 @@ function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
     # PYTHONPATH: python/ (so `import cecelia.*` resolves everywhere) + the user modules python dir
     # (so a custom task's dropped `_run.py` can import its own siblings). See docs/CUSTOM_MODULES.md.
     pythonpath = py_root
-    custom_py  = joinpath(config_dir(), "modules", "python")
+    custom_py  = _custom_modules_pydir()
     isdir(custom_py) && (pythonpath = string(custom_py, Sys.iswindows() ? ";" : ":", py_root))
     cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => pythonpath)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
