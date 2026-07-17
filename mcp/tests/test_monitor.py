@@ -5,8 +5,12 @@ than left to a live Claude Code session.
 """
 import unittest
 
-from cecelia_mcp.monitor import SessionMonitor, normalize_frame
+from cecelia_mcp.monitor import EST_TOKENS_PER_OBSERVATION, SessionMonitor, normalize_frame
 from cecelia_mcp.wsclient import api_url_to_ws, feed_raw
+
+
+def _note(n, project="P"):
+    return {"type": "image_note_added", "imageUid": f"i{n}", "note": f"n{n}", "projectUid": project}
 
 
 def _chain_done(uid, fn, project="P"):
@@ -168,6 +172,52 @@ class WsClientHelpersTest(unittest.TestCase):
         self.assertIsNone(feed_raw(m, "[1,2,3]"))       # not a dict
         self.assertIsNone(feed_raw(m, '{"type":"pong"}'))  # untracked
         self.assertEqual(m.poll(), [])
+
+
+class ThrottleTest(unittest.TestCase):
+    def test_cap_limits_surfaced_and_overflow_queued_for_log(self):
+        m = SessionMonitor(surface_cap=3)
+        for n in range(5):
+            m.record(normalize_frame(_note(n)))
+        surfaced = m.poll("P")
+        self.assertEqual(len(surfaced), 3)                 # cap hit
+        self.assertTrue(m.stats()["throttled"])
+        self.assertEqual(m.stats()["surfacedCount"], 3)
+        self.assertEqual(len(m.drain_for_log()), 2)        # overflow queued for silent lab-log flush
+        self.assertEqual(m.drain_for_log(), [])            # drained once
+
+    def test_once_capped_further_polls_surface_nothing(self):
+        m = SessionMonitor(surface_cap=2)
+        for n in range(2):
+            m.record(normalize_frame(_note(n)))
+        self.assertEqual(len(m.poll("P")), 2)
+        m.record(normalize_frame(_note(99)))               # new observation after cap
+        self.assertEqual(m.poll("P"), [])                  # nothing surfaced
+        self.assertEqual(len(m.drain_for_log()), 1)        # it went to the log queue
+
+    def test_off_switch_surfaces_nothing_but_keeps_counting(self):
+        m = SessionMonitor()
+        m.set_enabled(False)
+        for _ in range(4):
+            m.record(normalize_frame(_chain_done("img7", "segment.cellpose")))
+        self.assertEqual(m.poll("P"), [])                  # disabled → silent
+        self.assertEqual(m.stats()["surfacedCount"], 0)
+        m.set_enabled(True)
+        surfaced = m.poll("P")                             # history preserved → resurfaces
+        self.assertEqual(len(surfaced), 1)
+        self.assertEqual(surfaced[0]["attempts"], 4)
+
+    def test_stats_shape_and_token_estimate(self):
+        m = SessionMonitor(surface_cap=10)
+        for n in range(3):
+            m.record(normalize_frame(_note(n)))
+        m.poll("P")
+        s = m.stats()
+        self.assertEqual(s["surfacedCount"], 3)
+        self.assertEqual(s["surfaceCap"], 10)
+        self.assertFalse(s["throttled"])
+        self.assertTrue(s["enabled"])
+        self.assertEqual(s["estimatedTokens"], 3 * EST_TOKENS_PER_OBSERVATION)
 
 
 if __name__ == "__main__":

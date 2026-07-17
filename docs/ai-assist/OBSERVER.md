@@ -152,15 +152,33 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
    `qc_flag_fired` — needs the `:flagged` node state that doesn't exist yet (`QC-PROCESS.md` step 1/8);
    ships with the QC work. Also deferred: server→client *push* (MCP is client-pull; `poll_observations`
    is the reliable Phase-1 surface — validate live push before building the continuous version).
-4. Throttle + token reporting (§6). **← next slice**
-5. Cohort `get_qc_metrics` route once cohort stats land (`QC-PROCESS.md` step 3).
+4. ✅ **DONE (Slice C)** — Throttle + token reporting (§6), all in `mcp/cecelia_mcp/monitor.py`
+   (pure, unit-tested). Configurable per-session `surfaceCap` (default 20): once that many
+   observations have been surfaced, `poll_observations` goes quiet and suppressed patterns are flushed
+   to the lab log as a compact `[Claude]` block (silent-equivalent) rather than spending chat tokens.
+   Running per-session `stats` (`get_observer_stats` / on every poll): surfaced count, cap, throttled,
+   and an `estimatedTokens` gauge (surfaced × ~2.5k — an estimate; the server can't see Claude's real
+   usage). Off switch: `set_observer_active(false)` stops surfacing but keeps counting. **Calibration**
+   (the cap and per-observation token estimate) are defaults to tune against a real live run.
+   Also in this slice: **`get_recent_logs`** (`GET /api/logs/recent`, allow-listed) — the backend
+   console ring (server `@info`/`@warn`/`@error`). A **Julia-side task crash lands here, not in
+   `get_task_log`** (which only captures the Python subprocess's stdout), so when a task keeps failing
+   with an empty task log the observer can pull the real error. Added because the first live session
+   hit exactly this blind spot. Complementary durable fix (separate PR): tee the scheduler's caught
+   task exception into the per-image `.log` so `get_task_log` shows Julia failures too.
+5. Cohort `get_qc_metrics` route once cohort stats land (`QC-PROCESS.md` step 3). **← next**
 
-> **Status (Slice B):** steps 1–3 landed (minus `qc_flag_fired`, which waits on QC flag state). The
-> observer can describe project state, read task logs + history + the lab log, append `[Claude]`
-> entries, and now **detect the 10-attempts pattern live** (chain + module-page runs, session-scoped)
-> plus surface user notes / lab-log entries via `poll_observations` — and can do nothing else
-> (allow-list enforced + tested; the WS connection is receive-only). Throttling/token reporting
-> (step 4) is next.
+> **Status (Slice C):** steps 1–4 landed (minus `qc_flag_fired`, which waits on QC flag state).
+> **Validated end-to-end against live Claude Code (2026-07-17):** with a real project open, the
+> observer independently flagged "segment.cellposeMeasure has run 11×, all failed" — `repeat_attempts`
+> firing through `poll_observations` and Claude acting on it, unprompted. The observer can describe
+> project state, read task logs + history + the lab log + the backend console (`get_recent_logs`),
+> append `[Claude]` entries, detect the 10-attempts pattern live (chain + module-page, session-scoped),
+> surface notes / lab-log entries, and throttle itself (cap → silent lab-log logging, token estimate,
+> off switch) — and can do nothing else (allow-list enforced + tested; WS + console are receive-only).
+> Remaining: the cohort QC route (step 5, waits on `QC-PROCESS.md` step 3) and `qc_flag_fired`; and
+> calibrating the cap/token estimate against measured cost (note: retry storms inflate attempt counts,
+> so an "N attempts" may be fewer real user actions than it looks).
 
 ## Verify
 

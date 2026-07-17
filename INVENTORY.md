@@ -106,7 +106,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 
 ## MCP observer (`mcp/`)
 
-- **cecelia_mcp/server.py**: FastMCP stdio server `cecelia-observer` — 8 read tools + `poll_observations` + 1 append tool, each delegating to the client/monitor.
+- **cecelia_mcp/server.py**: FastMCP stdio server `cecelia-observer` — 9 read tools (incl. `get_recent_logs`, the backend console) + `poll_observations`/`set_observer_active`/`get_observer_stats` + 1 append tool, each delegating to the client/monitor.
 - **cecelia_mcp/client.py**: `CeceliaClient` (stdlib urllib to the Julia API) with `ALLOWED_ROUTES` allow-list — the read-only guarantee. Never opens images/h5ad itself; talks HTTP to :8080 only.
-- **cecelia_mcp/monitor.py**: `SessionMonitor` + `normalize_frame` — pure, thread-safe session-state for the 10-attempts pattern (counts terminal task outcomes per `(image_uid, fn)` off the WS stream) + note/lab-log events. No I/O; unit-tested. `poll` drains observations.
+- **cecelia_mcp/monitor.py**: `SessionMonitor` + `normalize_frame` — pure, thread-safe session-state for the 10-attempts pattern (counts terminal task outcomes per `(image_uid, fn)` off the WS stream) + note/lab-log events, plus the per-session throttle (`surfaceCap` → silent lab-log flush via `drain_for_log`), token-cost estimate (`stats`), and off switch (`set_enabled`). No I/O; unit-tested. `poll` drains observations.
 - **cecelia_mcp/wsclient.py**: thin WS listener (`observe`/`start_listener`) feeding the monitor from `ws://…/ws`; best-effort, reconnects, receive-only. Backend events it consumes: `chain:node:*`, `task:status` (now carries `fun`), `image_note_added`, `lab_log_entry_added`.
