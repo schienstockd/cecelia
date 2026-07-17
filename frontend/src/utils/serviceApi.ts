@@ -30,16 +30,28 @@ export const napariApi = {
   close: () => svcPost('/api/napari/close'),
 }
 
+/** Per-project observer session: the assistant session id + cumulative token totals. */
+export interface ObserverSession {
+  sessionId: string
+  inputTokens: number
+  outputTokens: number
+  turns: number
+}
+
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
 export const observerApi = {
-  /** Is an assistant CLI available? Drives the disabled-with-why UI. Never throws → false on error. */
-  status: async (): Promise<{ available: boolean }> => {
+  /** Availability (drives the disabled-with-why UI) + this project's session/usage when a uid is
+   *  given. Never throws → unavailable on error. */
+  status: async (projectUid?: string): Promise<{ available: boolean; session?: ObserverSession }> => {
     try {
-      const res = await fetch('/api/observer/status')
+      const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
+      const res = await fetch(`/api/observer/status${q}`)
       return res.ok ? await res.json() : { available: false }
     } catch { return { available: false } }
   },
   /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. Returns
-   *  { ok, available, message, error, inputTokens, outputTokens }. */
+   *  { ok, available, message, error, inputTokens, outputTokens, session }. */
   feedback: (projectUid: string) => svcPost('/api/observer/feedback', { projectUid }),
+  /** Clear context: reset the project's session + token totals. Returns { ok, session }. */
+  clear: (projectUid: string) => svcPost('/api/observer/clear', { projectUid }),
 }

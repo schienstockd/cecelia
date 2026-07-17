@@ -160,7 +160,9 @@ include("napari.jl")
 # docs/todo/OBSERVER_INTEGRATION_PLAN.md.
 include("ai/observer_prompt.jl")
 include("ai/agent_runner.jl")
+include("ai/observer_session.jl")
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
-       observer_feedback_prompt, observer_auto_prompt, observer_agent_bin
+       observer_feedback_prompt, observer_auto_prompt, observer_agent_bin,
+       read_observer_session, record_observer_turn!, clear_observer_session!
 
 end
