@@ -112,94 +112,72 @@ function onDrop(targetId: number) {
 type CapturedPage = { aspect: number; slots: { rect: { x: number; y: number; w: number; h: number }; png: string | null; svg?: string | null; name?: string; csv?: string | null }[] }
 const layoutRef = useTemplateRef<{ capturePage: (vector?: boolean) => Promise<CapturedPage>
   collectCsvs: () => Promise<{ name: string; csv: string | null }[]> }>('layoutRef')
+// ONE export pass for the whole board — a single spinner, a single walk over the tabs. Figure and CSV
+// share the exact same "visit each tab, let it render, capture" dance, so the dropdown offers combined
+// items (PDF + CSV, …) that do BOTH in one pass: no second click, no two spinners, and no chance of two
+// exports interleaving over the shared active-tab slot (only the active board is mounted at a time).
 const exporting = ref(false)
 const safe = (s: string) => s.replace(/[^\w.-]+/g, '_')
-async function exportPdf() {
-  if (exporting.value || !group.value || !tabs.value.length) return
+async function runExport(figure: 'pdf' | 'svg' | null, csv: boolean) {
+  if (exporting.value || !group.value || !tabs.value.length || (!figure && !csv)) return
   exporting.value = true
   const original = group.value.activeId
   try {
-    const pages = []
+    const pages: { title: string; aspect: number; slots: CapturedPage['slots'] }[] = []
+    const csvFiles: { name: string; text: string }[] = []
     for (const t of tabs.value) {
       tabsStore.setActive(groupKey, t.id)
       await nextTick()
       await waitForPlotsIdle()   // wait for THIS board's plots to finish fetching + rendering — a fixed
                                  // sleep captured slow plots blank; idle-tracking waits exactly as long
-                                 // as needed (a mid-render WebGL frame exports sparse/blurry)
-      const page = await layoutRef.value?.capturePage?.()
-      if (page) pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
-    }
-    tabsStore.setActive(groupKey, original)
-    await nextTick()
-    if (pages.length) await exportTabsToPdf(pages, 'analysis.pdf')
-    log.info('Exported analysis boards to PDF.', { source: 'analysis' })
-  } catch (e) {
-    log.error(`PDF export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
-  } finally { exporting.value = false }
-}
-
-// Export every board tab as a VECTOR SVG (docs/ANALYSIS.md) — dots/gates/summary charts are editable in
-// Illustrator; image + HMM slots embed as raster. Same visit-each-tab + idle-wait dance as the PDF, but
-// captures each slot's vector SVG (`capturePage(true)`) and stitches one SVG per board with the SAME A4
-// layout as the PDF. One `.svg` for a single board; a `.zip` of per-board files when there are several.
-async function exportSvgBoard() {
-  if (exporting.value || !group.value || !tabs.value.length) return
-  exporting.value = true
-  const original = group.value.activeId
-  try {
-    const pages = []
-    for (const t of tabs.value) {
-      tabsStore.setActive(groupKey, t.id)
-      await nextTick()
-      await waitForPlotsIdle()
-      const page = await layoutRef.value?.capturePage?.(true)
-      if (page) pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
-    }
-    tabsStore.setActive(groupKey, original)
-    await nextTick()
-    const boards = buildBoardSvgs(pages)
-    // non-blocking heads-up if a board came out heavy (a big UMAP/point cloud kept as vector)
-    for (const b of boards) { const warn = svgSizeWarning(b.svg, `Board “${b.title}”`); if (warn) log.warn(warn, { source: 'analysis' }) }
-    if (boards.length === 1) downloadText(`${safe(boards[0].title) || 'analysis'}.svg`, boards[0].svg, 'image/svg+xml')
-    else if (boards.length > 1) {
-      downloadBlob('analysis_svgs.zip', zipTextFiles(boards.map((b, i) => ({ name: `${String(i + 1).padStart(2, '0')}_${safe(b.title)}.svg`, text: b.svg }))))
-    }
-    log.info(`Exported ${boards.length} analysis board${boards.length === 1 ? '' : 's'} to SVG.`, { source: 'analysis' })
-  } catch (e) {
-    log.error(`SVG export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
-  } finally { exporting.value = false }
-}
-function exportBoard(kind: string) { if (kind === 'pdf') exportPdf(); else if (kind === 'svg') exportSvgBoard() }
-
-// Export the shown data of every summary plot — collected across all boards into ONE .zip (one CSV
-// per plot, ready to re-plot in Prism). Same visit-each-tab dance as the PDF (only the active board is
-// mounted); a single zip download replaces the old dozens-of-CSVs "allow multiple downloads" prompt.
-async function exportCsv() {
-  if (exporting.value || !group.value || !tabs.value.length) return
-  exporting.value = true
-  const original = group.value.activeId
-  try {
-    const files: { name: string; text: string }[] = []
-    for (const t of tabs.value) {
-      tabsStore.setActive(groupKey, t.id)
-      await nextTick()
-      await waitForPlotsIdle()   // wait for the board's plots to finish fetching before reading their data
-      for (const { name, csv } of (await layoutRef.value?.collectCsvs?.()) ?? []) {
-        if (!csv) continue
-        files.push({ name: `${safe(t.name)}_${safe(name)}.csv`, text: csv })
+                                 // as needed (a mid-render frame exports sparse/blurry)
+      if (figure) {
+        // raster page for PDF, vector page for SVG (same layout math, different slot content)
+        const page = await layoutRef.value?.capturePage?.(figure === 'svg')
+        if (page) pages.push({ title: t.name, aspect: page.aspect, slots: page.slots })
+      }
+      if (csv) {
+        for (const { name, csv: data } of (await layoutRef.value?.collectCsvs?.()) ?? []) {
+          if (data) csvFiles.push({ name: `${safe(t.name)}_${safe(name)}.csv`, text: data })
+        }
       }
     }
     tabsStore.setActive(groupKey, original)
     await nextTick()
-    if (files.length) {
-      downloadBlob('analysis_csvs.zip', zipTextFiles(files))
-      log.info(`Exported ${files.length} plot CSV${files.length === 1 ? '' : 's'} → analysis_csvs.zip.`, { source: 'analysis' })
-    } else {
-      log.info('No summary-plot data to export.', { source: 'analysis' })
+
+    if (figure === 'pdf' && pages.length) {
+      await exportTabsToPdf(pages, 'analysis.pdf')
+      log.info('Exported analysis boards to PDF.', { source: 'analysis' })
+    } else if (figure === 'svg' && pages.length) {
+      // stitch one SVG per board (same A4 layout as the PDF); dots/gates/summary are editable vector,
+      // image + HMM slots embed as raster. One `.svg` for a single board; a `.zip` when several.
+      const boards = buildBoardSvgs(pages)
+      // non-blocking heads-up if a board came out heavy (a big UMAP/point cloud kept as vector)
+      for (const b of boards) { const warn = svgSizeWarning(b.svg, `Board “${b.title}”`); if (warn) log.warn(warn, { source: 'analysis' }) }
+      if (boards.length === 1) downloadText(`${safe(boards[0].title) || 'analysis'}.svg`, boards[0].svg, 'image/svg+xml')
+      else if (boards.length > 1) downloadBlob('analysis_svgs.zip', zipTextFiles(boards.map((b, i) => ({ name: `${String(i + 1).padStart(2, '0')}_${safe(b.title)}.svg`, text: b.svg }))))
+      log.info(`Exported ${boards.length} analysis board${boards.length === 1 ? '' : 's'} to SVG.`, { source: 'analysis' })
+    }
+    if (csv) {
+      if (csvFiles.length) {
+        downloadBlob('analysis_csvs.zip', zipTextFiles(csvFiles))   // one CSV per plot, ready to re-plot in Prism
+        log.info(`Exported ${csvFiles.length} plot CSV${csvFiles.length === 1 ? '' : 's'} → analysis_csvs.zip.`, { source: 'analysis' })
+      } else {
+        log.info('No summary-plot data to export.', { source: 'analysis' })
+      }
     }
   } catch (e) {
-    log.error(`CSV export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
+    log.error(`Export failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'analysis' })
   } finally { exporting.value = false }
+}
+// dropdown value → (figure format, include CSV)
+function exportBoard(kind: string) {
+  const map: Record<string, ['pdf' | 'svg' | null, boolean]> = {
+    pdf: ['pdf', false], svg: ['svg', false],
+    'pdf+csv': ['pdf', true], 'svg+csv': ['svg', true], csv: [null, true],
+  }
+  const sel = map[kind]
+  if (sel) runExport(sel[0], sel[1])
 }
 </script>
 
@@ -245,22 +223,18 @@ async function exportCsv() {
       <button class="tab-add" type="button" @click="addTab" v-tooltip.bottom="'New board'" aria-label="New board">
         <i class="pi pi-plus" />
       </button>
-      <!-- board image export: PDF (raster) or SVG (vector, editable in Illustrator) -->
-      <select class="tab-pdf" :disabled="exporting" v-tooltip.bottom="'Export all boards as one file per board'"
+      <!-- one export control: figure (PDF/SVG), data (CSV), or both in a single pass -->
+      <select class="tab-pdf" :disabled="exporting" v-tooltip.bottom="'Export each board — figure, data, or both'"
               @change="exportBoard(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-        <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Figure' }}</option>
+        <option value="">{{ exporting ? '⋯ exporting…' : '⤓ Export' }}</option>
         <option value="pdf">PDF (raster)</option>
         <option value="svg">SVG (vector)</option>
+        <option value="pdf+csv">PDF + CSV</option>
+        <option value="svg+csv">SVG + CSV</option>
+        <option value="csv">CSV only</option>
       </select>
-      <i class="tab-info pi pi-info-circle" v-tooltip.bottom="'PDF = raster image, best for viewing/printing (data CSVs attached). ' +
-         'SVG = vector, editable in Illustrator (recolour dots, edit text/axes). ' +
-         'In SVG, image and HMM-transition panels stay raster (no clean vector form). ' +
-         'A very large point cloud (e.g. a 100k+ UMAP) makes a heavy SVG that can be slow in Illustrator — ' +
-         'you’ll get a warning in the log if a figure is large.'" />
-      <button class="tab-csv" type="button" @click="exportCsv" :disabled="exporting"
-              v-tooltip.bottom="'Export the raw datapoints of every summary plot as CSV (one file per plot, → Prism)'">
-        <i :class="exporting ? 'pi pi-spin pi-spinner' : 'pi pi-file-excel'" /> {{ exporting ? 'exporting…' : 'CSV' }}
-      </button>
+      <i class="tab-info pi pi-info-circle" v-tooltip.bottom="'PDF: raster, for viewing/printing. ' +
+         'SVG: vector, editable in Illustrator. CSV: data → Prism. Image + HMM panels stay raster; huge point clouds warn.'" />
     </div>
 
     <!-- only the active board is mounted; keyed by its canvas key so a tab switch re-binds the layout -->
@@ -306,10 +280,4 @@ async function exportCsv() {
 /* info hint for the figure-export format choice */
 .tab-info { align-self: center; margin-left: 4px; margin-bottom: 2px; font-size: 12px; color: var(--cc-text-dim); cursor: help; }
 .tab-info:hover { color: var(--cc-text); }
-/* CSV sits right next to PDF (PDF already carries the margin-left:auto that pushes the pair right) */
-.tab-csv { display: inline-flex; align-items: center; gap: 5px; margin-left: 4px; margin-bottom: 2px;
-  padding: 3px 10px; font-size: 11px; border: 1px solid var(--cc-border); border-radius: 5px;
-  background: var(--cc-surface-1); color: var(--cc-text-dim); cursor: pointer; }
-.tab-csv:hover:not(:disabled) { color: var(--cc-text); border-color: #7c3aed; }
-.tab-csv:disabled { opacity: 0.5; cursor: default; }
 </style>

@@ -39,7 +39,7 @@ migrated to sidecars on load. See `docs/todo/ANIMATION_PLAN.md`.
 Each tab renders through `components/canvas/LayoutCanvas.vue`: a **comic-plate** grid (templates in
 `plots/layoutTemplates.ts` — header banners, splits, hero+N) whose slots each hold one plot. A slot's
 content is `{ kind, ref, state }`; the `⚙` popover tunes cols/rows/row-height. `TabbedCanvas.vue` wraps
-it with the tab bar + the PDF/CSV export buttons. Each tab has a **duplicate** action (`pi-copy`):
+it with the tab bar + the single `⤓ Export` dropdown. Each tab has a **duplicate** action (`pi-copy`):
 `analysisTabs.addTab('… copy')` + `analysisLayout.duplicateEntry` deep-clones the source board's whole
 layout (plots + their state + shared view-state); sidecar assets (filmstrip/image PNGs) are re-copied
 to fresh ids via `/api/board-assets/copy` so the two boards are independent (deleting a frame in one
@@ -111,7 +111,7 @@ caption (bottom-centre) and actions (recapture / remove, bottom-right) sit **abo
 toolbar (`.cc-panel-controls`, z-index 6) — they used to live at the top and were masked when the
 hover toolbar appeared.
 
-## Export — Figure (PDF / SVG) + CSV
+## Export — one dropdown: figure (PDF / SVG) and/or CSV
 
 `TabbedCanvas` drives export; `LayoutCanvas.capturePage(vector?)` measures the on-screen grid so the
 output reproduces the layout exactly (spans, plates, gaps). `plots/pdf.ts` `layoutPages(pages)` computes
@@ -120,16 +120,24 @@ title strip) — **one geometry, two backends**: the PDF builder (`exportTabsToP
 board SVG builder (`plots/boardSvg.ts` `buildBoardSvgs`) both consume it, so the two exports land
 identically.
 
-**Figure dropdown — PDF (raster) / SVG (vector).** The board's `⤓ Figure` control offers:
-- **PDF (raster)** — the original: one A4 page per board, each slot a hi-res PNG, with each summary
-  plot's data CSV attached to the file.
+**One `⤓ Export` dropdown — figure, data, or both in a single pass.** The board's single export control
+offers: **PDF (raster)**, **SVG (vector)**, **PDF + CSV**, **SVG + CSV**, **CSV only**. Figure and CSV
+share the exact same visit-each-tab-and-capture walk, so the combined items do BOTH in **one pass** —
+`runExport(figure, csv)` walks the tabs once, capturing a figure page (raster for PDF, vector for SVG)
+and/or the per-plot CSVs, then emits whichever outputs were requested. One control, **one spinner**; the
+two exports can't interleave over the shared active-tab slot (only the active board is mounted).
+- **PDF (raster)** — one A4 page per board, each slot a hi-res PNG.
 - **SVG (vector)** — one `.svg` per board (zipped when >1), **editable in Illustrator**. Each slot is a
   **nested `<svg>`** when the panel can emit vector (summary + cluster heatmap via
   `PlotChart.toImageURL('svg')`; UMAP + gating via their `exportSvg`, dots grouped by colour for
   recolouring — see `docs/PLOTS.md`), stitched via `export.ts` `nestSvg`. **Deliberate raster
   exception:** image/filmstrip slots (already screenshots) and the **HMM-transition** panels (HTML
-  overlay legends, no clean vector form) embed as a raster `<image>`. An **info icon** by the dropdown
-  says which stay raster — no silent surprise.
+  overlay legends, no clean vector form) embed as a raster `<image>`.
+- **CSV** — one CSV per summary plot across all boards, zipped (`analysis_csvs.zip`), ready to re-plot
+  in Prism. Available alone or bundled with a figure.
+
+An **info icon** by the dropdown says which slot types stay raster and that a huge point cloud warns —
+no silent surprise.
 
 The vector contract each panel exposes: `exportSvg(): string | Promise<string>` (a full light-theme
 `<svg>`), collected by `capturePage(true)` (falls back to the panel's `exportImage()` PNG when absent).
@@ -144,7 +152,7 @@ The vector contract each panel exposes: `exportSvg(): string | Promise<string>` 
   blank. Every plot host feeds a board-wide load counter through `useDelayedLoading` (the one spinner
   composable they all use — no per-plot wiring), and `waitForPlotsIdle()` blocks until the counter has
   been 0 for a continuous settle window (+2 RAF frames for the final WebGL/canvas paint), capped by a
-  timeout. Both the PDF and CSV export await it after switching tabs.
+  timeout. The single export pass awaits it after switching to each tab.
 
 - **Per-slot title (figure caption)**: each filled slot has an editable title line (`.lc-slot-cap`,
   persisted in the slot's `state.title`), shown above the plot on-screen and drawn above the slot image
