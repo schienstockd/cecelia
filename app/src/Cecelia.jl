@@ -164,7 +164,7 @@ include("ai/observer_prompt.jl")
 include("ai/agent_runner.jl")
 include("ai/observer_session.jl")
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
-       observer_feedback_prompt, observer_auto_prompt, observer_agent_bin,
+       observer_feedback_prompt, observer_auto_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,
        read_observer_session, record_observer_turn!, log_observer_pass!, clear_observer_session!
 

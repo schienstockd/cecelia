@@ -333,6 +333,12 @@ async function toggleMute(category: string) {
       </div>
     </details>
 
+    <!-- transparency: the exact prompt the observer runs under (read-only), collapsed like the log -->
+    <details v-if="observerAvailable && observer.prompt" class="ll-activity ll-prompt">
+      <summary>Observer prompt</summary>
+      <pre class="ll-prompt-body">{{ observer.prompt }}</pre>
+    </details>
+
     <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
     <div class="ll-modebar">
       <span class="ll-modelabel">Rating:</span>
@@ -473,6 +479,10 @@ async function toggleMute(category: string) {
 }
 .ll-observer-body {
   font-size: 0.72rem; color: var(--cc-text); line-height: 1.45; white-space: pre-wrap;
+}
+.ll-prompt-body {
+  margin: 0.3rem 0 0; font-size: 0.66rem; color: var(--cc-text); line-height: 1.45;
+  white-space: pre-wrap; word-break: break-word; font-family: inherit;
 }
 /* Claude activity log — collapsible; shows each pass (Ask/Watch), its cost + verdict, even when silent */
 .ll-activity {

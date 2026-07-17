@@ -40,7 +40,8 @@ end
 function api_observer_status(req::HTTP.Request)
     resp = Dict{String,Any}("available"    => agent_available(ClaudeAgent()),
                             "models"        => OBSERVER_MODELS,          # the picker's choices
-                            "defaultModel"  => observer_default_model()) # config default (Sonnet)
+                            "defaultModel"  => observer_default_model(), # config default (Sonnet)
+                            "prompt"        => observer_prompt_display()) # transparency: what it runs under
     puid = get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", "")
     if !isempty(puid)
         proj = try load_project(puid) catch; nothing end

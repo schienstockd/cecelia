@@ -15,6 +15,7 @@ export const useObserverStore = defineStore('observer', () => {
 
   const available = ref(false)
   const models = ref<string[]>(['haiku', 'sonnet', 'opus'])
+  const prompt = ref('')                 // the exact instructions the observer runs under (transparency)
   const session = ref<ObserverSession | null>(null)
   const busy = ref(false)
   const appendTick = ref(0)              // bumped when a pass appends → the open panel reloads entries
@@ -25,6 +26,7 @@ export const useObserverStore = defineStore('observer', () => {
     const s = await observerApi.status(projectUid() || undefined)
     available.value = s.available
     if (s.models?.length) models.value = s.models
+    if (s.prompt) prompt.value = s.prompt
     session.value = s.session ?? null
   }
 
@@ -63,5 +65,5 @@ export const useObserverStore = defineStore('observer', () => {
   })
   const installAutoWatch = () => watcher.install()
 
-  return { available, models, session, busy, appendTick, refresh, runPass, clear, installAutoWatch }
+  return { available, models, prompt, session, busy, appendTick, refresh, runPass, clear, installAutoWatch }
 })
