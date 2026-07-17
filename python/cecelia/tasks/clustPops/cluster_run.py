@@ -15,6 +15,8 @@ Invoked by `app/src/tasks/clustPops/cluster.jl` via a params JSON. Params:
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
+import json
+
 import numpy as np
 import pandas as pd
 
@@ -99,7 +101,15 @@ def run(params):
     # ── split back per segment and write into each cell labelProps (shared write-back) ──
     # clusters are scanpy categorical strings ("0".."N"); the helper stores INTEGER codes (a
     # `clusters.*` name-rule pins them categorical above the level cap — see track_props.jl).
-    clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
+    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
+
+    # QC (advisory): hand the per-segment cluster distribution to Julia to bank as metrics + findings
+    # (qc.jl). Best-effort; never fails the task. Same qcOutPath pattern as cellpose_run.py.
+    qc_out_path = params.get("qcOutPath")
+    if qc_out_path is not None:
+        with open(qc_out_path, "w") as f:
+            json.dump(qc, f)
+        log.log(f">> saved cluster QC: {qc['nClusters']} clusters over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> cluster_cells done")
 

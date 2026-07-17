@@ -4201,6 +4201,21 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             _, pf = Cecelia._segment_qc_findings(Dict("nuc" => 5))
             @test pf == 5
 
+            # clustering findings (set-scope: total = run clusters; the rest = one image's slice)
+            # run collapsed to 1 cluster → warn (regardless of the per-image numbers)
+            c1 = Cecelia.cluster_qc_findings(1, 500, 1, 1.0)
+            @test length(c1) == 1 && c1[1]["code"] == "clustering.single_cluster" && c1[1]["level"] == "warn"
+            # image's cells all in one cluster while the run found several → warn (batch outlier)
+            c2 = Cecelia.cluster_qc_findings(6, 400, 1, 1.0)
+            @test length(c2) == 1 && c2[1]["code"] == "clustering.image_one_cluster" && c2[1]["level"] == "warn"
+            # one cluster dominates this image (≥90%) but not all → info
+            c3 = Cecelia.cluster_qc_findings(6, 400, 3, 0.95; unit = "tracks")
+            @test length(c3) == 1 && c3[1]["code"] == "clustering.dominant_cluster" && c3[1]["level"] == "info"
+            @test occursin("tracks", c3[1]["short"])
+            # a healthy spread flags nothing; an empty image (n=0) never flags
+            @test isempty(Cecelia.cluster_qc_findings(6, 400, 5, 0.4))
+            @test isempty(Cecelia.cluster_qc_findings(6, 0, 0, 0.0))
+
             # against the tracked fixture: metrics agree with an independent count of track_id
             h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
             if !have_fixture(h5)

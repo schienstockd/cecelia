@@ -24,6 +24,8 @@ Invoked by `app/src/tasks/clustTracks/cluster.jl` via a params JSON. Params:
   resolution, normaliseAxis, normaliseToMedian, maxFraction, normalisePercentile,
   normalisePercentileBottom, transformation, logBase, createUmap, usePaga, pagaThreshold, randomState
 """
+import json
+
 import numpy as np
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
@@ -77,7 +79,15 @@ def run(params):
     )
 
     # ── split back per segment and write into each per-track table (shared write-back) ──
-    clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
+    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log)
+
+    # QC (advisory): per-segment cluster distribution for Julia to bank (qc.jl). Best-effort; never
+    # fails the task. Same qcOutPath pattern as clustPops/cellpose runners.
+    qc_out_path = params.get("qcOutPath")
+    if qc_out_path is not None:
+        with open(qc_out_path, "w") as f:
+            json.dump(qc, f)
+        log.log(f">> saved cluster QC: {qc['nClusters']} clusters over {len(qc['perSegment'])} segment(s)")
 
     log.log(">> cluster_tracks done")
 

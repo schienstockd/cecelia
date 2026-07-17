@@ -49,6 +49,12 @@ Flags are statistical, not interpretive. Claude says "this gate produced 23 cell
 - State frequency per image vs. cohort — flag >2 SD deviation
 - Single state >95% dominant in one image but not others
 
+*Clustering* (`clustPops.cluster` / `clustTracks.cluster`, set-scope): implemented — banked per image (how that image's points landed in the set-wide clustering) via `write_cluster_qc!` (`app/src/qc.jl`).
+- Run collapsed to ≤1 cluster — resolution too low / features don't separate (warn)
+- One image's points all fell into a single cluster while the run found several — batch/normalisation outlier (warn)
+- One cluster holds ≥90% of an image's points — under-clustering (info)
+- Cohort: per-image `nClusters` / `largestClusterFrac` / point count vs. the set (`COHORT_METRICS`)
+
 **Cohort statistics**: computed after all images complete a stage. Per-image flags that depend on cohort context are deferred until the cohort is complete — Claude needs the full set to know what's an outlier.
 
 **Cross-experiment memory**: if the lab log contains prior experiment records, Claude cross-references. "This pattern (low cell count + bimodal track lengths) appeared in experiment X on 2026-03-12 — root cause was Z-drift. Check Z-stack integrity."

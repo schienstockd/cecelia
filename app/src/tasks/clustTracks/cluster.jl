@@ -134,6 +134,9 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
         "usePaga" => Bool(get(params, "usePaga", false)),
         "pagaThreshold" => get(params, "pagaThreshold", 0.1),
         "randomState" => 0)
+    # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
+    qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
+    task_params["qcOutPath"] = qc_out_path
     on_progress(3, 4)
 
     ok = run_py("tasks/clustTracks/cluster_run.py", task_params, task_run_dir(imgs[1]._dir);
@@ -143,6 +146,8 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
     for seg in segments
         _write_clust_features!(seg["propsPath"], suffix, present_cols, uids)
     end
+    # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
+    write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", on_log = on_log)
     on_progress(4, 4)
 
     on_log("[INFO] clustTracks done → clusters.$suffix (per-track)")
