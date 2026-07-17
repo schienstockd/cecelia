@@ -4216,22 +4216,25 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
 
         @testset "cohort outliers (robust median/MAD)" begin
-            # pure: one image far from a tight cluster is flagged; the cluster is not
-            r = Cecelia._cohort_outliers(
-                Dict("a"=>10.0,"b"=>10.0,"c"=>10.0,"d"=>10.0,"e"=>10.0,
-                     "f"=>10.0,"g"=>10.0,"h"=>10.0,"i"=>10.0,"j"=>100.0))
-            @test r.n == 10 && haskey(r.outliers, "j") && !haskey(r.outliers, "a")
-            @test r.outliers["j"]["z"] |> abs > 3.5              # modified-z carried for the flag
-            @test r.median == 10.0                               # robust centre (not dragged by 100)
-            # THE POINT: a clear outlier flags even at n=3 (mean/SD couldn't — max |z| there is 1.15)
+            # MAD>0 regime: a clear outlier flags even at n=3 (mean/SD couldn't — max |z| there = 1.15)
             r3 = Cecelia._cohort_outliers(Dict("a"=>800.0,"b"=>810.0,"c"=>100.0))
             @test r3.n == 3 && haskey(r3.outliers, "c") && !haskey(r3.outliers, "a")
-            @test r3.median == 800.0
+            @test r3.median == 800.0 && r3.mad > 0
+            @test r3.outliers["c"]["z"] |> abs > 3.5             # modified-z carried for the flag
+
+            # MAD==0 regime — THE qcProbe case [800,800,100]: two identical baselines → MAD 0 (and the
+            # old mean-abs-dev fallback missed it). Relative-departure rule flags the 100, not the 800s.
+            r0 = Cecelia._cohort_outliers(Dict("a"=>800.0,"b"=>800.0,"c"=>100.0))
+            @test r0.mad == 0.0 && haskey(r0.outliers, "c") && !haskey(r0.outliers, "a")
+            @test r0.outliers["c"]["relDev"] >= 0.5             # relative departure carried for the flag
+            # …but a near-identical value (801 vs 800) is NOT flagged (no magnitude → no false positive)
+            @test isempty(Cecelia._cohort_outliers(Dict("a"=>800.0,"b"=>800.0,"c"=>801.0)).outliers)
+
             # too few to judge (no cohort) → no outliers even with a wild value
             @test isempty(Cecelia._cohort_outliers(Dict("a"=>5.0,"b"=>500.0)).outliers)
-            # all identical → MAD 0 AND meanAD 0 → no outliers (no false positive)
+            # all identical → nothing flagged (no false positive)
             @test isempty(Cecelia._cohort_outliers(Dict("a"=>3.0,"b"=>3.0,"c"=>3.0)).outliers)
-            # a lower explicit threshold is honoured (more sensitive)
+            # a lower explicit threshold is honoured in the MAD>0 regime (more sensitive)
             @test haskey(Cecelia._cohort_outliers(Dict("a"=>800.0,"b"=>810.0,"c"=>100.0), 1.0).outliers, "c")
         end
 
