@@ -284,7 +284,15 @@ function _execute_job!(job::TaskJob)
                       Base.invokelatest(job.on_process, proc)
                   end)
     catch e
-        @warn "Unhandled error in task" task_id = job.id exception = e
+        bt = catch_backtrace()
+        @warn "Unhandled error in task" task_id = job.id exception = (e, bt)
+        # Also tee the crash into the per-image task log (job.on_log appends to
+        # {img._dir}/logs/{fun}.log). Without this, a Julia-side failure — e.g. one thrown before the
+        # Python subprocess even starts — leaves the task log ending mid-run with no error, invisible
+        # to `get_task_log` and to anyone debugging after the fact (the error only went to the console).
+        try
+            Base.invokelatest(job.on_log, "[ERROR] Task crashed: " * sprint(showerror, e, bt))
+        catch; end
         nothing
     end
     _set_status!(rec, is_cancelled(job.id) ? :cancelled :

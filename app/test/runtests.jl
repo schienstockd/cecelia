@@ -46,6 +46,12 @@ end
 # Custom drop-in task fixture — structs must live at module top level, not inside a @testset block.
 struct _TestCustomTask <: CciaTask end
 
+# A task whose _run_task always throws — used to assert the scheduler tees a crash into the task log.
+struct _CrashTask <: CciaTask end
+Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
+                  on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing,
+                  on_process::Function = _ -> nothing) = error("boom in _run_task (test)")
+
 @testset "Cecelia package smoke tests" begin
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -764,6 +770,28 @@ struct _TestCustomTask <: CciaTask end
         reloaded = init_object(proj.uid, img.uid)
         @test reloaded.status == "pending"        # primary removal reset status
         @test !haskey(reloaded.filepath, "default")  # version entry gone
+        rm(proj.root; recursive=true)
+    end
+
+    # ── A task crash is recorded in the per-image log, not just the console ──────
+    # Regression: a Julia-side failure (caught in _execute_job!) used to only @warn to the console —
+    # it never reached {img._dir}/logs/{fun}.log, so a crashed task looked like it just stopped
+    # mid-run with no error (invisible to get_task_log + on-disk debugging).
+    @testset "Task crash is teed into the per-image log" begin
+        proj = create_project!(name="crash-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        img  = add_image!(s; name="img")
+
+        logs = String[]
+        result = run_task(_CrashTask(), img, Dict{String,Any}(); on_log = l -> push!(logs, l))
+
+        @test result === nothing                                       # crash → nil result
+        @test any(l -> occursin("Task crashed", l) && occursin("boom", l), logs)  # reached on_log
+
+        fun_name = Cecelia._fun_name_from_task(_CrashTask())
+        logfile  = joinpath(img._dir, "logs", fun_name * ".log")
+        @test isfile(logfile)                                          # ...and the on-disk log
+        @test occursin("boom", read(logfile, String))
         rm(proj.root; recursive=true)
     end
 
