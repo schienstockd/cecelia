@@ -463,14 +463,18 @@ end
         let r = JSON3.read(hist("projectUid=$uid")[2])
             @test r.count == 0 && length(r.history) == 0
         end
-        # activity across two images, aggregated
+        # activity across two images, aggregated — including a FAILED run (visible to the observer)
         append_run_log!(img1, "segment.cellpose", "default")
-        append_run_log!(img2, "tracking.bayesian_tracking", "default")
+        append_run_log!(img2, "tracking.bayesian_tracking", "default", "failed")
         let r = JSON3.read(hist("projectUid=$uid")[2])
             @test r.count == 2
             funs = [h.fun for h in r.history]
             @test "segment.cellpose" in funs && "tracking.bayesian_tracking" in funs
             @test all(h -> h.imageUid in (img1.uid, img2.uid), r.history)
+            # per-run outcome surfaced under runStatus (distinct from the image's `status`)
+            byfun = Dict(String(h.fun) => String(h.runStatus) for h in r.history)
+            @test byfun["segment.cellpose"] == "done"          # default
+            @test byfun["tracking.bayesian_tracking"] == "failed"
         end
         # limit caps rows
         @test JSON3.read(hist("projectUid=$uid&limit=1")[2]).count == 1

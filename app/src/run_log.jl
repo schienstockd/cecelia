@@ -19,11 +19,15 @@ function read_run_log(img::CciaImage)::Vector{Any}
     end
 end
 
-# append one {fun, valueName, at} entry (ISO-ish local timestamp) and persist; returns the new log.
-function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "")
+# append one {fun, valueName, status, at} entry (ISO-ish local timestamp) and persist; returns the new
+# log. `status` is "done" (success) or "failed" — recording failures too so the run history (and the
+# AI observer reading it) can see repeated failures, not just successes. Legacy entries lack `status`;
+# readers should treat a missing status as "done".
+function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "",
+                         status::AbstractString = "done")
     entries = read_run_log(img)
     push!(entries, Dict{String,Any}(
-        "fun" => string(fun_name), "valueName" => string(value_name),
+        "fun" => string(fun_name), "valueName" => string(value_name), "status" => string(status),
         "at" => Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS")))
     length(entries) > RUN_LOG_CAP && (entries = entries[(end - RUN_LOG_CAP + 1):end])
     open(run_log_path(img), "w") do io
