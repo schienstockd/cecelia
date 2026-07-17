@@ -42,16 +42,17 @@ export interface ObserverSession {
 export const observerApi = {
   /** Availability (drives the disabled-with-why UI) + this project's session/usage when a uid is
    *  given. Never throws → unavailable on error. */
-  status: async (projectUid?: string): Promise<{ available: boolean; session?: ObserverSession }> => {
+  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; session?: ObserverSession }> => {
     try {
       const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
       const res = await fetch(`/api/observer/status${q}`)
       return res.ok ? await res.json() : { available: false }
     } catch { return { available: false } }
   },
-  /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. Returns
-   *  { ok, available, message, error, inputTokens, outputTokens, session }. */
-  feedback: (projectUid: string) => svcPost('/api/observer/feedback', { projectUid }),
+  /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. `model` is a
+   *  CLI alias (haiku|sonnet|opus); the backend allow-lists it. Returns
+   *  { ok, available, model, message, error, inputTokens, outputTokens, session }. */
+  feedback: (projectUid: string, model?: string) => svcPost('/api/observer/feedback', { projectUid, model }),
   /** Clear context: reset the project's session + token totals. Returns { ok, session }. */
   clear: (projectUid: string) => svcPost('/api/observer/clear', { projectUid }),
 }

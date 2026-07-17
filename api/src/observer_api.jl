@@ -24,7 +24,9 @@ end
 # status doubles as the per-project session/usage readout when given ?projectUid — one call drives
 # both the availability gate and the token readout on the panel.
 function api_observer_status(req::HTTP.Request)
-    resp = Dict{String,Any}("available" => agent_available(ClaudeAgent()))
+    resp = Dict{String,Any}("available"    => agent_available(ClaudeAgent()),
+                            "models"        => OBSERVER_MODELS,          # the picker's choices
+                            "defaultModel"  => observer_default_model()) # config default (Sonnet)
     puid = get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", "")
     if !isempty(puid)
         proj = try load_project(puid) catch; nothing end
@@ -44,7 +46,9 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
     catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
-    agent = ClaudeAgent()
+    # allow-listed model (default Sonnet); the panel sends the user's pick, auto-Watch included.
+    model = observer_valid_model(get(body, :model, ""))
+    agent = ClaudeAgent(; model = model)
     if !agent_available(agent)
         return 200, JSON3.write((; ok = false, available = false,
             error = "No assistant CLI found. Install Claude Code (or set [ai] agent_bin) to enable this."))
@@ -55,7 +59,8 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
                             session_id = String(sess["sessionId"]))     # resume the project's session
     # accumulate real usage + adopt the session id for the next --resume (only on a clean turn)
     updated = res.ok ? record_observer_turn!(proj, res.session_id, res.input_tokens, res.output_tokens) : sess
-    200, JSON3.write((; ok = res.ok, available = true, message = res.text, error = res.error,
+    200, JSON3.write((; ok = res.ok, available = true, model = model,
+                        message = res.text, error = res.error,
                         inputTokens = res.input_tokens, outputTokens = res.output_tokens,
                         session = updated))
 end

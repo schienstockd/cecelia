@@ -11,11 +11,24 @@ abstract type AgentBackend end
 # The CLI binary for the agent — default "claude", overridable via config.toml [ai] agent_bin.
 observer_agent_bin()::String = string(get(get(cecelia_conf(), "ai", Dict()), "agent_bin", "claude"))
 
+# The models the observer offers (Claude CLI `--model` aliases). Opus is deliberately NOT the
+# default: the observer's work — spot a repeat pattern, read a task log to diagnose a failure, write
+# a brief lab-log line — fits Sonnet, and Haiku is enough for the frequent auto-Watch passes; Opus
+# just costs more and runs slower. Default overridable via config.toml [ai] model, picked per-run by
+# the panel. A second backend (Gemini/…) would define its own list.
+const OBSERVER_MODELS = ["haiku", "sonnet", "opus"]
+observer_default_model()::String =
+    (m = string(get(get(cecelia_conf(), "ai", Dict()), "model", "sonnet"));
+     m in OBSERVER_MODELS ? m : "sonnet")
+# Coerce a requested model to a safe allow-listed value (never pass an arbitrary string to --model).
+observer_valid_model(m)::String =
+    (s = string(m); s in OBSERVER_MODELS ? s : observer_default_model())
+
 struct ClaudeAgent <: AgentBackend
     bin::String
     model::String     # "" = the CLI's default model
 end
-ClaudeAgent(; bin::AbstractString = observer_agent_bin(), model::AbstractString = "") =
+ClaudeAgent(; bin::AbstractString = observer_agent_bin(), model::AbstractString = observer_default_model()) =
     ClaudeAgent(String(bin), String(model))
 
 # One turn's outcome — backend-agnostic. The lab-log write itself is a side effect the agent performs

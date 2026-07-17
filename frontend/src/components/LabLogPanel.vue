@@ -38,6 +38,7 @@ const observerAvailable = ref(false)
 const observerBusy = ref(false)
 const observerNote = ref('')
 const observerSession = ref<ObserverSession | null>(null)
+const observerModels = ref<string[]>(['haiku', 'sonnet', 'opus'])   // populated from status
 const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
 // running token total for the readout (real usage from the assistant's own output, accumulated
 // per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
@@ -103,7 +104,7 @@ async function askClaude() {
   observerNote.value = ''
   error.value = ''
   try {
-    const res = await observerApi.feedback(projectUid.value)
+    const res = await observerApi.feedback(projectUid.value, settings.labLogObserverModel)
     if (res.session) observerSession.value = res.session   // updated running token total
     if (res.available === false) {
       observerAvailable.value = false
@@ -169,6 +170,7 @@ watch(projectUid, async () => {
   observerApi.status(projectUid.value).then(s => {
     observerAvailable.value = s.available
     observerSession.value = s.session ?? null
+    if (s.models?.length) observerModels.value = s.models
   })
   await load()
   if (settings.labLogAutoContext) capture(true)
@@ -311,6 +313,10 @@ async function toggleMute(category: string) {
              v-tooltip.top="'Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)'">
         <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
       </label>
+      <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
+              v-tooltip.top="'Which model the observer runs (Ask Claude + Watch). Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
+        <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
+      </select>
       <span v-if="observerTokens" class="ll-tokens"
             v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
@@ -427,6 +433,10 @@ async function toggleMute(category: string) {
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
+.ll-model {
+  font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
+  background: var(--cc-surface); border: 1px solid var(--cc-border); border-radius: 3px;
+}
 .ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
 .ll-tokens { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
 .ll-clearctx {

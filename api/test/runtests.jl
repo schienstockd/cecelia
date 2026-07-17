@@ -649,7 +649,12 @@ end
     # assert which, so it passes both in CI and on a dev box with Claude Code installed).
     st, body = api_observer_status(HTTP.Request("GET", "/api/observer/status"))
     @test st == 200
-    @test JSON3.read(body).available isa Bool
+    let s = JSON3.read(body)
+        @test s.available isa Bool
+        # the picker's choices + shipped default are exposed so the panel can populate the dropdown
+        @test Set(String.(s.models)) == Set(["haiku", "sonnet", "opus"])
+        @test String(s.defaultModel) in Set(["haiku", "sonnet", "opus"])
+    end
 
     # feedback: validated before anything is spawned.
     @test _post(api_observer_feedback, Dict())[1] == 400                       # projectUid missing
