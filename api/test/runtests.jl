@@ -605,4 +605,8 @@ end
     # feedback: validated before anything is spawned.
     @test _post(api_observer_feedback, Dict())[1] == 400                       # projectUid missing
     @test _post(api_observer_feedback, Dict("projectUid" => "nope"))[1] == 404 # unknown project
+
+    # clear context: same validation, no spawn.
+    @test _post(api_observer_clear, Dict())[1] == 400                          # projectUid missing
+    @test _post(api_observer_clear, Dict("projectUid" => "nope"))[1] == 404    # unknown project
 end

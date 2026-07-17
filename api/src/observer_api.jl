@@ -21,8 +21,16 @@ function _write_observer_mcp_config()::String
     path
 end
 
-function api_observer_status(::HTTP.Request)
-    200, JSON3.write((; available = agent_available(ClaudeAgent())))
+# status doubles as the per-project session/usage readout when given ?projectUid — one call drives
+# both the availability gate and the token readout on the panel.
+function api_observer_status(req::HTTP.Request)
+    resp = Dict{String,Any}("available" => agent_available(ClaudeAgent()))
+    puid = get(HTTP.queryparams(HTTP.URI(req.target)), "projectUid", "")
+    if !isempty(puid)
+        proj = try load_project(puid) catch; nothing end
+        proj === nothing || (resp["session"] = read_observer_session(proj))
+    end
+    200, JSON3.write(resp)
 end
 
 function api_observer_feedback(body_bytes::Vector{UInt8})
@@ -31,7 +39,7 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
     end
     project_uid = String(get(body, :projectUid, ""))
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
-    try
+    proj = try
         load_project(project_uid)                                # the agent will read this project
     catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
@@ -41,9 +49,26 @@ function api_observer_feedback(body_bytes::Vector{UInt8})
         return 200, JSON3.write((; ok = false, available = false,
             error = "No assistant CLI found. Install Claude Code (or set [ai] agent_bin) to enable this."))
     end
+    sess = read_observer_session(proj)
     cfg_path = _write_observer_mcp_config()
-    res = run_observer_turn(agent, observer_feedback_prompt(project_uid), cfg_path)
+    res = run_observer_turn(agent, observer_feedback_prompt(project_uid), cfg_path;
+                            session_id = String(sess["sessionId"]))     # resume the project's session
+    # accumulate real usage + adopt the session id for the next --resume (only on a clean turn)
+    updated = res.ok ? record_observer_turn!(proj, res.session_id, res.input_tokens, res.output_tokens) : sess
     200, JSON3.write((; ok = res.ok, available = true, message = res.text, error = res.error,
                         inputTokens = res.input_tokens, outputTokens = res.output_tokens,
-                        session = res.session_id))
+                        session = updated))
+end
+
+# Clear context: reset the project's assistant session + token totals (next run starts fresh).
+function api_observer_clear(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error = "Invalid JSON body"))
+    end
+    puid = String(get(body, :projectUid, ""))
+    isempty(puid) && return 400, JSON3.write((; error = "projectUid required"))
+    proj = try load_project(puid) catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok = true, session = clear_observer_session!(proj)))
 end

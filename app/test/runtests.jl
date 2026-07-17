@@ -187,6 +187,30 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
     end
 
+    @testset "AI observer session sidecar (tokens + clear)" begin
+        proj = create_project!(name = "obs-sess-$(rand(1000:9999))", kind = "static")
+        # fresh project → zeroed session
+        s0 = read_observer_session(proj)
+        @test s0["sessionId"] == "" && s0["inputTokens"] == 0 && s0["turns"] == 0
+
+        # a turn adopts the session id + accumulates tokens
+        record_observer_turn!(proj, "sessABC", 1000, 40)
+        s1 = read_observer_session(proj)                       # re-read from disk (persisted)
+        @test s1["sessionId"] == "sessABC" && s1["inputTokens"] == 1000 && s1["outputTokens"] == 40
+        @test s1["turns"] == 1
+        # a second turn accumulates; an EMPTY session id keeps the existing one
+        record_observer_turn!(proj, "", 500, 10)
+        s2 = read_observer_session(proj)
+        @test s2["sessionId"] == "sessABC"                     # unchanged (empty id kept prior)
+        @test s2["inputTokens"] == 1500 && s2["outputTokens"] == 50 && s2["turns"] == 2
+
+        # clear resets everything (next run forks a fresh session)
+        cleared = clear_observer_session!(proj)
+        @test cleared["sessionId"] == "" && cleared["inputTokens"] == 0 && cleared["turns"] == 0
+        @test read_observer_session(proj)["inputTokens"] == 0
+        rm(proj.root; recursive = true)
+    end
+
     # ── Model: create project and image ───────────────────────────────────────
     @testset "Model round-trip" begin
         proj = create_project!(name="smoke-test-$(rand(1000:9999))", kind="static")

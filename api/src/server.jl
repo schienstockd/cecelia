@@ -324,6 +324,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_lablog_capture(body_bytes)
         elseif path == "/api/observer/feedback"
             api_observer_feedback(body_bytes)
+        elseif path == "/api/observer/clear"
+            api_observer_clear(body_bytes)
         elseif path == "/api/lablog/tune"
             api_lablog_tune(body_bytes)
         elseif path == "/api/lablog/mute"

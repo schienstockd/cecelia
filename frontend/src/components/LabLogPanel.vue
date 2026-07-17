@@ -11,7 +11,7 @@ import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
-import { observerApi } from '../utils/serviceApi'
+import { observerApi, type ObserverSession } from '../utils/serviceApi'
 
 const pm = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -35,6 +35,16 @@ const mode = computed(() => settings.labLogMode)
 const observerAvailable = ref(false)
 const observerBusy = ref(false)
 const observerNote = ref('')
+const observerSession = ref<ObserverSession | null>(null)
+// running token total for the readout (real usage from the assistant's own output, accumulated
+// per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
+const observerTokens = computed(() => {
+  const s = observerSession.value
+  if (!s || (s.inputTokens + s.outputTokens) === 0) return ''
+  const total = s.inputTokens + s.outputTokens
+  const fmt = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
+  return `~${fmt} tokens · ${s.turns} turn${s.turns === 1 ? '' : 's'}`
+})
 // chips include any orphaned mute (category since renamed/removed) so it can always be un-muted
 const muteableCategories = computed(() => muteChips(categories.value, mutes.value))
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
@@ -91,6 +101,7 @@ async function askClaude() {
   error.value = ''
   try {
     const res = await observerApi.feedback(projectUid.value)
+    if (res.session) observerSession.value = res.session   // updated running token total
     if (res.available === false) {
       observerAvailable.value = false
       observerNote.value = res.error ?? 'Assistant unavailable.'
@@ -107,9 +118,25 @@ async function askClaude() {
   }
 }
 
+// Clear context: reset the project's assistant session + token totals (next run starts fresh).
+async function clearContext() {
+  if (!projectUid.value || observerBusy.value) return
+  try {
+    const res = await observerApi.clear(projectUid.value)
+    observerSession.value = res.session ?? null
+    observerNote.value = ''
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
 watch(projectUid, async () => {
-  observerApi.status().then(s => { observerAvailable.value = s.available })
+  observerNote.value = ''
+  observerApi.status(projectUid.value).then(s => {
+    observerAvailable.value = s.available
+    observerSession.value = s.session ?? null
+  })
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
@@ -247,8 +274,17 @@ async function toggleMute(category: string) {
                 : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
+      <span v-if="observerTokens" class="ll-tokens"
+            title="Assistant token use for this project's observer session (real usage)">{{ observerTokens }}</span>
+      <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
+              title="Clear the assistant's session and reset the token count">clear</button>
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
-      <span v-if="observerNote" class="ll-note">{{ observerNote }}</span>
+    </div>
+
+    <!-- assistant report: the full text of the last Ask-Claude pass, in a readable block -->
+    <div v-if="observerNote" class="ll-observer-report">
+      <div class="ll-observer-head"><i class="pi pi-sparkles" /> Claude</div>
+      <div class="ll-observer-body">{{ observerNote }}</div>
     </div>
 
     <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
@@ -347,6 +383,24 @@ async function toggleMute(category: string) {
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
 .ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
+.ll-tokens { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
+.ll-clearctx {
+  border: none; background: transparent; color: var(--cc-text-dim);
+  font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
+}
+.ll-clearctx:hover { color: var(--cc-text); }
+/* the last Ask-Claude report — its own readable block, not crammed in the toolbar */
+.ll-observer-report {
+  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-2); padding: 0.4rem 0.6rem; max-height: 8rem; overflow-y: auto;
+}
+.ll-observer-head {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.66rem; color: var(--cc-text-dim); margin-bottom: 0.2rem;
+}
+.ll-observer-body {
+  font-size: 0.72rem; color: var(--cc-text); line-height: 1.45; white-space: pre-wrap;
+}
 
 .ll-modebar {
   display: flex; align-items: center; gap: 0.35rem;
