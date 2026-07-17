@@ -28,6 +28,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/images/meta"),
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
+        ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
@@ -105,6 +106,17 @@ class CeceliaClient:
     def get_task_history(self, project_uid: str, limit: int | None = None):
         return self._request(
             "GET", "/api/tasks/history", {"projectUid": project_uid, "limit": limit}
+        )
+
+    def get_cohort_qc(self, project_uid: str, set_uid: str, fun_name: str,
+                      value_name: str | None = None, sd_threshold: float | None = None):
+        return self._request(
+            "GET",
+            "/api/qc/cohort",
+            {
+                "projectUid": project_uid, "setUid": set_uid, "funName": fun_name,
+                "valueName": value_name, "sdThreshold": sd_threshold,
+            },
         )
 
     def read_lab_log(self, project_uid: str):

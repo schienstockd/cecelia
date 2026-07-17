@@ -166,14 +166,15 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
    with an empty task log the observer can pull the real error. Added because the first live session
    hit exactly this blind spot. Complementary durable fix (separate PR): tee the scheduler's caught
    task exception into the per-image `.log` so `get_task_log` shows Julia failures too.
-5. ✅ **DONE (compute + route)** — Cohort stats: per-image objective metrics are banked by the
-   tasks (segment/measure/tracking → `write_qc`; `app/src/qc_cohort.jl` aggregates them per `CciaSet`),
-   surfaced via `GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&sdThreshold]` (mean/SD +
-   `z`-scored outliers over the *included* images, advisory, recompute-on-demand + set sidecar).
-   **Remaining:** wire the MCP `get_qc_metrics` to read this route; auto-recompute on stage-complete
-   (the "cohort complete" trigger, `QC-PROCESS.md` step 3) — today it's on-demand; and per-image
-   cohort findings (write outliers back through `write_qc` so they badge on the image). `qc_flag_fired`
-   still waits on the `:flagged` state (`QC-PROCESS.md` step 1).
+5. ✅ **DONE (compute + route + MCP tool)** — Cohort stats: per-image objective metrics are banked by
+   the tasks (segment/measure/tracking → `write_qc`; `app/src/qc_cohort.jl` aggregates them per
+   `CciaSet`), surfaced via `GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&sdThreshold]`
+   (mean/SD + `z`-scored outliers over the *included* images, advisory, recompute-on-demand + set
+   sidecar), and exposed to the observer as the **`get_cohort_qc`** MCP tool (the prompt tells it to
+   call this before calling any run an "anomaly vs the set"). **Remaining:** auto-recompute on
+   stage-complete (the "cohort complete" trigger, `QC-PROCESS.md` step 3) — today it's on-demand; and
+   per-image cohort findings (write outliers back through `write_qc` so they badge on the image).
+   `qc_flag_fired` still waits on the `:flagged` state (`QC-PROCESS.md` step 1).
 
 > **Status (Slice C):** steps 1–4 landed (minus `qc_flag_fired`, which waits on QC flag state).
 > **Validated end-to-end against live Claude Code (2026-07-17):** with a real project open, the
