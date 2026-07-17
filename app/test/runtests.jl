@@ -4201,6 +4201,44 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 @test fml ≈ length(valid) / length(unique(valid))
             end
         end
+
+        @testset "cohort outliers" begin
+            # pure: one image far from a tight cluster is flagged; the cluster is not
+            r = Cecelia._cohort_outliers(
+                Dict("a"=>10.0,"b"=>10.0,"c"=>10.0,"d"=>10.0,"e"=>10.0,
+                     "f"=>10.0,"g"=>10.0,"h"=>10.0,"i"=>10.0,"j"=>100.0), 2.0)
+            @test r.n == 10 && haskey(r.outliers, "j") && !haskey(r.outliers, "a")
+            @test r.outliers["j"]["z"] > 2                       # z carried for the flag
+            # too few to judge (no cohort) → no outliers even with a wild value
+            @test isempty(Cecelia._cohort_outliers(Dict("a"=>5.0,"b"=>500.0), 2.0).outliers)
+            # all identical → σ 0 → no outliers (no false positive)
+            @test isempty(Cecelia._cohort_outliers(Dict("a"=>3.0,"b"=>3.0,"c"=>3.0), 2.0).outliers)
+        end
+
+        @testset "cohort round-trip (banked metrics → set sidecar)" begin
+            set = CciaSet(; dir = mktempdir())
+            counts = Dict("a"=>800,"b"=>810,"c"=>790,"d"=>805,"e"=>795,
+                          "f"=>808,"g"=>803,"h"=>797,"i"=>802,"j"=>100)
+            for (uid, n) in counts
+                img = CciaImage(; uid = uid, dir = mktempdir())
+                write_qc(img, "segment.measureLabels", "default", Dict{String,Any}[];
+                         metrics = Dict{String,Any}("nCells" => n))
+                push!(set._images, img); push!(set.image_uids, uid)
+            end
+            doc = cohort_qc_for!(set, "segment.measureLabels", "default")
+            m = doc["metrics"]["nCells"]
+            @test m["n"] == 10 && haskey(m["outliers"], "j") && !haskey(m["outliers"], "a")
+            @test doc["nIncluded"] == 10
+            # sidecar written + re-readable
+            @test isfile(cohort_qc_path(set, "segment.measureLabels", "default"))
+            @test read_cohort_qc(set, "segment.measureLabels", "default")["nIncluded"] == 10
+            @test haskey(read_all_cohort_qc(set), "segment.measureLabels/default")
+            # excluded images drop out of the cohort
+            set._images[1].included = false                      # exclude one
+            @test cohort_qc_for!(set, "segment.measureLabels", "default")["nIncluded"] == 9
+            # unknown fun errors (not a metric producer)
+            @test_throws ErrorException cohort_qc_for!(set, "not.aTask", "default")
+        end
     end
 
 end

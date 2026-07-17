@@ -945,6 +945,35 @@ function api_tasks_history(req::HTTP.Request)
     200, JSON3.write((; projectUid=project_uid, count=length(rows), history=rows))
 end
 
+# GET /api/qc/cohort?projectUid&setUid&funName[&valueName][&sdThreshold]
+# Recompute the cohort QC summary for one (task, output) across a set's included images and return
+# it (also writes the sidecar). Feeds the MCP get_qc_metrics cohort view + the morning summary.
+function api_qc_cohort(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
+    fun_name    = get(q, "funName", "")
+    (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
+        return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
+    haskey(COHORT_METRICS, fun_name) ||
+        return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
+                                   known = sort(collect(keys(COHORT_METRICS)))))
+    value_name = get(q, "valueName", VERSIONED_DEFAULT_VAL)
+    sd = something(tryparse(Float64, get(q, "sdThreshold", "")), 2.0)
+    set = try
+        obj = init_object(project_uid, set_uid)
+        obj isa CciaSet || error("Not a set: $set_uid")
+        obj
+    catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
+    end
+    doc = try
+        cohort_qc_for!(set, fun_name, value_name; sd_threshold = sd)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(doc)
+end
+
 function api_images_delete(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))
