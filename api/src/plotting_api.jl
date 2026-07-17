@@ -178,6 +178,10 @@ function api_plot_data(body_bytes::Vector{UInt8})
     zscore    = Bool(get(body, "zscore", false))
     mnorm_v   = string(get(body, "matrixNormalize", "none"))
     matrix_normalize = mnorm_v in ("row", "col", "total") ? Symbol(mnorm_v) : :none
+    # clustering run suffix (cluster pop_types only): lets the per-population cluster heatmap resolve
+    # value_name to the run's segmentation instead of the drifting active one (plot_data.jl _cluster_pop_vn).
+    sfx_v     = get(body, "suffix", nothing)
+    cluster_suffix = (sfx_v === nothing || isempty(string(sfx_v))) ? nothing : string(sfx_v)
     # group cross-image series by one or MORE image ATTRIBUTES (e.g. "Treatment", or "Treatment" ×
     # "Mouse") instead of per-image — images sharing the combined value pool into one series labelled by
     # the combination (joined with ".", mirroring the old R `paste0(axisX, ".", interaction)`). Accepts a
@@ -236,7 +240,7 @@ function api_plot_data(body_bytes::Vector{UInt8})
                                   normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                                   matrix_mode = matrix_mode, measures = measures, category = category,
                                   separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
-                                  attr_map = attr_map) :
+                                  attr_map = attr_map, cluster_suffix = cluster_suffix) :
                 plot_summary_data(first.(pairs), last.(pairs), pop_type, targets, chart;
                                   scope = scope, granularity = gran, measure = measure,
                                   nbins = nbins, normalize = normalize, group_by = group_by,
@@ -251,11 +255,15 @@ function api_plot_data(body_bytes::Vector{UInt8})
         err === nothing || return err
         result = targets === nothing ?
             plot_summary_data(img, pop_type, [string(p) for p in get(body, "pops", String[])], chart;
-                              value_name = _resolve_vn(img, vn_req), granularity = gran,
+                              # empty → nothing (pop_df falls back to the active segmentation, same as
+                              # _resolve_vn); leaving it nothing lets the cluster run-resolver in
+                              # plot_data.jl (_cluster_pop_vn) pick the run's value_name from `suffix`.
+                              value_name = isempty(vn_req) ? nothing : _resolve_vn(img, vn_req), granularity = gran,
                               measure = measure, nbins = nbins, normalize = normalize,
                               group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,
                               matrix_mode = matrix_mode, measures = measures, category = category,
-                              separator = separator, zscore = zscore, matrix_normalize = matrix_normalize) :
+                              separator = separator, zscore = zscore, matrix_normalize = matrix_normalize,
+                              cluster_suffix = cluster_suffix) :
             plot_summary_data(img, pop_type, targets, chart;
                               granularity = gran, measure = measure, nbins = nbins,
                               normalize = normalize, group_by = group_by, collapse_series = collapse, raw_points = raw_pts, raw = raw, stat_unit = stat_unit, image_agg = image_agg,

@@ -18,6 +18,7 @@ import PlotChart from '../../components/plots/PlotChart.vue'
 import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
+import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
 
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
@@ -73,18 +74,15 @@ async function load() {
   loading.value = true
   try {
     // per-population when pops are shown (category = the pop_df `pop` column over those pops);
-    // otherwise per-cluster (category = the cluster column over root).
+    // otherwise per-cluster (category = the cluster column over root). `suffix` is always sent so the
+    // backend resolves value_name to the run's segmentation (see clusterHeatmapBody / _cluster_pop_vn).
     const pops = props.shownPops ?? []
+    const body = buildClusterHeatmapBody({
+      projectUid: props.projectUid, popType: props.popType, suffix: props.suffix,
+      granularity: granularity.value, features: features.value,
+      popPaths: pops.map(p => p.path), setUid: props.setUid, imageUids: props.imageUids,
+    })
     const popMode = pops.length > 0
-    const body: Record<string, unknown> = {
-      projectUid: props.projectUid, popType: props.popType, granularity: granularity.value,
-      chartType: 'matrix', matrixMode: 'profile',
-      category: popMode ? 'pop' : `clusters.${props.suffix}`,
-      separator: '_', pops: popMode ? pops.map(p => p.path) : ['root'],
-      measures: features.value, zscore: true,
-    }
-    if (props.setUid) { body.setUid = props.setUid; if (props.imageUids.length) body.imageUids = props.imageUids }
-    else if (props.imageUids[0]) body.imageUid = props.imageUids[0]
     const res = await fetch('/api/plot_data', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
     if (!res.ok) { heatmap.value = null; err.value = (await res.json()).error ?? res.statusText; return }
     const r = await res.json() as PlotDataResponse & { yLabels?: string[]; xLabels?: string[]; cells?: { x: string; y: string }[] }

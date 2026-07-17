@@ -79,15 +79,20 @@ export function useClusterContext(opts: {
   const missingUids = computed<string[]>(() =>
     runMembers.value.filter(u => !imageUids.value.includes(u)))
 
-  // resolve a highlight set (pop paths) to shown populations (colour + owned cluster IDs) via the store
+  // resolve a highlight set (pop paths) to shown populations (colour + owned cluster IDs) via the store.
+  // Scoped to the CURRENT run: only pops filtering this run's `clusters.{suffix}` — the store holds every
+  // run's pops for the segmentation in one sidecar, so a stale highlight from another run is ignored here
+  // (keeps the per-population heatmap / UMAP colouring on the run you're viewing).
   const shownPopsFor = (hl: string[]): ShownPop[] => g.flat
-    .filter(p => hl.includes(p.path))
+    .filter(p => hl.includes(p.path) && p.filter?.measure === `clusters.${suffix.value}`)
     .map(p => ({ path: p.path, name: p.name, colour: p.colour,
                  clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
 
   // drive the (shared, pop_type-agnostic) gating store for the pop tree: primary = first valid image,
   // the rest mirror every mutation so cluster pops land set-wide. Re-sync on selection/suffix change.
-  watch([validUids, suffix, popType, projectUid, enabled], () => {
+  // `resolvedVn` is a dependency (not just read): loadFeatures resolves it asynchronously, so without it
+  // the tree could stay pinned to the initial 'default' after the real segmentation value_name lands.
+  watch([validUids, suffix, popType, projectUid, enabled, resolvedVn], () => {
     if (!enabled.value || !projectUid.value || !validUids.value.length) return
     g.selectImage(validUids.value[0], resolvedVn.value, popType.value).then(() => {
       g.mirrorUids = validUids.value.slice(1)

@@ -147,6 +147,23 @@ clustered segmentation):
   value_name-prefixed ref (`"T/A"`) stays scoped to that one segmentation. `co_clustered_value_names`
   is the source of truth (the value_names whose clustfeatures sidecar carries the run's suffix).
 
+**Per-RUN scoping (one sidecar, many runs).** A segmentation's `{vn}__{clust|trackclust}.json` holds
+the pops for *every* clustering run on it — each pop is tagged by its run via
+`filter_measure="clusters.{suffix}"`. The cluster page views **one run at a time** (the suffix
+dropdown), so the population manager shows only the pops for the active suffix
+(`PopulationManager.visiblePops`), new pops are created against the active suffix, and cluster-ID
+assignment is exclusive *within* a run. Switching the run dropdown therefore swaps the visible pop
+set — pops from a different run on the same segmentation are hidden, not shown.
+
+**Cluster plots resolve value_name from the RUN, not the active segmentation.** The UMAP endpoint
+(`api_plots_umap`) and the per-population cluster heatmap (`/api/plot_data`) both take a `suffix` and
+resolve their value_name via `co_clustered_value_names(img, suffix)` — a segmentation that actually
+took part in the run — instead of the drifting *active* value_name. This is load-bearing: evaluating a
+cluster pop against a segmentation not in its run means the `clusters.{suffix}` column is absent, which
+otherwise 500'd the plot (`_cluster_pop_vn` in `plot_data.jl` does the resolution; the frontend always
+sends `suffix`). As a backstop, `recompute!` treats a gate/filter column missing from the fetched frame
+as **empty membership + a warning**, never a hard error — one absent column can't take down the whole map.
+
 ## `pop_df` — unified accessor
 
 > **Home:** `pop_df`/`_pop_df` live in `gating/population_manager.jl`, alongside the `pop_map`
