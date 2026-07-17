@@ -45,9 +45,11 @@ Flags are statistical, not interpretive. Claude says "this gate produced 23 cell
 - Track length distribution — flag bimodal when unimodal expected
 - Fraction of cells tracked vs. segmented — flag <30%
 
-*HMM/behaviour*:
-- State frequency per image vs. cohort — flag >2 SD deviation
-- Single state >95% dominant in one image but not others
+*HMM/behaviour* (`behaviour.hmm_states` / `behaviour.hmm_transitions`, set-scope): implemented — banked per image via `write_qc` in the state/transition write loops (`category_dist_metrics` + `hmm_states_qc_findings` / `hmm_transitions_qc_findings`, `qc.jl`).
+- No cells decoded into a state — tracks too short / measurements incomplete (warn)
+- All of an image's cells sat in one state — no state switching / too many model states (warn)
+- One state holds ≥95% of an image's cells — dominant state (info)
+- No transitions found (warn); cohort: per-image `nDecoded` / `nStates` / `dominantStateFrac`, `nTransitions` / `nDistinctTransitions` (`COHORT_METRICS`)
 
 *Clustering* (`clustPops.cluster` / `clustTracks.cluster`, set-scope): implemented — banked per image (how that image's points landed in the set-wide clustering) via `write_cluster_qc!` (`app/src/qc.jl`).
 - Run collapsed to ≤1 cluster — resolution too low / features don't separate (warn)

@@ -109,6 +109,12 @@ function _run_task(::HmmStates, imgs::Vector{CciaImage}, params::Dict{String,Any
             try
                 label_props(props) |> add_obs(cell_df) |> save!   # overwrites any existing column
                 n_ok += 1
+                # QC (advisory): bank this image-segmentation's state distribution (numeric state
+                # codes; NaN = undecoded) + degenerate-state findings. Never fails the write.
+                m = category_dist_metrics(vals)
+                write_qc(img, "behaviour.hmm_states", string(vn), hmm_states_qc_findings(m);
+                         metrics = Dict{String,Any}("nDecoded" => m.n, "nStates" => m.n_distinct,
+                             "dominantStateFrac" => round(m.dominant_frac; digits = 4)))
             catch e
                 on_log("[WARN] write failed: $(img.uid)/$vn — $e")
             end
