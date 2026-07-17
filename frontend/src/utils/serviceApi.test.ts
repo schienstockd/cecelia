@@ -63,12 +63,20 @@ describe('observerApi', () => {
     expect(await observerApi.status()).toEqual({ available: false })
   })
 
-  it('feedback POSTs the projectUid to the feedback endpoint', async () => {
+  it('feedback POSTs the projectUid (+ model + trigger) to the feedback endpoint', async () => {
     const f = mockFetch(200, { ok: true, message: 'noted' })
     vi.stubGlobal('fetch', f)
-    const r = await observerApi.feedback('NRUBxU')
+    const r = await observerApi.feedback('NRUBxU', 'haiku', 'auto')
     expect(f.mock.calls[0][0]).toBe('/api/observer/feedback')
-    expect(f.mock.calls[0][1].body).toBe(JSON.stringify({ projectUid: 'NRUBxU' }))
+    expect(f.mock.calls[0][1].body).toBe(
+      JSON.stringify({ projectUid: 'NRUBxU', model: 'haiku', trigger: 'auto' }))
     expect(r).toEqual({ ok: true, message: 'noted' })
+  })
+  it('feedback defaults trigger to manual', async () => {
+    const f = mockFetch(200, { ok: true })
+    vi.stubGlobal('fetch', f)
+    await observerApi.feedback('NRUBxU')
+    expect(f.mock.calls[0][1].body).toBe(
+      JSON.stringify({ projectUid: 'NRUBxU', model: undefined, trigger: 'manual' }))
   })
 })

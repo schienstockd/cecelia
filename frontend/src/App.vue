@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useWsStore } from './stores/ws'
 import { useSettingsStore } from './stores/settings'
 import { useAppControlStore } from './stores/appControl'
+import { useObserverStore } from './stores/observer'
+import { useProjectMetaStore } from './stores/projectMeta'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
 import HintCallout from './components/HintCallout.vue'
@@ -15,6 +17,13 @@ import LabLogPanel from './components/LabLogPanel.vue'
 const ws = useWsStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
+// Observer "Watch" runs from a store, not the lab-log panel, so it keeps working while the panel is
+// closed (the panel is v-if'd). Install the always-on auto-runner once, and refresh its status/session
+// whenever the open project changes.
+const observer = useObserverStore()
+const pm = useProjectMetaStore()
+observer.installAutoWatch()
+watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 onMounted(async () => {
   ws.connect()
   appCtl.checkUpdate()   // surfaces the header update badge app-wide (fire-and-forget)

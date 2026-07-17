@@ -4,11 +4,19 @@
 # sidecar per project, alongside the lab-log mutes/tuning configs. See
 # docs/todo/OBSERVER_INTEGRATION_PLAN.md (Decisions 3 + 4).
 
+import Dates
+
 observer_session_path(proj::CciaProject)::String =
     joinpath(proj.root, "settings", "observer-session.json")
 
+# `passes` is the activity log: one entry per observer run (auto OR manual), whether or not it wrote
+# to the lab log — so the user can see "it looked and had nothing to say" + the token cost, not just
+# silence. Bounded, newest-first.
 _observer_session_base() = Dict{String,Any}(
-    "sessionId" => "", "inputTokens" => 0, "outputTokens" => 0, "turns" => 0)
+    "sessionId" => "", "inputTokens" => 0, "outputTokens" => 0, "turns" => 0, "passes" => [])
+
+const _OBSERVER_MAX_PASSES = 30
+const _OBSERVER_NOTE_CAP   = 800
 
 function read_observer_session(proj::CciaProject)::Dict{String,Any}
     p = observer_session_path(proj)
@@ -40,7 +48,29 @@ function record_observer_turn!(proj::CciaProject, session_id::AbstractString,
     _write_observer_session(proj, s)
 end
 
+# Log one observer PASS for the activity readout — regardless of whether it appended to the lab log,
+# so a silent "looked, nothing to flag" run is still visible (with its token cost). Newest-first,
+# bounded. Separate from record_observer_turn! (which folds only a successful turn's usage/session).
+function log_observer_pass!(proj::CciaProject; trigger::AbstractString, model::AbstractString,
+                            ok::Bool, appended::Bool, input_tokens::Integer, output_tokens::Integer,
+                            note::AbstractString)::Dict{String,Any}
+    s = read_observer_session(proj)
+    passes = s["passes"] isa AbstractVector ? collect(Any, s["passes"]) : Any[]
+    pushfirst!(passes, Dict{String,Any}(
+        "at"           => Dates.format(Dates.now(), Dates.dateformat"yyyy-mm-dd HH:MM:SS"),
+        "trigger"      => String(trigger),
+        "model"        => String(model),
+        "ok"           => ok,
+        "appended"     => appended,
+        "inputTokens"  => Int(input_tokens),
+        "outputTokens" => Int(output_tokens),
+        "note"         => first(strip(String(note)), _OBSERVER_NOTE_CAP)))
+    length(passes) > _OBSERVER_MAX_PASSES && (passes = passes[1:_OBSERVER_MAX_PASSES])
+    s["passes"] = passes
+    _write_observer_session(proj, s)
+end
+
 # Clear context: drop the session id (the next run starts a FRESH session, so no stale assumptions
-# carry over) and zero the token totals.
+# carry over), zero the token totals, and clear the activity log.
 clear_observer_session!(proj::CciaProject)::Dict{String,Any} =
     _write_observer_session(proj, _observer_session_base())

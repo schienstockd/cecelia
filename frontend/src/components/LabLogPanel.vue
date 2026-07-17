@@ -4,16 +4,15 @@
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
-import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
-import { useWsStore } from '../stores/ws'
-import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES, OBSERVER_TRIGGERS } from '../utils/observerAuto'
+import { ref, computed, watch, nextTick } from 'vue'
+import { OBSERVER_TRIGGERS } from '../utils/observerAuto'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import { useObserverStore } from '../stores/observer'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
-import { observerApi, type ObserverSession } from '../utils/serviceApi'
 
 const pm = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -32,14 +31,21 @@ const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (confi
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
 const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
 const mode = computed(() => settings.labLogMode)
-// AI observer (in-app assistant) — availability gates a disabled-with-why button (see
-// docs/todo/OBSERVER_INTEGRATION_PLAN.md); the run is one-shot and may append a [Claude] entry.
-const observerAvailable = ref(false)
-const observerBusy = ref(false)
-const observerNote = ref('')
-const observerSession = ref<ObserverSession | null>(null)
-const observerModels = ref<string[]>(['haiku', 'sonnet', 'opus'])   // populated from status
+// AI observer (in-app assistant). State + the "Watch" auto-runner live in the observer STORE (so Watch
+// keeps running while this v-if'd panel is closed); the panel just drives it + shows its activity.
+const observer = useObserverStore()
+const observerAvailable = computed(() => observer.available)
+const observerBusy = computed(() => observer.busy)
+const observerModels = computed(() => observer.models)
+const observerSession = computed(() => observer.session)
+const observerNote = ref('')                 // last MANUAL pass verdict, shown in the report block
+const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
 const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
+const passLabel = (t: string) => (t === 'auto' ? 'Watch' : 'Ask')
+const passTokens = (p: { inputTokens: number; outputTokens: number }) => {
+  const total = p.inputTokens + p.outputTokens
+  return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
+}
 // running token total for the readout (real usage from the assistant's own output, accumulated
 // per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
 const observerTokens = computed(() => {
@@ -97,81 +103,35 @@ async function capture(silent = false) {
   }
 }
 
-// Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP.
+// Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP. The
+// store owns the run (+ session/tokens/badge); the panel just shows the verdict and reloads on append.
 async function askClaude() {
-  if (!projectUid.value || observerBusy.value || !observerAvailable.value) return
-  observerBusy.value = true
+  if (!projectUid.value || observer.busy || !observer.available) return
   observerNote.value = ''
   error.value = ''
-  try {
-    const res = await observerApi.feedback(projectUid.value, settings.labLogObserverModel)
-    if (res.session) observerSession.value = res.session   // updated running token total
-    if (res.available === false) {
-      observerAvailable.value = false
-      observerNote.value = res.error ?? 'Assistant unavailable.'
-    } else if (res.ok) {
-      observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
-      const claudeBefore = entries.value.filter(e => authorKind(e.author) === 'claude').length
-      await load()   // surface any new [Claude] entry the assistant appended
-      const claudeNow = entries.value.filter(e => authorKind(e.author) === 'claude')
-      // if it actually appended AND the panel is closed, flag the sidebar badge with a preview
-      if (claudeNow.length > claudeBefore && !settings.labLogPanelOpen) {
-        const line = (claudeNow[0]?.lines ?? []).find(l => l.trim()) ?? 'added a note'
-        settings.labLogUnseen = line.replace(/^[-*]\s*/, '').trim()
-      }
-    } else {
-      observerNote.value = res.error ?? 'The assistant could not complete.'
-    }
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  } finally {
-    observerBusy.value = false
-  }
+  const res = await observer.runPass('manual')
+  if (!res) return
+  if (res.available === false) observerNote.value = res.error ?? 'Assistant unavailable.'
+  else if (res.ok) observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
+  else observerNote.value = res.error ?? 'The assistant could not complete.'
+  // entries reload via the appendTick watch below when a pass actually appended
 }
 
-// ── "sit next to me" auto-mode: a finished task triggers a debounced observer pass ──────────────
-// Frontend-driven (fires while the app is open); subscribes to task/chain terminal frames only while
-// the toggle is on + an assistant is available. Debounced so a burst of completions → one pass.
-const ws = useWsStore()
-const AUTO_DEBOUNCE_MS = 8000
-let autoTimer: ReturnType<typeof setTimeout> | null = null
-function onTaskFrame(frame: any) {
-  if (!settings.labLogObserverAuto || !observerAvailable.value || !projectUid.value) return
-  if (!isObserverTrigger(frame)) return
-  if (autoTimer) clearTimeout(autoTimer)
-  autoTimer = setTimeout(() => {
-    autoTimer = null
-    if (settings.labLogObserverAuto && observerAvailable.value && !observerBusy.value) askClaude()
-  }, AUTO_DEBOUNCE_MS)
-}
-watch(() => settings.labLogObserverAuto, (on) => {
-  OBSERVER_AUTO_FRAME_TYPES.forEach(t => on ? ws.on(t, onTaskFrame) : ws.off(t, onTaskFrame))
-}, { immediate: true })
-onUnmounted(() => {
-  OBSERVER_AUTO_FRAME_TYPES.forEach(t => ws.off(t, onTaskFrame))
-  if (autoTimer) clearTimeout(autoTimer)
-})
+// Reload the log when any observer pass (manual OR auto/Watch) appends — including while this panel is
+// open and the pass was fired by the always-on store watcher.
+watch(() => observer.appendTick, () => { if (projectUid.value) load() })
 
 // Clear context: reset the project's assistant session + token totals (next run starts fresh).
 async function clearContext() {
-  if (!projectUid.value || observerBusy.value) return
-  try {
-    const res = await observerApi.clear(projectUid.value)
-    observerSession.value = res.session ?? null
-    observerNote.value = ''
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
+  if (!projectUid.value || observer.busy) return
+  await observer.clear()
+  observerNote.value = ''
 }
 
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
+// (Observer status/session is refreshed app-wide by the store — see App.vue.)
 watch(projectUid, async () => {
   observerNote.value = ''
-  observerApi.status(projectUid.value).then(s => {
-    observerAvailable.value = s.available
-    observerSession.value = s.session ?? null
-    if (s.models?.length) observerModels.value = s.models
-  })
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
@@ -338,6 +298,20 @@ async function toggleMute(category: string) {
       <div class="ll-observer-body">{{ observerNote }}</div>
     </div>
 
+    <!-- Claude activity log: every observer pass (Ask + Watch), whether or not it wrote to the log —
+         so a silent "looked, nothing to flag" run is still visible, with its trigger + token cost. -->
+    <details v-if="observerAvailable && observerPasses.length" class="ll-activity">
+      <summary>Claude activity ({{ observerPasses.length }})</summary>
+      <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
+        <div class="ll-pass-head">
+          <span class="ll-pass-trig">{{ passLabel(p.trigger) }}</span>
+          <span class="ll-pass-meta">{{ p.model }} · {{ passTokens(p) }} tok<span v-if="p.appended"> · wrote</span><span v-else-if="!p.ok"> · error</span></span>
+          <span class="ll-pass-at">{{ p.at }}</span>
+        </div>
+        <div v-if="p.note" class="ll-pass-note">{{ p.note }}</div>
+      </div>
+    </details>
+
     <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
     <div class="ll-modebar">
       <span class="ll-modelabel">Rating:</span>
@@ -467,6 +441,22 @@ async function toggleMute(category: string) {
 .ll-observer-body {
   font-size: 0.72rem; color: var(--cc-text); line-height: 1.45; white-space: pre-wrap;
 }
+/* Claude activity log — collapsible; shows each pass (Ask/Watch), its cost + verdict, even when silent */
+.ll-activity {
+  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-2); padding: 0.3rem 0.6rem; max-height: 11rem; overflow-y: auto;
+}
+.ll-activity > summary {
+  font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; user-select: none;
+}
+.ll-pass { margin-top: 0.35rem; padding-left: 0.4rem; border-left: 2px solid var(--cc-border); }
+.ll-pass.appended { border-left-color: var(--cc-accent); }
+.ll-pass.failed   { border-left-color: #f85149; }
+.ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: 0.64rem; }
+.ll-pass-trig { font-weight: 600; color: var(--cc-text); }
+.ll-pass-meta { color: var(--cc-text-dim); }
+.ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
+.ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
 
 .ll-modebar {
   display: flex; align-items: center; gap: 0.35rem;

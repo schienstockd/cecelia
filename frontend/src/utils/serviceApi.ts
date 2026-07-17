@@ -31,11 +31,23 @@ export const napariApi = {
 }
 
 /** Per-project observer session: the assistant session id + cumulative token totals. */
+export interface ObserverPass {
+  at: string
+  trigger: string          // 'manual' | 'auto'
+  model: string
+  ok: boolean
+  appended: boolean        // did it write a [Claude] lab-log entry this pass?
+  inputTokens: number
+  outputTokens: number
+  note: string             // the assistant's own verdict/reasoning for the pass
+}
+
 export interface ObserverSession {
   sessionId: string
   inputTokens: number
   outputTokens: number
   turns: number
+  passes?: ObserverPass[]  // activity log, newest-first
 }
 
 /** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
@@ -50,9 +62,11 @@ export const observerApi = {
     } catch { return { available: false } }
   },
   /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. `model` is a
-   *  CLI alias (haiku|sonnet|opus); the backend allow-lists it. Returns
-   *  { ok, available, model, message, error, inputTokens, outputTokens, session }. */
-  feedback: (projectUid: string, model?: string) => svcPost('/api/observer/feedback', { projectUid, model }),
+   *  CLI alias (haiku|sonnet|opus); `trigger` is 'manual' (button) or 'auto' (Watch). Returns
+   *  { ok, available, model, trigger, message, error, appended, appendedLine, inputTokens,
+   *    outputTokens, session }. */
+  feedback: (projectUid: string, model?: string, trigger: 'manual' | 'auto' = 'manual') =>
+    svcPost('/api/observer/feedback', { projectUid, model, trigger }),
   /** Clear context: reset the project's session + token totals. Returns { ok, session }. */
   clear: (projectUid: string) => svcPost('/api/observer/clear', { projectUid }),
 }
