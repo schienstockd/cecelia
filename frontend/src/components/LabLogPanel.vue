@@ -294,34 +294,34 @@ async function toggleMute(category: string) {
     <!-- activity capture: manual button + auto-on-open toggle -->
     <div class="ll-toolbar">
       <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
-              title="Append an app-generated [Cecelia] digest of recent activity (tasks run, …)">
+              v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
         <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
       </button>
-      <label class="ll-auto" title="Automatically capture activity when this project opens">
+      <label class="ll-auto" v-tooltip.top="'Automatically capture activity when this project opens'">
         <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
       </label>
       <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
               @click="askClaude"
-              :title="observerAvailable
+              v-tooltip.top="observerAvailable
                 ? 'Ask the assistant to review recent activity and note anything worth flagging in the lab log'
                 : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
       <label v-if="observerAvailable" class="ll-auto"
-             title="Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)">
+             v-tooltip.top="'Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)'">
         <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
       </label>
       <span v-if="observerTokens" class="ll-tokens"
-            title="Assistant token use for this project's observer session (real usage)">{{ observerTokens }}</span>
+            v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
-              title="Clear the assistant's session and reset the token count">clear</button>
+              v-tooltip.top="'Clear the assistant session and reset the token count'">clear</button>
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
     </div>
 
     <!-- what "Watch" triggers on: read-only green/red lights (only task-completion is wired today) -->
     <div v-if="observerAvailable && settings.labLogObserverAuto" class="ll-triggers">
       <span class="ll-triggers-label">Watching:</span>
-      <span v-for="t in observerTriggers" :key="t.key" class="ll-trigger" :title="t.note">
+      <span v-for="t in observerTriggers" :key="t.key" class="ll-trigger" v-tooltip.top="t.note">
         <span class="ll-trigger-dot" :class="t.active ? 'on' : 'off'" /> {{ t.label }}
       </span>
     </div>
@@ -336,9 +336,9 @@ async function toggleMute(category: string) {
     <div class="ll-modebar">
       <span class="ll-modelabel">Rating:</span>
       <button class="ll-modebtn" :class="{ on: mode === 'notes' }" @click="settings.labLogMode = 'notes'"
-              title="Thumbs + comment judge the DECISION → saved as a note in the log">decisions</button>
+              v-tooltip.top="'Thumbs + comment judge the DECISION → saved as a note in the log'">decisions</button>
       <button class="ll-modebtn" :class="{ on: mode === 'tuning' }" @click="settings.labLogMode = 'tuning'"
-              title="Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log">entry types</button>
+              v-tooltip.top="'Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log'">entry types</button>
     </div>
 
     <!-- mute whole categories from future digests (Tuning mode) -->
@@ -346,7 +346,7 @@ async function toggleMute(category: string) {
       <span class="ll-modelabel">Mute:</span>
       <button v-for="c in muteableCategories" :key="c" class="ll-mutebtn"
               :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
-              :title="mutes.includes(c) ? `${c} muted — click to log again` : `Stop logging ${c}`">
+              v-tooltip.top="mutes.includes(c) ? `${c} muted — click to log again` : `Stop logging ${c}`">
         <i :class="['pi', mutes.includes(c) ? 'pi-bell-slash' : 'pi-bell']" /> {{ c }}
       </button>
     </div>
@@ -368,15 +368,15 @@ async function toggleMute(category: string) {
             <span class="ll-actions">
               <template v-if="isRatable(e.author)">
                 <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'up' }"
-                        :title="mode === 'notes' ? 'Good decision — add a note' : 'Useful entry type'"
+                        v-tooltip.top="mode === 'notes' ? 'Good decision — add a note' : 'Useful entry type'"
                         @click="mode === 'notes' ? rateDecision(e, 'up') : tune(e, 'up')">👍</button>
                 <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'down' }"
-                        :title="mode === 'notes' ? 'Bad decision — add a note' : 'Noisy entry type'"
+                        v-tooltip.top="mode === 'notes' ? 'Bad decision — add a note' : 'Noisy entry type'"
                         @click="mode === 'notes' ? rateDecision(e, 'down') : tune(e, 'down')">👎</button>
-                <button v-if="mode === 'notes'" class="ll-link" title="Comment (saved as a note)"
+                <button v-if="mode === 'notes'" class="ll-link" v-tooltip.top="'Comment (saved as a note)'"
                         @click="startComment(e)">💬</button>
               </template>
-              <button v-else class="ll-link" title="Add a correction (never edits the original)"
+              <button v-else class="ll-link" v-tooltip.top="'Add a correction (never edits the original)'"
                       @click="startCorrection(e)">correct</button>
             </span>
           </div>

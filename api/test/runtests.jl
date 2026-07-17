@@ -580,6 +580,51 @@ end
     end
 end
 
+@testset "API: bad-param launch still emits [ERROR] + terminal failed frame" begin
+    # run_task validates params FIRST and throws before any job runs. handle_task_run must catch that
+    # and STILL emit a task log + a terminal task:status:failed frame — otherwise the throw dies in
+    # the @spawn silently and the observer's "Watch" auto-trigger (which keys off the terminal frame)
+    # never fires. This is the regression the HMM-with-no-params case exposed.
+    cap = Channel{String}(64)
+    key = gensym("test-taskfail")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (fs = Any[]; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-taskfail", kind="static")
+        s    = add_set!(proj; name="set-A")
+        img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+
+        # importImages.omezarr with pyramidScale=99 fails validate_params (min/max) before any job.
+        drain()
+        handle_task_run(nothing, Dict{Symbol,Any}(
+            :taskId => "t-fail", :funName => "importImages.omezarr",
+            :projectUid => proj.uid, :imageUid => img.uid,
+            :params => Dict{String,Any}("pyramidScale" => 99)))
+
+        # the handler runs the task on a @spawn — poll until the terminal frame lands (or time out)
+        frames = Any[]
+        for _ in 1:200
+            append!(frames, drain())
+            any(f -> f.type == "task:status" && f.status == "failed", frames) && break
+            sleep(0.05)
+        end
+        status = filter(f -> f.type == "task:status", frames)
+        @test any(f -> f.status == "failed" && f.fun == "importImages.omezarr", status)
+        # the [ERROR] log names the offending param → confirms we reached (and reported) validation
+        errs = filter(f -> f.type == "task:log" && occursin("[ERROR]", String(f.line)), frames)
+        @test any(f -> occursin("pyramidScale", String(f.line)), errs)
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: custom modules status/reload" begin
     # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
     st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
