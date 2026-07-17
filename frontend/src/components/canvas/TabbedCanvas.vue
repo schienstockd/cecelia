@@ -233,7 +233,8 @@ function exportBoard(kind: string) {
         <option value="svg+csv">SVG + CSV</option>
         <option value="csv">CSV only</option>
       </select>
-      <i class="tab-info pi pi-info-circle" v-tooltip.bottom="'PDF: raster, for viewing/printing. ' +
+      <!-- opens LEFT (into the page): this is the rightmost control, a bottom tooltip would clip the edge -->
+      <i class="tab-info pi pi-info-circle" v-tooltip.left="'PDF: raster, for viewing/printing. ' +
          'SVG: vector, editable in Illustrator. CSV: data → Prism. Image + HMM panels stay raster; huge point clouds warn.'" />
     </div>
 

@@ -248,7 +248,10 @@ const visibleUids = computed<string[]>(() =>
     <div class="module-body">
 
       <!-- ── Left: image panel ─────────────────────────────────────── -->
-      <div class="image-panel">
+      <!-- no #right panel (e.g. the Analysis page) → the panel runs flush to the viewport edge, jamming
+           the right-aligned controls (filter toggle, board export, pop picker) + their tooltips against
+           it. `no-right` adds a small right gutter so they have room. -->
+      <div class="image-panel" :class="{ 'no-right': !$slots.right }">
 
         <!-- first-use hint (dismissed permanently per hintKey) -->
         <HintCallout v-if="hint && hintKey" :hint-key="hintKey" :text="hint" />
@@ -421,6 +424,12 @@ const visibleUids = computed<string[]>(() =>
   overflow: hidden;
   min-width: 0;
 }
+/* Right gutter when there's no #right panel to provide one — inset the content of the toolbar + plot
+   area so the right-aligned controls (and their tooltips/floating pickers) aren't flush to the edge.
+   Padding on the inner boxes (not image-panel) keeps the action-bar divider spanning full width. */
+.image-panel.no-right > .action-bar { padding-right: 1.1rem; }
+.image-panel.no-right > .attr-filter,
+.image-panel.no-right > .panel-scroll { padding-right: 0.9rem; }
 
 /* ── Right panel (collapsible) ──────────────────────────────────────────────
    A thin always-visible handle on the left edge toggles the slot; when collapsed
