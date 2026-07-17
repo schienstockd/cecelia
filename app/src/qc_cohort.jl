@@ -10,9 +10,14 @@
 # can't call an outlier without a cohort to compare against). Recompute-from-current-data on demand,
 # so there is no stale state to invalidate when images are added/excluded/re-processed.
 
-using Statistics: mean, std
+using Statistics: mean, std, median
 
 const _COHORT_MIN_N = 3
+# Modified z-score cutoff (Iglewicz & Hoaglin 1993, "How to Detect and Handle Outliers"): |Mᵢ| > 3.5
+# is their recommended default. Robust — a single outlier doesn't inflate the scale and hide itself
+# the way mean/SD does, so a clear anomaly flags even at n=3 (mean/SD needs n≥6 for a lone point to
+# reach 2σ). See docs/ai-assist/QC-PROCESS.md §3.
+const _COHORT_MODZ_THRESHOLD = 3.5
 
 # The objective metrics banked today (segment/measure/tracking tasks → qc.jl). Drives the default
 # cohort pass so a caller need only name the (fun, value_name) to aggregate. A second producer just
@@ -23,27 +28,37 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
 )
 
-# Pure: mean/SD over the values + the uids ≥ `sd_threshold` SDs from the mean. Returns
-# (; n, mean, sd, outliers) with outliers = Dict(uid => Dict("value"=>, "z"=>)). <3 values ⇒ no
-# outliers (no cohort to judge against); σ == 0 (all identical) ⇒ no outliers. Unit-tested directly.
-function _cohort_outliers(values_by_uid::AbstractDict, sd_threshold::Real)
+# Pure: robust outlier detection via the modified z-score (median/MAD). For each value,
+#   Mᵢ = 0.6745·(xᵢ − median) / MAD,   MAD = median(|xᵢ − median|)
+# flag `abs(Mᵢ) ≥ threshold`. Robust — one bad image doesn't inflate the scale and mask itself, so a
+# clear outlier flags even at n=3. If MAD == 0 (≥ half the values identical) fall back to the
+# mean-absolute-deviation scale; all-identical ⇒ nothing flagged. Returns
+# (; n, median, mad, mean, sd, outliers), outliers = Dict(uid => Dict("value"=>, "z"=> modified-z)).
+# `mean`/`sd` are reported for human context; flagging is the robust `z`. Unit-tested directly.
+function _cohort_outliers(values_by_uid::AbstractDict, threshold::Real = _COHORT_MODZ_THRESHOLD)
     uids = collect(keys(values_by_uid))
     vals = Float64[values_by_uid[u] for u in uids]
     n = length(vals)
-    n == 0 && return (; n = 0, mean = 0.0, sd = 0.0, outliers = Dict{String,Any}())
-    μ = mean(vals)
+    n == 0 && return (; n = 0, median = 0.0, mad = 0.0, mean = 0.0, sd = 0.0, outliers = Dict{String,Any}())
+    med = median(vals); μ = mean(vals)
+    sd  = n < 2 ? 0.0 : std(vals)
     n < _COHORT_MIN_N &&
-        return (; n = n, mean = round(μ; digits = 3), sd = 0.0, outliers = Dict{String,Any}())
-    σ = std(vals)
-    outliers = Dict{String,Any}()
-    if σ > 0
-        for (u, v) in zip(uids, vals)
-            z = (v - μ) / σ
-            abs(z) >= sd_threshold &&
-                (outliers[string(u)] = Dict{String,Any}("value" => v, "z" => round(z; digits = 2)))
-        end
+        return (; n = n, median = round(med; digits = 3), mad = 0.0,
+                  mean = round(μ; digits = 3), sd = round(sd; digits = 3), outliers = Dict{String,Any}())
+    mad = median(abs.(vals .- med))
+    modz = if mad > 0
+        [0.6745 * (v - med) / mad for v in vals]
+    else
+        meanad = mean(abs.(vals .- med))          # MAD==0 (≥half identical) → mean-abs-dev fallback
+        meanad > 0 ? [(v - med) / (1.253314 * meanad) for v in vals] : zeros(n)
     end
-    (; n = n, mean = round(μ; digits = 3), sd = round(σ; digits = 3), outliers = outliers)
+    outliers = Dict{String,Any}()
+    for (u, v, m) in zip(uids, vals, modz)
+        abs(m) >= threshold &&
+            (outliers[string(u)] = Dict{String,Any}("value" => v, "z" => round(m; digits = 2)))
+    end
+    (; n = n, median = round(med; digits = 3), mad = round(mad; digits = 3),
+       mean = round(μ; digits = 3), sd = round(sd; digits = 3), outliers = outliers)
 end
 
 # Read one banked metric value from an image's (fun, vn) QC doc; `nothing` if absent/non-numeric.
@@ -61,15 +76,15 @@ cohort_qc_path(set::CciaSet, fun_name::AbstractString, value_name::AbstractStrin
     joinpath(cohort_qc_dir(set), string(fun_name), _qc_vn(value_name) * ".json")
 
 """
-    cohort_qc!(set, fun_name, value_name, metric_keys; sd_threshold=2.0) -> Dict
+    cohort_qc!(set, fun_name, value_name, metric_keys; threshold=3.5) -> Dict
 
 Aggregate the named banked metrics across the set's INCLUDED images and write the cohort summary
 sidecar. Returns the summary doc `{funName, valueName, nIncluded, metrics}` where each metric maps to
-`{n, mean, sd, sdThreshold, outliers}`. Advisory; recomputes from current data so it's safe to call
-any time.
+`{n, median, mad, mean, sd, threshold, outliers}` (outliers by robust modified z-score; `threshold`
+is its cutoff). Advisory; recomputes from current data so it's safe to call any time.
 """
 function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
-                    metric_keys::AbstractVector; sd_threshold::Real = 2.0)
+                    metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
     imgs = filter(image_included, images(set))
     metrics = Dict{String,Any}()
     for mk in metric_keys
@@ -78,10 +93,10 @@ function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::Abstract
             v = _read_metric(img, fun_name, value_name, mk)
             isnothing(v) || (vals[img.uid] = v)
         end
-        s = _cohort_outliers(vals, sd_threshold)
+        s = _cohort_outliers(vals, threshold)
         metrics[string(mk)] = Dict{String,Any}(
-            "n" => s.n, "mean" => s.mean, "sd" => s.sd,
-            "sdThreshold" => Float64(sd_threshold), "outliers" => s.outliers)
+            "n" => s.n, "median" => s.median, "mad" => s.mad, "mean" => s.mean, "sd" => s.sd,
+            "threshold" => Float64(threshold), "outliers" => s.outliers)
     end
     doc = Dict{String,Any}("funName" => string(fun_name), "valueName" => _qc_vn(value_name),
                            "nIncluded" => length(imgs), "metrics" => metrics)
@@ -91,17 +106,18 @@ function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::Abstract
 end
 
 """
-    cohort_qc_for!(set, fun_name, value_name="default"; sd_threshold=2.0) -> Dict
+    cohort_qc_for!(set, fun_name, value_name="default"; threshold=3.5) -> Dict
 
 Convenience: run `cohort_qc!` for the known metrics of `fun_name` (`COHORT_METRICS`). Errors if the
 fun isn't a known metric producer.
 """
 function cohort_qc_for!(set::CciaSet, fun_name::AbstractString,
-                        value_name::AbstractString = VERSIONED_DEFAULT_VAL; sd_threshold::Real = 2.0)
+                        value_name::AbstractString = VERSIONED_DEFAULT_VAL;
+                        threshold::Real = _COHORT_MODZ_THRESHOLD)
     ks = get(COHORT_METRICS, string(fun_name), nothing)
     isnothing(ks) &&
         error("No known cohort metrics for fun '$fun_name' (known: $(join(sort(collect(keys(COHORT_METRICS))), ", ")))")
-    cohort_qc!(set, fun_name, value_name, ks; sd_threshold = sd_threshold)
+    cohort_qc!(set, fun_name, value_name, ks; threshold = threshold)
 end
 
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
