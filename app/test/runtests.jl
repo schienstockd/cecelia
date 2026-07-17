@@ -184,6 +184,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         g = Cecelia._parse_claude_result("not json")
         @test !g.ok && g.input_tokens == 0
 
+        # stale-session detection: a pruned/expired --resume id makes the CLI say "No conversation
+        # found with session ID: …" → run_observer_turn drops the id and retries fresh (self-heal).
+        @test Cecelia._is_stale_session_error(
+            "No conversation found with session ID: 0df65af8-ae13-4ec5-964a-7231cd8bf005")
+        @test Cecelia._is_stale_session_error("no conversation found with session id: x")  # case-insensitive
+        @test !Cecelia._is_stale_session_error("agent exited 1")                            # other failures don't retry
+        @test !Cecelia._is_stale_session_error("tool failed")
+
         # MCP config points the spawned agent at the same cecelia_mcp server + this API
         cfg = Cecelia.observer_mcp_config("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
         srv = cfg["mcpServers"]["cecelia-observer"]

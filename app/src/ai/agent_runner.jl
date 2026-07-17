@@ -73,6 +73,17 @@ function _build_claude_cmd(a::ClaudeAgent, prompt::AbstractString, mcp_config_pa
     Cmd(args)
 end
 
+# A stored session id goes stale when Claude Code prunes/expires it (its own log rotation, or a
+# different working dir). `--resume <gone-sid>` then makes the CLI exit non-zero with
+# "No conversation found with session ID: …" — which, before the self-heal below, made EVERY
+# subsequent Watch pass fail permanently until the user hit Clear. Detected here (PURE → unit-tested)
+# so `run_observer_turn` can drop the dead id and retry fresh. Matched loosely (message wording is a
+# CLI detail): the "no conversation found" phrase plus a session-id mention.
+function _is_stale_session_error(msg::AbstractString)::Bool
+    m = lowercase(String(msg))
+    occursin("no conversation found", m) && occursin("session id", m)
+end
+
 # Parse `claude --output-format json` output. PURE → unit-tested. Claude prints one JSON object with
 # `result` (final text), `session_id`, `is_error`, and `usage {input_tokens, output_tokens}`. Tolerant
 # of missing keys (the exact schema is an adapter detail — confirm against a live run, see the PLAN).
@@ -92,13 +103,12 @@ function _parse_claude_result(json_str::AbstractString)::AgentResult
                 is_err ? (isempty(text) ? "agent reported an error" : text) : "")
 end
 
-# Run one observer turn: spawn the agent, let it read + append through the MCP, return usage/session.
-# Bounded by a timeout so a hung agent can't wedge the request. LIVE path (needs the agent CLI + a
-# running API) — not exercised in CI; the pure builders/parsers above are the tested surface.
-function run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
-                           system_prompt::AbstractString = "", session_id::AbstractString = "",
-                           timeout_s::Real = 180, on_process::Function = _ -> nothing)::AgentResult
-    agent_available(a) || return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(a.bin)")
+# Spawn the agent once and parse its result. Bounded by a timeout so a hung agent can't wedge the
+# request. LIVE path (needs the agent CLI) — not exercised in CI; the pure builders/parsers above are
+# the tested surface.
+function _run_observer_once(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
+                            system_prompt::AbstractString, session_id::AbstractString,
+                            timeout_s::Real, on_process::Function)::AgentResult
     cmd = _build_claude_cmd(a, prompt, mcp_config_path; session_id, system_prompt)
     out = Pipe()
     proc = run(pipeline(cmd; stdout = out, stderr = out); wait = false)
@@ -113,4 +123,21 @@ function run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_pa
                            isempty(strip(output)) ? "agent exited $(proc.exitcode)" : output)
     end
     _parse_claude_result(output)
+end
+
+# Run one observer turn: spawn the agent, let it read + append through the MCP, return usage/session.
+# Self-heals a stale session: if we passed `--resume <sid>` and the CLI reports the conversation is
+# gone, drop the dead id and retry ONCE fresh — otherwise a pruned session would fail every Watch
+# pass forever (see _is_stale_session_error). A fresh turn just loses the prior context, not the pass.
+function run_observer_turn(a::ClaudeAgent, prompt::AbstractString, mcp_config_path::AbstractString;
+                           system_prompt::AbstractString = "", session_id::AbstractString = "",
+                           timeout_s::Real = 180, on_process::Function = _ -> nothing)::AgentResult
+    agent_available(a) || return AgentResult(false, "", 0, 0, "", "assistant CLI not found: $(a.bin)")
+    res = _run_observer_once(a, prompt, mcp_config_path;
+                             system_prompt, session_id, timeout_s, on_process)
+    if !res.ok && !isempty(session_id) && _is_stale_session_error(res.error)
+        res = _run_observer_once(a, prompt, mcp_config_path;
+                                 system_prompt, session_id = "", timeout_s, on_process)
+    end
+    res
 end
