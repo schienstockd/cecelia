@@ -509,3 +509,69 @@ end
         @test _movie_named_path(blank, "uid7") == joinpath(tmp, "proj", "movies", "uid7.mp4")
     end
 end
+
+# Observer (mcp/) event broadcasts — Slice B. Capture WS frames by registering a private queue in
+# `_ws_clients` (broadcast_ws puts a serialised frame per client). These frames drive the observer's
+# 10-attempts pattern + note/lab-log surfacing (docs/ai-assist/OBSERVER.md §4-5).
+@testset "API: observer event broadcasts" begin
+    # register a capture client; drain returns the parsed frames seen since the last drain
+    cap = Channel{String}(64)
+    key = gensym("test-observer")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (frames = []; while isready(cap); push!(frames, JSON3.read(take!(cap))); end; frames)
+
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir()
+    dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-observer", kind="static")
+        uid  = proj.uid
+        s    = add_set!(proj; name="set-A")
+        img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+
+        # ── ws_status carries `fun` so a module-page run is attributable to a function ──
+        drain()
+        ws_status(nothing, "task-1", "done", img.uid; fun="segment.cellpose")
+        let f = drain()
+            @test length(f) == 1
+            @test f[1].type == "task:status" && f[1].fun == "segment.cellpose"
+            @test f[1].status == "done" && f[1].imageUid == img.uid
+        end
+
+        # ── image_note_added fires when a note is set ──
+        drain()
+        @test _post(api_images_inclusion_set,
+                    Dict("projectUid"=>uid, "values"=>Dict(img.uid=>Dict("note"=>"odd cells"))))[1] == 200
+        let f = drain()
+            note = filter(x -> x.type == "image_note_added", f)
+            @test length(note) == 1
+            @test note[1].imageUid == img.uid && note[1].note == "odd cells" && note[1].projectUid == uid
+        end
+        # setting only `included` (no note) does NOT broadcast a note event
+        drain()
+        @test _post(api_images_inclusion_set,
+                    Dict("projectUid"=>uid, "values"=>Dict(img.uid=>Dict("included"=>false))))[1] == 200
+        @test isempty(filter(x -> x.type == "image_note_added", drain()))
+
+        # ── lab_log_entry_added fires for USER entries only (not [Claude]/[Cecelia]) ──
+        drain()
+        @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"User", "lines"=>["switched to diam 30"]))[1] == 200
+        let f = filter(x -> x.type == "lab_log_entry_added", drain())
+            @test length(f) == 1 && occursin("diam 30", f[1].summary) && f[1].projectUid == uid
+        end
+        # the observer's own [Claude] append must NOT re-broadcast (would loop)
+        drain()
+        @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Claude", "lines"=>["noted"]))[1] == 200
+        @test isempty(filter(x -> x.type == "lab_log_entry_added", drain()))
+        # [Cecelia] auto-digests are not user decisions → no broadcast
+        drain()
+        @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Cecelia", "lines"=>["digest"]))[1] == 200
+        @test isempty(filter(x -> x.type == "lab_log_entry_added", drain()))
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end

@@ -18,11 +18,15 @@ import os
 from mcp.server.fastmcp import FastMCP
 
 from cecelia_mcp.client import CeceliaClient
+from cecelia_mcp.monitor import SessionMonitor
+from cecelia_mcp.wsclient import api_url_to_ws, start_listener
 
 # Lab-log author tag for observer-written entries. Matches the frontend's authorKind() 'claude'.
 CLAUDE_AUTHOR = "Claude"
 
-_client = CeceliaClient(base_url=os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080"))
+_API_URL = os.environ.get("CECELIA_API_URL", "http://127.0.0.1:8080")
+_client = CeceliaClient(base_url=_API_URL)
+_monitor = SessionMonitor()
 mcp = FastMCP("cecelia-observer")
 
 
@@ -98,7 +102,29 @@ def append_lab_log(project_uid: str, lines: list[str]) -> dict:
     return _client.append_lab_log(project_uid, CLAUDE_AUTHOR, lines)
 
 
+@mcp.tool()
+def poll_observations(project_uid: str) -> list:
+    """Drain the observer's pending observations since the last poll — the "sit next to me" signal.
+
+    Call this periodically while watching a project. Returns a list (often empty — most of the time
+    nothing is worth surfacing) of observations detected from the live task stream:
+
+    - `repeat_attempts`: the same function has run >3 times on one image this session
+      (`imageUid`, `fn`, `attempts`, `completed`/`failed` tallies, `lastOutcome`). This is the core
+      signal — surface it: "you've run cellpose on this image N times; want to talk through the goal?"
+    - `image_note_added`: the user added a note to an image (`imageUid`, `note`) — ask *why* if the
+      decision looks unusual; the answer belongs in the lab log.
+    - `lab_log_entry_added`: a user (non-[Claude]) lab-log entry appeared (`summary`).
+
+    Observations are cleared once returned. Empty list ⇒ stay silent.
+    """
+    return _monitor.poll(project_uid)
+
+
 def main():
+    # Best-effort: subscribe to the API's WS event stream so the monitor can detect patterns. If the
+    # backend isn't up yet the listener reconnects on its own; the read tools work regardless.
+    start_listener(_monitor, api_url_to_ws(_API_URL))
     mcp.run()  # stdio transport
 
 
