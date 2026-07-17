@@ -83,7 +83,15 @@ def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
 
 @mcp.tool()
 def get_task_history(project_uid: str, limit: int = 100) -> list:
-    """Recent task runs across all images, newest first: image, function, value name, timestamp, status."""
+    """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
+    `valueName`, `at` (timestamp), `status` (the image's current status), and **`runStatus`** — that
+    run's outcome, `"done"` or `"failed"`.
+
+    Watch `runStatus`: the same `fun` showing `"failed"` repeatedly on one image is a stuck point worth
+    flagging (e.g. "hmm failed 5x on image KDIeEm — want to look at the params?"). **This is the place
+    to catch repeated failures** — a failed task leaves little other trace, and the live-pattern
+    detector (`poll_observations`) starts empty each run, so it won't have older failures. Cross-check
+    `get_task_log` / `get_recent_logs` for the actual error before surfacing."""
     return _client.get_task_history(project_uid, limit).get("history", [])
 
 
