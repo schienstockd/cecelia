@@ -1,0 +1,33 @@
+{
+  "task": "exampleNormalise",
+  "fun_name": "behaviour.exampleNormalise",
+  "label": "Example: normalise a measure (custom)",
+  "category": "behaviour",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "image",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which segmentation's label properties to read/write."
+    },
+    {
+      "key": "column",
+      "label": "Measure column",
+      "type": "text",
+      "required": true,
+      "tip": "Name of the per-cell measure to min-max normalise, e.g. live.cell.speed."
+    },
+    {
+      "key": "suffix",
+      "label": "Output suffix",
+      "type": "text",
+      "default": ".norm",
+      "tip": "Appended to the column name for the new 0..1 column."
+    }
+  ]
+}

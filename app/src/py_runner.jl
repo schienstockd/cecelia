@@ -43,7 +43,10 @@ function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
                 on_progress::Function = (n, t) -> nothing,
                 on_process::Function  = _ -> nothing)::Bool
     py_root   = _python_dir()
-    py_script = joinpath(py_root, "cecelia", script_rel)
+    # A custom (user drop-in) task passes an ABSOLUTE path to its own `_run.py` under
+    # <config_dir>/modules/python/…; built-in tasks pass a path relative to python/cecelia/.
+    py_script = isabspath(String(script_rel)) ? String(script_rel) :
+                joinpath(py_root, "cecelia", script_rel)
     isfile(py_script) || (on_log("[ERROR] Python script not found: $py_script"); return false)
 
     mkpath(config_dir)
@@ -53,7 +56,12 @@ function run_py(script_rel::AbstractString, params, config_dir::AbstractString;
         JSON3.write(io, params)
     end
     out_pipe = Pipe()
-    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => py_root)
+    # PYTHONPATH: python/ (so `import cecelia.*` resolves everywhere) + the user modules python dir
+    # (so a custom task's dropped `_run.py` can import its own siblings). See docs/CUSTOM_MODULES.md.
+    pythonpath = py_root
+    custom_py  = joinpath(config_dir(), "modules", "python")
+    isdir(custom_py) && (pythonpath = string(custom_py, Sys.iswindows() ? ";" : ":", py_root))
+    cmd  = addenv(`$(python_bin_path()) $py_script --params $params_file`, "PYTHONPATH" => pythonpath)
     proc = run(pipeline(cmd; stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)

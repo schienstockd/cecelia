@@ -1,8 +1,27 @@
-# User-drop-in custom modules — PLAN (parked)
+# User-drop-in custom modules — PLAN
 
-**Status:** parked plan. Restore the old R-version capability: a user adds a custom **module/task
-function** by dropping files into their **user directory** (next to `custom.toml`) — no package edit,
-no rebuild. The GUI then shows it like any built-in task.
+**Status:** P1 + P2 + P3 BUILT. Restore the old R-version capability: a user adds a custom
+**module/task function** by dropping files into their **user directory** (next to `custom.toml`) — no
+package edit, no rebuild. The GUI shows it like any built-in task. Promote the durable parts into
+`docs/CUSTOM_MODULES.md` (done) — this plan can be retired once merged.
+
+**Shipped (P1 Julia drop-in + P2 Python compute):** runtime registry (`register_task!` in
+`app/src/tasks/task.jl`, consulted by `_task_from_fun_name`/`_spec_path`, built-ins win on clash);
+`load_custom_modules!` (`app/src/tasks/custom_modules.jl`) scans `<config_dir>/modules/sources/**/*.jl`
+on server start + on demand; `api_task_definitions` merges `<config_dir>/modules/inputDefinitions/**`
+(built-ins win); `run_py` runs absolute-path `modules/python/` scripts with the user dir on
+`PYTHONPATH`.
+
+**Shipped (P3 UX):** Settings → Custom modules panel (dir + per-module loaded/error list + Reload
+button); a **generic page** `/custom/:category` + a dynamic **"Custom"** sidebar group for
+new-category modules, driven by `categories` (with a `builtin` flag) on
+`GET`/`POST /api/tasks/custom-modules[/reload]`; guide `docs/CUSTOM_MODULES.md`; two runnable examples
+in `docs/examples/custom-modules/` (Julia-only `behaviour.exampleNormalise`; Julia+Python+nested-params
+`customExamples.trackContext`); tests in `app/test` + `api/test`.
+
+**Decisions that landed:** name-clash = built-ins win; hot-reload picks up NEW files, edited Julia
+still needs a restart (struct redefinition), documented; a new category's generic page has no plot
+canvas (results plot on the Analysis board / Explore pages once written to the h5ad).
 
 ## The gap (why this is needed)
 Old R cecelia `source()`d a `modules/` folder at startup, so a dropped `.R` + `.json` was live

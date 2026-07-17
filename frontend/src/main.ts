@@ -34,6 +34,8 @@ const router = createRouter({
     { path: '/batch-movies', component: () => import('./modules/BatchMoviesModule.vue'), meta: { label: 'Batch movies' } },
     { path: '/tasks',     component: () => import('./modules/TasksModule.vue'),         meta: { label: 'Tasks' } },
     { path: '/chain',     component: () => import('./modules/ChainModule.vue'),         meta: { label: 'Whiteboard' } },
+    // Generic page for a user custom-module category with no built-in page (docs/CUSTOM_MODULES.md).
+    { path: '/custom/:category', component: () => import('./modules/CustomModule.vue'),  meta: { label: 'Custom', customPage: true } },
     { path: '/settings',  component: () => import('./modules/SettingsModule.vue'),      meta: { label: 'Settings' } },
     // bare = rendered full-window without the app shell (opened in its own window via window.open)
     { path: '/console',   component: () => import('./modules/ConsoleView.vue'),         meta: { label: 'Console', bare: true } },

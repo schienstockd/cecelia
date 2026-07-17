@@ -575,3 +575,19 @@ end
         rm(tmp; recursive=true, force=true)
     end
 end
+
+@testset "API: custom modules status/reload" begin
+    # Read-only status: shape is { dir, modules: [...], categories: [...] }; dir is <config_dir>/modules.
+    st, body = api_custom_modules_status(HTTP.Request("GET", "/api/tasks/custom-modules"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test endswith(String(d.dir), joinpath("modules"))
+    @test haskey(d, :modules)
+    @test haskey(d, :categories)   # drives the generic new-category page + "Custom" nav group
+
+    # Reload rescans; with no modules dir present it returns empty lists, never errors.
+    st2, body2 = api_custom_modules_reload(Vector{UInt8}("{}"))
+    @test st2 == 200
+    d2 = JSON3.read(body2)
+    @test haskey(d2, :loaded) && haskey(d2, :failed) && haskey(d2, :categories)
+end

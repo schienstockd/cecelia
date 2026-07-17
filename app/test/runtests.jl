@@ -43,6 +43,9 @@ function have_fixture(path::AbstractString)::Bool
     false
 end
 
+# Custom drop-in task fixture — structs must live at module top level, not inside a @testset block.
+struct _TestCustomTask <: CciaTask end
+
 @testset "Cecelia package smoke tests" begin
 
     # ── Config ────────────────────────────────────────────────────────────────
@@ -460,6 +463,70 @@ end
         @test validate_params(
             CropImage(), Dict{String,Any}("x0" => 0, "x1" => 100, "y0" => 0, "y1" => 100,
                                           "z0" => 2, "z1" => 8, "t0" => -1, "t1" => -1)) === nothing
+    end
+
+    @testset "Custom module registry (drop-in tasks)" begin
+        # A user drops a task by calling register_task! with an instance + a spec path; it must then
+        # resolve through _task_from_fun_name / _spec_path / validate_params exactly like a built-in.
+        spec_dir = mktempdir()
+        spec = joinpath(spec_dir, "exampleTest.json")
+        write(spec, JSON3.write(Dict(
+            "fun_name"      => "customTest.exampleTest",
+            "label"         => "Example test",
+            "resource_pool" => "default",
+            "scope"         => "image",
+            "params"        => [Dict("key" => "n", "label" => "N", "type" => "int",
+                                     "min" => 0, "max" => 10)],
+        )))
+
+        register_task!("customTest.exampleTest", _TestCustomTask(); spec = spec)
+
+        @test _task_from_fun_name("customTest.exampleTest") isa _TestCustomTask
+        @test Cecelia._spec_path(_TestCustomTask()) == spec       # default _spec_path → custom registry
+        @test task_scope(_TestCustomTask()) == "image"           # spec read via the registered path
+        # param validation uses the dropped spec (n has min=0/max=10)
+        @test_throws ParamValidationError validate_params(
+            _TestCustomTask(), Dict{String,Any}("n" => 99))
+        @test validate_params(_TestCustomTask(), Dict{String,Any}("n" => 3)) === nothing
+
+        # built-ins win on a fun_name clash — registering under an existing name must NOT shadow it
+        register_task!("importImages.remove", _TestCustomTask(); spec = spec)
+        @test _task_from_fun_name("importImages.remove") isa RemoveImage
+
+        # a missing spec file is rejected up front
+        @test_throws ArgumentError register_task!(
+            "customTest.bad", _TestCustomTask(); spec = joinpath(spec_dir, "nope.json"))
+
+        # unknown fun_name still errors
+        @test_throws Exception _task_from_fun_name("customTest.doesNotExist")
+    end
+
+    @testset "Custom module reload prunes deleted files" begin
+        # load a module from a temp config dir, then delete its .jl and reload → the task must be
+        # unregistered (no longer dispatchable) and dropped from the load report. Regression: the
+        # report used to only accumulate, so a deleted module stayed "loaded"/green forever.
+        tmp = mktempdir()
+        srcdir = joinpath(tmp, "modules", "sources", "tmpcat");            mkpath(srcdir)
+        defdir = joinpath(tmp, "modules", "inputDefinitions", "tmpcat");   mkpath(defdir)
+        spec = joinpath(defdir, "pruneMe.json")
+        write(spec, JSON3.write(Dict(
+            "fun_name" => "tmpcat.pruneMe", "label" => "Prune me",
+            "resource_pool" => "default", "scope" => "image", "params" => Any[])))
+        jl = joinpath(srcdir, "pruneMe.jl")
+        write(jl, """
+        struct _PruneMeTask <: Cecelia.CciaTask end
+        Cecelia.register_task!("tmpcat.pruneMe", _PruneMeTask(); spec = $(repr(spec)))
+        """)
+
+        load_custom_modules!(; dev_dir = tmp)
+        @test _task_from_fun_name("tmpcat.pruneMe") isa CciaTask
+        @test any(m -> m.path == jl, custom_modules_report())
+
+        rm(jl)                                   # user deletes the module file
+        res = load_custom_modules!(; dev_dir = tmp)
+        @test jl in res.removed                  # reported as unloaded
+        @test_throws Exception _task_from_fun_name("tmpcat.pruneMe")   # no longer dispatchable
+        @test !any(m -> m.path == jl, custom_modules_report())         # gone from the report
     end
 
     # ── Section-param flattening (whiteboard/chain stores section params NESTED) ───

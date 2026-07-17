@@ -7,6 +7,10 @@ using Logging
 
 init_cecelia!()
 
+# Load user drop-in task modules from <config_dir>/modules (no rebuild needed). Safe/never-throws;
+# a broken module is logged, not fatal. See docs/CUSTOM_MODULES.md.
+Cecelia.load_custom_modules!()
+
 # ── Sub-modules ───────────────────────────────────────────────────────────────
 
 include("sockets.jl")
@@ -205,6 +209,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"
             api_task_definitions(req)
+        elseif path == "/api/tasks/custom-modules"
+            api_custom_modules_status(req)
         elseif path == "/api/tasks/funparams"
             api_task_fun_params(req)
         elseif path == "/api/pools"
@@ -265,6 +271,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     if method == "POST"
         return if path == "/api/projects/list"
             api_projects_list(req)
+        elseif path == "/api/tasks/custom-modules/reload"
+            api_custom_modules_reload(body_bytes)
         elseif path == "/api/projects/create"
             api_projects_create(body_bytes)
         elseif path == "/api/projects/load"

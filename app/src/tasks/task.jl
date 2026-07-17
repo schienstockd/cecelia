@@ -82,12 +82,64 @@ end
 
 # Subclasses define their spec path by implementing this or we use naming convention.
 # Default: look for <category>/<task>.json next to the .jl file.
+# Built-in tasks override this with a specific method (task_registry.jl); the default resolves a
+# user drop-in task's spec through the runtime registry below (keyed by concrete type, matching how
+# _task_spec caches by `string(typeof(task))`).
 function _spec_path(task::CciaTask)::Union{String, Nothing}
-    nothing  # concrete tasks override via the table below
+    lock(_CUSTOM_TASK_LOCK) do
+        get(_CUSTOM_SPEC_PATHS, string(typeof(task)), nothing)
+    end
 end
 
 # Concrete _spec_path overloads and _FUN_NAME_MAP live in task_registry.jl,
 # included after all task type definitions.
+
+# ── Custom (user-drop-in) task registry ───────────────────────────────────────
+# Built-in tasks are compiled into the package (a _spec_path method + a _fun_name_map entry, both in
+# task_registry.jl). User modules dropped into `<config_dir>/modules/` self-register at include time
+# via `register_task!`, populating these runtime dicts that `_task_from_fun_name` and the default
+# `_spec_path` consult. Built-ins always win on a fun_name clash. See `load_custom_modules!`
+# (custom_modules.jl) and docs/CUSTOM_MODULES.md.
+const _CUSTOM_TASKS      = Dict{String, CciaTask}()   # fun_name       => instance
+const _CUSTOM_SPEC_PATHS = Dict{String, String}()     # string(type)   => spec .json path
+const _CUSTOM_TASK_LOCK  = ReentrantLock()
+
+"""
+    register_task!(fun_name, task; spec) -> CciaTask
+
+Register a user/custom task at runtime — called from a dropped module's `.jl` at include time. Records
+the instance under `fun_name` and its JSON spec path (keyed by concrete type) so `_task_from_fun_name`
+and `_spec_path` resolve it exactly like a built-in. `spec` must be an existing `.json` file.
+Idempotent: re-registering the same type/`fun_name` replaces the entry. See `load_custom_modules!` and
+docs/CUSTOM_MODULES.md.
+"""
+function register_task!(fun_name::AbstractString, task::CciaTask; spec::AbstractString)
+    isfile(spec) ||
+        throw(ArgumentError("register_task!(\"$fun_name\"): spec file not found: $spec"))
+    lock(_CUSTOM_TASK_LOCK) do
+        _CUSTOM_TASKS[String(fun_name)]          = task
+        _CUSTOM_SPEC_PATHS[string(typeof(task))] = String(spec)
+    end
+    task
+end
+
+"""
+    _unregister_task!(fun_name) -> Bool
+
+Remove a custom task from the runtime registry (used by `load_custom_modules!` when a module file is
+deleted). Drops both the fun_name → instance and the type → spec entries. Returns `true` if it was
+registered. The struct/methods the module defined remain in the module (Julia can't undefine them),
+but with no registry entry the task is no longer dispatchable or visible.
+"""
+function _unregister_task!(fun_name::AbstractString)::Bool
+    lock(_CUSTOM_TASK_LOCK) do
+        t = get(_CUSTOM_TASKS, String(fun_name), nothing)
+        isnothing(t) && return false
+        delete!(_CUSTOM_TASKS, String(fun_name))
+        delete!(_CUSTOM_SPEC_PATHS, string(typeof(t)))
+        true
+    end
+end
 
 # ── Param validation ──────────────────────────────────────────────────────────
 
@@ -460,7 +512,11 @@ end
 
 function _task_from_fun_name(fun_name::String)::CciaTask
     map = _fun_name_map()
-    haskey(map, fun_name) ||
-        error("Unknown fun_name: \"$fun_name\". Available: $(join(keys(map), ", "))")
-    map[fun_name]
+    haskey(map, fun_name) && return map[fun_name]   # built-ins win on clash
+    custom = lock(_CUSTOM_TASK_LOCK) do
+        get(_CUSTOM_TASKS, fun_name, nothing)
+    end
+    isnothing(custom) || return custom
+    avail = vcat(collect(keys(map)), lock(_CUSTOM_TASK_LOCK) do; collect(keys(_CUSTOM_TASKS)) end)
+    error("Unknown fun_name: \"$fun_name\". Available: $(join(avail, ", "))")
 end

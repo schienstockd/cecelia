@@ -1,0 +1,65 @@
+{
+  "task": "trackContext",
+  "fun_name": "customExamples.trackContext",
+  "label": "Track context (Julia + Python)",
+  "category": "customExamples",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "image",
+  "outputValueName": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "Which tracked segmentation's label properties to read/write."
+    },
+    {
+      "key": "measure",
+      "label": "Measure",
+      "type": "text",
+      "default": "live.cell.speed",
+      "required": true,
+      "tip": "Per-cell measure to summarise per track (e.g. live.cell.speed)."
+    },
+    {
+      "key": "trackFiltering",
+      "label": "Track filtering",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "minTrackLength",
+          "label": "Min track length",
+          "type": "int",
+          "min": 1,
+          "max": 1000,
+          "step": 1,
+          "default": 1,
+          "tip": "Tracks shorter than this (in cells) are skipped."
+        }
+      ]
+    },
+    {
+      "key": "standardisation",
+      "label": "Python standardisation",
+      "type": "section",
+      "collapsed": true,
+      "params": [
+        {
+          "key": "method",
+          "label": "Method",
+          "type": "select",
+          "default": "zscore",
+          "options": [
+            { "value": "zscore", "label": "z-score (mean / sd)" },
+            { "value": "robust", "label": "robust (median / MAD)" },
+            { "value": "none",   "label": "none (skip Python step)" }
+          ],
+          "tip": "How the Python step standardises the Julia track-mean column."
+        }
+      ]
+    }
+  ]
+}
