@@ -63,6 +63,13 @@ export const useSettingsStore = defineStore('settings', () => {
   // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
   const labLogMode = ref<'notes' | 'tuning'>(
     localStorage.getItem('cc.labLogMode') === 'tuning' ? 'tuning' : 'notes')
+  // "sit next to me": when on, a finished task triggers a (debounced) observer pass that may append a
+  // [Claude] note. Frontend-driven (fires while you're using the app), gated on the availability of an
+  // assistant CLI. Default off — it spends tokens. See components/LabLogPanel.vue.
+  const labLogObserverAuto = ref(localStorage.getItem('cc.labLogObserverAuto') === 'true')
+  // transient (not persisted): a one-line preview of an unseen [Claude] lab-log addition — set when
+  // the observer appends while the panel is closed, drives the sidebar badge, cleared when opened.
+  const labLogUnseen = ref('')
 
   // per-image label-layer visibility: { [imageUid]: { [valueName]: boolean } }
   // unknown labels default to true; persisted across sessions
@@ -212,6 +219,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(labLogMode,               v => localStorage.setItem('cc.labLogMode',               String(v)))
+  watch(labLogObserverAuto,       v => localStorage.setItem('cc.labLogObserverAuto',       String(v)))
+  watch(labLogPanelOpen,          open => { if (open) labLogUnseen.value = '' })   // opening clears the badge
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, labLogObserverAuto, labLogUnseen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

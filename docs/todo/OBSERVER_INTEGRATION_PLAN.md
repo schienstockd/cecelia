@@ -138,8 +138,16 @@ executable resolution.
 2. **Token readout + session continuity + clear-context.** `observer_session.jl` sidecar; parse
    `usage` from the JSON result; `--resume`; `GET /api/observer/status` + `POST /api/observer/clear`;
    the token readout + clear button in the UI.
-3. **Auto "sit next to me".** The heartbeat loop + new-activity gate + `POST /api/observer/auto`
-   toggle; default off; respects the throttle. The `observer:wrote` notification + badge.
+3. ✅ **DONE — Auto "sit next to me".** Implemented **frontend-driven** (not a backend heartbeat): the
+   panel subscribes to task-completion WS frames (`task:status`/`chain:node:*` terminal, via
+   `utils/observerAuto.ts` `isObserverTrigger`) and, while the `labLogObserverAuto` toggle is on + an
+   assistant is available, fires a **debounced** (8s) observer pass (reusing the feedback path). Chosen
+   over a server loop because it's simpler, spends nothing when the app is closed, and is naturally
+   scoped to "while you're working." Default off. **Badge:** when the observer appends a `[Claude]`
+   entry while the lab-log panel is closed, `settings.labLogUnseen` (a one-line preview) lights a
+   sparkles badge on the sidebar lab-log toggle (`AppSidebar.vue`), cleared on open — the glanceable
+   notification (no toast, per Decision 6). (A backend heartbeat for closed-app/overnight watching is
+   Phase 3 of the *arc* — the Analyst — not this integration.)
 4. **Availability gating + polish + the AgentBackend seam made real** (document how a second backend
    would slot in; hide UI when unavailable).
 

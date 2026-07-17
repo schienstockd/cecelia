@@ -4,7 +4,9 @@
 // Zero-friction by design: an always-focused entry field at the top, submit on Enter, newest-first
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
-import { ref, computed, watch, nextTick } from 'vue'
+import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
+import { useWsStore } from '../stores/ws'
+import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES, OBSERVER_TRIGGERS } from '../utils/observerAuto'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import {
@@ -36,6 +38,7 @@ const observerAvailable = ref(false)
 const observerBusy = ref(false)
 const observerNote = ref('')
 const observerSession = ref<ObserverSession | null>(null)
+const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
 // running token total for the readout (real usage from the assistant's own output, accumulated
 // per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
 const observerTokens = computed(() => {
@@ -107,7 +110,14 @@ async function askClaude() {
       observerNote.value = res.error ?? 'Assistant unavailable.'
     } else if (res.ok) {
       observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
+      const claudeBefore = entries.value.filter(e => authorKind(e.author) === 'claude').length
       await load()   // surface any new [Claude] entry the assistant appended
+      const claudeNow = entries.value.filter(e => authorKind(e.author) === 'claude')
+      // if it actually appended AND the panel is closed, flag the sidebar badge with a preview
+      if (claudeNow.length > claudeBefore && !settings.labLogPanelOpen) {
+        const line = (claudeNow[0]?.lines ?? []).find(l => l.trim()) ?? 'added a note'
+        settings.labLogUnseen = line.replace(/^[-*]\s*/, '').trim()
+      }
     } else {
       observerNote.value = res.error ?? 'The assistant could not complete.'
     }
@@ -117,6 +127,29 @@ async function askClaude() {
     observerBusy.value = false
   }
 }
+
+// ── "sit next to me" auto-mode: a finished task triggers a debounced observer pass ──────────────
+// Frontend-driven (fires while the app is open); subscribes to task/chain terminal frames only while
+// the toggle is on + an assistant is available. Debounced so a burst of completions → one pass.
+const ws = useWsStore()
+const AUTO_DEBOUNCE_MS = 8000
+let autoTimer: ReturnType<typeof setTimeout> | null = null
+function onTaskFrame(frame: any) {
+  if (!settings.labLogObserverAuto || !observerAvailable.value || !projectUid.value) return
+  if (!isObserverTrigger(frame)) return
+  if (autoTimer) clearTimeout(autoTimer)
+  autoTimer = setTimeout(() => {
+    autoTimer = null
+    if (settings.labLogObserverAuto && observerAvailable.value && !observerBusy.value) askClaude()
+  }, AUTO_DEBOUNCE_MS)
+}
+watch(() => settings.labLogObserverAuto, (on) => {
+  OBSERVER_AUTO_FRAME_TYPES.forEach(t => on ? ws.on(t, onTaskFrame) : ws.off(t, onTaskFrame))
+}, { immediate: true })
+onUnmounted(() => {
+  OBSERVER_AUTO_FRAME_TYPES.forEach(t => ws.off(t, onTaskFrame))
+  if (autoTimer) clearTimeout(autoTimer)
+})
 
 // Clear context: reset the project's assistant session + token totals (next run starts fresh).
 async function clearContext() {
@@ -274,11 +307,23 @@ async function toggleMute(category: string) {
                 : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
+      <label v-if="observerAvailable" class="ll-auto"
+             title="Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)">
+        <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
+      </label>
       <span v-if="observerTokens" class="ll-tokens"
             title="Assistant token use for this project's observer session (real usage)">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
               title="Clear the assistant's session and reset the token count">clear</button>
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
+    </div>
+
+    <!-- what "Watch" triggers on: read-only green/red lights (only task-completion is wired today) -->
+    <div v-if="observerAvailable && settings.labLogObserverAuto" class="ll-triggers">
+      <span class="ll-triggers-label">Watching:</span>
+      <span v-for="t in observerTriggers" :key="t.key" class="ll-trigger" :title="t.note">
+        <span class="ll-trigger-dot" :class="t.active ? 'on' : 'off'" /> {{ t.label }}
+      </span>
     </div>
 
     <!-- assistant report: the full text of the last Ask-Claude pass, in a readable block -->
@@ -389,6 +434,17 @@ async function toggleMute(category: string) {
   font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
 }
 .ll-clearctx:hover { color: var(--cc-text); }
+/* trigger status row — what "Watch" fires on (read-only green/red lights) */
+.ll-triggers {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+  padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
+  font-size: 0.64rem; color: var(--cc-text-dim);
+}
+.ll-triggers-label { text-transform: uppercase; letter-spacing: 0.03em; }
+.ll-trigger { display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
+.ll-trigger-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; display: inline-block; }
+.ll-trigger-dot.on  { background: #3fb950; }   /* watched */
+.ll-trigger-dot.off { background: #f85149; opacity: 0.55; }   /* not a trigger */
 /* the last Ask-Claude report — its own readable block, not crammed in the toolbar */
 .ll-observer-report {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
