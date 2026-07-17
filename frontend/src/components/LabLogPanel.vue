@@ -269,14 +269,14 @@ async function toggleMute(category: string) {
                 : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
-      <label v-if="observerAvailable" class="ll-auto"
-             v-tooltip.top="'Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)'">
-        <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
-      </label>
       <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
               v-tooltip.top="'Which model the observer runs (Ask Claude + Watch). Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
         <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
       </select>
+      <label v-if="observerAvailable" class="ll-auto"
+             v-tooltip.top="'Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)'">
+        <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
+      </label>
       <span v-if="observerTokens" class="ll-tokens"
             v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
