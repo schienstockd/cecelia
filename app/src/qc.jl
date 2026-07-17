@@ -59,6 +59,34 @@ function read_all_qc(img::CciaImage)
     out
 end
 
+# ── Objective count metrics (QC banking) ─────────────────────────────────────────
+# Tasks bank objective counts (cells measured, tracks + mean length) into the qc/ sidecar so future
+# cohort stats can flag anomalies (a run that produced 10× fewer cells/tracks than usual). There is
+# no cohort threshold yet, so a count is recorded as a METRIC (the doc's `metrics` field) — the
+# bankable datum — with an advisory `finding` only for the unambiguous "produced nothing" case.
+
+"""
+    track_count_metrics(track_ids) -> (n_tracks, mean_length, n_tracked_cells)
+
+From a per-cell `track_id` vector, count distinct tracks, mean cells-per-track, and total tracked
+cells. Untracked cells (`missing`/`nothing`/`NaN`/`≤ 0`) are ignored — matching the `track_id > 0`
+"tracked" convention used across gating/pop_df. Pure (no I/O) so it's unit-tested directly.
+"""
+function track_count_metrics(track_ids)
+    counts = Dict{Int,Int}()
+    for t in track_ids
+        (ismissing(t) || t === nothing) && continue
+        (t isa Real && isnan(t)) && continue
+        ti = t isa Integer ? Int(t) : Int(round(t))
+        ti > 0 || continue
+        counts[ti] = get(counts, ti, 0) + 1
+    end
+    n_tracks = length(counts)
+    n_cells  = sum(values(counts); init = 0)
+    mean_len = n_tracks == 0 ? 0.0 : n_cells / n_tracks
+    (n_tracks, mean_len, n_cells)
+end
+
 # Reusable spatial check — flag an output whose XY canvas grew abnormally vs its source. Shapes are in
 # `dim_order` (e.g. "TCZYX"). Generic across any spatially-transforming task (drift/AF correction, …);
 # returns a finding or `nothing`. Default threshold 25% (normal drift expands XY ≤~15%).

@@ -73,5 +73,27 @@ function _run_task(task::BayesianTracking, img::CciaImage, params::Dict{String,A
     ok || return nothing
 
     on_log("[INFO] Tracking complete.")
+
+    # QC (advisory): bank the track count + mean track length from the track_id column btrack just
+    # wrote back into the segmentation's obs. 0 tracks (btrack linked nothing) is the one unambiguous
+    # problem → an advisory finding; the counts are always recorded as metrics for cohort stats.
+    try
+        cells = label_props(props_path) |> select_cols(["track_id"]) |> as_df
+        tids  = "track_id" in names(cells) ? cells.track_id : Float64[]
+        n_tracks, mean_len, n_tracked = track_count_metrics(tids)
+        findings = n_tracks == 0 ?
+            [qc_finding("warn", "tracking.no_tracks", "No tracks formed",
+                "btrack linked no cells into tracks — check segmentation continuity and the tracking parameters, then re-run.")] :
+            Dict{String,Any}[]
+        write_qc(img, "tracking.bayesian_tracking", value_name, findings;
+                 metrics = Dict{String,Any}("nTracks"         => n_tracks,
+                                            "meanTrackLength" => round(mean_len, digits = 2),
+                                            "nTrackedCells"   => n_tracked))
+        on_log(n_tracks == 0 ? "[QC] no tracks formed — see the image's QC badge." :
+               "[QC] $n_tracks track(s), mean length $(round(mean_len, digits = 1)) frames.")
+    catch e
+        on_log("[QC] could not compute tracking QC: $e")
+    end
+
     Dict{String,Any}("valueName" => value_name)
 end

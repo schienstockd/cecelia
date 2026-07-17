@@ -19,6 +19,13 @@ from skimage import morphology, segmentation
 from scipy import ndimage
 
 
+def count_labels(arr):
+    """Number of distinct non-zero label IDs in a label array — the objective cell count for QC.
+    Label IDs are assigned globally-incrementing across tiles AND timepoints, so this is the total
+    number of segmented object instances (matching one row per object in the measured .h5ad)."""
+    return int(np.unique(arr[arr > 0]).size)
+
+
 class SegmentationUtils:
 
     LABEL_DTYPE = np.uint32
@@ -150,6 +157,9 @@ class SegmentationUtils:
                     arr,
                     os.path.join(labels_dir, f'{self.output_value_name}_{ma}.zarr'),
                     label_axes, nscales)
+
+        # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
+        return {ma: count_labels(arr) for ma, arr in label_arrs.items()}
 
     # ── Tile helpers ──────────────────────────────────────────────────────────
 
