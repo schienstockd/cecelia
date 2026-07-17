@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { svcPost, notebooksApi } from './serviceApi'
+import { svcPost, notebooksApi, observerApi } from './serviceApi'
 
 function mockFetch(status: number, body: unknown) {
   return vi.fn().mockResolvedValue({
@@ -44,5 +44,31 @@ describe('svcPost', () => {
     vi.stubGlobal('fetch', f)
     await notebooksApi.shutdown()
     expect(f.mock.calls[0][0]).toBe('/api/notebooks/shutdown')
+  })
+})
+
+describe('observerApi', () => {
+  it('status returns availability from the endpoint', async () => {
+    vi.stubGlobal('fetch', mockFetch(200, { available: true }))
+    expect(await observerApi.status()).toEqual({ available: true })
+  })
+
+  it('status degrades to unavailable on a non-2xx (never throws → drives the disabled UI)', async () => {
+    vi.stubGlobal('fetch', mockFetch(500, {}))
+    expect(await observerApi.status()).toEqual({ available: false })
+  })
+
+  it('status degrades to unavailable when fetch rejects', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    expect(await observerApi.status()).toEqual({ available: false })
+  })
+
+  it('feedback POSTs the projectUid to the feedback endpoint', async () => {
+    const f = mockFetch(200, { ok: true, message: 'noted' })
+    vi.stubGlobal('fetch', f)
+    const r = await observerApi.feedback('NRUBxU')
+    expect(f.mock.calls[0][0]).toBe('/api/observer/feedback')
+    expect(f.mock.calls[0][1].body).toBe(JSON.stringify({ projectUid: 'NRUBxU' }))
+    expect(r).toEqual({ ok: true, message: 'noted' })
   })
 })
