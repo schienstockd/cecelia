@@ -15,3 +15,21 @@ export function isObserverTrigger(frame: { type?: string; status?: string }): bo
   if (t === 'task:status') return TERMINAL_TASK_STATUS.has(String(frame?.status ?? ''))
   return t === 'chain:node:done' || t === 'chain:node:failed'
 }
+
+// The event categories the observer COULD watch, for the read-only green/red status row under the
+// Watch toggle. `active` = wired as a live trigger today (only task-completion is). The rest are shown
+// red with a `note` explaining why — flip `active` (and wire the frame) when a signal exists. Single
+// source of truth so adding a trigger is one edit here. See docs/todo/OBSERVER_INTEGRATION_PLAN.md.
+export interface ObserverTrigger { key: string; label: string; active: boolean; note: string }
+export const OBSERVER_TRIGGERS: ObserverTrigger[] = [
+  { key: 'task',       label: 'Task finished', active: true,
+    note: 'A task or chain node completes (done or failed) — the current trigger.' },
+  { key: 'note',       label: 'Image note',    active: false,
+    note: 'A live event exists (image_note_added) but is not wired as a trigger yet.' },
+  { key: 'population', label: 'Population',     active: false,
+    note: 'No live signal yet — gating changes are captured at digest time, not pushed live.' },
+  { key: 'workflow',   label: 'Workflow',      active: false,
+    note: 'No live signal for saving a workflow yet.' },
+  { key: 'figure',     label: 'Figure',        active: false,
+    note: 'No live signal for creating a figure yet.' },
+]

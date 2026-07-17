@@ -6,7 +6,7 @@
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick, onUnmounted } from 'vue'
 import { useWsStore } from '../stores/ws'
-import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES } from '../utils/observerAuto'
+import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES, OBSERVER_TRIGGERS } from '../utils/observerAuto'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import {
@@ -38,6 +38,7 @@ const observerAvailable = ref(false)
 const observerBusy = ref(false)
 const observerNote = ref('')
 const observerSession = ref<ObserverSession | null>(null)
+const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
 // running token total for the readout (real usage from the assistant's own output, accumulated
 // per project — see docs/todo/OBSERVER_INTEGRATION_PLAN.md Decisions 3/4)
 const observerTokens = computed(() => {
@@ -317,6 +318,14 @@ async function toggleMute(category: string) {
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
     </div>
 
+    <!-- what "Watch" triggers on: read-only green/red lights (only task-completion is wired today) -->
+    <div v-if="observerAvailable && settings.labLogObserverAuto" class="ll-triggers">
+      <span class="ll-triggers-label">Watching:</span>
+      <span v-for="t in observerTriggers" :key="t.key" class="ll-trigger" :title="t.note">
+        <span class="ll-trigger-dot" :class="t.active ? 'on' : 'off'" /> {{ t.label }}
+      </span>
+    </div>
+
     <!-- assistant report: the full text of the last Ask-Claude pass, in a readable block -->
     <div v-if="observerNote" class="ll-observer-report">
       <div class="ll-observer-head"><i class="pi pi-sparkles" /> Claude</div>
@@ -425,6 +434,17 @@ async function toggleMute(category: string) {
   font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
 }
 .ll-clearctx:hover { color: var(--cc-text); }
+/* trigger status row — what "Watch" fires on (read-only green/red lights) */
+.ll-triggers {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
+  padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
+  font-size: 0.64rem; color: var(--cc-text-dim);
+}
+.ll-triggers-label { text-transform: uppercase; letter-spacing: 0.03em; }
+.ll-trigger { display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
+.ll-trigger-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; display: inline-block; }
+.ll-trigger-dot.on  { background: #3fb950; }   /* watched */
+.ll-trigger-dot.off { background: #f85149; opacity: 0.55; }   /* not a trigger */
 /* the last Ask-Claude report — its own readable block, not crammed in the toolbar */
 .ll-observer-report {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);

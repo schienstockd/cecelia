@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES } from './observerAuto'
+import { isObserverTrigger, OBSERVER_AUTO_FRAME_TYPES, OBSERVER_TRIGGERS } from './observerAuto'
 
 describe('isObserverTrigger', () => {
   it('fires on terminal module-page task outcomes', () => {
@@ -27,5 +27,13 @@ describe('isObserverTrigger', () => {
 
   it('subscribes to exactly the terminal frame types', () => {
     expect(OBSERVER_AUTO_FRAME_TYPES).toEqual(['task:status', 'chain:node:done', 'chain:node:failed'])
+  })
+})
+
+describe('OBSERVER_TRIGGERS (status row)', () => {
+  it('only task-completion is an active trigger today; each has an explanatory note', () => {
+    const active = OBSERVER_TRIGGERS.filter(t => t.active).map(t => t.key)
+    expect(active).toEqual(['task'])
+    expect(OBSERVER_TRIGGERS.every(t => t.label && t.note)).toBe(true)
   })
 })
