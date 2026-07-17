@@ -214,9 +214,22 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test s2["sessionId"] == "sessABC"                     # unchanged (empty id kept prior)
         @test s2["inputTokens"] == 1500 && s2["outputTokens"] == 50 && s2["turns"] == 2
 
-        # clear resets everything (next run forks a fresh session)
+        # activity log: every pass is recorded (newest-first), even a silent/failed one
+        log_observer_pass!(proj; trigger = "manual", model = "sonnet", ok = true, appended = false,
+                           input_tokens = 900, output_tokens = 20, note = "reviewed — nothing to flag")
+        log_observer_pass!(proj; trigger = "auto", model = "haiku", ok = true, appended = true,
+                           input_tokens = 700, output_tokens = 30, note = "flagged clustTracks failed 4×")
+        ps = read_observer_session(proj)["passes"]
+        @test length(ps) == 2
+        @test ps[1]["trigger"] == "auto" && ps[1]["appended"] == true          # newest-first
+        @test ps[1]["model"] == "haiku" && ps[1]["inputTokens"] == 700
+        @test ps[2]["trigger"] == "manual" && ps[2]["appended"] == false
+        @test occursin("nothing to flag", ps[2]["note"])
+
+        # clear resets everything (next run forks a fresh session), incl. the activity log
         cleared = clear_observer_session!(proj)
         @test cleared["sessionId"] == "" && cleared["inputTokens"] == 0 && cleared["turns"] == 0
+        @test isempty(cleared["passes"])
         @test read_observer_session(proj)["inputTokens"] == 0
         rm(proj.root; recursive = true)
     end
