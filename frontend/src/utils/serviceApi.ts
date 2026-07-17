@@ -54,7 +54,7 @@ export interface ObserverSession {
 export const observerApi = {
   /** Availability (drives the disabled-with-why UI) + this project's session/usage when a uid is
    *  given. Never throws → unavailable on error. */
-  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; session?: ObserverSession }> => {
+  status: async (projectUid?: string): Promise<{ available: boolean; models?: string[]; defaultModel?: string; prompt?: string; session?: ObserverSession }> => {
     try {
       const q = projectUid ? `?projectUid=${encodeURIComponent(projectUid)}` : ''
       const res = await fetch(`/api/observer/status${q}`)
