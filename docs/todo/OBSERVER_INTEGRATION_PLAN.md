@@ -35,6 +35,12 @@ always-available feature that most users will actually use.
    first implementation**; adding Gemini/ChatGPT later is a new adapter, not a rewrite. The observer
    *prompt* lives server-side (shared across backends). This is an explicit product requirement (user:
    "it would be nice if people could choose other agents in the future").
+   - **Model is user-selectable, default Sonnet.** The observer's work (spot a repeat pattern, read a
+     task log to diagnose a failure, write a brief lab-log line) fits Sonnet; Haiku is enough for the
+     frequent auto-Watch passes; **Opus is overkill** (slower, costlier). The panel exposes a
+     Haiku/Sonnet/Opus picker (`settings.labLogObserverModel`), sent per run (Ask-Claude + Watch) and
+     allow-listed server-side (`OBSERVER_MODELS`); the default is overridable via config.toml
+     `[ai] model`. A second backend would define its own list.
 
 3. **The control surface is exactly four things** (user: "that's the only two readouts we need" +
    two actions):

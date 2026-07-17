@@ -146,7 +146,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     # The live spawn (needs the agent CLI + a running API) isn't tested here; these pin the pure
     # builders/parsers that the runner + api route depend on. See docs/todo/OBSERVER_INTEGRATION_PLAN.md.
     @testset "AI observer agent runner (pure pieces)" begin
-        a   = Cecelia.ClaudeAgent(bin = "claude")
+        a   = Cecelia.ClaudeAgent(bin = "claude", model = "")               # explicit empty → no flag
         cmd = Cecelia._build_claude_cmd(a, "hello", "/tmp/mcp.json"; system_prompt = "be brief")
         argv = cmd.exec
         @test argv[1] == "claude"
@@ -156,12 +156,22 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test "--allowedTools" in argv                                    # observer tools allowed
         @test "--append-system-prompt" in argv && "be brief" in argv
         @test !("--resume" in argv)                                       # no session → no resume
-        @test !("--model" in argv)                                        # default model → no flag
+        @test !("--model" in argv)                                        # empty model → no flag
 
         cmd2 = Cecelia._build_claude_cmd(Cecelia.ClaudeAgent(bin = "claude", model = "claude-opus-4-8"),
                                          "hi", "/tmp/m.json"; session_id = "sess123")
         @test "--resume" in cmd2.exec && "sess123" in cmd2.exec
         @test "--model" in cmd2.exec && "claude-opus-4-8" in cmd2.exec
+
+        # model choice: shipped default is Sonnet (Opus not needed for observer work); the request
+        # model is allow-listed — an arbitrary string never reaches --model. (default_model reads
+        # config [ai] model, so assert it stays within the allow-list rather than a hard "sonnet".)
+        @test Set(Cecelia.OBSERVER_MODELS) == Set(["haiku", "sonnet", "opus"])
+        @test Cecelia.observer_default_model() in Cecelia.OBSERVER_MODELS
+        @test Cecelia.observer_valid_model("haiku") == "haiku"
+        @test Cecelia.observer_valid_model("gpt-4") == Cecelia.observer_default_model()   # unknown → default
+        @test Cecelia.observer_valid_model("")     == Cecelia.observer_default_model()
+        @test Cecelia.ClaudeAgent(bin = "claude").model == Cecelia.observer_default_model()
 
         # result parsing — success carries text + usage + session
         r = Cecelia._parse_claude_result(
