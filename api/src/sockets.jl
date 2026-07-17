@@ -261,22 +261,33 @@ function handle_task_run(ws, data)
             end
             rep = first(imgs).uid
             final_status = Ref{Symbol}(:failed)
-            result = run_task(task_struct, imgs, params;
-                              task_id          = task_id,
-                              pool_name        = pool_name,
-                              on_log           = line -> ws_log(ws, task_id, line),
-                              on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                              on_status_change = rec -> begin
-                                  # queued/running forwarded live; also forward :cancelled at once (it
-                                  # has no result to order before it) so a cancelled task — especially a
-                                  # still-QUEUED one — reflects immediately, not only when a worker later
-                                  # dequeues and skips it. :done/:failed still wait for the final send.
-                                  if rec.status in (:queued, :running, :cancelled)
-                                      ws_status(ws, task_id, string(rec.status), rep; fun=fun_name)
-                                  end
-                                  final_status[] = rec.status
-                              end)
-            isnothing(result) || ws_result(ws, task_id, rep, result)
+            # run_task validates params FIRST (throws ParamValidationError before any job runs), so a
+            # bad-param launch never reaches on_status_change. Catch it here so the failure is logged
+            # AND a terminal task:status frame still goes out — otherwise the throw dies in the
+            # @spawn silently (no [ERROR], no frame → the observer's "Watch" auto-trigger, which keys
+            # off the terminal frame, never fires). Same guarantee for any pre-job throw.
+            try
+                result = run_task(task_struct, imgs, params;
+                                  task_id          = task_id,
+                                  pool_name        = pool_name,
+                                  on_log           = line -> ws_log(ws, task_id, line),
+                                  on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
+                                  on_status_change = rec -> begin
+                                      # queued/running forwarded live; also forward :cancelled at once
+                                      # (it has no result to order before it) so a cancelled task —
+                                      # especially a still-QUEUED one — reflects immediately, not only
+                                      # when a worker later dequeues and skips it. :done/:failed still
+                                      # wait for the final send.
+                                      if rec.status in (:queued, :running, :cancelled)
+                                          ws_status(ws, task_id, string(rec.status), rep; fun=fun_name)
+                                      end
+                                      final_status[] = rec.status
+                                  end)
+                isnothing(result) || ws_result(ws, task_id, rep, result)
+            catch ex
+                ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
+                final_status[] = :failed
+            end
             # a set task touched EVERY member — send the full list so the frontend invalidates all of
             # their plots, not just the representative's (closes the non-rep-member gap).
             ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs], fun=fun_name)
@@ -297,22 +308,28 @@ function handle_task_run(ws, data)
         # Capture the final status so we can send ws_result before ws_status("done"),
         # preserving the result→status ordering the frontend expects.
         final_status = Ref{Symbol}(:failed)
-        result = run_task(task_struct, img, params;
-                          task_id          = task_id,
-                          pool_name        = pool_name,
-                          on_log           = line -> ws_log(ws, task_id, line),
-                          on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
-                          on_status_change = rec -> begin
-                              # Forward queued/running immediately, and :cancelled too (no result to
-                              # order before it) so a cancelled — especially still-QUEUED — task
-                              # reflects at once. Hold :done/:failed until after the result is sent.
-                              if rec.status in (:queued, :running, :cancelled)
-                                  ws_status(ws, task_id, string(rec.status), image_uid; fun=fun_name)
-                              end
-                              final_status[] = rec.status
-                          end)
-
-        isnothing(result) || ws_result(ws, task_id, image_uid, result)
+        # See the set-scope branch: run_task validates params first (throws before any job runs), so
+        # a pre-job throw is caught here to guarantee an [ERROR] log + a terminal task:status frame.
+        try
+            result = run_task(task_struct, img, params;
+                              task_id          = task_id,
+                              pool_name        = pool_name,
+                              on_log           = line -> ws_log(ws, task_id, line),
+                              on_progress      = (n, t) -> ws_progress(ws, task_id, n, t),
+                              on_status_change = rec -> begin
+                                  # Forward queued/running immediately, and :cancelled too (no result
+                                  # to order before it) so a cancelled — especially still-QUEUED —
+                                  # task reflects at once. Hold :done/:failed until after the result.
+                                  if rec.status in (:queued, :running, :cancelled)
+                                      ws_status(ws, task_id, string(rec.status), image_uid; fun=fun_name)
+                                  end
+                                  final_status[] = rec.status
+                              end)
+            isnothing(result) || ws_result(ws, task_id, image_uid, result)
+        catch ex
+            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex))
+            final_status[] = :failed
+        end
         ws_status(ws, task_id, string(final_status[]), image_uid; fun=fun_name)
     end
 end
