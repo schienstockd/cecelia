@@ -107,6 +107,7 @@ _where(names)::String = (n = length(names); n <= 2 ? join(sort(collect(names)), 
 # from the fun (the module header carries it): `segment.cellpose` → "cellpose on 5 images".
 function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},String}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
+    fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
     max_at = String(cutoff)
     for img in images(proj)
         for e in read_run_log(img)
@@ -114,7 +115,10 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
             at > cutoff || continue
             fun  = String(get(e, "fun", "?"))
             disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
-            push!(get!(get!(by_mod_fun, _category_of_fun(fun), Dict{String,Set{String}}()), disp, Set{String}()), img.name)
+            mod  = _category_of_fun(fun)
+            push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.name)
+            String(get(e, "status", "done")) == "failed" &&
+                (fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1)   # surface failures too
             at > max_at && (max_at = at)
         end
     end
@@ -122,8 +126,11 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
     for (mod, funs) in by_mod_fun
         items = String[]
         for disp in sort(collect(keys(funs)))
-            n = length(funs[disp])
-            push!(items, "$disp on $n image$(n == 1 ? "" : "s") ($(_where(funs[disp])))")
+            n  = length(funs[disp])
+            fc = get(fail_count, (mod, disp), 0)
+            item = "$disp on $n image$(n == 1 ? "" : "s") ($(_where(funs[disp])))"
+            fc > 0 && (item *= " — $fc failed")
+            push!(items, item)
         end
         out[mod] = items
     end

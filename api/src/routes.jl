@@ -933,8 +933,10 @@ function api_tasks_history(req::HTTP.Request)
     _rl(e, k) = (v = get(e, k, get(e, Symbol(k), nothing)); v === nothing ? "" : String(v))
     rows = Vector{Any}()
     for img in images(proj), e in read_run_log(img)
+        rs = _rl(e, "status")                        # per-RUN outcome; legacy entries have none → "done"
         push!(rows, Dict{String,Any}(
-            "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,
+            "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,  # image's status
+            "runStatus" => (isempty(rs) ? "done" : rs),                              # this run's outcome
             "fun" => _rl(e, "fun"), "valueName" => _rl(e, "valueName"), "at" => _rl(e, "at")))
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological

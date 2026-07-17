@@ -861,6 +861,23 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         logfile  = joinpath(img._dir, "logs", fun_name * ".log")
         @test isfile(logfile)                                          # ...and the on-disk log
         @test occursin("boom", read(logfile, String))
+
+        # ...AND the run log records the FAILED run (so history / the observer can see repeats, not
+        # just successes). This is the fix for tasks that silently failed invisibly (broken run_py, HMM).
+        rlog = read_run_log(img)
+        @test length(rlog) == 1
+        @test String(rlog[end]["fun"]) == fun_name && String(rlog[end]["status"]) == "failed"
+        rm(proj.root; recursive=true)
+    end
+
+    @testset "Run log records status (done + failed)" begin
+        proj = create_project!(name="rl-status-$(rand(1000:9999))", kind="static")
+        img  = add_image!(add_set!(proj; name="s"); name="img")
+        append_run_log!(img, "segment.cellpose", "default")              # default status = done
+        append_run_log!(img, "behaviour.hmm", "", "failed")
+        rl = read_run_log(img)
+        @test String(rl[1]["status"]) == "done"
+        @test String(rl[2]["fun"]) == "behaviour.hmm" && String(rl[2]["status"]) == "failed"
         rm(proj.root; recursive=true)
     end
 
