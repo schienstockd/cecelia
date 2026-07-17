@@ -11,6 +11,7 @@ import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
+import { observerApi } from '../utils/serviceApi'
 
 const pm = useProjectMetaStore()
 const settings = useSettingsStore()
@@ -29,6 +30,11 @@ const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (confi
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
 const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
 const mode = computed(() => settings.labLogMode)
+// AI observer (in-app assistant) — availability gates a disabled-with-why button (see
+// docs/todo/OBSERVER_INTEGRATION_PLAN.md); the run is one-shot and may append a [Claude] entry.
+const observerAvailable = ref(false)
+const observerBusy = ref(false)
+const observerNote = ref('')
 // chips include any orphaned mute (category since renamed/removed) so it can always be un-muted
 const muteableCategories = computed(() => muteChips(categories.value, mutes.value))
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
@@ -77,8 +83,33 @@ async function capture(silent = false) {
   }
 }
 
+// Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP.
+async function askClaude() {
+  if (!projectUid.value || observerBusy.value || !observerAvailable.value) return
+  observerBusy.value = true
+  observerNote.value = ''
+  error.value = ''
+  try {
+    const res = await observerApi.feedback(projectUid.value)
+    if (res.available === false) {
+      observerAvailable.value = false
+      observerNote.value = res.error ?? 'Assistant unavailable.'
+    } else if (res.ok) {
+      observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
+      await load()   // surface any new [Claude] entry the assistant appended
+    } else {
+      observerNote.value = res.error ?? 'The assistant could not complete.'
+    }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    observerBusy.value = false
+  }
+}
+
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
 watch(projectUid, async () => {
+  observerApi.status().then(s => { observerAvailable.value = s.available })
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
@@ -209,7 +240,15 @@ async function toggleMute(category: string) {
       <label class="ll-auto" title="Automatically capture activity when this project opens">
         <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
       </label>
+      <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
+              @click="askClaude"
+              :title="observerAvailable
+                ? 'Ask the assistant to review recent activity and note anything worth flagging in the lab log'
+                : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
+        <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
+      </button>
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
+      <span v-if="observerNote" class="ll-note">{{ observerNote }}</span>
     </div>
 
     <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->

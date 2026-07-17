@@ -59,9 +59,13 @@ always-available feature that most users will actually use.
    user answers with a `[User]` entry / reaction (the panel already supports both — see the reactions
    feature). Q&A in the log = the methodology record.
 
-6. **Notify on write.** People won't keep the panel open, so a `[Claude]` append broadcasts a WS frame
-   → a toast ("Claude added a lab-log note") + a badge on the lab-log button. Same mechanism as the
-   update badge / task notifications.
+6. **Notify on write — a glanceable badge, NOT a toast.** People won't keep the panel open, so a
+   `[Claude]` append broadcasts a WS frame → a **bell / Claude icon badge on the lab-log toggle**
+   (persistent, so you can notice it whenever), **plus an abbreviated one-line preview of the addition
+   under the toggle** (the gist without opening the panel). The badge clears when the panel is opened.
+   No transient toast (Cecelia has none; a badge is lighter and doesn't vanish). Same WS→badge
+   mechanism as the update badge. (User: "a bell or claude icon next to lab log, and an abbreviated
+   version of the addition underneath the lab log toggle.")
 
 7. **Signal discipline is enforced by the server-side prompt**, not left to a freeform session: one
    line per event, imperative, numbers in the detail; only write on a >3-attempt pattern / real error

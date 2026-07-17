@@ -29,3 +29,17 @@ export const napariApi = {
   restart: () => svcPost('/api/napari/restart'),
   close: () => svcPost('/api/napari/close'),
 }
+
+/** In-app AI observer — needs an assistant CLI (e.g. Claude Code) on the machine. */
+export const observerApi = {
+  /** Is an assistant CLI available? Drives the disabled-with-why UI. Never throws → false on error. */
+  status: async (): Promise<{ available: boolean }> => {
+    try {
+      const res = await fetch('/api/observer/status')
+      return res.ok ? await res.json() : { available: false }
+    } catch { return { available: false } }
+  },
+  /** One-shot: the assistant reviews the project and may append a [Claude] lab-log note. Returns
+   *  { ok, available, message, error, inputTokens, outputTokens }. */
+  feedback: (projectUid: string) => svcPost('/api/observer/feedback', { projectUid }),
+}
