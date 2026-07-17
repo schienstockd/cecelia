@@ -6,6 +6,7 @@
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick } from 'vue'
 import { OBSERVER_TRIGGERS } from '../utils/observerAuto'
+import { isAuthError, observerSetupReason } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
@@ -41,6 +42,11 @@ const observerSession = computed(() => observer.session)
 const observerNote = ref('')                 // last MANUAL pass verdict, shown in the report block
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
 const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
+// Setup guidance: availability only means `claude` is on PATH — not logged in. Show install/login
+// steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
+const observerSetup = computed(() =>
+  observerSetupReason(observerAvailable.value,
+    (observerPasses.value[0] && !observerPasses.value[0].ok && isAuthError(observerPasses.value[0].note)) || false))
 const passLabel = (t: string) => (t === 'auto' ? 'Watch' : 'Ask')
 const passTokens = (p: { inputTokens: number; outputTokens: number }) => {
   const total = p.inputTokens + p.outputTokens
@@ -284,6 +290,21 @@ async function toggleMute(category: string) {
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
     </div>
 
+    <!-- Set-up guidance: the integration needs NO config — just Claude Code installed + logged in.
+         Shown when the CLI is missing, or when a run failed because it isn't authenticated. -->
+    <div v-if="observerSetup" class="ll-setup">
+      <template v-if="observerSetup === 'missing'">
+        <strong>Claude Code not detected.</strong> To let an assistant watch your analysis and note
+        things here: install Claude Code so <code>claude</code> is on your PATH, then run
+        <code>claude</code> once to log in. No other setup — Cecelia wires the tools automatically.
+      </template>
+      <template v-else>
+        <strong>Claude Code isn't logged in.</strong> The last run failed to authenticate — run
+        <code>claude</code> in a terminal once to log in, then try again. (Nothing else to configure.)
+      </template>
+      <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
+    </div>
+
     <!-- what "Watch" triggers on: read-only green/red lights (only task-completion is wired today) -->
     <div v-if="observerAvailable && settings.labLogObserverAuto" class="ll-triggers">
       <span class="ll-triggers-label">Watching:</span>
@@ -430,6 +451,18 @@ async function toggleMute(category: string) {
 .ll-trigger-dot.on  { background: #3fb950; }   /* watched */
 .ll-trigger-dot.off { background: #f85149; opacity: 0.55; }   /* not a trigger */
 /* the last Ask-Claude report — its own readable block, not crammed in the toolbar */
+/* setup hint — install/login guidance when Claude Code is missing or not authenticated */
+.ll-setup {
+  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-2); padding: 0.4rem 0.6rem;
+  font-size: 0.68rem; color: var(--cc-text-dim); line-height: 1.5;
+}
+.ll-setup strong { color: var(--cc-text); }
+.ll-setup code {
+  font-size: 0.64rem; padding: 0 0.2rem; border-radius: 3px;
+  background: var(--cc-surface); border: 1px solid var(--cc-border);
+}
+.ll-setup a { margin-left: 0.3rem; color: var(--cc-accent); white-space: nowrap; }
 .ll-observer-report {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-2); padding: 0.4rem 0.6rem; max-height: 8rem; overflow-y: auto;
