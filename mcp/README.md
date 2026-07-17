@@ -36,7 +36,10 @@ mcp/
 | `get_task_log(project_uid, image_uid, fun)` | `GET /api/images/tasklog` | raw log text for one task fn on one image |
 | `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | recent runs across all images, newest first |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
-| `poll_observations(project_uid)` | *(in-process, WS-fed)* | pending observations since the last poll — the "sit next to me" signal (see below) |
+| `get_recent_logs(level="", limit=100)` | `GET /api/logs/recent` | recent backend console lines (server `@info`/`@warn`/`@error`) — where a Julia-side task crash lands (not in `get_task_log`) |
+| `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |
+| `set_observer_active(active)` | *(in-process)* | the off switch — stop/resume surfacing; counting continues while off |
+| `get_observer_stats()` | *(in-process)* | session throttle/cost state without draining (surfaced count, cap, throttled, token estimate) |
 | `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **the only write** — appends a dated `[Claude]` entry, append-only |
 
 ## Live observation — the 10-attempts pattern (Slice B)
@@ -45,7 +48,8 @@ Beyond the on-demand reads, the server keeps a **session monitor** fed by the AP
 stream (`ws://…/ws`, best-effort — reconnects on its own, never blocks the read tools). It watches for
 patterns the user is too close to notice and exposes them through **`poll_observations`** — a *pull*
 tool Claude calls periodically while watching a project (MCP is client-pull; unsolicited server→client
-push is a later slice). Each poll drains and returns a (usually empty) list:
+push is a later slice). Each poll returns `{observations, stats}`, where `observations` is a
+(usually empty) list of:
 
 - **`repeat_attempts`** — the same function has run **>3 times on one image this session**
   (`imageUid`, `fn`, `attempts`, `completed`/`failed` tallies, `lastOutcome`). The core signal.
@@ -56,6 +60,18 @@ push is a later slice). Each poll drains and returns a (usually empty) list:
 
 The monitor is pure and unit-tested (`tests/test_monitor.py`); the WS listener only decodes frames and
 feeds it. The connection is receive-only — no mutation path is added.
+
+### Throttle, token cost & off switch (Slice C)
+
+To bound token cost (the doc's honest caveat: heavy sessions can be ~10× the ~10-20-event estimate),
+the monitor caps how many observations it surfaces per session (`surfaceCap`, default 20). Once the
+cap is hit it **goes quiet**: `poll_observations` returns no new `observations`, and the suppressed
+patterns are appended to the **lab log** silently instead (a single compact `[Claude]` block) — so
+nothing is lost, but no chat tokens are spent narrating them. `stats` (also via `get_observer_stats`)
+reports `surfacedCount`, `surfaceCap`, `throttled`, `enabled`, and an `estimatedTokens` running gauge
+(surfaced × ~2.5k — an estimate; the server can't see Claude's real usage). **`set_observer_active(false)`**
+is the off switch: surfacing stops but attempt counting keeps running, so re-enabling resumes with full
+history.
 
 ## The no-mutation guarantee
 

@@ -28,6 +28,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/images/meta"),
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
+        ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
     }
@@ -108,6 +109,12 @@ class CeceliaClient:
 
     def read_lab_log(self, project_uid: str):
         return self._request("GET", "/api/lablog", {"projectUid": project_uid})
+
+    def get_recent_logs(self):
+        # The backend console ring — server-level @info/@warn/@error (task crashes land here, NOT in
+        # the per-image task log, which only captures the Python subprocess's stdout). Not scoped to a
+        # project (it's the process-wide console).
+        return self._request("GET", "/api/logs/recent")
 
     # ── the one write (append-only) ─────────────────────────────────────────────────
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):

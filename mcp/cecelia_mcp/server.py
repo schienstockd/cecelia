@@ -103,12 +103,31 @@ def append_lab_log(project_uid: str, lines: list[str]) -> dict:
 
 
 @mcp.tool()
-def poll_observations(project_uid: str) -> list:
+def get_recent_logs(level: str = "", limit: int = 100) -> list:
+    """Recent lines from the backend's own console — server `@info`/`@warn`/`@error`, newest last.
+
+    This is where a **Julia-side task crash lands** (e.g. a task that dies before its Python
+    subprocess starts) — it does NOT appear in `get_task_log`, which only captures the Python
+    process's stdout. When `poll_observations` shows a `repeat_attempts` / a task keeps failing but
+    the task log looks empty, call this to find the actual error.
+
+    `level` optionally filters to one of "info" / "warn" / "error" (default: all). `limit` caps how
+    many of the most-recent lines are returned. It's a process-wide ring buffer (~500 lines, not
+    persisted, not per-project), so it's for *live/recent* diagnosis, not historical forensics.
+    """
+    logs = _client.get_recent_logs().get("logs", [])
+    if level:
+        logs = [l for l in logs if str(l.get("level", "")).lower() == level.lower()]
+    return logs[-limit:] if limit and limit > 0 else logs
+
+
+@mcp.tool()
+def poll_observations(project_uid: str) -> dict:
     """Drain the observer's pending observations since the last poll — the "sit next to me" signal.
 
-    Call this periodically while watching a project. Returns a list (often empty — most of the time
-    nothing is worth surfacing) of observations detected from the live task stream:
+    Call this periodically while watching a project. Returns `{observations, stats}`:
 
+    `observations` is a list (often empty — most of the time nothing is worth surfacing) of:
     - `repeat_attempts`: the same function has run >3 times on one image this session
       (`imageUid`, `fn`, `attempts`, `completed`/`failed` tallies, `lastOutcome`). This is the core
       signal — surface it: "you've run cellpose on this image N times; want to talk through the goal?"
@@ -116,9 +135,60 @@ def poll_observations(project_uid: str) -> list:
       decision looks unusual; the answer belongs in the lab log.
     - `lab_log_entry_added`: a user (non-[Claude]) lab-log entry appeared (`summary`).
 
-    Observations are cleared once returned. Empty list ⇒ stay silent.
+    `stats` reports the session throttle/cost state (`surfacedCount`, `surfaceCap`, `throttled`,
+    `estimatedTokens`, `enabled`). Once `surfaceCap` observations have been surfaced, the observer
+    goes quiet: `observations` stays empty and further patterns are appended to the lab log silently
+    (so nothing is lost) — see `stats.throttled`. When `enabled` is false (see `set_observer_active`)
+    `observations` is always empty.
+
+    Empty `observations` ⇒ stay silent.
     """
-    return _monitor.poll(project_uid)
+    observations = _monitor.poll(project_uid)
+    # Throttle-suppressed observations are flushed to the lab log silently, so a busy session still
+    # records its patterns without spending chat tokens narrating them (OBSERVER.md §6).
+    suppressed = _monitor.drain_for_log()
+    if suppressed:
+        _flush_to_lab_log(project_uid, suppressed)
+    return {"observations": observations, "stats": _monitor.stats()}
+
+
+@mcp.tool()
+def set_observer_active(active: bool) -> dict:
+    """Turn the live observer on or off (the off switch, per OBSERVER.md §6).
+
+    When off, `poll_observations` surfaces nothing — but attempt counting keeps running in the
+    background, so turning it back on resumes with full history. Use this if the observer becomes
+    noisy or the user wants to work undisturbed. Returns the current session stats.
+    """
+    _monitor.set_enabled(active)
+    return _monitor.stats()
+
+
+@mcp.tool()
+def get_observer_stats() -> dict:
+    """The observer's running per-session state without draining anything: whether it's `enabled`,
+    how many observations were `surfacedCount` (vs the `surfaceCap`), whether it's `throttled`, and a
+    rough `estimatedTokens` cost. The token figure is an ESTIMATE (surfaced x ~2.5k) — the server
+    can't see Claude's real usage — meant as a running gauge, not a bill."""
+    return _monitor.stats()
+
+
+def _flush_to_lab_log(project_uid: str, suppressed: list) -> None:
+    """Append throttle-suppressed observations to the lab log as one compact [Claude] block. Best-
+    effort — never let a lab-log write failure break a poll."""
+    lines = ["_(observer throttled — logged silently, not surfaced)_"]
+    for obs in suppressed:
+        if obs.get("type") == "repeat_attempts":
+            lines.append(f"- repeat: `{obs.get('fn')}` on image {obs.get('imageUid')} "
+                         f"x{obs.get('attempts')} ({obs.get('completed')} ok / {obs.get('failed')} failed)")
+        elif obs.get("type") == "image_note_added":
+            lines.append(f"- note on image {obs.get('imageUid')}: {obs.get('note')}")
+        elif obs.get("type") == "lab_log_entry_added":
+            lines.append(f"- user log entry: {obs.get('summary')}")
+    try:
+        _client.append_lab_log(project_uid, CLAUDE_AUTHOR, lines)
+    except Exception:  # noqa: BLE001 — best-effort; a poll must not fail on a lab-log write error
+        pass
 
 
 def main():

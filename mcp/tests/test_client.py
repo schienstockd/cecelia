@@ -70,6 +70,15 @@ class ClientTest(unittest.TestCase):
             self.c.get_task_history("p", limit=5)
         self.assertIn("limit=5", u.call_args[0][0].full_url)
 
+    def test_recent_logs_is_an_allowed_get(self):
+        self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
+        with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:
+            out = self.c.get_recent_logs()
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertTrue(req.full_url.endswith("/api/logs/recent"))
+        self.assertEqual(out["logs"][0]["message"], "boom")
+
     def test_append_posts_json_body(self):
         with _patch_urlopen({"ok": True}) as u:
             self.c.append_lab_log("p", "Claude", ["hello", "world"])
