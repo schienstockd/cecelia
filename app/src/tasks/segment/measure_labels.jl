@@ -62,6 +62,24 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
     on_log("[INFO] Measurement complete.")
 
     h5ad_filename = "$(out_value_name).h5ad"
+
+    # QC (advisory): bank the objective cell count so cohort stats can later flag anomalies. A count
+    # of 0 (measured nothing) is the one unambiguous problem → an advisory finding. Read the count
+    # from the just-written .h5ad by path (img.label_props in-memory isn't refreshed here yet).
+    try
+        h5ad_path = joinpath(task_dir, "labelProps", h5ad_filename)
+        n = n_obs(label_props(h5ad_path))
+        findings = n == 0 ?
+            [qc_finding("warn", "measure.no_cells", "No cells measured",
+                "The segmentation produced no measurable objects — check the segmentation and re-run this step.")] :
+            Dict{String,Any}[]
+        write_qc(img, "segment.measureLabels", out_value_name, findings;
+                 metrics = Dict{String,Any}("nCells" => n))
+        on_log("[QC] measured $n cell(s).")
+    catch e
+        on_log("[QC] could not compute measure QC: $e")
+    end
+
     raw2 = Dict{String,Any}(String(k) => v for (k, v) in JSON3.read(read(ccid, String)))
     lp   = Dict{String,String}(String(k) => string(v)
                                for (k, v) in get(raw2, "label_props", Dict{String,Any}()))

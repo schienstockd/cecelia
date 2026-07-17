@@ -39,6 +39,7 @@ Parameter contract (JSON written by Julia):
 
 import sys
 import os
+import json
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
@@ -67,7 +68,15 @@ def run(params):
     log.log(f'>> GPU: {cp.gpu_device if cp.use_gpu else "none (CPU)"}')
     log.log(f'>> tiling: block={cp.block_size} overlap={cp.overlap} normalise_to_whole={cp.normalise_to_whole}')
 
-    cp.predict_from_zarr(im_dat)
+    label_counts = cp.predict_from_zarr(im_dat)
+
+    # Bank the objective per-type cell count for QC (the Julia handler reads this and writes the qc/
+    # sidecar — same qcOutPath pattern as drift_correct_run.py). Best-effort; never fails the task.
+    qc_out_path = params.get('qcOutPath')
+    if qc_out_path:
+        with open(qc_out_path, 'w') as f:
+            json.dump({'labelCounts': label_counts}, f)
+        log.log(f'>> saved segment QC counts: {label_counts}')
 
     log.log('>> done')
 

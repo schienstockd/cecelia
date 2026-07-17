@@ -23,7 +23,7 @@ export img_filepath, img_zero_dir, img_physical_sizes, image_included
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
-export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path
+export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_tuning, set_tuning!
@@ -35,7 +35,7 @@ export set_channel_names!, channel_names
 export with_transaction
 
 # ── LabelProps reader (H5AD via HDF5.jl) ──────────────────────────────────────
-export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categorical_obs
+export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categorical_obs, n_obs
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
 export filter_rows, sort_by, rename_channels!
 export col_names, channel_columns, centroid_columns, temporal_columns

@@ -1,5 +1,17 @@
 struct CellposeSegment <: CciaTask end
 
+# Pure QC helper (drift pattern): objective segment counts → findings + the primary (base) count.
+# Only the "0 cells" case is an advisory finding; the counts themselves are banked as metrics.
+function _segment_qc_findings(counts::AbstractDict)
+    primary = haskey(counts, "base") ? counts["base"] :
+              (isempty(counts) ? 0 : first(values(counts)))
+    findings = primary == 0 ?
+        [qc_finding("warn", "segment.no_cells", "No cells segmented",
+            "Segmentation produced no objects — check the channels/diameter and re-run this step.")] :
+        Dict{String,Any}[]
+    findings, primary
+end
+
 function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
@@ -54,10 +66,13 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     on_log("[INFO] Output: $(joinpath(task_dir, "labels", out_value_name)).zarr")
     on_log("[INFO] Models: $(length(models_converted))")
 
+    qc_out_path = joinpath(task_run_dir(task_dir), "segment_counts.json")
+
     ok = run_py("tasks/segment/cellpose_run.py",
         (; imPath              = im_path,
            taskDir             = task_dir,
            outputValueName     = out_value_name,
+           qcOutPath           = qc_out_path,
            models              = models_converted,
            blockSize           = Int(get(params, "blockSize", 512)),
            overlap             = Int(get(params, "overlap", 64)),
@@ -95,6 +110,21 @@ function _run_task(task::CellposeSegment, img::CciaImage, params::Dict{String,An
     labels_dict[out_value_name] = label_files
     raw2["labels"] = labels_dict
     open(ccid, "w") do io; JSON3.write(io, raw2); end
+
+    # QC (advisory): bank the objective per-type cell count the Python runner wrote (drift pattern).
+    if isfile(qc_out_path)
+        try
+            qmeta  = JSON3.read(read(qc_out_path, String))
+            counts = Dict{String,Any}(String(k) => Int(v) for (k, v) in get(qmeta, :labelCounts, ()))
+            findings, primary = _segment_qc_findings(counts)
+            write_qc(img, "segment.cellpose", out_value_name, findings;
+                     metrics = Dict{String,Any}("nCells" => primary, "byType" => counts))
+            on_log("[QC] segmented $primary cell(s)" *
+                   (length(counts) > 1 ? " ($(join(["$k=$v" for (k, v) in counts], ", ")))" : "") * ".")
+        catch e
+            on_log("[QC] could not compute segment QC: $e")
+        end
+    end
 
     Dict{String,Any}("outputValueName"  => out_value_name,
                      "labelValueName"   => out_value_name,

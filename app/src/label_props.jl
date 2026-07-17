@@ -191,6 +191,19 @@ function col_names(lp::LabelProps; data_type::Symbol=:vars)::Vector{String}
     end
 end
 
+"""
+    n_obs(lp) -> Int
+
+Number of observations (cells) — the length of the obs index. Reads the dataset **dims only**
+(no column materialised), so it's a cheap count for QC/banking. `0` if the file has no obs index.
+"""
+function n_obs(lp::LabelProps)::Int
+    _with_h5(lp.path, "r") do fid
+        haskey(fid, "obs/_index") || return 0
+        Int(first(size(fid["obs/_index"])))
+    end
+end
+
 _intensity_measure(fid) = haskey(fid, "uns/intensity_measure") ?
                           String(read(fid["uns/intensity_measure"])) : "mean"
 

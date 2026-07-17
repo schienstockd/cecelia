@@ -2091,6 +2091,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             # live.cell.* from tracking.track_measures) = 40 cols, 1377 rows
             df = label_props(h5) |> as_df
             @test size(df) == (1377, 40)
+            # n_obs is the cheap dims-only count — must agree with the materialised row count
+            @test n_obs(label_props(h5)) == 1377
             @test "label" in names(df)
             @test eltype(df.label) == Int64
             @test df.label[1:5] == [0, 1, 2, 3, 4]
@@ -4150,6 +4152,44 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                                        "outputShape" => [20, 4, 19, 541, 527], "shifts" => smooth))
             fo, _, _ = Cecelia._drift_qc_findings(meta_ok)
             @test isempty(fo)
+        end
+
+        @testset "count metrics" begin
+            # pure: distinct tracks, mean cells/track, tracked-cell total; untracked = missing/NaN/≤0
+            nt, ml, ntc = track_count_metrics([1, 1, 1, 2, 2, 0, -1, NaN, missing, 3])
+            @test nt == 3                       # tracks 1, 2, 3
+            @test ntc == 6                      # 3 + 2 + 1 cells tracked
+            @test ml ≈ 2.0                      # 6 cells / 3 tracks
+
+            # no tracks at all → zeros (drives the "No tracks formed" advisory)
+            @test track_count_metrics([0, NaN, missing]) == (0, 0.0, 0)
+            @test track_count_metrics(Float64[]) == (0, 0.0, 0)
+
+            # floats round to the nearest track id
+            n2, _, c2 = track_count_metrics([1.0, 1.0, 2.0])
+            @test (n2, c2) == (2, 3)
+
+            # segment counts → findings: 0 base cells warns; any base count is clean
+            f0, p0 = Cecelia._segment_qc_findings(Dict("base" => 0))
+            @test p0 == 0 && length(f0) == 1 && f0[1]["code"] == "segment.no_cells"
+            fN, pN = Cecelia._segment_qc_findings(Dict("base" => 812, "nuc" => 790))
+            @test pN == 812 && isempty(fN)
+            # no explicit "base" key → primary falls back to the sole type's count
+            _, pf = Cecelia._segment_qc_findings(Dict("nuc" => 5))
+            @test pf == 5
+
+            # against the tracked fixture: metrics agree with an independent count of track_id
+            h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+            if !have_fixture(h5)
+                @test_skip "track_count_metrics fixture (missing)"
+            else
+                tids = (label_props(h5) |> select_cols(["track_id"]) |> as_df).track_id
+                valid = Int.(filter(t -> !isnan(t) && t > 0, tids))
+                fnt, fml, fntc = track_count_metrics(tids)
+                @test fnt == length(unique(valid))
+                @test fntc == length(valid)
+                @test fml ≈ length(valid) / length(unique(valid))
+            end
         end
     end
 
