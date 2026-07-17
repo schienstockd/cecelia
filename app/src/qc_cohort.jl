@@ -18,6 +18,10 @@ const _COHORT_MIN_N = 3
 # the way mean/SD does, so a clear anomaly flags even at n=3 (mean/SD needs n≥6 for a lone point to
 # reach 2σ). See docs/ai-assist/QC-PROCESS.md §3.
 const _COHORT_MODZ_THRESHOLD = 3.5
+# When MAD==0 (≥half the values identical → no robust scale), flag a value that departs from the
+# constant median by at least this fraction of the median magnitude. 0.5 = 50% (100 vs a 800 cohort
+# flags; 801 vs 800 doesn't). See _cohort_outliers.
+const _COHORT_MAD0_REL = 0.5
 
 # The objective metrics banked today (segment/measure/tracking tasks → qc.jl). Drives the default
 # cohort pass so a caller need only name the (fun, value_name) to aggregate. A second producer just
@@ -28,13 +32,17 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
 )
 
-# Pure: robust outlier detection via the modified z-score (median/MAD). For each value,
-#   Mᵢ = 0.6745·(xᵢ − median) / MAD,   MAD = median(|xᵢ − median|)
-# flag `abs(Mᵢ) ≥ threshold`. Robust — one bad image doesn't inflate the scale and mask itself, so a
-# clear outlier flags even at n=3. If MAD == 0 (≥ half the values identical) fall back to the
-# mean-absolute-deviation scale; all-identical ⇒ nothing flagged. Returns
-# (; n, median, mad, mean, sd, outliers), outliers = Dict(uid => Dict("value"=>, "z"=> modified-z)).
-# `mean`/`sd` are reported for human context; flagging is the robust `z`. Unit-tested directly.
+# Pure: robust outlier detection. Two regimes:
+#  • MAD > 0 — modified z-score (Iglewicz & Hoaglin): Mᵢ = 0.6745·(xᵢ − median)/MAD, flag |Mᵢ| ≥
+#    threshold. Robust: one bad image doesn't inflate the scale and mask itself, so a clear outlier
+#    flags even at n=3. Outlier entry: {value, z}.
+#  • MAD == 0 — DEGENERATE: ≥ half the values are EXACTLY the median, so there is no robust scale
+#    (the mean-abs-dev fallback is magnitude-blind at small n — the odd-one-out gets the same z
+#    whether it differs by 1 or 700, which is why [800,800,100] never flagged). Judge by RELATIVE
+#    departure instead: flag a value that departs ≥ `_COHORT_MAD0_REL` of the median magnitude.
+#    Catches 100-vs-800 (0.88), ignores 801-vs-800 (0.001). Outlier entry: {value, relDev}.
+# all-identical ⇒ nothing flagged either way. Returns (; n, median, mad, mean, sd, outliers).
+# `mean`/`sd` are reported for human context. Unit-tested directly.
 function _cohort_outliers(values_by_uid::AbstractDict, threshold::Real = _COHORT_MODZ_THRESHOLD)
     uids = collect(keys(values_by_uid))
     vals = Float64[values_by_uid[u] for u in uids]
@@ -46,16 +54,20 @@ function _cohort_outliers(values_by_uid::AbstractDict, threshold::Real = _COHORT
         return (; n = n, median = round(med; digits = 3), mad = 0.0,
                   mean = round(μ; digits = 3), sd = round(sd; digits = 3), outliers = Dict{String,Any}())
     mad = median(abs.(vals .- med))
-    modz = if mad > 0
-        [0.6745 * (v - med) / mad for v in vals]
-    else
-        meanad = mean(abs.(vals .- med))          # MAD==0 (≥half identical) → mean-abs-dev fallback
-        meanad > 0 ? [(v - med) / (1.253314 * meanad) for v in vals] : zeros(n)
-    end
     outliers = Dict{String,Any}()
-    for (u, v, m) in zip(uids, vals, modz)
-        abs(m) >= threshold &&
-            (outliers[string(u)] = Dict{String,Any}("value" => v, "z" => round(m; digits = 2)))
+    if mad > 0
+        for (u, v) in zip(uids, vals)
+            z = 0.6745 * (v - med) / mad
+            abs(z) >= threshold &&
+                (outliers[string(u)] = Dict{String,Any}("value" => v, "z" => round(z; digits = 2)))
+        end
+    else
+        scale = max(abs(med), 1.0)                # avoid div-by-zero when the constant level is 0
+        for (u, v) in zip(uids, vals)
+            rel = abs(v - med) / scale
+            rel >= _COHORT_MAD0_REL &&
+                (outliers[string(u)] = Dict{String,Any}("value" => v, "relDev" => round(rel; digits = 2)))
+        end
     end
     (; n = n, median = round(med; digits = 3), mad = round(mad; digits = 3),
        mean = round(μ; digits = 3), sd = round(sd; digits = 3), outliers = outliers)
