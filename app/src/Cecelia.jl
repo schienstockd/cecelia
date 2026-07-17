@@ -155,4 +155,12 @@ include("tasks/scheduler.jl")
 include("tasks/chain.jl")
 include("napari.jl")
 
+# AI observer (in-app assistant) — spawns a headless agent that reads state + appends to the lab log
+# through the cecelia-observer MCP. After scheduler.jl (uses _kill_proc_tree). See
+# docs/todo/OBSERVER_INTEGRATION_PLAN.md.
+include("ai/observer_prompt.jl")
+include("ai/agent_runner.jl")
+export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
+       observer_feedback_prompt, observer_auto_prompt, observer_agent_bin
+
 end
