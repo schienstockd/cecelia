@@ -69,9 +69,31 @@ def get_image_notes(project_uid: str, image_uid: str) -> str:
 
 @mcp.tool()
 def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
-    """Per-image QC flags/metrics computed after tasks run ({} if none yet)."""
+    """Per-image QC flags/metrics computed after tasks run ({} if none yet). For "is THIS image an
+    outlier vs the rest of the set?", use get_cohort_qc instead — a single image's number means little
+    without the cohort."""
     img = _client.get_image_meta(project_uid, image_uid).get("image", {})
     return img.get("qc", {}) or {}
+
+
+@mcp.tool()
+def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str = "default") -> dict:
+    """Cohort QC for one task across a set's images — the way to spot an outlier run ("image 7 has 8×
+    fewer cells than the cohort"). Aggregates the objective metric each task banks, over the set's
+    INCLUDED images, into mean/SD + z-scored outliers.
+
+    `set_uid` comes from get_project_info's `sets` / list_images' per-image set. `fun_name` must be a
+    metric producer (else the call errors):
+      - "segment.cellpose"           → nCells
+      - "segment.measureLabels"      → nCells
+      - "tracking.bayesian_tracking" → nTracks, meanTrackLength, nTrackedCells
+    `value_name` is the output variant (default "default").
+
+    Returns {funName, valueName, nIncluded, metrics: {<key>: {n, mean, sd, sdThreshold,
+    outliers: {imageUid: {value, z}}}}}. An `outliers` map with entries is the flag worth a note
+    (name the image, its value, and the cohort mean — numbers in the detail). `n` < 3 ⇒ too few
+    images to judge (never call an outlier then). Advisory only; reads current data (nothing cached)."""
+    return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
 @mcp.tool()

@@ -70,6 +70,23 @@ class ClientTest(unittest.TestCase):
             self.c.get_task_history("p", limit=5)
         self.assertIn("limit=5", u.call_args[0][0].full_url)
 
+    def test_cohort_qc_builds_url_and_drops_unset(self):
+        self.assertIn(("GET", "/api/qc/cohort"), ALLOWED_ROUTES)
+        with _patch_urlopen({"metrics": {}}) as u:
+            self.c.get_cohort_qc("p", "set1", "segment.measureLabels")
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/qc/cohort?", url)
+        self.assertIn("setUid=set1", url)
+        self.assertIn("funName=segment.measureLabels", url)
+        self.assertNotIn("sdThreshold", url)          # unset optional dropped
+        # explicit optionals are passed through
+        with _patch_urlopen({"metrics": {}}) as u:
+            self.c.get_cohort_qc("p", "set1", "tracking.bayesian_tracking",
+                                 value_name="A", sd_threshold=3.0)
+        url = u.call_args[0][0].full_url
+        self.assertIn("valueName=A", url)
+        self.assertIn("sdThreshold=3.0", url)
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:
