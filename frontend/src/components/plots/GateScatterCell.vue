@@ -19,6 +19,7 @@ import PlotSpinner from './PlotSpinner.vue'
 import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import PlotLayers, { type PopLayer } from './PlotLayers.vue'
 import GateOverlay from './GateOverlay.vue'
+import { svgDoc, svgLine, svgText } from '../../plots/export'
 
 type Ext = { xMin: number; xMax: number; yMin: number; yMax: number }
 
@@ -75,7 +76,7 @@ function fmtTick(label: string): string {
 // scale so nothing is upscaled from the screen-DPR backing store; route each live canvas to its layer.
 const hostEl = useTemplateRef<HTMLElement>('hostEl')
 const panelPlotEl = useTemplateRef<HTMLElement>('panelPlotEl')
-type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null }
+type LayerExport = { exportCanvas(scale: number): Promise<HTMLCanvasElement | null>; getCanvas(): HTMLCanvasElement | null; exportSvgContent(): string }
 const layersRef = useTemplateRef<LayerExport>('layersRef')
 const overlayRef = useTemplateRef<LayerExport>('overlayRef')
 const hiRes = async (cv: HTMLCanvasElement, scale: number) => {
@@ -160,10 +161,75 @@ async function exportImage(bg = '#0d0b1a', light = false): Promise<string | null
     return out.toDataURL('image/png')
   } finally { if (light) host.classList.remove('cc-light') }
 }
+// TRUE-VECTOR SVG export (docs/PLOTS.md): compose the layers' vector bodies (dots/contours/gates —
+// PlotLayers + GateOverlay emit local-plot-area coords) translated into the capture, PLUS a VECTOR axis
+// built from the SAME math as drawAxes (so it can't drift from the dots). The density BASE stays a raster
+// <image> (PlotLayers' decision); everything categorical is editable vector. `light` flips the themed
+// ink/border to dark-on-white (figure ground), like exportImage. Returns a full <svg> string.
+function drawAxesSvg(pr: { x: number; y: number; w: number; h: number }): string {
+  const e = props.viewExtents
+  const xs = e.xMax > e.xMin ? e.xMax - e.xMin : 1, ys = e.yMax > e.yMin ? e.yMax - e.yMin : 1
+  const px = (v: number) => pr.x + ((v - e.xMin) / xs) * pr.w
+  const py = (v: number) => pr.y + (1 - (v - e.yMin) / ys) * pr.h
+  const cssVar = (n: string, fb: string) => {
+    const v = hostEl.value && getComputedStyle(hostEl.value).getPropertyValue(n).trim()
+    return v || fb
+  }
+  const ink = cssVar('--cc-text', '#111'), dim = cssVar('--cc-text-dim', '#555'), border = cssVar('--cc-border', '#c9ccd1')
+  const tickFont = Math.max(7, props.fontSize - 1), nameFont = props.fontSize + 2, MARK = 5, GAP = 3
+  const bottom = pr.y + pr.h, left = pr.x
+  let s = ''
+  // axis lines (L: left + bottom)
+  s += svgLine(left, pr.y, left, bottom, { stroke: border, width: 1 })
+  s += svgLine(left, bottom, pr.x + pr.w, bottom, { stroke: border, width: 1 })
+  // x ticks
+  for (const t of props.xTicks) {
+    const x = px(t.pos)
+    s += svgLine(x, bottom, x, bottom + MARK, { stroke: dim, width: 1 })
+    if (!props.compact) s += svgText(x, bottom + MARK + GAP + tickFont * 0.8, fmtTick(t.label), { fill: dim, size: tickFont, anchor: 'middle' })
+  }
+  // y ticks
+  for (const t of props.yTicks) {
+    const y = py(t.pos)
+    s += svgLine(left, y, left - MARK, y, { stroke: dim, width: 1 })
+    if (!props.compact) s += svgText(left - MARK - GAP, y + tickFont * 0.35, fmtTick(t.label), { fill: dim, size: tickFont, anchor: 'end' })
+  }
+  // axis names (skip when hidden — pairs matrix names each channel on the diagonal)
+  if (!props.hideAxisLabels) {
+    s += svgText(pr.x + pr.w / 2, bottom + MARK + GAP + tickFont + nameFont + 6, props.xLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600 })
+    s += svgText(Math.max(nameFont, left - 44), pr.y + pr.h / 2, props.yLabel, { fill: ink, size: nameFont, anchor: 'middle', weight: 600, rotate: -90 })
+  }
+  return s
+}
+// the plot's vector body (dots/gates translated into the capture + the vector axis), in this cell's
+// capture coords. ONE builder used by both the single-plot `exportSvg` and the montage stitch
+// (`exportSvgBody`), so they can't drift. Caller manages the `.cc-light` theme flip.
+function plotBody(): string {
+  const pp = panelPlotEl.value; if (!pp) return ''
+  const pr = { x: pp.offsetLeft, y: pp.offsetTop, w: pp.clientWidth, h: pp.clientHeight }
+  const layers = layersRef.value?.exportSvgContent() ?? ''      // local [0..pr.w, 0..pr.h] coords
+  const gates = overlayRef.value?.exportSvgContent() ?? ''
+  return `<g transform="translate(${pr.x} ${pr.y})">${layers}${gates}</g>` + drawAxesSvg(pr)
+}
+function withLight<T>(light: boolean, fn: () => T, fallback: T): T {
+  const host = hostEl.value; if (!host) return fallback
+  if (light) host.classList.add('cc-light')
+  try { return fn() } finally { if (light) host.classList.remove('cc-light') }
+}
+function exportSvg(bg = '#ffffff', light = true): string {
+  const host = hostEl.value; if (!host) return ''
+  return withLight(light, () => {
+    const capW = host.clientWidth, capH = host.clientHeight
+    if (!capW || !capH) return ''
+    return svgDoc({ width: capW, height: capH, background: bg, body: plotBody() })
+  }, '')
+}
 // `hiRes` is exposed so a host that captures a LARGER element containing several of these cells (the
 // gating-strategy MONTAGE grid) can still re-render each cell's canvases at export scale. `getHost`
-// lets the montage place each tile's UNIFIED export image at the tile's grid rect.
-defineExpose({ exportImage, hiRes, getHost: () => hostEl.value })
+// lets the montage place each tile's UNIFIED export image at the tile's grid rect. `exportSvg` gives the
+// host a full vector SVG (single-plot export); the montage stitches per-tile `exportSvgBody`.
+defineExpose({ exportImage, exportSvg, hiRes, getHost: () => hostEl.value,
+               exportSvgBody: (light = true) => withLight(light, plotBody, '') })
 
 </script>
 

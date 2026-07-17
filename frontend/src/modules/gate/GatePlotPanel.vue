@@ -20,7 +20,7 @@ import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateScatterCell from '../../components/plots/GateScatterCell.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
-import { downloadDataUrl } from '../../plots/export'
+import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
 import { coalesceByKey } from '../../utils/coalesce'
 import { useDataRefresh } from '../../composables/useDataRefresh'
@@ -240,12 +240,36 @@ async function onEdit(e: { path: string; gate: GateSpec }) {
   await g.setGate(e.path, e.gate)
 }
 
-// export the plot as PNG — GateScatterCell owns the composite (canvas pixels + HTML/canvas2D overlays,
-// each layer re-rendered hi-res); we just name the file.
-const cell = useTemplateRef<{ exportImage(bg?: string): Promise<string | null> }>('cell')
-function exportPng() {
+// export the plot — GateScatterCell owns the image composite (PNG = canvas pixels + overlays; SVG =
+// true-vector dots/gates/axes, docs/PLOTS.md); CSV = the shown per-event channel values + population
+// (Prism-ready). We name the file + assemble the CSV rows here.
+const cell = useTemplateRef<{
+  exportImage(bg?: string): Promise<string | null>
+  exportSvg(bg?: string, light?: boolean): string
+}>('cell')
+function exportAs(kind: string) {
   const stem = `gate_${xChan.value}_${yChan.value}`.replace(/[^\w.-]+/g, '_')
-  cell.value?.exportImage('#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  if (kind === 'png') cell.value?.exportImage('#0d0b1a').then(url => url && downloadDataUrl(`${stem}.png`, url))
+  else if (kind === 'svg') {
+    const svg = cell.value?.exportSvg('#ffffff', true)
+    if (svg) { const w = svgSizeWarning(svg, 'This gating plot'); if (w) log.warn(w, { source: 'gating' }); downloadText(`${stem}.svg`, svg, 'image/svg+xml') }
+  }
+  else if (kind === 'csv') { const csv = buildCsv(); if (csv) downloadText(`${stem}.csv`, csv, 'text/csv') }
+}
+// per-event rows for Prism: the base (parent) population's points, then each shown child-pop overlay's
+// points, each row = {x-channel value, y-channel value, population}. Headers use the channel LABELS.
+function buildCsv(): string {
+  const pts = points.value; if (!pts) return ''
+  const xName = g.colLabel(xChan.value) || 'x'
+  const yRaw = g.colLabel(yChan.value) || 'y'
+  const yName = yRaw === xName ? `${yRaw} (y)` : yRaw
+  const rows: Record<string, unknown>[] = []
+  const push = (arr: Float32Array, pop: string) => {
+    for (let i = 0; i < arr.length / 2; i++) rows.push({ [xName]: arr[2 * i], [yName]: arr[2 * i + 1], population: pop })
+  }
+  push(pts, parent.value === 'root' ? 'root' : (parent.value.split('/').filter(Boolean).pop() ?? parent.value))
+  if (showPops.value) for (const pl of popLayers.value) push(pl.points, pl.path.split('/').filter(Boolean).pop() ?? pl.path)
+  return rowsToCsv(rows)
 }
 
 function ensureChannels() {
@@ -326,9 +350,11 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
     <!-- utility actions (export) in the footer, like the summary / cluster panels -->
     <template #footer>
       <select class="gp-export" v-tooltip.top="'Export the shown plot'" :disabled="!points"
-              @change="($event.target as HTMLSelectElement).value === 'png' && exportPng(); ($event.target as HTMLSelectElement).value = ''">
+              @change="exportAs(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
         <option value="">⤓ Export</option>
+        <option value="csv">Data (CSV)</option>
         <option value="png">Image (PNG)</option>
+        <option value="svg">Image (SVG)</option>
       </select>
     </template>
     <GateScatterCell ref="cell" :points="points" :extents="extents" :view-extents="viewExtents"

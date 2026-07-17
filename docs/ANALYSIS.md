@@ -111,11 +111,33 @@ caption (bottom-centre) and actions (recapture / remove, bottom-right) sit **abo
 toolbar (`.cc-panel-controls`, z-index 6) — they used to live at the top and were masked when the
 hover toolbar appeared.
 
-## Export — PDF + CSV
+## Export — Figure (PDF / SVG) + CSV
 
-`TabbedCanvas` drives export; `LayoutCanvas.capturePage()` measures the on-screen grid so the PDF
-reproduces the layout exactly (spans, plates, gaps), and `plots/pdf.ts` lays out **exact A4** pages
-(per-board orientation) via `pdf-lib`.
+`TabbedCanvas` drives export; `LayoutCanvas.capturePage(vector?)` measures the on-screen grid so the
+output reproduces the layout exactly (spans, plates, gaps). `plots/pdf.ts` `layoutPages(pages)` computes
+the **exact A4** per-board page geometry (orientation from aspect, board aspect-fit + centred, per-slot
+title strip) — **one geometry, two backends**: the PDF builder (`exportTabsToPdf`, `pdf-lib`) and the
+board SVG builder (`plots/boardSvg.ts` `buildBoardSvgs`) both consume it, so the two exports land
+identically.
+
+**Figure dropdown — PDF (raster) / SVG (vector).** The board's `⤓ Figure` control offers:
+- **PDF (raster)** — the original: one A4 page per board, each slot a hi-res PNG, with each summary
+  plot's data CSV attached to the file.
+- **SVG (vector)** — one `.svg` per board (zipped when >1), **editable in Illustrator**. Each slot is a
+  **nested `<svg>`** when the panel can emit vector (summary + cluster heatmap via
+  `PlotChart.toImageURL('svg')`; UMAP + gating via their `exportSvg`, dots grouped by colour for
+  recolouring — see `docs/PLOTS.md`), stitched via `export.ts` `nestSvg`. **Deliberate raster
+  exception:** image/filmstrip slots (already screenshots) and the **HMM-transition** panels (HTML
+  overlay legends, no clean vector form) embed as a raster `<image>`. An **info icon** by the dropdown
+  says which stay raster — no silent surprise.
+
+The vector contract each panel exposes: `exportSvg(): string | Promise<string>` (a full light-theme
+`<svg>`), collected by `capturePage(true)` (falls back to the panel's `exportImage()` PNG when absent).
+
+> **Per-plot export (floating, not docked) also offers SVG.** The `⤓ Export` dropdown on a
+> *floating* plot (`InteractivePanel`/`SummaryPanel`/gating panels — hidden when docked) offers
+> CSV / PNG / **SVG**; the dot-plot SVG is true vector. That's the path for a single editable figure;
+> the board SVG is the path for the whole assembled page.
 
 - **Wait for plots before capturing** (`utils/plotReady`): the export visits each tab and must capture
   only once that board's plots have finished fetching + rendering — a fixed sleep captured slow plots

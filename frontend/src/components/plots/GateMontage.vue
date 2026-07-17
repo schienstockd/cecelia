@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
 import type { GateSpec, TransformSpec } from '../../stores/gating'
-import { elementToImageURL, loadImg } from '../../plots/export'
+import { elementToImageURL, loadImg, svgDoc, svgText, rowsToCsv } from '../../plots/export'
 import GateScatterCell from './GateScatterCell.vue'
 import type { PopLayer } from './PlotLayers.vue'
 import {
@@ -173,6 +173,8 @@ type CellExport = {
   exportImage(bg?: string, light?: boolean): Promise<string | null>
   hiRes(cv: HTMLCanvasElement, scale: number): Promise<CanvasImageSource | null>
   getHost(): HTMLElement | null
+  exportSvg(bg?: string, light?: boolean): string
+  exportSvgBody(light?: boolean): string
 }
 const cellRefs = new Map<string, CellExport>()
 function setCellRef(key: string, el: unknown) { if (el) cellRefs.set(key, el as CellExport); else cellRefs.delete(key) }
@@ -210,7 +212,52 @@ async function exportImage(bg = '#ffffff', light = true): Promise<string | null>
     return out.toDataURL('image/png')
   } finally { if (light) el.classList.remove('cc-light') }
 }
-defineExpose({ exportImage })
+// TRUE-VECTOR SVG (docs/PLOTS.md): single tile → the cell's own full SVG; multi-tile → stitch each
+// scatter tile's vector BODY (dots/gates/axes, in cell-capture coords) translated to its grid rect, plus
+// the ggpairs non-scatter cells (diagonal channel names + correlation values) as SVG <text>. Same rect
+// math as exportImage (getBoundingClientRect ÷ ancestor-zoom k), so it lines up identically.
+function exportSvg(bg = '#ffffff', light = true): string {
+  const scatterDefs = props.defs.filter(isScatter)
+  const el = gridRef.value; if (!el) return ''
+  if (scatterDefs.length === 1) return cellRefs.get(scatterDefs[0].key)?.exportSvg?.(bg, light) ?? ''
+  if (light) el.classList.add('cc-light')
+  try {
+    const gr = el.getBoundingClientRect()
+    const k = el.clientWidth ? gr.width / el.clientWidth : 1
+    const w = el.clientWidth, h = el.clientHeight
+    let body = ''
+    for (const cell of cellRefs.values()) {
+      const host = cell.getHost?.(); if (!host) continue
+      const cbody = cell.exportSvgBody?.(false); if (!cbody) continue     // grid already .cc-light
+      const r = host.getBoundingClientRect()
+      body += `<g transform="translate(${(r.left - gr.left) / k} ${(r.top - gr.top) / k})">${cbody}</g>`
+    }
+    const ink = getComputedStyle(el).getPropertyValue('--cc-text').trim() || '#111'
+    for (const node of Array.from(el.querySelectorAll('.gm-diag, .gm-corr'))) {
+      const span = node.querySelector('.gm-corr-v') ?? node.querySelector('span') ?? node
+      const txt = (span.textContent ?? '').trim(); if (!txt) continue
+      const r = (node as HTMLElement).getBoundingClientRect()
+      const isDiag = (node as HTMLElement).classList.contains('gm-diag')
+      body += svgText((r.left + r.width / 2 - gr.left) / k, (r.top + r.height / 2 - gr.top) / k, txt,
+                      { fill: ink, size: 13, anchor: 'middle', weight: isDiag ? 700 : 400 })
+    }
+    return svgDoc({ width: w, height: h, background: bg, body })
+  } finally { if (light) el.classList.remove('cc-light') }
+}
+// per-event CSV across all scatter tiles (Prism-ready): one row per event per pair, tagged with the
+// channel labels + parent population — a tidy long table you can filter/pivot in Prism.
+function exportCsv(): string {
+  const rows: Record<string, unknown>[] = []
+  for (const d of props.defs.filter(isScatter)) {
+    const pd = panelData.value[d.key]; if (!pd?.points) continue
+    const xL = props.colLabel(d.xChan), yL = props.colLabel(d.yChan)
+    const pop = d.parentPath === 'root' ? 'root' : (d.parentPath.split('/').filter(Boolean).pop() ?? d.parentPath)
+    const p = pd.points
+    for (let i = 0; i < p.length / 2; i++) rows.push({ xChan: xL, yChan: yL, x: p[2 * i], y: p[2 * i + 1], population: pop })
+  }
+  return rowsToCsv(rows)
+}
+defineExpose({ exportImage, exportSvg, exportCsv })
 
 const titleFor = (parentPath: string) => (parentPath === 'root' ? 'all events (root)' : parentPath)
 // upper-triangle correlation cell (ggpairs): show r, scaling the text with |r| so strong pairs stand out

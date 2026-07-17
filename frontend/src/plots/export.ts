@@ -181,3 +181,124 @@ export function rowsToCsv(rows: Record<string, unknown>[]): string {
   const esc = (v: unknown) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   return [header, ...rows.map(r => header.map(h => esc(r[h])))].map(row => row.join(',')).join('\n')
 }
+
+// ── TRUE-VECTOR SVG builders ─────────────────────────────────────────────────────────────────────
+// Pure string builders for exporting the CANVAS dot plots (UMAP, gating scatter/pairs) as a real
+// vector SVG — every dot a `<circle>` so the figure opens editable in Illustrator (recolour dots).
+// Kept here (not per-component) so all dot plots emit identical vector output, and kept as pure string
+// functions so they're unit-testable without mounting a component (docs/DEV.md → frontend test rule).
+// The point cloud is grouped by colour: one `<g fill=…>` per cluster/population, so selecting a group
+// in Illustrator and changing its fill recolours that whole group at once (the boss's ask).
+
+// round to 1 dp — halves the byte count of a big point cloud and keeps Illustrator responsive; sub-px
+// precision is invisible in a figure. `-0` normalises to `0`.
+const r1 = (n: number) => { const v = Math.round(n * 10) / 10; return v === 0 ? 0 : v }
+// XML-escape a text/attribute value (labels can contain & < > " ')
+export function svgEsc(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
+// assemble a complete <svg> document from a body string (already-built element strings)
+export function svgDoc(o: { width: number; height: number; background?: string; body: string }): string {
+  const bg = o.background && o.background !== 'transparent'
+    ? `<rect width="100%" height="100%" fill="${o.background}"/>` : ''
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${r1(o.width)}" height="${r1(o.height)}" ` +
+         `viewBox="0 0 ${r1(o.width)} ${r1(o.height)}">${bg}${o.body}</svg>`
+}
+
+// one colour-bucket of points as a group of <circle>s. Group-level fill/opacity = the recolour hook:
+// change the group's fill in Illustrator → the whole cluster recolours. Empty input → empty group ''.
+export function svgCircles(pts: ArrayLike<[number, number]> | [number, number][],
+                           o: { fill: string; opacity?: number; r?: number; label?: string }): string {
+  if (!pts.length) return ''
+  const rad = r1(o.r ?? 2)
+  let body = ''
+  for (let i = 0; i < pts.length; i++) { const p = pts[i]; body += `<circle cx="${r1(p[0])}" cy="${r1(p[1])}" r="${rad}"/>` }
+  const op = o.opacity != null && o.opacity < 1 ? ` fill-opacity="${r1(o.opacity)}"` : ''
+  const id = o.label ? ` data-group="${svgEsc(o.label)}"` : ''
+  return `<g fill="${o.fill}"${op}${id}>${body}</g>`
+}
+
+// small vector primitives (axes, gates, contours, labels)
+export function svgLine(x1: number, y1: number, x2: number, y2: number, o: { stroke: string; width?: number }): string {
+  return `<line x1="${r1(x1)}" y1="${r1(y1)}" x2="${r1(x2)}" y2="${r1(y2)}" stroke="${o.stroke}" stroke-width="${r1(o.width ?? 1)}"/>`
+}
+export function svgPolygon(pts: [number, number][], o: { stroke?: string; fill?: string; width?: number; opacity?: number }): string {
+  if (pts.length < 2) return ''
+  const p = pts.map(q => `${r1(q[0])},${r1(q[1])}`).join(' ')
+  const attrs = [`fill="${o.fill ?? 'none'}"`, o.stroke ? `stroke="${o.stroke}"` : '',
+    o.stroke ? `stroke-width="${r1(o.width ?? 1)}"` : '', o.opacity != null && o.opacity < 1 ? `stroke-opacity="${r1(o.opacity)}"` : '']
+  return `<polygon points="${p}" ${attrs.filter(Boolean).join(' ')}/>`
+}
+export function svgPath(d: string, o: { stroke?: string; fill?: string; width?: number; opacity?: number }): string {
+  if (!d) return ''
+  const attrs = [`fill="${o.fill ?? 'none'}"`, o.stroke ? `stroke="${o.stroke}"` : '',
+    o.stroke ? `stroke-width="${r1(o.width ?? 1)}"` : '', o.opacity != null && o.opacity < 1 ? `stroke-opacity="${r1(o.opacity)}"` : '',
+    'stroke-linejoin="round"', 'stroke-linecap="round"']
+  return `<path d="${d}" ${attrs.filter(Boolean).join(' ')}/>`
+}
+export function svgRect(x: number, y: number, w: number, h: number,
+                        o: { fill?: string; stroke?: string; width?: number; rx?: number; opacity?: number }): string {
+  const attrs = [`fill="${o.fill ?? 'none'}"`, o.stroke ? `stroke="${o.stroke}"` : '',
+    o.stroke ? `stroke-width="${r1(o.width ?? 1)}"` : '', o.rx ? `rx="${r1(o.rx)}"` : '',
+    o.opacity != null && o.opacity < 1 ? `fill-opacity="${r1(o.opacity)}"` : '']
+  return `<rect x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" ${attrs.filter(Boolean).join(' ')}/>`
+}
+export function svgText(x: number, y: number, s: string,
+                        o: { fill: string; size?: number; anchor?: 'start' | 'middle' | 'end'; weight?: number | string; rotate?: number } = { fill: '#111' }): string {
+  const anchor = o.anchor ? ` text-anchor="${o.anchor}"` : ''
+  const weight = o.weight ? ` font-weight="${o.weight}"` : ''
+  const rot = o.rotate ? ` transform="rotate(${r1(o.rotate)} ${r1(x)} ${r1(y)})"` : ''
+  return `<text x="${r1(x)}" y="${r1(y)}" fill="${o.fill}" font-family="system-ui, sans-serif" ` +
+         `font-size="${r1(o.size ?? 11)}"${anchor}${weight}${rot}>${svgEsc(s)}</text>`
+}
+// embed a raster layer as an <image>. `fit='none'` (default) stretches to the rect — used for the gating
+// density base, which exactly fills its plot area. `fit='meet'` aspect-fits (letterbox) — used for a
+// board slot's raster fallback, matching the PDF's aspect-preserving image placement.
+export function svgImage(dataUrl: string, x: number, y: number, w: number, h: number, fit: 'none' | 'meet' = 'none'): string {
+  if (!dataUrl) return ''
+  const par = fit === 'meet' ? 'xMidYMid meet' : 'none'
+  return `<image x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}" ` +
+         `preserveAspectRatio="${par}" href="${dataUrl}"/>`
+}
+
+// Nest a complete <svg> as a child positioned at (x,y,w,h) inside a parent SVG. SVG supports a nested
+// <svg> carrying its own viewBox, which scales the inner content to the rect (letterboxed via
+// preserveAspectRatio, matching the PDF's aspect-fit). Used to stitch each Analysis-board slot's plot
+// SVG into ONE page SVG (plots/boardSvg.ts). We control the input (our svgDoc output, or Observable
+// Plot's <svg>), so a light re-attribute of the root tag is safe. Default overflow (hidden) clips the
+// inner content to the slot rect, so a plot can't bleed into its neighbours.
+export function nestSvg(fullSvg: string, x: number, y: number, w: number, h: number): string {
+  if (!fullSvg) return ''
+  const m = fullSvg.match(/<svg\b([^>]*)>/i)
+  if (!m) return ''
+  const attrs = m[1]
+  let viewBox = (attrs.match(/viewBox\s*=\s*"([^"]*)"/i) ?? [])[1] ?? ''
+  if (!viewBox) {   // no viewBox → derive one from the root width/height so scaling still works
+    const wa = attrs.match(/\bwidth\s*=\s*"([\d.]+)/i), ha = attrs.match(/\bheight\s*=\s*"([\d.]+)/i)
+    if (wa && ha) viewBox = `0 0 ${wa[1]} ${ha[1]}`
+  }
+  const inner = fullSvg.slice((m.index ?? 0) + m[0].length).replace(/<\/svg>\s*$/i, '')
+  const vb = viewBox ? ` viewBox="${viewBox}"` : ''
+  return `<svg x="${r1(x)}" y="${r1(y)}" width="${r1(w)}" height="${r1(h)}"${vb} ` +
+         `preserveAspectRatio="xMidYMid meet">${inner}</svg>`
+}
+
+// A true-vector SVG keeps EVERY point as its own element, so a big point cloud (e.g. a 100k+-cell UMAP)
+// makes a heavy file that can be slow to open / edit in Illustrator. ~8 MB ≈ a few hundred thousand
+// dots — past that, warn the user (non-blocking) so a "why is my export huge/slow" is never a surprise.
+export const SVG_SIZE_WARN_BYTES = 8_000_000
+// Returns a human warning if the generated SVG is large enough to be sluggish in Illustrator, else null.
+// Uses byte size (not a point count) so it catches ANY massive element — a big UMAP, a dense gating
+// overlay, a whole board — through one check.
+export function svgSizeWarning(svg: string, label = 'This figure'): string | null {
+  if (svg.length <= SVG_SIZE_WARN_BYTES) return null
+  return `${label} is a ~${(svg.length / 1e6).toFixed(0)} MB vector SVG — a large point cloud keeps every ` +
+    `dot as an editable element, so the file may be slow to open in Illustrator. For a quick view use ` +
+    `PNG/PDF, or export a smaller selection.`
+}
+
+// trigger a browser download of a text string (SVG / CSV) — thin wrapper over downloadBlob
+export function downloadText(name: string, text: string, mime = 'text/plain') {
+  downloadBlob(name, new Blob([text], { type: mime }))
+}

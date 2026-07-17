@@ -481,7 +481,14 @@ function csvName(): string {
 }
 // a plot-only, LIGHT-theme PNG for the PDF export (no panel chrome; dark theme is on-screen only)
 async function exportImage(): Promise<string | null> { return (await plotRef.value?.toImageURL('png', true)) ?? null }
-defineExpose({ getCsv, csvName, exportImage })
+// full vector <svg> string for the board→SVG export (docs/ANALYSIS.md). PlotChart.toImageURL('svg')
+// returns an SVG DATA URL; decode its payload back to the raw markup so the board can nest it.
+async function exportSvg(): Promise<string | null> {
+  const url = await plotRef.value?.toImageURL('svg', true)
+  if (!url) return null
+  const i = url.indexOf(','); return i < 0 ? null : decodeURIComponent(url.slice(i + 1))
+}
+defineExpose({ getCsv, csvName, exportImage, exportSvg })
 </script>
 
 <template>
