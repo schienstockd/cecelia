@@ -16,6 +16,7 @@ Cecelia.load_custom_modules!()
 include("sockets.jl")
 include("routes.jl")
 include("napari_api.jl")
+include("observer_api.jl")
 include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
@@ -227,6 +228,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_run(req)
         elseif path == "/api/logs/recent"
             api_logs_recent()
+        elseif path == "/api/observer/status"
+            api_observer_status(req)
         elseif path == "/api/napari/status"
             api_napari_status(req)
         elseif path == "/api/napari/gpu"
@@ -319,6 +322,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_lablog_append(body_bytes)
         elseif path == "/api/lablog/capture"
             api_lablog_capture(body_bytes)
+        elseif path == "/api/observer/feedback"
+            api_observer_feedback(body_bytes)
         elseif path == "/api/lablog/tune"
             api_lablog_tune(body_bytes)
         elseif path == "/api/lablog/mute"

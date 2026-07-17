@@ -142,6 +142,51 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    # ── AI observer (in-app assistant) — pure command/result pieces ─────────────
+    # The live spawn (needs the agent CLI + a running API) isn't tested here; these pin the pure
+    # builders/parsers that the runner + api route depend on. See docs/todo/OBSERVER_INTEGRATION_PLAN.md.
+    @testset "AI observer agent runner (pure pieces)" begin
+        a   = Cecelia.ClaudeAgent(bin = "claude")
+        cmd = Cecelia._build_claude_cmd(a, "hello", "/tmp/mcp.json"; system_prompt = "be brief")
+        argv = cmd.exec
+        @test argv[1] == "claude"
+        @test "-p" in argv && "hello" in argv
+        @test "--output-format" in argv && "json" in argv
+        @test "--mcp-config" in argv && "/tmp/mcp.json" in argv
+        @test "--allowedTools" in argv                                    # observer tools allowed
+        @test "--append-system-prompt" in argv && "be brief" in argv
+        @test !("--resume" in argv)                                       # no session → no resume
+        @test !("--model" in argv)                                        # default model → no flag
+
+        cmd2 = Cecelia._build_claude_cmd(Cecelia.ClaudeAgent(bin = "claude", model = "claude-opus-4-8"),
+                                         "hi", "/tmp/m.json"; session_id = "sess123")
+        @test "--resume" in cmd2.exec && "sess123" in cmd2.exec
+        @test "--model" in cmd2.exec && "claude-opus-4-8" in cmd2.exec
+
+        # result parsing — success carries text + usage + session
+        r = Cecelia._parse_claude_result(
+            """{"is_error":false,"result":"noted a stuck task","session_id":"s1","usage":{"input_tokens":1200,"output_tokens":40}}""")
+        @test r.ok && r.text == "noted a stuck task"
+        @test r.input_tokens == 1200 && r.output_tokens == 40 && r.session_id == "s1"
+        # error result surfaces the message; garbage is a clean failure, not a throw
+        e = Cecelia._parse_claude_result("""{"is_error":true,"result":"tool failed"}""")
+        @test !e.ok && occursin("tool failed", e.error)
+        g = Cecelia._parse_claude_result("not json")
+        @test !g.ok && g.input_tokens == 0
+
+        # MCP config points the spawned agent at the same cecelia_mcp server + this API
+        cfg = Cecelia.observer_mcp_config("/repo/mcp", "/env/python", "http://127.0.0.1:8080")
+        srv = cfg["mcpServers"]["cecelia-observer"]
+        @test srv["command"] == "/env/python"
+        @test srv["args"] == ["-m", "cecelia_mcp.server"]
+        @test srv["env"]["PYTHONPATH"] == "/repo/mcp"
+        @test srv["env"]["CECELIA_API_URL"] == "http://127.0.0.1:8080"
+
+        # the prompt carries the project + the discipline rules
+        fp = Cecelia.observer_feedback_prompt("NRUBxU")
+        @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
+    end
+
     # ── Model: create project and image ───────────────────────────────────────
     @testset "Model round-trip" begin
         proj = create_project!(name="smoke-test-$(rand(1000:9999))", kind="static")

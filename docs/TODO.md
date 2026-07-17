@@ -43,6 +43,21 @@ when a set-level mutating task lands.
 
 ## Medium priority
 
+**#00083** — **QC engine: tasks emit metrics → cohort stats → `qc_flag_fired`**
+The AI observer (and any "is this image an outlier?" surfacing) needs QC *data* that mostly isn't
+produced yet. The writing API already exists — `qc_finding` / `write_qc` in `app/src/qc.jl` — but only
+`cleanupImages/drift_correct.jl` uses it. To make QC (and the observer's deferred `qc_flag_fired` +
+cohort `get_qc_metrics`) useful:
+1. **Encourage tasks to emit QC metrics.** Make it a task-authoring convention (document in
+   `docs/MODULES.md`) and retrofit the high-value tasks — cellpose segment (cell count, mean
+   confidence, % flagged), measure (feature ranges), tracking (track count, mean track length).
+2. **Cohort statistics** — per-set baselines so an image can be compared to its group
+   (`QC-PROCESS.md` step 3).
+3. **`qc_flag_fired` event + a `:flagged` node state** so a bad metric surfaces automatically
+   (`QC-PROCESS.md` step 1/8); then wire it into the observer (small once the data exists — see
+   `docs/ai-assist/OBSERVER.md` §7 step 5 and `docs/todo/OBSERVER_INTEGRATION_PLAN.md`).
+Full design sketch lives in [`docs/ai-assist/QC-PROCESS.md`](ai-assist/QC-PROCESS.md).
+
 **#00082** — **User-drop-in custom modules (restore the old R capability)** 🔹 needs-input
 Let users add custom task/module functions by dropping files into their user dir (beside
 `custom.toml`, resolved by `config_dir()`) — no package edit/rebuild — like old R cecelia's

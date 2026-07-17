@@ -591,3 +591,18 @@ end
     d2 = JSON3.read(body2)
     @test haskey(d2, :loaded) && haskey(d2, :failed) && haskey(d2, :categories)
 end
+
+# Observer (in-app AI assistant) — status shape + request validation. The actual agent spawn (a real
+# billed CLI call) is NOT exercised here; only the guard rails around it. See
+# docs/todo/OBSERVER_INTEGRATION_PLAN.md + app/src/ai/agent_runner.jl (pure pieces tested in app/test).
+@testset "API: observer status + feedback validation" begin
+    # status: availability is a bool (true/false depending on whether `claude` is on PATH — don't
+    # assert which, so it passes both in CI and on a dev box with Claude Code installed).
+    st, body = api_observer_status(HTTP.Request("GET", "/api/observer/status"))
+    @test st == 200
+    @test JSON3.read(body).available isa Bool
+
+    # feedback: validated before anything is spawned.
+    @test _post(api_observer_feedback, Dict())[1] == 400                       # projectUid missing
+    @test _post(api_observer_feedback, Dict("projectUid" => "nope"))[1] == 404 # unknown project
+end
