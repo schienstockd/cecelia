@@ -70,6 +70,7 @@ export hmm_fit_states, hmm_transitions, DiagGaussEmission
 export CciaTask
 export validate_params, ParamValidationError
 export _task_from_fun_name, task_scope
+export register_task!, load_custom_modules!, custom_modules_dir, custom_modules_report
 export TestImageTask, TestSetTask, IncrementalPlotTask
 export ImportOmezarr, read_ome_metadata, update_ome_scale!, update_ome_xml_pixels!, ome_xml_unit_name
 export resync_ome_meta!
@@ -149,6 +150,7 @@ include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
 include("tasks/task_registry.jl")
+include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")
 include("napari.jl")

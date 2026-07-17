@@ -7,12 +7,19 @@ import ConfirmButton from '../components/ConfirmButton.vue'
 import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState } from '../utils/serviceStatus'
 import { notebooksApi, napariApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
+import { useCustomModulesStore } from '../stores/customModules'
 
 const showPackages = ref(false)
 
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
 const appCtl      = useAppControlStore()
+const customModules = useCustomModulesStore()
+
+// ── Custom modules ───────────────────────────────────────────────────────────
+// User drop-in tasks (docs/CUSTOM_MODULES.md). Reload rescans the config dir for NEWLY dropped .jl;
+// edits to already-loaded modules still need a server restart. Refresh status when this panel opens.
+onMounted(() => customModules.refresh())
 
 const editName = ref(projectMeta.current?.name ?? '')
 const saving   = ref(false)
@@ -310,6 +317,39 @@ async function switchWt(path: string) {
       </span>
 
       <span v-if="appCtl.updateMsg" class="field-hint">{{ appCtl.updateMsg }}</span>
+    </section>
+
+    <!-- ── Custom modules ──────────────────────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Custom modules</h2>
+      <div class="field">
+        <label class="field-label">Modules directory</label>
+        <div class="field-row">
+          <input class="field-input mono" :value="customModules.dir || '—'" readonly />
+          <button
+            class="save-btn"
+            :disabled="customModules.loading"
+            @click="customModules.reload"
+            v-tooltip.right="'Rescan for newly dropped modules. Edits to already-loaded modules need a server restart.'"
+          >
+            <i :class="['pi', customModules.loading ? 'pi-spin pi-cog' : 'pi-refresh']" />
+            {{ customModules.loading ? 'Reloading…' : 'Reload' }}
+          </button>
+        </div>
+        <span class="field-hint">
+          Drop tasks into this folder to add them without a rebuild — see docs/CUSTOM_MODULES.md.
+        </span>
+      </div>
+
+      <div v-if="customModules.modules.length" class="cm-list">
+        <div v-for="m in customModules.modules" :key="m.path" class="cm-row">
+          <span class="svc-pill" :class="m.status === 'ok' ? 'ok' : 'err'">
+            <span class="dot" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
+          </span>
+          <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ m.path }}</span>
+        </div>
+      </div>
+      <span v-else class="field-hint">No custom modules loaded.</span>
     </section>
 
     </div>

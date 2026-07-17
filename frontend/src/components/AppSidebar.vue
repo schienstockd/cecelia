@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
+import { useCustomModulesStore } from '../stores/customModules'
 import ProjectPanel from './ProjectPanel.vue'
 import ConfirmButton from './ConfirmButton.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
+const customModules = useCustomModulesStore()
 const showPanel = ref(false)
 
 // quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
 // the Settings → System panel uses. Quit is destructive → two-click ConfirmButton (no native dialog).
-onMounted(() => appCtl.refreshDev())
+onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded() })
 
 // Track which groups are collapsed (all open by default)
 const collapsed = ref<Set<string>>(new Set())
@@ -84,6 +86,29 @@ const groups: { heading: string; items: NavItem[] }[] = [
   },
 ]
 
+// User custom-module categories that have NO built-in page get their own generic page + nav entry
+// (docs/CUSTOM_MODULES.md). Tasks in an existing category surface on that category's real page, so
+// only `builtin === false` categories appear here. Group is hidden entirely when there are none.
+function prettifyCategory(name: string): string {
+  const spaced = name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').trim()
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+const customGroup = computed<{ heading: string; items: NavItem[] } | null>(() => {
+  const items = customModules.categories
+    .filter(c => !c.builtin)
+    .map<NavItem>(c => ({
+      to: `/custom/${c.name}`,
+      label: prettifyCategory(c.name),
+      icon: 'pi-wrench',
+      tip: `Custom module: ${c.funNames.join(', ')}`,
+      requiresProject: true,
+    }))
+  return items.length ? { heading: 'Custom', items } : null
+})
+
+// static pipeline groups + the dynamic custom-module group (when any new-category modules exist)
+const allGroups = computed(() => customGroup.value ? [...groups, customGroup.value] : groups)
+
 function navTip(item: NavItem): string {
   if (item.disabled && item.soon) return `${item.tip} (coming soon)`
   if (item.requiresProject && !projectMeta.hasProject) return 'Open or create a project first.'
@@ -126,7 +151,7 @@ function isNavDisabled(item: NavItem): boolean {
     </div>
 
     <!-- ── Navigation groups ───────────────────────────────────────────── -->
-    <template v-for="group in groups" :key="group.heading">
+    <template v-for="group in allGroups" :key="group.heading">
       <button class="group-heading" @click="toggleGroup(group.heading)">
         <span>{{ group.heading }}</span>
         <i :class="['pi', isOpen(group.heading) ? 'pi-chevron-up' : 'pi-chevron-down', 'group-chevron']" />

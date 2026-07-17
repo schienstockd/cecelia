@@ -10,6 +10,7 @@ See also:
 - [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
 - [`docs/UI.md`](docs/UI.md) — frontend conventions, component catalog, how to add module pages and plots
 - [`docs/MODULES.md`](docs/MODULES.md) — complete guide to adding task functions and module pages
+- [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) — user drop-in tasks: add a task by dropping `.jl`/`.json`/`_run.py` into `<config_dir>/modules/` (no rebuild), the runtime `register_task!` registry, `load_custom_modules!`, the `/api/tasks/custom-modules` routes, and the runnable example in `docs/examples/custom-modules/`
 - [`docs/NAPARI.md`](docs/NAPARI.md) — napari integration: process model, restart rules, OME-ZARR layouts, byte order, contrast limits, layer props, unimplemented options
 - [`docs/OBJECTMODEL.md`](docs/OBJECTMODEL.md) — CciaProject/Set/Image hierarchy, disk layout, ccid.json shape, versioned fields, transactions
 - [`docs/SEGMENTATION.md`](docs/SEGMENTATION.md) — segmentation pipeline: class hierarchy, label type convention (base/nuc), tiling, output zarr layout, napari integration, future tracking/gating

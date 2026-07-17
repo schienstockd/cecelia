@@ -173,6 +173,37 @@ function api_task_definitions(req::HTTP.Request)
         isempty(specs) || (raw[category] = specs)
     end
 
+    # ── User drop-in modules (custom tasks) ────────────────────────────────────
+    # Same directory-driven contract as the built-ins, but rooted at the per-user config dir
+    # (<config_dir>/modules/inputDefinitions/<category>/<name>.json). Category = subdir name, so a
+    # custom task in an existing category (e.g. behaviour/) appears in that module page automatically.
+    # Built-ins win on a fun_name clash. See docs/CUSTOM_MODULES.md and Cecelia.load_custom_modules!.
+    builtin_funs = Set{String}()
+    for specs in values(raw), spec in specs
+        fn = string(get(spec, "fun_name", ""))
+        isempty(fn) || push!(builtin_funs, fn)
+    end
+    user_defs_root = joinpath(Cecelia.config_dir(), "modules", "inputDefinitions")
+    if isdir(user_defs_root)
+        for entry in readdir(user_defs_root; join=true)
+            isdir(entry) || continue
+            category = basename(entry)
+            (!isempty(cat) && category != cat) && continue
+            for f in readdir(entry; join=true)
+                endswith(f, ".json") || continue
+                try
+                    parsed = JSON3.read(read(f, String), Dict{String,Any})
+                    fn     = string(get(parsed, "fun_name", ""))
+                    (isempty(fn) || fn ∈ builtin_funs) && continue   # need a fun_name; built-ins win
+                    resolved = Cecelia._resolve_spec_includes(parsed, frag_dir)
+                    push!(get!(raw, category, Any[]), resolved)
+                catch e
+                    @warn "Skipping malformed custom task spec" path=f exception=e
+                end
+            end
+        end
+    end
+
     # Build fun_name → spec lookup so composite tasks can pull params from their steps.
     by_fun = Dict{String, Any}()
     for specs in values(raw)
@@ -214,6 +245,57 @@ function api_task_definitions(req::HTTP.Request)
     end
 
     200, JSON3.write(result)
+end
+
+# ── Custom (user drop-in) modules ─────────────────────────────────────────────
+# GET  /api/tasks/custom-modules         → load report + category list (see below)
+# POST /api/tasks/custom-modules/reload  → rescan <config_dir>/modules for NEWLY dropped .jl, then
+#                                          return the same report. (Edits to already-loaded modules
+#                                          need a server restart — same as any app/ struct change.)
+# See docs/CUSTOM_MODULES.md and Cecelia.load_custom_modules!.
+
+# Categories present among the user's custom specs, each flagged whether a built-in page already owns
+# that category (a matching dir under app/src/tasks). The frontend renders a generic page + nav entry
+# only for the NEW categories (builtin == false); tasks in an existing category already show there.
+function _custom_module_categories()
+    user_defs_root = joinpath(Cecelia.config_dir(), "modules", "inputDefinitions")
+    isdir(user_defs_root) || return Any[]
+    builtin = Set(basename(e) for e in readdir(_TASK_SPECS_ROOT; join=true) if isdir(e))
+    cats = Any[]
+    for entry in readdir(user_defs_root; join=true)
+        isdir(entry) || continue
+        category = basename(entry)
+        funs = String[]
+        for f in readdir(entry; join=true)
+            endswith(f, ".json") || continue
+            try
+                parsed = JSON3.read(read(f, String), Dict{String,Any})
+                fn = string(get(parsed, "fun_name", ""))
+                isempty(fn) || push!(funs, fn)
+            catch
+            end
+        end
+        isempty(funs) && continue
+        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs))
+    end
+    cats
+end
+
+function api_custom_modules_status(::HTTP.Request)
+    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
+                        modules    = Cecelia.custom_modules_report(),
+                        categories = _custom_module_categories()))
+end
+
+function api_custom_modules_reload(::Vector{UInt8})
+    res = Cecelia.load_custom_modules!()
+    200, JSON3.write((; dir        = Cecelia.custom_modules_dir(),
+                        loaded     = res.loaded,
+                        skipped    = res.skipped,
+                        removed    = res.removed,
+                        failed     = [(; path = p, error = m) for (p, m) in res.failed],
+                        modules    = Cecelia.custom_modules_report(),
+                        categories = _custom_module_categories()))
 end
 
 # ── Task param memory (funParams) ─────────────────────────────────────────────
