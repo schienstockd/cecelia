@@ -4233,6 +4233,12 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test Cecelia.hmm_transitions_qc_findings(Cecelia.category_dist_metrics(Any[nothing]))[1]["code"] == "hmm.no_transitions"
             @test isempty(Cecelia.hmm_transitions_qc_findings(Cecelia.category_dist_metrics(["1_2", "2_1"])))
 
+            # track measures: auto + low-confidence motion dims → warn; confident/user-set → none
+            tm = Cecelia.track_measures_qc_findings(120, "auto", 2, 2, "low", "z ambiguous")
+            @test length(tm) == 1 && tm[1]["code"] == "tracking.motion_dims_uncertain" && tm[1]["level"] == "warn"
+            @test isempty(Cecelia.track_measures_qc_findings(120, "auto", 3, 3, "high", "clear"))
+            @test isempty(Cecelia.track_measures_qc_findings(120, "3D", 3, 2, "low", "user forced"))  # user-set: no flag
+
             # against the tracked fixture: metrics agree with an independent count of track_id
             h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
             if !have_fixture(h5)
