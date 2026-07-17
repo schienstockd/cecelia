@@ -16,9 +16,12 @@ that talks to the Julia API over HTTP. It is separate infra, not part of the `ce
 mcp/
   cecelia_mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
-    server.py    # FastMCP server — wires the client into 8 read tools + append_lab_log
+    monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
+    wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
+    server.py    # FastMCP server — wires the client into 8 read tools + poll_observations + append_lab_log
   tests/
-    test_client.py   # stdlib unittest, HTTP mocked
+    test_client.py    # stdlib unittest, HTTP mocked
+    test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
 ```
 
 ## Tools
@@ -33,7 +36,26 @@ mcp/
 | `get_task_log(project_uid, image_uid, fun)` | `GET /api/images/tasklog` | raw log text for one task fn on one image |
 | `get_task_history(project_uid, limit=100)` | `GET /api/tasks/history` | recent runs across all images, newest first |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
+| `poll_observations(project_uid)` | *(in-process, WS-fed)* | pending observations since the last poll — the "sit next to me" signal (see below) |
 | `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **the only write** — appends a dated `[Claude]` entry, append-only |
+
+## Live observation — the 10-attempts pattern (Slice B)
+
+Beyond the on-demand reads, the server keeps a **session monitor** fed by the API's WebSocket event
+stream (`ws://…/ws`, best-effort — reconnects on its own, never blocks the read tools). It watches for
+patterns the user is too close to notice and exposes them through **`poll_observations`** — a *pull*
+tool Claude calls periodically while watching a project (MCP is client-pull; unsolicited server→client
+push is a later slice). Each poll drains and returns a (usually empty) list:
+
+- **`repeat_attempts`** — the same function has run **>3 times on one image this session**
+  (`imageUid`, `fn`, `attempts`, `completed`/`failed` tallies, `lastOutcome`). The core signal.
+  Counting is session-scoped and **launch-path-agnostic**: whiteboard chain nodes and module-page
+  single tasks land in the same tally (both terminal outcomes are counted once each).
+- **`image_note_added`** — the user added a note to an image (`imageUid`, `note`).
+- **`lab_log_entry_added`** — a user (non-`[Claude]`/`[Cecelia]`) lab-log entry appeared (`summary`).
+
+The monitor is pure and unit-tested (`tests/test_monitor.py`); the WS listener only decodes frames and
+feeds it. The connection is receive-only — no mutation path is added.
 
 ## The no-mutation guarantee
 

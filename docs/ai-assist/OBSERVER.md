@@ -143,13 +143,24 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
 
 1. ✅ **DONE** — New read routes: `get_task_log` (`GET /api/images/tasklog`), `get_task_history` (`GET /api/tasks/history`), plus a read-only `GET /api/images` project listing (so `list_images`/`get_project_info` avoid `/projects/load`'s `lastOpenedAt` write). `read_lab_log`/`append_lab_log` already existed. Thin, no scheduler change.
 2. ✅ **DONE** — MCP server skeleton (`mcp/`, Python + FastMCP, stdio) + the eight read tools + `append_lab_log`, allow-listed in `cecelia_mcp/client.py` (the no-mutation guarantee; append is the sole write). `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`.
-3. Attempt counter (§5) + `qc_flag_fired`/`image_note_added`/`lab_log_entry_added` events (§4) — enables the attempt pattern and QC surfacing. **← next slice**
-4. Throttle + token reporting (§6).
+3. ✅ **DONE (Slice B)** — Attempt counter (§5) + `image_note_added`/`lab_log_entry_added` events (§4).
+   Counter lives in the **MCP server's session memory** (the doc's "OR" option), fed by the WS stream
+   via `mcp/cecelia_mcp/monitor.py` (pure, unit-tested) + `wsclient.py` (thin listener), surfaced by
+   the `poll_observations` pull tool. Backend: `fun` added to the `task:status` frame (so module-page
+   runs are attributable, `sockets.jl`); `image_note_added` broadcast from `api_images_inclusion_set`
+   and `lab_log_entry_added` (user entries only) from `api_lablog_append` (`routes.jl`). **Deferred:**
+   `qc_flag_fired` — needs the `:flagged` node state that doesn't exist yet (`QC-PROCESS.md` step 1/8);
+   ships with the QC work. Also deferred: server→client *push* (MCP is client-pull; `poll_observations`
+   is the reliable Phase-1 surface — validate live push before building the continuous version).
+4. Throttle + token reporting (§6). **← next slice**
 5. Cohort `get_qc_metrics` route once cohort stats land (`QC-PROCESS.md` step 3).
 
-> **Status (Slice A):** steps 1–2 landed. The observer can describe project state, read task logs +
-> history, read the lab log, and append `[Claude]` entries — and can do nothing else (allow-list
-> enforced + tested). Events / the 10-attempts pattern (step 3) and throttling (step 4) are the next slices.
+> **Status (Slice B):** steps 1–3 landed (minus `qc_flag_fired`, which waits on QC flag state). The
+> observer can describe project state, read task logs + history + the lab log, append `[Claude]`
+> entries, and now **detect the 10-attempts pattern live** (chain + module-page runs, session-scoped)
+> plus surface user notes / lab-log entries via `poll_observations` — and can do nothing else
+> (allow-list enforced + tested; the WS connection is receive-only). Throttling/token reporting
+> (step 4) is next.
 
 ## Verify
 

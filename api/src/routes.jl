@@ -1079,6 +1079,12 @@ function api_images_inclusion_set(body_bytes::Vector{UInt8})
             haskey(fields, "included") && (img.included = Bool(fields["included"]))
             haskey(fields, "note")     && (img.note     = string(fields["note"]))
         end
+        # Notify observers (mcp/) that a note was set — first-class user context (OBSERVER.md §4).
+        if haskey(fields, "note")
+            broadcast_ws(Dict{String,Any}(
+                "type" => "image_note_added", "projectUid" => project_uid,
+                "imageUid" => String(image_uid), "note" => string(fields["note"])))
+        end
     end
     200, JSON3.write((; ok=true))
 end
@@ -1169,6 +1175,15 @@ function api_lablog_append(body_bytes::Vector{UInt8})
         append_lab_log!(proj, author, lines)
     catch e
         return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    # Notify observers (mcp/) of USER-written entries only — not the observer's own [Claude] writes
+    # (would loop) nor [Cecelia] auto-digests (not a user decision). See OBSERVER.md §4.
+    let a = lowercase(strip(author))
+        if !startswith(a, "claude") && !startswith(a, "cecelia")
+            broadcast_ws(Dict{String,Any}(
+                "type" => "lab_log_entry_added", "projectUid" => project_uid,
+                "summary" => join(lines, " ")))
+        end
     end
     200, JSON3.write((; ok=true, block, entries=parse_lab_log(read_lab_log(proj))))
 end

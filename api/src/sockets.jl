@@ -12,7 +12,10 @@ ws_log(_ws, task_id, line)             = _broadcast_task((; type="task:log",    
 # representative (first) member, so the frontend needs the full list to invalidate every member's plots
 # (task-refresh; see docs/todo/TASK_DATA_REFRESH_PLAN.md). Defaults empty → single-image tasks fall back
 # to `imageUid` on the frontend.
-ws_status(_ws, task_id, status, uid=""; image_uids=String[]) = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids))
+# `fun` carries the task fun_name so a WS observer (mcp/) can attribute a module-page run to a
+# function for the 10-attempts pattern (chain nodes already carry `fn`; module tasks didn't). Empty
+# for non-task status frames (batch movies). The frontend ignores the extra field.
+ws_status(_ws, task_id, status, uid=""; image_uids=String[], fun="") = _broadcast_task((; type="task:status", taskId=task_id, status=status, imageUid=uid, imageUids=image_uids, fun=fun))
 ws_result(_ws, task_id, uid, meta)     = _broadcast_task((; type="task:result",    taskId=task_id, imageUid=uid, meta=meta))
 
 ws_progress(_ws, task_id, fraction::Float64) =
@@ -206,7 +209,7 @@ function handle_task_run(ws, data)
     proj_root = joinpath(projects_dir(), project_uid)
     if !isdir(proj_root)
         ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
-        ws_status(ws, task_id, "failed")
+        ws_status(ws, task_id, "failed"; fun=fun_name)
         return
     end
 
@@ -218,7 +221,7 @@ function handle_task_run(ws, data)
     end
     if isempty(image_uids) && isempty(image_uid)
         ws_log(ws, task_id, "[ERROR] No images to run (all selected images are excluded).")
-        ws_status(ws, task_id, "failed")
+        ws_status(ws, task_id, "failed"; fun=fun_name)
         return
     end
 
@@ -233,7 +236,7 @@ function handle_task_run(ws, data)
             _task_from_fun_name(fun_name)
         catch
             ws_log(ws, task_id, "[ERROR] Unknown task: $fun_name")
-            ws_status(ws, task_id, "failed", image_uid)
+            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
             return
         end
 
@@ -253,7 +256,7 @@ function handle_task_run(ws, data)
             end
             if isempty(imgs)
                 ws_log(ws, task_id, "[ERROR] Set task '$fun_name' has no images")
-                ws_status(ws, task_id, "failed", image_uid)
+                ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
                 return
             end
             rep = first(imgs).uid
@@ -269,14 +272,14 @@ function handle_task_run(ws, data)
                                   # still-QUEUED one — reflects immediately, not only when a worker later
                                   # dequeues and skips it. :done/:failed still wait for the final send.
                                   if rec.status in (:queued, :running, :cancelled)
-                                      ws_status(ws, task_id, string(rec.status), rep)
+                                      ws_status(ws, task_id, string(rec.status), rep; fun=fun_name)
                                   end
                                   final_status[] = rec.status
                               end)
             isnothing(result) || ws_result(ws, task_id, rep, result)
             # a set task touched EVERY member — send the full list so the frontend invalidates all of
             # their plots, not just the representative's (closes the non-rep-member gap).
-            ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs])
+            ws_status(ws, task_id, string(final_status[]), rep; image_uids=[i.uid for i in imgs], fun=fun_name)
             return
         end
 
@@ -287,7 +290,7 @@ function handle_task_run(ws, data)
             obj
         catch ex
             ws_log(ws, task_id, "[ERROR] Could not load image: $ex")
-            ws_status(ws, task_id, "failed", image_uid)
+            ws_status(ws, task_id, "failed", image_uid; fun=fun_name)
             return
         end
 
@@ -304,13 +307,13 @@ function handle_task_run(ws, data)
                               # order before it) so a cancelled — especially still-QUEUED — task
                               # reflects at once. Hold :done/:failed until after the result is sent.
                               if rec.status in (:queued, :running, :cancelled)
-                                  ws_status(ws, task_id, string(rec.status), image_uid)
+                                  ws_status(ws, task_id, string(rec.status), image_uid; fun=fun_name)
                               end
                               final_status[] = rec.status
                           end)
 
         isnothing(result) || ws_result(ws, task_id, image_uid, result)
-        ws_status(ws, task_id, string(final_status[]), image_uid)
+        ws_status(ws, task_id, string(final_status[]), image_uid; fun=fun_name)
     end
 end
 
