@@ -2554,6 +2554,28 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
     end
 
+    @testset "recompute! — a missing filter/gate column degrades to empty (no crash)" begin
+        # A cluster pop whose `clusters.{suffix}` column isn't in the fetched frame — e.g. evaluated
+        # against a segmentation that didn't take part in that run, so `fetch_cols` silently dropped it
+        # — must resolve to NO members, not raise `ArgumentError: column name … not found` and 500 the
+        # whole plot. Regression: the trackclust heatmap crash (clusters.default not found).
+        m = PopulationMap(pop_type="trackclust", value_name="C")
+        add_pop!(m, "present"; filter_measure="clusters.movement", filter_fun="in", filter_values=[1, 2], colour="#10b981")
+        add_pop!(m, "absent";  filter_measure="clusters.default",  filter_fun="in", filter_values=[0, 1], colour="#ef4444")
+        # frame HAS clusters.movement but NOT clusters.default
+        fetch = _ -> DataFrame("label" => [10, 11, 12, 13], "clusters.movement" => [0, 1, 2, 1])
+        @test_logs (:warn, r"clusters\.default") match_mode=:any recompute!(m, fetch)  # warns, doesn't throw
+        @test Set(cells_in_pop(m, "/present")) == Set([11, 12, 13])   # present column resolves normally
+        @test isempty(cells_in_pop(m, "/absent"))                     # missing column → empty membership
+
+        # same guard for a GATE whose axis column is absent from the frame
+        mg = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(mg, "g"; gate=RectangleGate("x", "missingY", 0.0, 10.0, 0.0, 10.0), colour="#abcdef")
+        fetchg = _ -> DataFrame("label" => [1, 2], "x" => [1.0, 2.0])   # no "missingY"
+        @test_logs (:warn, r"missingY") match_mode=:any recompute!(mg, fetchg)
+        @test isempty(cells_in_pop(mg, "/g"))
+    end
+
     @testset "colour_by_palette — pop colour else default" begin
         # a value a user pop FILTERS for on the column → that pop's colour; the rest → OKABE_ITO by
         # sorted position. Generalises "use the population's colour where one exists" (a cluster pop is

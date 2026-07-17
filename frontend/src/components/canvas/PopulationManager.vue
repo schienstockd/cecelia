@@ -119,11 +119,21 @@ const POP_PALETTE = [
   '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
   '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
 ]
+// PER-RUN scoping (cluster mode): a run's populations are exactly the pops whose filter targets THIS
+// run's `clusters.{suffix}` column. The store holds every run's pops for the segmentation in ONE
+// sidecar (gating/{vn}__{popType}.json), so we scope to the active run here — switching the run
+// (suffix) dropdown then shows that run's pops, not another run's. Non-cluster surfaces are unfiltered.
+const visiblePops = computed<FlatPop[]>(() =>
+  clusterMode.value
+    ? g.flat.filter(p => p.filter?.measure === `clusters.${props.suffix}`)
+    : g.flat)
 const popClusterIds = (p: FlatPop): number[] => {
   const v = p.filter?.values
   return Array.isArray(v) ? (v as unknown[]).map(Number) : []
 }
-const clusterOwner = (id: number): FlatPop | undefined => g.flat.find(p => popClusterIds(p).includes(id))
+// a cluster ID belongs to at most one pop WITHIN the current run (scope to visiblePops so ticking is
+// exclusive per run, not across runs that happen to share the segmentation's sidecar)
+const clusterOwner = (id: number): FlatPop | undefined => visiblePops.value.find(p => popClusterIds(p).includes(id))
 
 async function toggleCluster(p: FlatPop, id: number) {
   const owner = clusterOwner(id)
@@ -137,13 +147,13 @@ async function toggleCluster(p: FlatPop, id: number) {
 }
 
 async function addClusterPopulation() {
-  const n = g.flat.length
+  const n = visiblePops.value.length
   await g.addClusterPop(`Population ${n + 1}`, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
 }
 </script>
 
 <template>
-  <PopulationPanelShell :count="g.flat.length" :scope="scope" :vis="vis" :docked="docked"
+  <PopulationPanelShell :count="visiblePops.length" :scope="scope" :vis="vis" :docked="docked"
                         @update:scope="emit('update:scope', $event)" @update:vis="emit('update:vis', $event)">
     <!-- ── population list (default slot) ── -->
       <!-- cluster mode: pops are made here (no gate to draw), then clusters ticked into them -->
@@ -154,11 +164,11 @@ async function addClusterPopulation() {
         </button>
       </div>
 
-      <div v-if="!g.flat.length" class="pm-empty">
+      <div v-if="!visiblePops.length" class="pm-empty">
         {{ clusterMode ? 'No populations yet — add one, then tick clusters into it.' : 'No populations yet — draw a gate.' }}
       </div>
 
-      <template v-for="p in g.flat" :key="p.path">
+      <template v-for="p in visiblePops" :key="p.path">
         <div class="pm-row" :class="{ active: p.path === props.selected, transient: p.transient }"
              :style="{ paddingLeft: 6 + p.depth * 14 + 'px' }"
              @click="pick(p)">

@@ -21,6 +21,16 @@ function _filter_mask(col::AbstractVector, fun, vals, default_all::Bool)::BitVec
     BitVector(!ismissing(x) && cmp(x, vals) for x in col)
 end
 
+# A gate/filter column the map references isn't in the fetched frame → the population resolves to no
+# members (empty mask) rather than crashing the whole recompute. Warns once per (pop, column) so the
+# cause is visible in the server log without spamming. See the call sites in `recompute!`.
+function _missing_col_mask(n::Int, path::AbstractString, col::AbstractString)::BitVector
+    @warn "gating: column '$col' absent from the fetched data for population '$path' — treating as \
+           empty (no members). For a cluster pop this usually means it's being evaluated against a \
+           segmentation that didn't take part in its clustering run."
+    falses(n)
+end
+
 # columns the gates + filters in this map need from the H5AD
 function _needed_columns(m::PopulationMap)::Vector{String}
     cols = String[]
@@ -46,6 +56,7 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
     "label" in names(df) || error("recompute!: fetch_cols must return a `label` column")
     labels = df.label
     n = length(labels)
+    cols = Set(names(df))
     memb = Dict{String,BitVector}()
     memb[ROOT] = trues(n)
     for path in topo_order(m)
@@ -56,9 +67,21 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
             sel = Set(p.explicit_labels)
             parent_mask .& BitVector(l in sel for l in labels)
         elseif p.gate !== nothing
-            parent_mask .& inside(p.gate, df[!, p.gate.x_channel], df[!, p.gate.y_channel])
+            # a gate whose axis column is absent from the fetched frame → no members, not a crash. See
+            # the filter case below for the rationale (missing column ≠ hard 500).
+            (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
+                parent_mask .& inside(p.gate, df[!, p.gate.x_channel], df[!, p.gate.y_channel]) :
+                _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
         elseif p.filter_measure !== nothing
-            parent_mask .& _filter_mask(df[!, p.filter_measure], p.filter_fun, p.filter_values, p.filter_default_all)
+            # A filter's column can legitimately be absent from THIS frame — e.g. a cluster pop
+            # (`clusters.{suffix}`) evaluated against a segmentation that didn't take part in that
+            # clustering run. `fetch_cols` intersects with the table's columns and silently drops the
+            # missing one, so an unguarded `df[!, col]` would raise `ArgumentError: column name … not
+            # found` and 500 the whole plot. Degrade to empty membership + a warning instead: the pop
+            # shows no members rather than taking down every other population on the map.
+            (p.filter_measure in cols) ?
+                parent_mask .& _filter_mask(df[!, p.filter_measure], p.filter_fun, p.filter_values, p.filter_default_all) :
+                _missing_col_mask(n, path, string(p.filter_measure))
         else
             copy(parent_mask)
         end

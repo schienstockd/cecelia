@@ -626,6 +626,21 @@ _pool_co_clustered(vns, fetch_vn)::DataFrame = begin
     isempty(frames) ? DataFrame() : reduce((a, b) -> vcat(a, b; cols=:union), frames)
 end
 
+# Per-POPULATION cluster heatmap (category="pop", bare cluster-pop paths): the pops must be evaluated
+# against a segmentation that actually took part in the clustering run — NOT the drifting *active*
+# value_name, which may not be in the run at all (its track/label table then lacks `clusters.{suffix}`,
+# which is exactly what produced the `column name :clusters.default not found` crash). Mirror the UMAP
+# endpoint's resolution (api/src/gating_api.jl `api_plots_umap`): pick a co-clustered value_name for the
+# run's suffix. Only kicks in for cluster pop_types with a known suffix and NO explicit value_name — the
+# per-cluster path (category="clusters.{suffix}") still pools via `_pool_co_clustered`, and an explicit
+# value_name is always honoured.
+function _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
+    (value_name === nothing && _is_cluster_pop_type(pop_type) &&
+        cluster_suffix !== nothing && !isempty(String(cluster_suffix))) || return value_name
+    cc = co_clustered_value_names(img, String(cluster_suffix); granularity=granularity)
+    isempty(cc) ? value_name : first(cc)
+end
+
 function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart_type::AbstractString;
                            value_name::Union{AbstractString,Nothing}=nothing,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,
@@ -636,19 +651,21 @@ function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart
                            measures::Union{Nothing,AbstractVector{<:AbstractString}}=nothing,
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
-                           matrix_normalize::Symbol=:none)::Dict{String,Any}
+                           matrix_normalize::Symbol=:none,
+                           cluster_suffix::Union{AbstractString,Nothing}=nothing)::Dict{String,Any}
     pops = String.(collect(pops))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
+    eff_vn = _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     df = (sfx !== nothing && _is_cluster_pop_type(pop_type)) ?
         _pool_co_clustered(co_clustered_value_names(img, sfx; granularity=granularity),
             vn -> pop_df(img, pop_type, pops; value_name=vn, granularity=granularity,
                          pop_cols=cols, raw_channel_names=true)) :
-        pop_df(img, pop_type, pops; value_name=value_name, granularity=granularity,
+        pop_df(img, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                  nbins=nbins, normalize=normalize, by_image=false, group_by=group_by,
-                 var_cols=_var_measure_set(img, value_name),
+                 var_cols=_var_measure_set(img, eff_vn),
                  collapse_series=collapse_series, raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                  matrix_mode=matrix_mode, measures=measures, category=category,
                  separator=separator, zscore=zscore, matrix_normalize=matrix_normalize)
@@ -667,10 +684,15 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
                            category::Union{AbstractString,Nothing}=nothing,
                            separator::AbstractString="_", zscore::Bool=false,
                            matrix_normalize::Symbol=:none,
-                           attr_map::Union{Nothing,AbstractDict}=nothing)::Dict{String,Any}
+                           attr_map::Union{Nothing,AbstractDict}=nothing,
+                           cluster_suffix::Union{AbstractString,Nothing}=nothing)::Dict{String,Any}
     pops = String.(collect(pops))
     cols = _cols_for(chart_type, measure, group_by, measures, category)
     sfx = _cluster_matrix_suffix(chart_type, category)
+    # per-population cluster heatmap: resolve value_name to the run's segmentation (see _cluster_pop_vn),
+    # taking the run from the first image — clustering is set-scope so the value_name set is consistent.
+    eff_vn = isempty(imgs) ? value_name :
+             _cluster_pop_vn(first(imgs), pop_type, value_name, cluster_suffix, granularity)
     # per-cluster heatmap → pool across the run's co-clustered segmentations (clustering is set-scope,
     # so the value_name set is consistent; take it from the first image). Each vn still pools across
     # images via the multi-image pop_df.
@@ -678,11 +700,11 @@ function plot_summary_data(imgs::AbstractVector{<:CciaImage}, uids::AbstractVect
         _pool_co_clustered(co_clustered_value_names(first(imgs), sfx; granularity=granularity),
             vn -> pop_df(imgs, uids, pop_type, pops; value_name=vn, granularity=granularity,
                          pop_cols=cols, raw_channel_names=true)) :
-        pop_df(imgs, uids, pop_type, pops; value_name=value_name, granularity=granularity,
+        pop_df(imgs, uids, pop_type, pops; value_name=eff_vn, granularity=granularity,
                pop_cols=cols, raw_channel_names=(chart_type == "matrix"))
     result = _summary_agg(df, chart_type; measure=measure, granularity=granularity,
                           nbins=nbins, normalize=normalize, by_image=(scope == :per_image),
-                          group_by=group_by, var_cols=_var_measure_set(imgs, value_name),
+                          group_by=group_by, var_cols=_var_measure_set(imgs, eff_vn),
                           collapse_series=collapse_series,
                           raw_points=raw_points, max_points=max_points, raw=raw, stat_unit=stat_unit, image_agg=image_agg,
                           matrix_mode=matrix_mode, measures=measures, category=category,
