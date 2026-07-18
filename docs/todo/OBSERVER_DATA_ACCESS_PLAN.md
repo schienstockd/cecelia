@@ -104,7 +104,12 @@ MCP-tool docstring**, not another copy of the plumbing:
   motility (median/quantiles/mean/n) over the MEANINGFUL pops (gated pops when present, else the base
   `_tracked`/all-cells — so it works with or without gating). Channels named consistently (resolved from
   the label view, not pop_df's pop_type-dependent rename). Membership counts land here as each summary's `n`.
-- **D — HMM + clusters** (`get_behaviour_summary`, `get_cluster_summary`).
+- **D — HMM + clusters** (`get_behaviour_summary`, `get_cluster_summary`). ✅ **DONE** —
+  `app/src/ai/behaviour_clusters.jl`, `GET /api/analysis/{behaviour,clusters}`, MCP `get_behaviour_summary`/
+  `get_cluster_summary`, allow-listed; pkg (pure distribution + fixture smoke) + api + mcp tests, validated
+  off-suite. HMM state/transition distributions + per-run cluster sizes/largestFrac/features. Reads obs via
+  the canonical `as_df` reader (pop_df's "labels" pop drops obs) — a shared `_category_distribution` returns
+  the per-category breakdown `category_dist_metrics` (aggregates-only) can't.
 - **E — Boards + chains** (`get_analysis_boards`, `get_chains`) — some folds into A.
 
 ## Grounding (where the data lives)

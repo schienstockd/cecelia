@@ -118,6 +118,18 @@ class ClientTest(unittest.TestCase):
         self.assertIn("imageUid=i1", url)
         self.assertNotIn("setUid", url)                           # unset optional dropped
 
+    def test_behaviour_and_cluster_summary_are_allowed_gets(self):
+        self.assertIn(("GET", "/api/analysis/behaviour"), ALLOWED_ROUTES)
+        self.assertIn(("GET", "/api/analysis/clusters"), ALLOWED_ROUTES)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_behaviour_summary("p", set_uid="s1")
+        self.assertIn("/api/analysis/behaviour?", u.call_args[0][0].full_url)
+        self.assertIn("setUid=s1", u.call_args[0][0].full_url)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_cluster_summary("p", image_uid="i1")
+        self.assertIn("/api/analysis/clusters?", u.call_args[0][0].full_url)
+        self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:

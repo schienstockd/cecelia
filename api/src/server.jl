@@ -216,6 +216,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_analysis_populations(req)
         elseif path == "/api/analysis/measures"
             api_analysis_measures(req)
+        elseif path == "/api/analysis/behaviour"
+            api_analysis_behaviour(req)
+        elseif path == "/api/analysis/clusters"
+            api_analysis_clusters(req)
         elseif path == "/api/lablog"
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"
