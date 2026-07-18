@@ -45,7 +45,6 @@ const observerPasses = computed(() => observer.session?.passes ?? [])   // activ
 const observerSetup = computed(() =>
   observerSetupReason(observerAvailable.value,
     (observerPasses.value[0] && !observerPasses.value[0].ok && isAuthError(observerPasses.value[0].note)) || false))
-const passLabel = (t: string) => (t === 'auto' ? 'Watch' : 'Ask')
 const passTokens = (p: { inputTokens: number; outputTokens: number }) => {
   const total = p.inputTokens + p.outputTokens
   return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
@@ -310,7 +309,6 @@ async function toggleMute(category: string) {
       <summary>Claude activity ({{ observerPasses.length }})</summary>
       <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
         <div class="ll-pass-head">
-          <span class="ll-pass-trig">{{ passLabel(p.trigger) }}</span>
           <span class="ll-pass-meta">{{ p.model }} · {{ passTokens(p) }} tok<span v-if="p.appended"> · wrote</span><span v-else-if="!p.ok"> · error</span></span>
           <span class="ll-pass-at">{{ p.at }}</span>
         </div>
@@ -469,7 +467,6 @@ async function toggleMute(category: string) {
 .ll-pass.appended { border-left-color: var(--cc-accent); }
 .ll-pass.failed   { border-left-color: #f85149; }
 .ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: 0.64rem; }
-.ll-pass-trig { font-weight: 600; color: var(--cc-text); }
 .ll-pass-meta { color: var(--cc-text-dim); }
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
