@@ -769,3 +769,46 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: cohort runs (per clustering run selector)" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _runs(t)  = api_qc_cohort_runs(HTTP.Request("GET", "/api/qc/cohort/runs" * t))
+    _check(b) = api_qc_cohort_check(Vector{UInt8}(JSON3.write(b)))
+    try
+        proj = create_project!(name = "api-cohort-runs", kind = "static")
+        s    = add_set!(proj; name = "set-A")
+        imgs = [add_image!(s; name = "i$i", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif")) for i in 1:3]
+        # two clustering RUNS (movement, test) over label sets T & B, banked via write_cluster_qc! so the
+        # composite {labelSet}.{suffix} keys + runSuffix land on disk (what the real task does)
+        mkqc(path) = open(path, "w") do io
+            JSON3.write(io, Dict("nClusters" => 4, "perSegment" =>
+                [Dict("uID" => img.uid, "valueName" => vn, "n" => 40, "nClusters" => 4, "largestClusterFrac" => 0.4)
+                 for img in imgs for vn in ("T", "B")]))
+        end
+        qcdir = mktempdir()
+        for suf in ("movement", "test")
+            p = joinpath(qcdir, "$suf.json"); mkqc(p)
+            Cecelia.write_cluster_qc!(collect(images(s)), "clustTracks.cluster", p; unit = "tracks", suffix = suf)
+        end
+        base = "?projectUid=$(proj.uid)&setUid=$(s.uid)"
+        # GET /runs → both runs, each with its composite value_names
+        str, br = _runs("$base&funName=clustTracks.cluster")
+        @test str == 200
+        rr = JSON3.read(br)
+        @test Set(r.run for r in rr.runs) == Set(["movement", "test"])
+        testrun = first(r for r in rr.runs if r.run == "test")
+        @test sort(String.(testrun.valueNames)) == ["B.test", "T.test"]
+        @test isempty(JSON3.read(_runs("$base&funName=segment.cellpose")[2]).runs)   # a fun with no runs → []
+        @test _runs("?projectUid=$(proj.uid)&setUid=$(s.uid)")[1] == 400             # missing funName
+        # POST /check with run=test persists ONLY the test run's sidecars, not movement's
+        _check((; projectUid = proj.uid, setUid = s.uid, funName = "clustTracks.cluster", run = "test"))
+        cdir = joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort", "clustTracks.cluster")
+        @test isfile(joinpath(cdir, "T.test.json")) && isfile(joinpath(cdir, "B.test.json"))
+        @test !isfile(joinpath(cdir, "T.movement.json"))
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

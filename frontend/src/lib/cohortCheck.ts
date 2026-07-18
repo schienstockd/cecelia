@@ -34,16 +34,33 @@ export function summariseCohortResult(docs: CohortDoc[]): CohortSummary {
     : { severity: 'ok', flagged: 0, nIncluded, message: `All ${nIncluded} image${s(nIncluded)} within range` }
 }
 
+// A clustering RUN (value-name suffix) with the value_names it produced — the Check-cohort button's
+// run selector picks one so a check judges just that run (cluster QC is banked per run).
+export interface CohortRun { run: string; valueNames: string[] }
+
+// LIVE: the distinct clustering runs a fun banked for this set (newest first); [] for funs that keep
+// no runs (segment/tracking/HMM). Cheap — no cohort math server-side.
+export async function fetchCohortRuns(projectUid: string, setUid: string,
+                                      funName: string): Promise<CohortRun[]> {
+  try {
+    const p = new URLSearchParams({ projectUid, setUid, funName })
+    const res = await fetch(`/api/qc/cohort/runs?${p}`)
+    if (!res.ok) return []
+    return (await res.json())?.runs ?? []
+  } catch { return [] }
+}
+
 // LIVE: POST a check per fun_name and summarise. A fun with no banked metrics for this set yet just
 // returns zero outliers (non-fatal); a hard error on one fun is skipped so the others still report.
+// `run` (optional) restricts clustering funs to that run's value_names (see fetchCohortRuns).
 export async function runCohortCheck(projectUid: string, setUid: string,
-                                     funNames: string[]): Promise<CohortSummary> {
+                                     funNames: string[], run = ''): Promise<CohortSummary> {
   const docs: CohortDoc[] = []
   for (const funName of funNames) {
     try {
       const res = await fetch('/api/qc/cohort/check', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid, setUid, funName }),
+        body: JSON.stringify({ projectUid, setUid, funName, ...(run ? { run } : {}) }),
       })
       if (!res.ok) continue
       const body = await res.json()

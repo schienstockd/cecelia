@@ -267,20 +267,61 @@ function cohort_value_names(set::CciaSet, fun_name::AbstractString)::Vector{Stri
     sort(collect(vns))
 end
 
+# The clustering RUN suffix a value_name was banked under (`write_cluster_qc!` stores `runSuffix` on
+# each doc), read from the first included image that carries it; "" for funs that bank no run (segment/
+# tracking). Lets the cohort filter "this run's value_names" without parsing the composite key.
+function _value_name_run(set::CciaSet, fun_name::AbstractString, value_name::AbstractString)::String
+    for img in filter(image_included, images(set))
+        d = read_qc(img, fun_name, value_name); d === nothing && continue
+        s = string(get(d, :runSuffix, "")); isempty(s) || return s
+    end
+    ""
+end
+
+# Restrict discovered value_names to those banked by a specific clustering run (suffix). `run` empty ⇒
+# no filtering (all value_names).
+_value_names_for_run(set::CciaSet, fun_name::AbstractString, vns::AbstractVector, run::AbstractString) =
+    isempty(run) ? vns : filter(vn -> _value_name_run(set, fun_name, vn) == run, vns)
+
+# The distinct clustering RUNS banked for a fun across the set — each run's `run` suffix + the composite
+# value_names (`{labelSet}.{suffix}`) it produced + the most recent banking time. Powers the cohort
+# button's run selector: cluster QC is banked PER RUN (write_cluster_qc!), so "check this run" checks
+# exactly that run's value_names — the fix for a later run silently overwriting an earlier one. Funs
+# that bank no run suffix (segment/tracking) return []. Ordered most-recent-first (by QC file mtime) so
+# the selector defaults to the latest run.
+function cohort_runs(set::CciaSet, fun_name::AbstractString)
+    acc = Dict{String,Tuple{Set{String},Float64}}()   # run => (value_names, latest mtime)
+    for img in filter(image_included, images(set))
+        fdir = qc_fun_dir(img, fun_name); isdir(fdir) || continue
+        for f in readdir(fdir)
+            endswith(f, ".json") || continue
+            vn = f[1:end-5]
+            doc = read_qc(img, fun_name, vn); doc === nothing && continue
+            run = string(get(doc, :runSuffix, "")); isempty(run) && continue
+            t = mtime(joinpath(fdir, f))
+            vns, at = get(acc, run, (Set{String}(), 0.0))
+            push!(vns, vn); acc[run] = (vns, max(at, t))
+        end
+    end
+    runs = [(; run = r, valueNames = sort(collect(v[1])), at = v[2]) for (r, v) in acc]
+    sort(runs; by = x -> x.at, rev = true)
+end
+
 # READ-ONLY: cohort summary for EVERY value_name a fun banked across the set → {value_name => doc}.
 # How a caller that doesn't know the suffix (the observer, the in-app button) gets per-label-set
 # cohorts — T-cells and B-cells as SEPARATE cohorts, which is correct (same value_name compared across
-# images). Empty when the fun banked nothing anywhere in the set.
+# images). `run` restricts to one clustering run's value_names (see cohort_runs). Empty when the fun
+# banked nothing (or nothing under `run`) anywhere in the set.
 cohort_qc_for_all(set::CciaSet, fun_name::AbstractString;
-                  threshold::Real = _COHORT_MODZ_THRESHOLD)::Dict{String,Any} =
+                  threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any} =
     Dict{String,Any}(vn => cohort_qc_for(set, fun_name, vn; threshold = threshold)
-                     for vn in cohort_value_names(set, fun_name))
+                     for vn in _value_names_for_run(set, fun_name, cohort_value_names(set, fun_name), run))
 
 # PERSIST variant of the above (the "check" action): writes each value_name's sidecar + per-image findings.
 cohort_qc_for_all!(set::CciaSet, fun_name::AbstractString;
-                   threshold::Real = _COHORT_MODZ_THRESHOLD)::Dict{String,Any} =
+                   threshold::Real = _COHORT_MODZ_THRESHOLD, run::AbstractString = "")::Dict{String,Any} =
     Dict{String,Any}(vn => cohort_qc_for!(set, fun_name, vn; threshold = threshold)
-                     for vn in cohort_value_names(set, fun_name))
+                     for vn in _value_names_for_run(set, fun_name, cohort_value_names(set, fun_name), run))
 
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)
