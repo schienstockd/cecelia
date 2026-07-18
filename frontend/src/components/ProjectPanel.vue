@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
+import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
@@ -42,6 +43,13 @@ async function openSelected() {
   if (!selectedUid.value) return
   const ok = await projectMeta.openProject(selectedUid.value)
   if (ok) emit('close')
+}
+
+// Permanently delete a project from disk (armed via ConfirmDeleteButton). Never offered for the
+// currently-open project. Clears the selection if the deleted one was selected.
+async function deleteProject(uid: string) {
+  await projectMeta.deleteProject(uid)
+  if (selectedUid.value === uid) selectedUid.value = projectMeta.recent[0]?.uid ?? null
 }
 
 onMounted(async () => {
@@ -119,6 +127,7 @@ const typeColour: Record<ProjectType, string> = {
               <th class="col-type">Type</th>
               <th class="col-path">Location</th>
               <th class="col-date">Last opened</th>
+              <th class="col-del" />
             </tr>
           </thead>
           <tbody>
@@ -153,6 +162,13 @@ const typeColour: Record<ProjectType, string> = {
                 {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
               </td>
               <td class="col-date dim">{{ formatDate(p.lastOpenedAt) }}</td>
+              <td class="col-del">
+                <!-- delete a project (not the open one) — canonical arm→confirm single button -->
+                <ConfirmDeleteButton v-if="projectMeta.current?.uid !== p.uid"
+                                     title="Delete this project from disk"
+                                     armed-title="Click again to permanently delete"
+                                     @confirm="deleteProject(p.uid)" />
+              </td>
             </tr>
           </tbody>
         </table>
@@ -295,6 +311,7 @@ const typeColour: Record<ProjectType, string> = {
 .col-type { width: 80px; }
 .col-path { flex: 1; }
 .col-date { width: 120px; }
+.col-del  { width: 34px; text-align: center; }
 
 .proj-row {
   border-bottom: 1px solid var(--cc-border);

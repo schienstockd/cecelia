@@ -679,6 +679,25 @@ function api_projects_rename(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok=true, name))
 end
 
+# delete → permanently remove a project directory from disk. Body {uid}. The frontend guards against
+# deleting the currently-open project; this is the raw removal (the recent list is a scan of
+# projects_dir, so it refreshes automatically). Destructive + irreversible.
+function api_projects_delete(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    uid = String(get(body, :uid, ""))
+    isempty(uid) && return 400, JSON3.write((; error="uid required"))
+    proj_dir = joinpath(projects_dir(), uid)
+    isdir(proj_dir) || return 404, JSON3.write((; error="Project not found"))
+    try
+        rm(proj_dir; recursive=true, force=true)
+    catch e
+        return 500, JSON3.write((; error="Failed to delete project: " * sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, uid))
+end
+
 # ── Set management ────────────────────────────────────────────────────────────
 
 function api_sets_create(body_bytes::Vector{UInt8})

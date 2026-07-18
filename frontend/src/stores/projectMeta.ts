@@ -141,5 +141,25 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
     log.info('Project closed.', { source: 'project' })
   }
 
-  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, closeProject }
+  // Permanently delete a project's directory from disk, then refresh the recent list (which is a scan
+  // of projects_dir). Guarded by the caller against deleting the currently-open project. Irreversible.
+  async function deleteProject(uid: string): Promise<boolean> {
+    try {
+      const res = await fetch('/api/projects/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid }),
+      })
+      const body = await res.json().catch(() => ({})) as { error?: string }
+      if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
+      await fetchRecent()
+      log.info('Project deleted.', { source: 'project' })
+      return true
+    } catch (e) {
+      log.error(`Failed to delete project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
+      return false
+    }
+  }
+
+  return { current, recent, projectsDir, loading, hasProject, fetchRecent, createProject, openProject, renameProject, deleteProject, closeProject }
 })
