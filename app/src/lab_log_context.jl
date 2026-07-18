@@ -105,9 +105,27 @@ _where(names)::String = (n = length(names); n <= 2 ? join(sort(collect(names)), 
 # are fixed-width, so a lexical `>` is a correct "happened after"; second-granular + strict, so
 # same-second-as-last-capture activity is skipped — negligible). The `category.` prefix is dropped
 # from the fun (the module header carries it): `segment.cellpose` → "cellpose on 5 images".
-function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},String}
+# True when an image's (fun, value_name) QC doc carries a `warn` finding — the ⚠️ signal for a
+# digest line. Cheap read of the sidecar the task already wrote this window.
+function _has_warn_qc(img::CciaImage, fun::AbstractString, vn::AbstractString)::Bool
+    doc = read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)
+    doc === nothing && return false
+    fs = get(doc, :findings, nothing)
+    fs === nothing && return false
+    any(f -> String(get(f, :level, "")) == "warn", fs)
+end
+
+const _SEV_RANK = Dict("ok" => 0, "warn" => 1, "fail" => 2)
+
+# Per-module run summary since `cutoff`. Returns `(items_by_module, severity_by_module, max_at)`:
+# severity is the worst outcome across that module's runs this window — `fail` (a run failed), else
+# `warn` (a run produced a warn QC finding), else `ok` — driving the digest line's ✅/⚠️/❌ symbol.
+function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},String}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
     fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
+    mod_sev    = Dict{String,String}()                     # module => "ok"|"warn"|"fail" (worst)
+    bump(mod, sev) = (get(_SEV_RANK, sev, 0) > get(_SEV_RANK, get(mod_sev, mod, "ok"), 0)) &&
+                     (mod_sev[mod] = sev)
     max_at = String(cutoff)
     for img in images(proj)
         for e in read_run_log(img)
@@ -116,9 +134,15 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
             fun  = String(get(e, "fun", "?"))
             disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
             mod  = _category_of_fun(fun)
+            vn   = String(get(e, "valueName", ""))
             push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.name)
-            String(get(e, "status", "done")) == "failed" &&
-                (fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1)   # surface failures too
+            get!(mod_sev, mod, "ok")
+            if String(get(e, "status", "done")) == "failed"
+                fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
+                bump(mod, "fail")
+            elseif _has_warn_qc(img, fun, vn)
+                bump(mod, "warn")
+            end
             at > max_at && (max_at = at)
         end
     end
@@ -134,7 +158,7 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
         end
         out[mod] = items
     end
-    (out, max_at)
+    (out, mod_sev, max_at)
 end
 
 # ── gating fingerprint + diff ─────────────────────────────────────────────────────
@@ -250,7 +274,7 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     name_by = Dict(img.uid => img.name for img in images(proj))
     name_of(u) = get(name_by, String(u), String(u))
 
-    task_items, max_at = _task_items_by_module(proj, cutoff)
+    task_items, mod_sev, max_at = _task_items_by_module(proj, cutoff)
 
     cur_gating  = _gating_fingerprint(proj)
     prev_gating = get(state, "gating", nothing)          # absent → first capture → seed silently
@@ -274,12 +298,16 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     state["excluded"] = cur_excl
     _write_context_state!(proj, state)
 
-    # one bullet per category, in task-manager order, skipping muted categories
+    # one bullet per category, in task-manager order, skipping muted categories. Each line leads with a
+    # traffic-light symbol (✅/⚠️/❌) from the module's worst run outcome this window — so the reader
+    # sees at a glance which entries need attention. Non-task categories (populations, exclusions) have
+    # no run severity ⇒ ✅ (informational).
     muted = Set(read_mutes(proj))
     lines = String[]
     for cat in sort(collect(keys(by_cat)); by = c -> (_category_rank(c), c))
         (cat in muted || isempty(by_cat[cat])) && continue
-        push!(lines, "$cat — " * join(by_cat[cat], "; "))
+        sym = severity_symbol(get(mod_sev, cat, "ok"))
+        push!(lines, "$sym $cat — " * join(by_cat[cat], "; "))
     end
 
     isempty(lines) && return nothing

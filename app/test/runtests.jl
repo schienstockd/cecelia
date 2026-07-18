@@ -387,6 +387,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test occursin("Segment — cellpose on 2 images", block)
         @test occursin("Tracking — bayesian_tracking on 1 image", block)   # singular
         @test occursin("img-1", block) && occursin("img-2", block)
+        # all runs succeeded, no QC → each module line leads with ✅
+        @test occursin("✅ Segment", block) && occursin("✅ Tracking", block)
 
         entries = parse_lab_log(read_lab_log(proj))
         @test length(entries) == 1 && entries[1]["author"] == "Cecelia"
@@ -394,6 +396,21 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # idempotent: no new activity → no second digest
         @test capture_context!(proj) === nothing
         @test length(parse_lab_log(read_lab_log(proj))) == 1
+
+        # severity symbols (fresh project so the cutoff is empty — no same-second edge):
+        # a failed run → ❌ on its module; a warn QC finding → ⚠️
+        projS = create_project!(name="labctx-sev-$(rand(1000:9999))", kind="static")
+        sS    = add_set!(projS; name="set-S")
+        iS1   = add_image!(sS; name="s-1", meta=Dict{String,Any}("ori_path"=>"/tmp/s1.tif"))
+        iS2   = add_image!(sS; name="s-2", meta=Dict{String,Any}("ori_path"=>"/tmp/s2.tif"))
+        append_run_log!(iS1, "segment.measureLabels", "default", "failed")
+        write_qc(iS2, "tracking.track_measures", "default",
+                 [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"s","long"=>"l")])
+        append_run_log!(iS2, "tracking.track_measures", "default")
+        sev = capture_context!(projS)
+        @test sev !== nothing
+        @test occursin("❌ Segment", sev)      # measureLabels failed → worst outcome for the module
+        @test occursin("⚠️ Tracking", sev)     # track_measures produced a warn finding
 
         # new activity strictly after the cutoff → a fresh digest that doesn't repeat old activity
         sleep(1)   # run-log timestamps are second-granular; ensure a strictly-later `at`
