@@ -1159,13 +1159,17 @@ function pop_df(img::CciaImage, pop_type::AbstractString, pops;
     # `pops` is ignored (there are no sub-populations).
     if String(pop_type) == "labels"
         lp = label_props(img; value_name=resolved_vn) |> v -> rename_channels!(v, !raw_channel_names)
-        isnothing(pop_cols) || select_cols(lp, String.(pop_cols))
-        # When no columns are requested (e.g. a bare cell COUNT), read neither X nor obs — just
-        # label/centroids. Reading every obs measure for millions of cells only to count rows needlessly
-        # loads the (single-process) API and would stall e.g. a queued napari open. With pop_cols set,
-        # `select_cols` already narrows the read to exactly those columns.
-        df = as_df(lp; include_x=(pop_cols === nothing ? include_x : true),
-                       include_obs=(pop_cols === nothing ? false : include_obs))
+        # No columns requested — `nothing` OR `String[]` — means a bare cell COUNT: read neither X nor
+        # obs, just label/centroids. Reading every obs measure for millions of cells only to count rows
+        # needlessly loads the (single-process) API and would stall e.g. a queued napari open. (Empty and
+        # `nothing` used to diverge — `String[]` slipped past this into a muddled "all X, no usable obs"
+        # state.) With pop_cols set, `select_cols` narrows the read to exactly those columns. NOTE: this
+        # path is for gated/measure reads — to summarise an OBS column (HMM state, clusters), read it
+        # directly via `as_df`, not through here (obs isn't a first-class pushdown target).
+        no_cols = pop_cols === nothing || isempty(pop_cols)
+        no_cols || select_cols(lp, String.(pop_cols))
+        df = as_df(lp; include_x=(no_cols ? include_x : true),
+                       include_obs=(no_cols ? false : include_obs))
         df[!, "value_name"] .= resolved_vn
         df[!, "pop"]        .= "/labels"
         img._pop_df_cache[ckey] = df
