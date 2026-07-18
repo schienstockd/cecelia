@@ -4319,6 +4319,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test isempty(Cecelia._cohort_outliers(Dict("a"=>3.0,"b"=>3.0,"c"=>3.0)).outliers)
             # a lower explicit threshold is honoured in the MAD>0 regime (more sensitive)
             @test haskey(Cecelia._cohort_outliers(Dict("a"=>800.0,"b"=>810.0,"c"=>100.0), 1.0).outliers, "c")
+
+            # per-image finding from an outlier entry — direction from value vs median; carries detail
+            cf = Cecelia._cohort_finding("nCells", Dict{String,Any}("value"=>100.0,"z"=>-5.2), 800.0)
+            @test cf["code"] == "cohort.nCells" && cf["level"] == "warn"
+            @test cf["detail"]["metric"] == "nCells" && cf["detail"]["value"] == 100.0 && cf["detail"]["z"] == -5.2
+            @test occursin("below", cf["long"])
+            cf2 = Cecelia._cohort_finding("nTracks", Dict{String,Any}("value"=>900.0,"relDev"=>0.8), 500.0)
+            @test occursin("above", cf2["long"]) && cf2["detail"]["relDev"] == 0.8
         end
 
         @testset "cohort round-trip (banked metrics → set sidecar)" begin
@@ -4339,6 +4347,16 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test isfile(cohort_qc_path(set, "segment.measureLabels", "default"))
             @test read_cohort_qc(set, "segment.measureLabels", "default")["nIncluded"] == 10
             @test haskey(read_all_cohort_qc(set), "segment.measureLabels/default")
+            # per-image write-back: the outlier (j) gets a cohort finding ON the image; a normal one
+            # (a) is written empty (no stale flag). Under the cohort.* namespace, merged by read_all_qc.
+            byid = Dict(i.uid => i for i in set._images)
+            fj = read_qc(byid["j"], "cohort.segment.measureLabels", "default")
+            @test fj !== nothing && !isempty(fj["findings"])
+            @test fj["findings"][1]["code"] == "cohort.nCells" && fj["findings"][1]["level"] == "warn"
+            @test occursin("below", fj["findings"][1]["long"])         # 100 < median 800
+            fa = read_qc(byid["a"], "cohort.segment.measureLabels", "default")
+            @test fa !== nothing && isempty(fa["findings"])
+            @test haskey(read_all_qc(byid["j"]), "cohort.segment.measureLabels/default")
             # excluded images drop out of the cohort
             set._images[1].included = false                      # exclude one
             @test cohort_qc_for!(set, "segment.measureLabels", "default")["nIncluded"] == 9
