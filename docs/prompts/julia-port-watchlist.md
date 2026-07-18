@@ -1,6 +1,6 @@
 # Julia Port Watch List
 
-> Living checklist distilled from `docs/todo/python-audit-report.md`. Purpose: recheck periodically
+> Living checklist distilled from `docs/prompts/python-audit-report.md`. Purpose: recheck periodically
 > whether a Julia drop-in has appeared for each **blocked** item. Each "cannot port (yet)" row names
 > the *specific* package/capability to watch for, so the recheck is a concrete search, not a re-audit.
 

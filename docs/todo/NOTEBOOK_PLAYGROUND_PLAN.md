@@ -4,7 +4,7 @@
 > architecture) for integrating **Pluto.jl** notebooks into the Cecelia UI as the structured home for
 > post-pipeline downstream analysis. Promote durable parts to a permanent `docs/NOTEBOOKS.md` once built.
 >
-> Origin: the `docs/todo/python-audit-report.md` *Notebooks* section + follow-up discussion. Grounded
+> Origin: the `docs/prompts/python-audit-report.md` *Notebooks* section + follow-up discussion. Grounded
 > in the real workflow it replaces — see Motivation.
 
 ---
@@ -275,8 +275,8 @@ Spike artifacts (throwaway): `scratchpad/nbspike/` — `setup.jl`, `ttfp.jl`, `b
 
 ## Cross-references
 
-- `docs/todo/python-audit-report.md` — Notebooks section (origin) + the Python-boundary context.
-- `docs/todo/julia-port-watchlist.md` — the porting discipline this feature complements.
+- `docs/prompts/python-audit-report.md` — Notebooks section (origin) + the Python-boundary context.
+- `docs/prompts/julia-port-watchlist.md` — the porting discipline this feature complements.
 - `docs/FUTURE.md` — Julia-native viewer (the GLMakie half of the Makie house convention).
 - `docs/ANALYSIS.md`, `docs/PLOTS.md` — the `/analysis` canvas (browser-side; NOT this).
 - `docs/OBJECTMODEL.md` — `project.json`, disk layout, project lock.
