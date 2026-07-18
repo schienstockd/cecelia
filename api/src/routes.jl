@@ -1078,6 +1078,10 @@ api_analysis_behaviour(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> behaviour_summary(p; image_uid = i, set_uid = s))
 api_analysis_clusters(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> cluster_summary(p; image_uid = i, set_uid = s))
+# GET /api/analysis/chains — the project's whiteboard chains: wired templates (node DAG) + recent runs.
+# Project-level (ignores image/set scope). Slice E.
+api_analysis_chains(req::HTTP.Request) =
+    _observer_summary_route(req, (p, _i, _s) -> chains_summary(p))
 
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:

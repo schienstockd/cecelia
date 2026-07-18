@@ -916,3 +916,25 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: analysis chains" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _ch(t) = api_analysis_chains(HTTP.Request("GET", "/api/analysis/chains" * t))
+    try
+        proj = create_project!(name = "api-chains", kind = "live")
+        Cecelia.save_chain_template!(proj, Cecelia.ChainTemplate("pipe",
+            [Cecelia.ChainNode(; id = "n1", fn = "segment.cellpose")], Cecelia.ChainEdge[]))
+        @test _ch("")[1] == 400                                              # missing projectUid
+        @test _ch("?projectUid=nope")[1] == 404
+        st, body = _ch("?projectUid=$(proj.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.projectUid == proj.uid && haskey(d, :runs)
+        @test d.templates[findfirst(t -> t.name == "pipe", d.templates)].nodes[1].fun == "segment.cellpose"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

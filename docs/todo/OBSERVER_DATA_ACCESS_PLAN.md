@@ -110,7 +110,13 @@ MCP-tool docstring**, not another copy of the plumbing:
   off-suite. HMM state/transition distributions + per-run cluster sizes/largestFrac/features. Reads obs via
   the canonical `as_df` reader (pop_df's "labels" pop drops obs) — a shared `_category_distribution` returns
   the per-category breakdown `category_dist_metrics` (aggregates-only) can't.
-- **E — Boards + chains** (`get_analysis_boards`, `get_chains`) — some folds into A.
+- **E — Boards + chains** (`get_analysis_boards`, `get_chains`) — chains ✅ **DONE** (`app/src/ai/chains.jl`,
+  `chains_summary`, `GET /api/analysis/chains`, MCP `get_chains`, allow-listed; pkg + api + mcp tests,
+  validated on the real "3P" chain). Returns the wired templates (node DAG + task fns) + recent runs with
+  node-outcome roll-ups — the intended pipeline + actual executions, which the run-log window can miss.
+  **Boards SKIPPED**: the board JSON is opaque at the Julia layer (plot/pop/measure semantics live only in
+  the frontend blob), so a board tool couldn't cheaply add more than lineage's tab names already do —
+  deferred until there's a concrete need + a frontend-side reader.
 
 ## Grounding (where the data lives)
 
