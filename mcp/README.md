@@ -38,6 +38,7 @@ mcp/
 | `get_cohort_qc(project_uid, set_uid, fun_name, value_name=None)` | `GET /api/qc/cohort` | per-set mean/SD + z-scored outliers over a task's banked metric; no `value_name` → `byValueName` map |
 | `get_analysis_lineage(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/lineage` | synthesized pipeline: per-image `steps` + seg/track/cluster/gating links, project chains/boards, roll-up |
 | `get_populations(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/populations` | per-image population definitions: tree + gate geometry / filter rule (defs only; counts are the measure slice) |
+| `get_measure_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/measures` | per-population phenotype (intensities+morphology) + motility summaries (median/quantiles/mean/n); gated pops else base |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
 | `get_recent_logs(level="", limit=100)` | `GET /api/logs/recent` | recent backend console lines (server `@info`/`@warn`/`@error`) — where a Julia-side task crash lands (not in `get_task_log`) |
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |

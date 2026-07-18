@@ -870,3 +870,26 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: analysis measures" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _meas(t) = api_analysis_measures(HTTP.Request("GET", "/api/analysis/measures" * t))
+    try
+        proj = create_project!(name = "api-measures", kind = "live")
+        s    = add_set!(proj; name = "set-A")
+        add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        @test _meas("")[1] == 400                                            # missing projectUid
+        @test _meas("?projectUid=nope")[1] == 404
+        # 200 + shape; no label props on disk → summaries empty (the deep read path is the pkg fixture test)
+        st, body = _meas("?projectUid=$(proj.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.projectUid == proj.uid && length(d.images) == 1
+        @test haskey(d.images[1], :summaries) && haskey(d.images[1], :truncated)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

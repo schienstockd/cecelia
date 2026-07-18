@@ -22,6 +22,10 @@ what's wired in a chain — call get_analysis_lineage(project[, image/set]) inst
 re-explain. Its `rollup.divergences` is the fast way to spot the odd image out (missing a stage the
 others ran, or excluded). For what a population actually MEANS — its gate geometry or filter rule, and
 where it sits in the tree — call get_populations(project[, image/set]) (definitions only; not counts).
+For what the cells/tracks actually LOOK like — channel intensities + morphology (phenotype) and track
+motility (speed/displacement/…), summarised per population — call get_measure_summary(project, image/set)
+(scope it; it reads cell data). It summarises the gated pops (the analysed cells), so "how bright is CD8
+in T/_qc" or "do the tracked B cells move slower" are answerable directly.
 
 ALWAYS check cohort QC for WHATEVER task(s) actually ran since you last looked — read get_task_history
 first, then call get_cohort_qc(project, set, fun) for the fun of each completed task. Check what RAN,

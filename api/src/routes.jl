@@ -1068,6 +1068,10 @@ api_analysis_lineage(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> analysis_lineage(p; image_uid = i, set_uid = s))
 api_analysis_populations(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> populations_summary(p; image_uid = i, set_uid = s))
+# GET /api/analysis/measures — per-population phenotype + motility summaries (gated pops, else the base
+# tracked/all-cells pop). Heavier (touches cell data via pop_df); prefer image/set scope. Slice C.
+api_analysis_measures(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> measure_summary(p; image_uid = i, set_uid = s))
 
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:

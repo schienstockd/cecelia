@@ -21,6 +21,25 @@ end
 # The identity header every per-image summary entry starts with, so builders don't each re-spell it.
 _observer_image_header(img::CciaImage) = (; uid = img.uid, name = img.name, included = image_included(img))
 
+# The gate/pop_type flavours a value_name can carry a persisted gating file for (flow/track = gate-drawn;
+# clust/trackclust = cluster pops). "live" derived pops (e.g. _tracked) are NOT persisted maps — they're
+# addressed directly through pop_df, not enumerated here.
+const _OBSERVER_POP_TYPES = ("flow", "track", "clust", "trackclust")
+
+# Iterate every persisted (non-transient) population on an image — `f(pop)` per pop, across the image's
+# segmentations × pop_type flavours. The shared enumerator for the population-based summary tools
+# (definitions AND measures), so the "walk the gating maps" loop lives once.
+function _observer_each_population(f::Function, img::CciaImage)
+    for v in sort(img_value_names(img)), pt in _OBSERVER_POP_TYPES
+        isfile(gating_path(img._dir, v; pop_type = pt)) || continue
+        m = load_pop_map(img; value_name = v, pop_type = pt)
+        for path in pop_paths(m)
+            p = pop_at(m, path); p.transient && continue
+            f(p)
+        end
+    end
+end
+
 # Map a per-image builder over the scope → `{projectUid, images}`. A tool that needs project-level
 # fields too (e.g. lineage's chains/boards/rollup) merges onto this base.
 observer_image_summary(proj::CciaProject, per_image::Function;
