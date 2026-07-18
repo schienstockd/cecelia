@@ -1037,16 +1037,20 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
-    # Cecelia authors a lab-log summary ONLY for docs that flagged (an all-clear would be noise; the
-    # toast covers that). Best-effort — a lab-log hiccup never fails the check. Author "Cecelia — …" so
-    # the append route treats it as a Cecelia digest (no observer re-broadcast).
+    # Cecelia authors a "Cohort check" lab-log entry ONLY for docs that flagged (an all-clear would be
+    # noise). This is the cross-image analysis — image NAMES, the metric, its value vs the cohort median
+    # — the durable record the amber button points at (no toast). Best-effort; a lab-log hiccup never
+    # fails the check. Author "Cecelia — …" so the append route treats it as a Cecelia entry.
+    name_by = Dict(img.uid => img.name for img in images(set))
+    name_of(uid) = get(name_by, string(uid), string(uid))
     log_flagged(docs) = begin
         flagged = [d for d in docs if d isa AbstractDict && Cecelia.cohort_has_outliers(d)]
         isempty(flagged) && return
         try
             proj = load_project(project_uid)
             for d in flagged
-                Cecelia.append_lab_log!(proj, "Cecelia — Cohort QC", Cecelia.cohort_qc_summary_lines(d))
+                Cecelia.append_lab_log!(proj, "Cecelia — Cohort check",
+                                        Cecelia.cohort_qc_summary_lines(d; name_of = name_of))
             end
         catch e
             @warn "cohort check: lab-log append failed" exception = e

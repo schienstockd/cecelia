@@ -751,6 +751,11 @@ end
         @test haskey(JSON3.read(bc), :byValueName)
         _check((; projectUid = proj.uid, setUid = s.uid, funName = "clustTracks.cluster"))
         @test isfile(joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort", "clustTracks.cluster", "B.json"))
+        # the cross-image detail lands in the lab log under a "[Cecelia — Cohort check]" entry, by image
+        # NAME (i1), with the label set and value-vs-median — not just a bare count
+        ll = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$(proj.uid)"))[2]).content
+        @test occursin("Cohort check", ll) && occursin("clustTracks.cluster (B)", ll)
+        @test occursin("i1 — nTracks", ll) && occursin("cohort median", ll)   # image NAME + detail
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
