@@ -60,11 +60,15 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
   Add per-image write-back under a **`cohort.*` fun namespace** (e.g. `cohort.segment.cellpose`) so it
   can't clobber the task's own `{uid}/qc/{fun}/{vn}.json` and surfaces automatically via `read_all_qc`.
 - Outlier → `warn` finding on that image (⚠️); non-outliers clear any prior cohort finding.
-- Tests: per-image cohort finding written to the `cohort.*` namespace; `read_all_qc` merges it.
+- **Compute/persist split** (a read must be safe): `cohort_qc`/`cohort_qc_for` = compute-only (the GET
+  path, writes nothing); `cohort_qc!`/`cohort_qc_for!` = compute + persist (sidecar + per-image). The
+  write path is the explicit **`POST /api/qc/cohort/check`** (backend of A3), NOT the GET.
+- Tests: read-only GET writes nothing; POST persists sidecar + per-image; per-image round-trip.
 
-### A3 — Cohort QC button + toast convention
-- "Check cohort consistency" button on module pages → `POST /api/qc/cohort/check?projectUid&setUid&funName`
-  → runs `cohort_qc_for!` for the stage, writes per-image findings (A2), appends a
+### A3 — Cohort QC button + toast convention — backend DONE (`POST /api/qc/cohort/check`), frontend TODO
+- **Backend done in A2**: `POST /api/qc/cohort/check {projectUid,setUid,funName[,valueName,threshold]}`
+  runs `cohort_qc_for!` (persist + per-image findings). Frontend remaining below.
+- "Check cohort consistency" button on module pages → POST the above → appends a
   `[Cecelia — Cohort QC]` lab-log summary line (✅ all-clear / ⚠️ N flagged).
 - Establish the toast convention ONCE: check whether PrimeVue `<Toast/>` is already in `App.vue`; if
   not, add it once + `useToast()`. Record in `INVENTORY.md` under a `UI conventions` section

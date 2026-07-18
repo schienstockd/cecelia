@@ -967,6 +967,40 @@ function api_qc_cohort(req::HTTP.Request)
     catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
+    # READ-ONLY: compute + return, write nothing (a GET must be safe). The write path — set sidecar +
+    # per-image cohort findings — is the explicit POST /api/qc/cohort/check below.
+    doc = try
+        cohort_qc_for(set, fun_name, value_name; threshold = thr)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(doc)
+end
+
+# POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
+# (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:
+# {projectUid, setUid, funName, valueName?, threshold?}. This is the ONLY cohort write path.
+function api_qc_cohort_check(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error = "Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, "")); set_uid = String(get(body, :setUid, ""))
+    fun_name    = String(get(body, :funName, ""))
+    (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
+        return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
+    haskey(COHORT_METRICS, fun_name) ||
+        return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
+                                   known = sort(collect(keys(COHORT_METRICS)))))
+    value_name = String(get(body, :valueName, VERSIONED_DEFAULT_VAL))
+    tv  = get(body, :threshold, nothing)
+    thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
+    set = try
+        obj = init_object(project_uid, set_uid)
+        obj isa CciaSet || error("Not a set: $set_uid")
+        obj
+    catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
+    end
     doc = try
         cohort_qc_for!(set, fun_name, value_name; threshold = thr)
     catch e

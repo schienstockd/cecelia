@@ -4339,6 +4339,13 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                          metrics = Dict{String,Any}("nCells" => n))
                 push!(set._images, img); push!(set.image_uids, uid)
             end
+            # READ-ONLY path (GET): computes outliers but writes NOTHING (no sidecar, no per-image)
+            ro = cohort_qc_for(set, "segment.measureLabels", "default")
+            @test haskey(ro["metrics"]["nCells"]["outliers"], "j")
+            @test !isfile(cohort_qc_path(set, "segment.measureLabels", "default"))
+            @test read_qc(set._images[findfirst(i -> i.uid == "j", set._images)],
+                          "cohort.segment.measureLabels", "default") === nothing
+            # PERSIST path (the check action): sidecar + per-image findings
             doc = cohort_qc_for!(set, "segment.measureLabels", "default")
             m = doc["metrics"]["nCells"]
             @test m["n"] == 10 && haskey(m["outliers"], "j") && !haskey(m["outliers"], "a")
