@@ -40,6 +40,7 @@ const observerModels = computed(() => observer.models)
 const observerSession = computed(() => observer.session)
 const observerNote = ref('')                 // last MANUAL pass verdict, shown in the report block
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
+const SHOW_ACTIVITY = false   // "Claude activity" list hidden for now (kept for easy re-enable)
 // Setup guidance: availability only means `claude` is on PATH — not logged in. Show install/login
 // steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
 const observerSetup = computed(() =>
@@ -303,9 +304,9 @@ async function toggleMute(category: string) {
       <div class="ll-observer-body">{{ observerNote }}</div>
     </div>
 
-    <!-- Claude activity log: every Ask-Claude pass, whether or not it wrote to the log — so a silent
-         "looked, nothing to flag" run is still visible, with its token cost. -->
-    <details v-if="observerAvailable && observerPasses.length" class="ll-activity">
+    <!-- Claude activity log: every Ask-Claude pass with its token cost. HIDDEN for now (SHOW_ACTIVITY)
+         — it has little use with Claude on-demand only; kept (not deleted) so it's easy to re-enable. -->
+    <details v-if="SHOW_ACTIVITY && observerAvailable && observerPasses.length" class="ll-activity">
       <summary>Claude activity ({{ observerPasses.length }})</summary>
       <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
         <div class="ll-pass-head">
@@ -314,12 +315,6 @@ async function toggleMute(category: string) {
         </div>
         <div v-if="p.note" class="ll-pass-note">{{ p.note }}</div>
       </div>
-    </details>
-
-    <!-- transparency: the exact prompt the observer runs under (read-only), collapsed like the log -->
-    <details v-if="observerAvailable && observer.prompt" class="ll-activity ll-prompt">
-      <summary>Observer prompt</summary>
-      <pre class="ll-prompt-body">{{ observer.prompt }}</pre>
     </details>
 
     <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
@@ -450,10 +445,6 @@ async function toggleMute(category: string) {
 }
 .ll-observer-body {
   font-size: 0.72rem; color: var(--cc-text); line-height: 1.45; white-space: pre-wrap;
-}
-.ll-prompt-body {
-  margin: 0.3rem 0 0; font-size: 0.66rem; color: var(--cc-text); line-height: 1.45;
-  white-space: pre-wrap; word-break: break-word; font-family: inherit;
 }
 /* Claude activity log — collapsible; shows each Ask-Claude pass, its cost + verdict, even when silent */
 .ll-activity {
