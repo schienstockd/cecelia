@@ -4327,6 +4327,19 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test occursin("below", cf["long"])
             cf2 = Cecelia._cohort_finding("nTracks", Dict{String,Any}("value"=>900.0,"relDev"=>0.8), 500.0)
             @test occursin("above", cf2["long"]) && cf2["detail"]["relDev"] == 0.8
+
+            # lab-log summary lines + has-outliers predicate (drives whether the check logs at all)
+            clean = Dict{String,Any}("funName"=>"segment.cellpose", "nIncluded"=>10,
+                "metrics"=>Dict("nCells"=>Dict{String,Any}("median"=>800.0,"outliers"=>Dict{String,Any}())))
+            @test !cohort_has_outliers(clean)
+            cl = cohort_qc_summary_lines(clean)
+            @test length(cl) == 1 && occursin("all 10", cl[1]) && startswith(cl[1], "✅")
+            flagged = Dict{String,Any}("funName"=>"segment.cellpose", "nIncluded"=>10,
+                "metrics"=>Dict("nCells"=>Dict{String,Any}("median"=>800.0,
+                    "outliers"=>Dict{String,Any}("j"=>Dict{String,Any}("value"=>100.0,"z"=>-5.2)))))
+            @test cohort_has_outliers(flagged)
+            fl = cohort_qc_summary_lines(flagged)
+            @test startswith(fl[1], "⚠️") && any(l -> occursin("j", l) && occursin("100", l), fl)
         end
 
         @testset "cohort round-trip (banked metrics → set sidecar)" begin

@@ -13,6 +13,7 @@ import ErrorConsole from './components/ErrorConsole.vue'
 import FloatingPanel from './components/FloatingPanel.vue'
 import ViewerPanel from './components/ViewerPanel.vue'
 import LabLogPanel from './components/LabLogPanel.vue'
+import Toast from 'primevue/toast'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -89,6 +90,7 @@ const bare = computed(() => route.meta.bare === true)
       <LabLogPanel />
     </FloatingPanel>
     <ErrorConsole />
+    <Toast position="bottom-right" />
   </div>
 </template>
 

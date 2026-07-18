@@ -65,7 +65,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
   write path is the explicit **`POST /api/qc/cohort/check`** (backend of A3), NOT the GET.
 - Tests: read-only GET writes nothing; POST persists sidecar + per-image; per-image round-trip.
 
-### A3 — Cohort QC button + toast convention — backend DONE (`POST /api/qc/cohort/check`), frontend TODO
+### A3 — Cohort QC button + toast convention — DONE (`feat/qc-cohort-button`)
 - **Backend done in A2**: `POST /api/qc/cohort/check {projectUid,setUid,funName[,valueName,threshold]}`
   runs `cohort_qc_for!` (persist + per-image findings). Frontend remaining below.
 - "Check cohort consistency" button on module pages → POST the above → appends a

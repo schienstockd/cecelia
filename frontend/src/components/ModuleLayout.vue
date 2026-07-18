@@ -47,6 +47,7 @@ import { isExcluded } from '../utils/inclusion'
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
+import CohortCheckButton from './CohortCheckButton.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import HintCallout from './HintCallout.vue'
@@ -275,6 +276,9 @@ const visibleUids = computed<string[]>(() =>
           <span class="no-set-hint" v-else>{{ noSetHint }}</span>
 
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
+            <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
+            <CohortCheckButton :module="module" :set-uid="activeSet.uid" />
+
             <!-- CSV export: the whole table, including excluded images + their notes -->
             <button class="filter-toggle" @click="exportCsv"
               v-tooltip.left="'Export the image table to CSV (includes excluded images and their notes)'">

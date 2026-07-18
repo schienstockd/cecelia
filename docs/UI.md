@@ -32,6 +32,21 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-console-bar-h` | `30px` | Collapsed console height |
 | `--cc-console-open-h` | `210px` | Expanded console height |
 
+### Toast notifications (transient foreground feedback)
+
+PrimeVue `<Toast />` is mounted once in `App.vue` (registered via `ToastService` in `main.ts`); call
+`useToast()` anywhere. **Do not add a second notification system.** Toast is for a foreground action
+the user just triggered and is waiting on (a cohort check, a longer save) — NOT for background
+scheduler progress (that's the task manager) nor for every lab-log entry (those badge). Severity maps
+to the traffic-light scale: `info` (in progress) · `success` (done, all-clear) · `warn` (done, findings)
+· `error` (failed). First consumer: `CohortCheckButton.vue`.
+
+The four notification surfaces — pick the one that fits, don't invent a fifth:
+- **Toast** — transient, auto-dismiss; a foreground op in progress / just done.
+- **Badge** — persistent "needs attention" (unseen lab-log entry, QC warning) until acknowledged.
+- **Lab log entry** — durable record, kept across sessions.
+- **Traffic light** — per-image summary state in the image table, always current.
+
 ### Severity (QC / traffic-light) — colour is never the only cue
 
 `--cc-sev-ok`/`--cc-sev-warn`/`--cc-sev-fail` are the ONE canonical severity palette

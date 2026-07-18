@@ -184,6 +184,31 @@ end
 Convenience: run `cohort_qc!` for the known metrics of `fun_name` (`COHORT_METRICS`). Errors if the
 fun isn't a known metric producer.
 """
+# Lab-log summary lines for a cohort-check result doc (PURE → unit-tested). Headline with a
+# severity symbol + one indented line per outlier (metric, value, median). `cohort_has_outliers`
+# says whether anything flagged, so the caller can skip logging an all-clear (the toast covers that).
+function cohort_has_outliers(doc::AbstractDict)
+    any(m -> (m isa AbstractDict) && !isempty(get(m, "outliers", Dict())),
+        values(get(doc, "metrics", Dict())))
+end
+
+function cohort_qc_summary_lines(doc::AbstractDict)
+    fun = string(get(doc, "funName", "?")); n = get(doc, "nIncluded", 0)
+    outs = String[]
+    for (mk, m) in get(doc, "metrics", Dict())
+        (m isa AbstractDict) || continue
+        med = get(m, "median", nothing)
+        for (uid, e) in get(m, "outliers", Dict())
+            val = (e isa AbstractDict) ? get(e, "value", nothing) : nothing
+            push!(outs, "  $(uid) — $(mk) $(val) (cohort median $(med))")
+        end
+    end
+    isempty(outs) ?
+        [severity_symbol("ok") * " $(fun): all $(n) image(s) within range"] :
+        vcat([severity_symbol("warn") * " $(fun): $(length(outs)) outlier(s) across $(n) image(s)"],
+             sort(outs))
+end
+
 function _cohort_keys(fun_name::AbstractString)
     ks = get(COHORT_METRICS, string(fun_name), nothing)
     isnothing(ks) &&
