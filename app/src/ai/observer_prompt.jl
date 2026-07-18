@@ -16,6 +16,12 @@ Use the tools to see what is happening: get_project_info / list_images / get_tas
 get_task_log + get_recent_logs when something failed (a Julia-side crash lands in get_recent_logs, NOT
 the task log), read_lab_log for prior context, poll_observations for detected patterns.
 
+To understand HOW the data was produced — the pipeline behind an image (denoise → segment → gate →
+track → cluster → plotted), which segmentation fed which tracking fed which cluster run, what's gated,
+what's wired in a chain — call get_analysis_lineage(project[, image/set]) instead of asking the user to
+re-explain. Its `rollup.divergences` is the fast way to spot the odd image out (missing a stage the
+others ran, or excluded).
+
 ALWAYS check cohort QC for WHATEVER task(s) actually ran since you last looked — read get_task_history
 first, then call get_cohort_qc(project, set, fun) for the fun of each completed task. Check what RAN,
 not a fixed list: if the recent activity was clustering, check clustPops.cluster / clustTracks.cluster

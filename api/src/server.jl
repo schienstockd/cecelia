@@ -210,6 +210,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_qc_cohort(req)
         elseif path == "/api/qc/cohort/runs"
             api_qc_cohort_runs(req)
+        elseif path == "/api/analysis/lineage"
+            api_analysis_lineage(req)
         elseif path == "/api/lablog"
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"
