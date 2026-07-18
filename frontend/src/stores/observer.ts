@@ -1,14 +1,14 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { observerApi, type ObserverSession } from '../utils/serviceApi'
-import { useTaskCompletionWatch } from '../composables/useTaskCompletionWatch'
 import { useSettingsStore } from './settings'
 import { useProjectMetaStore } from './projectMeta'
 
-// Owns the in-app observer state + the "Watch" auto-runner. It lives in a store (not inside
-// LabLogPanel) on purpose: the lab-log panel is `v-if`'d, so a WS subscription placed inside it dies
-// the moment the panel closes — which is exactly when Watch should still be running (and the sidebar
-// badge is for the closed-panel case). App.vue installs the auto-watch once, for the app lifetime.
+// Owns the in-app observer state. Claude is ON-DEMAND ONLY — the "Ask Claude" button runs a pass;
+// there is no auto-firing "Watch" (removed: most task completions had nothing worth flagging, so the
+// auto passes were token noise). Deterministic reporting is Cecelia's job (capture_context! digests +
+// QC), not Claude's. Lives in a store (not LabLogPanel, which is `v-if`'d) so state + the closed-panel
+// badge survive the panel closing.
 export const useObserverStore = defineStore('observer', () => {
   const settings = useSettingsStore()
   const pm = useProjectMetaStore()
@@ -30,14 +30,14 @@ export const useObserverStore = defineStore('observer', () => {
     session.value = s.session ?? null
   }
 
-  // Run one observer pass (manual button or auto Watch). Records + returns the pass; on a real append
-  // it bumps appendTick and, if the panel is closed, lights the sidebar badge with a one-line preview.
-  async function runPass(trigger: 'manual' | 'auto') {
+  // Run one observer pass (the on-demand "Ask Claude" button). Records + returns the pass; on a real
+  // append it bumps appendTick and, if the panel is closed, lights the sidebar badge with a preview.
+  async function runPass() {
     const uid = projectUid()
     if (!uid || busy.value || !available.value) return null
     busy.value = true
     try {
-      const res = await observerApi.feedback(uid, settings.labLogObserverModel, trigger)
+      const res = await observerApi.feedback(uid, settings.labLogObserverModel, 'manual')
       if (res?.available === false) { available.value = false; return res }
       if (res?.session) session.value = res.session
       if (res?.appended) {
@@ -57,13 +57,5 @@ export const useObserverStore = defineStore('observer', () => {
     session.value = res?.session ?? null
   }
 
-  // "Watch": run an auto pass after a task finishes. POLICY only — the subscribe/debounce MECHANISM
-  // is the shared useTaskCompletionWatch backbone (so a future background watcher reuses it).
-  const watcher = useTaskCompletionWatch({
-    enabled: () => settings.labLogObserverAuto && available.value && !busy.value && !!projectUid(),
-    onComplete: () => runPass('auto'),
-  })
-  const installAutoWatch = () => watcher.install()
-
-  return { available, models, prompt, session, busy, appendTick, refresh, runPass, clear, installAutoWatch }
+  return { available, models, prompt, session, busy, appendTick, refresh, runPass, clear }
 })
