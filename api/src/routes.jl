@@ -1170,6 +1170,9 @@ function api_images_meta_set(body_bytes::Vector{UInt8})
                 zarr_path = img_filepath(img, VERSIONED_DEFAULT_VAL)
                 (isnothing(zarr_path) || !isdir(zarr_path)) ||
                     Cecelia.sync_zarr_calibration!(zarr_path, fields)
+                # recompute calibration QC from the saved meta so a fixed image clears its warning
+                # (or a bad edit re-flags it) — the image-table indicator reads this, not the payload.
+                Cecelia.write_metadata_qc!(img)
             end
         end
     end
@@ -1389,6 +1392,22 @@ function _meta_str(meta::AbstractDict, key::String)
     isnothing(v) ? nothing : string(v)
 end
 
+# QC docs for the payload. Persisted sidecars (read_all_qc) PLUS a fallback calibration doc computed
+# live from the current meta when none is persisted yet — so images imported before metadata QC was
+# banked still show their calibration warnings in the table (and a `write_metadata_qc!` on the next
+# import/resync/edit persists the same thing for MCP/lab-log/whiteboard). Persisted wins when present
+# (it's kept fresh by the wired edit paths), so a future richer importImages.omezarr doc isn't clobbered.
+function _image_qc_payload(img::CciaImage)
+    docs = Cecelia.read_all_qc(img)
+    key  = "importImages.omezarr/" * Cecelia.VERSIONED_DEFAULT_VAL
+    if !haskey(docs, key)
+        docs[key] = Dict{String,Any}("funName" => "importImages.omezarr",
+            "valueName" => Cecelia.VERSIONED_DEFAULT_VAL,
+            "findings" => Cecelia.metadata_qc_findings(img.meta))
+    end
+    docs
+end
+
 # Frontend-shaped payload for one image, sourced from the model. Response shaping
 # (camelCase, field selection) is the API's job; data access goes through CciaImage
 # so ccid.json parsing has a single home.
@@ -1433,8 +1452,9 @@ function _image_payload(img::CciaImage)
         included        = img.included,
         note            = img.note,
         # QC findings per "funName/valueName" (docs/todo/QC_PLAN.md) — advisory "output looks off"
-        # flags the GUI renders as a badge + tooltip. Empty dict when a task has emitted none.
-        qc              = read_all_qc(img),
+        # flags the GUI renders as a badge + tooltip. Includes the live calibration fallback so
+        # pre-migration images still surface metadata warnings (see _image_qc_payload).
+        qc              = _image_qc_payload(img),
         # automatic provenance: which task functions ran on this image + when ({fun, valueName, at});
         # the image table shows it in a cog popover after the uid. Appended by the scheduler on success.
         runLog          = read_run_log(img),

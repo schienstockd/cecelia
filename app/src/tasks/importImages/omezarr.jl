@@ -433,6 +433,7 @@ function resync_ome_meta!(img::CciaImage)::Bool
     zarr_meta = read_ome_metadata(zarr_path)
     isempty(zarr_meta) && return false
     _merge_zarr_meta_into_ccid!(img, zarr_meta; overwrite = false)
+    write_metadata_qc!(img)     # recompute calibration QC from the refreshed meta
     true
 end
 
@@ -547,6 +548,9 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     _merge_zarr_meta_into_ccid!(img, zarr_meta;
                                 zarr_filename = basename(zarr_out),
                                 value_name    = value_name)
+    # bank calibration QC (missing/untrustworthy physical sizes) — the single source the image-table
+    # indicator, whiteboard, lab log and MCP all read (replaces the frontend's own re-derivation).
+    write_metadata_qc!(img)
 
     merge(zarr_meta, Dict{String,Any}(
         "valueName" => value_name,

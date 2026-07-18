@@ -873,13 +873,16 @@ th:hover .resize-handle::after { opacity: 1; }
 .name-row .cell-text { flex: 1; min-width: 0; }
 
 /* always visible when flagged — impossible-to-miss, sits in front of the name */
+/* Calibration warning icon (metadata.* findings) → click to fix. Warn severity token (colour-blind
+   palette); the shape-distinct triangle icon carries the meaning, colour is secondary. */
 .warn-icon-btn {
   flex-shrink: 0; background: none; border: none; cursor: pointer;
-  color: #fbbf24; font-size: 0.75rem; padding: 0.1rem; line-height: 1;
+  color: var(--cc-sev-warn); font-size: 0.75rem; padding: 0.1rem; line-height: 1;
 }
-.warn-icon-btn:hover { color: #fcd34d; }
+.warn-icon-btn:hover { filter: brightness(1.2); }
 
-/* QC badge — advisory "output looks off" flag; distinct from the metadata warning icon. */
+/* QC badge — advisory "output looks off" flag (non-metadata findings; distinct from the calibration
+   warning icon). Uses the canonical severity tokens. */
 .qc-badge {
   flex-shrink: 0; display: inline-flex; align-items: center; gap: 0.2rem;
   font-size: 0.6rem; font-weight: 700; letter-spacing: 0.04em;
@@ -887,7 +890,7 @@ th:hover .resize-handle::after { opacity: 1; }
   border: 1px solid transparent;
 }
 .qc-badge .pi { font-size: 0.62rem; }
-.qc-badge.warn { color: #fbbf24; background: #7c2d1233; border-color: #f59e0b55; }
+.qc-badge.warn { color: var(--cc-sev-warn); background: color-mix(in srgb, var(--cc-sev-warn) 15%, transparent); border-color: color-mix(in srgb, var(--cc-sev-warn) 40%, transparent); }
 .qc-badge.info { color: var(--cc-text-dim); background: var(--cc-surface-2); border-color: var(--cc-border); }
 
 /* excluded badge — persistent "this image is excluded" pill; carries the note as its tooltip */

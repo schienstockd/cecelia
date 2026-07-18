@@ -4209,6 +4209,35 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             _, pf = Cecelia._segment_qc_findings(Dict("nuc" => 5))
             @test pf == 5
 
+            # metadata calibration findings (port of the old frontend fieldIssues) — codes + field
+            codes(fs) = [f["code"] for f in fs]; fields(fs) = [f["detail"]["field"] for f in fs]
+            # clean 3D timelapse with units → nothing
+            @test isempty(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"SizeT"=>5,
+                "PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeZ"=>2.0,"PhysicalSizeUnit"=>"micron",
+                "TimeIncrement"=>30.0,"TimeIncrementUnit"=>"second")))
+            # z stack, no z spacing → z_spacing_unknown
+            @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeUnit"=>"micron"))) ==
+                  ["metadata.z_spacing_unknown"]
+            # auto-corrected z (PhysicalSizeZ_raw marker) → z_spacing_corrected
+            @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeZ"=>2.0,
+                "PhysicalSizeUnit"=>"micron","PhysicalSizeZ_raw"=>99.0))) == ["metadata.z_spacing_corrected"]
+            # unusual z:xy ratio (100:1 > 50) → z_spacing_unusual
+            @test codes(Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>1.0,"PhysicalSizeZ"=>100.0,
+                "PhysicalSizeUnit"=>"micron"))) == ["metadata.z_spacing_unusual"]
+            # timelapse, no interval → frame_interval_unknown; string values coerce
+            @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>"8","PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,
+                "PhysicalSizeUnit"=>"micron"))) == ["metadata.frame_interval_unknown"]
+            # interval present, no unit → frame_interval_no_unit
+            @test codes(Cecelia.metadata_qc_findings(Dict("SizeT"=>8,"TimeIncrement"=>30.0,
+                "PhysicalSizeX"=>0.5,"PhysicalSizeUnit"=>"micron"))) == ["metadata.frame_interval_no_unit"]
+            # no spatial unit, x+y+z present (2D-safe: SizeZ=1 so no z-spacing case) → three no-unit (x,y,z)
+            fu = Cecelia.metadata_qc_findings(Dict("PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5,"PhysicalSizeZ"=>2.0))
+            @test all(==("metadata.pixel_size_no_unit"), codes(fu)) && fields(fu) == ["x","y","z"]
+            # z-spacing case suppresses the z no-unit dup (z already flagged)
+            fz = Cecelia.metadata_qc_findings(Dict("SizeZ"=>10,"PhysicalSizeX"=>0.5,"PhysicalSizeY"=>0.5))
+            @test codes(fz) == ["metadata.z_spacing_unknown","metadata.pixel_size_no_unit","metadata.pixel_size_no_unit"]
+            @test fields(fz) == ["z","x","y"]     # no second z entry
+
             # severity symbols: shape-distinct (✅/⚠️/❌), NOT same-shape circles; unknown → ""
             @test Cecelia.severity_symbol("ok")   == "✅"
             @test Cecelia.severity_symbol("warn") == "⚠️"
