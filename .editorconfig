@@ -1,0 +1,25 @@
+# https://editorconfig.org — consistent whitespace across editors.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# Julia and Python — 4 spaces
+[*.{jl,py}]
+indent_size = 4
+
+# Frontend (Vue, TypeScript, JS) and structured config — 2 spaces
+[*.{vue,ts,js,mjs,cjs,json,yml,yaml,toml}]
+indent_size = 2
+
+# Markdown — keep trailing whitespace (two spaces = hard line break)
+[*.md]
+trim_trailing_whitespace = false
+
+# Makefiles require real tabs
+[Makefile]
+indent_style = tab
