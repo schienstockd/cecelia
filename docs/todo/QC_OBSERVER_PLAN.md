@@ -81,7 +81,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
   Claude (+ model picker, activity log, prompt display). The generic `useTaskCompletionWatch`
   composable STAYS — repurposed by B2.
 
-### B2 — Cecelia automatic summaries (enriched) + completion triggers
+### B2 — Cecelia automatic summaries (enriched) + completion triggers — DONE (B2a `feat/cecelia-digest-severity`, B2b `feat/cecelia-auto-summaries`)
 - Enrich `capture_context!` (`lab_log_context.jl`) line rendering with a leading symbol per module:
   ❌ if any run failed, ⚠️ if that module produced `warn` QC findings this window, else ✅. (Failure
   counts are already captured — `— N failed`.)

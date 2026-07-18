@@ -9,6 +9,11 @@ import ConfirmButton from './ConfirmButton.vue'
 
 const projectMeta = useProjectMetaStore()
 const settings = useSettingsStore()
+// lab-log badge: Cecelia digests colour by severity (⚠️/❌); Claude notes keep the accent tint.
+const labLogBadgeStyle = computed(() =>
+  settings.labLogUnseenLevel === 'fail' ? { color: 'var(--cc-sev-fail)' }
+  : settings.labLogUnseenLevel === 'warn' ? { color: 'var(--cc-sev-warn)' }
+  : {})
 const appCtl = useAppControlStore()
 const customModules = useCustomModulesStore()
 const showPanel = ref(false)
@@ -197,12 +202,15 @@ function isNavDisabled(item: NavItem): boolean {
             style="margin-top: 0.4rem"
             @click="settings.labLogPanelOpen = !settings.labLogPanelOpen"
             v-tooltip.right="settings.labLogUnseen
-              ? ('Claude noted: ' + settings.labLogUnseen)
+              ? ((settings.labLogUnseenKind === 'cecelia' ? 'Cecelia: ' : 'Claude noted: ') + settings.labLogUnseen)
               : 'Lab log: append-only analysis notes for this project (you + Claude). Floating panel — drag it anywhere.'">
       <i class="pi pi-book viewer-cta-icon" />
       <span class="viewer-cta-title">Lab log</span>
-      <!-- badge: Claude added something while the panel was closed (cleared on open) -->
-      <i v-if="settings.labLogUnseen" class="pi pi-sparkles lablog-badge" />
+      <!-- badge: Claude (sparkles) or Cecelia (bell, coloured by severity) added something while the
+           panel was closed (cleared on open) -->
+      <i v-if="settings.labLogUnseen"
+         :class="['pi', settings.labLogUnseenKind === 'cecelia' ? 'pi-bell' : 'pi-sparkles', 'lablog-badge']"
+         :style="labLogBadgeStyle" />
       <i :class="['pi', settings.labLogPanelOpen ? 'pi-eye' : 'pi-eye-slash', 'viewer-cta-state']" />
     </button>
 

@@ -42,6 +42,8 @@ export const useObserverStore = defineStore('observer', () => {
         appendTick.value++
         if (!settings.labLogPanelOpen && res.appendedLine) {
           settings.labLogUnseen = String(res.appendedLine).replace(/^[-*]\s*/, '').trim()
+          settings.labLogUnseenKind = 'claude'   // sparkles badge (Cecelia digests use the bell)
+          settings.labLogUnseenLevel = ''
         }
       }
       return res

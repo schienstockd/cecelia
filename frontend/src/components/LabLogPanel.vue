@@ -9,6 +9,7 @@ import { isAuthError, observerSetupReason } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useObserverStore } from '../stores/observer'
+import { useLabCaptureStore } from '../stores/labCapture'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
@@ -34,6 +35,7 @@ const mode = computed(() => settings.labLogMode)
 // AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
+const labCapture = useLabCaptureStore()
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
 const observerModels = computed(() => observer.models)
@@ -83,29 +85,24 @@ async function load() {
   }
 }
 
-// Append an auto-generated [Cecelia] activity digest. `silent` (auto-on-open) suppresses the
-// "nothing new" note. Returns whether anything was captured.
+// Manual "Capture activity" button + auto-on-open. Routes through the labCapture store (which owns
+// the POST, the sidebar badge, and the app-lifetime auto-capture); the entries reload via the
+// captureTick watch below. `silent` (auto-on-open) suppresses the "nothing new" note.
 async function capture(silent = false) {
   if (!projectUid.value || capturing.value) return
   capturing.value = true
-  error.value = ''
   if (!silent) captureNote.value = ''
   try {
-    const r = await fetch('/api/lablog/capture', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value }),
-    })
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    const body = await r.json()
-    entries.value = body.entries ?? entries.value
-    if (!silent) captureNote.value = body.captured ? 'Captured recent activity.' : 'No new activity.'
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    const body = await labCapture.capture()
+    if (body && !silent) captureNote.value = body.captured ? 'Captured recent activity.' : 'No new activity.'
   } finally {
     capturing.value = false
   }
 }
+
+// Reload entries whenever a capture appends — manual, auto-on-open, OR the app-lifetime auto-capture
+// firing while this panel is open (the store bumps captureTick).
+watch(() => labCapture.captureTick, () => { if (projectUid.value) load() })
 
 // Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP. The
 // store owns the run (+ session/tokens/badge); the panel just shows the verdict and reloads on append.
@@ -262,7 +259,7 @@ async function toggleMute(category: string) {
               v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
         <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
       </button>
-      <label class="ll-auto" v-tooltip.top="'Automatically capture activity when this project opens'">
+      <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
         <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
       </label>
       <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
