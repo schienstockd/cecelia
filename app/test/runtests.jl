@@ -412,7 +412,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         for im in (iS1, iS2, iS3); append_run_log!(im, "behaviour.hmm_states", "default"); end
         for im in (iS1, iS2)      # only 2 of the 3 get a warn
             write_qc(im, "behaviour.hmm_states", "default",
-                     [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"s","long"=>"l")])
+                     [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"Collapsed to one state","long"=>"l")])
         end
         sev = capture_context!(projS)
         @test sev !== nothing
@@ -420,6 +420,10 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test occursin("⚠️ Tracking", sev)     # track_measures produced a warn finding
         @test occursin("hmm_states on 3 images — 2 flagged", sev)   # count of flagged images, not just "≥1"
         @test !occursin("(3 images)", sev)     # redundant parenthetical dropped for >2 images
+        # the ACTUAL finding text is spelled out per flagged image (↳ image — what's wrong), not just a count
+        @test occursin("↳ s-1 — Collapsed to one state", sev)
+        @test occursin("↳ s-2 — Collapsed to one state", sev)
+        @test !occursin("↳ s-3", sev)          # the un-flagged image has no detail line
 
         # new activity strictly after the cutoff → a fresh digest that doesn't repeat old activity
         sleep(1)   # run-log timestamps are second-granular; ensure a strictly-later `at`
