@@ -73,6 +73,19 @@ Each = a read-only `/api` route + an MCP tool returning aggregates (+ caps):
 | `get_chains` | E | whiteboard chain templates (which tasks wired) |
 | *(spatial)* | *future* | neighbourhood / proximity summaries — **not yet ported**; leave the slot, don't build |
 
+## Shared scaffold (reuse — do NOT re-duplicate per slice)
+
+Every summary tool has the same shape (scope to image/set/project → per-image map → `{projectUid,
+images}`), so that shape lives once at each layer; a new slice is just its **per-image builder + one
+MCP-tool docstring**, not another copy of the plumbing:
+
+- **Julia** — `observer_image_summary(proj, per_image_fn; image_uid, set_uid)` + `_observer_scope_images`
+  + `_observer_image_header` in `app/src/ai/observer_summary.jl`. (`analysis_lineage` merges project-level
+  chains/boards/rollup onto the base; `populations_summary` is just the scaffold.)
+- **API** — `_observer_summary_route(req, build)` in `api/src/routes.jl`; each route is one line.
+- **MCP client** — `CeceliaClient._analysis_summary(path, …)`; each method is one line. The MCP **tools**
+  stay separate (their rich docstrings are the model-facing interface).
+
 ## Build slices (each shippable)
 
 - **A — Lineage** (`get_analysis_lineage`). Highest value, lightest data. ✅ **DONE** — `app/src/ai/lineage.jl`

@@ -1041,30 +1041,11 @@ function api_qc_cohort_runs(req::HTTP.Request)
     200, JSON3.write((; funName = fun_name, runs = runs))
 end
 
-# GET /api/analysis/lineage?projectUid[&imageUid][&setUid] — the synthesized analysis lineage: per
-# image the ordered pipeline steps + segmentation/track/cluster/gating links, plus project chains,
-# board tabs and a set-level roll-up. READ-ONLY, summary-level (see analysis_lineage / Slice A of
-# OBSERVER_DATA_ACCESS_PLAN). Lets the observer understand HOW the data was produced without the user
-# re-explaining the workflow each session.
-function api_analysis_lineage(req::HTTP.Request)
-    q = HTTP.queryparams(HTTP.URI(req.target))
-    project_uid = get(q, "projectUid", "")
-    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
-    proj = try load_project(project_uid) catch e
-        return 404, JSON3.write((; error = sprint(showerror, e)))
-    end
-    lin = try
-        analysis_lineage(proj; image_uid = get(q, "imageUid", ""), set_uid = get(q, "setUid", ""))
-    catch e
-        return 500, JSON3.write((; error = sprint(showerror, e)))
-    end
-    200, JSON3.write(lin)
-end
-
-# GET /api/analysis/populations?projectUid[&imageUid][&setUid] — per-image population DEFINITIONS
-# (tree + gate/filter specs), the detail behind the lineage's gatedPops. READ-ONLY, cheap (sidecar
-# read only; membership counts are Slice C). See populations_summary / OBSERVER_DATA_ACCESS_PLAN.
-function api_analysis_populations(req::HTTP.Request)
+# Shared GET handler for the observer's project-scoped summary routes (analysis/*): parse projectUid +
+# optional image/set scope, load the project (404), run `build(proj, image_uid, set_uid)` (500), return
+# JSON. Each route is then a one-liner over its builder — the same consolidation as the Julia
+# `observer_image_summary` scaffold and the MCP `_analysis_summary` client helper.
+function _observer_summary_route(req::HTTP.Request, build::Function)
     q = HTTP.queryparams(HTTP.URI(req.target))
     project_uid = get(q, "projectUid", "")
     isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
@@ -1072,12 +1053,21 @@ function api_analysis_populations(req::HTTP.Request)
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
     out = try
-        populations_summary(proj; image_uid = get(q, "imageUid", ""), set_uid = get(q, "setUid", ""))
+        build(proj, get(q, "imageUid", ""), get(q, "setUid", ""))
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
     200, JSON3.write(out)
 end
+
+# GET /api/analysis/lineage — synthesized pipeline (steps + seg/track/cluster/gating links, chains,
+# boards, rollup). GET /api/analysis/populations — the gate/filter DEFINITIONS behind lineage's
+# gatedPops. Both READ-ONLY, summary-level. See analysis_lineage / populations_summary and Slices A/B
+# of OBSERVER_DATA_ACCESS_PLAN.
+api_analysis_lineage(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> analysis_lineage(p; image_uid = i, set_uid = s))
+api_analysis_populations(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> populations_summary(p; image_uid = i, set_uid = s))
 
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:

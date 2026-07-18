@@ -166,6 +166,7 @@ include("napari.jl")
 include("ai/observer_prompt.jl")
 include("ai/agent_runner.jl")
 include("ai/observer_session.jl")
+include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
 export analysis_lineage, populations_summary

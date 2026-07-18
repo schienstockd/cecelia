@@ -4595,10 +4595,17 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test length(lin.chains) == 1 && lin.chains[1].name == "pipeline"
             @test Set(lin.chains[1].tasks) == Set(["segment.cellpose", "tracking.bayesian_tracking"])
             @test lin.boards == ["Behaviour", "Counts"]
-            # rollup: common pipeline in canonical order; i2 diverges (excluded + missing track/cluster)
-            @test lin.rollup.pipeline == ["import", "segment", "track", "cluster"]
+            # rollup: pipeline unions run-log steps AND artifact evidence, so i1's gated pop adds a
+            # "gate" stage even though gating isn't a task step. i2 diverges (excluded + missing the
+            # track/gate/cluster stages the others reached).
+            @test lin.rollup.pipeline == ["import", "segment", "track", "gate", "cluster"]
             dv = lin.rollup.divergences[findfirst(d -> d.uid == "i2", lin.rollup.divergences)]
-            @test dv.included == false && Set(dv.missingStages) == Set(["track", "cluster"])
+            @test dv.included == false && Set(dv.missingStages) == Set(["track", "gate", "cluster"])
+            # artifact-aware stages: a segmentation/track with NO run-log step still counts as reached
+            # (it predates the capped run-log window) — the fix for false "missing segment" divergences
+            noStep = (; uid = "x", name = "X", included = true, steps = NamedTuple[],
+                        segmentations = ["A"], tracked = ["A"], clusterRuns = Any[], gatedPops = Any[])
+            @test Set(Cecelia._image_stages(noStep)) == Set(["segment", "track"])
             # scoping: one image, one set, unknown → empty
             @test length(analysis_lineage(proj; image_uid = "i1").images) == 1
             @test length(analysis_lineage(proj; set_uid = "linS").images) == 2

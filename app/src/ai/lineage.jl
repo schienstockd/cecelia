@@ -71,7 +71,7 @@ end
 function _image_lineage(img::CciaImage)
     segs    = sort(img_value_names(img))                                      # segmentations (label_props keys), stable order
     tracked = String[v for v in segs if isfile(img_track_props_path(img, v))]  # those with a __tracks table
-    (; uid = img.uid, name = img.name, included = image_included(img),
+    (; _observer_image_header(img)...,
        steps         = _run_log_steps(img),
        segmentations = segs,
        tracked       = tracked,
@@ -109,11 +109,25 @@ function _board_tabs(proj::CciaProject)
     names
 end
 
-# Set-level roll-up: the common pipeline (every stage anyone ran, in canonical order) and where images
-# diverge from it — an image missing a stage the others ran, or one that's excluded. Ties to #9.
+# The stages an image reached — from run-log steps UNION artifact evidence. A stage counts as present
+# if a dated step OR a produced artifact shows it (segmentations→segment, tracked→track, clusterRuns→
+# cluster, gatedPops→gate). This matters because the run log is a recent, capped window: a segmentation
+# or tracking that predates it leaves no step but its artifacts persist, so a step-only rollup would
+# false-flag "missing segment/track" on images that plainly have them.
+function _image_stages(e)
+    st = String[s.stage for s in e.steps]
+    isempty(e.segmentations) || push!(st, "segment")
+    isempty(e.tracked)       || push!(st, "track")
+    isempty(e.clusterRuns)   || push!(st, "cluster")
+    isempty(e.gatedPops)     || push!(st, "gate")
+    unique(st)
+end
+
+# Set-level roll-up: the common pipeline (every stage anyone reached, in canonical order) and where
+# images diverge from it — an image missing a stage the others reached, or one that's excluded. Ties to #9.
 function _lineage_rollup(entries::AbstractVector)
     isempty(entries) && return (; pipeline = String[], divergences = Any[])
-    seqs = Dict(e.uid => unique(String[s.stage for s in e.steps]) for e in entries)
+    seqs = Dict(e.uid => _image_stages(e) for e in entries)
     pipeline = _stage_order(unique(vcat(values(seqs)...)))
     divergences = Any[]
     for e in entries
@@ -122,18 +136,6 @@ function _lineage_rollup(entries::AbstractVector)
             push!(divergences, (; uid = e.uid, name = e.name, included = e.included, missingStages = miss))
     end
     (; pipeline = pipeline, divergences = divergences)
-end
-
-# The images a lineage call covers: one image, one set, or the whole project.
-function _lineage_images(proj::CciaProject, image_uid::AbstractString, set_uid::AbstractString)
-    if !isempty(image_uid)
-        i = findfirst(im -> im.uid == image_uid, images(proj))
-        return isnothing(i) ? CciaImage[] : [images(proj)[i]]
-    elseif !isempty(set_uid)
-        s = findfirst(st -> st.uid == set_uid, sets(proj))
-        return isnothing(s) ? CciaImage[] : images(sets(proj)[s])
-    end
-    images(proj)
 end
 
 """
@@ -145,10 +147,9 @@ project-level `chains` (wired templates) and `boards` (tab names) and a `rollup`
 divergences). Summary-level only (names/counts/order), read-only. See OBSERVER_DATA_ACCESS_PLAN.md.
 """
 function analysis_lineage(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "")
-    entries = [_image_lineage(img) for img in _lineage_images(proj, image_uid, set_uid)]
-    (; projectUid = proj.uid,
-       images  = entries,
-       chains  = _chain_summaries(proj),
-       boards  = _board_tabs(proj),
-       rollup  = _lineage_rollup(entries))
+    base = observer_image_summary(proj, _image_lineage; image_uid = image_uid, set_uid = set_uid)
+    (; base...,                                # projectUid, images
+       chains = _chain_summaries(proj),
+       boards = _board_tabs(proj),
+       rollup = _lineage_rollup(base.images))
 end
