@@ -4647,7 +4647,8 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @testset "measure summary (Slice C)" begin
             # pure summary logic (always runs): median/quantiles/mean over finite values, NaN/missing dropped
             s = Cecelia._summarise_measure("x", Any[1.0, 2.0, 3.0, NaN, missing])
-            @test s.n == 3 && s.median == 2.0 && s.mean == 2.0 && s.q25 <= 2.0 <= s.q75
+            @test s.n == 3 && s.median == 2.0 && s.q25 <= 2.0 <= s.q75    # mean dropped (payload trim)
+            @test !hasproperty(s, :mean)
             @test Cecelia._summarise_measure("y", Any[NaN, missing]) === nothing
 
             # integration over the real KDIeEm B fixture: UNGATED image → the base fallback (all-cells
@@ -4709,6 +4710,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 b = behaviour_summary(proj); c = cluster_summary(proj)
                 @test length(b.images) == 1 && b.images[1].behaviour isa AbstractVector
                 @test length(c.images) == 1 && c.images[1].clusters isa AbstractVector
+                @test haskey(c, :featuresByRun)   # feature lists hoisted out of per-image entries
                 # every behaviour entry is a well-formed distribution
                 for e in b.images[1].behaviour
                     @test e.kind in ("state", "transitions") && e.n > 0 && !isempty(e.distribution)

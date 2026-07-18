@@ -229,9 +229,10 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
     Per image, `clusters` is a list, one entry per (segmentation × run):
       `{valueName, suffix, granularity: cell|track, nClusters, n, largestFrac, sizes: [{value, n,
-      fraction}], features}`.
+      fraction}]}`, and a top-level `featuresByRun: {suffix => features}`.
       - `suffix` is the run id (e.g. "movement"/"test"); `granularity` "cell" = clustPops, "track" =
-        clustTracks. `features` is the measure list the run clustered on.
+        clustTracks. The measure list a run clustered on is in `featuresByRun[suffix]` (same for every
+        image, so it's given once — not repeated per entry).
       - `largestFrac` near 1.0 (one cluster swallowing most points) or a very low `nClusters` vs peers
         means a near-uninformative / collapsed clustering for that image — worth flagging.
     Summary-level (sizes, not raw cluster assignments). Reads current on-disk state."""
