@@ -1,0 +1,51 @@
+cff-version: 1.2.0
+message: >-
+  If you use Cecelia Pineapple in your research, please cite both the software
+  (this record) and the original Cecelia paper (see preferred-citation).
+title: "Cecelia Pineapple"
+abstract: >-
+  A Julia package with a graphical interface for cellular image cytometry —
+  import, segmentation, tracking, gating, behavioural analysis, and clustering
+  of multiplexed and live-cell microscopy data. A ground-up reimplementation of
+  the original R/Shiny Cecelia in a Julia + Python + Vue stack.
+type: software
+authors:
+  - given-names: Dominik
+    family-names: Schienstock
+    orcid: "https://orcid.org/0000-0001-8440-0009"
+    affiliation: "Garvan Institute of Medical Research"
+license: GPL-3.0-or-later
+repository-code: "https://github.com/schienstockd/cecelia"
+url: "https://github.com/schienstockd/cecelia"
+version: 0.1.0-rc8
+date-released: 2026-07-16
+keywords:
+  - microscopy
+  - image-analysis
+  - cell-tracking
+  - cytometry
+  - segmentation
+  - napari
+  - julia
+  - bioinformatics
+preferred-citation:
+  type: article
+  title: "Cecelia: a multifunctional image analysis toolbox for decoding spatial cellular interactions and behaviour"
+  authors:
+    - given-names: Dominik
+      family-names: Schienstock
+      orcid: "https://orcid.org/0000-0001-8440-0009"
+    - given-names: Jyh Liang
+      family-names: Hor
+    - given-names: Sapna
+      family-names: Devi
+    - given-names: Scott N.
+      family-names: Mueller
+      orcid: "https://orcid.org/0000-0002-3838-3989"
+  journal: "Nature Communications"
+  year: 2025
+  month: 2
+  volume: 16
+  issue: 1
+  article-number: 1931
+  doi: 10.1038/s41467-025-57193-y
