@@ -113,6 +113,51 @@ plot — a `plotDefinitions/*.json` registry id (e.g. `segment.cellposeMeasure` 
 `segment.measureLabels` → `"segmentation_qc"`). The whiteboard Live view then auto-shows a QC
 thumbnail for that node (see `docs/SCHEDULER.md` → *Live QC row*); no other wiring needed.
 
+### QC — REQUIRED for every new task
+
+**Every task that produces a result must emit sensible QC.** This is a hard convention, not a
+nice-to-have: QC is how the image-table indicator, the chain whiteboard, the lab log and the AI
+observer all learn "this ran, and here's whether the output looks right." A task with no QC is
+invisible to all of them. QC is **advisory** — it never fails or gates a task (`level ∈ info|warn`,
+never `error`; the run either succeeded or it didn't, separately). See `docs/ai-assist/QC-PROCESS.md`
+and the traffic-light model in `docs/todo/QC_OBSERVER_PLAN.md`.
+
+After the work succeeds, bank two things through `write_qc` (`app/src/qc.jl`) — the one canonical
+writer, never a hand-rolled sidecar:
+
+1. **Objective metric(s)** — a countable, cohort-comparable number your task produces (`nCells`,
+   `nTracks`, `nClusters`, a mean/fraction). Stored under `metrics`; it's the datum cohort QC and the
+   observer aggregate across a set.
+2. **A `warn` finding for the unambiguous bad case** — "produced nothing", "collapsed to one
+   cluster/state", "canvas grew abnormally". Keep the text brief + actionable (short = the problem;
+   long = the imperative action; numbers go in `detail`).
+
+```julia
+# after the task's work succeeds, inside _run_task
+n = <objective count you already computed>
+findings = n == 0 ?
+    [qc_finding("warn", "mycat.no_output", "No objects produced",
+        "Check the inputs/params and re-run this step.")] : Dict{String,Any}[]
+write_qc(img, "mycat.myTask", out_value_name, findings;
+         metrics = Dict{String,Any}("nCells" => n))
+```
+
+- **Keep the finding logic in a PURE helper and unit-test it** (like `_segment_qc_findings`,
+  `cluster_qc_findings`, `hmm_states_qc_findings`, `track_measures_qc_findings` in `qc.jl`) — the
+  thresholds live in one testable place, the task just calls it and writes.
+- **If the metric is comparable across a set's images, add it to `COHORT_METRICS`** (`app/src/qc_cohort.jl`,
+  `"mycat.myTask" => ["nCells", …]`) so cohort-outlier detection and the observer pick it up for free.
+- **Set-scope / Python tasks:** compute per-image stats in Python and hand them back via a `qcOutPath`
+  JSON the Julia handler reads (the `segment.cellpose` / clustering pattern — `qcOutPath` param →
+  `write_qc` per image), so counting stays where the data is.
+- **Genuinely no objective signal** (e.g. a denoising/correction whose only failure mode is
+  perceptual)? Say so in a comment and skip QC deliberately — do **not** invent a meaningless metric.
+  This is the *only* exemption, and it must be explicit.
+
+Reuse the shared helpers in `qc.jl` rather than re-deriving: `qc_finding`, `write_qc`,
+`qc_canvas_expansion` (spatial-transform tasks), `category_dist_metrics` (state/label distributions),
+`track_count_metrics`. Add a test in `app/test/runtests.jl` in the same change.
+
 ### Running a Python subprocess
 
 Spawn the task's Python runner through **`run_py`** (`app/src/py_runner.jl`) — the single place
