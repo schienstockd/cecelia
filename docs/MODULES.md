@@ -14,6 +14,22 @@ This document is the authoritative how-to for adding a new analysis function (ta
 
 ---
 
+## Checklist — adding a task (go through every box)
+
+This doc has grown; use this as the run-list. Details for each are in the numbered sections.
+
+- [ ] **Two co-located files, same base name** — `.jl` (struct + `_run_task`) + `.json` (param spec). §1, §3
+- [ ] **Register** in `task_registry.jl` — `_spec_path` overload + `"category.myTask"` in `_fun_name_map`. §4
+- [ ] **`resource_pool`** in the JSON. §3
+- [ ] **Bank QC** — `write_qc` with an objective `metrics` count + a `warn` finding for the bad case, under the task's **`value_name`/`outputValueName`** (NOT hardcoded `"default"` — per label set, so cohort works). §1 → *QC*
+- [ ] **Cohort metrics** — add the keys to `COHORT_METRICS` (built-in) or call `register_cohort_metrics!` (custom). §1 → *QC*
+- [ ] **Observer summary layer** — does this task produce analysable data (measures / pops / clusters / behaviour / **phenotype** / lineage) the AI observer should see? If so, extend the read-only summary route + MCP tool (or add a field), per [`docs/todo/OBSERVER_DATA_ACCESS_PLAN.md`](todo/OBSERVER_DATA_ACCESS_PLAN.md). Don't let a new data type land with the observer blind to it.
+- [ ] **Tests** — dispatch + a bad-param `ParamValidationError`, and a QC finding unit test. §7
+- [ ] **Module page + route + nav** if it needs its own page. §7–§9
+- [ ] **Persist every user-settable option** (no bare `ref()`). §7 → *RULE*
+
+---
+
 ## 1. Julia task handler
 
 Create two co-located files under `app/src/tasks/<category>/`:
