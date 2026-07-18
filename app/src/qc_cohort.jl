@@ -105,10 +105,30 @@ sidecar. Returns the summary doc `{funName, valueName, nIncluded, metrics}` wher
 `{n, median, mad, mean, sd, threshold, outliers}` (outliers by robust modified z-score; `threshold`
 is its cutoff). Advisory; recomputes from current data so it's safe to call any time.
 """
+# PURE → unit-tested. One image's cohort-outlier finding for a metric, from its `_cohort_outliers`
+# entry (`{value, z}` when MAD>0, `{value, relDev}` when MAD==0) + the cohort median. Brief +
+# actionable (short = the problem, long = the action, numbers in `detail`).
+function _cohort_finding(metric::AbstractString, entry::AbstractDict, med)
+    val = get(entry, "value", nothing)
+    dir = (val isa Real && med isa Real) ? (val < med ? "below" : "above") : "from"
+    detail = Dict{String,Any}("metric" => string(metric), "value" => val, "median" => med)
+    haskey(entry, "z")      && (detail["z"] = entry["z"])
+    haskey(entry, "relDev") && (detail["relDev"] = entry["relDev"])
+    qc_finding("warn", "cohort." * string(metric),
+        "$(metric) is a cohort outlier",
+        "This image's $(metric) ($(val)) is far $(dir) the set median ($(med)) — check this image before trusting the run.";
+        detail = detail)
+end
+
 function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
                     metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
     imgs = filter(image_included, images(set))
     metrics = Dict{String,Any}()
+    # per-image cohort findings (accumulated across metrics) → written back so an outlier surfaces on
+    # the IMAGE (table indicator, whiteboard, lab log, MCP), not just in the set sidecar. Under the
+    # `cohort.{fun}` namespace so it never clobbers the task's own `{fun}` QC doc; every included image
+    # is written (empty ⇒ clears a prior cohort warning, so a fixed cohort doesn't stay flagged).
+    img_findings = Dict{String,Vector{Any}}(img.uid => Any[] for img in imgs)
     for mk in metric_keys
         vals = Dict{String,Float64}()
         for img in imgs
@@ -119,6 +139,14 @@ function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::Abstract
         metrics[string(mk)] = Dict{String,Any}(
             "n" => s.n, "median" => s.median, "mad" => s.mad, "mean" => s.mean, "sd" => s.sd,
             "threshold" => Float64(threshold), "outliers" => s.outliers)
+        for (uid, entry) in s.outliers
+            haskey(img_findings, uid) && (entry isa AbstractDict) &&
+                push!(img_findings[uid], _cohort_finding(string(mk), entry, s.median))
+        end
+    end
+    cohort_fun = "cohort." * string(fun_name)
+    for img in imgs
+        write_qc(img, cohort_fun, value_name, img_findings[img.uid])
     end
     doc = Dict{String,Any}("funName" => string(fun_name), "valueName" => _qc_vn(value_name),
                            "nIncluded" => length(imgs), "metrics" => metrics)

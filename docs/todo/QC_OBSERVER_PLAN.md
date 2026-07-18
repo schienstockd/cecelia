@@ -55,7 +55,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
 - Tests: `metadata_qc_findings` (jl, golden cases mirroring `fieldIssues`); frontend unit for the new
   finding→dialog mapping.
 
-### A2 — Cohort QC writes per-image findings
+### A2 — Cohort QC writes per-image findings — DONE (`feat/qc-cohort-per-image`)
 - `qc_cohort.jl` computes outliers but writes only a *set* sidecar — outliers never reach the image.
   Add per-image write-back under a **`cohort.*` fun namespace** (e.g. `cohort.segment.cellpose`) so it
   can't clobber the task's own `{uid}/qc/{fun}/{vn}.json` and surfaces automatically via `read_all_qc`.
