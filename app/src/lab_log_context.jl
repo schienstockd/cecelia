@@ -132,15 +132,29 @@ function _has_warn_qc(img::CciaImage, fun::AbstractString, vn::AbstractString)::
     any(f -> String(get(f, :level, "")) == "warn", fs)
 end
 
+# The SHORT text of each `warn` finding in an image's (fun, vn) QC doc — the actual "what's wrong",
+# for the digest's detail lines (so the lab log carries the finding, not just a count that sends the
+# user to hover a tag). Empty when none.
+function _warn_finding_shorts(img::CciaImage, fun::AbstractString, vn::AbstractString)::Vector{String}
+    doc = read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)
+    doc === nothing && return String[]
+    fs = get(doc, :findings, nothing)
+    fs === nothing && return String[]
+    String[String(get(f, :short, "")) for f in fs
+           if String(get(f, :level, "")) == "warn" && !isempty(String(get(f, :short, "")))]
+end
+
 const _SEV_RANK = Dict("ok" => 0, "warn" => 1, "fail" => 2)
+const _MAX_DIGEST_DETAILS = 8   # cap the per-module finding-detail lines so a big cohort can't flood the entry
 
 # Per-module run summary since `cutoff`. Returns `(items_by_module, severity_by_module, max_at)`:
 # severity is the worst outcome across that module's runs this window — `fail` (a run failed), else
 # `warn` (a run produced a warn QC finding), else `ok` — driving the digest line's ✅/⚠️/❌ symbol.
-function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},String}
+function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},Dict{String,Vector{String}},String}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
     fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
     warn_imgs  = Dict{Tuple{String,String},Set{String}}()  # (module, fun-display) => images with a warn QC finding
+    warn_det   = Dict{String,Set{String}}()                # module => {"image — finding short"} (the WHAT)
     mod_sev    = Dict{String,String}()                     # module => "ok"|"warn"|"fail" (worst)
     bump(mod, sev) = (get(_SEV_RANK, sev, 0) > get(_SEV_RANK, get(mod_sev, mod, "ok"), 0)) &&
                      (mod_sev[mod] = sev)
@@ -158,9 +172,15 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
             if String(get(e, "status", "done")) == "failed"
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
                 bump(mod, "fail")
-            elseif _has_warn_qc(img, fun, vn)
-                push!(get!(warn_imgs, (mod, disp), Set{String}()), img.name)   # count the flagged images
-                bump(mod, "warn")
+            else
+                shorts = _warn_finding_shorts(img, fun, vn)
+                if !isempty(shorts)
+                    push!(get!(warn_imgs, (mod, disp), Set{String}()), img.name)   # count the flagged images
+                    for s in shorts
+                        push!(get!(warn_det, mod, Set{String}()), "$(img.name) — $s")   # …and the WHAT
+                    end
+                    bump(mod, "warn")
+                end
             end
             at > max_at && (max_at = at)
         end
@@ -181,7 +201,16 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
         end
         out[mod] = items
     end
-    (out, mod_sev, max_at)
+    # per-module finding-detail lines (sorted, capped) — the actual QC text, ↳-prefixed under the line
+    details = Dict{String,Vector{String}}()
+    for (mod, ds) in warn_det
+        sorted = sort(collect(ds))
+        details[mod] = length(sorted) > _MAX_DIGEST_DETAILS ?
+            vcat(["↳ " * d for d in sorted[1:_MAX_DIGEST_DETAILS]],
+                 ["↳ +$(length(sorted) - _MAX_DIGEST_DETAILS) more"]) :
+            ["↳ " * d for d in sorted]
+    end
+    (out, mod_sev, details, max_at)
 end
 
 # ── gating fingerprint + diff ─────────────────────────────────────────────────────
@@ -297,7 +326,7 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     name_by = Dict(img.uid => img.name for img in images(proj))
     name_of(u) = get(name_by, String(u), String(u))
 
-    task_items, mod_sev, max_at = _task_items_by_module(proj, cutoff)
+    task_items, mod_sev, task_details, max_at = _task_items_by_module(proj, cutoff)
 
     cur_gating  = _gating_fingerprint(proj)
     prev_gating = get(state, "gating", nothing)          # absent → first capture → seed silently
@@ -331,6 +360,9 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
         (cat in muted || isempty(by_cat[cat])) && continue
         sym = severity_symbol(get(mod_sev, cat, "ok"))
         push!(lines, "$sym $cat — " * join(by_cat[cat], "; "))
+        # under a flagged category, spell out the actual QC findings (image — what's wrong) so the lab
+        # log carries the real signal, not just a "N flagged" count the user has to go hover a tag for.
+        append!(lines, get(task_details, cat, String[]))
     end
 
     isempty(lines) && return nothing
