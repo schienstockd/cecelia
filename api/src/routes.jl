@@ -1497,6 +1497,11 @@ function api_lablog_append(body_bytes::Vector{UInt8})
                 "summary" => join(lines, " ")))
         end
     end
+    # Panel-reload signal for EVERY append (any author) — an external Chat-to-Claude session appends
+    # straight through this route with no frontend action, so without this the open lab-log panel stays
+    # stale until the user closes+reopens it. Distinct from `lab_log_entry_added` above (that's the MCP
+    # observer's user-only, anti-loop notification); the frontend just reloads, so there's no loop.
+    broadcast_ws(Dict{String,Any}("type" => "lab_log_updated", "projectUid" => project_uid))
     200, JSON3.write((; ok=true, block, entries=parse_lab_log(read_lab_log(proj))))
 end
 
