@@ -415,6 +415,28 @@ end
     end
 end
 
+@testset "API: project delete" begin
+    # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
+    conf = cecelia_conf()
+    dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    try
+        proj = create_project!(name="api-del", kind="static")
+        uid  = proj.uid
+        @test isdir(proj.root)
+
+        @test _post(api_projects_delete, Dict())[1] == 400                    # uid missing
+        @test _post(api_projects_delete, Dict("uid"=>"nope"))[1] == 404       # not found
+        st, body = _post(api_projects_delete, Dict("uid"=>uid))
+        @test st == 200 && JSON3.read(body).ok == true
+        @test !isdir(proj.root)                                               # gone from disk
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive=true, force=true)
+    end
+end
+
 @testset "API: task log + history" begin
     # Redirect projects_dir() → a temp dir so we never touch the real dev projects dir.
     conf = cecelia_conf()

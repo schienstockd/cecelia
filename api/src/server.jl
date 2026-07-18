@@ -296,6 +296,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_board_asset_copy(body_bytes)
         elseif path == "/api/projects/rename"
             api_projects_rename(body_bytes)
+        elseif path == "/api/projects/delete"
+            api_projects_delete(body_bytes)
         elseif path == "/api/sets/create"
             api_sets_create(body_bytes)
         elseif path == "/api/sets/delete"
