@@ -1271,6 +1271,7 @@ function api_lablog_read(req::HTTP.Request)
     200, JSON3.write((; content, entries=parse_lab_log(content),
                         tuning=read_tuning(proj), mutes=read_mutes(proj),
                         pageCategories=lab_log_page_categories(), operationCategories=lab_log_operation_categories(),
+                        dismissed=read_dismissed(proj),
                         mtime=(isfile(p) ? mtime(p) : nothing)))
 end
 
@@ -1316,6 +1317,28 @@ function api_lablog_mute(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error=sprint(showerror, e)))
     end
     200, JSON3.write((; ok=true, mutes))
+end
+
+# dismiss → hide/un-hide a single entry from the PANEL (config sidecar; the log file is never edited —
+# append-only). Body {projectUid, id, dismissed}. Returns the updated dismissed-id list.
+function api_lablog_dismiss(body_bytes::Vector{UInt8})
+    body = try JSON3.read(String(body_bytes)) catch
+        return 400, JSON3.write((; error="Invalid JSON body"))
+    end
+    project_uid = String(get(body, :projectUid, ""))
+    entry_id    = String(get(body, :id, ""))
+    dismissed   = Bool(get(body, :dismissed, false))
+    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
+    isempty(entry_id)    && return 400, JSON3.write((; error="id required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error=sprint(showerror, e)))
+    end
+    ids = try
+        set_dismissed!(proj, entry_id, dismissed)
+    catch e
+        return 400, JSON3.write((; error=sprint(showerror, e)))
+    end
+    200, JSON3.write((; ok=true, dismissed=ids))
 end
 
 # append → one dated, author-tagged block. Server injects date + author tag (append-only, lock-guarded

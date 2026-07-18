@@ -12,9 +12,11 @@ import { useToast } from 'primevue/usetoast'
 import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
+import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteGroups,
-  muteCategoryLabel, USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
+  muteCategoryLabel, visibleEntries as computeVisibleEntries,
+  USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
 const pm = useProjectMetaStore()
@@ -34,6 +36,7 @@ const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (confi
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
 const pageCategories = ref<string[]>([])       // module-page digest categories (mute chips: Pages group)
 const operationCategories = ref<string[]>([])  // operation digest categories (mute chips: Operations group)
+const dismissed = ref<string[]>([])            // hidden entry ids (config sidecar, NOT the log — append-only)
 const mode = computed(() => settings.labLogMode)
 // AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
@@ -83,6 +86,9 @@ const observerTokens = computed(() => {
 // two mute groups: all module pages, and a general Operations group (orphaned mutes fold into it)
 const muteGroupsView = computed(() => muteGroups(pageCategories.value, operationCategories.value, mutes.value))
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
+// entries shown in the panel: hidden (dismissed) ids filtered out. The log FILE still contains them —
+// hide is view-only (a config sidecar), so the append-only methodology record is preserved.
+const visibleEntries = computed(() => computeVisibleEntries(entries.value, dismissed.value))
 
 async function load() {
   error.value = ''
@@ -97,6 +103,7 @@ async function load() {
     mutes.value = body.mutes ?? []
     pageCategories.value = body.pageCategories ?? []
     operationCategories.value = body.operationCategories ?? []
+    dismissed.value = body.dismissed ?? []
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -222,6 +229,23 @@ async function tune(entry: LabLogEntry, vote: Vote) {
     })
     if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
     tuning.value = (await r.json()).tuning ?? {}
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : String(e)
+  }
+}
+
+// Hide an entry from the panel. The lab-log FILE is never edited (append-only); this writes the id to
+// a config sidecar and filters it out of the view. Two-click armed via ConfirmDeleteButton.
+async function dismissEntry(entry: LabLogEntry) {
+  if (!projectUid.value) return
+  const id = entryId(entry.raw)
+  try {
+    const r = await fetch('/api/lablog/dismiss', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectUid: projectUid.value, id, dismissed: true }),
+    })
+    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
+    dismissed.value = (await r.json()).dismissed ?? dismissed.value
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -379,11 +403,11 @@ async function toggleMute(category: string) {
     <div class="ll-list">
       <div v-if="loading" class="ll-empty">Loading…</div>
       <div v-else-if="!projectUid" class="ll-empty">No project open.</div>
-      <div v-else-if="!entries.length" class="ll-empty">
+      <div v-else-if="!visibleEntries.length" class="ll-empty">
         No entries yet. The first note you save appears here.
       </div>
       <template v-else>
-        <div v-for="(e, i) in entries" :key="e.raw + i" class="ll-entry" :class="'k-' + authorKind(e.author)">
+        <div v-for="(e, i) in visibleEntries" :key="e.raw + i" class="ll-entry" :class="'k-' + authorKind(e.author)">
           <div class="ll-entry-head">
             <span class="ll-author">{{ e.author }}</span>
             <span class="ll-date">{{ e.date }}</span>
@@ -400,6 +424,10 @@ async function toggleMute(category: string) {
               </template>
               <button v-else class="ll-link" v-tooltip.top="'Add a correction (never edits the original)'"
                       @click="startCorrection(e)">correct</button>
+              <!-- Hide this entry (view-only — the log file is append-only, never edited). The ONE
+                   app-wide delete affordance: single button, arm on first click, hide on second. -->
+              <ConfirmDeleteButton title="Hide this entry (view only — the log file is kept)"
+                                   armed-title="Click again to hide" @confirm="dismissEntry(e)" />
             </span>
           </div>
           <ul class="ll-lines">

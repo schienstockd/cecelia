@@ -409,6 +409,17 @@ end
         end
         @test _post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"", "muted"=>true))[1] == 400   # empty rejected
         @test _post(api_lablog_mute, Dict("projectUid"=>uid, "muted"=>true))[1] == 400                   # category missing
+
+        # ── dismiss (hide an entry → config sidecar; the log file stays append-only) ──
+        let d = JSON3.read(_post(api_lablog_dismiss, Dict("projectUid"=>uid, "id"=>"ff00aa", "dismissed"=>true))[2])
+            @test d.ok == true && "ff00aa" in d.dismissed
+        end
+        @test "ff00aa" in JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2]).dismissed  # surfaced on read
+        let d = JSON3.read(_post(api_lablog_dismiss, Dict("projectUid"=>uid, "id"=>"ff00aa", "dismissed"=>false))[2])
+            @test !("ff00aa" in d.dismissed)                                                             # un-hidden
+        end
+        @test _post(api_lablog_dismiss, Dict("projectUid"=>uid, "dismissed"=>true))[1] == 400            # id missing
+        @test _post(api_lablog_dismiss, Dict("id"=>"x", "dismissed"=>true))[1] == 400                    # projectUid missing
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive=true, force=true)

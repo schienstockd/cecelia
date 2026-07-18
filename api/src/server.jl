@@ -334,6 +334,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_lablog_tune(body_bytes)
         elseif path == "/api/lablog/mute"
             api_lablog_mute(body_bytes)
+        elseif path == "/api/lablog/dismiss"
+            api_lablog_dismiss(body_bytes)
         elseif path == "/api/images/meta/resync"
             api_images_meta_resync(body_bytes)
         elseif path == "/api/images/labels/delete"

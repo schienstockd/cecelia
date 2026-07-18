@@ -407,10 +407,19 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         write_qc(iS2, "tracking.track_measures", "default",
                  [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"s","long"=>"l")])
         append_run_log!(iS2, "tracking.track_measures", "default")
+        # a fun run on 3 images with a warn banked on 2 of them → the digest reports "— 2 flagged"
+        iS3 = add_image!(sS; name="s-3", meta=Dict{String,Any}("ori_path"=>"/tmp/s3.tif"))
+        for im in (iS1, iS2, iS3); append_run_log!(im, "behaviour.hmm_states", "default"); end
+        for im in (iS1, iS2)      # only 2 of the 3 get a warn
+            write_qc(im, "behaviour.hmm_states", "default",
+                     [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"s","long"=>"l")])
+        end
         sev = capture_context!(projS)
         @test sev !== nothing
         @test occursin("❌ Segment", sev)      # measureLabels failed → worst outcome for the module
         @test occursin("⚠️ Tracking", sev)     # track_measures produced a warn finding
+        @test occursin("hmm_states on 3 images — 2 flagged", sev)   # count of flagged images, not just "≥1"
+        @test !occursin("(3 images)", sev)     # redundant parenthetical dropped for >2 images
 
         # new activity strictly after the cutoff → a fresh digest that doesn't repeat old activity
         sleep(1)   # run-log timestamps are second-granular; ensure a strictly-later `at`
@@ -455,6 +464,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test capture_context!(proj) === nothing            # no further change
 
         rm(proj.root; recursive=true)
+        rm(projS.root; recursive=true)                      # severity sub-project — also clean up (was leaking)
     end
 
     @testset "Lab log context — first capture seeds silently" begin
@@ -504,6 +514,26 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test read_mutes(proj) == ["Segment"]
         @test read_mutes(load_project(proj.uid)) == ["Segment"]           # persists
         @test_throws ErrorException set_mute!(proj, "  ", true)            # empty rejected (else lenient)
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Lab log dismiss (hide a single entry — config sidecar, log stays append-only) ──
+    @testset "Lab log dismiss" begin
+        proj = create_project!(name="dismiss-test-$(rand(1000:9999))", kind="static")
+        @test read_dismissed(proj) == String[]
+        set_dismissed!(proj, "e1a2", true)
+        set_dismissed!(proj, "b3c4", true)
+        @test Set(read_dismissed(proj)) == Set(["e1a2", "b3c4"])
+        set_dismissed!(proj, "e1a2", false)                                # un-hide
+        @test read_dismissed(proj) == ["b3c4"]
+        @test read_dismissed(load_project(proj.uid)) == ["b3c4"]           # persists
+        @test_throws ErrorException set_dismissed!(proj, "  ", true)       # empty id rejected
+
+        # hiding NEVER edits the log file (append-only): the entry text is still on disk
+        append_lab_log!(proj, "Cecelia", ["a digest line to hide"])
+        before = read_lab_log(proj)
+        set_dismissed!(proj, "deadbeef", true)
+        @test read_lab_log(proj) == before                                 # file untouched
         rm(proj.root; recursive=true)
     end
 

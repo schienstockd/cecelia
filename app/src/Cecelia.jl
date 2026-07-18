@@ -30,6 +30,7 @@ export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_tuning, set_tuning!
 export read_mutes, set_mute!, lab_log_categories, lab_log_page_categories, lab_log_operation_categories
+export read_dismissed, set_dismissed!
 export capture_context!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 

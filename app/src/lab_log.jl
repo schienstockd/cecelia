@@ -166,3 +166,41 @@ function set_mute!(proj::CciaProject, category::AbstractString, muted::Bool)::Ve
     end
     out
 end
+
+# ── Dismissed (hidden) entries ───────────────────────────────────────────────────
+# "Hide this entry": drop a single [Cecelia]/[Claude]/user line from the PANEL view without touching
+# the log. The lab log stays APPEND-ONLY (the methodology record is never rewritten) — this is a config
+# sidecar of entry ids, exactly like tuning/mutes; the panel filters them out. Un-hide by removing the
+# id. The id is the same `entryId(raw)` the frontend computes for tuning.
+_dismissed_path(proj::CciaProject)::String = joinpath(proj.root, "settings", "lab-log-dismissed.json")
+
+# the dismissed entry ids; [] when none.
+function read_dismissed(proj::CciaProject)::Vector{String}
+    p = _dismissed_path(proj)
+    isfile(p) || return String[]
+    try
+        String[String(x) for x in JSON3.read(read(p, String), Vector{Any})]
+    catch
+        String[]
+    end
+end
+
+"""
+Hide (`dismissed=true`) or un-hide a lab-log entry by its id. Config sidecar only — the log file is
+never modified (append-only). Lock-guarded. Returns the updated id list.
+"""
+function set_dismissed!(proj::CciaProject, entry_id::AbstractString, dismissed::Bool)::Vector{String}
+    id = strip(String(entry_id))
+    isempty(id) && error("dismiss entry id required")
+    s = Set(read_dismissed(proj))
+    dismissed ? push!(s, id) : delete!(s, id)
+    out = sort(collect(s))
+    with_transaction(proj) do
+        p = _dismissed_path(proj)
+        mkpath(dirname(p))
+        open(p, "w") do io
+            JSON3.write(io, out)
+        end
+    end
+    out
+end
