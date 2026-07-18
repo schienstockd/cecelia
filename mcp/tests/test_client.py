@@ -109,6 +109,15 @@ class ClientTest(unittest.TestCase):
         self.assertIn("setUid=s1", url)
         self.assertNotIn("imageUid", url)                          # unset optional dropped
 
+    def test_measure_summary_builds_url_and_drops_unset(self):
+        self.assertIn(("GET", "/api/analysis/measures"), ALLOWED_ROUTES)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_measure_summary("p", image_uid="i1")       # scoped to one image
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/analysis/measures?", url)
+        self.assertIn("imageUid=i1", url)
+        self.assertNotIn("setUid", url)                           # unset optional dropped
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:

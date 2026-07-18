@@ -169,7 +169,8 @@ include("ai/observer_session.jl")
 include("ai/observer_summary.jl")
 include("ai/lineage.jl")
 include("ai/populations.jl")
-export analysis_lineage, populations_summary
+include("ai/measures.jl")
+export analysis_lineage, populations_summary, measure_summary
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,

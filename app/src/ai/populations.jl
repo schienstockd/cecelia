@@ -8,13 +8,9 @@
 # applying every gate/filter over the full label table, which is heavy compute the plan forbids on an
 # always-on observer read; they belong with the measure slice (C), which already materializes pop_df.
 
-# The gate/pop_type flavours a value_name can carry a gating file for (flow/track = gate-drawn;
-# clust/trackclust = cluster pops filtering a `clusters.{suffix}` column).
-const _POP_SUMMARY_TYPES = ("flow", "track", "clust", "trackclust")
 const _POP_SUMMARY_CAP = 300   # hard cap per image (plan: caps on every list); `truncated` flags a cut
 
-# One population → its definition (names/tree links + the gate geometry or the filter spec). Transient
-# napari-selection pops are skipped (never persisted, not part of the analysis).
+# One population → its definition (names/tree links + the gate geometry or the filter spec).
 function _pop_summary(p::Population)
     gate = p.gate === nothing ? nothing : gate_spec(p.gate)
     filt = p.filter_measure === nothing ? nothing :
@@ -23,20 +19,13 @@ function _pop_summary(p::Population)
        valueName = p.value_name, colour = p.colour, isTrack = p.is_track, gate = gate, filter = filt)
 end
 
-# Every persisted population defined on an image, across its segmentations × pop_type flavours.
+# Every persisted population defined on an image (via the shared enumerator), capped.
 function _image_populations(img::CciaImage)
-    out = Vector{Any}()
-    for v in sort(img_value_names(img)), pt in _POP_SUMMARY_TYPES
-        isfile(gating_path(img._dir, v; pop_type = pt)) || continue
-        m = load_pop_map(img; value_name = v, pop_type = pt)
-        for path in pop_paths(m)
-            p = pop_at(m, path)
-            p.transient && continue
-            push!(out, _pop_summary(p))
-            length(out) >= _POP_SUMMARY_CAP && return (out, true)
-        end
+    out = Vector{Any}(); truncated = false
+    _observer_each_population(img) do p
+        length(out) >= _POP_SUMMARY_CAP ? (truncated = true) : push!(out, _pop_summary(p))
     end
-    (out, false)
+    (out, truncated)
 end
 
 # Per-image builder: the identity header + its population definitions (+ a cap flag).

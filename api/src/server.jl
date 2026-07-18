@@ -214,6 +214,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_analysis_lineage(req)
         elseif path == "/api/analysis/populations"
             api_analysis_populations(req)
+        elseif path == "/api/analysis/measures"
+            api_analysis_measures(req)
         elseif path == "/api/lablog"
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"

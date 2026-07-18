@@ -98,7 +98,12 @@ MCP-tool docstring**, not another copy of the plumbing:
   api + mcp tests. Per-image pop tree + gate/filter DEFINITIONS (cheap sidecar read). Membership COUNTS
   are deferred to Slice C (they need computing gates over the full table — heavy, forbidden on an
   always-on read).
-- **C — Measures** (`get_measure_summary`).
+- **C — Measures** (`get_measure_summary`). ✅ **DONE** — `app/src/ai/measures.jl` (`measure_summary`),
+  `GET /api/analysis/measures`, MCP `get_measure_summary`, allow-listed; pkg (fixture-gated + pure
+  summary logic) + api + mcp tests, validated off-suite on real gated data. Per-population phenotype +
+  motility (median/quantiles/mean/n) over the MEANINGFUL pops (gated pops when present, else the base
+  `_tracked`/all-cells — so it works with or without gating). Channels named consistently (resolved from
+  the label view, not pop_df's pop_type-dependent rename). Membership counts land here as each summary's `n`.
 - **D — HMM + clusters** (`get_behaviour_summary`, `get_cluster_summary`).
 - **E — Boards + chains** (`get_analysis_boards`, `get_chains`) — some folds into A.
 

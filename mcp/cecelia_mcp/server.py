@@ -187,6 +187,26 @@ def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") ->
 
 
 @mcp.tool()
+def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """Phenotype + motility SUMMARIES per population — what the cells/tracks actually look like. Use this
+    for "how bright is CD8 in the T/_qc cells", "how fast do the tracked B cells move", cross-image
+    comparisons of a measure. Scope with `image_uid` / `set_uid` (prefer one — this touches cell data,
+    so it's heavier than lineage/populations); omit both for the whole project.
+
+    Summarised over the MEANINGFUL populations, not the raw segmentation (most labels are usually gated
+    out): the user's gated pops when present (e.g. `T/_qc`), else the base `_tracked` population (all
+    tracked cells), else all cells. Per image, `summaries` is a list; each:
+      `{population, valueName, kind: phenotype|motility, n, measures: [{name, n, median, q25, q75, mean}]}`.
+      - `kind` "phenotype" = per-cell channel intensities (named by channel) + morphology (area, …);
+        "motility" = per-track `live.track.*` (speed, displacement, trackLength, straightness, …).
+      - A gated cell pop yields BOTH a phenotype row (its cells) and, when tracked, a motility row (its
+        tracks). `n` is the cell/track count the stats are over.
+    `truncated: true` means the population×measure list was capped. Summary-level only — medians and
+    quantiles, never raw cell/track rows. Reads current on-disk state."""
+    return _client.get_measure_summary(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")

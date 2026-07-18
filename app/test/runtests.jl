@@ -4643,6 +4643,44 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test length(populations_summary(proj; image_uid = "i1").images) == 1
             @test isempty(populations_summary(proj; image_uid = "nope").images)
         end
+
+        @testset "measure summary (Slice C)" begin
+            # pure summary logic (always runs): median/quantiles/mean over finite values, NaN/missing dropped
+            s = Cecelia._summarise_measure("x", Any[1.0, 2.0, 3.0, NaN, missing])
+            @test s.n == 3 && s.median == 2.0 && s.mean == 2.0 && s.q25 <= 2.0 <= s.q75
+            @test Cecelia._summarise_measure("y", Any[NaN, missing]) === nothing
+
+            # integration over the real KDIeEm B fixture: UNGATED image → the base fallback (all-cells
+            # phenotype + tracked motility). The gated path (T/_qc) is validated separately off-suite.
+            h5  = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+            trk = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B__tracks.h5ad")
+            if !have_fixture(h5) || !have_fixture(trk)
+                @test_skip "measure summary (fixture missing)"
+            else
+                td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+                cp(h5,  joinpath(td, "labelProps", "B.h5ad"))
+                cp(trk, joinpath(td, "labelProps", "B__tracks.h5ad"))
+                img = CciaImage(uid = "KDIeEm", dir = td)
+                img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+                proj = CciaProject(; uid = "mP", name = "m"); proj.root = mktempdir()
+                st = CciaSet(; uid = "mS", dir = mktempdir()); push!(proj._sets, st); push!(proj.set_uids, st.uid)
+                push!(st._images, img); push!(st.image_uids, img.uid)
+
+                out = measure_summary(proj)
+                @test length(out.images) == 1
+                summ = out.images[1].summaries
+                @test !isempty(summ)
+                # motility over the tracked base (no channel-name dependence) — the robust anchor
+                mi = findfirst(x -> x.kind == "motility", summ)
+                @test mi !== nothing
+                moti = summ[mi]
+                @test moti.n > 0 && any(m -> m.name == "live.track.speed", moti.measures)
+                @test all(m -> isfinite(m.median) && m.n > 0, moti.measures)
+                # phenotype over all cells: more rows than tracks (cells collapse to tracks)
+                pi = findfirst(x -> x.kind == "phenotype", summ)
+                @test pi !== nothing && summ[pi].n > moti.n && !isempty(summ[pi].measures)
+            end
+        end
     end
 
 end
