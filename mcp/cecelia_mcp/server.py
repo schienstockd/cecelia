@@ -32,12 +32,18 @@ mcp = FastMCP("cecelia-observer")
 
 @mcp.tool()
 def get_project_info(project_uid: str) -> dict:
-    """Project summary: name, kind, image count, its sets, and a per-status breakdown of images."""
+    """Project summary: name, kind, image count, its sets, a per-status breakdown, and `excludedCount`
+    — how many images are EXCLUDED (included:false). An excluded image is a silent member: it still
+    sits in the set as "done", so anything counting "images in the set" (cohort denominators, figures)
+    is over by that many. If excludedCount > 0, check list_images/get_image_notes for which and why."""
     data = _client.list_images(project_uid)
     statuses: dict[str, int] = {}
+    excluded = 0
     for img in data.get("images", []):
         s = img.get("status", "?")
         statuses[s] = statuses.get(s, 0) + 1
+        if img.get("included") is False:
+            excluded += 1
     return {
         "projectUid": project_uid,
         "name": data.get("name"),
@@ -45,12 +51,15 @@ def get_project_info(project_uid: str) -> dict:
         "imageCount": data.get("count"),
         "sets": data.get("sets"),
         "statusBreakdown": statuses,
+        "excludedCount": excluded,
     }
 
 
 @mcp.tool()
 def list_images(project_uid: str) -> list:
-    """Every image in the project: uid, name, processing status, and which set it belongs to."""
+    """Every image in the project: uid, name, processing status, which set it belongs to, and
+    `included` — false means EXCLUDED from analysis (a silent member; downstream/cohort counts should
+    drop it). An excluded image that is still "done" is intentional but easy to miss — see its note."""
     return _client.list_images(project_uid).get("images", [])
 
 

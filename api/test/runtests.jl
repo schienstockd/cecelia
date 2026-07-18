@@ -469,7 +469,15 @@ end
             names = [i.name for i in r.images]
             @test "img-1" in names && "img-2" in names
             @test all(i -> i.setName == "set-A", r.images)
+            @test all(i -> i.included == true, r.images)          # included surfaced (default true)
         end
+        # excluding an image surfaces as included:false (so the observer can see the silent member)
+        img1.included = false; save!(img1)
+        let r = JSON3.read(api_images_list(HTTP.Request("GET", "/api/images?projectUid=$uid"))[2])
+            byname = Dict(i.name => i for i in r.images)
+            @test byname["img-1"].included == false && byname["img-2"].included == true
+        end
+        img1.included = true; save!(img1)                          # restore for the rest of the testset
         @test api_images_list(HTTP.Request("GET", "/api/images"))[1] == 400          # projectUid missing
         @test api_images_list(HTTP.Request("GET", "/api/images?projectUid=nope"))[1] == 404
 

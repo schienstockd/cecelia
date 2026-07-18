@@ -270,6 +270,12 @@ const visibleUids = computed<string[]>(() =>
               {{ activeSet.images.length }}
             </template>
             image{{ activeSet.images.length !== 1 ? 's' : '' }}
+            <!-- an excluded image is still a "done" set member — call it out so the count isn't silently
+                 over (excluded images drop out of analysis / cohort denominators). -->
+            <span v-if="excludedCount > 0" class="excluded-note"
+                  v-tooltip.top="`${excludedCount} image(s) excluded from analysis — not counted downstream`">
+              &nbsp;({{ excludedCount }} excluded)
+            </span>
             <template v-if="selectedUids.length">
               &nbsp;·&nbsp;{{ selectedUids.length }} selected
             </template>
@@ -481,6 +487,7 @@ const visibleUids = computed<string[]>(() =>
   align-items: center;
   gap: 0.4rem;
 }
+.excluded-note { color: var(--cc-sev-warn); }
 
 .filter-badge {
   font-size: 0.65rem;
