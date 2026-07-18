@@ -75,7 +75,11 @@ Each = a read-only `/api` route + an MCP tool returning aggregates (+ caps):
 
 ## Build slices (each shippable)
 
-- **A — Lineage** (`get_analysis_lineage`). Highest value, lightest data.
+- **A — Lineage** (`get_analysis_lineage`). Highest value, lightest data. ✅ **DONE** — `app/src/ai/lineage.jl`
+  (`analysis_lineage`), `GET /api/analysis/lineage`, MCP `get_analysis_lineage`, on the `ALLOWED_ROUTES`
+  allow-list; pkg + api + mcp tests. Returns per-image `steps`/`segmentations`/`tracked`/`clusterRuns`/
+  `gatedPops` + project `chains`/`boards` + a `rollup`. Boards are best-effort tab names only (the board
+  JSON is opaque at the Julia layer — plot semantics stay Slice E).
 - **B — Populations + gating** (`get_populations`).
 - **C — Measures** (`get_measure_summary`).
 - **D — HMM + clusters** (`get_behaviour_summary`, `get_cluster_summary`).

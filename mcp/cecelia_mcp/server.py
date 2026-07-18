@@ -143,6 +143,29 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
 
 
 @mcp.tool()
+def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
+    the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);
+    omit both for the whole project.
+
+    Returns:
+      - `images`: per image `{uid, name, included, steps, segmentations, tracked, clusterRuns, gatedPops}`.
+        - `steps`: the ordered pipeline from the run log — each `{stage, fun, valueName, status, at}`.
+          `stage` ∈ import/cleanup/edit/segment/track/behaviour/cluster/other; `status` "done"/"failed".
+          This IS the "denoised → segmented → tracked → clustered" story, in order, with what each wrote.
+        - `segmentations`: the label-set value_names; `tracked`: those with a per-track table.
+        - `clusterRuns`: `[{suffix, valueNames}]` — each clustering run and the label sets it clustered.
+        - `gatedPops`: `[{valueName, popType, n, pops}]` — gate-defined populations (names/counts only).
+      - `chains`: wired whiteboard templates `[{name, tasks}]` — which steps were pipelined vs ad-hoc.
+      - `boards`: analysis-board tab names (best-effort; the board's plot detail is not exposed here).
+      - `rollup`: `{pipeline, divergences}` — the common stage sequence across images, and which images
+        diverge (missing a stage the others ran, or excluded). Start here to spot the odd image out.
+
+    Summary-level only (names/counts/order — no raw cell/track rows). Reads current on-disk state."""
+    return _client.get_analysis_lineage(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")

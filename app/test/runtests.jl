@@ -4537,6 +4537,73 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test COHORT_METRICS[fun] == ["nCells", "nClusters"]
             delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
         end
+
+        @testset "analysis lineage (Slice A synthesizer)" begin
+            proj = CciaProject(; uid = "linP", name = "lineage"); proj.root = mktempdir()
+            s = CciaSet(; uid = "linS", dir = mktempdir())
+            push!(proj._sets, s); push!(proj.set_uids, s.uid)
+
+            # i1 — full pipeline: import → segment(A,B) → track(A) → cluster(A/movement); A gated (flow)
+            i1 = CciaImage(; uid = "i1", dir = mktempdir())
+            i1.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad")
+            lp1 = img_label_props_dir(i1); mkpath(lp1)
+            touch(img_track_props_path(i1, "A"))                       # A is tracked
+            open(joinpath(lp1, "A__tracks.clustfeatures.json"), "w") do f
+                JSON3.write(f, Dict("movement" => Dict("features" => ["live.track.speed"], "partOf" => ["i1"])))
+            end
+            g1 = PopulationMap(; pop_type = "flow", value_name = "A")
+            add_pop!(g1, "CD3"; gate = RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+            save_pop_map!(g1, i1)
+            append_run_log!(i1, "importImages.omezarr", "default", "done")
+            append_run_log!(i1, "segment.cellpose", "A", "done")
+            append_run_log!(i1, "segment.cellpose", "B", "done")
+            append_run_log!(i1, "tracking.bayesian_tracking", "A", "done")
+            append_run_log!(i1, "clustTracks.cluster", "movement", "done")
+            push!(s._images, i1); push!(s.image_uids, i1.uid)
+
+            # i2 — partial + excluded: import → segment(A, failed) only
+            i2 = CciaImage(; uid = "i2", dir = mktempdir()); i2.included = false
+            i2.label_props = Dict("A" => "A.h5ad")
+            append_run_log!(i2, "importImages.omezarr", "default", "done")
+            append_run_log!(i2, "segment.cellpose", "A", "failed")
+            push!(s._images, i2); push!(s.image_uids, i2.uid)
+
+            # a wired chain + board tabs (project-level)
+            save_chain_template!(proj, ChainTemplate("pipeline",
+                [ChainNode(; id = "n1", fn = "segment.cellpose"),
+                 ChainNode(; id = "n2", fn = "tracking.bayesian_tracking")], ChainEdge[]))
+            mkpath(joinpath(proj.root, "settings"))
+            open(joinpath(proj.root, "settings", "analysisBoards.json"), "w") do io
+                JSON3.write(io, Dict("tabs" => [Dict("name" => "Behaviour"), Dict("name" => "Counts")]))
+            end
+
+            lin = analysis_lineage(proj)
+            @test lin.projectUid == "linP" && length(lin.images) == 2
+            e1 = lin.images[findfirst(e -> e.uid == "i1", lin.images)]
+            e2 = lin.images[findfirst(e -> e.uid == "i2", lin.images)]
+            # i1 ordered steps + stage mapping, last step's value_name is the run suffix
+            @test [st.stage for st in e1.steps] == ["import", "segment", "segment", "track", "cluster"]
+            @test e1.steps[end].fun == "clustTracks.cluster" && e1.steps[end].valueName == "movement"
+            @test e1.segmentations == ["A", "B"] && e1.tracked == ["A"]
+            @test length(e1.clusterRuns) == 1 && e1.clusterRuns[1].suffix == "movement" &&
+                  e1.clusterRuns[1].valueNames == ["A"]
+            @test length(e1.gatedPops) == 1 && e1.gatedPops[1].valueName == "A" && "/CD3" in e1.gatedPops[1].pops
+            # i2 partial + excluded + a failed step is surfaced
+            @test e2.included == false && isempty(e2.tracked) && isempty(e2.clusterRuns)
+            @test any(st -> st.fun == "segment.cellpose" && st.status == "failed", e2.steps)
+            # project-level chains + boards
+            @test length(lin.chains) == 1 && lin.chains[1].name == "pipeline"
+            @test Set(lin.chains[1].tasks) == Set(["segment.cellpose", "tracking.bayesian_tracking"])
+            @test lin.boards == ["Behaviour", "Counts"]
+            # rollup: common pipeline in canonical order; i2 diverges (excluded + missing track/cluster)
+            @test lin.rollup.pipeline == ["import", "segment", "track", "cluster"]
+            dv = lin.rollup.divergences[findfirst(d -> d.uid == "i2", lin.rollup.divergences)]
+            @test dv.included == false && Set(dv.missingStages) == Set(["track", "cluster"])
+            # scoping: one image, one set, unknown → empty
+            @test length(analysis_lineage(proj; image_uid = "i1").images) == 1
+            @test length(analysis_lineage(proj; set_uid = "linS").images) == 2
+            @test isempty(analysis_lineage(proj; image_uid = "nope").images)
+        end
     end
 
 end

@@ -812,3 +812,33 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: analysis lineage" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _lin(t) = api_analysis_lineage(HTTP.Request("GET", "/api/analysis/lineage" * t))
+    try
+        proj = create_project!(name = "api-lineage", kind = "live")
+        s    = add_set!(proj; name = "set-A")
+        img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        append_run_log!(img, "importImages.omezarr", "default", "done")
+        append_run_log!(img, "segment.cellpose", "default", "done")
+        append_run_log!(img, "tracking.bayesian_tracking", "default", "failed")
+        @test _lin("")[1] == 400                                            # missing projectUid
+        @test _lin("?projectUid=nope")[1] == 404
+        st, body = _lin("?projectUid=$(proj.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.projectUid == proj.uid && length(d.images) == 1
+        e = d.images[1]
+        @test [String(x.stage) for x in e.steps] == ["import", "segment", "track"]   # ordered pipeline
+        @test any(x -> x.status == "failed", e.steps)                                # the failed track surfaces
+        @test "import" in d.rollup.pipeline && "track" in d.rollup.pipeline
+        # scope to one image
+        @test length(JSON3.read(_lin("?projectUid=$(proj.uid)&imageUid=$(img.uid)")[2]).images) == 1
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

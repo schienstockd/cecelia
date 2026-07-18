@@ -87,6 +87,19 @@ class ClientTest(unittest.TestCase):
         self.assertIn("valueName=A", url)
         self.assertIn("threshold=3.0", url)
 
+    def test_analysis_lineage_builds_url_and_drops_unset(self):
+        self.assertIn(("GET", "/api/analysis/lineage"), ALLOWED_ROUTES)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_analysis_lineage("p")                       # whole project — no image/set scope
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/analysis/lineage?", url)
+        self.assertIn("projectUid=p", url)
+        self.assertNotIn("imageUid", url)                          # unset optionals dropped
+        self.assertNotIn("setUid", url)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_analysis_lineage("p", image_uid="i1")       # scoped to one image
+        self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:
