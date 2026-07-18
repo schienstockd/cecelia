@@ -175,14 +175,19 @@ end
 # PERSIST: compute, then write the per-set summary sidecar AND per-image cohort findings — so an
 # outlier surfaces on the IMAGE (table indicator, whiteboard, lab log, MCP), not just in the sidecar.
 # Per-image findings go under the `cohort.{fun}` namespace so they never clobber the task's own `{fun}`
-# QC doc; EVERY included image is written (empty ⇒ clears a stale cohort warning, so a fixed cohort
-# un-flags). This is the explicit user/auto action (POST /api/qc/cohort/check), never a GET.
+# QC doc. Write an image ONLY when it has a finding, or to CLEAR an existing `cohort.{fun}` doc (a
+# fixed cohort un-flags) — never create a fresh empty placeholder on an image that never flagged
+# (that put an empty `cohort.{fun}.json` on every image on every check). This is the explicit
+# user/auto action (POST /api/qc/cohort/check), never a GET.
 function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
                     metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
     doc, imgs, img_findings = _cohort_compute(set, fun_name, value_name, metric_keys; threshold)
     cohort_fun = "cohort." * string(fun_name)
     for img in imgs
-        write_qc(img, cohort_fun, value_name, img_findings[img.uid])
+        findings = img_findings[img.uid]
+        # skip empty placeholders: write only when there's a finding, or when clearing a prior doc
+        (isempty(findings) && !isfile(qc_path(img, cohort_fun, value_name))) && continue
+        write_qc(img, cohort_fun, value_name, findings)
     end
     path = cohort_qc_path(set, fun_name, value_name); mkpath(dirname(path))
     open(path, "w") do io; JSON3.write(io, doc); end
