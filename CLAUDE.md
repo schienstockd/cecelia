@@ -344,6 +344,12 @@ When adding a new task, also register it in `app/src/tasks/task_registry.jl`:
 - Add a `_spec_path(::MyTask)` overload pointing at the `.json` file
 - Add `"category.myTask" => MyTask()` to `_fun_name_map()`
 
+**And emit QC** — every result-producing task MUST bank sensible QC via `write_qc` (an objective
+`metrics` count + a `warn` finding for the bad case) and add cohort-comparable metrics to
+`COHORT_METRICS`. This is mandatory, not optional; the only exemption is a task with genuinely no
+objective signal (e.g. perceptual denoising), and it must be an explicit comment. Full guide + the
+pattern: [`docs/MODULES.md`](docs/MODULES.md) → *QC — REQUIRED for every new task*.
+
 ---
 
 ## Development
@@ -494,6 +500,13 @@ ok = proc.exitcode == 0 && proc.termsignal == 0
 ```
 
 **`resource_pool` is required in every task JSON.** Standard values: `"gpu"` (limit 1), `"gpu-light"` (4), `"io"` (8), `"default"` (20). Defined in `app/config.toml`. The `tasksLimit` field and concurrent-task slider have been removed — use pools instead.
+
+**QC is required for every result-producing task.** After the work succeeds, bank an objective
+`metrics` count + a `warn` finding for the unambiguous bad case via `write_qc` (`app/src/qc.jl`), and
+add cohort-comparable metrics to `COHORT_METRICS` (`app/src/qc_cohort.jl`). Advisory only (never
+`error`, never gates). Keep the finding logic in a pure, unit-tested helper. The only exemption is a
+task with genuinely no objective signal, stated as an explicit comment. See `docs/MODULES.md` → *QC —
+REQUIRED for every new task*.
 
 ---
 
