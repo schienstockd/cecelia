@@ -670,6 +670,7 @@ end
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
     tmp  = mktempdir(); dirs["projects"] = tmp
     _qc(t) = api_qc_cohort(HTTP.Request("GET", "/api/qc/cohort" * t))
+    _check(b) = api_qc_cohort_check(Vector{UInt8}(JSON3.write(b)))
     try
         proj = create_project!(name = "api-cohort", kind = "static")
         s    = add_set!(proj; name = "set-A")
@@ -679,20 +680,24 @@ end
                      metrics = Dict{String,Any}("nCells" => n))
         end
         base = "?projectUid=$(proj.uid)&setUid=$(s.uid)"
-        # validation
+        sidecar = joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort",
+                           "segment.measureLabels", "default.json")
+        # GET validation
         @test _qc("")[1] == 400                                              # missing params
         @test _qc("$base&funName=bad.fun")[1] == 400                         # not a metric producer
         @test _qc("?projectUid=$(proj.uid)&setUid=nope&funName=segment.measureLabels")[1] == 404
-        # happy path: aggregates the banked nCells across the set's included images
+        # GET happy path: aggregates the banked nCells — and is READ-ONLY (no sidecar written)
         st, body = _qc("$base&funName=segment.measureLabels")
         @test st == 200
         d = JSON3.read(body)
-        @test d.nIncluded == 4
-        @test d.metrics.nCells.n == 4
+        @test d.nIncluded == 4 && d.metrics.nCells.n == 4
         @test d.metrics.nCells.mean == 801.25                               # (800+810+790+805)/4
-        # sidecar was written under the set dir
-        @test isfile(joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort",
-                              "segment.measureLabels", "default.json"))
+        @test !isfile(sidecar)                                              # a GET must not write
+        # POST /check is the write path: persists the set sidecar
+        @test _check((;))[1] == 400                                          # missing params
+        @test _check((; projectUid = proj.uid, setUid = s.uid, funName = "bad.fun"))[1] == 400
+        stc, _ = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels"))
+        @test stc == 200 && isfile(sidecar)
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)

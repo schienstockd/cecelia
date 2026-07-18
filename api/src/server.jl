@@ -320,6 +320,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_images_meta_set(body_bytes)
         elseif path == "/api/images/inclusion/set"
             api_images_inclusion_set(body_bytes)
+        elseif path == "/api/qc/cohort/check"
+            api_qc_cohort_check(body_bytes)
         elseif path == "/api/lablog/append"
             api_lablog_append(body_bytes)
         elseif path == "/api/lablog/capture"

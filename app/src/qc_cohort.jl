@@ -120,14 +120,13 @@ function _cohort_finding(metric::AbstractString, entry::AbstractDict, med)
         detail = detail)
 end
 
-function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
-                    metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
+# Compute the cohort summary + per-image findings WITHOUT writing anything. Returns
+# `(doc, imgs, img_findings)`. Shared by the read-only `cohort_qc` (GET) and the persisting
+# `cohort_qc!` (the explicit check action) — one computation, two dispositions.
+function _cohort_compute(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
+                         metric_keys::AbstractVector; threshold::Real)
     imgs = filter(image_included, images(set))
     metrics = Dict{String,Any}()
-    # per-image cohort findings (accumulated across metrics) → written back so an outlier surfaces on
-    # the IMAGE (table indicator, whiteboard, lab log, MCP), not just in the set sidecar. Under the
-    # `cohort.{fun}` namespace so it never clobbers the task's own `{fun}` QC doc; every included image
-    # is written (empty ⇒ clears a prior cohort warning, so a fixed cohort doesn't stay flagged).
     img_findings = Dict{String,Vector{Any}}(img.uid => Any[] for img in imgs)
     for mk in metric_keys
         vals = Dict{String,Float64}()
@@ -144,12 +143,36 @@ function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::Abstract
                 push!(img_findings[uid], _cohort_finding(string(mk), entry, s.median))
         end
     end
+    doc = Dict{String,Any}("funName" => string(fun_name), "valueName" => _qc_vn(value_name),
+                           "nIncluded" => length(imgs), "metrics" => metrics)
+    (doc, imgs, img_findings)
+end
+
+"""
+    cohort_qc(set, fun_name, value_name, metric_keys; threshold=3.5) -> Dict
+
+READ-ONLY: compute + return the cohort summary, writing NOTHING. The GET path
+(`/api/qc/cohort` / MCP `get_cohort_qc`) uses this — a read must be safe (no side effects), so the
+sidecar + per-image findings are written only by the explicit `cohort_qc!` (the "check" action).
+"""
+function cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
+                   metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
+    doc, _, _ = _cohort_compute(set, fun_name, value_name, metric_keys; threshold)
+    doc
+end
+
+# PERSIST: compute, then write the per-set summary sidecar AND per-image cohort findings — so an
+# outlier surfaces on the IMAGE (table indicator, whiteboard, lab log, MCP), not just in the sidecar.
+# Per-image findings go under the `cohort.{fun}` namespace so they never clobber the task's own `{fun}`
+# QC doc; EVERY included image is written (empty ⇒ clears a stale cohort warning, so a fixed cohort
+# un-flags). This is the explicit user/auto action (POST /api/qc/cohort/check), never a GET.
+function cohort_qc!(set::CciaSet, fun_name::AbstractString, value_name::AbstractString,
+                    metric_keys::AbstractVector; threshold::Real = _COHORT_MODZ_THRESHOLD)
+    doc, imgs, img_findings = _cohort_compute(set, fun_name, value_name, metric_keys; threshold)
     cohort_fun = "cohort." * string(fun_name)
     for img in imgs
         write_qc(img, cohort_fun, value_name, img_findings[img.uid])
     end
-    doc = Dict{String,Any}("funName" => string(fun_name), "valueName" => _qc_vn(value_name),
-                           "nIncluded" => length(imgs), "metrics" => metrics)
     path = cohort_qc_path(set, fun_name, value_name); mkpath(dirname(path))
     open(path, "w") do io; JSON3.write(io, doc); end
     doc
@@ -161,14 +184,24 @@ end
 Convenience: run `cohort_qc!` for the known metrics of `fun_name` (`COHORT_METRICS`). Errors if the
 fun isn't a known metric producer.
 """
-function cohort_qc_for!(set::CciaSet, fun_name::AbstractString,
-                        value_name::AbstractString = VERSIONED_DEFAULT_VAL;
-                        threshold::Real = _COHORT_MODZ_THRESHOLD)
+function _cohort_keys(fun_name::AbstractString)
     ks = get(COHORT_METRICS, string(fun_name), nothing)
     isnothing(ks) &&
         error("No known cohort metrics for fun '$fun_name' (known: $(join(sort(collect(keys(COHORT_METRICS))), ", ")))")
-    cohort_qc!(set, fun_name, value_name, ks; threshold = threshold)
+    ks
 end
+
+# READ-ONLY convenience (GET path): compute + return, no writes.
+cohort_qc_for(set::CciaSet, fun_name::AbstractString,
+              value_name::AbstractString = VERSIONED_DEFAULT_VAL;
+              threshold::Real = _COHORT_MODZ_THRESHOLD) =
+    cohort_qc(set, fun_name, value_name, _cohort_keys(fun_name); threshold = threshold)
+
+# PERSIST convenience (the "check" action): compute + write sidecar + per-image findings.
+cohort_qc_for!(set::CciaSet, fun_name::AbstractString,
+               value_name::AbstractString = VERSIONED_DEFAULT_VAL;
+               threshold::Real = _COHORT_MODZ_THRESHOLD) =
+    cohort_qc!(set, fun_name, value_name, _cohort_keys(fun_name); threshold = threshold)
 
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)
