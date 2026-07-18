@@ -65,6 +65,7 @@ const props = withDefaults(defineProps<{
   hint?:        string   // first-use-only one-liner shown above the panel (dismissed per hintKey)
   hintKey?:     string   // stable id for the hint's localStorage dismissal (required if hint set)
   rightDefaultWidth?: number   // starting width (px) for the #right panel; omitted → sizes to content
+  cohortFuns?:  string[]  // explicit cohort funs for the "Check cohort" button (custom pages); overrides COHORT_STAGES
 }>(), {
   allowManage: false,
   allowDelete: false,
@@ -277,7 +278,7 @@ const visibleUids = computed<string[]>(() =>
 
           <div class="table-tools" v-if="activeSet && activeSet.images.length > 0">
             <!-- Cohort consistency: self-hides unless this module banks cohort metrics (cohortStages) -->
-            <CohortCheckButton :module="module" :set-uid="activeSet.uid" />
+            <CohortCheckButton :module="module" :set-uid="activeSet.uid" :funs="cohortFuns" />
 
             <!-- CSV export: the whole table, including excluded images + their notes -->
             <button class="filter-toggle" @click="exportCsv"

@@ -6,7 +6,7 @@ import { ref } from 'vue'
 // custom specs. `categories` with builtin === false drive a generic page + a "Custom" nav group;
 // tasks in a builtin category already surface on that category's existing page.
 export interface CustomModuleEntry { path: string; status: 'ok' | 'error'; error: string | null }
-export interface CustomCategory { name: string; builtin: boolean; funNames: string[] }
+export interface CustomCategory { name: string; builtin: boolean; funNames: string[]; cohortFuns?: string[] }
 
 export const useCustomModulesStore = defineStore('customModules', () => {
   const dir        = ref('')

@@ -10,12 +10,14 @@ import { cohortFunsFor } from '../lib/cohortStages'
 import { runCohortCheck } from '../lib/cohortCheck'
 import { SEVERITY } from '../lib/severity'
 
-const props = defineProps<{ module?: string; setUid?: string }>()
+// `funs` overrides the built-in COHORT_STAGES lookup — passed by pages whose cohort funs come from the
+// backend (custom modules: funNames ∩ COHORT_METRICS), so the button needs no hardcoded per-page entry.
+const props = defineProps<{ module?: string; setUid?: string; funs?: string[] }>()
 const toast = useToast()
 const projectMeta = useProjectMetaStore()
 const busy = ref(false)
 
-const funs = computed(() => cohortFunsFor(props.module))
+const funs = computed(() => props.funs?.length ? props.funs : cohortFunsFor(props.module))
 const canCheck = computed(() => funs.value.length > 0 && !!props.setUid && !!projectMeta.current?.uid)
 
 async function check() {

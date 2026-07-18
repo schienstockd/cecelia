@@ -81,14 +81,25 @@ export function draftToLines(draft: string): string[] {
     .filter(l => l.length > 0)
 }
 
-/** Categories to show as mute chips: the canonical category list (in the backend's order) plus any
- *  currently-muted category no longer in it (e.g. a task category later renamed/removed), appended
- *  at the end. Without the union such an orphaned mute would render no chip and could never be
- *  un-muted. */
-export function muteChips(categories: string[], mutes: string[]): string[] {
-  const cats = categories ?? []
-  const orphans = (mutes ?? []).filter(m => !cats.includes(m))
-  return [...cats, ...orphans]
+/** Split the muteable digest categories into the panel's two display groups: all module-page
+ *  categories (always shown), and the general Operations group. Any orphaned mute — a category no
+ *  longer in either backend list (e.g. a renamed/removed custom category) — is folded into Operations
+ *  so it still renders and can be un-muted. Both lists keep the backend's (pipeline) order. */
+export function muteGroups(pageCategories: string[], operationCategories: string[], mutes: string[]):
+  { pages: string[]; operations: string[] } {
+  const pages = pageCategories ?? []
+  const ops = operationCategories ?? []
+  const known = new Set<string>([...pages, ...ops])
+  const orphans = (mutes ?? []).filter(m => !known.has(m))
+  return { pages: [...pages], operations: [...ops, ...orphans] }
+}
+
+/** Display label for a mute chip: the category tag with a capitalised first letter, so the chips read
+ *  uniformly (task specs tag some categories lower-case, e.g. "import"). The raw category stays the
+ *  mute KEY — only the label is prettified. */
+export function muteCategoryLabel(category: string): string {
+  const c = category ?? ''
+  return c ? c.charAt(0).toUpperCase() + c.slice(1) : c
 }
 
 /** Count entries authored by Claude that are newer than the last one the user has seen (by date +

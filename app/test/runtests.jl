@@ -528,6 +528,24 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    # ── Mute-bar taxonomy: module pages vs operations (two separate groups) ──
+    @testset "Lab log mute categories — pages vs operations" begin
+        pages = lab_log_page_categories()
+        ops   = lab_log_operation_categories()
+        # the pipeline module pages are all present, in _CATEGORY_ORDER, and carry NO operation tags
+        for p in ("Segment", "Gating", "Tracking", "Clustering", "Behaviour")
+            @test p in pages
+        end
+        @test !("Edit" in pages) && !("Manage images" in pages)
+        # operations are the non-page actions, shown as one general group
+        @test Set(ops) == Set(["Edit", "Manage images"])
+        # the two groups partition the full universe (no overlap, union == all)
+        @test isempty(intersect(Set(pages), Set(ops)))
+        @test Set(vcat(pages, ops)) == Set(lab_log_categories())
+        # ordering follows _CATEGORY_ORDER (Segment before Tracking before Clustering)
+        @test findfirst(==("Segment"), pages) < findfirst(==("Tracking"), pages) < findfirst(==("Clustering"), pages)
+    end
+
     # ── Param validation ──────────────────────────────────────────────────────
     @testset "Param validation" begin
         task = ImportOmezarr()
@@ -4399,6 +4417,16 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test cohort_qc_for!(set, "segment.measureLabels", "default")["nIncluded"] == 9
             # unknown fun errors (not a metric producer)
             @test_throws ErrorException cohort_qc_for!(set, "not.aTask", "default")
+        end
+
+        @testset "register_cohort_metrics! (custom-module opt-in)" begin
+            fun = "customExamples.qcProbeTest"
+            @test !haskey(COHORT_METRICS, fun)                       # unknown → cohort errors
+            register_cohort_metrics!(fun, ["nCells"])
+            @test COHORT_METRICS[fun] == ["nCells"]                  # now a known producer
+            register_cohort_metrics!(fun, ["nCells", "nClusters"])   # idempotent overwrite
+            @test COHORT_METRICS[fun] == ["nCells", "nClusters"]
+            delete!(COHORT_METRICS, fun)                             # don't leak into other testsets
         end
     end
 

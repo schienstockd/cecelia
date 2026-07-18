@@ -86,13 +86,30 @@ _category_of_pop_type(pt::AbstractString)::String =
 non-task ones. Ordered by `_CATEGORY_ORDER`, extras appended. Backs the panel's per-category mutes."""
 function lab_log_categories()::Vector{String}
     cats = Set{String}([CATEGORY_GATING, "Clustering", CATEGORY_IMAGES])
-    for (_fun, task) in _fun_name_map()
-        spec = try _task_spec(task) catch; nothing end
-        spec !== nothing && haskey(spec, "category") && push!(cats, String(spec["category"]))
+    # built-ins (static registry) PLUS loaded custom modules (runtime registry) — so a new task/page,
+    # or a user's custom-module category (e.g. customExamples), appears automatically with no change here.
+    for fun in vcat(collect(keys(_fun_name_map())), collect(_custom_task_keys()))
+        push!(cats, _category_of_fun(fun))
     end
     ordered = String[c for c in _CATEGORY_ORDER if c in cats]
     vcat(ordered, sort(String[c for c in cats if !(c in _CATEGORY_ORDER)]))
 end
+
+# Categories that are OPERATIONS — an action, not a module page (crop lives in Edit; include/exclude in
+# Manage images). Everything else the app emits is a module page. Small + explicit; the mute bar shows
+# these as one general "Operations" group, separate from the per-module-page chips.
+const _OPERATION_CATEGORIES = ("Manage images", "Edit")
+_is_operation_category(c::AbstractString)::Bool = String(c) in _OPERATION_CATEGORIES
+
+"""Module-page digest categories — everything `lab_log_categories` can emit that ISN'T an operation —
+ordered by `_CATEGORY_ORDER`. Backs the mute bar's 'Module pages' group (all pages, always shown)."""
+lab_log_page_categories()::Vector{String} =
+    String[c for c in lab_log_categories() if !_is_operation_category(c)]
+
+"""Operation digest categories (actions with no module page of their own — Edit, Manage images),
+ordered by `_CATEGORY_ORDER`. Backs the mute bar's general 'Operations' group."""
+lab_log_operation_categories()::Vector{String} =
+    String[c for c in lab_log_categories() if _is_operation_category(c)]
 
 # rank for digest ordering (index in _CATEGORY_ORDER; unknown categories sort last, then alphabetical)
 _category_rank(c::AbstractString)::Int = (i = findfirst(==(String(c)), _CATEGORY_ORDER); i === nothing ? typemax(Int) : i)

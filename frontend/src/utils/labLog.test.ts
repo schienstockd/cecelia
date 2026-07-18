@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
-  entryId, decisionPrefill, isRatable, muteChips,
+  entryId, decisionPrefill, isRatable, muteGroups, muteCategoryLabel,
   type LabLogEntry,
 } from './labLog'
 
@@ -37,18 +37,33 @@ describe('labLog.draftToLines', () => {
   })
 })
 
-describe('labLog.muteChips', () => {
-  it('keeps canonical order and appends orphaned mutes at the end', () => {
-    expect(muteChips(['Segment', 'Gating', 'Clustering'], ['Gating']))
-      .toEqual(['Segment', 'Gating', 'Clustering'])
-    // a muted category no longer in the canonical list is still shown (so it can be un-muted)
-    expect(muteChips(['Segment', 'Gating'], ['OldName', 'Gating']))
-      .toEqual(['Segment', 'Gating', 'OldName'])
+describe('labLog.muteGroups', () => {
+  it('splits into all pages + a general operations group, keeping order', () => {
+    const g = muteGroups(['Segment', 'Gating', 'Clustering'], ['Edit', 'Manage images'], ['Gating'])
+    expect(g.pages).toEqual(['Segment', 'Gating', 'Clustering'])   // all pages, always
+    expect(g.operations).toEqual(['Edit', 'Manage images'])
+  })
+  it('folds an orphaned mute (in neither list) into operations so it can be un-muted', () => {
+    const g = muteGroups(['Segment'], ['Edit'], ['OldCustom', 'Segment'])
+    expect(g.pages).toEqual(['Segment'])
+    expect(g.operations).toEqual(['Edit', 'OldCustom'])            // orphan appended to operations
   })
   it('handles empty / missing inputs', () => {
-    expect(muteChips([], [])).toEqual([])
-    expect(muteChips(undefined as any, undefined as any)).toEqual([])
-    expect(muteChips([], ['Stuck'])).toEqual(['Stuck'])
+    expect(muteGroups([], [], [])).toEqual({ pages: [], operations: [] })
+    expect(muteGroups(undefined as any, undefined as any, undefined as any))
+      .toEqual({ pages: [], operations: [] })
+  })
+})
+
+describe('labLog.muteCategoryLabel', () => {
+  it('capitalises the first letter so chips read uniformly', () => {
+    expect(muteCategoryLabel('import')).toBe('Import')      // task-spec lower-case tag
+    expect(muteCategoryLabel('Segment')).toBe('Segment')    // already title-case → unchanged
+    expect(muteCategoryLabel('Manage images')).toBe('Manage images')
+  })
+  it('handles empty / missing input', () => {
+    expect(muteCategoryLabel('')).toBe('')
+    expect(muteCategoryLabel(undefined as any)).toBe('')
   })
 })
 

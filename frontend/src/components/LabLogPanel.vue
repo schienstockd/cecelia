@@ -13,8 +13,8 @@ import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
 import {
-  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
-  USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
+  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteGroups,
+  muteCategoryLabel, USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
 const pm = useProjectMetaStore()
@@ -32,7 +32,8 @@ const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (config, NOT the log)
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
-const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
+const pageCategories = ref<string[]>([])       // module-page digest categories (mute chips: Pages group)
+const operationCategories = ref<string[]>([])  // operation digest categories (mute chips: Operations group)
 const mode = computed(() => settings.labLogMode)
 // AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
@@ -79,8 +80,8 @@ const observerTokens = computed(() => {
   const fmt = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
   return `~${fmt} tokens · ${s.turns} turn${s.turns === 1 ? '' : 's'}`
 })
-// chips include any orphaned mute (category since renamed/removed) so it can always be un-muted
-const muteableCategories = computed(() => muteChips(categories.value, mutes.value))
+// two mute groups: all module pages, and a general Operations group (orphaned mutes fold into it)
+const muteGroupsView = computed(() => muteGroups(pageCategories.value, operationCategories.value, mutes.value))
 const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
 
 async function load() {
@@ -94,7 +95,8 @@ async function load() {
     entries.value = body.entries ?? []
     tuning.value = body.tuning ?? {}
     mutes.value = body.mutes ?? []
-    categories.value = body.categories ?? []
+    pageCategories.value = body.pageCategories ?? []
+    operationCategories.value = body.operationCategories ?? []
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -341,14 +343,34 @@ async function toggleMute(category: string) {
               v-tooltip.top="'Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log'">entry types</button>
     </div>
 
-    <!-- mute whole categories from future digests (Tuning mode) -->
+    <!-- Mute [Cecelia] auto-digest categories (Tuning mode). Two groups: every module page, and a
+         general Operations group (Edit, Manage images — actions with no page of their own). Muting a
+         category stops its [Cecelia] activity lines; your own notes + Claude entries are never muted. -->
     <div v-if="mode === 'tuning' && projectUid" class="ll-mutebar">
-      <span class="ll-modelabel">Mute:</span>
-      <button v-for="c in muteableCategories" :key="c" class="ll-mutebtn"
-              :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
-              v-tooltip.top="mutes.includes(c) ? `${c} muted — click to log again` : `Stop logging ${c}`">
-        <i :class="['pi', mutes.includes(c) ? 'pi-bell-slash' : 'pi-bell']" /> {{ c }}
-      </button>
+      <span class="ll-modelabel ll-mutelabel"
+            v-tooltip.top="'Categories Cecelia auto-logs. Click one to mute its [Cecelia] activity lines — only these auto-digests, never your notes or Claude entries.'">
+        <i class="pi pi-bell-slash" /> Mute Cecelia digests:
+      </span>
+      <div class="ll-mutegroup">
+        <span class="ll-mutegrouplabel">Module pages</span>
+        <div class="ll-mutechips">
+          <button v-for="c in muteGroupsView.pages" :key="c" class="ll-mutebtn"
+                  :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
+                  v-tooltip.top="mutes.includes(c) ? `Muted — click to log ${muteCategoryLabel(c)} again` : `Stop logging ${muteCategoryLabel(c)} activity`">
+            {{ muteCategoryLabel(c) }}
+          </button>
+        </div>
+      </div>
+      <div v-if="muteGroupsView.operations.length" class="ll-mutegroup">
+        <span class="ll-mutegrouplabel">Operations</span>
+        <div class="ll-mutechips">
+          <button v-for="c in muteGroupsView.operations" :key="c" class="ll-mutebtn"
+                  :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
+                  v-tooltip.top="mutes.includes(c) ? `Muted — click to log ${muteCategoryLabel(c)} again` : `Stop logging ${muteCategoryLabel(c)} activity`">
+            {{ muteCategoryLabel(c) }}
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="error" class="ll-error">{{ error }}</div>
@@ -479,17 +501,28 @@ async function toggleMute(category: string) {
 }
 .ll-modebtn.on { color: var(--cc-text); border-color: #8b949e; background: rgba(139, 148, 158, 0.15); }
 
+/* label on its own line, then the chips wrap on the line below (a clean grid, not a mixed row) */
 .ll-mutebar {
-  display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem;
   padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; font-size: 0.68rem;
 }
+/* each group: a small sub-label, then its wrapping chip row */
+.ll-mutegroup { display: flex; align-items: baseline; gap: 0.4rem; width: 100%; }
+.ll-mutegrouplabel {
+  flex-shrink: 0; width: 5.5rem; text-align: right;
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-text-dim);
+}
+.ll-mutechips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .ll-mutebtn {
   display: inline-flex; align-items: center; gap: 0.25rem;
   border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim);
   border-radius: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.64rem; cursor: pointer;
 }
-.ll-mutebtn:hover { color: var(--cc-text); }
-.ll-mutebtn.muted { color: #d29922; border-color: #d29922; background: rgba(210, 153, 34, 0.12); }
+.ll-mutebtn:hover { color: var(--cc-text); border-color: #8b949e; }
+/* muted state carries itself (struck + amber) — no per-chip bell needed; the one bell is on the label */
+.ll-mutebtn.muted { color: #d29922; border-color: #d29922; background: rgba(210, 153, 34, 0.12); text-decoration: line-through; }
+.ll-mutelabel { display: inline-flex; align-items: center; gap: 0.3rem; }
+.ll-mutelabel .pi { font-size: 0.66rem; }
 
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 

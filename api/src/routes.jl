@@ -276,7 +276,12 @@ function _custom_module_categories()
             end
         end
         isempty(funs) && continue
-        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs))
+        # cohortFuns = the category's funs that bank cohort-comparable metrics (Cecelia.COHORT_METRICS,
+        # populated at load incl. custom modules' register_cohort_metrics!). Drives the "Check cohort"
+        # button on the generic custom page WITHOUT any hardcoded per-page list — a custom module that
+        # declares its metrics gets the button automatically.
+        cohort_funs = String[f for f in funs if haskey(Cecelia.COHORT_METRICS, f)]
+        push!(cats, (; name = category, builtin = category ∈ builtin, funNames = funs, cohortFuns = cohort_funs))
     end
     cats
 end
@@ -1264,7 +1269,8 @@ function api_lablog_read(req::HTTP.Request)
     content = read_lab_log(proj)
     p = lab_log_path(proj)
     200, JSON3.write((; content, entries=parse_lab_log(content),
-                        tuning=read_tuning(proj), mutes=read_mutes(proj), categories=lab_log_categories(),
+                        tuning=read_tuning(proj), mutes=read_mutes(proj),
+                        pageCategories=lab_log_page_categories(), operationCategories=lab_log_operation_categories(),
                         mtime=(isfile(p) ? mtime(p) : nothing)))
 end
 
