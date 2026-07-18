@@ -39,6 +39,12 @@ function _image_populations(img::CciaImage)
     (out, false)
 end
 
+# Per-image builder: the identity header + its population definitions (+ a cap flag).
+function _population_image(img::CciaImage)
+    pops, trunc = _image_populations(img)
+    (; _observer_image_header(img)..., populations = pops, truncated = trunc)
+end
+
 """
     populations_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
@@ -46,12 +52,5 @@ Per image, the persisted population definitions (tree + gate/filter specs), scop
 or `set_uid` or the whole project. Definitions only — cheap, sidecar-read; membership counts are Slice
 C. See OBSERVER_DATA_ACCESS_PLAN.md.
 """
-function populations_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "")
-    imgs = _lineage_images(proj, image_uid, set_uid)
-    (; projectUid = proj.uid,
-       images = [begin
-                     pops, trunc = _image_populations(img)
-                     (; uid = img.uid, name = img.name, included = image_included(img),
-                        populations = pops, truncated = trunc)
-                 end for img in imgs])
-end
+populations_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =
+    observer_image_summary(proj, _population_image; image_uid = image_uid, set_uid = set_uid)

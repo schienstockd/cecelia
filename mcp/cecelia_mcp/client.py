@@ -121,19 +121,22 @@ class CeceliaClient:
             },
         )
 
-    def get_analysis_lineage(self, project_uid: str, image_uid: str | None = None,
-                             set_uid: str | None = None):
+    # Shared caller for the observer's analysis/* summary routes — same (projectUid + optional
+    # image/set scope) contract for every slice, so each tool method is a one-liner over its path.
+    def _analysis_summary(self, path: str, project_uid: str,
+                          image_uid: str | None = None, set_uid: str | None = None):
         return self._request(
-            "GET", "/api/analysis/lineage",
+            "GET", path,
             {"projectUid": project_uid, "imageUid": image_uid, "setUid": set_uid},
         )
 
+    def get_analysis_lineage(self, project_uid: str, image_uid: str | None = None,
+                             set_uid: str | None = None):
+        return self._analysis_summary("/api/analysis/lineage", project_uid, image_uid, set_uid)
+
     def get_populations(self, project_uid: str, image_uid: str | None = None,
                         set_uid: str | None = None):
-        return self._request(
-            "GET", "/api/analysis/populations",
-            {"projectUid": project_uid, "imageUid": image_uid, "setUid": set_uid},
-        )
+        return self._analysis_summary("/api/analysis/populations", project_uid, image_uid, set_uid)
 
     def read_lab_log(self, project_uid: str):
         return self._request("GET", "/api/lablog", {"projectUid": project_uid})
