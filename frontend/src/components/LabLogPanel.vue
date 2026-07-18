@@ -8,7 +8,6 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { isAuthError, observerSetupReason } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
-import { useToast } from 'primevue/usetoast'
 import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
@@ -42,10 +41,12 @@ const mode = computed(() => settings.labLogMode)
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
-const toast = useToast()
+const chatCopied = ref(false)              // brief "Prompt copied" state on the Chat-to-Claude button
+let chatCopiedTimer: ReturnType<typeof setTimeout> | null = null
 
 // Chat to Claude: copy a starter prompt (project context + MCP pointer) to the clipboard for a full
 // external session. Re-copies on each click. Works for any MCP assistant — no `claude` install needed.
+// No toast — the button flashes "Prompt copied" (colour + tooltip) for a couple of seconds instead.
 async function chatToClaude() {
   if (!projectUid.value) return
   const text = buildChatPrompt(projectUid.value, pm.current?.name)
@@ -56,8 +57,9 @@ async function chatToClaude() {
     ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
     document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
   }
-  toast.add({ severity: 'info', summary: 'Prompt copied',
-              detail: 'Paste it into Claude (or any MCP chat bot) to start.', life: 3500 })
+  chatCopied.value = true
+  if (chatCopiedTimer) clearTimeout(chatCopiedTimer)
+  chatCopiedTimer = setTimeout(() => { chatCopied.value = false }, 2500)
 }
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
@@ -316,9 +318,10 @@ async function toggleMute(category: string) {
       </select>
       <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
            one-shot. Copies a starter prompt; no `claude` install needed. -->
-      <button class="ll-capture" :disabled="!projectUid" @click="chatToClaude"
-              v-tooltip.top="'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
-        <i class="pi pi-comments" /> Chat to Claude
+      <button class="ll-capture" :class="{ copied: chatCopied }" :disabled="!projectUid" @click="chatToClaude"
+              v-tooltip.top="chatCopied ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
+                : 'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
+        <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
       </button>
       <span v-if="observerTokens" class="ll-tokens"
             v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
@@ -475,6 +478,8 @@ async function toggleMute(category: string) {
   border-radius: 0.35rem; padding: 0.2rem 0.5rem; font-size: 0.7rem; cursor: pointer;
 }
 .ll-capture:hover:not(:disabled) { border-color: #8b949e; }
+/* brief "copied" flash on the Chat-to-Claude button (replaces the toast) */
+.ll-capture.copied { color: var(--cc-sev-ok); border-color: var(--cc-sev-ok); background: rgba(12, 163, 12, 0.1); }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {

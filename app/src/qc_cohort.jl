@@ -203,7 +203,9 @@ function cohort_has_outliers(doc::AbstractDict)
         values(get(doc, "metrics", Dict())))
 end
 
-function cohort_qc_summary_lines(doc::AbstractDict)
+# `name_of(uid)` resolves an image uid → its human name (default: the uid) so the lab-log lines read
+# with image NAMES, not opaque uids — the caller (the check route) passes the set's uid→name map.
+function cohort_qc_summary_lines(doc::AbstractDict; name_of = identity)
     fun = string(get(doc, "funName", "?")); n = get(doc, "nIncluded", 0)
     vn  = string(get(doc, "valueName", ""))
     # name the label set when it isn't the default, so per-label-set cohorts (clustTracks.cluster on
@@ -215,7 +217,7 @@ function cohort_qc_summary_lines(doc::AbstractDict)
         med = get(m, "median", nothing)
         for (uid, e) in get(m, "outliers", Dict())
             val = (e isa AbstractDict) ? get(e, "value", nothing) : nothing
-            push!(outs, "  $(uid) — $(mk) $(val) (cohort median $(med))")
+            push!(outs, "  $(name_of(string(uid))) — $(mk) $(val) (cohort median $(med))")
         end
     end
     isempty(outs) ?
