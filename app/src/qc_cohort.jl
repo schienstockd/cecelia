@@ -205,6 +205,10 @@ end
 
 function cohort_qc_summary_lines(doc::AbstractDict)
     fun = string(get(doc, "funName", "?")); n = get(doc, "nIncluded", 0)
+    vn  = string(get(doc, "valueName", ""))
+    # name the label set when it isn't the default, so per-label-set cohorts (clustTracks.cluster on
+    # T vs B) read distinctly in the lab log
+    fun = (isempty(vn) || vn == VERSIONED_DEFAULT_VAL) ? fun : "$fun ($vn)"
     outs = String[]
     for (mk, m) in get(doc, "metrics", Dict())
         (m isa AbstractDict) || continue
@@ -238,6 +242,38 @@ cohort_qc_for!(set::CciaSet, fun_name::AbstractString,
                value_name::AbstractString = VERSIONED_DEFAULT_VAL;
                threshold::Real = _COHORT_MODZ_THRESHOLD) =
     cohort_qc!(set, fun_name, value_name, _cohort_keys(fun_name); threshold = threshold)
+
+# Value_names actually banked for a fun across the set's included images — the on-disk QC filenames
+# under each image's qc/{fun}/ dir. Different producers bank under different value_names (segment/
+# tracking under "default"; clustering per label set, e.g. "T"/"B"), so a cohort check must DISCOVER
+# them rather than assume "default" (which is why a plain `get_cohort_qc(fun)` on clustering returned
+# n=0). Sorted + distinct; empty if the fun banked nothing anywhere in the set.
+function cohort_value_names(set::CciaSet, fun_name::AbstractString)::Vector{String}
+    vns = Set{String}()
+    for img in filter(image_included, images(set))
+        fdir = qc_fun_dir(img, fun_name)
+        isdir(fdir) || continue
+        for f in readdir(fdir)
+            endswith(f, ".json") && push!(vns, f[1:end-5])
+        end
+    end
+    sort(collect(vns))
+end
+
+# READ-ONLY: cohort summary for EVERY value_name a fun banked across the set → {value_name => doc}.
+# How a caller that doesn't know the suffix (the observer, the in-app button) gets per-label-set
+# cohorts — T-cells and B-cells as SEPARATE cohorts, which is correct (same value_name compared across
+# images). Empty when the fun banked nothing anywhere in the set.
+cohort_qc_for_all(set::CciaSet, fun_name::AbstractString;
+                  threshold::Real = _COHORT_MODZ_THRESHOLD)::Dict{String,Any} =
+    Dict{String,Any}(vn => cohort_qc_for(set, fun_name, vn; threshold = threshold)
+                     for vn in cohort_value_names(set, fun_name))
+
+# PERSIST variant of the above (the "check" action): writes each value_name's sidecar + per-image findings.
+cohort_qc_for_all!(set::CciaSet, fun_name::AbstractString;
+                   threshold::Real = _COHORT_MODZ_THRESHOLD)::Dict{String,Any} =
+    Dict{String,Any}(vn => cohort_qc_for!(set, fun_name, vn; threshold = threshold)
+                     for vn in cohort_value_names(set, fun_name))
 
 read_cohort_qc(set::CciaSet, fun_name::AbstractString, value_name::AbstractString = VERSIONED_DEFAULT_VAL) =
     (p = cohort_qc_path(set, fun_name, value_name); isfile(p) ? JSON3.read(read(p, String)) : nothing)

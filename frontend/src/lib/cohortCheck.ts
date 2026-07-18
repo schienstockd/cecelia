@@ -45,7 +45,13 @@ export async function runCohortCheck(projectUid: string, setUid: string,
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectUid, setUid, funName }),
       })
-      if (res.ok) docs.push(await res.json())
+      if (!res.ok) continue
+      const body = await res.json()
+      // No valueName sent → the server checks EVERY value_name the fun banked and returns a
+      // `byValueName` map (clustering is per label set T/B; segment/tracking under "default"). Fold each
+      // per-label-set cohort into the summary; a single-doc response (explicit valueName) is pushed as-is.
+      if (body?.byValueName) docs.push(...(Object.values(body.byValueName) as CohortDoc[]))
+      else docs.push(body)
     } catch { /* skip this fun; others still report */ }
   }
   return summariseCohortResult(docs)

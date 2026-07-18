@@ -982,7 +982,7 @@ function api_qc_cohort(req::HTTP.Request)
     haskey(COHORT_METRICS, fun_name) ||
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
-    value_name = get(q, "valueName", VERSIONED_DEFAULT_VAL)
+    vn_param = get(q, "valueName", "")
     thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
     set = try
         obj = init_object(project_uid, set_uid)
@@ -993,8 +993,20 @@ function api_qc_cohort(req::HTTP.Request)
     end
     # READ-ONLY: compute + return, write nothing (a GET must be safe). The write path — set sidecar +
     # per-image cohort findings — is the explicit POST /api/qc/cohort/check below.
+    # No valueName → discover every value_name this fun banked and return per-value_name cohorts (a
+    # `byValueName` map): clustering banks per label set (T/B), segment/tracking under "default", so a
+    # caller that doesn't know the suffix still gets all cohorts. An explicit valueName returns just that
+    # one cohort (single doc, backward-compatible).
+    if isempty(vn_param)
+        byval = try
+            cohort_qc_for_all(set, fun_name; threshold = thr)
+        catch e
+            return 500, JSON3.write((; error = sprint(showerror, e)))
+        end
+        return 200, JSON3.write((; funName = fun_name, valueNames = sort(collect(keys(byval))), byValueName = byval))
+    end
     doc = try
-        cohort_qc_for(set, fun_name, value_name; threshold = thr)
+        cohort_qc_for(set, fun_name, vn_param; threshold = thr)
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
@@ -1015,7 +1027,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     haskey(COHORT_METRICS, fun_name) ||
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
-    value_name = String(get(body, :valueName, VERSIONED_DEFAULT_VAL))
+    vn_param = String(get(body, :valueName, ""))
     tv  = get(body, :threshold, nothing)
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
     set = try
@@ -1025,22 +1037,37 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     catch e
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
-    doc = try
-        cohort_qc_for!(set, fun_name, value_name; threshold = thr)
-    catch e
-        return 500, JSON3.write((; error = sprint(showerror, e)))
-    end
-    # Cecelia authors a lab-log summary ONLY when something flagged (an all-clear would be noise; the
-    # toast covers that). Best-effort — a lab-log hiccup never fails the check. Author "Cecelia — …"
-    # so the append route treats it as a Cecelia digest (no observer re-broadcast).
-    if Cecelia.cohort_has_outliers(doc)
+    # Cecelia authors a lab-log summary ONLY for docs that flagged (an all-clear would be noise; the
+    # toast covers that). Best-effort — a lab-log hiccup never fails the check. Author "Cecelia — …" so
+    # the append route treats it as a Cecelia digest (no observer re-broadcast).
+    log_flagged(docs) = begin
+        flagged = [d for d in docs if d isa AbstractDict && Cecelia.cohort_has_outliers(d)]
+        isempty(flagged) && return
         try
             proj = load_project(project_uid)
-            Cecelia.append_lab_log!(proj, "Cecelia — Cohort QC", Cecelia.cohort_qc_summary_lines(doc))
+            for d in flagged
+                Cecelia.append_lab_log!(proj, "Cecelia — Cohort QC", Cecelia.cohort_qc_summary_lines(d))
+            end
         catch e
             @warn "cohort check: lab-log append failed" exception = e
         end
     end
+    # No valueName → check EVERY value_name the fun banked (per label set); else just the one.
+    if isempty(vn_param)
+        byval = try
+            cohort_qc_for_all!(set, fun_name; threshold = thr)
+        catch e
+            return 500, JSON3.write((; error = sprint(showerror, e)))
+        end
+        log_flagged(collect(values(byval)))
+        return 200, JSON3.write((; funName = fun_name, valueNames = sort(collect(keys(byval))), byValueName = byval))
+    end
+    doc = try
+        cohort_qc_for!(set, fun_name, vn_param; threshold = thr)
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    log_flagged([doc])
     200, JSON3.write(doc)
 end
 

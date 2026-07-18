@@ -714,6 +714,12 @@ end
             write_qc(img, "segment.measureLabels", "default", Dict{String,Any}[];
                      metrics = Dict{String,Any}("nCells" => n))
         end
+        # clustering banks PER LABEL SET (T/B), not "default" — bank some so discovery has >1 value_name
+        for (i, img) in enumerate(images(s))
+            write_qc(img, "clustTracks.cluster", "T", Dict{String,Any}[]; metrics = Dict{String,Any}("nTracks" => 40))
+            write_qc(img, "clustTracks.cluster", "B", Dict{String,Any}[];
+                     metrics = Dict{String,Any}("nTracks" => i == 1 ? 9 : 23))   # i1 sparse in B
+        end
         base = "?projectUid=$(proj.uid)&setUid=$(s.uid)"
         sidecar = joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort",
                            "segment.measureLabels", "default.json")
@@ -721,18 +727,30 @@ end
         @test _qc("")[1] == 400                                              # missing params
         @test _qc("$base&funName=bad.fun")[1] == 400                         # not a metric producer
         @test _qc("?projectUid=$(proj.uid)&setUid=nope&funName=segment.measureLabels")[1] == 404
-        # GET happy path: aggregates the banked nCells — and is READ-ONLY (no sidecar written)
-        st, body = _qc("$base&funName=segment.measureLabels")
+        # GET with an explicit valueName → single doc; READ-ONLY (no sidecar)
+        st, body = _qc("$base&funName=segment.measureLabels&valueName=default")
         @test st == 200
         d = JSON3.read(body)
         @test d.nIncluded == 4 && d.metrics.nCells.n == 4
         @test d.metrics.nCells.mean == 801.25                               # (800+810+790+805)/4
         @test !isfile(sidecar)                                              # a GET must not write
-        # POST /check is the write path: persists the set sidecar
+        # GET with NO valueName → per-value_name map (byValueName). segment banks under "default"…
+        dv = JSON3.read(_qc("$base&funName=segment.measureLabels")[2])
+        @test collect(dv.valueNames) == ["default"] && dv.byValueName.default.nIncluded == 4
+        # …clustering under T and B — both discovered, the sparse i1 flags in B only
+        dc = JSON3.read(_qc("$base&funName=clustTracks.cluster")[2])
+        @test Set(String.(dc.valueNames)) == Set(["B", "T"])
+        i1 = images(s)[1].uid
+        @test haskey(dc.byValueName.B.metrics.nTracks.outliers, Symbol(i1))
+        @test isempty(dc.byValueName.T.metrics.nTracks.outliers)
+        # POST /check (no valueName) → checks every label set, persists each sidecar
         @test _check((;))[1] == 400                                          # missing params
         @test _check((; projectUid = proj.uid, setUid = s.uid, funName = "bad.fun"))[1] == 400
-        stc, _ = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels"))
+        stc, bc = _check((; projectUid = proj.uid, setUid = s.uid, funName = "segment.measureLabels"))
         @test stc == 200 && isfile(sidecar)
+        @test haskey(JSON3.read(bc), :byValueName)
+        _check((; projectUid = proj.uid, setUid = s.uid, funName = "clustTracks.cluster"))
+        @test isfile(joinpath(tmp, proj.uid, "1", s.uid, "qc", "cohort", "clustTracks.cluster", "B.json"))
     finally
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
         rm(tmp; recursive = true, force = true)
