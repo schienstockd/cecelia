@@ -147,7 +147,7 @@ function _run_task(::ClustTracks, imgs::Vector{CciaImage}, params::Dict{String,A
         _write_clust_features!(seg["propsPath"], suffix, present_cols, uids)
     end
     # bank per-image cluster QC (track counts + cluster distribution + degenerate-run findings)
-    write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", on_log = on_log)
+    write_cluster_qc!(imgs, "clustTracks.cluster", qc_out_path; unit = "tracks", suffix = suffix, on_log = on_log)
     on_progress(4, 4)
 
     on_log("[INFO] clustTracks done → clusters.$suffix (per-track)")

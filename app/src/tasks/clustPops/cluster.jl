@@ -111,7 +111,7 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
         _write_clust_features!(seg["propsPath"], suffix, feature_cols, uids)
     end
     # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
-    write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", on_log = on_log)
+    write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", suffix = suffix, on_log = on_log)
     on_progress(4, 4)
 
     on_log("[INFO] clustPops done → clusters.$suffix")

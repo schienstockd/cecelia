@@ -25,7 +25,7 @@ export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
-export cohort_value_names, cohort_qc_for_all, cohort_qc_for_all!
+export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME

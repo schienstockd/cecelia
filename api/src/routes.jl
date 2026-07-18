@@ -984,6 +984,7 @@ function api_qc_cohort(req::HTTP.Request)
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
     vn_param = get(q, "valueName", "")
+    run_param = get(q, "run", "")   # clustering: restrict to one run's value_names (see cohort_runs)
     thr = something(tryparse(Float64, get(q, "threshold", "")), Cecelia._COHORT_MODZ_THRESHOLD)
     set = try
         obj = init_object(project_uid, set_uid)
@@ -1000,7 +1001,7 @@ function api_qc_cohort(req::HTTP.Request)
     # one cohort (single doc, backward-compatible).
     if isempty(vn_param)
         byval = try
-            cohort_qc_for_all(set, fun_name; threshold = thr)
+            cohort_qc_for_all(set, fun_name; threshold = thr, run = run_param)
         catch e
             return 500, JSON3.write((; error = sprint(showerror, e)))
         end
@@ -1012,6 +1013,32 @@ function api_qc_cohort(req::HTTP.Request)
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
     200, JSON3.write(doc)
+end
+
+# GET /api/qc/cohort/runs?projectUid&setUid&funName — the distinct clustering RUNS a fun banked across
+# the set (cheap: scans QC filenames + reads each doc's runSuffix, no cohort math). Powers the Check-
+# cohort button's run selector: cluster QC is banked per run, so the user picks WHICH run to check
+# rather than the button re-checking every past iteration. `[]` for funs that keep no runs (segment/
+# tracking/HMM) — the button then shows no selector and checks as before. Newest run first.
+function api_qc_cohort_runs(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", ""); set_uid = get(q, "setUid", "")
+    fun_name    = get(q, "funName", "")
+    (isempty(project_uid) || isempty(set_uid) || isempty(fun_name)) &&
+        return 400, JSON3.write((; error = "projectUid, setUid and funName required"))
+    set = try
+        obj = init_object(project_uid, set_uid)
+        obj isa CciaSet || error("Not a set: $set_uid")
+        obj
+    catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
+    end
+    runs = try
+        [(; run = r.run, valueNames = r.valueNames) for r in cohort_runs(set, fun_name)]
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write((; funName = fun_name, runs = runs))
 end
 
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
@@ -1029,6 +1056,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
         return 400, JSON3.write((; error = "No cohort metrics for fun '$fun_name'",
                                    known = sort(collect(keys(COHORT_METRICS)))))
     vn_param = String(get(body, :valueName, ""))
+    run_param = String(get(body, :run, ""))   # clustering: check only this run's value_names (see cohort_runs)
     tv  = get(body, :threshold, nothing)
     thr = tv isa Real ? Float64(tv) : Cecelia._COHORT_MODZ_THRESHOLD
     set = try
@@ -1060,7 +1088,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     # No valueName → check EVERY value_name the fun banked (per label set); else just the one.
     if isempty(vn_param)
         byval = try
-            cohort_qc_for_all!(set, fun_name; threshold = thr)
+            cohort_qc_for_all!(set, fun_name; threshold = thr, run = run_param)
         catch e
             return 500, JSON3.write((; error = sprint(showerror, e)))
         end

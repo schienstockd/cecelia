@@ -318,7 +318,8 @@ end
 # segmentation value_name). `unit` = "cells" (clustPops) or "tracks" (clustTracks) — drives the
 # banked count key (nCells/nTracks) and the finding wording. Best-effort; never fails the task.
 function write_cluster_qc!(imgs::AbstractVector, fun_name::AbstractString, qc_out_path::AbstractString;
-                           unit::AbstractString = "cells", on_log::Function = _ -> nothing)
+                           unit::AbstractString = "cells", suffix::AbstractString = "",
+                           on_log::Function = _ -> nothing)
     isfile(qc_out_path) || return
     img_by_uid = Dict(img.uid => img for img in imgs)
     count_key = unit == "tracks" ? "nTracks" : "nCells"
@@ -333,7 +334,16 @@ function write_cluster_qc!(imgs::AbstractVector, fun_name::AbstractString, qc_ou
             nc   = Int(get(seg, :nClusters, 0))
             frac = Float64(get(seg, :largestClusterFrac, 0.0))
             findings = cluster_qc_findings(total, n, nc, frac; unit = unit)
-            write_qc(img, fun_name, vn, findings;
+            # Bank per (LABEL SET × RUN): a clustering run is identified by its suffix (e.g. "movement"
+            # /"test"), and the same label set (vn, e.g. "T"/"B") can be clustered by many runs. Keying
+            # QC under the label set alone made a later run OVERWRITE an earlier one — the cohort could
+            # then only ever judge the newest. Bank under the composite `{labelSet}.{suffix}` so every
+            # run's QC is retained and cohort-checkable independently (the button's run selector picks
+            # one). `runSuffix`/`labelSet` are stored explicitly so callers group by run without parsing
+            # the composite key (a label set could itself contain a dot). See project_cluster_pop_scoping.
+            qc_vn = isempty(suffix) ? vn : string(vn, ".", suffix)
+            write_qc(img, fun_name, qc_vn, findings;
+                     runSuffix = string(suffix), labelSet = vn,
                      metrics = Dict{String,Any}(count_key => n, "nClusters" => nc,
                          "largestClusterFrac" => round(frac; digits = 4), "nClustersTotal" => total))
         end

@@ -4490,6 +4490,44 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test occursin("(B)", join(cohort_qc_summary_lines(allw["B"])))   # label set named in the summary
         end
 
+        @testset "cluster QC banked per run (suffix, no collision)" begin
+            img = CciaImage(; uid = "a", dir = mktempdir())
+            qcdir = mktempdir()
+            # a cluster_qc.json fixture (what the Python runner writes): two segments T & B
+            mkqc(path) = open(path, "w") do io
+                JSON3.write(io, Dict("nClusters" => 4, "perSegment" => [
+                    Dict("uID" => "a", "valueName" => "T", "n" => 40, "nClusters" => 4, "largestClusterFrac" => 0.4),
+                    Dict("uID" => "a", "valueName" => "B", "n" => 20, "nClusters" => 3, "largestClusterFrac" => 0.5)]))
+            end
+            p1 = joinpath(qcdir, "run1.json"); mkqc(p1)
+            Cecelia.write_cluster_qc!([img], "clustTracks.cluster", p1; unit = "tracks", suffix = "movement")
+            p2 = joinpath(qcdir, "run2.json"); mkqc(p2)
+            Cecelia.write_cluster_qc!([img], "clustTracks.cluster", p2; unit = "tracks", suffix = "test")
+            # BOTH runs retained under composite {labelSet}.{suffix} keys — "test" did NOT overwrite "movement"
+            dmov = read_qc(img, "clustTracks.cluster", "T.movement")
+            dtst = read_qc(img, "clustTracks.cluster", "T.test")
+            @test dmov !== nothing && dtst !== nothing
+            @test dmov["metrics"]["nTracks"] == 40 && dmov["runSuffix"] == "movement" && dmov["labelSet"] == "T"
+            @test dtst["runSuffix"] == "test"
+            # empty suffix ⇒ bank under the bare label set (no trailing dot)
+            p3 = joinpath(qcdir, "run3.json"); mkqc(p3)
+            Cecelia.write_cluster_qc!([img], "clustPops.cluster", p3; unit = "cells", suffix = "")
+            @test read_qc(img, "clustPops.cluster", "T") !== nothing
+
+            set = CciaSet(; dir = mktempdir()); push!(set._images, img); push!(set.image_uids, "a")
+            # cohort discovers all (label set × run) value_names
+            @test cohort_value_names(set, "clustTracks.cluster") == ["B.movement", "B.test", "T.movement", "T.test"]
+            # cohort_runs groups by run (segment/tracking funs bank no run → [])
+            crs = cohort_runs(set, "clustTracks.cluster")
+            @test Set(r.run for r in crs) == Set(["movement", "test"])
+            @test sort(first(r.valueNames for r in crs if r.run == "test")) == ["B.test", "T.test"]  # each run carries its value_names
+            @test isempty(cohort_runs(set, "segment.cellpose"))
+            # run filter: cohort_qc_for_all!(run="test") persists ONLY the test run's value_names
+            allw = cohort_qc_for_all!(set, "clustTracks.cluster"; run = "test")
+            @test Set(keys(allw)) == Set(["B.test", "T.test"])
+            @test occursin("(T.test)", join(cohort_qc_summary_lines(allw["T.test"])))  # run named in the lab-log line
+        end
+
         @testset "register_cohort_metrics! (custom-module opt-in)" begin
             fun = "customExamples.qcProbeTest"
             @test !haskey(COHORT_METRICS, fun)                       # unknown → cohort errors
