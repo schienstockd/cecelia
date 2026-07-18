@@ -4436,16 +4436,24 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test isfile(cohort_qc_path(set, "segment.measureLabels", "default"))
             @test read_cohort_qc(set, "segment.measureLabels", "default")["nIncluded"] == 10
             @test haskey(read_all_cohort_qc(set), "segment.measureLabels/default")
-            # per-image write-back: the outlier (j) gets a cohort finding ON the image; a normal one
-            # (a) is written empty (no stale flag). Under the cohort.* namespace, merged by read_all_qc.
+            # per-image write-back: the outlier (j) gets a cohort finding ON the image. A normal image
+            # (a) is NOT written — no empty placeholder (that would put an empty cohort.* doc on every
+            # image on every check). Under the cohort.* namespace, merged by read_all_qc.
             byid = Dict(i.uid => i for i in set._images)
             fj = read_qc(byid["j"], "cohort.segment.measureLabels", "default")
             @test fj !== nothing && !isempty(fj["findings"])
             @test fj["findings"][1]["code"] == "cohort.nCells" && fj["findings"][1]["level"] == "warn"
             @test occursin("below", fj["findings"][1]["long"])         # 100 < median 800
-            fa = read_qc(byid["a"], "cohort.segment.measureLabels", "default")
-            @test fa !== nothing && isempty(fa["findings"])
+            @test read_qc(byid["a"], "cohort.segment.measureLabels", "default") === nothing
             @test haskey(read_all_qc(byid["j"]), "cohort.segment.measureLabels/default")
+            # clear-stale: bump the outlier back into range and re-check → j's prior cohort doc is
+            # CLEARED (written empty, un-flags), not left as a stale warning
+            byid["j"].included = true
+            write_qc(byid["j"], "segment.measureLabels", "default", Dict{String,Any}[];
+                     metrics = Dict{String,Any}("nCells" => 801))
+            cohort_qc_for!(set, "segment.measureLabels", "default")
+            fj2 = read_qc(byid["j"], "cohort.segment.measureLabels", "default")
+            @test fj2 !== nothing && isempty(fj2["findings"])          # existing doc cleared, not deleted
             # excluded images drop out of the cohort
             set._images[1].included = false                      # exclude one
             @test cohort_qc_for!(set, "segment.measureLabels", "default")["nIncluded"] == 9
