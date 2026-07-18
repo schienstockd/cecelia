@@ -4716,6 +4716,21 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 end
             end
         end
+
+        @testset "chains summary (Slice E)" begin
+            proj = CciaProject(; uid = "chP", name = "ch"); proj.root = mktempdir()
+            save_chain_template!(proj, ChainTemplate("pipe",
+                [ChainNode(; id = "n1", fn = "segment.cellpose"),
+                 ChainNode(; id = "n2", fn = "tracking.bayesian_tracking")],
+                [ChainEdge("n1", "n2")]))
+            c = chains_summary(proj)
+            @test c.projectUid == "chP" && length(c.templates) == 1
+            t = c.templates[1]
+            @test t.name == "pipe" && length(t.nodes) == 2 && length(t.edges) == 1
+            @test t.nodes[1].fun == "segment.cellpose" && t.nodes[1].scope == "image"   # per-task default
+            @test t.edges[1].from == "n1" && t.edges[1].to == "n2"
+            @test c.runs isa AbstractVector && isempty(c.runs)   # no runs recorded on disk
+        end
     end
 
 end

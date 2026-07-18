@@ -239,6 +239,23 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
 
 @mcp.tool()
+def get_chains(project_uid: str) -> dict:
+    """The project's whiteboard CHAINS — the wired analysis pipelines and their runs. Use this to see the
+    INTENDED pipeline (which task feeds which) and which chains were actually executed — the run log is a
+    recent capped window, so a pipeline that ran earlier may have no dated steps, but its chain is here.
+
+    Returns:
+      - `templates`: `[{name, nodes: [{id, fun, scope}], edges: [{from, to}], startTargets}]` — the wired
+        DAG per chain (`fun` is the task, `scope` image/set/incremental; `edges` are node→node). This is
+        the configured pipeline, distinct from what the run log shows actually ran.
+      - `runs`: recent chain executions, newest first — `{id, chainName, at, imageCount, nodeStatus}`;
+        `nodeStatus` counts node outcomes across images (done/failed/skipped/…). A run with `failed` nodes
+        is a pipeline that broke partway — cross-check get_task_log.
+    Project-level (no image/set scope). Reads current on-disk state."""
+    return _client.get_chains(project_uid)
+
+
+@mcp.tool()
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")

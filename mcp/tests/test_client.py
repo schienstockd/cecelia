@@ -130,6 +130,16 @@ class ClientTest(unittest.TestCase):
         self.assertIn("/api/analysis/clusters?", u.call_args[0][0].full_url)
         self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
 
+    def test_chains_is_an_allowed_project_level_get(self):
+        self.assertIn(("GET", "/api/analysis/chains"), ALLOWED_ROUTES)
+        with _patch_urlopen({"templates": [], "runs": []}) as u:
+            self.c.get_chains("p")
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/analysis/chains?", url)
+        self.assertIn("projectUid=p", url)
+        self.assertNotIn("imageUid", url)                          # project-level: no scope params
+        self.assertNotIn("setUid", url)
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:

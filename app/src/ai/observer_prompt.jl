@@ -30,6 +30,9 @@ For behaviour + clustering: get_behaviour_summary(project, image/set) gives the 
 (fraction per state) + transitions; get_cluster_summary(project, image/set) gives each clustering run's
 cluster count / sizes / largest fraction / features. A collapsed state distribution or one cluster
 swallowing most points on ONE image (vs its peers) is worth flagging.
+For the INTENDED pipeline (vs what the run-log window happens to show): get_chains(project) gives the
+wired chain templates (which task feeds which) + the actual chain runs and their node outcomes — how to
+tell chain-orchestrated work from ad-hoc runs, and to see a pipeline that ran before the log window.
 
 ALWAYS check cohort QC for WHATEVER task(s) actually ran since you last looked — read get_task_history
 first, then call get_cohort_qc(project, set, fun) for the fun of each completed task. Check what RAN,

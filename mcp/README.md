@@ -41,6 +41,7 @@ mcp/
 | `get_measure_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/measures` | per-population phenotype (intensities+morphology) + motility summaries (median/quantiles/mean/n); gated pops else base |
 | `get_behaviour_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/behaviour` | per-image HMM state distribution (fraction per state) + transition counts |
 | `get_cluster_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/clusters` | per clustering run: n clusters, sizes, largest fraction, feature list (cell=clustPops, track=clustTracks) |
+| `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |
 | `read_lab_log(project_uid)` | `GET /api/lablog` | the full lab-log markdown |
 | `get_recent_logs(level="", limit=100)` | `GET /api/logs/recent` | recent backend console lines (server `@info`/`@warn`/`@error`) — where a Julia-side task crash lands (not in `get_task_log`) |
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |
