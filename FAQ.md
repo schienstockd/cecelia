@@ -34,7 +34,7 @@ that can't move. So the remaining Python is a deliberate, permanent rim, not unf
 the `.h5ad` files aren't the lock-in people assume: that format is the one both Julia and Python read
 natively, which is *why* it stays — what keeps Python in the loop is the clustering algorithm, not
 the file format. Full breakdown in
-[`docs/todo/python-audit-report.md`](docs/todo/python-audit-report.md).
+[`docs/prompts/python-audit-report.md`](docs/prompts/python-audit-report.md).
 
 **Why keep all analysis out of the frontend?**
 So the core package can run and be tested from the Julia REPL with no interface attached. The same

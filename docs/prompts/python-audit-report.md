@@ -1,11 +1,11 @@
 # Audit Result: Python Task + Utils Classification
 
-> Opus planning pass — output of `docs/todo/python-audit-prompt.md`. **No code changes were made**
+> Opus planning pass — output of `docs/prompts/python-audit-prompt.md`. **No code changes were made**
 > (except the deferred-goal entry appended to `docs/FUTURE.md`, as the prompt instructed). Sonnet
 > executes from this document. Mesh-feasibility claims were adversarially verified; corrections from
 > that pass are folded in and marked **[verified]** / **[corrected]**.
 >
-> **See `docs/todo/julia-port-watchlist.md`** for the distilled, living checklist — what can/cannot
+> **See `docs/prompts/julia-port-watchlist.md`** for the distilled, living checklist — what can/cannot
 > be ported and the *specific Julia drop-in to watch for* on each blocked item. **Rule: only port
 > what the current framework uses; do not port unused algorithms** (e.g. `findSignalPeaks`, spatial)
 > speculatively. Net: the only in-framework Julia-portable tasks are drift/AF correct, and they are

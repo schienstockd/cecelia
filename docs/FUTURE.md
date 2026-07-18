@@ -115,7 +115,7 @@ not hold.
 
 **Reference:** `docs/NAPARI.md` (bridge process model, layer props, OME-Zarr layouts),
 `napari/napari_bridge.py`, `api/src/napari_api.jl`; footprint + shrinkage buckets in
-`docs/todo/python-audit-report.md`. Julia candidates: `GLMakie.jl`, `Mousetrap.jl`, `Zarr.jl`.
+`docs/prompts/python-audit-report.md`. Julia candidates: `GLMakie.jl`, `Mousetrap.jl`, `Zarr.jl`.
 
 ---
 
