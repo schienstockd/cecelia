@@ -67,7 +67,17 @@ function _run_task(::HmmTransitions, imgs::Vector{CciaImage}, params::Dict{Strin
             ok = write_categorical_obs(props,
                      [(name=trans_col, labels=Int.(vsub.label), values=vals)];
                      drop=[trans_col], on_log=on_log, on_process=on_process)
-            ok ? (n_ok += 1) : on_log("[WARN] write failed: $(img.uid)/$vn")
+            if ok
+                n_ok += 1
+                # QC (advisory): bank this image-segmentation's transition distribution + the
+                # no-transitions finding. Never fails the write.
+                m = category_dist_metrics(vals)
+                write_qc(img, "behaviour.hmm_transitions", string(vn), hmm_transitions_qc_findings(m);
+                         metrics = Dict{String,Any}("nTransitions" => m.n,
+                             "nDistinctTransitions" => m.n_distinct))
+            else
+                on_log("[WARN] write failed: $(img.uid)/$vn")
+            end
         end
     end
     on_progress(3, 3)

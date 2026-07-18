@@ -87,6 +87,94 @@ function track_count_metrics(track_ids)
     (n_tracks, mean_len, n_cells)
 end
 
+# One HMM state holding ≥ this fraction of an image's cells is flagged as dominant. (Clustering uses
+# its own _CLUSTER_DOMINANT_FRAC — a single cluster is a weaker signal than a single behavioural
+# state, so the thresholds differ.) See hmm_states_qc_findings.
+const _DOMINANT_FRAC = 0.95
+
+"""
+    category_dist_metrics(vals) -> (; n, n_distinct, dominant_frac)
+
+Distribution stats for one image's categorical/state column (PURE → unit-tested). Counts the valid
+entries (skips `nothing`/`missing`/`NaN`), the number of distinct values, and the fraction in the
+single most common value (dominance). Shared by HMM states (numeric state codes) + HMM transitions
+(string labels) — an image whose cells collapse into one state/transition is a QC signal.
+"""
+function category_dist_metrics(vals)
+    counts = Dict{Any,Int}(); n = 0
+    for v in vals
+        (v === nothing || ismissing(v)) && continue
+        (v isa Real && isnan(v)) && continue
+        counts[v] = get(counts, v, 0) + 1; n += 1
+    end
+    n == 0 && return (; n = 0, n_distinct = 0, dominant_frac = 0.0)
+    (; n = n, n_distinct = length(counts), dominant_frac = maximum(values(counts)) / n)
+end
+
+"""
+    hmm_states_qc_findings(m) -> Vector
+
+Advisory findings for one image's HMM state assignment, from `category_dist_metrics` `m`
+(PURE → unit-tested). Most-severe first:
+  • no cells decoded (`n == 0`) ⇒ warn (tracks too short / measurements incomplete).
+  • all decoded cells in one state (`n_distinct ≤ 1`) ⇒ warn (image didn't switch states — check
+    it's the same acquisition/measurements, or the model has too few states).
+  • one state holds ≥ `_DOMINANT_FRAC` of cells ⇒ info (check it's really this uniform).
+"""
+function hmm_states_qc_findings(m)
+    findings = Dict{String,Any}[]
+    if m.n == 0
+        push!(findings, qc_finding("warn", "hmm.no_states_decoded",
+            "No cells decoded into a state",
+            "Tracks may be too short or measurements incomplete — check segmentation/tracking and re-run."))
+    elseif m.n_distinct <= 1
+        push!(findings, qc_finding("warn", "hmm.single_state",
+            "All cells sat in one state",
+            "This image didn't switch states — check it's the same acquisition and measurements, or reduce the state count."))
+    elseif m.dominant_frac >= _DOMINANT_FRAC
+        push!(findings, qc_finding("info", "hmm.dominant_state",
+            "One state holds $(round(Int, 100 * m.dominant_frac))% of cells",
+            "Check the behaviour is really this uniform, or the model may have too many states.";
+            detail = Dict{String,Any}("dominantStateFrac" => round(m.dominant_frac; digits = 3))))
+    end
+    findings
+end
+
+"""
+    hmm_transitions_qc_findings(m) -> Vector
+
+Advisory finding for one image's HMM transitions, from `category_dist_metrics` `m` (PURE). Only the
+unambiguous "no transitions" case flags (warn) — transition dominance isn't clearly actionable.
+"""
+function hmm_transitions_qc_findings(m)
+    m.n == 0 ?
+        [qc_finding("warn", "hmm.no_transitions",
+            "No state transitions found",
+            "Tracks may be too short or the model produced one state — check HMM states and track lengths.")] :
+        Dict{String,Any}[]
+end
+
+"""
+    track_measures_qc_findings(n_tracks, dims_param, resolved_dims, auto_dims, confidence, reason) -> Vector
+
+Advisory findings for a track-measures run (PURE → unit-tested). Surfaces the motion-dimensionality
+call the task already computes: when `dims_param == "auto"` and the detector's `confidence` is "low",
+the z axis couldn't be classified as migration vs jitter — feeding an ambiguous z corrupts turning
+angle + speed (see track_measures.jl `_detect_motion_dims`), so it's flagged for review. A confident
+auto call (or a user-set dims) flags nothing. `reason` is carried into the finding detail.
+"""
+function track_measures_qc_findings(n_tracks::Integer, dims_param::AbstractString,
+                                    resolved_dims::Integer, auto_dims::Integer,
+                                    confidence::AbstractString, reason::AbstractString = "")
+    (lowercase(strip(String(dims_param))) == "auto" && String(confidence) == "low") ?
+        [qc_finding("warn", "tracking.motion_dims_uncertain",
+            "Motion dimensionality uncertain ($(resolved_dims)D)",
+            "z couldn't be classified as migration vs jitter — review whether tracking should be 2D or 3D and re-run with dims set.";
+            detail = Dict{String,Any}("resolvedDims" => Int(resolved_dims),
+                                      "autoDims" => Int(auto_dims), "reason" => String(reason)))] :
+        Dict{String,Any}[]
+end
+
 # QC thresholds for a clustering run (clustPops/clustTracks). A single dominant cluster holding this
 # fraction of an image's points suggests under-clustering (resolution too low / features don't
 # separate). See cluster_qc_findings.

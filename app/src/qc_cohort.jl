@@ -30,11 +30,16 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "segment.cellpose"           => ["nCells"],
     "segment.measureLabels"      => ["nCells"],
     "tracking.bayesian_tracking" => ["nTracks", "meanTrackLength", "nTrackedCells"],
+    "tracking.track_measures"    => ["nTracks", "meanSpeed", "meanDisplacement"],
     # clustering is set-scope (one run over all images); per-image QC records how each image's points
     # landed, so cohort stats flag an image that collapsed into far fewer clusters / one dominant
     # cluster than its peers (a batch/normalisation outlier). See qc.jl write_cluster_qc!.
     "clustPops.cluster"          => ["nCells", "nClusters", "largestClusterFrac"],
     "clustTracks.cluster"        => ["nTracks", "nClusters", "largestClusterFrac"],
+    # HMM (set-scope, one joint fit): per image, how its cells distributed over the states — an image
+    # that collapsed to one state / a very different dominant-state fraction is an outlier.
+    "behaviour.hmm_states"       => ["nDecoded", "nStates", "dominantStateFrac"],
+    "behaviour.hmm_transitions"  => ["nTransitions", "nDistinctTransitions"],
 )
 
 # Pure: robust outlier detection. Two regimes:

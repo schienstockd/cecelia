@@ -482,6 +482,28 @@ function _run_task(task::TrackMeasures, img::CciaImage, params::Dict{String,Any}
     end
     on_progress(5, 5)
 
+    # QC (advisory): bank per-track counts/means + the motion-dims finding. Means over the per-track
+    # X (skipping NaN→nothing); omitted when non-finite so a degenerate image is excluded from the
+    # cohort rather than polluting it. Never fails the task.
+    try
+        speed_idx = findfirst(==("live.track.speed"), agg_names)
+        disp_idx  = findfirst(==("live.track.displacement"), agg_names)
+        _meas_mean(idx) = isnothing(idx) ? NaN : begin
+            vs = Float64[Float64(row[idx]) for row in X
+                         if row[idx] !== nothing && !(row[idx] isa Real && isnan(row[idx]))]
+            isempty(vs) ? NaN : mean(vs)
+        end
+        ms = _meas_mean(speed_idx); md = _meas_mean(disp_idx)
+        metrics = Dict{String,Any}("nTracks" => n_tracks, "motionDims" => resolved)
+        isnan(ms) || (metrics["meanSpeed"] = round(ms; digits = 4))
+        isnan(md) || (metrics["meanDisplacement"] = round(md; digits = 4))
+        findings = track_measures_qc_findings(n_tracks, dims_param, resolved, det.dims,
+                                              det.confidence, det.reason)
+        write_qc(img, "tracking.track_measures", value_name, findings; metrics = metrics)
+    catch e
+        on_log("[QC] could not compute track-measures QC: $e")
+    end
+
     on_log("[INFO] Track measures complete.")
     Dict{String,Any}("valueName" => value_name, "nTracks" => n_tracks, "trackProps" => track_path,
                      "dims" => resolved, "dimsAuto" => det.dims, "dimsReason" => det.reason)
