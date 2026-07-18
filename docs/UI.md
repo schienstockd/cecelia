@@ -22,12 +22,25 @@ All tokens live in `frontend/src/style.css` under `.cc-dark` (always applied at 
 | `--cc-warn` | `#f59e0b` | Amber warnings (e.g. heavy-load hints) |
 | `--cc-danger` | `#ef4444` | Destructive / error state (delete, invalid) |
 | `--cc-viewer` | `#22c55e` | Green accent for the napari viewer controls button + its floating-panel border (stands apart from purple chrome) |
+| `--cc-sev-ok` | `#0ca30c` | Severity **ok** (QC/traffic-light). Colour-blind-safe status palette |
+| `--cc-sev-warn` | `#fab219` | Severity **warn** (a QC warn finding) |
+| `--cc-sev-fail` | `#d03b3b` | Severity **fail** (a task failed) |
 | `--cc-mono` | system monospace stack | Log output, code |
 | `--cc-header-h` | `40px` | Fixed header height |
 | `--cc-sidebar-w` | `190px` | Fixed sidebar width |
 | `--cc-runner-w` | `280px` | TaskRunner panel width |
 | `--cc-console-bar-h` | `30px` | Collapsed console height |
 | `--cc-console-open-h` | `210px` | Expanded console height |
+
+### Severity (QC / traffic-light) — colour is never the only cue
+
+`--cc-sev-ok`/`--cc-sev-warn`/`--cc-sev-fail` are the ONE canonical severity palette
+(colour-blind-safe hues from the dataviz status palette). **Never render a severity as colour alone**
+— always pair the hue with a shape-distinct icon + label. The canonical mapping lives in
+`frontend/src/lib/severity.ts` (`SEVERITY`, `worstSeverity`, `severityFor`); the lab-log glyph
+counterpart is `qc.jl` `severity_symbol` (✅/⚠️/❌ — shape-distinct, never 🟢🟡🔴). Any new severity
+UI imports these; do not hand-pick a green/amber/red or a coloured dot. See
+`docs/todo/QC_OBSERVER_PLAN.md`.
 
 ---
 

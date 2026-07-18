@@ -22,6 +22,17 @@
   /* status colours (amber warning / red danger) — previously only inlined as var() fallbacks */
   --cc-warn:       #f59e0b;
   --cc-danger:     #ef4444;
+
+  /* Severity palette (colour-blind-safe) — the ONE canonical set for QC/traffic-light state
+     (ok / warn / fail). Hues from the dataviz status palette, validated for CVD separation
+     (worst adjacent pair ΔE 11.3 under protanopia > the ΔE≥8 bar). Colour is NEVER the sole cue:
+     always paired with a shape-distinct icon + label via frontend/src/lib/severity.ts (pi-check-circle
+     / pi-exclamation-triangle / pi-times-circle). See docs/todo/QC_OBSERVER_PLAN.md.
+     Supersedes --cc-warn/--cc-danger and the ad-hoc traffic-lights in ChainLiveNode / ParamRenderer
+     for severity semantics — migrate those here (follow-up). */
+  --cc-sev-ok:     #0ca30c;
+  --cc-sev-warn:   #fab219;
+  --cc-sev-fail:   #d03b3b;
   /* viewer accent (green) — the napari viewer controls button + its floating panel border, so the
      viewer stands out distinctly from the purple form/accent chrome and amber selection boxes. */
   --cc-viewer:     #22c55e;
