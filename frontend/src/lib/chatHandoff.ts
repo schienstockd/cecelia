@@ -8,13 +8,21 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
   // Deliberately a COMPLETE, paste-and-run instruction — no <placeholder> (users paste as-is) and no
   // relative doc reference (an external session can't resolve it, and chasing it wastes a whole
   // session). If the MCP is missing we tell the user, we don't send the assistant to configure it.
+  // It ORIENTS and asks for direction rather than diving straight into QC — the user might want to
+  // chat about the analysis, not just QC. Mirrors the in-app observer system prompt (observer_prompt.jl).
   return [
     `I'm working in the Cecelia project ${proj}.`,
     ``,
-    `Use the cecelia-observer MCP tools (get_project_info, get_task_history, get_qc_metrics, ` +
-      `get_cohort_qc, get_image_notes, and the lab log) to review my recent analysis activity and QC ` +
-      `across this project, and flag anything that looks off or inconsistent across the set. ` +
-      `Read only — do not append to the lab log unless I ask.`,
+    `You have the cecelia-observer MCP tools — read-only access to this project. They cover its state ` +
+      `(get_project_info, list_images, get_task_history, get_task_log/get_recent_logs), how the data ` +
+      `was produced (get_analysis_lineage, get_chains), the analysis itself (get_populations, ` +
+      `get_measure_summary, get_behaviour_summary, get_cluster_summary), cross-set QC (get_cohort_qc), ` +
+      `and the lab log (read_lab_log). Read only — do not append to the lab log unless I ask.`,
+    ``,
+    `Don't dive in yet. Get your bearings with a quick get_project_info, then ask me which direction ` +
+      `I'd like to take — for example: QC the workflow (the cohort numbers for what just ran), look ` +
+      `for something that's off across the set, understand the processing pipeline, or go deeper into ` +
+      `the analysis (populations, phenotype/motility, behaviour, clustering). Then follow my lead.`,
     ``,
     `If the cecelia-observer MCP tools are not available in this session, just tell me — do not try ` +
       `to install, register, or configure anything.`,
