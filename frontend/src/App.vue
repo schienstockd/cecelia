@@ -18,12 +18,10 @@ import Toast from 'primevue/toast'
 const ws = useWsStore()
 const settings = useSettingsStore()
 const appCtl = useAppControlStore()
-// Observer "Watch" runs from a store, not the lab-log panel, so it keeps working while the panel is
-// closed (the panel is v-if'd). Install the always-on auto-runner once, and refresh its status/session
-// whenever the open project changes.
+// Observer state lives in a store (not the v-if'd lab-log panel) so it survives the panel closing.
+// Claude is on-demand only (Ask Claude); refresh its status/session whenever the open project changes.
 const observer = useObserverStore()
 const pm = useProjectMetaStore()
-observer.installAutoWatch()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
 onMounted(async () => {
   ws.connect()

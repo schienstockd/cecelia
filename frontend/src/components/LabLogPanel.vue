@@ -5,7 +5,6 @@
 // list with a distinct colour per author, one-click correction (append-only — never edits). Mounted
 // as a FloatingPanel in App.vue so it's reachable from any page.
 import { ref, computed, watch, nextTick } from 'vue'
-import { OBSERVER_TRIGGERS } from '../utils/observerAuto'
 import { isAuthError, observerSetupReason } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
@@ -32,8 +31,8 @@ const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (confi
 const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
 const categories = ref<string[]>([])           // all digest categories (task-manager tags), for mute chips
 const mode = computed(() => settings.labLogMode)
-// AI observer (in-app assistant). State + the "Watch" auto-runner live in the observer STORE (so Watch
-// keeps running while this v-if'd panel is closed); the panel just drives it + shows its activity.
+// AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
+// v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
@@ -41,13 +40,11 @@ const observerModels = computed(() => observer.models)
 const observerSession = computed(() => observer.session)
 const observerNote = ref('')                 // last MANUAL pass verdict, shown in the report block
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
-const observerTriggers = OBSERVER_TRIGGERS   // read-only trigger status row (green/red)
 // Setup guidance: availability only means `claude` is on PATH — not logged in. Show install/login
 // steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
 const observerSetup = computed(() =>
   observerSetupReason(observerAvailable.value,
     (observerPasses.value[0] && !observerPasses.value[0].ok && isAuthError(observerPasses.value[0].note)) || false))
-const passLabel = (t: string) => (t === 'auto' ? 'Watch' : 'Ask')
 const passTokens = (p: { inputTokens: number; outputTokens: number }) => {
   const total = p.inputTokens + p.outputTokens
   return total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
@@ -115,7 +112,7 @@ async function askClaude() {
   if (!projectUid.value || observer.busy || !observer.available) return
   observerNote.value = ''
   error.value = ''
-  const res = await observer.runPass('manual')
+  const res = await observer.runPass()
   if (!res) return
   if (res.available === false) observerNote.value = res.error ?? 'Assistant unavailable.'
   else if (res.ok) observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
@@ -123,8 +120,7 @@ async function askClaude() {
   // entries reload via the appendTick watch below when a pass actually appended
 }
 
-// Reload the log when any observer pass (manual OR auto/Watch) appends — including while this panel is
-// open and the pass was fired by the always-on store watcher.
+// Reload the log when an Ask-Claude pass appends (the store bumps appendTick).
 watch(() => observer.appendTick, () => { if (projectUid.value) load() })
 
 // Clear context: reset the project's assistant session + token totals (next run starts fresh).
@@ -276,13 +272,9 @@ async function toggleMute(category: string) {
         <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
       </button>
       <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
-              v-tooltip.top="'Which model the observer runs (Ask Claude + Watch). Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
+              v-tooltip.top="'Which model Ask Claude runs. Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
         <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
       </select>
-      <label v-if="observerAvailable" class="ll-auto"
-             v-tooltip.top="'Sit next to me: after a task finishes, Claude reviews and may note something in the lab log (spends tokens)'">
-        <input type="checkbox" v-model="settings.labLogObserverAuto" /> Watch
-      </label>
       <span v-if="observerTokens" class="ll-tokens"
             v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
@@ -305,27 +297,18 @@ async function toggleMute(category: string) {
       <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
     </div>
 
-    <!-- what "Watch" triggers on: read-only green/red lights (only task-completion is wired today) -->
-    <div v-if="observerAvailable && settings.labLogObserverAuto" class="ll-triggers">
-      <span class="ll-triggers-label">Watching:</span>
-      <span v-for="t in observerTriggers" :key="t.key" class="ll-trigger" v-tooltip.top="t.note">
-        <span class="ll-trigger-dot" :class="t.active ? 'on' : 'off'" /> {{ t.label }}
-      </span>
-    </div>
-
     <!-- assistant report: the full text of the last Ask-Claude pass, in a readable block -->
     <div v-if="observerNote" class="ll-observer-report">
       <div class="ll-observer-head"><i class="pi pi-sparkles" /> Claude</div>
       <div class="ll-observer-body">{{ observerNote }}</div>
     </div>
 
-    <!-- Claude activity log: every observer pass (Ask + Watch), whether or not it wrote to the log —
-         so a silent "looked, nothing to flag" run is still visible, with its trigger + token cost. -->
+    <!-- Claude activity log: every Ask-Claude pass, whether or not it wrote to the log — so a silent
+         "looked, nothing to flag" run is still visible, with its token cost. -->
     <details v-if="observerAvailable && observerPasses.length" class="ll-activity">
       <summary>Claude activity ({{ observerPasses.length }})</summary>
       <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
         <div class="ll-pass-head">
-          <span class="ll-pass-trig">{{ passLabel(p.trigger) }}</span>
           <span class="ll-pass-meta">{{ p.model }} · {{ passTokens(p) }} tok<span v-if="p.appended"> · wrote</span><span v-else-if="!p.ok"> · error</span></span>
           <span class="ll-pass-at">{{ p.at }}</span>
         </div>
@@ -445,18 +428,6 @@ async function toggleMute(category: string) {
   font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
 }
 .ll-clearctx:hover { color: var(--cc-text); }
-/* trigger status row — what "Watch" fires on (read-only green/red lights) */
-.ll-triggers {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem;
-  padding: 0.3rem 0.6rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
-  font-size: 0.64rem; color: var(--cc-text-dim);
-}
-.ll-triggers-label { text-transform: uppercase; letter-spacing: 0.03em; }
-.ll-trigger { display: inline-flex; align-items: center; gap: 0.25rem; cursor: help; }
-.ll-trigger-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; display: inline-block; }
-.ll-trigger-dot.on  { background: #3fb950; }   /* watched */
-.ll-trigger-dot.off { background: #f85149; opacity: 0.55; }   /* not a trigger */
-/* the last Ask-Claude report — its own readable block, not crammed in the toolbar */
 /* setup hint — install/login guidance when Claude Code is missing or not authenticated */
 .ll-setup {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
@@ -484,7 +455,7 @@ async function toggleMute(category: string) {
   margin: 0.3rem 0 0; font-size: 0.66rem; color: var(--cc-text); line-height: 1.45;
   white-space: pre-wrap; word-break: break-word; font-family: inherit;
 }
-/* Claude activity log — collapsible; shows each pass (Ask/Watch), its cost + verdict, even when silent */
+/* Claude activity log — collapsible; shows each Ask-Claude pass, its cost + verdict, even when silent */
 .ll-activity {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-2); padding: 0.3rem 0.6rem; max-height: 11rem; overflow-y: auto;
@@ -496,7 +467,6 @@ async function toggleMute(category: string) {
 .ll-pass.appended { border-left-color: var(--cc-accent); }
 .ll-pass.failed   { border-left-color: #f85149; }
 .ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: 0.64rem; }
-.ll-pass-trig { font-weight: 600; color: var(--cc-text); }
 .ll-pass-meta { color: var(--cc-text-dim); }
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }

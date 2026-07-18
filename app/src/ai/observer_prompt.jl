@@ -46,22 +46,9 @@ function observer_feedback_prompt(project_uid::AbstractString)::String
         "anomaly, or a why-question). If nothing warrants it, append nothing and say so briefly.")
 end
 
-# Auto mode (the "sit next to me" heartbeat tick): only invoked when there is new activity (the backend
-# gates on the run-log delta), so bias toward the single most important thing since last time.
-function observer_auto_prompt(project_uid::AbstractString)::String
-    string(_OBSERVER_RULES, "\n\n",
-        "You are watching project $(project_uid) in the background; something just changed. Check ",
-        "poll_observations + the recent task history/logs and append a [Claude] line ONLY for the ",
-        "single most important new thing (a fired pattern, a real error, an anomaly). If it is routine ",
-        "or already noted, append nothing.")
-end
-
 # The exact prompt the observer runs under — surfaced in-app for transparency (the user can read what
-# the assistant is instructed to do). Shows the shared rules + how each mode extends them.
+# the assistant is instructed to do). Claude is on-demand only (Ask Claude); there is no auto Watch.
 function observer_prompt_display()::String
     fb = strip(replace(observer_feedback_prompt("<project>"), _OBSERVER_RULES => ""))
-    au = strip(replace(observer_auto_prompt("<project>"),     _OBSERVER_RULES => ""))
-    string(strip(_OBSERVER_RULES),
-           "\n\n— Ask Claude adds —\n", fb,
-           "\n\n— Watch adds —\n", au)
+    string(strip(_OBSERVER_RULES), "\n\n— Ask Claude adds —\n", fb)
 end

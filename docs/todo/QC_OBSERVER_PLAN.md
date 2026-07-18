@@ -75,7 +75,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
   (toast = transient foreground feedback; badge = persistent needs-attention; lab-log = durable record).
   info→✅ / warn→⚠️ / error→❌ severity, consistent with the traffic light.
 
-### B1 — Remove Watch (auto-Claude)
+### B1 — Remove Watch (auto-Claude) — DONE (`feat/observer-remove-watch`)
 - Delete the `'auto'` trigger: `observer.ts` `installAutoWatch`, its `useTaskCompletionWatch` use, the
   `App.vue` install, and the Watch toggle/label in `LabLogPanel`. **Keep** `runPass('manual')` = Ask
   Claude (+ model picker, activity log, prompt display). The generic `useTaskCompletionWatch`

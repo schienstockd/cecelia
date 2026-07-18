@@ -63,13 +63,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
   const labLogMode = ref<'notes' | 'tuning'>(
     localStorage.getItem('cc.labLogMode') === 'tuning' ? 'tuning' : 'notes')
-  // "sit next to me": when on, a finished task triggers a (debounced) observer pass that may append a
-  // [Claude] note. Frontend-driven (fires while you're using the app), gated on the availability of an
-  // assistant CLI. Default off — it spends tokens. See components/LabLogPanel.vue.
-  const labLogObserverAuto = ref(localStorage.getItem('cc.labLogObserverAuto') === 'true')
-  // which model the observer spawns (Claude CLI --model alias). Default Sonnet — Opus is overkill for
-  // the observer's work; Haiku is the cheap option for frequent auto-Watch passes. Sent per feedback
-  // call; the backend allow-lists it. See app/src/ai/agent_runner.jl OBSERVER_MODELS.
+  // which model "Ask Claude" spawns (Claude CLI --model alias). Default Sonnet — Opus is overkill for
+  // the observer's work; Haiku is the cheap option. Sent per feedback call; the backend allow-lists it.
+  // See app/src/ai/agent_runner.jl OBSERVER_MODELS.
   const labLogObserverModel = ref(localStorage.getItem('cc.labLogObserverModel') || 'sonnet')
   // transient (not persisted): a one-line preview of an unseen [Claude] lab-log addition — set when
   // the observer appends while the panel is closed, drives the sidebar badge, cleared when opened.
@@ -223,9 +219,8 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
   watch(labLogMode,               v => localStorage.setItem('cc.labLogMode',               String(v)))
-  watch(labLogObserverAuto,       v => localStorage.setItem('cc.labLogObserverAuto',       String(v)))
   watch(labLogObserverModel,      v => localStorage.setItem('cc.labLogObserverModel',      v))
   watch(labLogPanelOpen,          open => { if (open) labLogUnseen.value = '' })   // opening clears the badge
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, labLogObserverAuto, labLogObserverModel, labLogUnseen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, labLogObserverModel, labLogUnseen, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

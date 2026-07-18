@@ -61,6 +61,14 @@ stdio — standard for local MCP servers. Claude Code connects over stdin/stdout
 
 ## The observer session (sit next to me mode)
 
+> **Implementation note (2026-07, `feat/observer-remove-watch`):** the in-app auto-firing "Watch"
+> was **removed**. In practice most task completions had nothing worth flagging, so the auto passes
+> were token noise the user stopped reading. Claude is now **on-demand only** — the "Ask Claude"
+> button runs one pass. Deterministic, always-on reporting is **Cecelia's** job (the `capture_context!`
+> digests + QC traffic lights), not Claude's. The design below is the original vision; the event-push
+> machinery (`monitor.py`) remains for the repeat-failure signal + a possible future opt-in. See
+> `docs/todo/QC_OBSERVER_PLAN.md`.
+
 The observer session is a Claude chat window with MCP access to the running Cecelia project. The user opens it and says "just sit next to me" or "watch what I'm doing." Claude doesn't wait to be asked — it monitors and surfaces observations when something is worth saying.
 
 **Event-driven, not continuous.** Claude does not stream logs in real time — that would be prohibitively expensive in tokens. Instead, the MCP server pushes event notifications to Claude when specific things happen:
