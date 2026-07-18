@@ -140,6 +140,7 @@ const _SEV_RANK = Dict("ok" => 0, "warn" => 1, "fail" => 2)
 function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},String}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
     fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
+    warn_imgs  = Dict{Tuple{String,String},Set{String}}()  # (module, fun-display) => images with a warn QC finding
     mod_sev    = Dict{String,String}()                     # module => "ok"|"warn"|"fail" (worst)
     bump(mod, sev) = (get(_SEV_RANK, sev, 0) > get(_SEV_RANK, get(mod_sev, mod, "ok"), 0)) &&
                      (mod_sev[mod] = sev)
@@ -158,6 +159,7 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
                 bump(mod, "fail")
             elseif _has_warn_qc(img, fun, vn)
+                push!(get!(warn_imgs, (mod, disp), Set{String}()), img.name)   # count the flagged images
                 bump(mod, "warn")
             end
             at > max_at && (max_at = at)
@@ -167,9 +169,13 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
     for (mod, funs) in by_mod_fun
         items = String[]
         for disp in sort(collect(keys(funs)))
-            n  = length(funs[disp])
+            names = funs[disp]
+            n  = length(names)
+            item = "$disp on $n image$(n == 1 ? "" : "s")"
+            n <= 2 && (item *= " ($(join(sort(collect(names)), ", ")))")   # name them when few; for more, the count says it
+            w  = length(get(warn_imgs, (mod, disp), Set{String}()))
             fc = get(fail_count, (mod, disp), 0)
-            item = "$disp on $n image$(n == 1 ? "" : "s") ($(_where(funs[disp])))"
+            w  > 0 && (item *= " — $w flagged")   # how many banked a warn QC finding (not just that one did)
             fc > 0 && (item *= " — $fc failed")
             push!(items, item)
         end

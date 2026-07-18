@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
-  entryId, decisionPrefill, isRatable, muteGroups, muteCategoryLabel,
+  entryId, decisionPrefill, isRatable, muteGroups, muteCategoryLabel, visibleEntries,
   type LabLogEntry,
 } from './labLog'
 
@@ -64,6 +64,20 @@ describe('labLog.muteCategoryLabel', () => {
   it('handles empty / missing input', () => {
     expect(muteCategoryLabel('')).toBe('')
     expect(muteCategoryLabel(undefined as any)).toBe('')
+  })
+})
+
+describe('labLog.visibleEntries', () => {
+  it('filters out entries whose id is dismissed, keeps the rest', () => {
+    const a = entry('Cecelia', 'raw-a'), b = entry('User', 'raw-b'), c = entry('Claude', 'raw-c')
+    const out = visibleEntries([a, b, c], [entryId(b.raw)])
+    expect(out).toEqual([a, c])          // b dropped
+  })
+  it('returns all entries when nothing dismissed; handles empty/missing', () => {
+    const a = entry('User', 'raw-a')
+    expect(visibleEntries([a], [])).toEqual([a])
+    expect(visibleEntries([a], undefined as any)).toEqual([a])
+    expect(visibleEntries(undefined as any, [])).toEqual([])
   })
 })
 

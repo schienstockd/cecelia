@@ -40,6 +40,13 @@ export function entryId(raw: string): string {
   return (h >>> 0).toString(16).padStart(8, '0')
 }
 
+/** Entries the panel should show: those whose `entryId` is NOT in the dismissed (hidden) list. Hiding
+ *  is view-only — the lab-log file keeps every entry (append-only); this just filters the panel. */
+export function visibleEntries(entries: LabLogEntry[], dismissed: string[]): LabLogEntry[] {
+  const hidden = new Set(dismissed ?? [])
+  return (entries ?? []).filter(e => !hidden.has(entryId(e.raw)))
+}
+
 /** Notes-mode decision-assessment prefill: a verdict + reference the user completes with the why. */
 export function decisionPrefill(entry: Pick<LabLogEntry, 'date' | 'author'>, vote: Vote): string {
   return `${vote === 'up' ? '👍' : '👎'} re ${entry.date} [${entry.author}]: `
