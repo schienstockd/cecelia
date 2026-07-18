@@ -1061,6 +1061,24 @@ function api_analysis_lineage(req::HTTP.Request)
     200, JSON3.write(lin)
 end
 
+# GET /api/analysis/populations?projectUid[&imageUid][&setUid] — per-image population DEFINITIONS
+# (tree + gate/filter specs), the detail behind the lineage's gatedPops. READ-ONLY, cheap (sidecar
+# read only; membership counts are Slice C). See populations_summary / OBSERVER_DATA_ACCESS_PLAN.
+function api_analysis_populations(req::HTTP.Request)
+    q = HTTP.queryparams(HTTP.URI(req.target))
+    project_uid = get(q, "projectUid", "")
+    isempty(project_uid) && return 400, JSON3.write((; error = "projectUid required"))
+    proj = try load_project(project_uid) catch e
+        return 404, JSON3.write((; error = sprint(showerror, e)))
+    end
+    out = try
+        populations_summary(proj; image_uid = get(q, "imageUid", ""), set_uid = get(q, "setUid", ""))
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(out)
+end
+
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:
 # {projectUid, setUid, funName, valueName?, threshold?}. This is the ONLY cohort write path.

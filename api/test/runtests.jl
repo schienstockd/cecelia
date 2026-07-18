@@ -842,3 +842,31 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: analysis populations" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _pops(t) = api_analysis_populations(HTTP.Request("GET", "/api/analysis/populations" * t))
+    try
+        proj = create_project!(name = "api-pops", kind = "live")
+        s    = add_set!(proj; name = "set-A")
+        img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        img.label_props = Dict("A" => "A.h5ad"); save!(img)
+        m = Cecelia.PopulationMap(; pop_type = "flow", value_name = "A")
+        Cecelia.add_pop!(m, "CD3"; gate = Cecelia.RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        Cecelia.save_pop_map!(m, img)
+        @test _pops("")[1] == 400                                            # missing projectUid
+        @test _pops("?projectUid=nope")[1] == 404
+        st, body = _pops("?projectUid=$(proj.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.projectUid == proj.uid && length(d.images) == 1
+        pops = d.images[1].populations
+        cd3 = pops[findfirst(p -> p.name == "CD3", pops)]
+        @test cd3.popType == "flow" && cd3.gate.kind == "rectangle" && cd3.gate.x_channel == "c1"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

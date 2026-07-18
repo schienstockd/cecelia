@@ -100,6 +100,15 @@ class ClientTest(unittest.TestCase):
             self.c.get_analysis_lineage("p", image_uid="i1")       # scoped to one image
         self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
 
+    def test_populations_builds_url_and_drops_unset(self):
+        self.assertIn(("GET", "/api/analysis/populations"), ALLOWED_ROUTES)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_populations("p", set_uid="s1")              # scoped to one set
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/analysis/populations?", url)
+        self.assertIn("setUid=s1", url)
+        self.assertNotIn("imageUid", url)                          # unset optional dropped
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:
