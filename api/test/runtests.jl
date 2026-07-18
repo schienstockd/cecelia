@@ -397,10 +397,12 @@ end
         let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>true))[2])
             @test m.ok == true && "Segment" in m.mutes
         end
-        # read exposes both the mutes and the available category vocabulary (for the panel's chips)
+        # read exposes the mutes and the two category groups the panel's mute chips render (module pages
+        # vs operations) — both dynamic from task specs.
         let r = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2])
             @test "Segment" in r.mutes
-            @test "Segment" in r.categories && "Gating" in r.categories   # dynamic from task specs
+            @test "Segment" in r.pageCategories && "Gating" in r.pageCategories   # module pages
+            @test "Edit" in r.operationCategories                                 # operations group
         end
         let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>false))[2])
             @test !("Segment" in m.mutes)
