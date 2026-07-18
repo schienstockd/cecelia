@@ -45,9 +45,11 @@ export const useLabCaptureStore = defineStore('labCapture', () => {
   }
 
   // Auto-capture after a task/chain node finishes (debounced + coalesced by the composable; the
-  // backend digest is "since last capture", so bursts collapse to one entry). App-lifetime install.
+  // backend digest is "since last capture", so bursts collapse to one entry). App-lifetime install,
+  // gated on the SAME "Auto" toggle (`labLogAutoContext`) that governs capture-on-project-open — one
+  // control for all automatic capture; when off, only the manual "Capture" button fires.
   const watcher = useTaskCompletionWatch({
-    enabled: () => !!projectUid(),
+    enabled: () => !!projectUid() && settings.labLogAutoContext,
     onComplete: () => { capture() },
   })
   const installAutoCapture = () => watcher.install()

@@ -259,7 +259,7 @@ async function toggleMute(category: string) {
               v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
         <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
       </button>
-      <label class="ll-auto" v-tooltip.top="'Automatically capture activity when this project opens'">
+      <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
         <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
       </label>
       <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"

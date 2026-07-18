@@ -56,8 +56,9 @@ export const useSettingsStore = defineStore('settings', () => {
   // the lab log is a floating dockable panel too (open/closed state, toggled from the sidebar).
   // Off by default (opt-in). See components/LabLogPanel.vue, docs/ai-assist/LAB-LOG.md.
   const labLogPanelOpen = ref(localStorage.getItem('cc.labLogPanelOpen') === 'true')
-  // auto-capture app activity digests ([Cecelia] entries) when a project opens. Opt-in while we
-  // feel out what's sensible; the panel also has a manual "Capture" button. Default off.
+  // auto-capture app activity digests ([Cecelia] entries) — on project open AND after tasks/chains
+  // finish (stores/labCapture.ts). One toggle for all automatic capture; off ⇒ only the manual
+  // "Capture" button fires. Opt-in while we feel out what's sensible. Default off.
   const labLogAutoContext = ref(localStorage.getItem('cc.labLogAutoContext') === 'true')
   // lab-log feedback mode: 'notes' → thumbs+comment judge the decision (recorded); 'tuning' → thumbs
   // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
