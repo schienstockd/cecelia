@@ -207,6 +207,38 @@ def get_measure_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
 
 @mcp.tool()
+def get_behaviour_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """HMM BEHAVIOUR distribution per image — how the tracked cells split across behaviour states, and
+    their transitions. Scope with `image_uid` / `set_uid`; omit both for the whole project.
+
+    Per image, `behaviour` is a list; each entry is one HMM column of one segmentation:
+      - `kind` "state": `{valueName, column, n, nStates, distribution: [{value, n, fraction}]}` — the
+        fraction of cells in each state (e.g. 0.42 Directed / 0.35 Scanning / 0.23 Meandering). `n` is
+        the number of DECODED cells (untracked cells have no state and are excluded).
+      - `kind` "transitions": `{valueName, column, n, nDistinct, distribution: [top transitions]}` —
+        e.g. "1_2" is a 1→2 transition; distribution is the top-N by frequency, `nDistinct` the total.
+    An image collapsed into one state, or a very different dominant-state fraction from its peers, is
+    worth flagging. Summary-level (distributions, not raw rows). Reads current on-disk state."""
+    return _client.get_behaviour_summary(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
+def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """CLUSTERING summary per image — for each clustering run, how the cells/tracks landed. Scope with
+    `image_uid` / `set_uid`; omit both for the whole project.
+
+    Per image, `clusters` is a list, one entry per (segmentation × run):
+      `{valueName, suffix, granularity: cell|track, nClusters, n, largestFrac, sizes: [{value, n,
+      fraction}], features}`.
+      - `suffix` is the run id (e.g. "movement"/"test"); `granularity` "cell" = clustPops, "track" =
+        clustTracks. `features` is the measure list the run clustered on.
+      - `largestFrac` near 1.0 (one cluster swallowing most points) or a very low `nClusters` vs peers
+        means a near-uninformative / collapsed clustering for that image — worth flagging.
+    Summary-level (sizes, not raw cluster assignments). Reads current on-disk state."""
+    return _client.get_cluster_summary(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")

@@ -1072,6 +1072,12 @@ api_analysis_populations(req::HTTP.Request) =
 # tracked/all-cells pop). Heavier (touches cell data via pop_df); prefer image/set scope. Slice C.
 api_analysis_measures(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> measure_summary(p; image_uid = i, set_uid = s))
+# GET /api/analysis/behaviour — HMM state distribution + transition counts. GET /api/analysis/clusters —
+# per clustering run: n clusters, sizes, largest fraction, features. Both read obs via pop_df. Slice D.
+api_analysis_behaviour(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> behaviour_summary(p; image_uid = i, set_uid = s))
+api_analysis_clusters(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> cluster_summary(p; image_uid = i, set_uid = s))
 
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:

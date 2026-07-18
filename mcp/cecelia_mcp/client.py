@@ -32,6 +32,8 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
         ("GET", "/api/analysis/measures"),  # per-pop phenotype + motility summaries (median/quantiles)
+        ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
+        ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
@@ -142,6 +144,14 @@ class CeceliaClient:
     def get_measure_summary(self, project_uid: str, image_uid: str | None = None,
                             set_uid: str | None = None):
         return self._analysis_summary("/api/analysis/measures", project_uid, image_uid, set_uid)
+
+    def get_behaviour_summary(self, project_uid: str, image_uid: str | None = None,
+                              set_uid: str | None = None):
+        return self._analysis_summary("/api/analysis/behaviour", project_uid, image_uid, set_uid)
+
+    def get_cluster_summary(self, project_uid: str, image_uid: str | None = None,
+                            set_uid: str | None = None):
+        return self._analysis_summary("/api/analysis/clusters", project_uid, image_uid, set_uid)
 
     def read_lab_log(self, project_uid: str):
         return self._request("GET", "/api/lablog", {"projectUid": project_uid})

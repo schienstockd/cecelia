@@ -893,3 +893,26 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: analysis behaviour + clusters" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _beh(t) = api_analysis_behaviour(HTTP.Request("GET", "/api/analysis/behaviour" * t))
+    _clu(t) = api_analysis_clusters(HTTP.Request("GET", "/api/analysis/clusters" * t))
+    try
+        proj = create_project!(name = "api-behclust", kind = "live")
+        s    = add_set!(proj; name = "set-A")
+        add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        @test _beh("")[1] == 400 && _clu("")[1] == 400                        # missing projectUid
+        @test _beh("?projectUid=nope")[1] == 404 && _clu("?projectUid=nope")[1] == 404
+        # 200 + shape; no obs on disk → empty lists (the read path is validated off-suite / pkg fixture)
+        bd = JSON3.read(_beh("?projectUid=$(proj.uid)")[2])
+        @test bd.projectUid == proj.uid && length(bd.images) == 1 && haskey(bd.images[1], :behaviour)
+        cd = JSON3.read(_clu("?projectUid=$(proj.uid)")[2])
+        @test cd.projectUid == proj.uid && length(cd.images) == 1 && haskey(cd.images[1], :clusters)
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end

@@ -4681,6 +4681,41 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 @test pi !== nothing && summ[pi].n > moti.n && !isempty(summ[pi].measures)
             end
         end
+
+        @testset "behaviour + cluster summary (Slice D)" begin
+            # pure category-distribution logic (always runs): fractions, distinct count, cap, null-drop
+            d = Cecelia._category_distribution(Any[1.0, 1.0, 1.0, 2.0, NaN, missing, nothing])
+            @test d.n == 4 && d.nDistinct == 2
+            @test d.top[1].value == "1.0" && d.top[1].n == 3 && d.top[1].fraction == 0.75
+            @test d.top[2].value == "2.0" && d.top[2].n == 1
+            big = Cecelia._category_distribution(collect(1:100); cap = 5)
+            @test big.nDistinct == 100 && length(big.top) == 5   # capped, but distinct count is the true total
+            @test Cecelia._category_distribution(Any[NaN, missing, nothing]).n == 0
+
+            # integration over the real KDIeEm B fixture: the summaries run and return the right shape
+            # (behaviour/cluster entries only if the fixture banked HMM/cluster obs — asserted when present)
+            h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+            if !have_fixture(h5)
+                @test_skip "behaviour/cluster summary (fixture missing)"
+            else
+                td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+                cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+                img = CciaImage(uid = "KDIeEm", dir = td)
+                img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+                proj = CciaProject(; uid = "bP", name = "b"); proj.root = mktempdir()
+                st = CciaSet(; uid = "bS", dir = mktempdir()); push!(proj._sets, st); push!(proj.set_uids, st.uid)
+                push!(st._images, img); push!(st.image_uids, img.uid)
+
+                b = behaviour_summary(proj); c = cluster_summary(proj)
+                @test length(b.images) == 1 && b.images[1].behaviour isa AbstractVector
+                @test length(c.images) == 1 && c.images[1].clusters isa AbstractVector
+                # every behaviour entry is a well-formed distribution
+                for e in b.images[1].behaviour
+                    @test e.kind in ("state", "transitions") && e.n > 0 && !isempty(e.distribution)
+                    @test all(x -> 0.0 <= x.fraction <= 1.0, e.distribution)
+                end
+            end
+        end
     end
 
 end
