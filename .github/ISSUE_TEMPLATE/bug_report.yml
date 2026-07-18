@@ -1,0 +1,68 @@
+name: Bug report
+description: Something isn't working as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Thanks for taking the time to report a bug. Cecelia Pineapple is early
+        software and has not yet been widely tested, so detailed reports are
+        genuinely useful. Please search existing issues first to avoid duplicates.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+      placeholder: |
+        Steps to reproduce:
+        1. ...
+        2. ...
+
+        Expected: ...
+        Actual: ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Cecelia version
+      description: Release tag, or `git` commit if you built from source.
+      placeholder: "v0.1.0-rc8"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How did you install?
+      options:
+        - Installer script (install.sh / install.ps1)
+        - Built from source
+        - Other (describe below)
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: >-
+        Paste any error messages, stack traces, or relevant console output.
+        This will be automatically formatted as code, so no backticks needed.
+      render: shell
+  - type: textarea
+    id: data-context
+    attributes:
+      label: Data context (optional)
+      description: >-
+        Image type / modality, size, number of channels or timepoints — anything
+        about the data that might be relevant. Do **not** upload sensitive or
+        unpublished imaging data.

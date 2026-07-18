@@ -65,10 +65,28 @@ someone else installs it.
 1. CI matrix green on `main` (all three OSes).
 2. Decide the version (heartbeat patch vs substantial minor; `-rcN` if you'll soak before announcing).
 3. Draft release notes (features / fixes / infra since the last tag — `git log <lasttag>..HEAD`).
-4. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
-5. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
+   The same log feeds **`CHANGELOG.md`**: rename its `[Unreleased]` block to the new version + date
+   and paste the notes in (see snippet below). Don't hand-maintain `[Unreleased]` between releases —
+   it's generated here, so it can't silently drift from what actually shipped.
+4. Bump the `version:` + `date-released:` in **`CITATION.cff`** to this tag.
+5. Tag off `main` and push (`release.yml` builds + publishes). Hyphenated tag = prerelease.
+6. If it's a demo/onboarding/external build: verify the published artifact **installs clean** on a
    fresh machine + the target dataset before relying on it.
-6. Only at a coarse boundary: add a MILESTONES entry (append-only).
+7. Only at a coarse boundary: add a MILESTONES entry (append-only).
+
+### Regenerating the CHANGELOG section
+
+The `CHANGELOG.md` `[Unreleased]` block is filled in *at release time* from the commit log, so it
+never has to be maintained by hand between tags. Grab the one-liners since the last tag:
+
+```sh
+git log $(git describe --tags --abbrev=0)..HEAD --oneline --no-merges
+```
+
+Rename `## [Unreleased]` to `## [<version>] — <YYYY-MM-DD>`, drop the grouped notes under it
+(Added / Changed / Fixed), add a fresh empty `## [Unreleased]` above it, and update the compare
+links at the bottom of the file. This is the same content as the GitHub Release — the CHANGELOG is
+just its offline-readable, in-repo mirror.
 
 ## Overdue check
 

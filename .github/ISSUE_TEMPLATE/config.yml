@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: FAQ — why it's built this way
+    url: https://github.com/schienstockd/cecelia/blob/main/FAQ.md
+    about: Design rationale and answers to common questions. Please check here first.
