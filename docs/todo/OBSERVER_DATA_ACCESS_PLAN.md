@@ -12,6 +12,12 @@ repeatedly hit this wall (reconstructing track counts from clustering inputs bec
 **Goal:** give it as much *decision-useful* information as feasible, **summary-level only** — never
 raw 100 MB tables — plus a synthesized **lineage** so it understands *how* the data was produced.
 
+**Coverage — not just tracking.** Live/tracking projects are the current focus, but many users have
+**static images** where the signal is **phenotype** — per-cell channel intensities + morphology — with
+no tracks at all. Phenotype is a first-class summary target (see `get_measure_summary`), equal to
+motility. **Spatial** / neighbourhood analysis is a future stage (not yet ported) — leave a slot for it,
+don't build it.
+
 ## Locked decisions
 
 1. **Lineage-first.** Build `get_analysis_lineage` (Slice A) before the richer per-stage numbers —
@@ -28,6 +34,10 @@ raw 100 MB tables — plus a synthesized **lineage** so it understands *how* the
    in `mcp/cecelia_mcp/server.py`.
 5. **Two layers, one arc.** Layer 1 = the lineage story; Layer 2 = per-stage summaries. Boards +
    chains feed both.
+6. **New modules wire this layer.** When a module that produces analysable data lands, extending the
+   observer summary layer (a thin route + MCP tool, or a new field on an existing one) is PART of the
+   module — not an afterthought — so the observer never silently goes blind on a new data type. Codified
+   as a checklist in [`docs/MODULES.md`](../MODULES.md) (the module-building doc).
 
 ## Layer 1 — lineage (Slice A)
 
@@ -56,11 +66,12 @@ Each = a read-only `/api` route + an MCP tool returning aggregates (+ caps):
 | Tool | Slice | Returns (summary only) |
 |---|---|---|
 | `get_populations` | B | pop tree: names, type (gate/clust/track), **gate defs** (channels/measures + gate kind), **membership counts** (n cells/tracks per pop) |
-| `get_measure_summary` | C | per pop/image: median + quantiles + n for speed / displacement / track-length (+ key cell measures) |
+| `get_measure_summary` | C | per pop/image: median + quantiles + n. **Phenotype** (per-cell channel intensities + morphology) for static images, **and** track motility (speed / displacement / track-length) for live. Static projects have no tracks — phenotype is their whole signal. |
 | `get_behaviour_summary` | D | HMM state distribution (fraction per state), n transitions / distinct |
 | `get_cluster_summary` | D | n clusters, sizes, largestFrac, feature list, per label set |
 | `get_analysis_boards` | E | what plots exist (type, data source, pops/measures plotted) |
 | `get_chains` | E | whiteboard chain templates (which tasks wired) |
+| *(spatial)* | *future* | neighbourhood / proximity summaries — **not yet ported**; leave the slot, don't build |
 
 ## Build slices (each shippable)
 
