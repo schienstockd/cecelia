@@ -602,20 +602,30 @@ end
                     Dict("projectUid"=>uid, "values"=>Dict(img.uid=>Dict("included"=>false))))[1] == 200
         @test isempty(filter(x -> x.type == "image_note_added", drain()))
 
-        # ── lab_log_entry_added fires for USER entries only (not [Claude]/[Cecelia]) ──
+        # ── lab_log_entry_added fires for USER entries only (anti-loop); lab_log_updated (the panel-
+        # reload signal) fires for EVERY append so an external Chat-to-Claude append still refreshes ──
         drain()
         @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"User", "lines"=>["switched to diam 30"]))[1] == 200
-        let f = filter(x -> x.type == "lab_log_entry_added", drain())
-            @test length(f) == 1 && occursin("diam 30", f[1].summary) && f[1].projectUid == uid
+        let f = drain()
+            ea = filter(x -> x.type == "lab_log_entry_added", f)
+            @test length(ea) == 1 && occursin("diam 30", ea[1].summary) && ea[1].projectUid == uid
+            @test length(filter(x -> x.type == "lab_log_updated" && x.projectUid == uid, f)) == 1
         end
-        # the observer's own [Claude] append must NOT re-broadcast (would loop)
+        # the observer's own [Claude] append must NOT re-broadcast entry_added (would loop) — but it
+        # STILL emits lab_log_updated so an open panel reloads (the external-append bug fix)
         drain()
         @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Claude", "lines"=>["noted"]))[1] == 200
-        @test isempty(filter(x -> x.type == "lab_log_entry_added", drain()))
-        # [Cecelia] auto-digests are not user decisions → no broadcast
+        let f = drain()
+            @test isempty(filter(x -> x.type == "lab_log_entry_added", f))
+            @test length(filter(x -> x.type == "lab_log_updated", f)) == 1
+        end
+        # [Cecelia] auto-digests: no entry_added either, but still a panel reload
         drain()
         @test _post(api_lablog_append, Dict("projectUid"=>uid, "author"=>"Cecelia", "lines"=>["digest"]))[1] == 200
-        @test isempty(filter(x -> x.type == "lab_log_entry_added", drain()))
+        let f = drain()
+            @test isempty(filter(x -> x.type == "lab_log_entry_added", f))
+            @test length(filter(x -> x.type == "lab_log_updated", f)) == 1
+        end
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")

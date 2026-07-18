@@ -5,6 +5,7 @@ import { useTaskStore } from './tasks'
 import { useProjectStore } from './project'
 import { useProjectMetaStore } from './projectMeta'
 import { useTaskDefsStore } from './taskDefs'
+import { useLabCaptureStore } from './labCapture'
 
 export type WsStatus = 'connecting' | 'connected' | 'disconnected' | 'error'
 
@@ -76,6 +77,14 @@ export const useWsStore = defineStore('ws', () => {
       if (type === 'server:log') {
         const level = (data.level === 'error' || data.level === 'warn') ? data.level : 'info'
         useLogStore().push(level as any, String(data.message ?? ''), { source: 'server' })
+      }
+
+      // a lab-log entry was appended by ANY path (incl. an external Chat-to-Claude MCP session) — reload
+      // an open panel if it's for the current project. Reuses notifyAppended() (bumps the tick the panel
+      // watches). Covers the case the frontend didn't initiate the append, so it has no other signal.
+      if (type === 'lab_log_updated') {
+        const puid = String(data.projectUid ?? '')
+        if (puid && puid === useProjectMetaStore().current?.uid) useLabCaptureStore().notifyAppended()
       }
 
       if (type === 'task:progress') {
