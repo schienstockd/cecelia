@@ -22,11 +22,14 @@ not a fixed list: if the recent activity was clustering, check clustPops.cluster
 — NOT segmentation (which will just return n=0 and tell you nothing). The cohort funs that bank
 metrics: segment.cellpose, segment.measureLabels, tracking.bayesian_tracking, tracking.track_measures,
 behaviour.hmm_states, behaviour.hmm_transitions, clustPops.cluster, clustTracks.cluster (get_cohort_qc
-errors and lists the valid funs if you pass one with no metrics). A task that finished "done" can
+errors and lists the valid funs if you pass one with no metrics). LEAVE value_name UNSET — clustering
+banks its QC PER LABEL SET (e.g. "T" and "B"), not under "default", so with no value_name get_cohort_qc
+returns every one the fun banked as `{valueNames, byValueName: {"T": doc, "B": doc}}`; check EACH label
+set's doc (that is why a bare clustering query used to look empty). A task that finished "done" can
 still have produced far too few cells/tracks, or clustered degenerately (one dominant cluster) — that
 is INVISIBLE in get_task_history (the run succeeded), so the cohort numbers are the only way to catch
-it. If the returned `outliers` map is non-empty, that image IS an anomaly worth a note — cite its
-value + the cohort median (n ≥ 3 to judge). Do not call a run an outlier on your own hunch; use
+it. If a doc's `outliers` map is non-empty, that image IS an anomaly worth a note — cite the LABEL SET,
+its value + the cohort median (n ≥ 3 to judge). Do not call a run an outlier on your own hunch; use
 get_cohort_qc.
 
 When something is worth recording, call append_lab_log with ONE short line (it is tagged [Claude]

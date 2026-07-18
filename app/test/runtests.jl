@@ -4449,6 +4449,35 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test_throws ErrorException cohort_qc_for!(set, "not.aTask", "default")
         end
 
+        @testset "cohort value_name discovery (per label set)" begin
+            set = CciaSet(; dir = mktempdir())
+            # clustering banks per label set: T-tracks tight, B-tracks with one sparse image (c=9)
+            for (uid, nT, nB) in [("a", 40, 22), ("b", 39, 24), ("c", 41, 9)]
+                img = CciaImage(; uid = uid, dir = mktempdir())
+                write_qc(img, "clustTracks.cluster", "T", Dict{String,Any}[];
+                         metrics = Dict{String,Any}("nTracks"=>nT, "nClusters"=>4, "largestClusterFrac"=>0.4))
+                write_qc(img, "clustTracks.cluster", "B", Dict{String,Any}[];
+                         metrics = Dict{String,Any}("nTracks"=>nB, "nClusters"=>3, "largestClusterFrac"=>0.5))
+                push!(set._images, img); push!(set.image_uids, uid)
+            end
+            # discovers the banked label sets (sorted), empty for a fun that banked nothing
+            @test cohort_value_names(set, "clustTracks.cluster") == ["B", "T"]
+            @test cohort_value_names(set, "segment.cellpose") == String[]
+            # per-value_name cohorts: T and B are SEPARATE cohorts
+            allc = cohort_qc_for_all(set, "clustTracks.cluster")
+            @test Set(keys(allc)) == Set(["B", "T"])
+            @test allc["T"]["valueName"] == "T" && allc["B"]["valueName"] == "B"
+            # the sparse B image (c) flags in the B cohort, not the T cohort
+            @test haskey(allc["B"]["metrics"]["nTracks"]["outliers"], "c")
+            @test !haskey(allc["T"]["metrics"]["nTracks"]["outliers"], "c")
+            @test !isfile(cohort_qc_path(set, "clustTracks.cluster", "B"))   # read-only wrote nothing
+            # persist variant writes each label set's sidecar
+            allw = cohort_qc_for_all!(set, "clustTracks.cluster")
+            @test isfile(cohort_qc_path(set, "clustTracks.cluster", "B"))
+            @test isfile(cohort_qc_path(set, "clustTracks.cluster", "T"))
+            @test occursin("(B)", join(cohort_qc_summary_lines(allw["B"])))   # label set named in the summary
+        end
+
         @testset "register_cohort_metrics! (custom-module opt-in)" begin
             fun = "customExamples.qcProbeTest"
             @test !haskey(COHORT_METRICS, fun)                       # unknown → cohort errors

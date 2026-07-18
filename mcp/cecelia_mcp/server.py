@@ -77,7 +77,7 @@ def get_qc_metrics(project_uid: str, image_uid: str) -> dict:
 
 
 @mcp.tool()
-def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str = "default") -> dict:
+def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str | None = None) -> dict:
     """Cohort QC for one task across a set's images — the way to spot an outlier run ("image 7 has 8×
     fewer cells than the cohort"). Aggregates the objective metric each task banks, over the set's
     INCLUDED images, into mean/SD + z-scored outliers.
@@ -94,14 +94,21 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
       - "behaviour.hmm_transitions"  → nTransitions, nDistinctTransitions
       - "clustPops.cluster"          → nCells, nClusters, largestClusterFrac
       - "clustTracks.cluster"        → nTracks, nClusters, largestClusterFrac
-    `value_name` is the output variant (default "default").
 
-    Returns {funName, valueName, nIncluded, metrics: {<key>: {n, median, mad, mean, sd, threshold,
+    **LEAVE value_name UNSET** unless you have a specific one. A task banks its QC under a value_name,
+    and different tasks use different ones: segment/tracking bank under "default", but CLUSTERING banks
+    PER LABEL SET (e.g. "T" and "B" — T-cells and B-cells). With no value_name, this returns every one
+    the fun actually banked, so you don't have to know the suffix:
+       {funName, valueNames: [...], byValueName: {"T": <doc>, "B": <doc>}}
+    (that is why a bare clustering query used to come back empty — it defaulted to "default", where
+    clustering banks nothing). Pass an explicit value_name only to get that single label set's <doc>.
+
+    Each <doc> is {funName, valueName, nIncluded, metrics: {<key>: {n, median, mad, mean, sd, threshold,
     outliers: {imageUid: {value, z|relDev}}}}}. Outliers use a robust modified z-score (median/MAD) —
     the entry carries `z` (that score); when the cohort has no spread (MAD 0, ≥half identical) it
     carries `relDev` (relative departure) instead. Either way a clear outlier flags even at n=3. An
-    `outliers` map with entries is the flag worth a note — name the image, its value, and the cohort
-    median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data."""
+    `outliers` map with entries is the flag worth a note — name the image, the LABEL SET, its value, and
+    the cohort median (numbers in the detail). `n` < 3 ⇒ too few images to judge. Advisory; reads current data."""
     return _client.get_cohort_qc(project_uid, set_uid, fun_name, value_name)
 
 
