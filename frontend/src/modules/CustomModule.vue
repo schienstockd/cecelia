@@ -12,6 +12,7 @@ import { useRoute } from 'vue-router'
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
+import { useCustomModulesStore } from '../stores/customModules'
 
 const route    = useRoute()
 // Category comes from the route; useTaskDefs is re-created per navigation because vue-router reuses
@@ -19,10 +20,15 @@ const route    = useRoute()
 // the route by full path, so a fresh instance (and fresh defs) is created per category.
 const category = computed(() => String(route.params.category ?? ''))
 const { defs, reload } = useTaskDefs(category.value)
+// cohort funs come from the backend (funNames ∩ COHORT_METRICS), so the "Check cohort" button appears
+// automatically for a custom module that registered cohort metrics — no hardcoded per-page list.
+const customModules = useCustomModulesStore()
+const cohortFuns = computed(() =>
+  customModules.categories.find(c => c.name === category.value)?.cohortFuns ?? [])
 </script>
 
 <template>
-  <ModuleLayout :module="category" :show-attrs="true" :show-filter="true">
+  <ModuleLayout :module="category" :show-attrs="true" :show-filter="true" :cohort-funs="cohortFuns">
     <template #right="{ selectedUids, selectedNames }">
       <TaskRunner
         :defs="defs"

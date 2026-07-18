@@ -112,6 +112,26 @@ on `PYTHONPATH`, writes the params JSON, streams `[PROGRESS] n/total` → `on_pr
 clean exit. Your `_run.py` reads params via `cecelia.utils.script_utils.script_params()` — see the
 built-in runners under `python/cecelia/tasks/` for the pattern. **No `sys.path` bootstrapping.**
 
+## QC (recommended)
+
+Like a built-in task, a result-producing custom module should bank advisory QC so its output flows to
+the image badge, the `[Cecelia]` lab-log digest and the observer. Call **`Cecelia.write_qc(img, fun,
+value_name, findings; metrics)`** after the work succeeds — `metrics` is an objective count, `findings`
+a vector of `Cecelia.qc_finding("warn", code, short, long)` for the bad case (advisory only; never
+blocks). Write it under **your own `fun_name`** — that is the fun the image badge and the digest ⚠️
+resolve against.
+
+To make your metric cohort-comparable across a set (the `get_cohort_qc` / `/api/qc/cohort` outlier
+check), declare its keys **at load time**, next to your `register_task!`:
+
+```julia
+Cecelia.register_cohort_metrics!("customExamples.myTask", ["nCells"])
+```
+
+The category you tag in the JSON (`"category": "customExamples"`) automatically appears in the lab-log
+mute bar's **Module pages** group — so a user can mute your module's `[Cecelia]` digest lines. A
+runnable QC example lives in `dev/modules/…/customExamples/qcProbe.jl`.
+
 ## Loading & reloading
 
 Custom modules are loaded once on server start. To pick up **newly dropped** files without a restart,

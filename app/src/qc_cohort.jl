@@ -42,6 +42,17 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "behaviour.hmm_transitions"  => ["nTransitions", "nDistinctTransitions"],
 )
 
+"""
+    register_cohort_metrics!(fun_name, keys) -> Vector{String}
+
+Declare the cohort-comparable metric keys a task banks, so `get_cohort_qc` / the `/api/qc/cohort` route
+can run on `fun_name`. Built-ins are listed in `COHORT_METRICS` above; **custom modules call this at
+registration time** to opt their QC into cohort checks (mirrors `register_task!`). Idempotent.
+"""
+function register_cohort_metrics!(fun_name::AbstractString, keys::AbstractVector)::Vector{String}
+    COHORT_METRICS[String(fun_name)] = String[String(k) for k in keys]
+end
+
 # Pure: robust outlier detection. Two regimes:
 #  • MAD > 0 — modified z-score (Iglewicz & Hoaglin): Mᵢ = 0.6745·(xᵢ − median)/MAD, flag |Mᵢ| ≥
 #    threshold. Robust: one bad image doesn't inflate the scale and mask itself, so a clear outlier

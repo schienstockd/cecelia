@@ -24,12 +24,12 @@ export img_label_props_dir, img_label_props_path, img_track_props_path, img_valu
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
 export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
-export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS
+export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
 export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_tuning, set_tuning!
-export read_mutes, set_mute!, lab_log_categories
+export read_mutes, set_mute!, lab_log_categories, lab_log_page_categories, lab_log_operation_categories
 export capture_context!, CONTEXT_AUTHOR
 export set_channel_names!, channel_names
 

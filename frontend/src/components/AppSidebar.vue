@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useAppControlStore } from '../stores/appControl'
@@ -21,6 +21,11 @@ const showPanel = ref(false)
 // quick app controls in the footer: Quit (everyone) + Restart backend (dev only). Same shared store
 // the Settings → System panel uses. Quit is destructive → two-click ConfirmButton (no native dialog).
 onMounted(() => { appCtl.refreshDev(); customModules.ensureLoaded() })
+
+// Re-scan custom modules when a project opens — the custom-module nav group needs a project anyway, and
+// this way a module dropped after startup appears without a detour through Settings (the old symptom:
+// `ensureLoaded` fetched once at boot and never retried). Also refreshes the per-category cohortFuns.
+watch(() => projectMeta.current?.uid, uid => { if (uid) customModules.refresh() })
 
 // Track which groups are collapsed (all open by default)
 const collapsed = ref<Set<string>>(new Set())
