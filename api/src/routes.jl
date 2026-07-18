@@ -1006,6 +1006,17 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
     catch e
         return 500, JSON3.write((; error = sprint(showerror, e)))
     end
+    # Cecelia authors a lab-log summary ONLY when something flagged (an all-clear would be noise; the
+    # toast covers that). Best-effort — a lab-log hiccup never fails the check. Author "Cecelia — …"
+    # so the append route treats it as a Cecelia digest (no observer re-broadcast).
+    if Cecelia.cohort_has_outliers(doc)
+        try
+            proj = load_project(project_uid)
+            Cecelia.append_lab_log!(proj, "Cecelia — Cohort QC", Cecelia.cohort_qc_summary_lines(doc))
+        catch e
+            @warn "cohort check: lab-log append failed" exception = e
+        end
+    end
     200, JSON3.write(doc)
 end
 
