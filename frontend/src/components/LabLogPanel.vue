@@ -8,8 +8,10 @@ import { ref, computed, watch, nextTick } from 'vue'
 import { isAuthError, observerSetupReason } from '../utils/observerSetup'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
+import { useToast } from 'primevue/usetoast'
 import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
+import { buildChatPrompt } from '../lib/chatHandoff'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteChips,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
@@ -36,13 +38,29 @@ const mode = computed(() => settings.labLogMode)
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
 const labCapture = useLabCaptureStore()
+const toast = useToast()
+
+// Chat to Claude: copy a starter prompt (project context + MCP pointer) to the clipboard for a full
+// external session. Re-copies on each click. Works for any MCP assistant — no `claude` install needed.
+async function chatToClaude() {
+  if (!projectUid.value) return
+  const text = buildChatPrompt(projectUid.value, pm.current?.name)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch {
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+  }
+  toast.add({ severity: 'info', summary: 'Prompt copied',
+              detail: 'Paste it into Claude (or any MCP chat bot) to start.', life: 3500 })
+}
 const observerAvailable = computed(() => observer.available)
 const observerBusy = computed(() => observer.busy)
 const observerModels = computed(() => observer.models)
 const observerSession = computed(() => observer.session)
-const observerNote = ref('')                 // last MANUAL pass verdict, shown in the report block
 const observerPasses = computed(() => observer.session?.passes ?? [])   // activity log (newest-first)
-const SHOW_ACTIVITY = false   // "Claude activity" list hidden for now (kept for easy re-enable)
+const activityOpen = ref(false)              // Claude activity <details> open state (opens after an Ask)
 // Setup guidance: availability only means `claude` is on PATH — not logged in. Show install/login
 // steps when the CLI is missing, or when the most recent pass failed with an auth-shaped error.
 const observerSetup = computed(() =>
@@ -105,17 +123,16 @@ async function capture(silent = false) {
 watch(() => labCapture.captureTick, () => { if (projectUid.value) load() })
 
 // Ask the assistant for a one-shot review; it may append a [Claude] entry via the observer MCP. The
-// store owns the run (+ session/tokens/badge); the panel just shows the verdict and reloads on append.
+// store owns the run (+ session/tokens/badge); the result (verdict + cost) lands in the Claude
+// activity log below (observer.session.passes) — no separate transient report block. Open the log so
+// the just-run result is visible.
 async function askClaude() {
   if (!projectUid.value || observer.busy || !observer.available) return
-  observerNote.value = ''
   error.value = ''
-  const res = await observer.runPass()
-  if (!res) return
-  if (res.available === false) observerNote.value = res.error ?? 'Assistant unavailable.'
-  else if (res.ok) observerNote.value = (res.message ?? '').trim() || 'Reviewed — nothing to flag.'
-  else observerNote.value = res.error ?? 'The assistant could not complete.'
-  // entries reload via the appendTick watch below when a pass actually appended
+  activityOpen.value = true
+  await observer.runPass()
+  // the pass + its verdict note appear in observer.session.passes → the activity log; entries reload
+  // via the appendTick watch below when a pass actually appended.
 }
 
 // Reload the log when an Ask-Claude pass appends (the store bumps appendTick).
@@ -125,13 +142,11 @@ watch(() => observer.appendTick, () => { if (projectUid.value) load() })
 async function clearContext() {
   if (!projectUid.value || observer.busy) return
   await observer.clear()
-  observerNote.value = ''
 }
 
 // (re)load whenever the open project changes, and on first mount; auto-capture activity if enabled.
 // (Observer status/session is refreshed app-wide by the store — see App.vue.)
 watch(projectUid, async () => {
-  observerNote.value = ''
   await load()
   if (settings.labLogAutoContext) capture(true)
 }, { immediate: true })
@@ -273,6 +288,12 @@ async function toggleMute(category: string) {
               v-tooltip.top="'Which model Ask Claude runs. Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
         <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
       </select>
+      <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
+           one-shot. Copies a starter prompt; no `claude` install needed. -->
+      <button class="ll-capture" :disabled="!projectUid" @click="chatToClaude"
+              v-tooltip.top="'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
+        <i class="pi pi-comments" /> Chat to Claude
+      </button>
       <span v-if="observerTokens" class="ll-tokens"
             v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
       <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
@@ -295,18 +316,15 @@ async function toggleMute(category: string) {
       <a href="https://docs.anthropic.com/en/docs/claude-code/setup" target="_blank" rel="noopener">Setup guide ↗</a>
     </div>
 
-    <!-- assistant report: the full text of the last Ask-Claude pass, in a readable block -->
-    <div v-if="observerNote" class="ll-observer-report">
-      <div class="ll-observer-head"><i class="pi pi-sparkles" /> Claude</div>
-      <div class="ll-observer-body">{{ observerNote }}</div>
-    </div>
-
-    <!-- Claude activity log: every Ask-Claude pass with its token cost. HIDDEN for now (SHOW_ACTIVITY)
-         — it has little use with Claude on-demand only; kept (not deleted) so it's easy to re-enable. -->
-    <details v-if="SHOW_ACTIVITY && observerAvailable && observerPasses.length" class="ll-activity">
+    <!-- Claude activity log: every Ask-Claude pass — its verdict (note), token cost, and outcome. This
+         is where an Ask-Claude result lands (no separate transient block); opens after an Ask so the
+         result is visible. Each entry is tagged "Ask" (sparkles) — an explicit on-demand run. -->
+    <details v-if="observerAvailable && observerPasses.length" class="ll-activity"
+             :open="activityOpen" @toggle="activityOpen = ($event.target as HTMLDetailsElement).open">
       <summary>Claude activity ({{ observerPasses.length }})</summary>
       <div v-for="(p, i) in observerPasses" :key="i" class="ll-pass" :class="{ appended: p.appended, failed: !p.ok }">
         <div class="ll-pass-head">
+          <span class="ll-pass-trig"><i class="pi pi-sparkles" /> Ask</span>
           <span class="ll-pass-meta">{{ p.model }} · {{ passTokens(p) }} tok<span v-if="p.appended"> · wrote</span><span v-else-if="!p.ok"> · error</span></span>
           <span class="ll-pass-at">{{ p.at }}</span>
         </div>
@@ -432,18 +450,7 @@ async function toggleMute(category: string) {
   background: var(--cc-surface); border: 1px solid var(--cc-border);
 }
 .ll-setup a { margin-left: 0.3rem; color: var(--cc-accent); white-space: nowrap; }
-.ll-observer-report {
-  flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
-  background: var(--cc-surface-2); padding: 0.4rem 0.6rem; max-height: 8rem; overflow-y: auto;
-}
-.ll-observer-head {
-  display: inline-flex; align-items: center; gap: 0.3rem;
-  font-size: 0.66rem; color: var(--cc-text-dim); margin-bottom: 0.2rem;
-}
-.ll-observer-body {
-  font-size: 0.72rem; color: var(--cc-text); line-height: 1.45; white-space: pre-wrap;
-}
-/* Claude activity log — collapsible; shows each Ask-Claude pass, its cost + verdict, even when silent */
+/* Claude activity log — collapsible; each Ask-Claude pass with its verdict, cost + outcome */
 .ll-activity {
   flex-shrink: 0; border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-2); padding: 0.3rem 0.6rem; max-height: 11rem; overflow-y: auto;
@@ -455,6 +462,8 @@ async function toggleMute(category: string) {
 .ll-pass.appended { border-left-color: var(--cc-accent); }
 .ll-pass.failed   { border-left-color: #f85149; }
 .ll-pass-head { display: flex; align-items: baseline; gap: 0.35rem; font-size: 0.64rem; }
+.ll-pass-trig { display: inline-flex; align-items: center; gap: 0.2rem; font-weight: 600; color: var(--cc-accent); }
+.ll-pass-trig .pi { font-size: 0.6rem; }
 .ll-pass-meta { color: var(--cc-text-dim); }
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }

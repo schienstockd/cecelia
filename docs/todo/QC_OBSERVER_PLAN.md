@@ -92,7 +92,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
   (extend `settings.labLogUnseen` with a level so the badge colour reflects ⚠️ vs ❌). Writes go through
   `POST /api/lablog/append`/capture regardless of panel state.
 
-### B3 — Chat to Claude button
+### B3 — Chat to Claude button — DONE (`feat/observer-panel-chat-activity`)
 - Copies a **starter prompt** to the clipboard (project uid + "use the cecelia-observer MCP tools to
   review recent activity/QC and help with …", plus a one-line MCP-connect pointer to
   `docs/ai-assist/OBSERVER-SETUP.md`) and shows a toast: "Prompt copied — open your chat bot and paste
