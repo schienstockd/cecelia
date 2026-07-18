@@ -903,7 +903,8 @@ function api_images_list(req::HTTP.Request)
     sets = [(; uid=s.uid, name=s.name, imageCount=length(s.image_uids)) for s in proj._sets]
     imgs = Vector{Any}()
     for s in proj._sets, img in images(s)
-        push!(imgs, (; uid=img.uid, name=img.name, status=img.status, setUid=s.uid, setName=s.name))
+        push!(imgs, (; uid=img.uid, name=img.name, status=img.status,
+                       included=image_included(img), setUid=s.uid, setName=s.name))
     end
     200, JSON3.write((; projectUid=project_uid, name=proj.name, kind=proj.kind,
                         count=length(imgs), sets, images=imgs))
