@@ -58,8 +58,9 @@ export const useSettingsStore = defineStore('settings', () => {
   const labLogPanelOpen = ref(localStorage.getItem('cc.labLogPanelOpen') === 'true')
   // auto-capture app activity digests ([Cecelia] entries) — on project open AND after tasks/chains
   // finish (stores/labCapture.ts). One toggle for all automatic capture; off ⇒ only the manual
-  // "Capture" button fires. Opt-in while we feel out what's sensible. Default off.
-  const labLogAutoContext = ref(localStorage.getItem('cc.labLogAutoContext') === 'true')
+  // "Capture" button fires. Default ON — Cecelia is the always-on activity reporter (local-only, no
+  // tokens; routine ✅ digests append silently, only ⚠️/❌ badge). Turn off to silence auto-capture.
+  const labLogAutoContext = ref(localStorage.getItem('cc.labLogAutoContext') !== 'false')
   // lab-log feedback mode: 'notes' → thumbs+comment judge the decision (recorded); 'tuning' → thumbs
   // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
   const labLogMode = ref<'notes' | 'tuning'>(
