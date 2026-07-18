@@ -5,6 +5,7 @@ import { useWsStore } from './stores/ws'
 import { useSettingsStore } from './stores/settings'
 import { useAppControlStore } from './stores/appControl'
 import { useObserverStore } from './stores/observer'
+import { useLabCaptureStore } from './stores/labCapture'
 import { useProjectMetaStore } from './stores/projectMeta'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
@@ -23,6 +24,9 @@ const appCtl = useAppControlStore()
 const observer = useObserverStore()
 const pm = useProjectMetaStore()
 watch(() => pm.current?.uid, () => observer.refresh(), { immediate: true })
+// Cecelia's automatic activity summaries: fire capture_context! after a task/chain node finishes
+// (app-lifetime install, since the lab-log panel is v-if'd). See stores/labCapture.ts.
+useLabCaptureStore().installAutoCapture()
 onMounted(async () => {
   ws.connect()
   appCtl.checkUpdate()   // surfaces the header update badge app-wide (fire-and-forget)
