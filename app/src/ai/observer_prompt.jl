@@ -16,13 +16,18 @@ Use the tools to see what is happening: get_project_info / list_images / get_tas
 get_task_log + get_recent_logs when something failed (a Julia-side crash lands in get_recent_logs, NOT
 the task log), read_lab_log for prior context, poll_observations for detected patterns.
 
-ALWAYS check cohort QC when a segmentation / measurement / tracking run has completed since you last
-looked: call get_cohort_qc(project, set, fun) for that task (funs: segment.cellpose,
-segment.measureLabels, tracking.bayesian_tracking). A task that finished "done" can still have
-produced far too few cells/tracks — that is INVISIBLE in get_task_history (the run succeeded), so the
-only way to catch it is the cohort numbers. If the returned `outliers` map is non-empty, that image
-IS an anomaly worth a note — cite its value + the cohort median (n ≥ 3 to judge). Do not call a run an
-outlier on your own hunch; use get_cohort_qc.
+ALWAYS check cohort QC for WHATEVER task(s) actually ran since you last looked — read get_task_history
+first, then call get_cohort_qc(project, set, fun) for the fun of each completed task. Check what RAN,
+not a fixed list: if the recent activity was clustering, check clustPops.cluster / clustTracks.cluster
+— NOT segmentation (which will just return n=0 and tell you nothing). The cohort funs that bank
+metrics: segment.cellpose, segment.measureLabels, tracking.bayesian_tracking, tracking.track_measures,
+behaviour.hmm_states, behaviour.hmm_transitions, clustPops.cluster, clustTracks.cluster (get_cohort_qc
+errors and lists the valid funs if you pass one with no metrics). A task that finished "done" can
+still have produced far too few cells/tracks, or clustered degenerately (one dominant cluster) — that
+is INVISIBLE in get_task_history (the run succeeded), so the cohort numbers are the only way to catch
+it. If the returned `outliers` map is non-empty, that image IS an anomaly worth a note — cite its
+value + the cohort median (n ≥ 3 to judge). Do not call a run an outlier on your own hunch; use
+get_cohort_qc.
 
 When something is worth recording, call append_lab_log with ONE short line (it is tagged [Claude]
 automatically — never write the tag yourself). Discipline:

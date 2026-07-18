@@ -83,10 +83,17 @@ def get_cohort_qc(project_uid: str, set_uid: str, fun_name: str, value_name: str
     INCLUDED images, into mean/SD + z-scored outliers.
 
     `set_uid` comes from get_project_info's `sets` / list_images' per-image set. `fun_name` must be a
-    metric producer (else the call errors):
+    metric producer (else the call errors AND lists the current valid funs). Check the fun of WHATEVER
+    task actually ran (from get_task_history) — e.g. if you just clustered, check clustPops/clustTracks,
+    not segmentation. The metric producers:
       - "segment.cellpose"           → nCells
       - "segment.measureLabels"      → nCells
       - "tracking.bayesian_tracking" → nTracks, meanTrackLength, nTrackedCells
+      - "tracking.track_measures"    → nTracks, meanSpeed, meanDisplacement
+      - "behaviour.hmm_states"       → nDecoded, nStates, dominantStateFrac
+      - "behaviour.hmm_transitions"  → nTransitions, nDistinctTransitions
+      - "clustPops.cluster"          → nCells, nClusters, largestClusterFrac
+      - "clustTracks.cluster"        → nTracks, nClusters, largestClusterFrac
     `value_name` is the output variant (default "default").
 
     Returns {funName, valueName, nIncluded, metrics: {<key>: {n, median, mad, mean, sd, threshold,
