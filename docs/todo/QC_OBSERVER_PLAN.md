@@ -40,7 +40,7 @@ with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.
 
 ## Slices (each a focused PR; consolidation before observer)
 
-### A1 — Metadata warnings → qc.jl (kill the image-table double-affordance)
+### A1 — Metadata warnings → qc.jl (kill the image-table double-affordance) — DONE (`feat/qc-metadata-consolidation`)
 - New pure Julia helper `metadata_qc_findings(img)` replicating `frontend/src/lib/imageMetadataWarnings.ts`
   `fieldIssues` (missing Z spacing, auto-corrected Z, unusual Z ratio, missing frame interval,
   no-unit interval, no-unit pixel size). Each finding carries `detail.field ∈ {x,y,z,t}` so the fix

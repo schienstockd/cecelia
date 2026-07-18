@@ -27,6 +27,12 @@ export interface QcSummary {
   long: string    // full detail (all findings)
 }
 
+// `metadata.*` findings are calibration warnings (missing physical size / frame interval). They have
+// their OWN image-table affordance (the click-to-fix warn icon → PhysicalSizeDialog, via
+// imageMetadataWarnings.ts), so the general QC badge excludes them to avoid a double indicator — both
+// now read the same qc.jl source, just partitioned by this predicate.
+export const isMetadataCode = (code?: string): boolean => !!code && code.startsWith('metadata.')
+
 // Every finding across all of an image's QC docs.
 export function qcFindings(img: CciaImage): QcFinding[] {
   const qc = img.qc
@@ -34,9 +40,10 @@ export function qcFindings(img: CciaImage): QcFinding[] {
   return Object.values(qc).flatMap(d => d?.findings ?? [])
 }
 
-// Worst-level summary for the badge, or null when the image has no QC findings. `warn` outranks `info`.
+// Worst-level summary for the badge (calibration `metadata.*` findings excluded — see isMetadataCode),
+// or null when the image has no non-metadata QC findings. `warn` outranks `info`.
 export function qcSummary(img: CciaImage): QcSummary | null {
-  const fs = qcFindings(img)
+  const fs = qcFindings(img).filter(f => !isMetadataCode(f.code))
   if (!fs.length) return null
   const level = fs.some(f => f.level === 'warn') ? 'warn' : 'info'
   const short = fs.length === 1 ? fs[0].short : `${fs.length} QC issues — hover for detail`

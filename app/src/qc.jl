@@ -66,6 +66,97 @@ function read_all_qc(img::CciaImage)
     out
 end
 
+# ── Image calibration QC (metadata warnings) ─────────────────────────────────────
+# The image's physical-size/timing calibration is a QC concern like any other: missing or
+# untrustworthy values get advisory `warn` findings under `importImages.omezarr`, so ONE source
+# (qc.jl) drives the image-table indicator, the whiteboard, the lab log and MCP — instead of the
+# frontend re-deriving them from the payload (the old `imageMetadataWarnings.ts fieldIssues`, now
+# retired). Each finding carries `detail.field ∈ {x,y,z,t}` so the physical-size fix dialog keeps its
+# per-field highlight. Findings are RECOMPUTED wherever calibration changes (import / resync /
+# metadata edit) via `write_metadata_qc!`, so a fixed image clears its warning. See QC_OBSERVER_PLAN.
+
+# Z-step vs XY pixel-size sanity band — a ratio outside this is far more likely a unit-conversion bug
+# (e.g. an ImageJ TIFF calibrated in inch) than a real voxel geometry. Mirrors imageMetadataWarnings.ts.
+const _Z_RATIO_MIN = 0.02
+const _Z_RATIO_MAX = 50
+
+_cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
+_cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
+_cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
+
+"""
+    metadata_qc_findings(meta) -> Vector
+
+Advisory calibration findings for one image, from its `meta` dict (String keys: `SizeZ`/`SizeT`,
+`PhysicalSizeX/Y/Z`, `PhysicalSizeUnit`, `PhysicalSizeZ_raw` presence = auto-corrected,
+`TimeIncrement`/`TimeIncrementUnit`). PURE → unit-tested. Faithful port of the old frontend
+`fieldIssues`: missing Z spacing / auto-corrected Z / unusual Z ratio / missing frame interval /
+unit-less interval / unit-less pixel size. All `warn`; each carries `detail.field`.
+"""
+function metadata_qc_findings(meta::AbstractDict)
+    size_z    = _cal_int(get(meta, "SizeZ", nothing), 1)
+    size_t    = _cal_int(get(meta, "SizeT", nothing), 1)
+    phys_x    = _cal_num(get(meta, "PhysicalSizeX", nothing))
+    phys_z    = _cal_num(get(meta, "PhysicalSizeZ", nothing))
+    phys_y    = _cal_num(get(meta, "PhysicalSizeY", nothing))
+    phys_unit = _cal_txt(get(meta, "PhysicalSizeUnit", nothing))
+    t_incr    = _cal_num(get(meta, "TimeIncrement", nothing))
+    t_unit    = _cal_txt(get(meta, "TimeIncrementUnit", nothing))
+    z_corr    = haskey(meta, "PhysicalSizeZ_raw")
+
+    fs = Dict{String,Any}[]
+    mf(code, field, short, long) =
+        push!(fs, qc_finding("warn", code, short, long; detail = Dict{String,Any}("field" => field)))
+
+    # Z spacing — the first applicable case only (mirrors the frontend if/elseif chain)
+    if size_z > 1 && phys_z === nothing
+        mf("metadata.z_spacing_unknown", "z", "Z spacing unknown",
+           "No Z step found — set the voxel depth (acquisition software, or Fiji ▸ Image ▸ Properties).")
+    elseif z_corr
+        mf("metadata.z_spacing_corrected", "z", "Z spacing auto-corrected",
+           "Auto-corrected from the source ImageJ tag — confirm it in Fiji ▸ Image ▸ Properties before trusting it.")
+    elseif phys_z !== nothing && phys_x !== nothing && phys_x > 0
+        ratio = phys_z / phys_x
+        (ratio < _Z_RATIO_MIN || ratio > _Z_RATIO_MAX) &&
+            mf("metadata.z_spacing_unusual", "z", "Z spacing looks unusual",
+               "Z step is far from the XY pixel size — likely a wrong calibration unit; check the original in Fiji and correct it.")
+    end
+
+    # frame interval
+    if size_t > 1 && t_incr === nothing
+        mf("metadata.frame_interval_unknown", "t", "Frame interval unknown",
+           "No frame interval found — enter it from your acquisition settings.")
+    elseif t_incr !== nothing && t_unit === nothing
+        mf("metadata.frame_interval_no_unit", "t", "Frame interval has no unit",
+           "A frame interval is recorded without a unit — re-enter it with seconds/minutes.")
+    end
+
+    # spatial unit — one PhysicalSizeUnit covers x/y/z; flag whichever axes carry a value
+    if phys_unit === nothing
+        phys_x !== nothing &&
+            mf("metadata.pixel_size_no_unit", "x", "Pixel size has no unit",
+               "A pixel size is recorded without a unit — re-enter it with a unit.")
+        phys_y !== nothing &&
+            mf("metadata.pixel_size_no_unit", "y", "Pixel size has no unit",
+               "A pixel size is recorded without a unit — re-enter it with a unit.")
+        (phys_z !== nothing && !any(f -> f["detail"]["field"] == "z", fs)) &&
+            mf("metadata.pixel_size_no_unit", "z", "Voxel depth has no unit",
+               "A Z step is recorded without a unit — re-enter it with a unit.")
+    end
+    fs
+end
+
+# Compute + persist an image's calibration QC. Re-reads the PERSISTED ccid meta (not the possibly
+# stale in-memory `img.meta`) so it's correct from any call site — import, resync, metadata edit.
+# Writes even when clean (empty findings), so a fixed image overwrites its stale warning.
+function write_metadata_qc!(img::CciaImage)
+    ccid = joinpath(img._dir, "ccid.json")
+    isfile(ccid) || return
+    raw  = JSON3.read(read(ccid, String))
+    meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, :meta, Dict{String,Any}()))
+    write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, metadata_qc_findings(meta))
+end
+
 # ── Objective count metrics (QC banking) ─────────────────────────────────────────
 # Tasks bank objective counts (cells measured, tracks + mean length) into the qc/ sidecar so future
 # cohort stats can flag anomalies (a run that produced 10× fewer cells/tracks than usual). There is
