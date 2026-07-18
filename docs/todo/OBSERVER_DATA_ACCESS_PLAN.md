@@ -80,7 +80,11 @@ Each = a read-only `/api` route + an MCP tool returning aggregates (+ caps):
   allow-list; pkg + api + mcp tests. Returns per-image `steps`/`segmentations`/`tracked`/`clusterRuns`/
   `gatedPops` + project `chains`/`boards` + a `rollup`. Boards are best-effort tab names only (the board
   JSON is opaque at the Julia layer — plot semantics stay Slice E).
-- **B — Populations + gating** (`get_populations`).
+- **B — Populations + gating** (`get_populations`). ✅ **DONE** — `app/src/ai/populations.jl`
+  (`populations_summary`), `GET /api/analysis/populations`, MCP `get_populations`, allow-listed; pkg +
+  api + mcp tests. Per-image pop tree + gate/filter DEFINITIONS (cheap sidecar read). Membership COUNTS
+  are deferred to Slice C (they need computing gates over the full table — heavy, forbidden on an
+  always-on read).
 - **C — Measures** (`get_measure_summary`).
 - **D — HMM + clusters** (`get_behaviour_summary`, `get_cluster_summary`).
 - **E — Boards + chains** (`get_analysis_boards`, `get_chains`) — some folds into A.

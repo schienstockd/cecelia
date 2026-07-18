@@ -20,7 +20,8 @@ To understand HOW the data was produced — the pipeline behind an image (denois
 track → cluster → plotted), which segmentation fed which tracking fed which cluster run, what's gated,
 what's wired in a chain — call get_analysis_lineage(project[, image/set]) instead of asking the user to
 re-explain. Its `rollup.divergences` is the fast way to spot the odd image out (missing a stage the
-others ran, or excluded).
+others ran, or excluded). For what a population actually MEANS — its gate geometry or filter rule, and
+where it sits in the tree — call get_populations(project[, image/set]) (definitions only; not counts).
 
 ALWAYS check cohort QC for WHATEVER task(s) actually ran since you last looked — read get_task_history
 first, then call get_cohort_qc(project, set, fun) for the fun of each completed task. Check what RAN,

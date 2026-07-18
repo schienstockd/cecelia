@@ -30,6 +30,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/tasks/history"),
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
+        ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
@@ -124,6 +125,13 @@ class CeceliaClient:
                              set_uid: str | None = None):
         return self._request(
             "GET", "/api/analysis/lineage",
+            {"projectUid": project_uid, "imageUid": image_uid, "setUid": set_uid},
+        )
+
+    def get_populations(self, project_uid: str, image_uid: str | None = None,
+                        set_uid: str | None = None):
+        return self._request(
+            "GET", "/api/analysis/populations",
             {"projectUid": project_uid, "imageUid": image_uid, "setUid": set_uid},
         )
 

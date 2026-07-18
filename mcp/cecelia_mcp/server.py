@@ -166,6 +166,27 @@ def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "
 
 
 @mcp.tool()
+def get_populations(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """Population DEFINITIONS per image — the detail behind lineage's `gatedPops`. Use this to know what
+    a population actually MEANS: its gate geometry or filter rule, and where it sits in the tree. Scope
+    with `image_uid` / `set_uid`, or omit both for the whole project.
+
+    Per image `populations` is a flat list; each: `{path, name, parent, popType, valueName, colour,
+    isTrack, gate, filter}`.
+      - `path`/`parent` give the tree (a pop's cells are its gate/filter ∩ its parent).
+      - `popType`: flow/track = gate-drawn; clust/trackclust = cluster pops.
+      - `gate` (flow/track): `{kind: rectangle|polygon, x_channel, y_channel, x_transform, y_transform,
+        …geometry}` — the drawn gate on two channels. null for filter pops.
+      - `filter` (clust/live): `{measure, fun, values}` — e.g. a cluster pop is
+        `{measure: "clusters.movement", fun: "in", values: [3]}`, which also ties it to that clustering run.
+    `truncated: true` means the list was capped (many pops); the definitions are cheap sidecar reads.
+
+    Definitions only — membership COUNTS (n cells/tracks per pop) are not here (they need computing gates
+    over the full table); that's the measure summary. Reads current on-disk state."""
+    return _client.get_populations(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
 def read_lab_log(project_uid: str) -> str:
     """The full lab-log markdown for the project — the accumulated cross-session memory."""
     return _client.read_lab_log(project_uid).get("content", "")

@@ -4604,6 +4604,38 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test length(analysis_lineage(proj; set_uid = "linS").images) == 2
             @test isempty(analysis_lineage(proj; image_uid = "nope").images)
         end
+
+        @testset "populations summary (Slice B)" begin
+            proj = CciaProject(; uid = "popP", name = "pops"); proj.root = mktempdir()
+            s = CciaSet(; uid = "popS", dir = mktempdir())
+            push!(proj._sets, s); push!(proj.set_uids, s.uid)
+            img = CciaImage(; uid = "i1", dir = mktempdir())
+            img.label_props = Dict("A" => "A.h5ad")
+            # a flow gate on A (CD3) + a cluster pop filtering clusters.movement
+            mf = PopulationMap(; pop_type = "flow", value_name = "A")
+            add_pop!(mf, "CD3"; gate = RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+            save_pop_map!(mf, img)
+            mc = PopulationMap(; pop_type = "trackclust", value_name = "A")
+            add_pop!(mc, "Directed"; filter_measure = "clusters.movement", filter_fun = "in", filter_values = [3])
+            save_pop_map!(mc, img)
+            push!(s._images, img); push!(s.image_uids, img.uid)
+
+            out = populations_summary(proj)
+            @test out.projectUid == "popP" && length(out.images) == 1
+            pops = out.images[1].populations
+            @test out.images[1].truncated == false
+            cd3 = pops[findfirst(p -> p.name == "CD3", pops)]
+            @test cd3.popType == "flow" && cd3.valueName == "A" && cd3.filter === nothing
+            @test cd3.gate !== nothing && cd3.gate["kind"] == "rectangle" &&
+                  cd3.gate["x_channel"] == "c1" && cd3.gate["y_channel"] == "c2"
+            dir = pops[findfirst(p -> p.name == "Directed", pops)]
+            @test dir.popType == "trackclust" && dir.gate === nothing
+            @test dir.filter.measure == "clusters.movement" && dir.filter.fun == "in" &&
+                  collect(dir.filter.values) == [3]
+            # scoping mirrors lineage
+            @test length(populations_summary(proj; image_uid = "i1").images) == 1
+            @test isempty(populations_summary(proj; image_uid = "nope").images)
+        end
     end
 
 end
