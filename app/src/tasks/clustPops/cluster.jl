@@ -97,6 +97,9 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
         "usePaga" => Bool(get(params, "usePaga", false)),
         "pagaThreshold" => get(params, "pagaThreshold", 0.1),
         "randomState" => 0)
+    # QC (advisory): the runner writes the per-segment cluster distribution here; banked below.
+    qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "cluster_qc.json")
+    task_params["qcOutPath"] = qc_out_path
     on_progress(3, 4)
 
     # set-scope run config dir (consistent task dir under the project tree, never tmp)
@@ -107,6 +110,8 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     for seg in segments
         _write_clust_features!(seg["propsPath"], suffix, feature_cols, uids)
     end
+    # bank per-image cluster QC (cell counts + cluster distribution + degenerate-run findings)
+    write_cluster_qc!(imgs, "clustPops.cluster", qc_out_path; unit = "cells", on_log = on_log)
     on_progress(4, 4)
 
     on_log("[INFO] clustPops done → clusters.$suffix")

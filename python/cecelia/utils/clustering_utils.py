@@ -163,6 +163,23 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
     return adata.obs["clusters"], adata.obsm.get("X_umap")
 
 
+# ── QC: per-segment cluster distribution ─────────────────────────────────────────
+def cluster_seg_stats(seg_codes):
+    """Objective QC stats for one segment's cluster assignment (PURE → unit-tested).
+
+    `seg_codes` is the integer cluster code of every point (cell/track) belonging to one
+    (image, segmentation). Returns `{n, nClusters, largestClusterFrac}` — the point count, how
+    many distinct clusters those points occupy, and the fraction in the single largest cluster
+    (dominance). An image whose points collapse into far fewer clusters (or one dominant cluster)
+    than the cohort is a batch/quality outlier — see qc.jl `cluster_qc_findings` + COHORT_METRICS."""
+    n = int(np.asarray(seg_codes).size)
+    if n == 0:
+        return {"n": 0, "nClusters": 0, "largestClusterFrac": 0.0}
+    _uniq, counts = np.unique(seg_codes, return_counts=True)
+    return {"n": n, "nClusters": int(counts.size),
+            "largestClusterFrac": float(counts.max() / n)}
+
+
 # ── shared write-back (cells + tracks) ─────────────────────────────────────────────
 def split_back_and_write(adata, segments, suffix: str, log=None):
     """Split a pooled, clustered AnnData back per segment and write the cluster assignment
@@ -181,7 +198,11 @@ def split_back_and_write(adata, segments, suffix: str, log=None):
 
     Writes integer-code `clusters.{suffix}` obs (the new stack auto-detects integer obs as a
     categorical code set; a `clusters.*` name-rule pins it categorical above the level cap — see
-    track_props.jl) and, when present, `obsm['X_umap.{suffix}']`. Returns the number of clusters."""
+    track_props.jl) and, when present, `obsm['X_umap.{suffix}']`.
+
+    Returns a QC dict `{nClusters, nTotal, perSegment:[{uID, valueName, n, nClusters,
+    largestClusterFrac}]}` — the run total plus each segment's cluster distribution (via
+    `cluster_seg_stats`), so the Julia caller can bank per-image QC metrics + findings (qc.jl)."""
     _log = log if callable(log) else (lambda _m: None)
 
     cluster_col = f"clusters.{suffix}"
@@ -197,6 +218,7 @@ def split_back_and_write(adata, segments, suffix: str, log=None):
     vn_arr    = adata.obs["valueName"].to_numpy()
     label_arr = adata.obs["label"].to_numpy()
 
+    per_segment = []
     for seg in segments:
         mask = (uid_arr == seg["uID"]) & (vn_arr == seg["valueName"])
         if not mask.any():
@@ -208,9 +230,11 @@ def split_back_and_write(adata, segments, suffix: str, log=None):
             view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
         view.save()
         view.close()
+        stats = cluster_seg_stats(codes[mask])
+        per_segment.append({"uID": seg["uID"], "valueName": seg["valueName"], **stats})
         _log(f"> wrote {seg['uID']}/{seg['valueName']}: {int(mask.sum())} rows")
 
-    return n_clusters
+    return {"nClusters": int(n_clusters), "nTotal": int(codes.size), "perSegment": per_segment}
 
 
 def _find_gpu(adata, resolution: float, create_umap: bool, random_state: int):

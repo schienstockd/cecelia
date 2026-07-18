@@ -87,6 +87,76 @@ function track_count_metrics(track_ids)
     (n_tracks, mean_len, n_cells)
 end
 
+# QC thresholds for a clustering run (clustPops/clustTracks). A single dominant cluster holding this
+# fraction of an image's points suggests under-clustering (resolution too low / features don't
+# separate). See cluster_qc_findings.
+const _CLUSTER_DOMINANT_FRAC = 0.9
+
+"""
+    cluster_qc_findings(n_clusters_total, n_here, n_clusters_here, largest_frac; unit="cells")
+
+Advisory findings for ONE image's slice of a set-wide clustering run (PURE → unit-tested). The run
+clusters all images together, so `n_clusters_total` is the run's cluster count; `n_here` /
+`n_clusters_here` / `largest_frac` describe how THIS image's points landed. Degenerate patterns,
+most-severe first:
+  • run collapsed to ≤ 1 cluster ⇒ warn (resolution too low / features don't separate).
+  • this image's points all fell into one cluster while the run found several ⇒ warn (the image
+    separated from the cohort — a batch/normalisation outlier).
+  • one cluster holds ≥ `_CLUSTER_DOMINANT_FRAC` of this image's points ⇒ info (check it's really
+    that uniform, or raise resolution).
+`unit` is "cells" (clustPops) or "tracks" (clustTracks) for the message. Returns a findings vector.
+"""
+function cluster_qc_findings(n_clusters_total::Integer, n_here::Integer, n_clusters_here::Integer,
+                             largest_frac::Real; unit::AbstractString = "cells")
+    findings = Dict{String,Any}[]
+    if n_clusters_total <= 1
+        push!(findings, qc_finding("warn", "clustering.single_cluster",
+            "Only one cluster found",
+            "Resolution too low or features don't separate populations — raise resolution or add features and re-run."))
+    elseif n_here > 0 && n_clusters_here <= 1
+        push!(findings, qc_finding("warn", "clustering.image_one_cluster",
+            "All $unit fell into one cluster",
+            "This image separated from the cohort — check it's the same acquisition and normalisation, then re-run."))
+    elseif n_here > 0 && largest_frac >= _CLUSTER_DOMINANT_FRAC
+        push!(findings, qc_finding("info", "clustering.dominant_cluster",
+            "One cluster holds $(round(Int, 100 * largest_frac))% of $unit",
+            "Check the population is really this uniform, or raise resolution to split it.";
+            detail = Dict{String,Any}("largestClusterFrac" => round(largest_frac; digits = 3))))
+    end
+    findings
+end
+
+# Bank a clustering run's QC from the per-segment JSON its Python runner wrote (see
+# clustering_utils.split_back_and_write → qcOutPath). Shared by clustPops + clustTracks (both are
+# set-scope, cluster all images at once, and write one QC doc per (image, segmentation) keyed by the
+# segmentation value_name). `unit` = "cells" (clustPops) or "tracks" (clustTracks) — drives the
+# banked count key (nCells/nTracks) and the finding wording. Best-effort; never fails the task.
+function write_cluster_qc!(imgs::AbstractVector, fun_name::AbstractString, qc_out_path::AbstractString;
+                           unit::AbstractString = "cells", on_log::Function = _ -> nothing)
+    isfile(qc_out_path) || return
+    img_by_uid = Dict(img.uid => img for img in imgs)
+    count_key = unit == "tracks" ? "nTracks" : "nCells"
+    try
+        qc    = JSON3.read(read(qc_out_path, String))
+        total = Int(get(qc, :nClusters, 0))
+        segs  = get(qc, :perSegment, ())
+        for seg in segs
+            uid = string(get(seg, :uID, "")); vn = string(get(seg, :valueName, ""))
+            img = get(img_by_uid, uid, nothing); img === nothing && continue
+            n    = Int(get(seg, :n, 0))
+            nc   = Int(get(seg, :nClusters, 0))
+            frac = Float64(get(seg, :largestClusterFrac, 0.0))
+            findings = cluster_qc_findings(total, n, nc, frac; unit = unit)
+            write_qc(img, fun_name, vn, findings;
+                     metrics = Dict{String,Any}(count_key => n, "nClusters" => nc,
+                         "largestClusterFrac" => round(frac; digits = 4), "nClustersTotal" => total))
+        end
+        on_log("[QC] $total cluster(s) over $(length(segs)) segment(s).")
+    catch e
+        on_log("[QC] could not compute cluster QC: $e")
+    end
+end
+
 # Reusable spatial check — flag an output whose XY canvas grew abnormally vs its source. Shapes are in
 # `dim_order` (e.g. "TCZYX"). Generic across any spatially-transforming task (drift/AF correction, …);
 # returns a finding or `nothing`. Default threshold 25% (normal drift expands XY ≤~15%).
