@@ -54,5 +54,10 @@ export const useLabCaptureStore = defineStore('labCapture', () => {
   })
   const installAutoCapture = () => watcher.install()
 
-  return { captureTick, capture, installAutoCapture }
+  // Signal that a [Cecelia] entry was appended by a path OTHER than capture() — the Check-cohort button
+  // appends its "[Cecelia — Cohort check]" entry server-side (POST /api/qc/cohort/check), which doesn't
+  // route through capture(), so an open panel wouldn't reload without this. Same tick the panel watches.
+  const notifyAppended = () => { captureTick.value++ }
+
+  return { captureTick, capture, installAutoCapture, notifyAppended }
 })

@@ -6,6 +6,9 @@
 // when the last run flagged something, pointing the user there. See docs/todo/QC_OBSERVER_PLAN.md (A3).
 import { computed, ref, watch } from 'vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
+import { useProjectStore } from '../stores/project'
+import { useLabCaptureStore } from '../stores/labCapture'
+import { useDataRefresh } from '../composables/useDataRefresh'
 import { cohortFunsFor } from '../lib/cohortStages'
 import { runCohortCheck, fetchCohortRuns } from '../lib/cohortCheck'
 
@@ -13,6 +16,8 @@ import { runCohortCheck, fetchCohortRuns } from '../lib/cohortCheck'
 // backend (custom modules: funNames ∩ COHORT_METRICS), so the button needs no hardcoded per-page entry.
 const props = defineProps<{ module?: string; setUid?: string; funs?: string[] }>()
 const projectMeta = useProjectMetaStore()
+const project = useProjectStore()
+const labCapture = useLabCaptureStore()
 const busy = ref(false)
 const foundWarnings = ref(false)   // last run flagged an outlier → amber + "see the lab log" tooltip
 
@@ -24,7 +29,7 @@ const canCheck = computed(() => funs.value.length > 0 && !!props.setUid && !!pro
 // runs (segment/tracking/HMM) return [] → no selector, checks as before. See cohortCheck.ts.
 const runs = ref<string[]>([])            // distinct run suffixes across the page's cohort funs, newest first
 const selectedRun = ref('')               // '' ⇒ check every value_name (no runs, or user picks "All runs")
-const showSelector = computed(() => runs.value.length > 1)
+const showSelector = computed(() => runs.value.length >= 1)   // show the selector whenever there's a run to pick
 
 async function loadRuns() {
   const projectUid = projectMeta.current?.uid
@@ -36,6 +41,12 @@ async function loadRuns() {
   if (merged.length && !merged.includes(selectedRun.value)) selectedRun.value = merged[0]  // default: newest run
 }
 watch([() => props.setUid, funs, () => projectMeta.current?.uid], loadRuns, { immediate: true })
+// A new clustering run banks a new run's QC, so refetch when a task finishes on any image in this set —
+// otherwise the just-created run only appears after navigating away and back. Uses the shared
+// task-refresh framework (gated by autoRefreshOnTask, like the plots).
+const setImageUids = computed(() =>
+  project.sets.find(s => s.uid === props.setUid)?.images.map(i => i.uid) ?? [])
+useDataRefresh(() => setImageUids.value, loadRuns)
 
 const tip = computed(() => foundWarnings.value
   ? 'Cohort check found warnings — check the lab log for details'
@@ -52,6 +63,9 @@ async function check() {
     // No toast: the cross-image detail is written to the [Cecelia — Cohort check] lab-log entry. The
     // button turns amber when something flagged so the user knows to look there; clears when clean.
     foundWarnings.value = r.severity === 'warn'
+    // On a flag, the server appended a lab-log entry — reload an open panel (the server append doesn't
+    // route through capture()'s tick). All cohort checks are set-scoped, so this covers every page.
+    if (r.severity === 'warn') labCapture.notifyAppended()
   } catch (e) {
     console.error('cohort check failed', e)
   } finally {
