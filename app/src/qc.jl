@@ -10,6 +10,13 @@
 
 const QC_DIRNAME = "qc"
 
+# Colour-blind-safe severity symbols for lab-log entries — SHAPE-DISTINCT glyphs (✅ check / ⚠️
+# triangle / ❌ cross), NOT the same-shape circles 🟢🟡🔴 (which differ only in hue and are unreadable
+# under red-green colour blindness). Mirrors the frontend severity model (frontend/src/lib/severity.ts):
+# ok / warn / fail. See docs/todo/QC_OBSERVER_PLAN.md.
+const SEVERITY_SYMBOLS = Dict("ok" => "✅", "warn" => "⚠️", "fail" => "❌")
+severity_symbol(sev::AbstractString)::String = get(SEVERITY_SYMBOLS, string(sev), "")
+
 qc_root(img::CciaImage) = joinpath(img._dir, QC_DIRNAME)
 qc_fun_dir(img::CciaImage, fun_name::AbstractString) = joinpath(qc_root(img), string(fun_name))
 # A task with no output value_name falls back to the default versioned key so there's always a key.

@@ -4209,6 +4209,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             _, pf = Cecelia._segment_qc_findings(Dict("nuc" => 5))
             @test pf == 5
 
+            # severity symbols: shape-distinct (✅/⚠️/❌), NOT same-shape circles; unknown → ""
+            @test Cecelia.severity_symbol("ok")   == "✅"
+            @test Cecelia.severity_symbol("warn") == "⚠️"
+            @test Cecelia.severity_symbol("fail") == "❌"
+            @test length(Set(values(Cecelia.SEVERITY_SYMBOLS))) == 3   # distinct glyphs
+            @test !("🟢" in values(Cecelia.SEVERITY_SYMBOLS))          # not the colour-blind trap
+            @test Cecelia.severity_symbol("bogus") == ""
+
             # clustering findings (set-scope: total = run clusters; the rest = one image's slice)
             # run collapsed to 1 cluster → warn (regardless of the per-image numbers)
             c1 = Cecelia.cluster_qc_findings(1, 500, 1, 1.0)

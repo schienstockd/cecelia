@@ -20,18 +20,23 @@ are all Cecelia features.
 
 ## Traffic-light semantics (locked)
 
-One scale, everywhere (lab-log entry symbols, image-table indicator, cohort summary):
+One scale, everywhere (lab-log entry symbols, image-table indicator, cohort summary). **Colour-blind
+safe by construction** (built 2026-07-18, `feat/severity-tokens`): a validated CVD-safe hue paired
+with a **shape-distinct icon + label** — colour is NEVER the sole cue (WCAG 1.4.1).
 
-| Symbol | Meaning | Source |
-|---|---|---|
-| 🟢 | ran fine, nothing to see | no findings + task succeeded |
-| 🟡 | a QC **warn** finding was logged | `qc.jl` `level=="warn"` (metadata gap, cohort outlier, any task QC warn) |
-| 🔴 | a task **failed** | scheduler run-status `failed` / repeat-failure (>3) |
+| State | Hue (`--cc-sev-*`) | Icon (shape) | Lab-log emoji | Meaning / source |
+|---|---|---|---|---|
+| ok   | `#0ca30c` | `pi-check-circle` ✓ | ✅ | ran fine — no findings + task succeeded |
+| warn | `#fab219` | `pi-exclamation-triangle` ⚠ | ⚠️ | a QC **warn** finding (`qc.jl` `level=="warn"`: metadata gap, cohort outlier, any task warn) |
+| fail | `#d03b3b` | `pi-times-circle` ✕ | ❌ | a task **failed** (scheduler run-status `failed` / repeat-failure >3) |
 
-- `info`-level findings are informational → do **not** raise the light above 🟢 and do **not** badge.
-- The image-table indicator is a **view** that composes advisory QC (🟢/🟡) with run-status (🔴).
-  `qc.jl` stays advisory (`level ∈ info|warn`, never blocks) — 🔴 comes from run-status, not a qc level.
-- **The lab-log toggle badge lights on unseen 🟡 or 🔴** (Cecelia or Claude authored). 🟢 never badges.
+- The canonical definitions live in `frontend/src/lib/severity.ts` (TS) and `qc.jl`
+  `SEVERITY_SYMBOLS` / `severity_symbol` (lab-log glyphs). Do NOT hand-pick colours or use the
+  same-shape circles 🟢🟡🔴 (they differ only in hue → unreadable under red-green colour blindness).
+- `info`-level findings are informational → do **not** raise the light above `ok` and do **not** badge.
+- The image-table indicator is a **view** composing advisory QC (ok/warn) with run-status (fail).
+  `qc.jl` stays advisory (`level ∈ info|warn`, never blocks) — `fail` comes from run-status, not a qc level.
+- **The lab-log toggle badge lights on unseen warn or fail** (Cecelia or Claude authored). `ok` never badges.
 
 ## Slices (each a focused PR; consolidation before observer)
 
@@ -54,17 +59,17 @@ One scale, everywhere (lab-log entry symbols, image-table indicator, cohort summ
 - `qc_cohort.jl` computes outliers but writes only a *set* sidecar — outliers never reach the image.
   Add per-image write-back under a **`cohort.*` fun namespace** (e.g. `cohort.segment.cellpose`) so it
   can't clobber the task's own `{uid}/qc/{fun}/{vn}.json` and surfaces automatically via `read_all_qc`.
-- Outlier → `warn` finding on that image (🟡); non-outliers clear any prior cohort finding.
+- Outlier → `warn` finding on that image (⚠️); non-outliers clear any prior cohort finding.
 - Tests: per-image cohort finding written to the `cohort.*` namespace; `read_all_qc` merges it.
 
 ### A3 — Cohort QC button + toast convention
 - "Check cohort consistency" button on module pages → `POST /api/qc/cohort/check?projectUid&setUid&funName`
   → runs `cohort_qc_for!` for the stage, writes per-image findings (A2), appends a
-  `[Cecelia — Cohort QC]` lab-log summary line (🟢 all-clear / 🟡 N flagged).
+  `[Cecelia — Cohort QC]` lab-log summary line (✅ all-clear / ⚠️ N flagged).
 - Establish the toast convention ONCE: check whether PrimeVue `<Toast/>` is already in `App.vue`; if
   not, add it once + `useToast()`. Record in `INVENTORY.md` under a `UI conventions` section
   (toast = transient foreground feedback; badge = persistent needs-attention; lab-log = durable record).
-  info→🟢 / warn→🟡 / error→🔴 severity, consistent with the traffic light.
+  info→✅ / warn→⚠️ / error→❌ severity, consistent with the traffic light.
 
 ### B1 — Remove Watch (auto-Claude)
 - Delete the `'auto'` trigger: `observer.ts` `installAutoWatch`, its `useTaskCompletionWatch` use, the
@@ -74,13 +79,13 @@ One scale, everywhere (lab-log entry symbols, image-table indicator, cohort summ
 
 ### B2 — Cecelia automatic summaries (enriched) + completion triggers
 - Enrich `capture_context!` (`lab_log_context.jl`) line rendering with a leading symbol per module:
-  🔴 if any run failed, 🟡 if that module produced `warn` QC findings this window, else 🟢. (Failure
+  ❌ if any run failed, ⚠️ if that module produced `warn` QC findings this window, else ✅. (Failure
   counts are already captured — `— N failed`.)
 - Add triggers: fire a capture on **chain completion** and **set-scope run completion** (reuse the
   freed-up `useTaskCompletionWatch`; capture aggregates "since last capture" so it stays coalesced and
   catches up on panel-open). Keep the manual "Capture activity" button.
-- Badge: when a capture appends unseen 🟡/🔴 while the panel is closed, light the lab-log badge
-  (extend `settings.labLogUnseen` with a level so the badge colour reflects 🟡 vs 🔴). Writes go through
+- Badge: when a capture appends unseen ⚠️/❌ while the panel is closed, light the lab-log badge
+  (extend `settings.labLogUnseen` with a level so the badge colour reflects ⚠️ vs ❌). Writes go through
   `POST /api/lablog/append`/capture regardless of panel state.
 
 ### B3 — Chat to Claude button
@@ -105,5 +110,5 @@ the observer redesign lands. Each slice: pure helper unit-tested + wiring + doc 
 ## Invariants (do not violate)
 - One QC store (`qc.jl`); cohort writes through `write_qc` under `cohort.*`, never a parallel store.
 - One lab-log write path (`POST /api/lablog/append` / `capture_context!`), author-tagged.
-- One severity scale (info/🟢, warn/🟡, failure/🔴) across findings, badge, lab log, toast.
+- One severity scale (info/✅, warn/⚠️, failure/❌) across findings, badge, lab log, toast.
 - The function is `write_qc` (no bang) — the exploratory prompts wrote `write_qc!`.

@@ -7,6 +7,7 @@
 import { computed, ref, watch } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
+import { SEVERITY, type Severity } from '../lib/severity'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -331,13 +332,14 @@ const motionMsg = computed(() => {
   if (m.confidence === 'low') return `${m.dims}D — uncertain, review`
   return `${m.dims}D recommended`
 })
-// traffic-light flag: how usable is the z-axis? green = real 3D motion; yellow = borderline /
-// uncertain; red = z is clearly jitter (anti-persistent). Only shown for the 'auto' recommendation.
-const motionFlag = computed<'green' | 'yellow' | 'red' | ''>(() => {
+// traffic-light flag: how usable is the z-axis? ok = real 3D motion; warn = borderline / uncertain;
+// fail = z is clearly jitter (anti-persistent). Only shown for the 'auto' recommendation. Rendered as
+// a shape-distinct severity icon (not a colour-only dot) via the canonical severity model.
+const motionFlag = computed<Severity | ''>(() => {
   const m = motionDims.value; if (!m || (val.value ?? 'auto') !== 'auto') return ''
-  if (m.dims === 3) return m.confidence === 'high' ? 'green' : 'yellow'
+  if (m.dims === 3) return m.confidence === 'high' ? 'ok' : 'warn'
   const aZ = m.metrics?.autocorrZ                         // dims === 2: severity from z autocorrelation
-  return (typeof aZ === 'number' && aZ <= 0) ? 'red' : 'yellow'   // ≤0 = reversing (bad); else just under cutoff
+  return (typeof aZ === 'number' && aZ <= 0) ? 'fail' : 'warn'   // ≤0 = reversing (bad); else just under cutoff
 })
 // plain-language explanation (replaces the technical detector `reason` in the tooltip): what we
 // tested, the result, and by how far the z-axis missed the migration cutoff.
@@ -573,8 +575,9 @@ const pct = computed(() => {
            :class="{ warn: motionWarn }" v-tooltip.right="motionTip">
         <i :class="['pi', motionWarn ? 'pi-exclamation-triangle' : 'pi-check-circle']" />
         {{ motionMsg }}
-        <span v-if="motionFlag" class="md-flag" :class="motionFlag"
-              v-tooltip.right="motionFlag === 'green' ? 'z carries real migration' : motionFlag === 'red' ? 'z is clearly jitter — 2D strongly advised' : 'borderline — only just decided'" />
+        <i v-if="motionFlag" class="pi md-flag" :class="SEVERITY[motionFlag].icon"
+           :style="{ color: SEVERITY[motionFlag].color }"
+           v-tooltip.right="motionFlag === 'ok' ? 'z carries real migration' : motionFlag === 'fail' ? 'z is clearly jitter — 2D strongly advised' : 'borderline — only just decided'" />
       </div>
     </div>
 
@@ -828,11 +831,9 @@ const pct = computed(() => {
 .md-note { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); }
 .md-note .pi { font-size: 0.72rem; }
 .md-note.warn { color: #fbbf24; }
-/* traffic-light flag: how usable is the z-axis (green real 3D · yellow borderline · red jitter) */
-.md-flag { width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: none; }
-.md-flag.green { background: #34d399; }
-.md-flag.yellow { background: #fbbf24; }
-.md-flag.red { background: #f87171; }
+/* traffic-light flag: how usable is the z-axis (ok real 3D · warn borderline · fail jitter). A
+   shape-distinct severity icon (canonical severity model) — colour is never the sole cue. */
+.md-flag { font-size: 0.72rem; flex: none; }
 
 .col-group { margin-bottom: 0.4rem; }
 .col-group:last-child { margin-bottom: 0; }
