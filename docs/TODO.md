@@ -355,4 +355,14 @@ The test tasks `testTasks.imageTask`/`testTasks.setTask`/`testTasks.incrementalP
 important (test-only scaffolding, no user-facing impact) but should be fixed for consistency;
 batch it rather than churn standalone.
 
+**#00084** — **Observer summary set roll-up mode (only if payload trim is insufficient)**
+Set-scoped observer calls (`get_measure_summary`, `get_cluster_summary`) return per-image detail ×
+many measures, big enough the observer offloads them to a subagent (~80k tokens). The first-pass trim
+(dedupe cluster `features` → `featuresByRun`, drop `mean`, round to 4 sig figs, `docs/ai-assist/`
+tools) should shrink this a lot. IF that's still too large, consider an OPTIONAL set roll-up mode:
+per-pop median-across-images + range instead of per-image. **Caveat (Dominik):** behaviour/phenotype
+vary *within* an image per population, so a median-per-image roll-up flattens real structure the
+observer needs to catch outliers — so this is a fallback, not obviously correct. Keep per-image as the
+default; a roll-up would be an explicit opt-in for the "compare T vs B across the set" question only.
+
 ---

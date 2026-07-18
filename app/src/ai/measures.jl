@@ -20,11 +20,14 @@ const _MEASURE_TARGET_CAP = 40   # population×granularity summaries per image (
 
 _finite_reals(v) = Float64[Float64(x) for x in v if (x isa Real) && !(x isa Bool) && isfinite(x)]
 
-# One measure column → its summary (nothing when no finite values). q25/q75 bracket the median.
+# One measure column → its summary (nothing when no finite values). q25/q75 bracket the median. Values
+# rounded to 4 significant digits and `mean` dropped (median + quantiles are the headline) to keep the
+# per-image×pop×measure payload small — set-scoped calls returned ~80k tokens otherwise.
 function _summarise_measure(name, vals)
     f = _finite_reals(vals); isempty(f) && return nothing
-    (; name = string(name), n = length(f), median = median(f),
-       q25 = quantile(f, 0.25), q75 = quantile(f, 0.75), mean = mean(f))
+    r(x) = round(x; sigdigits = 4)
+    (; name = string(name), n = length(f),
+       median = r(median(f)), q25 = r(quantile(f, 0.25)), q75 = r(quantile(f, 0.75)))
 end
 
 # The pushdown columns + a raw→pretty rename map for a (value_name, granularity), read from the var list

@@ -61,26 +61,28 @@ function _clustfeatures_features(props_path::AbstractString, suffix::AbstractStr
 end
 
 # Collect the `clusters.{suffix}` distributions from one table's obs (cell props = clustPops, track props
-# = clustTracks) into `out`.
-function _collect_cluster_cols!(out, vn::AbstractString, props::AbstractString, gran::Symbol)
+# = clustTracks) into `out`. The run's feature list is the SAME for a suffix across every image, so it's
+# recorded ONCE into `feats` (returned as a top-level `featuresByRun` map) rather than repeated on every
+# entry — that repetition was the bulk of a set-scoped payload.
+function _collect_cluster_cols!(out, feats::AbstractDict, vn::AbstractString, props::AbstractString, gran::Symbol)
     df = _read_obs(props); df === nothing && return
     for c in names(df)
         startswith(c, "clusters.") || continue
         d = _category_distribution(df[!, c]); d.n == 0 && continue
         suffix = c[ncodeunits("clusters.")+1:end]
+        haskey(feats, suffix) || (f = _clustfeatures_features(props, suffix); isempty(f) || (feats[suffix] = f))
         push!(out, (; valueName = vn, suffix = suffix, granularity = string(gran),
                      nClusters = d.nDistinct, n = d.n,
-                     largestFrac = isempty(d.top) ? 0.0 : d.top[1].fraction,
-                     sizes = d.top, features = _clustfeatures_features(props, suffix)))
+                     largestFrac = isempty(d.top) ? 0.0 : d.top[1].fraction, sizes = d.top))
     end
 end
 
 # One image's clustering runs: cell-level (clustPops) + track-level (clustTracks) cluster distributions.
-function _cluster_image(img::CciaImage)
+function _cluster_image(img::CciaImage, feats::AbstractDict)
     out = Any[]
     for vn in sort(img_value_names(img))
-        _collect_cluster_cols!(out, vn, img_label_props_path(img, vn), :cell)
-        _collect_cluster_cols!(out, vn, img_track_props_path(img, vn), :track)
+        _collect_cluster_cols!(out, feats, vn, img_label_props_path(img, vn), :cell)
+        _collect_cluster_cols!(out, feats, vn, img_track_props_path(img, vn), :track)
     end
     (; _observer_image_header(img)..., clusters = out)
 end
@@ -97,8 +99,12 @@ behaviour_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::Ab
 """
     cluster_summary(proj; image_uid="", set_uid="") -> NamedTuple
 
-Per image, each clustering run (`clusters.{suffix}`): n clusters, cluster sizes, largest fraction, and
-the feature list — cell obs for clustPops, track obs for clustTracks. Slice D of OBSERVER_DATA_ACCESS_PLAN.md.
+Per image, each clustering run (`clusters.{suffix}`): n clusters, cluster sizes, largest fraction (cell
+obs for clustPops, track obs for clustTracks) — plus a top-level `featuresByRun` (`{suffix => features}`)
+holding each run's feature list ONCE instead of on every per-image entry. Slice D of OBSERVER_DATA_ACCESS_PLAN.md.
 """
-cluster_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "") =
-    observer_image_summary(proj, _cluster_image; image_uid = image_uid, set_uid = set_uid)
+function cluster_summary(proj::CciaProject; image_uid::AbstractString = "", set_uid::AbstractString = "")
+    feats = Dict{String,Vector{String}}()
+    imgs = [_cluster_image(img, feats) for img in _observer_scope_images(proj, image_uid, set_uid)]
+    (; projectUid = proj.uid, images = imgs, featuresByRun = feats)
+end
