@@ -1075,15 +1075,17 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
-    # ── Storage reclaim — free the original import once a corrected variant is active ────
+    # ── Storage reclaim — free every non-active image version, keep the active one ───────
     @testset "Storage reclaim" begin
-        # pure reclaimable-default policy
-        @test Cecelia.reclaimable_default(Dict{String,Any}(
-            "default" => "a.zarr", "driftCorrected" => "b.zarr", "_active" => "driftCorrected"))
-        @test !Cecelia.reclaimable_default(Dict{String,Any}(  # active is still the original
-            "default" => "a.zarr", "_active" => "default"))
-        @test !Cecelia.reclaimable_default(Dict{String,Any}(  # no default entry left
-            "driftCorrected" => "b.zarr", "_active" => "driftCorrected"))
+        # pure policy: everything except the active version
+        @test Set(Cecelia.reclaimable_versions(Dict{String,Any}(
+            "default"=>"a", "afCorrected"=>"b", "cpCorrected"=>"c", "_active"=>"cpCorrected"))) ==
+            Set(["default", "afCorrected"])
+        @test isempty(Cecelia.reclaimable_versions(Dict{String,Any}(  # only the active version present
+            "default"=>"a", "_active"=>"default")))
+        # active is the original, but a leftover corrected variant is still freeable (NEW vs default-only)
+        @test Cecelia.reclaimable_versions(Dict{String,Any}(
+            "default"=>"a", "afCorrected"=>"b", "_active"=>"default")) == ["afCorrected"]
 
         _mk_ver!(img, fn) = (d = joinpath(img_zero_dir(img), fn); mkpath(d);
                              write(joinpath(d, "chunk"), rand(UInt8, 2048)); fn)
@@ -1091,46 +1093,43 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         proj = create_project!(name="stor-test-$(rand(1000:9999))", kind="static")
         s    = add_set!(proj; name="s")
 
-        # imgA: original + drift-corrected, drift active → the reclaim case
+        # imgA: original + af + cp, cp active → reclaim frees default AND af, keeps cp
         a = add_image!(s; name="a")
-        _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "drift.ome.zarr")
-        a.filepath = Dict("default"=>"import.ome.zarr", "driftCorrected"=>"drift.ome.zarr", "_active"=>"driftCorrected")
+        _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "af.ome.zarr"); _mk_ver!(a, "cp.ome.zarr")
+        a.filepath = Dict("default"=>"import.ome.zarr", "afCorrected"=>"af.ome.zarr",
+                          "cpCorrected"=>"cp.ome.zarr", "_active"=>"cpCorrected")
         a.im_channel_names = Dict{String,Any}("default"=>["ch0","ch1"], "_active"=>"default")
         a.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
         a.status = "done"; save!(a)
 
-        # imgB: original only, active default → NOT reclaimable (would be an un-import)
+        # imgB: original only, active default → nothing to reclaim
         b = add_image!(s; name="b")
         _mk_ver!(b, "import.ome.zarr")
         b.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
         b.status = "done"; save!(b)
 
-        # safe-primary rule: removing default while drift remains active must NOT un-import
-        freed, cleared = remove_image_version!(a, "default", "driftCorrected")
-        @test freed > 0
-        @test cleared == false                                        # other version survives
+        # safe-primary unit: removing default while other versions remain must NOT un-import
+        freed, cleared = remove_image_version!(a, "default", "cpCorrected")
+        @test freed > 0 && cleared == false
+        # restore default for the batch reclaim below
+        _mk_ver!(a, "import.ome.zarr")
+        ra0 = init_object(proj.uid, a.uid); ra0.filepath["default"] = "import.ome.zarr"; save!(ra0)
+
+        # reclaim_inactive! frees ALL non-active (default + af), keeps cp; imgB skipped
+        tot, reclaimed = reclaim_inactive!(proj.uid, [a.uid, b.uid])
+        @test reclaimed == [a.uid]
+        @test tot > 0
         @test !isdir(joinpath(img_zero_dir(a), "import.ome.zarr"))    # original gone
-        @test  isdir(joinpath(img_zero_dir(a), "drift.ome.zarr"))     # corrected kept
+        @test !isdir(joinpath(img_zero_dir(a), "af.ome.zarr"))        # intermediate gone
+        @test  isdir(joinpath(img_zero_dir(a), "cp.ome.zarr"))        # active kept
+        @test  isdir(joinpath(img_zero_dir(b), "import.ome.zarr"))    # b untouched
 
         ra = init_object(proj.uid, a.uid)
-        @test ra.status == "done"                                     # NOT reset to pending
-        @test ra.filepath["_active"] == "driftCorrected"
-        @test !haskey(ra.filepath, "default")
+        @test ra.status == "done"                                     # NOT un-imported
+        @test ra.filepath["_active"] == "cpCorrected"
+        @test collect(keys(filter(kv -> kv.first != "_active", ra.filepath))) == ["cpCorrected"]
         @test ra.meta["SizeC"] == 2                                   # dims kept
         @test Cecelia.versioned_get(ra.im_channel_names, "default") == ["ch0","ch1"]  # channel names kept
-
-        # reclaim_defaults! over both: only imgB is skipped (active==default), imgA already freed above
-        # → re-run on a fresh reclaimable image to assert the batch path + skip
-        c = add_image!(s; name="c")
-        _mk_ver!(c, "import.ome.zarr"); _mk_ver!(c, "af.ome.zarr")
-        c.filepath = Dict("default"=>"import.ome.zarr", "afCorrected"=>"af.ome.zarr", "_active"=>"afCorrected")
-        c.status = "done"; save!(c)
-
-        tot, reclaimed = reclaim_defaults!(proj.uid, [c.uid, b.uid])
-        @test reclaimed == [c.uid]                                    # b skipped (not reclaimable)
-        @test tot > 0
-        @test !isdir(joinpath(img_zero_dir(c), "import.ome.zarr"))
-        @test  isdir(joinpath(img_zero_dir(b), "import.ome.zarr"))    # b untouched
         rm(proj.root; recursive=true)
     end
 

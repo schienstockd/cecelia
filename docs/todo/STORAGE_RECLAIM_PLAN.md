@@ -10,23 +10,29 @@ should show disk usage + the reclaimable originals and free them in one click.
 
 ## Locked decisions
 
-- **Reclaimable = the original `default` import of an image whose corrected variant is ACTIVE.**
-  Conservative on purpose (`reclaimable_default`): only the original — the biggest and safe-to-drop
-  one — not arbitrary non-active variants (which may feed other steps).
+- **Reclaimable = every image version EXCEPT the active one** (`reclaimable_versions`). Keep only
+  what you're using: the original `default` import AND any superseded intermediates (e.g. with
+  `cpCorrected` active, `default` + `afCorrected` are both freeable). Started as default-only, then
+  generalised (Dom, 2026-07-20): "really you can remove every image except the active one." Channel
+  names/dims (fallback to `default`) and all derived labels/measurements/gating live in `1/`, so
+  dropping non-active image stores is safe. Freeing `default` is irreversible (re-import) — accepted.
 - **On-demand scan.** Walking every image store (`_dir_bytes`) is expensive at TB scale, so it is NOT
   run on Settings open — a "Scan storage" button triggers it. `diskstat` (disk free/total) is cheap
   and returned by the same call.
-- **One-click reclaim** with a confirm, reusing the existing removal path.
+- **One-click reclaim** with a confirm, reusing the shared removal path.
 
 ## Architecture
 
 - `app/src/storage.jl` — the shared core:
-  - `reclaimable_default(fp)` — pure policy over the ccid `filepath` dict (unit-tested).
-  - `image_storage(img)` / `project_storage_summary(proj)` — walked sizes + reclaimable list + disk.
+  - `reclaimable_versions(fp)` — pure policy over the ccid `filepath` dict: all versions except
+    `_active` (unit-tested).
+  - `image_storage(img)` / `project_storage_summary(proj)` — walked sizes + per-image reclaimable
+    version list + disk.
   - `remove_image_version!(img, value, new_default)` — the ONE deletion path, extracted from the
     `RemoveImage` task so the task and the reclaim API share it. Returns `nothing` on a missing
     version (a failure the caller propagates — the chain fault-isolation relies on this).
-  - `reclaim_defaults!(proj, uids)` — free each image's original, skipping ineligible ones.
+  - `reclaim_inactive!(proj, uids)` — free every non-active version of each image, keeping the active
+    one; skips images with nothing to reclaim.
 - **Safe-primary fix** (the crux): `remove_image_version!` only "un-imports" (clears `imChannelNames`
   + `SizeC/T/Z`, `status="pending"`) when the primary is removed AND no other version survives.
   Previously removing `default` ALWAYS wiped — which would break a still-active corrected variant that
@@ -39,9 +45,9 @@ should show disk usage + the reclaimable originals and free them in one click.
 
 ## Tests
 
-- `app/test/runtests.jl` "Storage reclaim": `reclaimable_default` policy; safe-primary rule (removing
-  `default` with a corrected variant active keeps names/dims/status and the file); `reclaim_defaults!`
-  batch + skip of ineligible images.
+- `app/test/runtests.jl` "Storage reclaim": `reclaimable_versions` policy (all-except-active, incl.
+  leftover variant when active is `default`); safe-primary rule; `reclaim_inactive!` frees all
+  non-active versions and keeps names/dims/status + the active store.
 - `api/test/runtests.jl` "API: storage": param validation (400s).
 - `frontend/src/utils/storage.test.ts`: `formatBytes` golden values.
 

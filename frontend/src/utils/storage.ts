@@ -6,8 +6,9 @@ export interface ReclaimableImage {
   imageUid: string
   name: string
   setUid: string
-  bytes: number
-  activeVersion: string
+  bytes: number             // total of the non-active versions that would be freed
+  activeVersion: string     // the version kept
+  versions?: { valueName: string; bytes: number }[]   // the non-active versions being removed
 }
 
 export interface StorageSummary {
