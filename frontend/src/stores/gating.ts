@@ -25,10 +25,15 @@ export interface GateSpec {
   x_min?: number; x_max?: number; y_min?: number; y_max?: number
   vertices?: [number, number][]
 }
+// one AND-ed condition of a compound filter (Decision 15)
+export interface FilterCondition { measure: string; fun: string; values: unknown }
+// a filter spec: the single measure/fun/values (back-compat) plus optional AND-ed `conditions`
+export interface FilterSpec { measure: string; fun: string; values: unknown; default_all: boolean; conditions?: FilterCondition[] }
+
 export interface PopNode {
   name: string; colour: string; show: boolean
   gate?: GateSpec
-  filter?: { measure: string; fun: string; values: unknown; default_all: boolean }
+  filter?: FilterSpec
   is_track?: boolean
   transient?: boolean              // ephemeral (napari cell selection) — not persisted
   membership_sig?: string          // explicit-label pops (napari selection): hash of label set
@@ -40,7 +45,7 @@ export interface PopTree { value_name: string; pop_type: string; populations: Po
 export interface FlatPop {
   path: string; name: string; parent: string; colour: string; show: boolean
   depth: number; gate?: GateSpec; transient?: boolean
-  filter?: { measure: string; fun: string; values: unknown; default_all: boolean }  // cluster pops
+  filter?: FilterSpec  // cluster / region / user-defined filter pops
 }
 
 function flatten(tree: PopTree): FlatPop[] {
@@ -244,6 +249,16 @@ export const useGatingStore = defineStore('gating', () => {
   const addClusterPop = (name: string, suffix: string, colour: string) =>
     _post('/api/gating/pop/add', { name, colour,
       filter: { measure: clusterMeasure(popType.value, suffix), fun: 'in', values: [], default_all: false } })
+  // user-defined filter population (Decision 15): a compound AND-ed filter on any obs measures, under a
+  // chosen parent, for the current popType. The backend mirrors conditions[1] onto the single fields.
+  const addFilterPop = (name: string, parent: string, colour: string, conditions: FilterCondition[]) =>
+    _post('/api/gating/pop/add', { name, parent, colour,
+      filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun,
+                values: conditions[0]?.values, default_all: false } })
+  // rewrite a filter pop's conditions (edit) — mirror onto single fields as add does.
+  const updateFilterPop = (path: string, conditions: FilterCondition[]) =>
+    _post('/api/gating/pop/update', { path,
+      filter: { conditions, measure: conditions[0]?.measure, fun: conditions[0]?.fun, values: conditions[0]?.values } })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
   const deletePop  = (path: string)                  => _post('/api/gating/pop/delete', { path })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })
@@ -308,7 +323,7 @@ export const useGatingStore = defineStore('gating', () => {
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,
-    addPop, addClusterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
+    addPop, addClusterPop, addFilterPop, updateFilterPop, setGate, deletePop, renamePop, updatePop, applyBroadcast,
     refreshNapariPops, refreshNapari, startCellSelection, clearNapariSelection, updateSelectionScope,
   }
 })

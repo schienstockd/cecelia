@@ -54,6 +54,11 @@ mutable struct Population
     filter_fun::Union{String,Nothing}      # gt|gte|lt|lte|eq|neq|in
     filter_values::Any
     filter_default_all::Bool
+    # compound filter (Decision 15): a list of AND-ed conditions, each `(; measure, fun, values)`.
+    # `nothing` → the single filter_measure/fun/values above (back-compat: existing sidecars). When set
+    # (non-empty), it is the source of truth and the single fields mirror conditions[1] for readers that
+    # only look at one. Lets a user-defined filter pop combine e.g. CD4>0.5 AND speed>5 in ONE pop.
+    filter_conditions::Union{Vector,Nothing}
     is_track::Bool
     # explicit-label membership: when set, this pop's cells ARE these label IDs (∩ parent),
     # bypassing gate/filter. Used by the transient napari selection (docs/POPULATION.md) so a
@@ -93,12 +98,27 @@ descendants(m::PopulationMap, path::AbstractString) =
 """Paths in parent-before-child order (stable by depth)."""
 topo_order(m::PopulationMap) = sort(m.order; by = p -> count(==('/'), p), alg = MergeSort)
 
+# Normalise a compound-filter spec (Decision 15): `nothing` | a list of `{measure, fun, values}`
+# (dicts, from JSON, or NamedTuples) → `Vector{NamedTuple}` of `(; measure, fun, values)`, dropping
+# entries missing a measure/fun. Empty → `nothing` (treated as no compound filter).
+function _normalise_conditions(conds)
+    conds === nothing && return nothing
+    out = NamedTuple[]
+    for c in conds
+        gc(k) = c isa AbstractDict ? get(c, k, get(c, Symbol(k), nothing)) : getproperty(c, Symbol(k))
+        mz = gc("measure"); fz = gc("fun")
+        (mz === nothing || fz === nothing) && continue
+        push!(out, (; measure = String(mz), fun = String(fz), values = gc("values")))
+    end
+    isempty(out) ? nothing : out
+end
+
 # ── Mutations ────────────────────────────────────────────────────────────────────
 function add_pop!(m::PopulationMap, name::AbstractString;
                   parent::AbstractString=ROOT, gate::Union{Gate,Nothing}=nothing,
                   colour::AbstractString="#ffffff", show::Bool=true,
                   filter_measure=nothing, filter_fun=nothing, filter_values=nothing,
-                  filter_default_all::Bool=false, is_track::Bool=false,
+                  filter_default_all::Bool=false, filter_conditions=nothing, is_track::Bool=false,
                   explicit_labels=nothing, transient::Bool=false,
                   reserved_ok::Bool=false)::String
     # `_`-prefixed names are reserved for derived populations (e.g. _tracked); only the derived
@@ -110,11 +130,16 @@ function add_pop!(m::PopulationMap, name::AbstractString;
     (parent == ROOT || has_pop(m, parent)) || error("add_pop!: parent not found: $parent")
     path = pop_path(parent, name)
     has_pop(m, path) && error("add_pop!: population already exists: $path")
+    conds = _normalise_conditions(filter_conditions)
+    # when compound, mirror the single fields onto conditions[1] so single-field readers still work.
+    if conds !== nothing
+        filter_measure = conds[1].measure; filter_fun = conds[1].fun; filter_values = conds[1].values
+    end
     m.pops[path] = Population(String(name), path, parent, String(colour), show,
                               m.pop_type, m.value_name, gate,
                               filter_measure === nothing ? nothing : String(filter_measure),
                               filter_fun === nothing ? nothing : String(filter_fun),
-                              filter_values, filter_default_all, is_track,
+                              filter_values, filter_default_all, conds, is_track,
                               explicit_labels === nothing ? nothing : collect(explicit_labels), transient)
     push!(m.order, path)
     _invalidate!(m)
@@ -182,6 +207,10 @@ function _node_dict(m::PopulationMap, path::AbstractString; include_transient::B
     if p.filter_measure !== nothing
         d["filter"] = Dict{String,Any}("measure" => p.filter_measure, "fun" => p.filter_fun,
                                        "values" => p.filter_values, "default_all" => p.filter_default_all)
+        # compound filter (Decision 15): emit the AND-ed conditions so a multi-condition pop round-trips.
+        p.filter_conditions === nothing ||
+            (d["filter"]["conditions"] = [Dict{String,Any}("measure" => c.measure, "fun" => c.fun,
+                                                           "values" => c.values) for c in p.filter_conditions])
     end
     p.is_track && (d["is_track"] = true)
     p.transient && (d["transient"] = true)
@@ -218,6 +247,7 @@ function _add_node!(m::PopulationMap, node::AbstractDict, parent::AbstractString
                     filter_fun     = flt === nothing ? nothing : get(flt, "fun", get(flt, :fun, nothing)),
                     filter_values  = flt === nothing ? nothing : get(flt, "values", get(flt, :values, nothing)),
                     filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", get(flt, :default_all, false))),
+                    filter_conditions = flt === nothing ? nothing : get(flt, "conditions", get(flt, :conditions, nothing)),
                     is_track = Bool(g("is_track", false)))
     for child in g("children", [])
         _add_node!(m, child, path)
