@@ -747,6 +747,26 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
     end
 
+    @testset "Param validation — DetectAggregates" begin
+        @test _task_from_fun_name("spatialAnalysis.detectAggregates") isa DetectAggregates
+        @test task_scope(DetectAggregates()) == "image"
+        @test_throws ParamValidationError validate_params(
+            DetectAggregates(), Dict{String,Any}("minCells" => 1))       # min=2
+        @test_throws ParamValidationError validate_params(
+            DetectAggregates(), Dict{String,Any}("clustDiameter" => -3))  # min=0
+    end
+
+    @testset "aggregate DBSCAN ids (Clustering.jl)" begin
+        # two dense blobs + one far noise point → two aggregates, noise = id 0
+        coords = [0.0 0.0; 0.1 0.1; 0.2 0.0; 5.0 5.0; 5.1 5.1; 5.2 5.0; 50.0 50.0]
+        ids = Cecelia._aggregate_ids(coords, 0.5, 2)
+        @test length(unique(ids[ids .> 0])) == 2                          # two aggregates
+        @test ids[end] == 0                                               # far point is noise
+        @test count(==(0), ids) == 1                                      # exactly one noise point
+        # too-few points → all noise
+        @test all(Cecelia._aggregate_ids([0.0 0.0; 0.1 0.1], 0.5, 5) .== 0)
+    end
+
     @testset "Param validation — NeighbourStats" begin
         @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
         @test task_scope(NeighbourStats()) == "image"
