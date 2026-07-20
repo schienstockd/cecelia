@@ -82,10 +82,11 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    (live docstring introspection) + `docs/REPL.md` (cookbook + generated section, golden-tested) +
    `image_by_uid(proj/s; uid=)` convenience + `GET /api/repl/api` → `get_repl_api` MCP tool.
    *(app/ + api/ + mcp/ + docs/ + test-pkg/api/mcp)*
-2. **`get_module_params` MCP tool** — expose the existing task-definition specs (valid
-   ranges/defaults/types) to Claude. Route already exists; add the allow-list entry + client
-   method + server tool. *(mcp/ + allow-list; possibly a thin `/api` shim if the current one
-   isn't shaped for it)*
+2. **`get_module_params` MCP tool** — ✅ **done**: reuses the existing `GET /api/tasks/definitions`
+   route (task specs already carry `params:[{key,type,min,max,step,default,tip}]`) — no new Julia,
+   no re-extraction. Added the allow-list entry + `get_module_params(category)` client method + tool.
+   Trims each spec to the suggestion-relevant fields at the MCP boundary (`_trim_module_params` —
+   drops UI-widget plumbing; the shared route stays full for the frontend). *(mcp/ + test-mcp + docs)*
 3. **§1 param suggestions** — `read_module_fun_params` exposure (current params per fun/image)
    + the suggestion pattern documented in the observer prompt so Claude produces range-valid,
    QC-anchored 🟡 suggestions. *(mcp/ + app/ accessor exposure + observer_prompt.jl)*

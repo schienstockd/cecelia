@@ -22,9 +22,9 @@ class ServerToolRegistrationTest(unittest.TestCase):
     def test_expected_read_and_write_tools_registered(self):
         for tool in (
             "get_project_info", "list_images", "get_task_history",
-            "get_analysis_lineage", "get_populations", "get_measure_summary",
-            "get_behaviour_summary", "get_cluster_summary", "get_chains",
-            "get_cohort_qc", "get_repl_api", "get_recent_logs",
+            "get_module_params", "get_analysis_lineage", "get_populations",
+            "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
+            "get_chains", "get_cohort_qc", "get_repl_api", "get_recent_logs",
             "read_lab_log", "append_lab_log",
         ):
             self.assertIn(tool, self.names)
