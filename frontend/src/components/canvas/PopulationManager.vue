@@ -23,6 +23,7 @@ import PopulationPanelShell from './PopulationPanelShell.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { PALETTES, type VisProps } from '../../plots/plot'
+import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
 
 const props = withDefaults(defineProps<{
   selected: string
@@ -114,7 +115,7 @@ async function toggleNapari(p: FlatPop) {
 // clusters.{suffix}). Instead of drawing gates, the user ticks cluster IDs into a pop here. A
 // cluster belongs to AT MOST ONE pop (ticking it into B moves it off A) — mirrors old R
 // setClusterForPop. Writes go set-wide via the store's mirrorUids. ────────────────────────────
-const clusterMode = computed(() => props.popType === 'clust' || props.popType === 'trackclust')
+const clusterMode = computed(() => isClusterPopType(props.popType))
 const POP_PALETTE = [
   '#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#a78bfa', '#ec4899', '#14b8a6', '#eab308',
   '#f97316', '#22d3ee', '#84cc16', '#8b5cf6', '#f43f5e', '#06b6d4', '#a3e635', '#d946ef',
@@ -125,7 +126,7 @@ const POP_PALETTE = [
 // (suffix) dropdown then shows that run's pops, not another run's. Non-cluster surfaces are unfiltered.
 const visiblePops = computed<FlatPop[]>(() =>
   clusterMode.value
-    ? g.flat.filter(p => p.filter?.measure === `clusters.${props.suffix}`)
+    ? g.flat.filter(p => p.filter?.measure === clusterMeasure(props.popType, props.suffix))
     : g.flat)
 const popClusterIds = (p: FlatPop): number[] => {
   const v = p.filter?.values

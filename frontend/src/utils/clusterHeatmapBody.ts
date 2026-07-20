@@ -11,9 +11,11 @@
 // clustering run's segmentation (plot_data.jl `_cluster_pop_vn`) rather than the drifting active one —
 // which is what caused `column name :clusters.default not found`.
 
+import { clusterMeasure, type ClusterPopType } from './clusterMeasure'
+
 export interface ClusterHeatmapBodyInput {
   projectUid: string
-  popType: 'clust' | 'trackclust'
+  popType: ClusterPopType
   suffix: string
   granularity: 'cell' | 'track'
   features: string[]
@@ -31,7 +33,7 @@ export function buildClusterHeatmapBody(i: ClusterHeatmapBodyInput): Record<stri
     granularity: i.granularity,
     chartType: 'matrix',
     matrixMode: 'profile',
-    category: popMode ? 'pop' : `clusters.${i.suffix}`,
+    category: popMode ? 'pop' : clusterMeasure(i.popType, i.suffix),
     separator: '_',
     pops: popMode ? i.popPaths : ['root'],
     measures: i.features,

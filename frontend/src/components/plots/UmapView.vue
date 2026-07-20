@@ -30,7 +30,7 @@ import SquarePlot from './SquarePlot.vue'
 
 const props = defineProps<{
   projectUid: string; imageUids: string[]; setUid: string | null
-  popType: 'clust' | 'trackclust'; suffix: string
+  popType: 'clust' | 'trackclust' | 'region'; suffix: string
   // populations whose eye is on in the manager: colour their clusters in the pop colour, grey the
   // rest. Empty → plain colour-by-cluster. Live from the gating store via ClusterPlots' viewContext.
   shownPops?: { path: string; name: string; colour: string; clusterIds: number[] }[]

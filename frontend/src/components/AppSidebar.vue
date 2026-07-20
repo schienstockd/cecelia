@@ -75,7 +75,8 @@ const groups: { heading: string; items: NavItem[] }[] = [
     items: [
       { to: '/phenotype', label: 'Phenotype', icon: 'pi-percentage', tip: 'Summarise populations — counts / proportion of each population across images.', requiresProject: true },
       { to: '/behaviour', label: 'Behaviour', icon: 'pi-chart-bar',  tip: 'Summary plots of cell/track measures (speed, HMM states, …).', requiresProject: true },
-      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Spatial neighbourhood and proximity analysis.', disabled: true, soon: true },
+      { to: '/spatial',   label: 'Spatial',   icon: 'pi-map',        tip: 'Spatial neighbourhood, contact and aggregate analysis.', requiresProject: true },
+      { to: '/regions',   label: 'Cluster regions', icon: 'pi-clone', tip: 'Cluster cells into spatial regions by neighbourhood composition (i-niches), then define region populations.', requiresProject: true },
     ],
   },
   {

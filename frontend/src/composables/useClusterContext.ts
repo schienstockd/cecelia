@@ -10,13 +10,14 @@
 import { ref, computed, watch, type Ref } from 'vue'
 import { useGatingStore } from '../stores/gating'
 import { useLogStore } from '../stores/log'
+import { clusterMeasure, type ClusterPopType } from '../utils/clusterMeasure'
 
 export interface ShownPop { path: string; name: string; colour: string; clusterIds: number[] }
 
 export function useClusterContext(opts: {
   projectUid: Ref<string>
   imageUids: Ref<string[]>
-  popType: Ref<'clust' | 'trackclust'>
+  popType: Ref<ClusterPopType>
   suffix: Ref<string>
   // gate the singleton-store drive + feature load (the Analysis board only wants this when a cluster
   // slot exists; the cluster module leaves it on). Defaults to always-on.
@@ -84,7 +85,7 @@ export function useClusterContext(opts: {
   // run's pops for the segmentation in one sidecar, so a stale highlight from another run is ignored here
   // (keeps the per-population heatmap / UMAP colouring on the run you're viewing).
   const shownPopsFor = (hl: string[]): ShownPop[] => g.flat
-    .filter(p => hl.includes(p.path) && p.filter?.measure === `clusters.${suffix.value}`)
+    .filter(p => hl.includes(p.path) && p.filter?.measure === clusterMeasure(popType.value, suffix.value))
     .map(p => ({ path: p.path, name: p.name, colour: p.colour,
                  clusterIds: Array.isArray(p.filter?.values) ? (p.filter!.values as unknown[]).map(Number) : [] }))
 

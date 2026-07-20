@@ -23,7 +23,7 @@ import { buildClusterHeatmapBody } from '../../utils/clusterHeatmapBody'
 const props = defineProps<{
   index: number; active: boolean; arrange?: ArrangeCmd | null; persistKey?: string
   projectUid: string; setUid: string | null; imageUids: string[]
-  popType: 'clust' | 'trackclust'; suffix: string
+  popType: 'clust' | 'trackclust' | 'region'; suffix: string
   featureOptions: string[]; nameMap: Record<string, string>
   // populations shown in the manager: when present, columns become these pops (per-population
   // profile) instead of the raw cluster IDs. Empty → per-cluster. `clusterIds` is carried only so

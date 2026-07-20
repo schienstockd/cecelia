@@ -38,7 +38,7 @@ import { defaultVis, type VisProps } from '../../plots/plot'
 interface ClusterPanelState { [key: string]: unknown; kind: string; features?: string[]; labels?: boolean; hl?: string[]; measure?: string; vis?: VisProps }
 
 const props = defineProps<{
-  imageUids: string[]; popType: 'clust' | 'trackclust'
+  imageUids: string[]; popType: 'clust' | 'trackclust' | 'region'
   selectUids?: (uids: string[]) => void   // drive the image selection (from ModuleLayout)
 }>()
 const meta = useProjectMetaStore()
