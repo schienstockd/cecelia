@@ -5233,4 +5233,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
     end
 
+    @testset "ss listener PID parse (_kill_listeners_on_port, Linux)" begin
+        # Real `ss -tlnpH` lines: a listener appears once for IPv4 and once for IPv6 → one PID.
+        raw = "LISTEN 0 128 127.0.0.1:8080 0.0.0.0:* users:((\"julia\",pid=1044704,fd=24))\n" *
+              "LISTEN 0 128 [::1]:8080 [::]:* users:((\"julia\",pid=1044704,fd=25))"
+        @test Cecelia._listener_pids_from_ss(raw) == [1044704]
+        @test isempty(Cecelia._listener_pids_from_ss(""))                # nothing listening
+        two = "users:((\"a\",pid=10,fd=1))\nusers:((\"b\",pid=22,fd=3))"
+        @test Cecelia._listener_pids_from_ss(two) == [10, 22]            # distinct PIDs kept, in order
+    end
+
 end
