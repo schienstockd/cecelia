@@ -291,6 +291,25 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test length(capped) == Cecelia.RUN_LOG_CAP
         @test capped[end]["fun"] == "x.$(Cecelia.RUN_LOG_CAP + 10)"   # newest kept
 
+        # params trail: entry carries the sanitised task params; internal `_…` keys and the redundant
+        # `valueName` are dropped, real tuning knobs kept (Observer Phase 2 §1 — see OBSERVER_PHASE2_PLAN).
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path" => "/tmp/fake2.tif"))
+        append_run_log!(img2, "tracking.bayesian_tracking", "default", "done",
+                        Dict{String,Any}("search_radius" => 5.0, "max_lost" => 3,
+                                         "valueName" => "default", "_task_id" => "abc123"))
+        e = read_run_log(img2)[end]
+        @test e["params"]["search_radius"] == 5.0
+        @test e["params"]["max_lost"] == 3
+        @test !haskey(e["params"], "valueName")    # redundant with its own field
+        @test !haskey(e["params"], "_task_id")      # internal, dropped
+        # default (no params) → shape-stable empty dict, and it survives reload
+        append_run_log!(img2, "behaviour.hmm")
+        @test read_run_log(img2)[end]["params"] == Dict{String,Any}()
+        @test read_run_log(init_object(proj.uid, img2.uid))[end-1]["params"]["search_radius"] == 5.0
+        # sanitiser handles nothing/empty directly
+        @test Cecelia._run_log_params(nothing) == Dict{String,Any}()
+        @test Cecelia._run_log_params(Dict("_x" => 1, "keep" => 2)) == Dict{String,Any}("keep" => 2)
+
         rm(proj.root; recursive=true)
     end
 
