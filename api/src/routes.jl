@@ -962,7 +962,10 @@ function api_tasks_history(req::HTTP.Request)
         push!(rows, Dict{String,Any}(
             "imageUid" => img.uid, "imageName" => img.name, "status" => img.status,  # image's status
             "runStatus" => (isempty(rs) ? "done" : rs),                              # this run's outcome
-            "fun" => _rl(e, "fun"), "valueName" => _rl(e, "valueName"), "at" => _rl(e, "at")))
+            "fun" => _rl(e, "fun"), "valueName" => _rl(e, "valueName"), "at" => _rl(e, "at"),
+            # the tuning trail: the params this run used (run_log.jl; {} on legacy entries). Lets the
+            # observer suggest a param adjustment on an outlier without a second per-image call.
+            "params" => get(e, :params, get(e, "params", Dict{String,Any}()))))
     end
     # newest first — the run-log timestamp is yyyy-mm-ddTHH:MM:SS, so lexicographic == chronological
     sort!(rows, by = r -> r["at"], rev = true)

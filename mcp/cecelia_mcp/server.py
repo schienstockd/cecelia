@@ -131,8 +131,11 @@ def get_task_log(project_uid: str, image_uid: str, fun: str) -> str:
 @mcp.tool()
 def get_task_history(project_uid: str, limit: int = 100) -> list:
     """Recent task runs across all images, newest first. Each row: `imageUid`, `imageName`, `fun`,
-    `valueName`, `at` (timestamp), `status` (the image's current status), and **`runStatus`** — that
-    run's outcome, `"done"` or `"failed"`.
+    `valueName`, `at` (timestamp), `status` (the image's current status), **`runStatus`** — that run's
+    outcome, `"done"` or `"failed"` — and **`params`**, the params that run used (the tuning trail; `{}`
+    on older runs). Pair `params` with get_module_params + get_cohort_qc to suggest a param adjustment
+    on an outlier: what was tried, the valid range, the direction to try. It is "what was tried", not a
+    params→outcome relationship — suggest, don't predict.
 
     Watch `runStatus`: the same `fun` showing `"failed"` repeatedly on one image is a stuck point worth
     flagging (e.g. "hmm failed 5x on image KDIeEm — want to look at the params?"). **This is the place

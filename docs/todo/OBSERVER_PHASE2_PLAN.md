@@ -87,9 +87,12 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    no re-extraction. Added the allow-list entry + `get_module_params(category)` client method + tool.
    Trims each spec to the suggestion-relevant fields at the MCP boundary (`_trim_module_params` —
    drops UI-widget plumbing; the shared route stays full for the frontend). *(mcp/ + test-mcp + docs)*
-3. **§1 param suggestions** — `read_module_fun_params` exposure (current params per fun/image)
-   + the suggestion pattern documented in the observer prompt so Claude produces range-valid,
-   QC-anchored 🟡 suggestions. *(mcp/ + app/ accessor exposure + observer_prompt.jl)*
+3. **§1 param suggestions** — ✅ **done**: surfaced the run's `params` (the #250 tuning trail) in
+   `get_task_history` (was projecting a subset) + added the suggestion pattern to `observer_prompt.jl`
+   (on a cohort outlier → read the trail + `get_module_params` range → suggest an in-range direction,
+   "suggestion not instruction", current-state only). Superseded the planned `read_module_fun_params`
+   exposure — the run log IS the param source now (one place, not a second config read).
+   *(api/ history route + observer_prompt.jl + test-api/pkg + docs)*
 4. **`get_session_briefing` MCP tool** + `buildChatPrompt` update to call it first.
    *(mcp/ + frontend/ chatHandoff.ts + test-frontend)*
 5. **Notebook generation guidance** — document the collaborator-request→notebook workflow so

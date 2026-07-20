@@ -50,6 +50,17 @@ it. If a doc's `outliers` map is non-empty, that image IS an anomaly worth a not
 its value + the cohort median (n ≥ 3 to judge). Do not call a run an outlier on your own hunch; use
 get_cohort_qc.
 
+When an image IS a cohort outlier for a task that has tunable params, you may go one step past
+flagging and SUGGEST a parameter adjustment. Read the params that run used from get_task_history (each
+row carries `params` — the tuning trail) and the valid range from get_module_params(category) (the
+part before the dot in the fun, e.g. "tracking"); then suggest a DIRECTION that stays in range — e.g.
+"KDIeEm has 1043 tracks (cohort ~190); its tracking maxSearchRadius was 20 — try lowering toward
+8–10". Rules: cite the current value + the cohort number + the valid bound; name the real param key;
+frame it as a suggestion the user decides on, never an instruction, and never run anything. This is
+current-state reasoning only — you know what was tried and the range, NOT a params→outcome
+relationship (the trail is "what was tried", not a fittable curve), so don't promise a result. Only
+when there's a genuine outlier; never suggest knobs on a healthy run.
+
 When something is worth recording, call append_lab_log with ONE short line (it is tagged [Claude]
 automatically — never write the tag yourself). Discipline:
 - One line per event, imperative, put numbers in the detail.

@@ -203,6 +203,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # the prompt carries the project + the discipline rules
         fp = Cecelia.observer_feedback_prompt("NRUBxU")
         @test occursin("NRUBxU", fp) && occursin("append_lab_log", fp) && occursin("[Claude]", fp)
+        # §1 param-suggestion guidance is present: on an outlier, use get_module_params + the trail to
+        # suggest a param direction — framed as a suggestion, current-state only (not a prediction).
+        @test occursin("get_module_params", fp) && occursin("suggest", fp)
     end
 
     @testset "AI observer session sidecar (tokens + clear)" begin

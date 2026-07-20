@@ -508,16 +508,20 @@ end
         end
         # activity across two images, aggregated — including a FAILED run (visible to the observer)
         append_run_log!(img1, "segment.cellpose", "default")
-        append_run_log!(img2, "tracking.bayesian_tracking", "default", "failed")
+        append_run_log!(img2, "tracking.bayesian_tracking", "default", "failed",
+                        Dict{String,Any}("maxSearchRadius" => 20, "maxLost" => 3))
         let r = JSON3.read(hist("projectUid=$uid")[2])
             @test r.count == 2
             funs = [h.fun for h in r.history]
             @test "segment.cellpose" in funs && "tracking.bayesian_tracking" in funs
             @test all(h -> h.imageUid in (img1.uid, img2.uid), r.history)
             # per-run outcome surfaced under runStatus (distinct from the image's `status`)
-            byfun = Dict(String(h.fun) => String(h.runStatus) for h in r.history)
-            @test byfun["segment.cellpose"] == "done"          # default
-            @test byfun["tracking.bayesian_tracking"] == "failed"
+            byfun = Dict(String(h.fun) => h for h in r.history)
+            @test String(byfun["segment.cellpose"].runStatus) == "done"          # default
+            @test String(byfun["tracking.bayesian_tracking"].runStatus) == "failed"
+            # the tuning trail rides along per row (Observer Phase 2 §1): the run's params
+            @test byfun["tracking.bayesian_tracking"].params.maxSearchRadius == 20
+            @test isempty(byfun["segment.cellpose"].params)                      # no params → {}
         end
         # limit caps rows
         @test JSON3.read(hist("projectUid=$uid&limit=1")[2]).count == 1
