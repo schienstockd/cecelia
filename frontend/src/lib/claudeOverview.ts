@@ -81,8 +81,9 @@ export const CLAUDE_CAPABILITIES: CapabilityGroup[] = [
 ]
 
 // Copyable one-liners that show the range — from QC to a notebook.
+// Keep them short and uniform so they read as a clean row of chips.
 export const CLAUDE_EXAMPLES: string[] = [
   'Why is this image off?',
-  'How do I plot the behaviour differences?',
-  'Build me a notebook for cell speed over time.',
+  'Plot the behaviour differences',
+  'Build a cell-speed notebook',
 ]

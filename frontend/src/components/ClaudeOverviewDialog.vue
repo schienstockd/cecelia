@@ -39,7 +39,9 @@ defineEmits<{ (e: 'close'): void }>()
     <!-- example prompts to try -->
     <div class="co-examples">
       <span class="co-examples-label">Try asking</span>
-      <span v-for="(ex, i) in CLAUDE_EXAMPLES" :key="i" class="co-chip">{{ ex }}</span>
+      <div class="co-chips">
+        <span v-for="(ex, i) in CLAUDE_EXAMPLES" :key="i" class="co-chip">{{ ex }}</span>
+      </div>
     </div>
   </BaseModal>
 </template>
@@ -65,8 +67,9 @@ defineEmits<{ (e: 'close'): void }>()
 .co-cell.tone-muted { opacity: 0.85; }
 .co-cell.tone-muted .co-cell-head { color: var(--cc-text-dim); }
 
-.co-examples { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.co-examples-label { font-size: 0.78rem; color: var(--cc-text-dim); margin-right: 2px; }
+.co-examples { margin-top: 14px; }
+.co-examples-label { display: block; font-size: 0.78rem; color: var(--cc-text-dim); margin-bottom: 6px; }
+.co-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .co-chip {
   font-size: 0.78rem; color: var(--cc-text); background: var(--cc-surface-2);
   border: 1px solid var(--cc-border); border-radius: 999px; padding: 3px 10px;
