@@ -77,6 +77,25 @@ class ClientTest(unittest.TestCase):
             {"projectUid": "p", "file": "speed.jl", "description": "shorter blurb"},
         )
 
+    def test_notebook_read_routes_allow_listed(self):
+        self.assertIn(("GET", "/api/notebooks"), ALLOWED_ROUTES)
+        self.assertIn(("GET", "/api/notebooks/content"), ALLOWED_ROUTES)
+
+    def test_list_notebooks_builds_url(self):
+        with _patch_urlopen({"notebooks": []}) as u:
+            self.c.list_notebooks("p")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/notebooks?projectUid=p", req.full_url)
+
+    def test_get_notebook_builds_url(self):
+        with _patch_urlopen({"file": "speed.jl", "scope": "project", "content": "x=1"}) as u:
+            self.c.get_notebook("p", "speed.jl")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertIn("/api/notebooks/content?", req.full_url)
+        self.assertIn("file=speed.jl", req.full_url)
+
     def test_list_images_builds_url(self):
         with _patch_urlopen({"images": []}) as u:
             self.c.list_images("proj1")

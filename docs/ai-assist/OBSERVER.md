@@ -43,6 +43,8 @@ read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage
 get_repl_api              → notebook/REPL data-access surface: read accessors + live docstrings + cookbook (Phase 2)
 get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
+list_notebooks            → a project's notebooks (name, file, description, version) + shipped examples (Phase 2)
+get_notebook              → a notebook's current Pluto source (with the user's edits) — the "have a look" flow (Phase 2)
 ```
 
 **Write (the three non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
@@ -249,5 +251,10 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **Notebooks: Claude bootstraps, the user owns.** `create_notebook` is create-only + snapshots v1;
   iteration happens in Pluto by the user (Claude guiding via chat). Notebook code writes figures/CSV
   only — never h5ad/QC/lab-log/ccid (`docs/REPL.md`).
+- **Stuck? Read + teach, don't overwrite.** When the user is stuck in a notebook, Claude reads its
+  current source (`get_notebook`), explains the fix in plain terms and walks them through it (most
+  users are new to Julia — the goal is they learn to do it themselves). If they ask Claude to apply the
+  change, it creates a NEW notebook version via `create_notebook` (a new name) and says so first —
+  it never overwrites their file or their edits. There is deliberately no "overwrite notebook" write.
 - **REPL.md can't drift.** `docs/REPL.md`'s API section is generated from the live docstrings of
   `NOTEBOOK_API` and golden-tested; changing a listed function's docstring without regenerating fails CI.

@@ -43,6 +43,8 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
+        ("GET", "/api/notebooks"),         # list a project's notebooks (file, description, version)
+        ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
         ("POST", "/api/lablog/append"),  # write 1/3 — append-only, server-guarded
         ("POST", "/api/notebooks/write"),  # write 2/3 — create-only (409 on existing); serialises cells to a Pluto notebook
         ("POST", "/api/notebooks/describe"),  # write 3/3 — edits ONLY a notebook's description string (registry sidecar); not its content
@@ -219,6 +221,14 @@ class CeceliaClient:
         # the per-image task log, which only captures the Python subprocess's stdout). Not scoped to a
         # project (it's the process-wide console).
         return self._request("GET", "/api/logs/recent")
+
+    def list_notebooks(self, project_uid: str):
+        return self._request("GET", "/api/notebooks", params={"projectUid": project_uid})
+
+    def get_notebook(self, project_uid: str, file: str):
+        # Returns {file, scope, content} — the notebook's current Pluto source (with the user's edits).
+        return self._request("GET", "/api/notebooks/content",
+                             params={"projectUid": project_uid, "file": file})
 
     # ── the three writes (all non-destructive to project & analysis data) ────────────
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):

@@ -339,6 +339,26 @@ function api_notebooks_list(req::HTTP.Request)
     200, JSON3.write((; notebooks = vcat(proj, examples)))
 end
 
+# GET /api/notebooks/content?projectUid=&file=  → { file, scope, content }
+# Read a notebook's CURRENT source (including the user's own edits) so the observer can "have a look"
+# when the user is stuck — the Phase 2 teaching flow: read, explain, suggest corrected cells to paste;
+# never overwrite (a revision becomes a NEW notebook via create_notebook). Resolves under the project's
+# notebooks/ dir, then the shipped examples/ dir. `_safe_nb_file` blocks path traversal. Read-only.
+function api_notebooks_content(req::HTTP.Request)
+    query = HTTP.queryparams(HTTP.URI(req.target))
+    uid   = get(query, "projectUid", "")
+    file  = _safe_nb_file(get(query, "file", ""))
+    (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    ppath = joinpath(_project_notebooks_dir(uid), file)
+    epath = joinpath(_repo_notebooks_dir(), file)
+    path, scope = isfile(ppath) ? (ppath, "project") :
+                  isfile(epath) ? (epath, "example") : (nothing, "")
+    path === nothing && return 404, JSON3.write((; error = "Notebook not found"))
+    200, JSON3.write((; file = file, scope = scope, content = read(path, String)))
+end
+
 # ── Notebook CRUD (project scope) ────────────────────────────────────────────────
 # All resolve the target strictly under {proj}/notebooks/ via _safe_nb_file, so examples (which live
 # in the repo, not the project dir) can't be mutated/deleted here — only duplicated into the project.

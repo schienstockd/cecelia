@@ -329,6 +329,28 @@ def read_lab_log(project_uid: str) -> str:
 
 
 @mcp.tool()
+def list_notebooks(project_uid: str) -> dict:
+    """List a project's notebooks (name, file, description, current version) plus the shipped examples.
+    Use it to find the `file` for get_notebook / set_notebook_description when the user refers to a
+    notebook by name."""
+    return _client.list_notebooks(project_uid)
+
+
+@mcp.tool()
+def get_notebook(project_uid: str, file: str) -> dict:
+    """Read a notebook's CURRENT Pluto source — including the user's own edits — so you can help when
+    they're stuck ("can you have a look?"). Returns {file, scope, content}. `file` is the notebook
+    filename (from list_notebooks / create_notebook, e.g. "speed.jl").
+
+    TEACHING FLOW — the user is likely new to Julia. Read the source, explain what's wrong in plain
+    terms, and walk them through the fix so they learn to do it themselves; suggest corrected cells for
+    them to paste. Do NOT overwrite their notebook. If they ask you to make the changes for them,
+    default to creating a NEW notebook version with create_notebook (a new name, e.g. "<name>-v2") and
+    tell them first: "I'll make a new notebook version." — the original and their edits stay intact."""
+    return _client.get_notebook(project_uid, file)
+
+
+@mcp.tool()
 def append_lab_log(project_uid: str, lines: list[str]) -> dict:
     """Append a dated [Claude] entry to the lab log. Append-only — never edits existing content.
 
@@ -354,7 +376,11 @@ def create_notebook(project_uid: str, name: str, cells: list[str], description: 
     open and doesn't show it, they can hit refresh. They open it, edit/iterate in Pluto (you can guide
     them + suggest corrected cells to paste), and once happy they run it without you. One of only three
     writes; non-destructive. Suggest, then create on the user's ask — don't spam notebooks. To reword
-    its description afterwards, use set_notebook_description (don't recreate)."""
+    its description afterwards, use set_notebook_description (don't recreate).
+
+    REVISIONS: when the user asks you to change an existing notebook, read it with get_notebook, then
+    create a NEW version here under a new name (e.g. "<name>-v2") — never overwrite theirs. Say so
+    first: "I'll make a new notebook version." Prefer teaching them the edit over doing it for them."""
     return _client.create_notebook(project_uid, name, cells, description)
 
 
