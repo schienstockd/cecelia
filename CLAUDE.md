@@ -317,7 +317,22 @@ ecosystem — do not mix:
 
 **Critical**: `api/src/*.jl` files are `include`d by the server script — they are **not** Revise-tracked. Changes to them require a server restart. Only changes to `app/src/` (the Cecelia package) are picked up by Revise. Napari logic lives in `api/src/napari_api.jl`, not `app/src/`.
 
-**Adding a Julia dependency to `app/`**: edit `app/Project.toml`, then run `julia --project -e 'import Pkg; Pkg.instantiate()'` from the `api/` directory before restarting the server. The `api/` environment has its own manifest and won't pick up the new dep automatically — the server will fail to precompile Cecelia until you do this. (`cd app && julia --project test/runtests.jl` passes regardless because it uses the `app/` environment directly.)
+**Adding a Julia dependency to `app/`**: `Cecelia` is path-sourced by **three** separate environments,
+each with its own committed `Manifest.toml` that pins Cecelia's full dependency graph — so a new dep
+must be re-resolved into **all three** and all three manifests committed together, or whichever env was
+missed fails to precompile Cecelia (`ArgumentError: Package Cecelia does not have <Dep> in its
+dependencies`). `Pkg.instantiate()` alone does NOT do this — it honours the existing (stale) manifest;
+you need `Pkg.resolve()` (the `*-instantiate` tasks below now resolve-then-instantiate for exactly this
+reason). After editing `app/Project.toml` (or `Pkg.add`-ing in `app/`):
+
+| Env | Command | Manifest to commit |
+|---|---|---|
+| `app/` (package + `test-pkg`) | `pixi run julia-instantiate` | `app/Manifest.toml` |
+| `api/` (WS server) | `cd api && julia --project -e 'using Pkg; Pkg.resolve()'` | `api/Manifest.toml` |
+| `pixi run frontend`… `pluto/` (notebooks) | `pixi run notebooks-instantiate` | `pluto/Manifest.toml` |
+
+Miss one and it precompiles fine everywhere else but dies in that one env — which is exactly how a
+`Clustering`/`NearestNeighbors` add shipped a stale `pluto/Manifest.toml` and broke every notebook.
 
 ### Data layout
 ```

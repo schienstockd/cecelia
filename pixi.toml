@@ -134,8 +134,12 @@ notebooks-sysimage = { cmd = "julia --project build_sysimage.jl", cwd = "pluto" 
 # RELEASE build: same, but also bakes in Cecelia + CeceliaNb (code frozen) for near-instant first
 # plot AND first pop_df. Wired into the packaging flow — see docs/SHIPPING.md. Also → pluto/deps.so.
 notebooks-sysimage-full = { cmd = "julia --project build_sysimage_full.jl", cwd = "pluto" }
-# Resolve/precompile the pluto env (its own manifest — like julia-instantiate for app/).
-notebooks-instantiate = { cmd = "julia --project -e 'using Pkg; Pkg.instantiate()'", cwd = "pluto" }
+# Resolve + install the pluto env (its own manifest — like julia-instantiate for app/). `resolve`
+# FIRST is deliberate: the pluto env path-sources Cecelia (../app), so when a new Julia dep is added
+# to app/Project.toml, plain `instantiate` honours the stale manifest and never picks it up — the
+# notebook then fails to precompile ("Cecelia does not have <Dep> in its dependencies"). `resolve` is
+# a no-op when already consistent and self-heals the manifest when it isn't. Same for julia-instantiate.
+notebooks-instantiate = { cmd = "julia --project -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'", cwd = "pluto" }
 
 # One-click launch (the desktop-shortcut entrypoint): start the prod server, wait for /api/health,
 # open the default browser at :8080. The Julia server serves the built frontend, so run `build` first.
@@ -145,8 +149,9 @@ app = "python app.py"
 # "Update" button hits /api/update, which runs the same). Refreshes pixi.lock.
 update = "pixi update"
 
-# Julia package deps.
-julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.instantiate()'"
+# Julia package deps. `resolve` first (self-heals a manifest that's missing a newly-added dep — see
+# notebooks-instantiate); a no-op when already consistent.
+julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.resolve(); Pkg.instantiate()'"
 
 # Stop by PORT, not by process name — killing by name self-matches the task's own shell and was
 # orphaning the napari bridge (see docs/SHIPPING.md). `stop-napari` alone forces a fresh bridge
