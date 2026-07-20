@@ -94,6 +94,12 @@ end
 const _Z_RATIO_MIN = 0.02
 const _Z_RATIO_MAX = 50
 
+# 16→8-bit rescale-on-import QC thresholds. A channel that clips more than this fraction of its pixels
+# has its high percentile set too low; a true-max that dwarfs the 99.9th percentile by this ratio is a
+# hot pixel pinning the window and squashing the real signal. See docs/todo/IMPORT_RESCALE_PLAN.md.
+const _RESCALE_CLIP_WARN     = 0.01
+const _RESCALE_HOTPIXEL_RATIO = 3.0
+
 _cal_num(v) = v === nothing ? nothing : (v isa Real ? Float64(v) : tryparse(Float64, string(v)))
 _cal_int(v, default::Int) = (n = _cal_num(v); n === nothing ? default : round(Int, n))
 _cal_txt(v) = (v === nothing || (v isa AbstractString && isempty(v))) ? nothing : string(v)
@@ -160,15 +166,117 @@ function metadata_qc_findings(meta::AbstractDict)
     fs
 end
 
-# Compute + persist an image's calibration QC. Re-reads the PERSISTED ccid meta (not the possibly
-# stale in-memory `img.meta`) so it's correct from any call site — import, resync, metadata edit.
-# Writes even when clean (empty findings), so a fixed image overwrites its stale warning.
+"""
+    rescale_qc_findings(meta) -> Vector
+
+Advisory findings for the import-time 16→8-bit rescale, from the persisted `meta["rescale8bit"]`
+(written by `ImportOmezarr` when `convertTo8bit` is set): a per-channel `[vmin, vmax]` window +
+clip stats. PURE → unit-tested. Empty when the image wasn't converted. Warns on a channel clipped
+hard (top percentile too low → real signal trimmed), a channel whose true max dwarfs its 99.9th
+percentile (a hot pixel pins the window and squashes the signal), and a flat channel (zero range →
+blank output). Only one finding per channel (the first applicable — flat ▸ clipped ▸ hot pixel).
+"""
+function rescale_qc_findings(meta::AbstractDict)
+    fs = Dict{String,Any}[]
+    r  = get(meta, "rescale8bit", nothing)
+    r isa AbstractDict || return fs
+    channels = get(Dict{String,Any}(String(k) => v for (k, v) in r), "channels", nothing)
+    channels isa AbstractVector || return fs
+    for ch0 in channels
+        ch0 isa AbstractDict || continue
+        ch = Dict{String,Any}(String(k) => v for (k, v) in ch0)
+        i         = _cal_int(get(ch, "index", nothing), 0)
+        span      = _cal_num(get(ch, "rangeSpan", nothing))
+        clip_high = _cal_num(get(ch, "clipHighFrac", nothing))
+        true_max  = _cal_num(get(ch, "trueMax", nothing))
+        p999      = _cal_num(get(ch, "p999", nothing))
+        if span !== nothing && span <= 0
+            push!(fs, qc_finding("warn", "rescale.channel_flat",
+                "Channel $i is flat",
+                "This channel has no intensity range — its 8-bit output is blank; check the acquisition.";
+                detail = Dict{String,Any}("channel" => i)))
+        elseif clip_high !== nothing && clip_high > _RESCALE_CLIP_WARN
+            push!(fs, qc_finding("warn", "rescale.channel_clipped",
+                "Channel $i clips bright signal",
+                "Raise the 8-bit high percentile (or 100 = true max) and re-import.";
+                detail = Dict{String,Any}("channel" => i,
+                                          "clipPct" => round(clip_high * 100, digits = 2))))
+        elseif true_max !== nothing && p999 !== nothing && p999 > 0 &&
+               true_max > _RESCALE_HOTPIXEL_RATIO * p999
+            push!(fs, qc_finding("warn", "rescale.hot_pixel",
+                "Channel $i may have a hot pixel",
+                "The max is far above the 99.9th percentile, squashing the signal — lower the 8-bit high percentile (e.g. 99.9) and re-import.";
+                detail = Dict{String,Any}("channel" => i, "trueMax" => true_max, "p999" => p999)))
+        end
+    end
+    fs
+end
+
+"""
+    import_metrics(meta) -> Union{Dict,Nothing}
+
+Objective, cohort-comparable metrics EVERY import produces: channel/Z/T counts (`nChannels`/`nZ`/`nT`)
+from the OME metadata (`SizeC`/`SizeZ`/`SizeT`). An image whose channel count or dimensionality
+differs from its cohort peers is an outlier (wrong file imported / acquisition misconfigured).
+`nothing` only for pre-metadata images carrying none of these keys. This is the base import metric
+the QC convention requires of every result-producing task (MODULES.md → QC).
+"""
+function import_metrics(meta::AbstractDict)
+    d = Dict{String,Any}()
+    for (key, name) in (("SizeC", "nChannels"), ("SizeZ", "nZ"), ("SizeT", "nT"))
+        v = _cal_int(get(meta, key, nothing), -1)
+        v >= 0 && (d[name] = v)
+    end
+    isempty(d) ? nothing : d
+end
+
+"""
+    rescale_metrics(meta) -> Union{Dict,Nothing}
+
+Extra objective metrics for the 16→8-bit rescale (`nChannelsClipped`, `nChannelsFlat`), from the
+persisted `meta["rescale8bit"]`. `nothing` when the image wasn't converted (unconverted imports bank
+only the base `import_metrics`). Channel count lives in `import_metrics` (`nChannels`) so it's present
+for every import, converted or not — not duplicated here.
+"""
+function rescale_metrics(meta::AbstractDict)
+    r = get(meta, "rescale8bit", nothing)
+    r isa AbstractDict || return nothing
+    channels = get(Dict{String,Any}(String(k) => v for (k, v) in r), "channels", nothing)
+    channels isa AbstractVector || return nothing
+    n_clipped = 0; n_flat = 0
+    for ch0 in channels
+        ch0 isa AbstractDict || continue
+        ch = Dict{String,Any}(String(k) => v for (k, v) in ch0)
+        span      = _cal_num(get(ch, "rangeSpan", nothing))
+        clip_high = _cal_num(get(ch, "clipHighFrac", nothing))
+        (span !== nothing && span <= 0) && (n_flat += 1)
+        (clip_high !== nothing && clip_high > _RESCALE_CLIP_WARN) && (n_clipped += 1)
+    end
+    Dict{String,Any}("nChannelsClipped" => n_clipped, "nChannelsFlat" => n_flat)
+end
+
+# Compute + persist an image's import QC. Re-reads the PERSISTED ccid meta (not the possibly stale
+# in-memory `img.meta`) so it's correct from any call site — import, resync, metadata edit. Writes
+# even when clean (empty findings), so a fixed image overwrites its stale warning. Calibration and
+# 16→8-bit-rescale QC share the one `importImages.omezarr` doc: both are import-time properties of the
+# same image, and both are recomputed here from persisted meta so they never diverge. Banks the base
+# import metric (`import_metrics`, every image) plus the rescale metrics (converted images only).
 function write_metadata_qc!(img::CciaImage)
     ccid = joinpath(img._dir, "ccid.json")
     isfile(ccid) || return
-    raw  = JSON3.read(read(ccid, String))
-    meta = Dict{String,Any}(String(k) => v for (k, v) in get(raw, :meta, Dict{String,Any}()))
-    write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, metadata_qc_findings(meta))
+    raw      = JSON3.read(read(ccid, String))
+    meta     = Dict{String,Any}(String(k) => v for (k, v) in get(raw, :meta, Dict{String,Any}()))
+    findings = vcat(metadata_qc_findings(meta), rescale_qc_findings(meta))
+
+    metrics = import_metrics(meta)
+    rm      = rescale_metrics(meta)
+    isnothing(rm) || (metrics = merge(isnothing(metrics) ? Dict{String,Any}() : metrics, rm))
+
+    if isnothing(metrics)
+        write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, findings)
+    else
+        write_qc(img, "importImages.omezarr", VERSIONED_DEFAULT_VAL, findings; metrics = metrics)
+    end
 end
 
 # ── Objective count metrics (QC banking) ─────────────────────────────────────────

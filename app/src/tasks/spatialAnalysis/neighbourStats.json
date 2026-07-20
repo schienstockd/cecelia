@@ -1,0 +1,59 @@
+{
+  "task": "neighbourStats",
+  "fun_name": "spatialAnalysis.neighbourStats",
+  "label": "Contact statistics",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "statsSuffix",
+      "label": "Suffix",
+      "type": "text",
+      "default": "default",
+      "tip": "Names the stored result (spatialStats/<suffix>.json). Keeps multiple runs side by side."
+    },
+    {
+      "key": "basisPops",
+      "label": "Populations",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "The cell types to compute pairwise contact statistics for (≥2). May span segmentations — they are pooled into one neighbour graph. Produces a log-odds association/avoidance table for every pair."
+    },
+    {
+      "key": "neighbourMethod",
+      "label": "Graph type",
+      "type": "select",
+      "default": "delaunay",
+      "options": [
+        { "value": "delaunay", "label": "Delaunay (radius-pruned)" },
+        { "value": "knn",      "label": "k nearest neighbours" },
+        { "value": "radius",   "label": "Fixed radius" }
+      ],
+      "tip": "How the neighbour graph is built (squidpy). CODEX pairwise stats use the Delaunay graph."
+    },
+    {
+      "key": "neighbourRadius",
+      "label": "Radius (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 30,
+      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)."
+    },
+    {
+      "key": "nNeighbours",
+      "label": "k (neighbours)",
+      "type": "int",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "default": 6,
+      "tip": "Number of nearest neighbours for the kNN graph."
+    }
+  ]
+}

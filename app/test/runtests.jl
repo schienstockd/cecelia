@@ -723,6 +723,53 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    @testset "Param validation — CellNeighbours" begin
+        @test _task_from_fun_name("spatialAnalysis.cellNeighbours") isa CellNeighbours
+        @test task_scope(CellNeighbours()) == "image"          # per-image graph (no "scope" in spec)
+        # neighbourRadius is float min=0/max=1000 — out of range must be rejected
+        @test_throws ParamValidationError validate_params(
+            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 5000))
+        # nNeighbours is int min=1 — below the floor must be rejected
+        @test_throws ParamValidationError validate_params(
+            CellNeighbours(), Dict{String,Any}("nNeighbours" => 0))
+        # a valid param set passes
+        @test validate_params(
+            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 30, "nNeighbours" => 6,
+                                               "neighbourMethod" => "knn")) === nothing
+    end
+
+    @testset "cellNeighbours QC findings (pure helper)" begin
+        # objective graph metrics → advisory findings; only the unambiguous problems flag
+        @test isempty(Cecelia._neighbours_qc_findings(100, 500, 0.1))        # healthy graph → no finding
+        @test only(Cecelia._neighbours_qc_findings(0, 0, 0.0))["code"]   == "spatial.no_cells"
+        @test only(Cecelia._neighbours_qc_findings(100, 0, 0.0))["code"] == "spatial.no_edges"
+        @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7))["code"] == "spatial.many_isolated"
+        @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
+    end
+
+    @testset "Param validation — NeighbourStats" begin
+        @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
+        @test task_scope(NeighbourStats()) == "image"
+        @test_throws ParamValidationError validate_params(
+            NeighbourStats(), Dict{String,Any}("neighbourRadius" => 5000))
+        @test_throws ParamValidationError validate_params(
+            NeighbourStats(), Dict{String,Any}("nNeighbours" => 0))
+    end
+
+    @testset "Param validation — ClustRegions" begin
+        @test _task_from_fun_name("clustRegions.cluster") isa ClustRegions
+        @test task_scope(ClustRegions()) == "set"              # set-scope (regions comparable across set)
+        # numClusters is int min=1 — below the floor rejected
+        @test_throws ParamValidationError validate_params(
+            ClustRegions(), Dict{String,Any}("numClusters" => 0))
+        # resolution is float min=0/max=5 — out of range rejected
+        @test_throws ParamValidationError validate_params(
+            ClustRegions(), Dict{String,Any}("resolution" => 99))
+        @test validate_params(
+            ClustRegions(), Dict{String,Any}("numClusters" => 5, "resolution" => 1.0,
+                                             "clusterMethod" => "leiden")) === nothing
+    end
+
     @testset "Param validation — CropImage" begin
         @test _task_from_fun_name("editImages.cropImage") isa CropImage
         # x0/x1/y0/y1 are int min=0 — negative must be rejected
@@ -811,7 +858,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test "imageTiling"    in Cecelia._section_keys(ml)
         nested = Dict{String,Any}(
             "outputValueName" => "T",
-            "measureOptions"  => Dict{String,Any}("extendedMeasures" => true, "saveMeshes" => false),
+            "measureOptions"  => Dict{String,Any}("extendedMeasures" => true),
             "imageTiling"     => Dict{String,Any}("blockSize" => 4096, "overlap" => 0))
         flat = Cecelia._flatten_sections(ml, nested)
         @test flat["extendedMeasures"] == true          # was buried under measureOptions
@@ -2742,6 +2789,79 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Set(pop_at(m2, "/myeloid").filter_values) == Set([1, 3])
     end
 
+    @testset "region pop type (spatial regions)" begin
+        # region reuses the cluster-pop machinery with its OWN `regions.{suffix}` column prefix
+        # (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 5) — no duplicated logic, one generalisation.
+        td = mktempdir()
+        @test endswith(gating_path(td, "B"; pop_type="region"), joinpath("gating", "B__region.json"))
+        @test Cecelia._is_cluster_pop_type("region")
+        @test Cecelia._cluster_measure_prefix("region") == "regions."
+        @test Cecelia._cluster_measure_prefix("clust") == "clusters."
+        @test is_track_pop("region", "/tumour_zone") == false          # regions are per-cell, not per-track
+        @test !is_gating_pop_type("region")                            # filter/membership pop, not a gate
+
+        # region membership = filter "in" over the region code column (same engine path as clust)
+        m = PopulationMap(pop_type="region", value_name="B")
+        add_pop!(m, "tumour_zone"; filter_measure="regions.niches", filter_fun="in",
+                 filter_values=[1, 3], colour="#10b981")
+        fetch = _ -> DataFrame("label" => [10, 11, 12, 13, 14],
+                               "regions.niches" => [0, 1, 2, 3, 1])
+        recompute!(m, fetch)
+        @test Set(cells_in_pop(m, "/tumour_zone")) == Set([11, 13, 14])   # region codes ∈ {1,3}
+
+        # referenced-suffixes generalisation reads the region prefix from the map's own pop_type
+        @test Cecelia._referenced_cluster_suffixes(m) == Set(["niches"])
+
+        # save/load round-trip → own __region file, flow file untouched
+        save_pop_map!(m, td)
+        @test isfile(gating_path(td, "B"; pop_type="region"))
+        @test !isfile(gating_path(td, "B"; pop_type="flow"))
+        m2 = load_pop_map(td, "B"; pop_type="region")
+        @test pop_at(m2, "/tumour_zone").filter_measure == "regions.niches"
+        @test Set(pop_at(m2, "/tumour_zone").filter_values) == Set([1, 3])
+
+        # categorical name-rule: `regions`/`regions.{suffix}` are always a code set, even past the level cap
+        @test Cecelia._is_categorical_col(collect(0:50), "regions.niches")   # 51 int levels, name-rule wins
+        @test Cecelia._is_categorical_col(collect(0:50), "regions")
+        @test Cecelia._is_categorical_col([0.0, 1.5, 2.7], "regions.niches") # decimals irrelevant under name-rule
+
+        # per-region heatmap matrix detection routes through the shared suffix extractor (regions. prefix)
+        @test Cecelia._cluster_matrix_suffix("matrix", "regions.niches") == "niches"
+        @test Cecelia._cluster_matrix_suffix("matrix", "clusters.default") == "default"
+    end
+
+    @testset "region pop auto-share (co-clustered value_names, cell granularity)" begin
+        # regions are a per-run column shared across co-clustered segmentations — the identical
+        # auto-share/expand machinery as clust, exercised via the `regions.` prefix + cell granularity.
+        td = mktempdir()
+        lpdir = joinpath(td, "labelProps"); mkpath(lpdir)
+        # A & B were region-clustered together (both CELL sidecars carry suffix "niches"); C was not.
+        for vn in ("A", "B")
+            open(joinpath(lpdir, "$(vn).clustfeatures.json"), "w") do f
+                JSON3.write(f, Dict("niches" => Dict("features" => ["flow.region.cd8"], "partOf" => ["u1"])))
+            end
+        end
+        am = PopulationMap(pop_type="region", value_name="A")
+        add_pop!(am, "TumourZone"; filter_measure="regions.niches", filter_fun="in", filter_values=[2], colour="#c061cb")
+        save_pop_map!(am, td)
+
+        img = CciaImage(; dir=td)
+        img.label_props = Dict("A" => "A.h5ad", "B" => "B.h5ad", "C" => "C.h5ad", "_active" => "A")
+
+        @test Set(Cecelia.co_clustered_value_names(img, "niches"; granularity=:cell)) == Set(["A", "B"])
+
+        # B has no sidecar but IS co-clustered → borrows A's region pops, relabeled to B
+        mb = load_pop_map(img; value_name="B", pop_type="region")
+        @test Set(keys(mb.pops)) == Set(["/TumourZone"]) && mb.value_name == "B"
+        @test all(p.value_name == "B" for p in values(mb.pops))
+        # C was not in the run → no borrow
+        @test isempty(load_pop_map(img; value_name="C", pop_type="region").pops)
+
+        # bare region-pop ref expands across all co-clustered segmentations
+        @test Set(Cecelia._expand_cluster_pops(img, ["/TumourZone"], "region", "A")) ==
+              Set(["A/TumourZone", "B/TumourZone"])
+    end
+
     @testset "recompute! — a missing filter/gate column degrades to empty (no crash)" begin
         # A cluster pop whose `clusters.{suffix}` column isn't in the fetched frame — e.g. evaluated
         # against a segmentation that didn't take part in that run, so `fetch_cols` silently dropped it
@@ -2893,8 +3013,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test is_track_pop("track", "/TEST") == true                # per-track gate
         @test is_track_pop("trackclust", "/clusterA") == true       # track cluster
 
-        # scope_pop_types: sources loaded per scope; clusters toggleable; unknown scope throws
-        @test scope_pop_types("cells", true)  == ["live", "clust"]
+        # scope_pop_types: sources loaded per scope; clusters toggleable; unknown scope throws.
+        # `cells` also loads `region` (spatial regions) alongside `clust` — both cluster-family.
+        @test scope_pop_types("cells", true)  == ["live", "clust", "region"]
         @test scope_pop_types("cells", false) == ["live"]
         @test scope_pop_types("tracks", true)  == ["live", "track", "trackclust"]
         @test scope_pop_types("tracks", false) == ["live", "track"]
@@ -4338,6 +4459,61 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                                        "outputShape" => [20, 4, 19, 541, 527], "shifts" => smooth))
             fo, _, _ = Cecelia._drift_qc_findings(meta_ok)
             @test isempty(fo)
+        end
+
+        @testset "OIR companion-file staging" begin
+            # main .oir + its _000nn parts; a sibling image (Img2) and a non-numbered sibling
+            # (Img_processed — the exact case the old R version's loose pattern got wrong) must NOT be grabbed
+            names = ["Img.oir", "Img_00001.oir", "Img_00002.oir",
+                     "Img2.oir", "Img_processed.oir", "Other.oir", "notes.txt"]
+            @test Set(Cecelia._companion_files(names, "Img.oir")) ==
+                  Set(["Img.oir", "Img_00001.oir", "Img_00002.oir"])
+            # regex metacharacters in the stem (their `basal+NECA` bug): literal match, no injection
+            plus = ["basal+NECA.oir", "basal+NECA_00001.oir", "basal+NECB.oir"]
+            @test Set(Cecelia._companion_files(plus, "basal+NECA.oir")) ==
+                  Set(["basal+NECA.oir", "basal+NECA_00001.oir"])
+            # single self-contained file → just itself
+            @test Cecelia._companion_files(["a.tif", "b.tif"], "a.tif") == ["a.tif"]
+        end
+
+        @testset "rescale (16→8-bit) findings" begin
+            mk_ch(i; span = 100.0, clipHigh = 0.0, trueMax = 100, p999 = 100) =
+                Dict{String,Any}("index" => i, "rangeSpan" => span, "clipHighFrac" => clipHigh,
+                                 "trueMax" => trueMax, "p999" => p999)
+            meta = Dict{String,Any}("rescale8bit" => Dict{String,Any}("channels" => [
+                mk_ch(0),                                  # healthy → no finding
+                mk_ch(1; span = 0.0),                      # flat
+                mk_ch(2; clipHigh = 0.05),                 # clips bright signal
+                mk_ch(3; trueMax = 1000, p999 = 100),      # hot pixel (max ≫ p99.9)
+            ]))
+
+            fs    = Cecelia.rescale_qc_findings(meta)
+            codes = Dict(f["detail"]["channel"] => f["code"] for f in fs)
+            @test length(fs) == 3
+            @test !haskey(codes, 0)
+            @test codes[1] == "rescale.channel_flat"
+            @test codes[2] == "rescale.channel_clipped"
+            @test codes[3] == "rescale.hot_pixel"
+
+            m = Cecelia.rescale_metrics(meta)
+            @test m["nChannelsFlat"] == 1
+            @test m["nChannelsClipped"] == 1
+            @test !haskey(m, "nChannels")                 # channel count is a base import metric
+
+            # base import metric — present for EVERY import (from SizeC/SizeZ/SizeT)
+            bm = Cecelia.import_metrics(Dict{String,Any}("SizeC" => 4, "SizeZ" => 13, "SizeT" => 20))
+            @test bm == Dict{String,Any}("nChannels" => 4, "nZ" => 13, "nT" => 20)
+            @test Cecelia.import_metrics(Dict{String,Any}()) === nothing
+
+            # unconverted image (no rescale8bit) → no rescale findings, no rescale metric
+            @test isempty(Cecelia.rescale_qc_findings(Dict{String,Any}()))
+            @test Cecelia.rescale_metrics(Dict{String,Any}()) === nothing
+
+            # JSON3 round-trip — the real path (meta read back from ccid.json has Symbol keys)
+            rt     = JSON3.read(JSON3.write(meta))
+            rtmeta = Dict{String,Any}(String(k) => v for (k, v) in rt)
+            @test length(Cecelia.rescale_qc_findings(rtmeta)) == 3
+            @test Cecelia.rescale_metrics(rtmeta)["nChannelsFlat"] == 1
         end
 
         @testset "count metrics" begin

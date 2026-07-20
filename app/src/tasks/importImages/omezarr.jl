@@ -439,6 +439,49 @@ end
 
 # ── Task ──────────────────────────────────────────────────────────────────────
 
+# Files belonging to ONE multi-file image: the main file plus Olympus OIR companions, which are named
+# `<stem>_<5 digits><ext>` (e.g. `Img.oir` + `Img_00001.oir`, `Img_00002.oir`). Pure → unit-tested.
+# bioformats auto-discovers companions in a directory, so once the whole set is staged under the same
+# names, pointing bioformats2raw at the copied main file just works.
+#
+# Ported from the old R `prepFilelistToSync` (cciaHelpers.R), including its two hard-won lessons:
+#  1. Match the stem LITERALLY (`startswith`), never by interpolating it into a regex — a filename with
+#     regex metacharacters (their example: `basal+NECA`) breaks an interpolated `"<stem>_[0-9]+"` pattern.
+#  2. Require the companion suffix to be `_` + EXACTLY five digits, so a sibling image like
+#     `Img_processed.oir` / `Img_v2.oir` isn't mistaken for a companion of `Img.oir`.
+function _companion_files(names::AbstractVector{<:AbstractString}, main::AbstractString)
+    stem = first(splitext(main))
+    ext  = last(splitext(main))
+    filter(names) do n
+        n == main && return true
+        startswith(n, stem * "_") &&
+            occursin(r"^_[0-9]{5}$", chop(n; head = length(stem), tail = length(ext)))
+    end
+end
+
+"""
+Copy a source image (+ its companion file set) to a local scratch dir and return the path to the
+copied main file. Reading a multi-file format like Olympus OIR directly over SMB is dominated by
+per-read network latency (bioformats does many small random seeks); a bulk sequential copy is
+throughput-bound and far faster — this automates the manual copy-to-tmp workaround. See
+docs/todo/IMPORT_RESCALE_PLAN.md.
+"""
+function _stage_source!(src_path::AbstractString, stage_dir::AbstractString;
+                        on_log::Function = _ -> nothing)
+    src_dir = dirname(src_path)
+    files   = _companion_files(readdir(src_dir), basename(src_path))
+    isempty(files) && (files = [basename(src_path)])
+    mkpath(stage_dir)
+    total = 0
+    on_log("[INFO] Staging $(length(files)) source file(s) to local scratch …")
+    for f in files
+        cp(joinpath(src_dir, f), joinpath(stage_dir, f); force = true)
+        total += filesize(joinpath(stage_dir, f))
+    end
+    on_log("[INFO] Staged $(length(files)) file(s) ($(round(total / 1e9; digits = 1)) GB).")
+    joinpath(stage_dir, basename(src_path))
+end
+
 struct ImportOmezarr <: CciaTask end
 
 function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any};
@@ -459,6 +502,18 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     zarr_out      = joinpath(img_zero_dir(img), "ccidImage.ome.zarr")
     pyramid_scale = Int(get(params, "pyramidScale", 2))
 
+    # 16→8-bit rescale on import (large low-dynamic-range acquisitions): bioformats2raw can't reduce
+    # bit depth, so we convert to a transient 16-bit zarr, then rescale it to the final 8-bit store
+    # and drop the transient — only the 8-bit is kept. See docs/todo/IMPORT_RESCALE_PLAN.md.
+    convert_8bit = Bool(get(params, "convertTo8bit", false))
+    low_pct      = Float64(get(params, "rescaleLowPercentile", 0.0))
+    high_pct     = Float64(get(params, "rescaleHighPercentile", 100.0))
+
+    # When converting, bioformats2raw writes a single-level transient (the pyramid is rebuilt on the
+    # 8-bit output); otherwise it writes the final pyramid directly.
+    bf2raw_out = convert_8bit ? joinpath(img_zero_dir(img), "ccidImage.16bit.tmp.ome.zarr") : zarr_out
+    bf2raw_res = convert_8bit ? 1 : pyramid_scale
+
     bf2raw = bioformats2raw_bin()
     if !isfile(bf2raw)
         on_log("[ERROR] bioformats2raw not found at $bf2raw")
@@ -466,26 +521,51 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
         return nothing
     end
 
-    if isdir(zarr_out)
-        on_log("[INFO] Removing previous output: $zarr_out")
-        rm(zarr_out; recursive = true)
+    # clean any previous outputs (the final store, a leftover transient, a leftover stage dir)
+    stage_dir = joinpath(img_zero_dir(img), "_stage_src")
+    for d in unique([zarr_out, bf2raw_out, stage_dir])
+        if isdir(d)
+            on_log("[INFO] Removing previous output: $d")
+            rm(d; recursive = true)
+        end
+    end
+
+    # Stage the source locally first when reading from a slow/network location (SMB): copies the whole
+    # companion set to local scratch, then bioformats2raw reads at disk speed. Deleted right after the
+    # conversion's source read finishes (independent of the 16-bit transient).
+    stage_local = Bool(get(params, "stageLocal", false))
+    eff_src     = src_path
+    if stage_local
+        try
+            eff_src = _stage_source!(src_path, stage_dir; on_log = on_log)
+        catch e
+            on_log("[ERROR] Failed to stage source locally: $e")
+            rm(stage_dir; recursive = true, force = true)
+            return nothing
+        end
     end
 
     on_log("[INFO] Source:  $src_path")
     on_log("[INFO] Output:  $zarr_out")
     on_log("[INFO] Pyramid: $pyramid_scale levels")
+    stage_local  && on_log("[INFO] Staged source locally (network-source speedup).")
+    convert_8bit && on_log("[INFO] Convert to 8-bit: window low=$(low_pct)% high=$(high_pct)%")
 
     out_pipe = Pipe()
-    proc = run(pipeline(`$bf2raw --resolutions $pyramid_scale $src_path $zarr_out`;
+    proc = run(pipeline(`$bf2raw --resolutions $bf2raw_res $eff_src $bf2raw_out`;
                         stdout = out_pipe, stderr = out_pipe); wait = false)
     close(out_pipe.in)
     on_process(proc)
 
-    src_size = filesize(src_path)
+    # progress denominator: the full staged set when staged (the OIR main file alone understates the
+    # data held in its `_000nn` companions), else the source file size
+    src_size = stage_local ? _dir_bytes(stage_dir) : filesize(src_path)
     monitor  = @async begin
         while process_running(proc)
-            if isdir(zarr_out) && src_size > 0
-                p = min(_dir_bytes(zarr_out) / src_size, 0.98)
+            if isdir(bf2raw_out) && src_size > 0
+                # leave headroom for the rescale pass when converting (it reports its own progress)
+                cap = convert_8bit ? 0.5 : 0.98
+                p = min(_dir_bytes(bf2raw_out) / src_size, cap)
                 on_progress(round(Int, p * 100), 100)
             end
             sleep(2)
@@ -496,13 +576,60 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     wait(proc)
     wait(monitor)
 
+    # bioformats2raw is done reading the source — drop the local stage copy now (on success OR failure)
+    stage_local && rm(stage_dir; recursive = true, force = true)
+
     ok = proc.exitcode == 0 && proc.termsignal == 0
     ok || return nothing
 
-    on_progress(1, 1)
     on_log("[INFO] Conversion complete.")
 
-    zarr_meta = read_ome_metadata(zarr_out)
+    # Read calibration metadata from the bioformats2raw (nested) output — the only layout
+    # read_ome_metadata understands (CLAUDE.md → OME-ZARR dual-format). For the 8-bit path this is
+    # the transient, so we must read it BEFORE deleting it (the 8-bit output is a flat layout that
+    # this reader can't parse).
+    zarr_meta = read_ome_metadata(bf2raw_out)
+
+    if convert_8bit
+        run_dir     = task_run_dir(img._dir)
+        result_file = joinpath(run_dir, "rescale_to_8bit.$(string(rand(UInt32); base = 16)).result.json")
+        isdir(zarr_out) && rm(zarr_out; recursive = true)
+        on_log("[INFO] Rescaling 16-bit → 8-bit …")
+        ok_r = run_py("tasks/importImages/rescale_to_8bit_run.py",
+            (; imPath         = bf2raw_out,
+               outPath        = zarr_out,
+               nscales        = pyramid_scale,
+               lowPercentile  = low_pct,
+               highPercentile = high_pct,
+               resultPath     = result_file),
+            run_dir; on_log = on_log, on_progress = on_progress, on_process = on_process)
+        # drop the 16-bit scratch regardless of outcome — it's transient (never keep it locally)
+        rm(bf2raw_out; recursive = true, force = true)
+        if !ok_r
+            on_log("[ERROR] 8-bit rescale failed")
+            return nothing
+        end
+        # persist the per-channel window in meta → reproducible + drives rescale QC (rescale_qc_findings)
+        if isfile(result_file)
+            try
+                res   = JSON3.read(read(result_file, String))
+                chans = get(res, :channels, nothing)
+                if !isnothing(chans)
+                    zarr_meta["rescale8bit"] = Dict{String,Any}(
+                        "low" => low_pct, "high" => high_pct,
+                        "channels" => [Dict{String,Any}(String(k) => v for (k, v) in ch) for ch in chans],
+                    )
+                    on_log("[INFO] 8-bit rescale complete ($(length(chans)) channel(s)).")
+                end
+            catch e
+                @warn "Could not read 8-bit rescale result" exception = e
+            finally
+                rm(result_file; force = true)
+            end
+        end
+    end
+
+    on_progress(1, 1)
 
     # ImageJ-sourced TIFFs: bioformats2raw applies the source's calibration-unit conversion
     # correctly for X/Y but not for Z, so a non-micron unit (e.g. an ImageJ file saved with

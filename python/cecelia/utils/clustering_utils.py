@@ -181,9 +181,14 @@ def cluster_seg_stats(seg_codes):
 
 
 # ── shared write-back (cells + tracks) ─────────────────────────────────────────────
-def split_back_and_write(adata, segments, suffix: str, log=None):
+def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str = "clusters"):
     """Split a pooled, clustered AnnData back per segment and write the cluster assignment
     into each segment's labelProps via `LabelPropsView` (the sanctioned writer — CLAUDE.md).
+
+    `col_prefix` selects the obs-column family: "clusters" (default; clustPops/clustTracks →
+    `clusters.{suffix}`) or "regions" (clustRegions spatial regions → `regions.{suffix}`). Both are
+    pinned categorical by the same name-rule (track_props.jl `_is_categorical_col`), so region reuses
+    this writer verbatim rather than a second copy (docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 5).
 
     Granularity-blind, like `find_populations`: the caller decides what a "segment" and a "label"
     mean. For `clustPops` a segment is one (image, segmentation) and `label` is the CELL label;
@@ -205,7 +210,7 @@ def split_back_and_write(adata, segments, suffix: str, log=None):
     `cluster_seg_stats`), so the Julia caller can bank per-image QC metrics + findings (qc.jl)."""
     _log = log if callable(log) else (lambda _m: None)
 
-    cluster_col = f"clusters.{suffix}"
+    cluster_col = f"{col_prefix}.{suffix}"
     umap_key    = f"X_umap.{suffix}"
 
     codes      = adata.obs["clusters"].astype(int).to_numpy()

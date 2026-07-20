@@ -55,13 +55,6 @@
           "type": "bool",
           "default": false,
           "tip": "Compute trimesh-based 3D shape descriptors (surface area, sphericity, compactness, ellipsoid axes). Slow but comprehensive for 3D images."
-        },
-        {
-          "key": "saveMeshes",
-          "label": "Save cell meshes",
-          "type": "bool",
-          "default": false,
-          "tip": "Save per-cell triangular meshes to {task_dir}/meshes/{valueName}/. Required for downstream spatial contact analysis."
         }
       ]
     },

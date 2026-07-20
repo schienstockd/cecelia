@@ -24,7 +24,7 @@ _observer_image_header(img::CciaImage) = (; uid = img.uid, name = img.name, incl
 # The gate/pop_type flavours a value_name can carry a persisted gating file for (flow/track = gate-drawn;
 # clust/trackclust = cluster pops). "live" derived pops (e.g. _tracked) are NOT persisted maps — they're
 # addressed directly through pop_df, not enumerated here.
-const _OBSERVER_POP_TYPES = ("flow", "track", "clust", "trackclust")
+const _OBSERVER_POP_TYPES = ("flow", "track", "clust", "trackclust", "region")
 
 # Iterate every persisted (non-transient) population on an image — `f(pop)` per pop, across the image's
 # segmentations × pop_type flavours. The shared enumerator for the population-based summary tools

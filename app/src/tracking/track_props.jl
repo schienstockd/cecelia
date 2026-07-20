@@ -30,10 +30,11 @@ const _MAX_CATEGORICAL_LEVELS = 20
 # `categorical` to force the other way). The first rule is exact, so the cleanest path for a true
 # categorical is to have the producing task write it as an anndata `categorical`.
 function _is_categorical_col(col, name::AbstractString="")::Bool
-    # name-rule: cluster assignments are always a categorical code set, however many clusters —
+    # name-rule: cluster/region assignments are always a categorical code set, however many clusters —
     # a high-resolution run can exceed the integer-level cap below, but the codes are never a count.
-    # `clusters` (exact) or `clusters.{suffix}` (clustPops/clustTracks output).
-    (name == "clusters" || startswith(name, "clusters.")) && return true
+    # `clusters`/`clusters.{suffix}` (clustPops/clustTracks) and `regions`/`regions.{suffix}`
+    # (clustRegions, spatial regions) — same rule, one check.
+    (name in ("clusters", "regions") || startswith(name, "clusters.") || startswith(name, "regions.")) && return true
     nonmissingtype(eltype(col)) <: Real || return true            # String / categorical-encoded
     vals = _finite_vals(col)
     isempty(vals) && return false

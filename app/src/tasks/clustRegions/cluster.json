@@ -1,0 +1,98 @@
+{
+  "task": "clusterRegions",
+  "fun_name": "clustRegions.cluster",
+  "label": "Cluster regions",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "scope": "set",
+  "params": [
+    {
+      "key": "valueNameSuffix",
+      "label": "Suffix",
+      "type": "text",
+      "default": "default",
+      "tip": "Output column suffix → regions.<suffix> and obsm['X_umap.<suffix>']. Keeps multiple region runs side by side."
+    },
+    {
+      "key": "basisPops",
+      "label": "Population basis",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "The populations that define the neighbourhood composition — “what cell types surround each cell”. May span segmentations (e.g. B cells + T cells): they are pooled into one spatial graph. Need at least two."
+    },
+    {
+      "key": "neighbourMethod",
+      "label": "Graph type",
+      "type": "select",
+      "default": "delaunay",
+      "options": [
+        { "value": "delaunay", "label": "Delaunay (radius-pruned)" },
+        { "value": "knn",      "label": "k nearest neighbours" },
+        { "value": "radius",   "label": "Fixed radius" }
+      ],
+      "tip": "How the neighbourhood graph is built (squidpy). Delaunay pruned by radius, kNN, or fixed radius."
+    },
+    {
+      "key": "neighbourRadius",
+      "label": "Radius (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 30,
+      "tip": "Neighbourhood radius in microns (fixed-radius graph + Delaunay pruning)."
+    },
+    {
+      "key": "nNeighbours",
+      "label": "k (neighbours)",
+      "type": "int",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "default": 6,
+      "tip": "Number of nearest neighbours for the kNN graph."
+    },
+    {
+      "key": "clusterMethod",
+      "label": "Clustering",
+      "type": "select",
+      "default": "leiden",
+      "options": [
+        { "value": "leiden", "label": "Leiden (resolution)" },
+        { "value": "kmeans", "label": "k-means (fixed k)" }
+      ],
+      "tip": "Leiden (data-driven number of regions, set by resolution) or k-means (fixed number of regions)."
+    },
+    {
+      "key": "resolution",
+      "label": "Resolution",
+      "type": "float",
+      "min": 0,
+      "max": 5,
+      "step": 0.05,
+      "default": 1,
+      "tip": "Leiden resolution — higher gives more, smaller regions."
+    },
+    {
+      "key": "numClusters",
+      "label": "Number of regions (k-means)",
+      "type": "int",
+      "min": 1,
+      "max": 50,
+      "step": 1,
+      "default": 5,
+      "tip": "Number of regions for k-means."
+    },
+    {
+      "key": "mergeUmap",
+      "label": "Calculate UMAP",
+      "type": "bool",
+      "default": true,
+      "tip": "Also compute a UMAP of the composition vectors (obsm['X_umap.<suffix>']) for plotting."
+    }
+  ]
+}
