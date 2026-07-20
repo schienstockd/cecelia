@@ -4520,18 +4520,36 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         end
 
         @testset "OIR companion-file staging" begin
-            # main .oir + its _000nn parts; a sibling image (Img2) and a non-numbered sibling
-            # (Img_processed — the exact case the old R version's loose pattern got wrong) must NOT be grabbed
+            # REAL Olympus naming: the registered file already ends in _NNNN.oir and companions are
+            # EXTENSIONLESS <mainstem>_00001, _00002, … (this is what shipped broken — only the main
+            # matched, so bioformats saw a fraction of the timepoints).
+            real = ["M1a-res_0001.oir", "M1a-res_0001_00001", "M1a-res_0001_00002", "M1a-res_0001_00045",
+                    "M1a-res_0002.oir",           # a DIFFERENT acquisition — must NOT be grabbed
+                    "M1a-res_0001_notes.txt"]     # non-numeric sibling — excluded
+            @test Set(Cecelia._companion_files(real, "M1a-res_0001.oir")) ==
+                  Set(["M1a-res_0001.oir", "M1a-res_0001_00001", "M1a-res_0001_00002", "M1a-res_0001_00045"])
+
+            # extensioned companions (Img.oir + Img_00001.oir …); sibling Img2 / non-numbered excluded
             names = ["Img.oir", "Img_00001.oir", "Img_00002.oir",
                      "Img2.oir", "Img_processed.oir", "Other.oir", "notes.txt"]
             @test Set(Cecelia._companion_files(names, "Img.oir")) ==
                   Set(["Img.oir", "Img_00001.oir", "Img_00002.oir"])
-            # regex metacharacters in the stem (their `basal+NECA` bug): literal match, no injection
-            plus = ["basal+NECA.oir", "basal+NECA_00001.oir", "basal+NECB.oir"]
+            # regex metacharacters in the stem (the `basal+NECA` bug): literal match, no injection
+            plus = ["basal+NECA.oir", "basal+NECA_00001", "basal+NECB.oir"]
             @test Set(Cecelia._companion_files(plus, "basal+NECA.oir")) ==
-                  Set(["basal+NECA.oir", "basal+NECA_00001.oir"])
+                  Set(["basal+NECA.oir", "basal+NECA_00001"])
             # single self-contained file → just itself
             @test Cecelia._companion_files(["a.tif", "b.tif"], "a.tif") == ["a.tif"]
+
+            # chunked yielding copy is byte-identical (incl. a size that isn't a chunk multiple)
+            src = tempname(); dst = tempname()
+            data = rand(UInt8, 3 * 1024 * 1024 + 777)
+            write(src, data)
+            copied = Ref(0)
+            Cecelia._copy_file_yielding(src, dst; chunk = 1024 * 1024, on_bytes = n -> (copied[] += n))
+            @test read(dst) == data
+            @test copied[] == length(data)
+            rm(src; force = true); rm(dst; force = true)
         end
 
         @testset "rescale (16→8-bit) findings" begin
