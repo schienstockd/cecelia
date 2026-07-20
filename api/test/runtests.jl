@@ -250,6 +250,18 @@ end
     @test occursin("# ╔═╡ Cell order:", src)
     @test count("# ╠═", src) == 3                             # activation + 2 caller cells, listed once each
 
+    # Pluto is one-expression-per-cell: a multi-statement cell must be wrapped in begin…end so it
+    # loads (otherwise "Multiple expressions in one cell"). Single expressions stay bare.
+    @test _wrap_multi_expr("df = 1") == "df = 1"                          # single expr → untouched
+    @test _wrap_multi_expr("# just a comment") == "# just a comment"     # no expr → untouched
+    @test !occursin("begin", _wrap_multi_expr("plot(df.x, df.y)"))       # single call → bare
+    multi = _wrap_multi_expr("a = 1\nb = 2\na + b")
+    @test startswith(multi, "begin\n") && endswith(multi, "\nend")       # multi-statement → wrapped
+    @test occursin("a = 1\nb = 2\na + b", multi)                         # body preserved verbatim
+    @test _wrap_multi_expr("x = (\n  1 + 2)") == "x = (\n  1 + 2)"       # one expr spanning lines → bare
+    # end-to-end through the serialiser: a multi-statement caller cell comes out wrapped
+    @test occursin("begin\nusing Cecelia\ndf = pop_df", _pluto_notebook_source(["using Cecelia\ndf = pop_df(img, \"flow\", [\"/T\"])"]))
+
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
     tmp  = mktempdir(); dirs["projects"] = tmp
