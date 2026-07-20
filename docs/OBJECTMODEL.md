@@ -157,6 +157,14 @@ Several fields (`filepath`, `imChannelNames`, `labels`, `label_props`) follow th
 - Correction tasks add named entries (e.g. `"afCorrected"`, `"cpCorrected"`).
 - `_active` is updated to the new name after each correction.
 
+**Removing a version** — `remove_image_version!` (`storage.jl`) is the ONE path (used by the
+`RemoveImage` task and the storage-reclaim API): it deletes the version's store, clears its
+`filepath` entry and re-points `_active`. It only **un-imports** the image (also clears
+`imChannelNames` + `SizeC/T/Z`, `status="pending"`) when the primary `default` is removed **and no
+other version remains**. Removing `default` while a corrected variant is still present keeps the
+channel names/dims that variant inherits from `default` via versioned fallback — this is what makes
+"reclaim the original to free space, keep the corrected one" safe.
+
 ### Julia API
 
 ```julia

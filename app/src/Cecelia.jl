@@ -12,6 +12,7 @@ export gen_uid, UID_LENGTH
 export VERSIONED_ACTIVE_KEY, VERSIONED_DEFAULT_VAL
 export versioned_active, versioned_get, versioned_set!
 export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw
+export project_storage_summary, reclaim_defaults!, remove_image_version!, reclaimable_default, image_storage
 
 # ── Data model ────────────────────────────────────────────────────────────────
 export CciaImage, CciaSet, CciaProject
@@ -160,6 +161,7 @@ include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/clustRegions/cluster.jl")
+include("storage.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")

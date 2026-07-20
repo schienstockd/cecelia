@@ -69,6 +69,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **Behaviour / plotting**: `behaviour/hmm.jl` (Gaussian HMM), `plotting/plot_data.jl` (`plot_summary_data` server-side aggregation).
 - **Napari client**: `napari.jl` — `NapariViewer` package-level bridge client (WS :7655, `launch!`/`close!`/`restart!`).
 - **Utils / config / logs**: `utils.jl` (`gen_uid`, `_dir_bytes` — the one directory-size helper), `config.jl` (`init_cecelia!`, `.env` reader, `bioformats2raw_bin()`, `python_bin_path()`), `qc.jl`, `run_log.jl`, `lab_log.jl`/`lab_log_context.jl`.
+- **storage.jl**: disk/reclaimable accounting for the Settings storage box (`project_storage_summary`, `reclaimable_default`) + `remove_image_version!` — the ONE image-version deletion path (shared by the `RemoveImage` task and the reclaim API; safe-primary rule keeps a still-active corrected variant working).
 
 ## Julia API (`api/src/`)
 
@@ -81,6 +82,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **tracking_api.jl**: `/api/tracking/motion-dims` preflight.
 - **notebooks_api.jl**: Pluto engine lifecycle (:7660) + registry/snapshot CRUD + sysimage build.
 - **app_api.jl**: `_stop_children_for_exit`, `/api/app/shutdown|restart`, dev worktree-switch.
+- **storage_api.jl**: `/api/storage/summary` (walked disk/reclaimable scan) + `/api/storage/reclaim` — thin adapters over `storage.jl`.
 - **repl_api.jl / update_api.jl / setup_api.jl**: diagnostics + gated REPL; self-update; first-launch wizard.
 - **task_console.jl / dev.jl**: standalone `pixi run console` WS *client*; the `pixi run dev` supervisor. (Both outside the server.)
 
