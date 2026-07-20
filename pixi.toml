@@ -27,6 +27,12 @@ openjdk = ">=17"
 # (umfpack.h) that aren't present on a stock Mac, breaking `pixi install`. Pin it from conda-forge
 # (prebuilt on every platform) so it's never built from source; pixi maps it onto btrack's PyPI req.
 cvxopt = ">=1.3.1"
+# pyproj (pulled transitively by squidpy) is the same story: PyPI has no osx-arm64 wheel for the
+# resolved version, so a PyPI-only solve falls back to the sdist and tries to build pyproj against a
+# system PROJ library that isn't on a stock Mac ("proj executable not found / PROJ_DIR"), breaking
+# `pixi install` on macOS only. Pin it from conda-forge (which bundles PROJ) so it's prebuilt on
+# every platform and pixi maps it onto squidpy's PyPI req.
+pyproj = ">=3.7"
 
 [pypi-dependencies]
 # cecelia's own Python helpers (top-level python/, sibling to app/), installed editable. This ALSO
