@@ -1,11 +1,13 @@
 <!--
   File browser modal. Calls Julia /api/fs/list to navigate the server filesystem.
-  Emits 'select' with an array of absolute-ish paths when the user confirms.
+  Emits 'select' with an array of ABSOLUTE paths when the user confirms. Navigates the whole
+  filesystem (home + mount shortcuts) so mounted network drives / external storage are reachable.
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import BaseModal from './BaseModal.vue'
 import { useLogStore } from '../stores/log'
+import { fsBreadcrumbs } from '../utils/fsPath'
 
 const emit = defineEmits<{
   (e: 'select', paths: string[]): void
@@ -14,12 +16,14 @@ const emit = defineEmits<{
 
 interface FsEntry {
   name: string
-  path: string     // relative to server root
+  path: string     // absolute path on the server
   isdir: boolean
   isimage: boolean
   ext: string
   size: number | null
 }
+
+interface FsShortcut { label: string; path: string }
 
 function formatSize(bytes: number | null): string {
   if (bytes === null || bytes === undefined) return ''
@@ -33,6 +37,7 @@ interface FsListing {
   root: string
   current: string
   parent: string | null
+  shortcuts: FsShortcut[]
   entries: FsEntry[]
 }
 
@@ -92,24 +97,23 @@ const allSelected   = computed(() =>
 const someSelected  = computed(() =>
   selected.value.size > 0 && selected.value.size < imageEntries.value.length
 )
-const breadcrumbs = computed(() => {
-  if (!listing.value) return []
-  const parts = listing.value.current.split('/').filter(Boolean)
-  const crumbs = [{ label: '~', path: '' }]
-  let acc = ''
-  for (const p of parts) {
-    acc = acc ? `${acc}/${p}` : p
-    crumbs.push({ label: p, path: acc })
-  }
-  return crumbs
-})
+const breadcrumbs = computed(() => fsBreadcrumbs(listing.value?.current ?? ''))
+const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 </script>
 
 <template>
   <BaseModal title="Select images" width="680px" @close="$emit('close')">
 
-    <!-- breadcrumbs -->
+    <!-- shortcuts + breadcrumbs -->
     <template #toolbar>
+      <div v-if="shortcuts.length" class="fb-shortcuts">
+        <i class="pi pi-bookmark fb-sc-icon" />
+        <button v-for="sc in shortcuts" :key="sc.path" class="fb-shortcut"
+          @click="navigate(sc.path)"
+          v-tooltip.bottom="`Go to ${sc.path}`">
+          {{ sc.label }}
+        </button>
+      </div>
       <div class="fb-breadcrumbs">
         <template v-for="(crumb, i) in breadcrumbs" :key="crumb.path">
           <span v-if="i > 0" class="crumb-sep">/</span>
@@ -129,7 +133,7 @@ const breadcrumbs = computed(() => {
 
         <div v-else-if="error" class="fb-state error">
           <i class="pi pi-exclamation-triangle" /> {{ error }}
-          <button class="btn-ghost btn-sm" @click="navigate('')">Back to root</button>
+          <button class="btn-ghost btn-sm" @click="navigate('')">Back to home</button>
         </div>
 
         <table v-else class="fb-table">
@@ -244,6 +248,21 @@ const breadcrumbs = computed(() => {
   flex-shrink: 0;
   flex-wrap: wrap;
 }
+/* shortcuts (home + mount points) */
+.fb-shortcuts {
+  display: flex; align-items: center; gap: 0.3rem; flex-wrap: wrap;
+  padding: 0.4rem 1rem;
+  border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-1);
+}
+.fb-sc-icon { font-size: 0.7rem; color: var(--cc-text-dim); margin-right: 0.1rem; }
+.fb-shortcut {
+  background: var(--cc-surface-2); border: 1px solid var(--cc-border); cursor: pointer;
+  color: var(--cc-text); font-size: 0.72rem;
+  padding: 0.12rem 0.5rem; border-radius: 0.9rem;
+}
+.fb-shortcut:hover { border-color: var(--cc-accent); color: var(--cc-accent); }
+
 .crumb-sep { color: var(--cc-text-dim); }
 .crumb {
   background: none; border: none; cursor: pointer;
