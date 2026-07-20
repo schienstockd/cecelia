@@ -95,6 +95,27 @@ project, that's a task, not a notebook.
 
 ---
 
+## Generating a notebook (`create_notebook`)
+
+The observer can create a Pluto notebook for the user via the `create_notebook(project_uid, name,
+cells, description)` MCP tool — to turn a "give me the data / plot this" request into a **runnable,
+editable artifact the user then owns**. The flow: you create it → the user opens it in the Notebooks
+page and edits/iterates in Pluto (you guide them in chat, reading errors and suggesting corrected
+cells to paste) → once happy, they run it without you.
+
+- **`cells`** is a list of Julia cell sources (one string per cell). The **env-activation cell is
+  prepended automatically — do NOT include it**. Your first cell is typically
+  `using Cecelia, DataFrames, AlgebraOfGraphics, CairoMakie, CSV` (+ `CeceliaNb` for plot shortcuts),
+  then `Cecelia.init_cecelia!()`, then the analysis.
+- Load with `load_project` / `image_by_uid` / `pop_df` / `track_props` / `label_props |> as_df`
+  (see the API reference below — read it first; don't guess names). Plot with AlgebraOfGraphics +
+  CairoMakie; export with `CSV.write`. Obey the **write rules above** (figures/CSV only).
+- **Create-only**: a name that already exists returns 409 — it never overwrites a notebook the user
+  may have edited. Pick a new name, or suggest cell edits for them to apply in Pluto.
+- Suggest first, create on the user's ask — don't spam notebooks.
+
+---
+
 ## API reference
 
 Signatures + docstrings for the notebook-safe accessors, generated from the live package.

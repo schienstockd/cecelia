@@ -22,6 +22,13 @@ describe('buildChatPrompt', () => {
     expect(p).toMatch(/get_session_briefing first/i)   // oriented before diving in
   })
 
+  it('offers notebook creation as a direction and names the write tools', () => {
+    const p = buildChatPrompt('NRUBxU')
+    expect(p).toContain('create_notebook')
+    expect(p).toContain('get_repl_api')
+    expect(p).toMatch(/edit and run/i)                 // Claude bootstraps; the user owns/iterates it
+  })
+
   it('is paste-and-run: no placeholder, no relative doc path, tells it not to self-setup', () => {
     const p = buildChatPrompt('NRUBxU')
     expect(p).not.toContain('<')            // no <describe what you need> placeholder

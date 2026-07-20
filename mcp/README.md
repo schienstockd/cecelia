@@ -50,7 +50,8 @@ mcp/
 | `poll_observations(project_uid)` | *(in-process, WS-fed)* | `{observations, stats}` since the last poll — the "sit next to me" signal (see below) |
 | `set_observer_active(active)` | *(in-process)* | the off switch — stop/resume surfacing; counting continues while off |
 | `get_observer_stats()` | *(in-process)* | session throttle/cost state without draining (surfaced count, cap, throttled, token estimate) |
-| `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **the only write** — appends a dated `[Claude]` entry, append-only |
+| `append_lab_log(project_uid, lines)` | `POST /api/lablog/append` | **write 1/2** — appends a dated `[Claude]` entry, append-only |
+| `create_notebook(project_uid, name, cells, description="")` | `POST /api/notebooks/write` | **write 2/2** — serialises Julia `cells` into a runnable Pluto notebook (env-activation cell prepended, snapshot v1). Create-only (409 on an existing name); the user then edits/owns it in Pluto |
 
 ## Live observation — the 10-attempts pattern (Slice B)
 
@@ -85,10 +86,12 @@ history.
 
 ## The no-mutation guarantee
 
-Every request goes through `ALLOWED_ROUTES` in `client.py`. The only non-GET route on it is
-`POST /api/lablog/append` (append-only, itself server-guarded). A call to any other route raises
+Every request goes through `ALLOWED_ROUTES` in `client.py`. The only non-GET routes on it are
+`POST /api/lablog/append` (append-only) and `POST /api/notebooks/write` (create-only — 409 on an
+existing name). Both are **additive / non-destructive**: no allow-listed route can edit or delete
+project data (no h5ad, gates, ccid.json, or existing notebooks). A call to any other route raises
 `DisallowedRoute` — so if a future tool ever wires in a mutating route, the test suite fails loudly
-rather than a project being silently mutated. `test_client.py` asserts append is the sole write.
+rather than a project being silently mutated. `test_client.py` asserts those two are the only writes.
 
 ## Running it
 

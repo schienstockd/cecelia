@@ -88,6 +88,16 @@ Provenance without git or file-watching:
   Snapshot advances it to the new number, and Restore sets it to the version you restored (restore v3
   → the column reads `v3`). It is a *pointer to current state*, not a monotonic counter.
 
+## AI-generated notebooks (`create_notebook`)
+
+The observer can generate a notebook for the user: `POST /api/notebooks/write { projectUid, name,
+cells, description }` serialises a list of Julia cell sources into valid Pluto format
+(`_pluto_notebook_source` in `notebooks_api.jl` — the env-activation cell is prepended, so the result
+is self-contained/runnable), registers it, and snapshots v1. **Create-only** (409 on an existing name)
+— it never overwrites a notebook the user may have edited, so the read-only observer stays
+non-destructive. The user then opens it in the Notebooks page and edits/owns it in Pluto. Backed by
+the `create_notebook` MCP tool; the code-generation guidance for Claude lives in `docs/REPL.md`.
+
 ## Sysimage (why the first plot isn't slow)
 
 Makie compiles plotting code on first use (~20 s cold). A PackageCompiler sysimage bakes that in

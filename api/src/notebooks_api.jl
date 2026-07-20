@@ -366,6 +366,81 @@ function api_notebooks_create(body_bytes::Vector{UInt8})
     200, JSON3.write((; ok = true, file = file))
 end
 
+# The mandatory first cell — activates the Notebooks engine env so the dev `Cecelia`/`CeceliaNb`
+# resolve (mirrors notebook_template.jl). The write route ALWAYS prepends this, so a generated
+# notebook is self-contained and runnable regardless of what the caller supplied.
+const _NB_ACTIVATION_CELL = """# Activate the Notebooks env (path-sources the dev Cecelia). Keep this as the first cell.
+begin
+    import Pkg
+    Pkg.activate(get(ENV, \"CECELIA_PLUTO_ENV\", joinpath(@__DIR__, \"..\", \"pluto\")))
+end"""
+
+# A valid v4-UUID string for a Pluto cell id — built from Base rand/bytes2hex so we don't pull the
+# UUIDs stdlib into the api env. (Pluto parses cell ids as UUIDs, so they must be well-formed.)
+function _cell_uuid()::String
+    b = rand(UInt8, 16)
+    b[7] = (b[7] & 0x0f) | 0x40   # version 4
+    b[9] = (b[9] & 0x3f) | 0x80   # variant 10xx
+    h = bytes2hex(b)
+    string(h[1:8], "-", h[9:12], "-", h[13:16], "-", h[17:20], "-", h[21:32])
+end
+
+# Serialise a list of Julia cell sources into a valid Pluto notebook `.jl` (the format
+# notebook_template.jl uses: a header, one `# ╔═╡ <uuid>` marker per cell, then a `# ╔═╡ Cell order:`
+# block). The activation cell is prepended and pinned to the template's fixed id; caller cells get
+# fresh uuids. Pure — unit-tested in api/test.
+function _pluto_notebook_source(cells::AbstractVector)::String
+    all_cells = vcat(Any[_NB_ACTIVATION_CELL], collect(cells))
+    ids  = String[]
+    body = IOBuffer()
+    for (i, code) in enumerate(all_cells)
+        id = i == 1 ? "10000000-0000-0000-0000-000000000001" : _cell_uuid()
+        push!(ids, id)
+        print(body, "# ╔═╡ ", id, "\n", rstrip(String(code)), "\n\n")
+    end
+    io = IOBuffer()
+    print(io, "### A Pluto.jl notebook ###\n# v1.0.3\n\n")
+    print(io, "using Markdown\nusing InteractiveUtils\n\n")
+    print(io, String(take!(body)))
+    print(io, "# ╔═╡ Cell order:\n")
+    for id in ids
+        print(io, "# ╠═", id, "\n")
+    end
+    String(take!(io))
+end
+
+# POST /api/notebooks/write  { projectUid, name, cells:[code…], description }  → { ok, file }
+# Create a NEW notebook FROM CELLS — the observer's "generate a notebook" path, distinct from /create
+# (which stamps a blank template). Serialises `cells` to valid Pluto format (env-activation cell
+# prepended), registers it, and snapshots v1 so there's an immediate restore point. CREATE-ONLY: 409 if
+# the name exists, so it never clobbers a notebook the user may have edited — Claude picks a new name or
+# the user iterates in Pluto. The user then owns/edits it freely. Backs the create_notebook MCP tool.
+function api_notebooks_write(body_bytes::Vector{UInt8})
+    body = JSON3.read(String(body_bytes))
+    uid  = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    file = _safe_nb_file(get(body, :name, ""))
+    file === nothing && return 400, JSON3.write((; error = "Invalid notebook name"))
+    cells = get(body, :cells, nothing)
+    (cells === nothing || isempty(cells)) && return 400, JSON3.write((; error = "cells required (a non-empty list of Julia cell sources)"))
+
+    dir = _project_notebooks_dir(uid); mkpath(dir)
+    dest = joinpath(dir, file)
+    isfile(dest) && return 409, JSON3.write((; error = "Notebook already exists: $file (pick a new name; create-only)"))
+    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells))); end
+
+    reg = _read_registry(uid)
+    reg[file] = Dict{String,Any}("description" => String(get(body, :description, "")),
+                                 "current" => 0, "updatedAt" => string(Dates.now()))
+    _write_registry!(uid, reg)
+    # snapshot v1 — an immediate restore point before the user starts editing in Pluto
+    api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
+    # nudge an open Notebooks page to refresh (it has no per-notebook poll); harmless if none is open.
+    broadcast_ws(Dict{String,Any}("type" => "notebooks_changed", "projectUid" => uid, "file" => file))
+    200, JSON3.write((; ok = true, file = file))
+end
+
 # POST /api/notebooks/describe  { projectUid, file, description }  → { ok }
 function api_notebooks_describe(body_bytes::Vector{UInt8})
     body = JSON3.read(String(body_bytes))

@@ -97,10 +97,12 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    images via the new canonical `all_qc_docs` merge + recent lab log) → `GET /api/observer/briefing`
    → `get_session_briefing` tool; `buildChatPrompt` now tells Claude to call it first.
    *(app/ briefing.jl + qc.jl all_qc_docs + api/ + mcp/ + frontend/ chatHandoff.ts + test-pkg/api/mcp/frontend)*
-5. **Notebook generation guidance** — document the collaborator-request→notebook workflow so
-   Claude generates a correct `using Cecelia` Pluto notebook via the existing notebooks
-   registry/snapshot system; verify the generated patterns run. *(docs/ + mcp/ prompt; leans
-   on `docs/NOTEBOOKS.md`)*
+5. **Notebook generation** — ✅ **done** (scoped to a WRITE route per the decision): `create_notebook`
+   MCP tool → `POST /api/notebooks/write` serialises Claude's cells into valid Pluto format
+   (`_pluto_notebook_source`, env-activation cell prepended) + snapshots v1. **Create-only** (409 on
+   existing) so the observer stays non-destructive — the SECOND additive write (with lab-log append).
+   Guidance for Claude in `docs/REPL.md`; `buildChatPrompt` offers "build me a notebook". The user
+   then edits/owns it in Pluto. *(api/ notebooks_api.jl + mcp/ + frontend/ + docs/ + test-api/mcp/frontend)*
 6. **`get_available_plots` MCP tool** — from the existing plot JSON specs (name/module/data
    needs/scope modes). *(mcp/ + allow-list + a `/api/plots/available` read if not already
    served)*
