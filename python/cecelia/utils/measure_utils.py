@@ -7,8 +7,9 @@ result as an AnnData .h5ad file.
 
 For 3D images, basic shape metrics come from skimage.  When extendedMeasures
 is True, a trimesh mesh is built per cell via marching cubes, giving accurate
-surface area, volume, convex hull metrics, and ellipsoid axes.  The meshes
-can optionally be saved to disk for downstream spatial analysis.
+surface area, volume, convex hull metrics, and ellipsoid axes.  Meshes are
+transient (never written to disk) — spatial contact analysis regenerates them
+on the fly from label masks (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 11).
 """
 
 from __future__ import annotations
@@ -61,7 +62,6 @@ class MeasureUtils:
         self.intensity_measure  = params.get('intensityMeasure', 'mean')
         self.gaussian_filter    = float(params.get('gaussianFilter', 0.0))
         self.extended_measures  = bool(params.get('extendedMeasures', False))
-        self.save_meshes        = bool(params.get('saveMeshes', False))
 
     # ── public entry point ────────────────────────────────────────────────────
 
@@ -113,12 +113,7 @@ class MeasureUtils:
             if self.gaussian_filter > 0.0:
                 im_vol = self._gaussian_smooth(im_vol, la_c, la_t, n_c)
 
-            mesh_dir = None
-            if self.save_meshes or self.extended_measures:
-                mesh_dir = os.path.join(self.task_dir, 'meshes',
-                                        self.output_value_name, f't{t_idx:04d}')
-
-            morph_df = self._measure_morphology(base_vol, is_3d, mesh_dir, log)
+            morph_df = self._measure_morphology(base_vol, is_3d, log)
             if morph_df is None or len(morph_df) == 0:
                 print(f'[PROGRESS] {t_idx + 1}/{n_t}', flush=True)
                 continue
@@ -149,8 +144,7 @@ class MeasureUtils:
 
     # ── morphology ────────────────────────────────────────────────────────────
 
-    def _measure_morphology(self, vol: np.ndarray, is_3d: bool,
-                            mesh_dir: str | None, log) -> pd.DataFrame | None:
+    def _measure_morphology(self, vol: np.ndarray, is_3d: bool, log) -> pd.DataFrame | None:
         use_trimesh = is_3d and self.extended_measures and _HAS_TRIMESH
         if is_3d:
             props_list = _PROPS_3D_BASE if use_trimesh else _PROPS_3D
@@ -169,7 +163,7 @@ class MeasureUtils:
             if not use_trimesh:
                 df = self._add_3d_derived(df)
             if self.extended_measures:
-                df = self._extended_3d_measures(vol, df, mesh_dir, log)
+                df = self._extended_3d_measures(vol, df, log)
         else:
             df = self._add_2d_derived(df)
 
@@ -233,12 +227,8 @@ class MeasureUtils:
 
     # ── extended 3D via trimesh ───────────────────────────────────────────────
 
-    def _extended_3d_measures(self, vol: np.ndarray, df: pd.DataFrame,
-                              mesh_dir: str | None, log) -> pd.DataFrame:
+    def _extended_3d_measures(self, vol: np.ndarray, df: pd.DataFrame, log) -> pd.DataFrame:
         import trimesh  # guaranteed available — caller checks _HAS_TRIMESH
-
-        if mesh_dir and self.save_meshes:
-            os.makedirs(mesh_dir, exist_ok=True)
 
         rows: dict[int, dict] = {}
         labels = df.index.tolist()
@@ -254,9 +244,6 @@ class MeasureUtils:
                     mesh.fill_holes()
             except Exception:
                 continue
-
-            if self.save_meshes and mesh_dir:
-                mesh.export(os.path.join(mesh_dir, f'{lb}.stl'))
 
             ch = mesh.convex_hull
             row: dict = {

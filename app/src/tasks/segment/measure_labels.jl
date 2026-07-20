@@ -49,7 +49,6 @@ function _run_task(task::MeasureLabels, img::CciaImage, params::Dict{String,Any}
            intensityMeasure  = string(get(params, "intensityMeasure", "mean")),
            gaussianFilter    = Float64(get(params, "gaussianFilter",  0.0)),
            extendedMeasures  = Bool(get(params, "extendedMeasures",   false)),
-           saveMeshes        = Bool(get(params, "saveMeshes",         false)),
            blockSize         = Int(get(params, "blockSize",           512)),
            overlap           = Int(get(params, "overlap",             64)),
            blockSizeZ        = Int(get(params, "blockSizeZ",          0)),

@@ -749,7 +749,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test "imageTiling"    in Cecelia._section_keys(ml)
         nested = Dict{String,Any}(
             "outputValueName" => "T",
-            "measureOptions"  => Dict{String,Any}("extendedMeasures" => true, "saveMeshes" => false),
+            "measureOptions"  => Dict{String,Any}("extendedMeasures" => true),
             "imageTiling"     => Dict{String,Any}("blockSize" => 4096, "overlap" => 0))
         flat = Cecelia._flatten_sections(ml, nested)
         @test flat["extendedMeasures"] == true          # was buried under measureOptions

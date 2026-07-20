@@ -14,7 +14,6 @@ Parameter contract (JSON written by Julia):
   intensityMeasure  - 'mean' or 'median'
   gaussianFilter    - Gaussian sigma for intensity pre-smooth (0 = off)
   extendedMeasures  - bool: trimesh 3D shape descriptors (3D images only)
-  saveMeshes        - bool: save per-cell .stl meshes to {task_dir}/meshes/
   blockSize         - XY tile size (informational; measurement is per-timepoint)
   overlap           - XY tile overlap (informational)
   blockSizeZ        - Z tile size (informational)
