@@ -98,14 +98,11 @@ def run(params):
             sc.tl.umap(adata, random_state=rs)   # obsm['X_umap']
     else:
         # Leiden on the composition graph — no normalisation (vectors are already fractions in [0,1]).
-        # integrateBatch → Harmony-integrate on uID so region IDs are comparable across the cohort
-        # rather than confounded by per-sample batch effects (NicheCompass cohort-integration idea).
-        batch_key = "uID" if bool(script_utils.get_param(params, "integrateBatch", default=False)) else None
         clustering_utils.find_populations(
             adata,
             resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
             axis="NONE", transformation="NONE",
-            create_umap=create_umap, backend="auto", random_state=rs, batch_key=batch_key, log=log.log)
+            create_umap=create_umap, backend="auto", random_state=rs, log=log.log)
 
     # ── persist the composition vectors as continuous per-cell measures (spatial.comp.{basis}.{suffix})
     # so the region-composition heatmap reuses the cluster-heatmap (region × measures) — no new plot
