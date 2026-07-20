@@ -313,14 +313,25 @@ re-defined). Tests: param validation (range enforcement — note `int` enforces 
 NOT) + QC-helper unit tests; suite green (1278 pass). **Not yet run against real image data** (needs a
 live squidpy run + fixture); frontend module page is Phase 5.
 
-**Phase 3 — Composition vector (Julia).** Julia reads graph edges + resolves neighbour pop labels via
-`pop_df` + computes per-cell composition (clustTracks inline-matrix pattern). `perTimepoint` (Decision 7).
-Unit-tested against golden freq values.
-
-**Phase 4 — Region clustering.** `clustRegions.cluster` task: composition matrix (inline) → Python
-`find_populations` (Leiden) / k-means / (opt) SOM → `regions.{suffix}` + `X_umap.{suffix}` via
-`split_back_and_write`. Region Clustering module page (Decision 12) + route `/regions` + nav. Reuse
-cluster heatmap + UMAP panels via registries.
+**Phase 3+4 — Composition vector + region clustering. ✅ DONE backend, validated end-to-end
+(2026-07-20).** Unified into the `clustRegions.cluster` task (set-scope, like clustPops). The graph
+obsp is Python-native, so composition is computed Python-side, but **membership stays Julia**: the
+handler resolves the basis via `pop_df` and assigns each pooled cell a **(value_name, pop) basis code**
+(keying on the pair, so B/qc vs T/qc are distinct across segmentations — found during validation).
+`cluster_run.py` pools each image's basis cells across segmentations into **one combined graph** (a B
+cell and a nearby T cell are neighbours across segmentations), computes composition via shared
+`spatial_utils.neighbourhood_composition` (`freq = n/sum(n)`), pools across the set, clusters (Leiden
+via `find_populations` with `axis="NONE"`, or k-means), and writes `regions.{suffix}` + `X_umap.{suffix}`
+via `split_back_and_write(col_prefix="regions")` — **generalised, not forked** (Dominik's ask). Shared
+`spatial_utils.build_spatial_graph` used by both cellNeighbours and this (one squidpy entry point).
+Registered + QC + COHORT_METRICS. Tests: Julia param/dispatch, Python composition unit tests (pure).
+**Validated on XcPcu8** (project 4kS67f, images LUkCpP+k3Tx90, B/T basis): 1966 cells pooled →
+`regions.btregions` written to all 4 segments, readable as categorical, UMAP present.
+- ⚠️ **Over-segmentation with a tiny basis:** 2 basis pops → ~1-D composition → Leiden at res 1.0 made
+  49 regions. Real usage has many cell types; small-basis runs want k-means (fixed k) or low resolution.
+  Consider a QC finding for "regions ≫ basis dimensionality". *(Follow-up, not blocking.)*
+- **Still deferred:** SOM method (minisom), `perTimepoint` temporal composition (Decision 7 — Phase 8),
+  the Region Clustering **module page** (Vue) + route/nav (Phase 5 with the spatial page), region plots.
 
 **Phase 5 — Spatial Analysis functions + stats + page.** Contacts (`cellContacts` kNN, `cellContactsMeshes`
 trimesh), aggregate detection (Decision 10), distance-to-structure/leading-edge, squidpy stats

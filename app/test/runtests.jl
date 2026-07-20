@@ -661,6 +661,20 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
     end
 
+    @testset "Param validation — ClustRegions" begin
+        @test _task_from_fun_name("clustRegions.cluster") isa ClustRegions
+        @test task_scope(ClustRegions()) == "set"              # set-scope (regions comparable across set)
+        # numClusters is int min=1 — below the floor rejected
+        @test_throws ParamValidationError validate_params(
+            ClustRegions(), Dict{String,Any}("numClusters" => 0))
+        # resolution is float min=0/max=5 — out of range rejected
+        @test_throws ParamValidationError validate_params(
+            ClustRegions(), Dict{String,Any}("resolution" => 99))
+        @test validate_params(
+            ClustRegions(), Dict{String,Any}("numClusters" => 5, "resolution" => 1.0,
+                                             "clusterMethod" => "leiden")) === nothing
+    end
+
     @testset "Param validation — CropImage" begin
         @test _task_from_fun_name("editImages.cropImage") isa CropImage
         # x0/x1/y0/y1 are int min=0 — negative must be rejected

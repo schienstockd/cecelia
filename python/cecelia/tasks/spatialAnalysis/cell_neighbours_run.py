@@ -25,6 +25,7 @@ import numpy as np
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
 from cecelia.utils.label_props_utils import LabelPropsView
 import cecelia.utils.script_utils as script_utils
+import cecelia.utils.spatial_utils as spatial_utils
 
 
 def run(params):
@@ -63,7 +64,6 @@ def run(params):
     coords = coords * scale.reshape(1, -1)
 
     import anndata as ad
-    import squidpy as sq
     adata = ad.AnnData(coords.astype(np.float32))
     adata.var_names = [str(c) for c in ccols]
     adata.obs_names = [str(int(l)) for l in df["label"].to_numpy()]
@@ -71,33 +71,14 @@ def run(params):
     adata.obsm["spatial"] = coords
 
     log.log(f">> neighbour graph: {n} cells, method={method}")
-    if method == "delaunay":
-        sq.gr.spatial_neighbors(adata, coord_type="generic", delaunay=True)
-        # prune edges longer than the radius (legacy parity) — drop from both matrices symmetrically
-        dist = adata.obsp["spatial_distances"]
-        conn = adata.obsp["spatial_connectivities"]
-        mask = dist > radius
-        dist[mask] = 0.0; conn[mask] = 0.0
-        dist.eliminate_zeros(); conn.eliminate_zeros()
-    elif method == "knn":
-        sq.gr.spatial_neighbors(adata, coord_type="generic", n_neighs=k)
-    else:  # radius
-        sq.gr.spatial_neighbors(adata, coord_type="generic", radius=radius)
-
-    # ── objective metrics (undirected: count each edge once) ──
-    conn = adata.obsp["spatial_connectivities"]
-    deg = np.asarray((conn > 0).sum(axis=1)).ravel()
-    n_edges = int(conn.nnz // 2)
-    n_isolated = int((deg == 0).sum())
-    mean_degree = float(deg.mean())
-    isolated_frac = float(n_isolated / n)
+    spatial_utils.build_spatial_graph(adata, method=method, radius=radius, n_neighs=k)
 
     # ── write the graph sidecar (a NEW file — the sanctioned creation exception) ──
     adata.write_h5ad(graph_path)
-    log.log(f">> wrote {graph_path}: {n_edges} edges, mean degree {mean_degree:.2f}, {n_isolated} isolated")
-
-    _dump_qc(qc_path, {"nCells": n, "nEdges": n_edges,
-                       "meanDegree": mean_degree, "isolatedFrac": isolated_frac})
+    m = spatial_utils.graph_metrics(adata)
+    log.log(f">> wrote {graph_path}: {m['nEdges']} edges, mean degree {m['meanDegree']:.2f}, "
+            f"{int(m['isolatedFrac'] * n)} isolated")
+    _dump_qc(qc_path, m)
 
 
 def _dump_qc(qc_path, qc):
