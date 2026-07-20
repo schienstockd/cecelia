@@ -185,6 +185,13 @@ class ClientTest(unittest.TestCase):
         self.assertIn("/api/analysis/clusters?", u.call_args[0][0].full_url)
         self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
 
+    def test_spatial_stats_is_an_allowed_get(self):
+        self.assertIn(("GET", "/api/analysis/spatial"), ALLOWED_ROUTES)
+        with _patch_urlopen({"images": []}) as u:
+            self.c.get_spatial_stats("p", image_uid="i1")
+        self.assertIn("/api/analysis/spatial?", u.call_args[0][0].full_url)
+        self.assertIn("imageUid=i1", u.call_args[0][0].full_url)
+
     def test_chains_is_an_allowed_project_level_get(self):
         self.assertIn(("GET", "/api/analysis/chains"), ALLOWED_ROUTES)
         with _patch_urlopen({"templates": [], "runs": []}) as u:

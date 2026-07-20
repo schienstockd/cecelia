@@ -37,6 +37,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/measures"),  # per-pop phenotype + motility summaries (median/quantiles)
         ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
         ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
+        ("GET", "/api/analysis/spatial"),  # region runs + pairwise cell-type contact log-odds (association/avoidance)
         ("GET", "/api/analysis/chains"),  # whiteboard chains: wired templates (DAG) + recent runs
         ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
@@ -197,6 +198,10 @@ class CeceliaClient:
     def get_cluster_summary(self, project_uid: str, image_uid: str | None = None,
                             set_uid: str | None = None):
         return self._analysis_summary("/api/analysis/clusters", project_uid, image_uid, set_uid)
+
+    def get_spatial_stats(self, project_uid: str, image_uid: str | None = None,
+                          set_uid: str | None = None):
+        return self._analysis_summary("/api/analysis/spatial", project_uid, image_uid, set_uid)
 
     def get_chains(self, project_uid: str):
         return self._analysis_summary("/api/analysis/chains", project_uid)
