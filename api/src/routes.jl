@@ -341,7 +341,37 @@ end
 
 # ── Filesystem browser ────────────────────────────────────────────────────────
 
-const FS_ROOT = get(ENV, "CECELIA_FS_ROOT", homedir())
+# FS_ROOT: OPTIONAL sandbox. Empty (the default) = browse the whole filesystem — required to reach
+# mounted network drives / external storage (SMB, `/mnt`, `/media`, …), which live OUTSIDE the home
+# dir. Set CECELIA_FS_ROOT to confine the browser to one subtree. (Was hard-clamped to homedir(),
+# which made network drives unreachable from the import file picker.)
+const FS_ROOT = get(ENV, "CECELIA_FS_ROOT", "")
+
+# Whether a path is inside the sandbox (always true when no sandbox is configured).
+_fs_confined(path::AbstractString)::Bool = isempty(FS_ROOT) || startswith(path, FS_ROOT)
+
+# Parent dir, or `nothing` at the navigable ceiling (the filesystem root `/` or a Windows drive, or
+# FS_ROOT when sandboxed) so the UI stops offering "up".
+function _fs_parent(base::String)
+    par = dirname(base)
+    par == base && return nothing            # filesystem root (/ or C:\)
+    _fs_confined(par) ? par : nothing        # sandbox floor
+end
+
+# Quick-jump shortcuts: home + the common mount parents where external/network drives appear.
+function _fs_shortcuts()
+    sc = Tuple{String,String}[("Home", homedir())]
+    if Sys.iswindows()
+        for c in 'A':'Z'
+            d = string(c, ":\\"); isdir(d) && push!(sc, (string(c, ":"), d))
+        end
+    else
+        for d in ("/", "/mnt", "/media", "/Volumes", "/run/media")
+            isdir(d) && push!(sc, (d == "/" ? "Root" : basename(d), d))
+        end
+    end
+    [(; label, path) for (label, path) in sc if _fs_confined(path)]
+end
 
 const IMAGE_EXTS = Set([
     # TIFF family
@@ -373,26 +403,33 @@ const IMAGE_EXTS = Set([
 ])
 
 function api_fs_list(req::HTTP.Request)
-    uri   = HTTP.URI(req.target)
-    query = HTTP.queryparams(uri)
-    rel   = get(query, "path", "")
-    base  = isempty(rel) ? FS_ROOT : normpath(joinpath(FS_ROOT, rel))
-    startswith(base, FS_ROOT) || return 400, JSON3.write((; error="Path outside allowed root"))
+    query = HTTP.queryparams(HTTP.URI(req.target))
+    p     = get(query, "path", "")
+    # Absolute paths are used as-is (browse anywhere); empty → home; a relative path resolves against
+    # home (back-compat with the old relative-to-root contract). Confine to FS_ROOT only if it's set.
+    base = isempty(p)      ? homedir() :
+           isabspath(p)    ? normpath(p) :
+                             normpath(joinpath(homedir(), p))
+    _fs_confined(base) || (base = FS_ROOT)
     isdir(base) || return 400, JSON3.write((; error="Not a directory: $base"))
 
-    entries = map(readdir(base; join=false)) do name
+    names = try
+        readdir(base; join=false)
+    catch e
+        return 400, JSON3.write((; error="Cannot read directory: $(sprint(showerror, e))"))
+    end
+    entries = map(names) do name
         full   = joinpath(base, name)
         ext    = lowercase(splitext(name)[2])
-        isdir_ = isdir(full)
-        (; name, path=relpath(full, FS_ROOT), isdir=isdir_,
+        isdir_ = try isdir(full) catch; false end          # broken symlink / no perms → treat as file
+        (; name, path=full, isdir=isdir_,                   # ABSOLUTE path (import resolves it directly)
            isimage=!isdir_ && ext ∈ IMAGE_EXTS, ext,
-           size=isdir_ ? nothing : filesize(full))
+           size=isdir_ ? nothing : (try filesize(full) catch; nothing end))
     end
     visible = filter(e -> !startswith(e.name, "."), entries)
     sorted  = sort(visible; by=e -> (!e.isdir, lowercase(e.name)))
-    200, JSON3.write((; root=FS_ROOT, current=relpath(base, FS_ROOT),
-                       parent=base == FS_ROOT ? nothing : relpath(dirname(base), FS_ROOT),
-                       entries=sorted))
+    200, JSON3.write((; root=homedir(), current=base, parent=_fs_parent(base),
+                       shortcuts=_fs_shortcuts(), entries=sorted))
 end
 
 # ── Project management ────────────────────────────────────────────────────────

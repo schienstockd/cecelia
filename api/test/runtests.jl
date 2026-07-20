@@ -1050,3 +1050,27 @@ end
     st, _ = _post(api_storage_reclaim, Dict("projectUid" => "p", "imageUids" => String[]))
     @test st == 400
 end
+
+@testset "API: fs browser" begin
+    tmp = mktempdir()
+    mkdir(joinpath(tmp, "sub"))
+    write(joinpath(tmp, "img.tif"), "x")
+    write(joinpath(tmp, "notes.txt"), "y")
+
+    st, body = api_fs_list(HTTP.Request("GET", "/api/fs/list?path=" * HTTP.URIs.escapeuri(tmp)))
+    @test st == 200
+    d = JSON3.read(body)
+    @test String(d.current) == tmp
+    @test String(d.parent)  == dirname(tmp)          # navigates UP out of tmp — NOT clamped to home
+    ents = Dict(String(e.name) => e for e in d.entries)
+    @test haskey(ents, "sub") && ents["sub"].isdir
+    @test ents["img.tif"].isimage
+    @test String(ents["img.tif"].path) == joinpath(tmp, "img.tif")   # absolute path
+    @test !ents["notes.txt"].isimage
+    @test any(s -> String(s.label) == "Home", d.shortcuts)
+
+    # non-existent dir → 400 (not a 500)
+    st2, _ = api_fs_list(HTTP.Request("GET", "/api/fs/list?path=" * HTTP.URIs.escapeuri(joinpath(tmp, "nope"))))
+    @test st2 == 400
+    rm(tmp; recursive=true)
+end
