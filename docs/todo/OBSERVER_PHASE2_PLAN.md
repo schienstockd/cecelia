@@ -103,9 +103,10 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    existing) so the observer stays non-destructive — the SECOND additive write (with lab-log append).
    Guidance for Claude in `docs/REPL.md`; `buildChatPrompt` offers "build me a notebook". The user
    then edits/owns it in Pluto. *(api/ notebooks_api.jl + mcp/ + frontend/ + docs/ + test-api/mcp/frontend)*
-6. **`get_available_plots` MCP tool** — from the existing plot JSON specs (name/module/data
-   needs/scope modes). *(mcp/ + allow-list + a `/api/plots/available` read if not already
-   served)*
+6. **`get_available_plots` MCP tool** — ✅ **done**: reuses the existing `GET /api/plots/definitions`
+   (the `app/src/plotDefinitions/*.json` registry — chartTypes/dataSource/scopeModes) — no new Julia.
+   Allow-list + `get_available_plots(module)` client method + tool; `buildChatPrompt` names it.
+   *(mcp/ + frontend/ + test-mcp/frontend + docs)*
 7. **In-app Claude overview panel** — static reference panel (what Claude can see / suggest /
    create / cannot do / can write). Verified against real capabilities. *(frontend/)*
 

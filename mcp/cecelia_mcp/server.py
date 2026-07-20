@@ -162,6 +162,20 @@ def get_module_params(category: str = "") -> dict:
 
 
 @mcp.tool()
+def get_available_plots(module: str = "") -> list:
+    """The plot types the analysis board can render — use this to SUGGEST a visualization ("plot the HMM
+    state frequencies as a bar chart") or to pick the chart for a notebook.
+
+    Returns `[{id, label, module, family, chartTypes, dataSource:{popType, granularity, measure,
+    measureOptions}, scopeModes, …}]`. `chartTypes` = the applicable charts (boxplot/violin/bar/
+    histogram/…); `dataSource` = what data it needs (population type, granularity, measure);
+    `scopeModes` = per_image / summarised (pooled across a set). Pass `module` to narrow to one module
+    page's plots; omit for all. Project-independent; read-only. These are the board's OWN plots — for a
+    notebook you reproduce the equivalent with AlgebraOfGraphics (see get_repl_api)."""
+    return _client.get_available_plots(module or None)
+
+
+@mcp.tool()
 def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
     the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);

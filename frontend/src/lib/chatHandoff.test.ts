@@ -29,6 +29,10 @@ describe('buildChatPrompt', () => {
     expect(p).toMatch(/edit and run/i)                 // Claude bootstraps; the user owns/iterates it
   })
 
+  it('names the available-plots tool for suggesting visualizations', () => {
+    expect(buildChatPrompt('NRUBxU')).toContain('get_available_plots')
+  })
+
   it('is paste-and-run: no placeholder, no relative doc path, tells it not to self-setup', () => {
     const p = buildChatPrompt('NRUBxU')
     expect(p).not.toContain('<')            // no <describe what you need> placeholder

@@ -37,6 +37,7 @@ get_image_info            → one image: channels, dims, label props, task histo
 get_task_log              → log content for a specific task run on a specific image
 get_task_history          → recent tasks across all images: function, status, timestamp, and the run's params (tuning trail)
 get_module_params         → task param specs (valid ranges/defaults/types) for parameter suggestions (Phase 2)
+get_available_plots       → plot types the board can render (chart types, data needs, scope) to suggest a viz (Phase 2)
 get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage

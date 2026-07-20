@@ -113,6 +113,18 @@ class ClientTest(unittest.TestCase):
             self.c.get_module_params()
         self.assertNotIn("category", u.call_args[0][0].full_url)
 
+    def test_available_plots_builds_url_and_drops_unset_module(self):
+        self.assertIn(("GET", "/api/plots/definitions"), ALLOWED_ROUTES)
+        with _patch_urlopen([{"id": "cell_properties"}]) as u:
+            out = self.c.get_available_plots("behaviourAnalysis")
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/plots/definitions?", url)
+        self.assertIn("module=behaviourAnalysis", url)
+        self.assertEqual(out[0]["id"], "cell_properties")
+        with _patch_urlopen([]) as u:                       # no module → all plots
+            self.c.get_available_plots()
+        self.assertNotIn("module", u.call_args[0][0].full_url)
+
     def test_cohort_qc_builds_url_and_drops_unset(self):
         self.assertIn(("GET", "/api/qc/cohort"), ALLOWED_ROUTES)
         with _patch_urlopen({"metrics": {}}) as u:
