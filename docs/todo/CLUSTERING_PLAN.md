@@ -313,10 +313,11 @@ are thus comparable across the set.
   size distribution). Runs on a CUDA box once RAPIDS is installed. GPU labels won't be
   bit-identical to CPU leidenalg — both stochastic, different impls; concordance is the bar.
 - **PAGA** layout option (`usePaga`/`pagaThreshold`) — port if needed (old default off).
-- **Batch correction** (ComBat/Harmony from old `correctBatch`) — stays in Python (scanpy
-  `sc.pp.combat` / harmonypy). Now that clustering is **always per-set** (Decision 6), pooling
-  images with batch effects is the norm, so this is more likely wanted than the old note implied —
-  but still optional; add when a real batch artefact shows up. Not in v1.
+- **Batch correction** — a Harmony (`harmonypy`) batch-integration option was briefly added and then
+  **removed** (2026-07-21): it doesn't work well on imaging-derived data, and harmonypy ≥0.2's torch
+  backend caused macOS crashes in the clustering process (see SPATIAL_REGIONS_PLAN.md → Decision 13).
+  If revisited, use a method suited to protein-imaging composition and one without a torch dependency
+  in the clustering subprocess. Not in v1.
 - **Sub-clustering design** (Decision 8) — the elegant replacement for `keepPops`/`reLeiden`. Mechanism
   sketched (restricted run × new suffix column × clust pop-tree parent/child); finalise the UX +
   the `cells_in_pop` restriction wiring at implementation.
