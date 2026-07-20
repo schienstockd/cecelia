@@ -1,10 +1,11 @@
 """Read-only HTTP client for the Cecelia Julia API, used by the MCP observer server.
 
 Every request goes through an explicit ALLOW-LIST of (method, path) pairs. That list IS the
-observer's no-mutation guarantee: the only non-GET route permitted is ``POST /api/lablog/append``
-(append-only, itself server-guarded). Any attempt to call a route not on the list raises
-``DisallowedRoute`` — so if a future tool ever wires in a mutating route it fails loudly in tests
-rather than silently mutating a project.
+observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/lablog/append``
+(append-only) and ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
+overwrites). Both are ADDITIVE / non-destructive: no allow-listed route can edit or delete project
+data. Any attempt to call a route not on the list raises ``DisallowedRoute`` — so if a future tool
+ever wires in a mutating route it fails loudly in tests rather than silently mutating a project.
 
 Uses only the Python standard library (urllib) so this module — and its tests — carry no third-party
 dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these calls into tools.
@@ -40,7 +41,8 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
-        ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
+        ("POST", "/api/lablog/append"),  # write 1/2 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/2 — create-only (409 on existing); serialises cells to a Pluto notebook
     }
 )
 
@@ -210,10 +212,19 @@ class CeceliaClient:
         # project (it's the process-wide console).
         return self._request("GET", "/api/logs/recent")
 
-    # ── the one write (append-only) ─────────────────────────────────────────────────
+    # ── the two writes (both additive / non-destructive) ─────────────────────────────
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(
             "POST",
             "/api/lablog/append",
             body={"projectUid": project_uid, "author": author, "lines": lines},
+        )
+
+    def create_notebook(self, project_uid: str, name: str, cells: list[str], description: str = ""):
+        # Create-only (409 if the name exists). `cells` = Julia cell sources; the env-activation cell
+        # is prepended server-side, so the notebook is self-contained/runnable.
+        return self._request(
+            "POST",
+            "/api/notebooks/write",
+            body={"projectUid": project_uid, "name": name, "cells": cells, "description": description},
         )

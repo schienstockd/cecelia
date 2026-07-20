@@ -25,7 +25,7 @@ class ServerToolRegistrationTest(unittest.TestCase):
             "get_module_params", "get_analysis_lineage", "get_populations",
             "get_measure_summary", "get_behaviour_summary", "get_cluster_summary",
             "get_chains", "get_cohort_qc", "get_repl_api", "get_session_briefing",
-            "get_recent_logs", "read_lab_log", "append_lab_log",
+            "get_recent_logs", "read_lab_log", "append_lab_log", "create_notebook",
         ):
             self.assertIn(tool, self.names)
 

@@ -241,6 +241,51 @@ end
     end
 end
 
+@testset "API: notebooks write (generate from cells)" begin
+    # Pure serialiser: cells → valid Pluto source (activation prepended, markers + Cell order block).
+    src = _pluto_notebook_source(["using Cecelia", "df = pop_df(img, \"flow\", [\"/T\"])"])
+    @test occursin("### A Pluto.jl notebook ###", src)
+    @test occursin("Pkg.activate", src)                       # env-activation cell prepended
+    @test occursin("df = pop_df(img", src)                    # caller cell present, verbatim
+    @test occursin("# ╔═╡ Cell order:", src)
+    @test count("# ╠═", src) == 3                             # activation + 2 caller cells, listed once each
+
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    w(b) = _post(api_notebooks_write, b)
+    # capture WS frames so we can assert the create nudges an open Notebooks page to refresh
+    cap = Channel{String}(64); key = gensym("test-nbwrite")
+    lock(_ws_clients_lock) do; _ws_clients[key] = cap; end
+    drain() = (fs = []; while isready(cap); push!(fs, JSON3.read(take!(cap))); end; fs)
+    try
+        uid = "TESTNBW"; mkpath(joinpath(tmp, uid))
+        @test w(Dict("projectUid"=>uid, "name"=>"gen"))[1] == 400              # cells required
+        @test w(Dict("projectUid"=>"NOPE", "name"=>"gen", "cells"=>["x=1"]))[1] == 404
+        drain()   # clear any frames from the failing calls above
+        st, body = w(Dict("projectUid"=>uid, "name"=>"gen",
+                          "cells"=>["using Cecelia", "df = 1"], "description"=>"speed over time"))
+        @test st == 200 && JSON3.read(body).file == "gen.jl"
+        # a notebooks_changed frame for this project → an open Notebooks page auto-refreshes
+        @test any(f -> String(get(f, :type, "")) == "notebooks_changed" &&
+                       String(get(f, :projectUid, "")) == uid, drain())
+        dest = joinpath(tmp, uid, "notebooks", "gen.jl")
+        @test isfile(dest)
+        content = read(dest, String)
+        @test occursin("Pkg.activate", content) && occursin("df = 1", content)   # runnable + caller code
+        # registered + snapshotted v1 (an immediate restore point)
+        nb = JSON3.read(api_notebooks_list(HTTP.Request("GET", "/api/notebooks?projectUid=$uid"))[2]).notebooks
+        g  = nb[findfirst(n -> n.file == "gen.jl", nb)]
+        @test g.version == 1 && g.description == "speed over time"
+        # create-only: never clobbers
+        @test w(Dict("projectUid"=>uid, "name"=>"gen", "cells"=>["y=2"]))[1] == 409
+    finally
+        lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: notebooks sysimage status" begin
     # status always carries a `sysimage` field, one of the valid states (machine-independent: deps.so
     # may or may not exist here). Pins the response contract the frontend's first-run build reads.

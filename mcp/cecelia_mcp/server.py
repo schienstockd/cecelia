@@ -318,9 +318,29 @@ def read_lab_log(project_uid: str) -> str:
 def append_lab_log(project_uid: str, lines: list[str]) -> dict:
     """Append a dated [Claude] entry to the lab log. Append-only — never edits existing content.
 
-    `lines` is one or more markdown lines. This is the ONLY write the observer can make.
+    `lines` is one or more markdown lines. One of only two writes the observer can make (the other is
+    create_notebook); both are additive.
     """
     return _client.append_lab_log(project_uid, CLAUDE_AUTHOR, lines)
+
+
+@mcp.tool()
+def create_notebook(project_uid: str, name: str, cells: list[str], description: str = "") -> dict:
+    """Create a Pluto NOTEBOOK from Julia cell sources — to answer a "give me the data / plot this"
+    request with a runnable, editable artifact the user then owns. Read get_repl_api FIRST so the code
+    uses the real accessors and the notebook write rules (figures/CSV only; never .h5ad / QC / lab log).
+
+    `cells` = a list of Julia cell sources (one string per cell), e.g. loading via `init_object` /
+    `pop_df` / `track_props`, computing a DataFrame, an AlgebraOfGraphics+CairoMakie plot, and a
+    `CSV.write` export. The env-activation cell is prepended automatically, so DON'T include it; your
+    first cell is typically `using Cecelia, DataFrames, AlgebraOfGraphics, CairoMakie, CSV`.
+
+    CREATE-ONLY: 409 if `name` already exists — never overwrites (pick a new name). After creating, tell
+    the user it's ready in the **Notebooks page** — an open page auto-refreshes; if theirs was already
+    open and doesn't show it, they can hit refresh. They open it, edit/iterate in Pluto (you can guide
+    them + suggest corrected cells to paste), and once happy they run it without you. One of only two
+    writes; additive. Suggest, then create on the user's ask — don't spam notebooks."""
+    return _client.create_notebook(project_uid, name, cells, description)
 
 
 @mcp.tool()

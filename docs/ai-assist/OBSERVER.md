@@ -44,9 +44,10 @@ get_repl_api              → notebook/REPL data-access surface: read accessors 
 get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
 ```
 
-**Write (Phase 1 — lab log only):**
+**Write (additive only — the two non-destructive writes):**
 ```
 append_lab_log            → append a dated [Claude] entry. Append-only, never edits existing content.
+create_notebook           → create a Pluto notebook from cells (Phase 2). Create-only (409 on existing); the user edits/owns it.
 ```
 
 **Write (Phase 2 — deferred):**

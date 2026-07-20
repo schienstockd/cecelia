@@ -2,8 +2,9 @@
 // Per-project notebook registry table (Phase 3). Mirrors ImageTable's inline-edit pattern for the
 // description field. Project notebooks are managed (create/describe/snapshot/delete); shipped
 // examples are read-only (duplicate-into-project only). See docs/todo/NOTEBOOK_PLAYGROUND_PLAN.md.
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { useLogStore } from '../stores/log'
+import { useWsStore } from '../stores/ws'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
 const props = defineProps<{
@@ -190,6 +191,12 @@ function openUrl(nb: Notebook) {
 
 onMounted(refresh)
 watch(() => props.projectUid, refresh)
+
+// Auto-refresh when a notebook is created out-of-band (e.g. Claude's create_notebook) for THIS project.
+const ws = useWsStore()
+function onNotebooksChanged(d: any) { if (String(d?.projectUid ?? '') === props.projectUid) refresh() }
+onMounted(() => ws.on('notebooks_changed', onNotebooksChanged))
+onUnmounted(() => ws.off('notebooks_changed', onNotebooksChanged))
 defineExpose({ refresh })
 </script>
 

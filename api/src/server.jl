@@ -366,6 +366,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_chains_delete(body_bytes)
         elseif path == "/api/notebooks/launch"
             api_notebooks_launch(body_bytes)
+        elseif path == "/api/notebooks/write"
+            api_notebooks_write(body_bytes)
         elseif path == "/api/notebooks/create"
             api_notebooks_create(body_bytes)
         elseif path == "/api/notebooks/describe"
