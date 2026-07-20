@@ -45,10 +45,11 @@ get_repl_api              → notebook/REPL data-access surface: read accessors 
 get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
 ```
 
-**Write (additive only — the two non-destructive writes):**
+**Write (the three non-destructive writes — none touch cell data / images / gates / QC / notebook content):**
 ```
 append_lab_log            → append a dated [Claude] entry. Append-only, never edits existing content.
 create_notebook           → create a Pluto notebook from cells (Phase 2). Create-only (409 on existing); the user edits/owns it.
+set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 ```
 
 **Write (Phase 2 — deferred):**
@@ -231,13 +232,16 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **REPL knowledge (`get_repl_api` + `docs/REPL.md`)** — the notebook-safe accessor allow-list
   (`NOTEBOOK_API`) with live docstrings; a golden test keeps REPL.md from drifting.
 - **`create_notebook`** — generates a runnable Pluto notebook from cells (`/api/notebooks/write`).
+  `set_notebook_description` rewords its blurb afterwards (`/api/notebooks/describe`, description text only).
 - **`get_available_plots`** — the board's plot types, for viz suggestions.
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
 
 **Durable boundaries (why, so they aren't relitigated)**
-- **Two additive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
-  (append-only) and `POST /api/notebooks/write` (create-only, 409 on existing). Neither edits/deletes;
-  the invariant test asserts the set. No task-run, gate, h5ad, or config write.
+- **Three non-destructive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
+  (append-only), `POST /api/notebooks/write` (create-only, 409 on existing), and `POST
+  /api/notebooks/describe` (a notebook's description string only — not its cells). None touch cell
+  data, images, gates, QC, or notebook content; the invariant test asserts the exact set. No task-run,
+  gate, h5ad, or config write.
 - **Param suggestions are current-state, not a correlation.** The run log stores params but QC is NOT
   snapshotted per run, so there is no fittable params→outcome curve — Claude cites what was tried + the
   valid range and suggests a direction; it does not predict. A per-run QC snapshot was considered and

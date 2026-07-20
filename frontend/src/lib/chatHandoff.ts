@@ -19,8 +19,9 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `analysis itself (get_populations, get_measure_summary, get_behaviour_summary, get_cluster_summary), ` +
       `the board's plot types (get_available_plots), ` +
       `cross-set QC (get_cohort_qc), the lab log (read_lab_log), and the notebook/REPL data-access ` +
-      `surface (get_repl_api). They are read-only except two additive actions, taken only when I ask: ` +
-      `appending to the lab log (append_lab_log) and creating a Pluto notebook (create_notebook).`,
+      `surface (get_repl_api). They are read-only except three non-destructive actions, taken only when ` +
+      `I ask: appending to the lab log (append_lab_log), creating a Pluto notebook (create_notebook), and ` +
+      `rewording a notebook's description (set_notebook_description).`,
     ``,
     `Don't dive in yet. Call get_session_briefing first to get oriented — it returns the project name + ` +
       `image count, which images are flagged (QC), and recent lab-log entries. Open with what stands out ` +

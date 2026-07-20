@@ -332,8 +332,8 @@ def read_lab_log(project_uid: str) -> str:
 def append_lab_log(project_uid: str, lines: list[str]) -> dict:
     """Append a dated [Claude] entry to the lab log. Append-only — never edits existing content.
 
-    `lines` is one or more markdown lines. One of only two writes the observer can make (the other is
-    create_notebook); both are additive.
+    `lines` is one or more markdown lines. One of only three writes the observer can make (the others
+    are create_notebook and set_notebook_description); all are non-destructive to project data.
     """
     return _client.append_lab_log(project_uid, CLAUDE_AUTHOR, lines)
 
@@ -352,9 +352,20 @@ def create_notebook(project_uid: str, name: str, cells: list[str], description: 
     CREATE-ONLY: 409 if `name` already exists — never overwrites (pick a new name). After creating, tell
     the user it's ready in the **Notebooks page** — an open page auto-refreshes; if theirs was already
     open and doesn't show it, they can hit refresh. They open it, edit/iterate in Pluto (you can guide
-    them + suggest corrected cells to paste), and once happy they run it without you. One of only two
-    writes; additive. Suggest, then create on the user's ask — don't spam notebooks."""
+    them + suggest corrected cells to paste), and once happy they run it without you. One of only three
+    writes; non-destructive. Suggest, then create on the user's ask — don't spam notebooks. To reword
+    its description afterwards, use set_notebook_description (don't recreate)."""
     return _client.create_notebook(project_uid, name, cells, description)
+
+
+@mcp.tool()
+def set_notebook_description(project_uid: str, file: str, description: str) -> dict:
+    """Update a notebook's one-line description (shown in the Notebooks page). Use this to reword the
+    blurb after create_notebook — e.g. the user asks to make it briefer — instead of recreating the
+    notebook. Edits ONLY the description string in the registry sidecar; the notebook's cells are
+    untouched. `file` is the notebook filename create_notebook returned (e.g. "speed.jl"); a bare name
+    works too. 404 if it doesn't exist. One of only three writes; non-destructive."""
+    return _client.set_notebook_description(project_uid, file, description)
 
 
 @mcp.tool()
