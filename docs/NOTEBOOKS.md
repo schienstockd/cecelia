@@ -34,6 +34,14 @@ notebooks/                   ← shipped EXAMPLE notebooks (UID-free, versioned 
 {project}/settings/notebooks.json  ← per-project registry: { file → {description, version, updatedAt} }
 ```
 
+> **The `pluto/` env path-sources `../app` and pins Cecelia's deps in its own `pluto/Manifest.toml`.**
+> So **whenever a Julia dep is added to `app/Project.toml`, you must re-resolve this env** (`pixi run
+> notebooks-instantiate`, which now runs `Pkg.resolve()` first) and commit the updated
+> `pluto/Manifest.toml` — otherwise every notebook fails to precompile with `Package Cecelia does not
+> have <Dep> in its dependencies`. This is one of the three envs in CLAUDE.md → *Adding a Julia
+> dependency to `app/`*; a stale pluto manifest here (missing `Clustering`/`NearestNeighbors`) is what
+> broke notebooks after the spatial-analysis merge.
+
 ## Authoring a notebook
 
 The **first cell** activates the engine env (so the dev `Cecelia` + `CeceliaNb` resolve — Pluto's
