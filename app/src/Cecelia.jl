@@ -66,6 +66,7 @@ export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export co_clustered_value_names
 export colour_by_palette, pop_colour_overrides, pop_label_overrides, OKABE_ITO
 export recompute!, cells_in_pop, pop_membership, pop_stats, pop_df, resolve_pops
+export region_membership, region_enrichment
 export plot_summary_data
 export track_props, track_cell_measures, is_tracked
 export hmm_fit_states, hmm_transitions, DiagGaussEmission
@@ -128,6 +129,7 @@ include("gating/gates.jl")
 include("gating/density.jl")
 include("gating/population_manager.jl")
 include("gating/gating_engine.jl")
+include("spatial.jl")   # cross-poptype region queries (needs pop_df)
 include("plotting/plot_data.jl")
 include("tracking/track_props.jl")
 include("behaviour/hmm.jl")
