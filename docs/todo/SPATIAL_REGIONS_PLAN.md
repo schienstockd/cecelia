@@ -240,6 +240,31 @@ camp (CellCharter/GraphST) — which is what Cecelia does, and the modality-appr
 the cohort-integration idea was worth taking (this Decision). Revisit NicheCompass/CellCharter only if
 Cecelia invests in spatial-transcriptomics niches (the `stomics` vignette).
 
+### Decision 14 — clean population selection: `accepts` allow-list + grouped UI + aggregated pop (2026-07-20)
+
+The `popSelection` widget muddles all poptypes into one flat chip strip (and discards the `popType` the
+backend already sends). With flow/live/clust/trackclust/region now all live, this is confusing — and
+region-clustering basis must accept BOTH cells and tracks (gated + clustered + region). Redesign
+(Dominik's calls):
+
+1. **A function declares an explicit poptype allow-list** — `popSelection` params carry
+   `accepts: [...]` (e.g. `["flow","live","clust","region"]`; region basis adds `"track","trackclust"`).
+   The function states exactly what it takes; supersedes the coarse `popScope` (kept back-compatible).
+   Matches the R per-widget popType / `showAll`.
+2. **Grouped, labelled selection (universal)** — each population option gains `granularity` (cell/track)
+   + `category` (gated / clustered / region / tracked / aggregated), derived backend-side from
+   `pop_type`+`is_track_pop`. The chip UI groups under headers (*Cells · Gated*, *Cells · Clustered*,
+   *Cells · Regions*, *Tracks · Gated*, *Tracks · Clustered*). Applies to every popSelection.
+3. **Aggregated cells → a reusable population** — `detectAggregates`/`aggregatesMeshes` write the
+   `<popType>.cell.is.aggregate` column AND auto-define an "aggregated" filtered pop (filter on that
+   column, `> 0`) under the input pop, so it flows into any downstream `popSelection` — the R
+   lazy-predicate model (`filterMeasure`/`filterFun`/`filterValues`, resolved at read by `pop_df`),
+   auto-created from the cutoff rather than hand-defined.
+
+Build: backend enumeration by explicit poptype list + category/granularity tags + API `accepts` param
+(testable) → aggregated-pop auto-creation (testable) → frontend grouped renderer + `accepts` (typecheck)
+→ migrate task JSONs to `accepts`. `popScope` stays working through the transition.
+
 ### Decision 12 — two module pages, both REPL-runnable
 
 **Spatial Analysis** and **Region Clustering** are separate first-class pages (like segment/track/gate),
