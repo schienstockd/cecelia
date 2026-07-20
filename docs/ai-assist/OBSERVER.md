@@ -41,6 +41,7 @@ get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage
 get_repl_api              → notebook/REPL data-access surface: read accessors + live docstrings + cookbook (Phase 2)
+get_session_briefing      → chat startup context: name/count + flagged images + recent lab log (Phase 2; call first)
 ```
 
 **Write (Phase 1 — lab log only):**

@@ -13,16 +13,19 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
   return [
     `I'm working in the Cecelia project ${proj}.`,
     ``,
-    `You have the cecelia-observer MCP tools — read-only access to this project. They cover its state ` +
-      `(get_project_info, list_images, get_task_history, get_task_log/get_recent_logs), how the data ` +
-      `was produced (get_analysis_lineage, get_chains), the analysis itself (get_populations, ` +
-      `get_measure_summary, get_behaviour_summary, get_cluster_summary), cross-set QC (get_cohort_qc), ` +
-      `and the lab log (read_lab_log). Read only — do not append to the lab log unless I ask.`,
+    `You have the cecelia-observer MCP tools — read-only access to this project. They cover a session ` +
+      `briefing (get_session_briefing), its state (get_project_info, list_images, get_task_history, ` +
+      `get_task_log/get_recent_logs), how the data was produced (get_analysis_lineage, get_chains), the ` +
+      `analysis itself (get_populations, get_measure_summary, get_behaviour_summary, get_cluster_summary), ` +
+      `cross-set QC (get_cohort_qc), and the lab log (read_lab_log). Read only — do not append to the lab ` +
+      `log unless I ask.`,
     ``,
-    `Don't dive in yet. Get your bearings with a quick get_project_info, then ask me which direction ` +
-      `I'd like to take — for example: QC the workflow (the cohort numbers for what just ran), look ` +
-      `for something that's off across the set, understand the processing pipeline, or go deeper into ` +
-      `the analysis (populations, phenotype/motility, behaviour, clustering). Then follow my lead.`,
+    `Don't dive in yet. Call get_session_briefing first to get oriented — it returns the project name + ` +
+      `image count, which images are flagged (QC), and recent lab-log entries. Open with what stands out ` +
+      `(e.g. "3 of 12 images flagged; 2 have too few tracks"), then ask me which direction I'd like to ` +
+      `take — for example: QC the workflow (the cohort numbers for what just ran), look for something ` +
+      `that's off across the set, understand the processing pipeline, or go deeper into the analysis ` +
+      `(populations, phenotype/motility, behaviour, clustering). Then follow my lead.`,
     ``,
     `If the cecelia-observer MCP tools are not available in this session, just tell me — do not try ` +
       `to install, register, or configure anything.`,

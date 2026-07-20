@@ -348,6 +348,38 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    # ── Session briefing + all_qc_docs (Observer Phase 2 §2) ─────────────────────
+    @testset "Session briefing + all_qc_docs" begin
+        proj = create_project!(name="brief-$(rand(1000:9999))", kind="static")
+        s = add_set!(proj; name="set-A")
+        img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+        # suppress the calibration fallback (these fixtures have no PhysicalSize) by persisting an
+        # empty omezarr QC doc — so the only flag is the one we add explicitly. Also tests "persisted wins".
+        for im in (img1, img2)
+            write_qc(im, "importImages.omezarr", "default", Dict{String,Any}[])
+        end
+        write_qc(img1, "tracking.bayesian_tracking", "default",
+                 [qc_finding("warn", "few_tracks", "Few tracks", "Only 5 tracks")])
+        append_lab_log!(proj, "User", ["started tracking run"])
+
+        b = session_briefing(proj)
+        @test b.projectUid == proj.uid && b.projectName == proj.name && b.imageCount == 2
+        uids = [f.uid for f in b.flagged]
+        @test img1.uid in uids && !(img2.uid in uids)     # only the warn image flags; clean stays clean
+        f1 = b.flagged[findfirst(f -> f.uid == img1.uid, b.flagged)]
+        @test f1.worst == "warn" && f1.findings[1].short == "Few tracks"
+        @test length(b.recentLabLog) == 1 && b.recentLabLog[1].author == "User"
+        @test occursin("tracking", b.recentLabLog[1].summary)
+
+        # all_qc_docs: a fresh image (no persisted omezarr) gets the computed calibration fallback
+        img3 = add_image!(s; name="img-3", meta=Dict{String,Any}("ori_path"=>"/tmp/c.tif"))
+        @test haskey(all_qc_docs(img3), "importImages.omezarr/default")
+        @test haskey(all_qc_docs(img1), "importImages.omezarr/default")   # persisted present too
+
+        rm(proj.root; recursive=true)
+    end
+
     # ── Lockfile (naive guard) ──────────────────────────────────────────────────
     @testset "with_transaction" begin
         proj     = create_project!(name="lock-test-$(rand(1000:9999))", kind="static")

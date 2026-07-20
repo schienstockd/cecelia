@@ -179,6 +179,15 @@ class ClientTest(unittest.TestCase):
         self.assertTrue(req.full_url.endswith("/api/repl/api"))     # no query params
         self.assertEqual(out["api"][0]["name"], "pop_df")
 
+    def test_session_briefing_builds_url(self):
+        self.assertIn(("GET", "/api/observer/briefing"), ALLOWED_ROUTES)
+        with _patch_urlopen({"projectUid": "p", "flagged": [], "recentLabLog": []}) as u:
+            out = self.c.get_session_briefing("p")
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/observer/briefing?", url)
+        self.assertIn("projectUid=p", url)
+        self.assertEqual(out["projectUid"], "p")
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:

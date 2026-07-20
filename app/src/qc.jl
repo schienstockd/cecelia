@@ -66,6 +66,20 @@ function read_all_qc(img::CciaImage)
     out
 end
 
+# All QC docs for an image AS THE USER SEES THEM: the persisted sidecars (read_all_qc) PLUS a computed
+# calibration fallback for images imported before metadata QC was banked — so the flag here matches the
+# image table's indicator. Persisted wins when present. ONE source for the API image payload, the
+# session briefing, and any severity roll-up (don't re-merge these two elsewhere).
+function all_qc_docs(img::CciaImage)
+    docs = read_all_qc(img)
+    key  = "importImages.omezarr/" * VERSIONED_DEFAULT_VAL
+    if !haskey(docs, key)
+        docs[key] = Dict{String,Any}("funName" => "importImages.omezarr",
+            "valueName" => VERSIONED_DEFAULT_VAL, "findings" => metadata_qc_findings(img.meta))
+    end
+    docs
+end
+
 # ── Image calibration QC (metadata warnings) ─────────────────────────────────────
 # The image's physical-size/timing calibration is a QC concern like any other: missing or
 # untrustworthy values get advisory `warn` findings under `importImages.omezarr`, so ONE source

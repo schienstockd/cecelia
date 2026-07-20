@@ -276,6 +276,20 @@ def get_chains(project_uid: str) -> dict:
 
 
 @mcp.tool()
+def get_session_briefing(project_uid: str) -> dict:
+    """Startup context for THIS session — call this FIRST when a chat begins, so you're oriented without
+    the user re-explaining. Returns:
+      - `projectName`, `imageCount`
+      - `flagged`: images with a warn/fail QC finding (same source as the app's image table) —
+        `[{uid, name, worst: warn|fail, findings: [{level, short}]}]`
+      - `recentLabLog`: entries from the last 7 days, newest-first — `[{date, author, summary}]`
+
+    Use it to open with what matters ("3 of 12 images flagged; 2 have too few tracks") and to pick up
+    where the last session left off (the lab log). Then ask the user which direction to take. Read-only."""
+    return _client.get_session_briefing(project_uid)
+
+
+@mcp.tool()
 def get_repl_api() -> dict:
     """The Cecelia REPL / notebook data-access surface — read THIS before writing any `using Cecelia`
     code (a Pluto notebook, a REPL snippet). It is the ground truth for the interface; do not guess
