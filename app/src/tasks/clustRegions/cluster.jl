@@ -38,32 +38,13 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
     df = pop_df(imgs, uids, pop_type, pops; pop_cols = String[], granularity = :cell)
     nrow(df) == 0 && (on_log("[ERROR] clustRegions: no cells for basis pops=$(pops)"); return nothing)
 
-    # basis population = a (value_name, pop) PAIR → a stable 0-based code (the composition columns).
-    # Keying on the pair distinguishes e.g. B/qc from T/qc (same pop name in different segmentations)
-    # AND different gates within one segmentation. Labelled "value_name<pop>" (pop already starts "/").
-    basis_pairs = sort(unique([(String(r.value_name), String(r.pop)) for r in eachrow(df)]))
-    basis = [string(vn, p) for (vn, p) in basis_pairs]
-    code_of = Dict(basis_pairs[i] => i - 1 for i in eachindex(basis_pairs))
+    # basis populations (value_name, pop) pairs + per-segment codes — shared resolver (spatial.jl)
+    basis, segments, phys = _basis_segments(imgs, df)
     length(basis) < 2 &&
         (on_log("[ERROR] clustRegions: need ≥2 basis populations to form a composition (got $(basis))"); return nothing)
+    isempty(segments) && (on_log("[ERROR] clustRegions: no segments resolved"); return nothing)
     on_log("[INFO] clustRegions: $(length(imgs)) image(s), basis=$(basis), suffix=$suffix")
     on_progress(2, 4)
-
-    # ── one segment per (uID, value_name): labels + their basis-pop codes ──
-    img_by_uid = Dict(img.uid => img for img in imgs)
-    phys = Dict{String,Any}()
-    segments = Vector{Dict{String,Any}}()
-    for g in groupby(df, [:uID, :value_name])
-        uid = string(first(g.uID)); vn = string(first(g.value_name))
-        img = get(img_by_uid, uid, nothing); img === nothing && continue
-        haskey(phys, uid) || (phys[uid] = first(img_physical_sizes(img)))   # [sz, sy, sx]
-        push!(segments, Dict{String,Any}(
-            "uID" => uid, "valueName" => vn,
-            "propsPath" => img_label_props_path(img, vn),
-            "labels" => Int.(g.label),
-            "popCodes" => [code_of[(vn, String(p))] for p in g.pop]))
-    end
-    isempty(segments) && (on_log("[ERROR] clustRegions: no segments resolved"); return nothing)
 
     qc_out_path = joinpath(task_run_dir(imgs[1]._dir), "region_qc.json")
     task_params = Dict{String,Any}(

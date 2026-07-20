@@ -22,7 +22,6 @@ import numpy as np
 import pandas as pd
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-from cecelia.utils.label_props_utils import LabelPropsView
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.spatial_utils as spatial_utils
 import cecelia.utils.clustering_utils as clustering_utils
@@ -53,29 +52,11 @@ def run(params):
 
     comp_blocks, obs_blocks = [], []
     for uid, segs in by_uid.items():
-        coords_list, code_list, obs_list = [], [], []
-        scale = np.asarray(phys.get(uid, [1.0, 1.0, 1.0]), dtype=float)
-        for seg in segs:
-            view = LabelPropsView(seg["propsPath"]).only_centroid_cols().filter_by_label(seg["labels"])
-            d = view.as_df(); ccols = view.centroid_columns(); view.close()
-            if d.shape[0] == 0:
-                continue
-            code_map = {int(l): int(c) for l, c in zip(seg["labels"], seg["popCodes"])}
-            codes = np.array([code_map[int(l)] for l in d["label"]], dtype=np.int64)
-            coords = d[ccols].to_numpy(dtype=np.float64) * scale[-len(ccols):].reshape(1, -1)
-            coords_list.append(coords)
-            code_list.append(codes)
-            obs_list.append(pd.DataFrame({"uID": uid, "valueName": seg["valueName"],
-                                          "label": d["label"].to_numpy()}))
-        if not coords_list:
+        a, codes_all, obs_all = spatial_utils.build_pooled_image_graph(
+            segs, phys.get(uid, [1.0, 1.0, 1.0]), method=method, radius=radius, n_neighs=k)
+        if a is None:
             continue
-        coords_all = np.vstack(coords_list)
-        codes_all = np.concatenate(code_list)
-        obs_all = pd.concat(obs_list, ignore_index=True)
-
-        a = ad.AnnData(coords_all.astype(np.float32))
-        a.obsm["spatial"] = coords_all
-        spatial_utils.build_spatial_graph(a, method=method, radius=radius, n_neighs=k)
+        obs_all.insert(0, "uID", uid)
         comp = spatial_utils.neighbourhood_composition(
             a.obsp["spatial_connectivities"], codes_all, n_basis)
         m = spatial_utils.graph_metrics(a)

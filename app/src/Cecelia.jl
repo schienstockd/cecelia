@@ -85,7 +85,7 @@ export CellposeSegment
 export MeasureLabels
 export BayesianTracking, TrackMeasures
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions
+export CellNeighbours, ClustRegions, NeighbourStats
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
 export CropImage
@@ -158,6 +158,7 @@ include("tasks/behaviour/hmm_transitions.jl")
 include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
+include("tasks/spatialAnalysis/neighbourStats.jl")
 include("tasks/clustRegions/cluster.jl")
 include("tasks/task_registry.jl")
 include("tasks/custom_modules.jl")

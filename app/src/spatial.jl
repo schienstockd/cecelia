@@ -10,9 +10,34 @@
 # Outputs are FLAT, interpretable DataFrames (Decision 9): one row per region / population, with counts
 # and fractions — MCP-friendly ("CD8 cells are 42% in region 3"), never a raw matrix.
 
-using DataFrames: DataFrame, groupby, combine, nrow, rename!, sort!, dropmissing, names
+using DataFrames: DataFrame, groupby, combine, nrow, rename!, sort!, dropmissing, names, eachrow
 
 _region_col(suffix::AbstractString) = "regions.$(suffix)"
+
+# Shared basis resolution for spatial tasks that pool cells across segmentations (clustRegions,
+# spatialAnalysis.neighbourStats). Given `df` = a pooled `pop_df` result (cols uID, value_name, label,
+# pop), assign each cell a 0-based code for its (value_name, pop) PAIR — so B/qc and T/qc are distinct
+# populations across segmentations. Returns (basis names, per-(uID,value_name) segment dicts with
+# labels + popCodes, physical sizes per uID). One implementation, used by every pooled-graph task.
+function _basis_segments(imgs, df::DataFrame)
+    basis_pairs = sort(unique([(String(r.value_name), String(r.pop)) for r in eachrow(df)]))
+    basis = [string(vn, p) for (vn, p) in basis_pairs]
+    code_of = Dict(basis_pairs[i] => i - 1 for i in eachindex(basis_pairs))
+    img_by_uid = Dict(img.uid => img for img in imgs)
+    phys = Dict{String,Any}()
+    segments = Vector{Dict{String,Any}}()
+    for g in groupby(df, [:uID, :value_name])
+        uid = string(first(g.uID)); vn = string(first(g.value_name))
+        img = get(img_by_uid, uid, nothing); img === nothing && continue
+        haskey(phys, uid) || (phys[uid] = first(img_physical_sizes(img)))
+        push!(segments, Dict{String,Any}(
+            "uID" => uid, "valueName" => vn,
+            "propsPath" => img_label_props_path(img, vn),
+            "labels" => Int.(g.label),
+            "popCodes" => [code_of[(vn, String(p))] for p in g.pop]))
+    end
+    (basis, segments, phys)
+end
 
 """
     region_membership(img, query_pop, suffix; value_name=nothing) -> DataFrame

@@ -661,6 +661,15 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
     end
 
+    @testset "Param validation — NeighbourStats" begin
+        @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
+        @test task_scope(NeighbourStats()) == "image"
+        @test_throws ParamValidationError validate_params(
+            NeighbourStats(), Dict{String,Any}("neighbourRadius" => 5000))
+        @test_throws ParamValidationError validate_params(
+            NeighbourStats(), Dict{String,Any}("nNeighbours" => 0))
+    end
+
     @testset "Param validation — ClustRegions" begin
         @test _task_from_fun_name("clustRegions.cluster") isa ClustRegions
         @test task_scope(ClustRegions()) == "set"              # set-scope (regions comparable across set)
