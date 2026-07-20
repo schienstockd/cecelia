@@ -641,6 +641,15 @@ function _cluster_pop_vn(img, pop_type, value_name, cluster_suffix, granularity)
     isempty(cc) ? value_name : first(cc)
 end
 
+"""
+    plot_summary_data(img, pop_type, pops, chart_type; measure, granularity, …) -> NamedTuple
+    plot_summary_data(imgs, uids, pop_type, pops, chart_type; …)                 -> NamedTuple
+
+Compute the data behind an analysis-board **summary plot** (histogram/box/violin/bar/…) for `pops` and
+a `measure`, from `pop_df`. Returns the plot-ready series (not a figure). The vector form pools the
+same population across images (tagged by `uID`). Use it to reproduce a board plot's numbers in a
+notebook; pick `measure` from the population's columns (`pop_df` / `get_measure_summary`).
+"""
 function plot_summary_data(img::CciaImage, pop_type::AbstractString, pops, chart_type::AbstractString;
                            value_name::Union{AbstractString,Nothing}=nothing,
                            granularity::Symbol=:cell, measure::Union{AbstractString,Nothing}=nothing,

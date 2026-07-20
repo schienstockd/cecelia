@@ -76,6 +76,12 @@ end
 # Generic value_name checks over a versioned property field (default `label_props` = the segmentations).
 # It's just "does this versioned field carry this value_name" — reusable wherever a feature must know
 # whether an image has a given value_name before acting on it (e.g. copying gating across images).
+"""
+    img_value_names(img::CciaImage; field = :label_props) -> Vector{String}
+
+The value_names on an image for a versioned field — by default the segmentation names (the keys of the
+`label_props` field). These are the `value_name`s you pass to `pop_df` / `label_props` / `track_props`.
+"""
 img_value_names(img::CciaImage; field::Symbol = :label_props)::Vector{String} =
     versioned_keys(getfield(img, field))
 img_has_value_name(img::CciaImage, value_name::AbstractString; field::Symbol = :label_props)::Bool =

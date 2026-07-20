@@ -140,6 +140,15 @@ class ClientTest(unittest.TestCase):
         self.assertNotIn("imageUid", url)                          # project-level: no scope params
         self.assertNotIn("setUid", url)
 
+    def test_repl_api_is_an_allowed_project_independent_get(self):
+        self.assertIn(("GET", "/api/repl/api"), ALLOWED_ROUTES)
+        with _patch_urlopen({"api": [{"name": "pop_df"}], "doc": "cookbook"}) as u:
+            out = self.c.get_repl_api()
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "GET")
+        self.assertTrue(req.full_url.endswith("/api/repl/api"))     # no query params
+        self.assertEqual(out["api"][0]["name"], "pop_df")
+
     def test_recent_logs_is_an_allowed_get(self):
         self.assertIn(("GET", "/api/logs/recent"), ALLOWED_ROUTES)
         with _patch_urlopen({"logs": [{"level": "error", "message": "boom"}]}) as u:

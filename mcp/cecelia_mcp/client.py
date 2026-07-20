@@ -35,6 +35,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/analysis/behaviour"),  # HMM state distribution + transition counts
         ("GET", "/api/analysis/clusters"),  # per clustering run: n clusters, sizes, largest fraction, features
         ("GET", "/api/analysis/chains"),  # whiteboard chains: wired templates (DAG) + recent runs
+        ("GET", "/api/repl/api"),        # notebook/REPL data-access surface: accessors + docstrings + cookbook
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
@@ -156,6 +157,10 @@ class CeceliaClient:
 
     def get_chains(self, project_uid: str):
         return self._analysis_summary("/api/analysis/chains", project_uid)
+
+    def get_repl_api(self):
+        # Project-independent: the notebook/REPL data-access surface (accessors + docstrings + cookbook).
+        return self._request("GET", "/api/repl/api")
 
     def read_lab_log(self, project_uid: str):
         return self._request("GET", "/api/lablog", {"projectUid": project_uid})

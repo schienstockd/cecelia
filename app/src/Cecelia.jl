@@ -17,7 +17,7 @@ export versioned_get_field, versioned_set_field!, versioned_keys, read_ccid_raw
 export CciaImage, CciaSet, CciaProject
 export save!
 export load_project, init_object
-export create_project!, add_image!, add_set!, images, sets
+export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!
 export img_filepath, img_zero_dir, img_physical_sizes, image_included
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
@@ -172,8 +172,10 @@ include("ai/populations.jl")
 include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")
 include("ai/chains.jl")
+include("ai/repl_api.jl")
 export analysis_lineage, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export chains_summary
+export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,
