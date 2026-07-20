@@ -148,11 +148,17 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
         n_comps = min(50, adata.n_vars - 1, adata.n_obs - 1)
         if n_comps >= 2:
             import harmonypy
+            import torch
             sc.pp.pca(adata, n_comps=n_comps, random_state=random_state)
+            # Pin harmonypy's torch device: with device=None it auto-picks cuda→mps→cpu, and Harmony
+            # on Apple's MPS backend SEGFAULTS (killed test-py on the macOS CI runner). Use CUDA where
+            # it's real, CPU otherwise — never MPS. NOT torch_device() (gpu_utils), which returns mps.
+            # (Harmony runs on the ≤50-PC matrix, so CPU is no meaningful perf loss.)
+            harmony_device = "cuda" if torch.cuda.is_available() else "cpu"
             # call run_harmony directly (not scanpy's harmony_integrate): the wrapper transposes
             # Z_corr assuming the old (d, N) layout, but harmonypy ≥0.2 returns (N, d) → shape error.
             # Orient to (n_obs, n_pcs) ourselves so it's robust across harmonypy versions.
-            ho = harmonypy.run_harmony(adata.obsm["X_pca"], adata.obs, [batch_key])
+            ho = harmonypy.run_harmony(adata.obsm["X_pca"], adata.obs, [batch_key], device=harmony_device)
             Z = np.asarray(ho.Z_corr)
             if Z.shape[0] != adata.n_obs and Z.shape[1] == adata.n_obs:
                 Z = Z.T
