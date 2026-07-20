@@ -102,6 +102,7 @@ export const useGatingStore = defineStore('gating', () => {
 
   const tree      = ref<PopTree>({ value_name: 'default', pop_type: 'flow', populations: [] })
   const columns   = ref<string[]>([])           // gateable feature columns (raw var names)
+  const obsColumns = ref<string[]>([])          // per-cell obs measures (regions.*/clusters.*/hmm.*/is.aggregate/speed…) — filter-pop measures
   const channels  = ref<string[]>([])           // intensity columns, e.g. mean_intensity_0 (ordered)
   const channelNames = ref<string[]>([])         // display names aligned to `channels`
   const valueNames = ref<string[]>([])
@@ -196,8 +197,10 @@ export const useGatingStore = defineStore('gating', () => {
       const res = await fetch(`/api/gating/channels?${_params()}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as { columns: string[]; channels?: string[]; channelNames?: string[]
-        valueNames: string[]; valueName?: string; cellMeasures?: string[]; trackAggregates?: string[] }
+        valueNames: string[]; valueName?: string; cellMeasures?: string[]; trackAggregates?: string[]
+        obsColumns?: string[] }
       columns.value = d.columns ?? []
+      obsColumns.value = d.obsColumns ?? []
       // track gating returns no intensity channels — `columns` are the (motility) track axes; flow
       // returns intensity channels + display names. cellMeasures/trackAggregates are track-only.
       channels.value = d.channels ?? []
@@ -319,7 +322,7 @@ export const useGatingStore = defineStore('gating', () => {
   const clearNapariSelection = () => _napari('/api/napari/stop-selection', true)
 
   return {
-    imageUid, valueName, popType, mirrorUids, tree, columns, channels, channelNames, valueNames,
+    imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,

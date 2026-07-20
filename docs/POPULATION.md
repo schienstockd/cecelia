@@ -123,6 +123,16 @@ cluster column), never written into the H5AD; only the *definition* (which IDs) 
 evaluates over the cell table (`:cell`), `trackclust` over `track_props` (`:track`, with
 expand-to-cells for `:cell`) — exactly mirroring `flow` and `track` respectively.
 
+**User-defined filter populations (compound).** The same stored-filter-pop mechanism is exposed to the
+user for ANY obs/var measure via the PopulationManager "New filter population" form: name + parent +
+colour + N conditions. Multiple conditions are stored on one `Population` as `filter_conditions` — a
+list of AND-ed `(; measure, fun, values)` — with `conditions[1]` mirrored onto the single
+`filter_measure/fun/values` for back-compat (absent `filter_conditions` = the plain single filter;
+existing sidecars keep working). `recompute!` ANDs each condition; a missing column degrades the whole
+pop to empty + a warning, never a crash. Created/edited via `pop/add`·`pop/update` `filter.conditions`.
+Filter pops are badged in the manager to distinguish them from hand-drawn gates — one manager, not two
+(SPATIAL_REGIONS_PLAN Decision 15).
+
 Clustering is **set-scope**, so a cluster pop is written **set-wide**: the same filter pop lands in
 every clustered image's sidecar (the filter is image-independent and cluster IDs are comparable
 across the run). Membership of a run is recorded as `partOf` (the clustered uIDs) in the
