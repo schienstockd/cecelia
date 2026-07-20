@@ -93,8 +93,10 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    "suggestion not instruction", current-state only). Superseded the planned `read_module_fun_params`
    exposure — the run log IS the param source now (one place, not a second config read).
    *(api/ history route + observer_prompt.jl + test-api/pkg + docs)*
-4. **`get_session_briefing` MCP tool** + `buildChatPrompt` update to call it first.
-   *(mcp/ + frontend/ chatHandoff.ts + test-frontend)*
+4. **`get_session_briefing` MCP tool** — ✅ **done**: `session_briefing(proj)` (name/count + flagged
+   images via the new canonical `all_qc_docs` merge + recent lab log) → `GET /api/observer/briefing`
+   → `get_session_briefing` tool; `buildChatPrompt` now tells Claude to call it first.
+   *(app/ briefing.jl + qc.jl all_qc_docs + api/ + mcp/ + frontend/ chatHandoff.ts + test-pkg/api/mcp/frontend)*
 5. **Notebook generation guidance** — document the collaborator-request→notebook workflow so
    Claude generates a correct `using Cecelia` Pluto notebook via the existing notebooks
    registry/snapshot system; verify the generated patterns run. *(docs/ + mcp/ prompt; leans

@@ -16,6 +16,12 @@ describe('buildChatPrompt', () => {
     expect(p).not.toMatch(/review my recent analysis activity and QC/i)
   })
 
+  it('tells Claude to pull the session briefing first', () => {
+    const p = buildChatPrompt('NRUBxU')
+    expect(p).toContain('get_session_briefing')
+    expect(p).toMatch(/get_session_briefing first/i)   // oriented before diving in
+  })
+
   it('is paste-and-run: no placeholder, no relative doc path, tells it not to self-setup', () => {
     const p = buildChatPrompt('NRUBxU')
     expect(p).not.toContain('<')            // no <describe what you need> placeholder

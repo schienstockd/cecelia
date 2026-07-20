@@ -224,6 +224,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_analysis_chains(req)
         elseif path == "/api/repl/api"
             api_repl_api(req)
+        elseif path == "/api/observer/briefing"
+            api_observer_briefing(req)
         elseif path == "/api/lablog"
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"

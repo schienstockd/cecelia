@@ -1086,6 +1086,12 @@ api_analysis_clusters(req::HTTP.Request) =
 api_analysis_chains(req::HTTP.Request) =
     _observer_summary_route(req, (p, _i, _s) -> chains_summary(p))
 
+# GET /api/observer/briefing?projectUid — the observer SESSION BRIEFING (Observer Phase 2 §2): a small
+# startup context (project name + image count, flagged images, recent lab log) a fresh Chat-to-Claude
+# session pulls first so the user need not re-explain. Project-level, READ-ONLY. Backs get_session_briefing.
+api_observer_briefing(req::HTTP.Request) =
+    _observer_summary_route(req, (p, _i, _s) -> session_briefing(p))
+
 # GET /api/repl/api — the notebook/REPL data-access surface (Observer Phase 2 foundation): the
 # NOTEBOOK_API accessors with their live docstrings, plus the docs/REPL.md cookbook when present. Backs
 # the MCP get_repl_api tool so Claude can generate correct `using Cecelia` notebooks without guessing
@@ -1611,21 +1617,10 @@ function _meta_str(meta::AbstractDict, key::String)
     isnothing(v) ? nothing : string(v)
 end
 
-# QC docs for the payload. Persisted sidecars (read_all_qc) PLUS a fallback calibration doc computed
-# live from the current meta when none is persisted yet — so images imported before metadata QC was
-# banked still show their calibration warnings in the table (and a `write_metadata_qc!` on the next
-# import/resync/edit persists the same thing for MCP/lab-log/whiteboard). Persisted wins when present
-# (it's kept fresh by the wired edit paths), so a future richer importImages.omezarr doc isn't clobbered.
-function _image_qc_payload(img::CciaImage)
-    docs = Cecelia.read_all_qc(img)
-    key  = "importImages.omezarr/" * Cecelia.VERSIONED_DEFAULT_VAL
-    if !haskey(docs, key)
-        docs[key] = Dict{String,Any}("funName" => "importImages.omezarr",
-            "valueName" => Cecelia.VERSIONED_DEFAULT_VAL,
-            "findings" => Cecelia.metadata_qc_findings(img.meta))
-    end
-    docs
-end
+# QC docs for the payload — persisted sidecars + the computed calibration fallback (see all_qc_docs).
+# ONE canonical merge in the package (Cecelia.all_qc_docs), shared with the observer session briefing,
+# so the table indicator and the briefing's flagged-list can never diverge.
+_image_qc_payload(img::CciaImage) = Cecelia.all_qc_docs(img)
 
 # Frontend-shaped payload for one image, sourced from the model. Response shaping
 # (camelCase, field selection) is the API's job; data access goes through CciaImage

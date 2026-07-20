@@ -953,6 +953,32 @@ end
     end
 end
 
+@testset "API: observer briefing" begin
+    conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
+    had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
+    tmp  = mktempdir(); dirs["projects"] = tmp
+    _b(t) = api_observer_briefing(HTTP.Request("GET", "/api/observer/briefing" * t))
+    try
+        proj = create_project!(name = "api-brief", kind = "static")
+        s    = add_set!(proj; name = "set-A")
+        img  = add_image!(s; name = "i1", meta = Dict{String,Any}("ori_path" => "/tmp/x.tif"))
+        write_qc(img, "importImages.omezarr", "default", Dict{String,Any}[])   # suppress calibration fallback
+        write_qc(img, "segment.measureLabels", "default",
+                 [qc_finding("fail", "zero_cells", "No cells", "Segmentation produced 0 cells")])
+        @test _b("")[1] == 400                                # projectUid missing
+        @test _b("?projectUid=nope")[1] == 404
+        st, body = _b("?projectUid=$(proj.uid)")
+        @test st == 200
+        d = JSON3.read(body)
+        @test d.projectUid == proj.uid && d.imageCount == 1
+        @test d.flagged[1].uid == img.uid && String(d.flagged[1].worst) == "fail"
+        @test String(d.flagged[1].findings[1].short) == "No cells"
+    finally
+        had ? (dirs["projects"] = old) : delete!(dirs, "projects")
+        rm(tmp; recursive = true, force = true)
+    end
+end
+
 @testset "API: repl api surface" begin
     # Project-independent: the notebook/REPL data-access surface backing the get_repl_api MCP tool.
     st, body = api_repl_api(HTTP.Request("GET", "/api/repl/api"))

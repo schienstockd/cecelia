@@ -23,7 +23,7 @@ export img_filepath, img_zero_dir, img_physical_sizes, image_included
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
-export write_qc, read_qc, read_all_qc, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
+export write_qc, read_qc, read_all_qc, all_qc_docs, qc_finding, qc_canvas_expansion, qc_path, track_count_metrics
 export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, read_all_cohort_qc, cohort_qc_path, COHORT_METRICS, register_cohort_metrics!
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
@@ -173,8 +173,9 @@ include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")
 include("ai/chains.jl")
 include("ai/repl_api.jl")
+include("ai/briefing.jl")
 export analysis_lineage, populations_summary, measure_summary, behaviour_summary, cluster_summary
-export chains_summary
+export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
