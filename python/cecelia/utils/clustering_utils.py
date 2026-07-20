@@ -210,7 +210,8 @@ def cluster_seg_stats(seg_codes):
 
 
 # ── shared write-back (cells + tracks) ─────────────────────────────────────────────
-def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str = "clusters"):
+def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str = "clusters",
+                         extra_obs=None):
     """Split a pooled, clustered AnnData back per segment and write the cluster assignment
     into each segment's labelProps via `LabelPropsView` (the sanctioned writer — CLAUDE.md).
 
@@ -233,6 +234,13 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
     Writes integer-code `clusters.{suffix}` obs (the new stack auto-detects integer obs as a
     categorical code set; a `clusters.*` name-rule pins it categorical above the level cap — see
     track_props.jl) and, when present, `obsm['X_umap.{suffix}']`.
+
+    `extra_obs` (optional): a dict `{colname: array}` of extra CONTINUOUS per-cell obs written
+    alongside, each array aligned to `adata.obs` row order and sliced per segment. Used by region
+    clustering to persist the neighbourhood-composition vectors (`spatial.comp.{basis}.{suffix}`) so
+    they become ordinary numeric measures — the region-composition heatmap then reuses the existing
+    cluster-heatmap (region × measures) with no new plot family (SPATIAL_REGIONS_PLAN Decision 16).
+    Names must NOT start with `clusters.`/`regions.` (that name-rule would pin them categorical).
 
     Returns a QC dict `{nClusters, nTotal, perSegment:[{uID, valueName, n, nClusters,
     largestClusterFrac}]}` — the run total plus each segment's cluster distribution (via
@@ -258,8 +266,11 @@ def split_back_and_write(adata, segments, suffix: str, log=None, col_prefix: str
         if not mask.any():
             continue
         sub_labels = label_arr[mask]
-        view = LabelPropsView(seg["propsPath"]).add_obs(
-            pd.DataFrame({"label": sub_labels, cluster_col: codes[mask]}))
+        obs_cols = {"label": sub_labels, cluster_col: codes[mask]}
+        if extra_obs:
+            for cname, arr in extra_obs.items():
+                obs_cols[cname] = np.asarray(arr)[mask]
+        view = LabelPropsView(seg["propsPath"]).add_obs(pd.DataFrame(obs_cols))
         if has_umap:
             view = view.add_obsm(umap_key, sub_labels, adata.obsm["X_umap"][mask])
         view.save()

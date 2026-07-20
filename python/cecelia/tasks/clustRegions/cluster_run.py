@@ -107,8 +107,16 @@ def run(params):
             axis="NONE", transformation="NONE",
             create_umap=create_umap, backend="auto", random_state=rs, batch_key=batch_key, log=log.log)
 
+    # ── persist the composition vectors as continuous per-cell measures (spatial.comp.{basis}.{suffix})
+    # so the region-composition heatmap reuses the cluster-heatmap (region × measures) — no new plot
+    # family (SPATIAL_REGIONS_PLAN Decision 16). "/" in a basis name → "_" for a clean column/label. ──
+    def _san(b):
+        return str(b).replace("/", "_").replace(" ", "_")
+    comp_obs = {f"spatial.comp.{_san(basis[j])}.{suffix}": X[:, j] for j in range(n_basis)}
+
     # ── write regions.{suffix} back per segmentation (shared writer, region column family) ──
-    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log, col_prefix="regions")
+    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log,
+                                               col_prefix="regions", extra_obs=comp_obs)
 
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:
