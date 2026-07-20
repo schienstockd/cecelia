@@ -42,6 +42,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **tracking_utils**: `BayesianTrackingUtils.track_objects` (btrack) + `write_track_props` (new `{vn}__tracks.h5ad`).
 - **clustering_utils**: shared Leiden engine (`find_populations` + `split_back_and_write`); used by both cluster runners.
 - **correction_utils**: AF + drift correction (drift shifts, AF channel correct, denoise/rolling-ball/top-hat).
+- **intensity_utils**: 16→8-bit rescale on import — per-channel stack histogram (`channel_histograms`), true-min/max or percentile window (`range_from_hist`), lazy uint8 rescale (`rescale_stack_to_uint8`), clip-stats QC. Used by `tasks/importImages/rescale_to_8bit_run.py`.
 - **dim_utils**: `DimUtils` — dimension-order/index/physical-size/slice reasoning off an ome-types OME object. Core dependency of most tasks.
 - **slice_utils**: numpy slice-tuple generators for tiled 2D/3D(+time) processing + downsample strides.
 - **napari_utils**: project-agnostic napari layer builders (`add_image`/`add_labels`/`add_tracks`), hex↔rgba, clip planes, view snapshot, movie recording, colour-by helpers. Imported by the bridge (and coastal).

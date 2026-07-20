@@ -17,11 +17,45 @@
       "tip": "Number of resolution levels in the image pyramid. Higher values allow smoother zooming for very large images. 2 is suitable for most images."
     },
     {
+      "key": "convertTo8bit",
+      "label": "Convert to 8-bit",
+      "type": "bool",
+      "default": false,
+      "tip": "Rescale 16-bit intensities to 8-bit on import (halves storage; mirrors the Fiji rescale-then-save-8-bit workflow). The 16-bit is transient and deleted — only the 8-bit is kept. Use for large low-dynamic-range acquisitions."
+    },
+    {
+      "key": "stageLocal",
+      "label": "Copy to local scratch first",
+      "type": "bool",
+      "default": false,
+      "tip": "Copy the source (and its companion files, e.g. Olympus OIR _000nn parts) to local disk before converting. Reading a multi-file format directly over a network share (SMB) is very slow — a bulk local copy first is far faster. The copy is deleted after import."
+    },
+    {
       "key": "advanced",
       "label": "Advanced",
       "type": "section",
       "collapsed": true,
       "params": [
+        {
+          "key": "rescaleLowPercentile",
+          "label": "8-bit low percentile",
+          "type": "float",
+          "min": 0,
+          "max": 50,
+          "default": 0,
+          "step": 0.1,
+          "tip": "Bottom of the per-channel intensity window when converting to 8-bit. 0 = the channel's true minimum. Raise it to clip a background floor."
+        },
+        {
+          "key": "rescaleHighPercentile",
+          "label": "8-bit high percentile",
+          "type": "float",
+          "min": 50,
+          "max": 100,
+          "default": 100,
+          "step": 0.1,
+          "tip": "Top of the per-channel intensity window when converting to 8-bit. 100 = the channel's true maximum (nothing clipped). Lower it (e.g. 99.9) only if a hot pixel pins the max and squashes the signal."
+        },
         {
           "key": "chunkSizeX",
           "label": "Chunk size X",

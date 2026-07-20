@@ -4375,6 +4375,61 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test isempty(fo)
         end
 
+        @testset "OIR companion-file staging" begin
+            # main .oir + its _000nn parts; a sibling image (Img2) and a non-numbered sibling
+            # (Img_processed — the exact case the old R version's loose pattern got wrong) must NOT be grabbed
+            names = ["Img.oir", "Img_00001.oir", "Img_00002.oir",
+                     "Img2.oir", "Img_processed.oir", "Other.oir", "notes.txt"]
+            @test Set(Cecelia._companion_files(names, "Img.oir")) ==
+                  Set(["Img.oir", "Img_00001.oir", "Img_00002.oir"])
+            # regex metacharacters in the stem (their `basal+NECA` bug): literal match, no injection
+            plus = ["basal+NECA.oir", "basal+NECA_00001.oir", "basal+NECB.oir"]
+            @test Set(Cecelia._companion_files(plus, "basal+NECA.oir")) ==
+                  Set(["basal+NECA.oir", "basal+NECA_00001.oir"])
+            # single self-contained file → just itself
+            @test Cecelia._companion_files(["a.tif", "b.tif"], "a.tif") == ["a.tif"]
+        end
+
+        @testset "rescale (16→8-bit) findings" begin
+            mk_ch(i; span = 100.0, clipHigh = 0.0, trueMax = 100, p999 = 100) =
+                Dict{String,Any}("index" => i, "rangeSpan" => span, "clipHighFrac" => clipHigh,
+                                 "trueMax" => trueMax, "p999" => p999)
+            meta = Dict{String,Any}("rescale8bit" => Dict{String,Any}("channels" => [
+                mk_ch(0),                                  # healthy → no finding
+                mk_ch(1; span = 0.0),                      # flat
+                mk_ch(2; clipHigh = 0.05),                 # clips bright signal
+                mk_ch(3; trueMax = 1000, p999 = 100),      # hot pixel (max ≫ p99.9)
+            ]))
+
+            fs    = Cecelia.rescale_qc_findings(meta)
+            codes = Dict(f["detail"]["channel"] => f["code"] for f in fs)
+            @test length(fs) == 3
+            @test !haskey(codes, 0)
+            @test codes[1] == "rescale.channel_flat"
+            @test codes[2] == "rescale.channel_clipped"
+            @test codes[3] == "rescale.hot_pixel"
+
+            m = Cecelia.rescale_metrics(meta)
+            @test m["nChannelsFlat"] == 1
+            @test m["nChannelsClipped"] == 1
+            @test !haskey(m, "nChannels")                 # channel count is a base import metric
+
+            # base import metric — present for EVERY import (from SizeC/SizeZ/SizeT)
+            bm = Cecelia.import_metrics(Dict{String,Any}("SizeC" => 4, "SizeZ" => 13, "SizeT" => 20))
+            @test bm == Dict{String,Any}("nChannels" => 4, "nZ" => 13, "nT" => 20)
+            @test Cecelia.import_metrics(Dict{String,Any}()) === nothing
+
+            # unconverted image (no rescale8bit) → no rescale findings, no rescale metric
+            @test isempty(Cecelia.rescale_qc_findings(Dict{String,Any}()))
+            @test Cecelia.rescale_metrics(Dict{String,Any}()) === nothing
+
+            # JSON3 round-trip — the real path (meta read back from ccid.json has Symbol keys)
+            rt     = JSON3.read(JSON3.write(meta))
+            rtmeta = Dict{String,Any}(String(k) => v for (k, v) in rt)
+            @test length(Cecelia.rescale_qc_findings(rtmeta)) == 3
+            @test Cecelia.rescale_metrics(rtmeta)["nChannelsFlat"] == 1
+        end
+
         @testset "count metrics" begin
             # pure: distinct tracks, mean cells/track, tracked-cell total; untracked = missing/NaN/≤0
             nt, ml, ntc = track_count_metrics([1, 1, 1, 2, 2, 0, -1, NaN, missing, 3])

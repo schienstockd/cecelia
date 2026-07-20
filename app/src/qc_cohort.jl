@@ -47,6 +47,11 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # region clustering (set-scope, one run): per-image region distribution — an image collapsed to
     # one region / a very different dominant-region fraction is an outlier. See clustRegions/cluster.jl.
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],
+    # import: nChannels/nZ/nT for every image (an odd channel count / dimensionality vs peers = wrong
+    # file or acquisition misconfig); nChannelsClipped/Flat only for convertTo8bit imports (an image
+    # that rescaled worse than its peers). Banked by qc.jl import_metrics + rescale_metrics. See
+    # docs/todo/IMPORT_RESCALE_PLAN.md.
+    "importImages.omezarr"           => ["nChannels", "nZ", "nT", "nChannelsClipped", "nChannelsFlat"],
 )
 
 """
