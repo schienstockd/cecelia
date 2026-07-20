@@ -107,8 +107,13 @@ Foundation first (everything leans on the REPL layer), then the features, panel 
    (the `app/src/plotDefinitions/*.json` registry — chartTypes/dataSource/scopeModes) — no new Julia.
    Allow-list + `get_available_plots(module)` client method + tool; `buildChatPrompt` names it.
    *(mcp/ + frontend/ + test-mcp/frontend + docs)*
-7. **In-app Claude overview panel** — static reference panel (what Claude can see / suggest /
-   create / cannot do / can write). Verified against real capabilities. *(frontend/)*
+7. **In-app Claude overview panel** — ✅ **done**: `ClaudeOverviewDialog.vue` (a brief, visual
+   how-to — two entry-point cards Ask/Chat + a sees/suggests/creates/can't grid + example prompts),
+   opened by a `?` button in the lab-log toolbar. Content in `lib/claudeOverview.ts` (tested). Built
+   on `BaseModal`. *(frontend/ + test-frontend + docs)*
+
+**Phase 2 complete** — all seven steps landed. Durable capability record lives in
+`docs/ai-assist/OBSERVER.md` (tool list) + `mcp/README.md`; this plan can be retired once promoted.
 
 Each step ships with its tests (`test-pkg`/`test-api`/`test-mcp`/`test-frontend`) and doc
 updates (`docs/ai-assist/OBSERVER.md`, `mcp/README.md`, `docs/API.md`, `docs/NOTEBOOKS.md`)

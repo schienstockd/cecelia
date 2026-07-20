@@ -12,6 +12,7 @@ import { useObserverStore } from '../stores/observer'
 import { useLabCaptureStore } from '../stores/labCapture'
 import { buildChatPrompt } from '../lib/chatHandoff'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
 import {
   authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteGroups,
   muteCategoryLabel, visibleEntries as computeVisibleEntries,
@@ -28,6 +29,7 @@ const correcting = ref(false)      // next submit is a [User — correction] blo
 const loading = ref(false)
 const busy = ref(false)            // an append is in flight
 const capturing = ref(false)       // an activity-capture is in flight
+const showClaudeOverview = ref(false)   // the "What can Claude do here?" how-to dialog
 const captureNote = ref('')        // transient result of the last manual capture
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
@@ -305,6 +307,10 @@ async function toggleMute(category: string) {
       <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
         <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
       </label>
+      <button class="ll-help" @click="showClaudeOverview = true"
+              v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
+        <i class="pi pi-question-circle" />
+      </button>
       <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
               @click="askClaude"
               v-tooltip.top="observerAvailable
@@ -439,6 +445,8 @@ async function toggleMute(category: string) {
         </div>
       </template>
     </div>
+
+    <ClaudeOverviewDialog v-if="showClaudeOverview" @close="showClaudeOverview = false" />
   </div>
 </template>
 
@@ -481,6 +489,11 @@ async function toggleMute(category: string) {
 /* brief "copied" flash on the Chat-to-Claude button (replaces the toast) */
 .ll-capture.copied { color: var(--cc-sev-ok); border-color: var(--cc-sev-ok); background: rgba(12, 163, 12, 0.1); }
 .ll-capture:disabled { opacity: 0.5; cursor: default; }
+.ll-help {
+  display: inline-flex; align-items: center; border: none; background: none;
+  color: var(--cc-text-dim); cursor: pointer; padding: 0.2rem; font-size: 0.85rem;
+}
+.ll-help:hover { color: var(--cc-accent); }
 .ll-auto { display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.7rem; color: var(--cc-text-dim); cursor: pointer; }
 .ll-model {
   font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;

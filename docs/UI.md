@@ -158,8 +158,9 @@ const emit = defineEmits<{ (e: 'close'): void }>()
 Host it with `v-if`: `<MyDialog v-if="show" @close="show = false" />`. Put dialog-specific CSS in the
 child's scoped `<style>`; the shell (overlay/box/header/footer) is BaseModal's — don't restyle it.
 Working examples: `PackagesDialog.vue` (toolbar + body), `PhysicalSizeDialog.vue` (`#title` slot +
-footer), `FileBrowser.vue` (toolbar + footer). *(An in-canvas overlay like `GateOverlay` is a
-different thing — that's `position:absolute` inside a plot, not a modal.)*
+footer), `FileBrowser.vue` (toolbar + footer), `ClaudeOverviewDialog.vue` (a static how-to — content
+from `lib/claudeOverview.ts`, opened by the `?` button in the lab-log toolbar). *(An in-canvas overlay
+like `GateOverlay` is a different thing — that's `position:absolute` inside a plot, not a modal.)*
 
 ### No native browser dialogs — use `ConfirmButton` for confirms
 
