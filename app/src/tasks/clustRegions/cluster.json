@@ -18,7 +18,7 @@
       "key": "basisPops",
       "label": "Population basis",
       "type": "popSelection",
-      "popScope": "cells",
+      "accepts": ["live", "clust", "region"],
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],
@@ -86,6 +86,20 @@
       "step": 1,
       "default": 5,
       "tip": "Number of regions for k-means."
+    },
+    {
+      "key": "integrateBatch",
+      "label": "Integrate across samples",
+      "type": "bool",
+      "default": false,
+      "tip": "Batch-correct the composition across images (Harmony on the sample/uID) before clustering, so region identities are comparable across a cohort instead of confounded by per-sample batch effects. Leiden only."
+    },
+    {
+      "key": "perTimepoint",
+      "label": "Per timepoint (live)",
+      "type": "bool",
+      "default": false,
+      "tip": "Live imaging: build the neighbourhood graph frame by frame, so a cell's region reflects only its own timepoint and can change over time (behaviour regions). Off = pool all timepoints into one graph (static images)."
     },
     {
       "key": "mergeUmap",

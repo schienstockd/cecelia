@@ -33,16 +33,18 @@ const cropStarting      = ref(false)   // crop-start in flight (napari building 
 const cropSaving        = ref(false)   // the cropImage scheduler task is running (new image being written)
 let   cropTaskId: string | null = null // its task id, to clear cropSaving on completion
 
-// per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust)
-// belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
+// per-pop-type population overlays as centroid POINTS. Only the CELL-grained pop types (flow, clust,
+// region) belong here: show-populations plots by cell label, whereas track/trackclust are track-grained
 // (membership is track_ids) — their napari viz is ribbons (the Tracks-ribbon toggle below /
 // per-segmentation directions), and trackclust ribbons are still to come. Layers are namespaced by
-// pop type in the bridge, so flow + clust coexist.
+// pop type in the bridge, so flow + clust + region coexist. resolve_pops is generic over pop_type, so
+// region (a filter on regions.{suffix}) resolves + colours its centroids like any other cell pop.
 // icons MATCH the sidebar module nav (Gate = pi-chart-scatter, Cluster cells = pi-palette,
-// Track = pi-share-alt, Cluster tracks = pi-sitemap) so a pop type reads the same everywhere.
+// Region = pi-map, Track = pi-share-alt, Cluster tracks = pi-sitemap) so a pop type reads the same.
 const POP_TYPES: { key: string; icon: string; label: string }[] = [
-  { key: 'flow',  icon: 'pi-chart-scatter', label: 'gating populations' },
-  { key: 'clust', icon: 'pi-palette',       label: 'cell-cluster populations' },
+  { key: 'flow',   icon: 'pi-chart-scatter', label: 'gating populations' },
+  { key: 'clust',  icon: 'pi-palette',       label: 'cell-cluster populations' },
+  { key: 'region', icon: 'pi-map',           label: 'spatial-region populations' },
 ]
 const trackVns          = ref<Record<string, boolean>>({})   // per-segmentation track-overlay visibility
 const colourByCol       = ref('')      // obs column to shade tracks + labels by ('' = default)

@@ -4,6 +4,7 @@ import { useLogStore } from './log'
 import { useProjectMetaStore } from './projectMeta'
 import { useProjectStore } from './project'
 import { useSettingsStore } from './settings'
+import { clusterMeasure } from '../utils/clusterMeasure'
 
 // Derived populations (e.g. `_tracked`, future clustering pops) own a reserved namespace:
 // leaf names beginning with `_`. Hand-drawn gates may not use that prefix — mirrors the backend
@@ -242,7 +243,7 @@ export const useGatingStore = defineStore('gating', () => {
   // Starts empty; the manager ticks IDs in via updatePop's filter patch. Set-wide via mirrorUids.
   const addClusterPop = (name: string, suffix: string, colour: string) =>
     _post('/api/gating/pop/add', { name, colour,
-      filter: { measure: `clusters.${suffix}`, fun: 'in', values: [], default_all: false } })
+      filter: { measure: clusterMeasure(popType.value, suffix), fun: 'in', values: [], default_all: false } })
   const setGate    = (path: string, gate: GateSpec) => _post('/api/gating/pop/set-gate', { path, gate })
   const deletePop  = (path: string)                  => _post('/api/gating/pop/delete', { path })
   const renamePop  = (path: string, newName: string) => _post('/api/gating/pop/rename', { path, newName })

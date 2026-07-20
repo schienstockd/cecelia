@@ -219,6 +219,99 @@ meshes) are addressed by *how* it's used, not by switching engines (Dominik rais
 Python-owns-geometry boundary, justified only if — *after* the pre-filter — mesh distance is still the
 measured bottleneck on large PhenoCycler volumes. Measure first.
 
+### Decision 13 — cohort batch integration via Harmony (2026-07-20)
+
+Region IDs must be comparable across a cohort, not confounded by per-sample batch effects — the
+cohort-integration idea from NicheCompass (Birk et al., *Nat Genet* 2025), applied to **composition
+vectors**, not their GNN (wrong modality for protein imaging + heavy deps; see the dismissal note
+below). Implemented **lightweight**: an optional `batch_key` in the shared `find_populations` engine
+runs Harmony (`harmonypy`, PCA→`run_harmony`) on the feature matrix before Leiden, clustering over the
+integrated embedding. `clustRegions` exposes it as `integrateBatch` (batch = `uID`); it also benefits
+cell/track clustering for free. Skipped (with a log) when <3 features (a ≤2-population composition is
+~1-D — integration is meaningless). NB `harmonypy` pinned `<1`: scanpy's `harmony_integrate` wrapper
+transposes `Z_corr` for the old (d,N) layout and breaks on harmonypy ≥0.2's (N,d) — so we call
+`run_harmony` directly and orient the output ourselves.
+
+**NicheCompass dismissed for direct import (2026-07-20):** its niche model is *signalling*-based
+(ligand-receptor gene programs, a graph-attention VAE) and needs spatial *transcriptomics*; not
+demonstrated on protein/antibody imaging (CODEX/IMC), which is Cecelia's core. Heavy deps (torch-geometric
++ gene-program DBs) cut against the Python-boundary stance. It benchmarks *against* the composition-based
+camp (CellCharter/GraphST) — which is what Cecelia does, and the modality-appropriate choice here. Only
+the cohort-integration idea was worth taking (this Decision). Revisit NicheCompass/CellCharter only if
+Cecelia invests in spatial-transcriptomics niches (the `stomics` vignette).
+
+### Decision 14 — clean population selection: `accepts` allow-list + grouped UI + aggregated pop (2026-07-20)
+
+The `popSelection` widget muddles all poptypes into one flat chip strip (and discards the `popType` the
+backend already sends). With flow/live/clust/trackclust/region now all live, this is confusing — and
+region-clustering basis must accept BOTH cells and tracks (gated + clustered + region). Redesign
+(Dominik's calls):
+
+1. **A function declares an explicit poptype allow-list** — `popSelection` params carry
+   `accepts: [...]` (e.g. `["flow","live","clust","region"]`; region basis adds `"track","trackclust"`).
+   The function states exactly what it takes; supersedes the coarse `popScope` (kept back-compatible).
+   Matches the R per-widget popType / `showAll`.
+2. **Grouped, labelled selection (universal)** — each population option gains `granularity` (cell/track)
+   + `category` (gated / clustered / region / tracked / aggregated), derived backend-side from
+   `pop_type`+`is_track_pop`. The chip UI groups under headers (*Cells · Gated*, *Cells · Clustered*,
+   *Cells · Regions*, *Tracks · Gated*, *Tracks · Clustered*). Applies to every popSelection.
+3. **Aggregated cells → a reusable population** — `detectAggregates`/`aggregatesMeshes` write the
+   `<popType>.cell.is.aggregate` column AND auto-define an "aggregated" filtered pop (filter on that
+   column, `> 0`) under the input pop, so it flows into any downstream `popSelection` — the R
+   lazy-predicate model (`filterMeasure`/`filterFun`/`filterValues`, resolved at read by `pop_df`),
+   auto-created from the cutoff rather than hand-defined.
+
+Build: backend enumeration by explicit poptype list + category/granularity tags + API `accepts` param
+(testable) → aggregated-pop auto-creation (testable) → frontend grouped renderer + `accepts` (typecheck)
+→ migrate task JSONs to `accepts`. `popScope` stays working through the transition.
+
+**BUILT** (commit 5297a75): `pop_category`, `population_accept_groups` (+ `population_scope_groups` shim),
+`ensure_filter_pop!`, `AGGREGATED_POP_NAME`; detectAggregates/aggregatesMeshes auto-create `_aggregated`;
+`/api/plots/populations?accepts=` + granularity/category on every path; frontend `popGroups.ts` grouped
+picker. Julia 1464, vitest 255. `clustRegions` accepts cells only for now — the track basis lands with
+behaviour regions (Phase 8 backend, when a track basis is verified).
+
+### Decision 15 — filter populations live in the existing PopulationManager (no separate manager)
+
+Dominik's call after weighing a separate "Filter Manager": **one manager, not two.** If storage is
+unified (a filter pop is just a `Population` in the per-poptype sidecar, resolved by `pop_df` like a
+gate — `ensure_filter_pop!` is the programmatic primitive), a second manager is only a filtered *view*
+behind an artificial boundary. So: add a **"New filter population"** affordance to the existing
+per-poptype `PopulationManager` (reused CRUD: `pop/add`·`update`·`delete`), and make that manager
+**embeddable** on other module pages for reach. Muddling (gates vs filters mixed for flow/track) is a
+**presentation** concern — badge/group filters distinctly in the list — not an architecture one.
+- **Compound filter** (the one model change): `Population` filter gains an optional AND-ed
+  `conditions: [{measure, fun, values}]` (back-compatible with single measure/fun/values); `pop_df`
+  evaluates all. Reproduces the old `populationUI.R` multi-condition-in-one-pop (up to 12 rows).
+- **Colour + all pop attributes apply** (a filter pop is a Population): user-picked colour (palette
+  default, not the old random), `show`, label overrides — nothing special-cased.
+- Filter on ANY obs measure (cluster/region/aggregate/intensity/speed/HMM…) for ANY poptype — the R
+  `filterMeasure/filterFun/filterValues` lazy-predicate model. Dominik: "old app filtered TRUE/FALSE —
+  reference not gospel"; kept measure-agnostic (`> 0` is just the flag case).
+LAST priority (task #10). See CD8→aggregate→CD69 workflow: chain composes parent∩child, no muddle.
+
+### Decision 16 — Spatial Analysis plots: CytoMAP parity for the Gerner lab
+
+Dominik: "take CytoMAP as inspiration; provide at least similar plots for Gerner people." The Spatial
+Analysis + Region Clustering pages need a plot canvas (currently none). Plan, reusing the existing
+registry + `SummaryCanvas`/cluster-heatmap framework (docs/PLOTS.md — NOT a bespoke panel):
+1. **Region composition heatmap** (CytoMAP signature): region × basis-population mean composition —
+   "what each region is made of." ENABLER: save the composition vectors as obs columns in clustRegions
+   so the EXISTING cluster-heatmap plot (cluster/region × measures) renders it directly. (verifiable)
+2. **Cell-type contact heatmap** (CODEX log-odds, `spatialStats/{suffix}.json`): pop × pop association/
+   avoidance. Needs a small data route reading the sidecar → a matrix plot. This is the lean, clustered-
+   adjacency form of the "round network connection plot" (CODEX Fig 6); a chord/network view is a
+   deferred second option (propose).
+3. **Region abundance + per-cell spatial measures** (composition, `is.aggregate`, region) via the
+   existing summary family once the composition obs columns exist.
+4. **Region UMAP** already produced (`obsm['X_umap.{suffix}']`) — reuse the cluster UMAP canvas.
+Mount `SummaryCanvas` on both module pages. Task #6.
+
+**BUILT — Phase 7 (napari region colouring, d4c8ab9):** region toggle in the viewer overlay row;
+`resolve_pops`/`show_populations` were already generic over pop_type.
+**BUILT — Phase 8 (behaviour regions, e4cc6da):** `clustRegions` `perTimepoint` → per-frame
+block-diagonal neighbourhood graph (`build_block_diagonal_graph`); regions vary over time. test-py 97.
+
 ### Decision 12 — two module pages, both REPL-runnable
 
 **Spatial Analysis** and **Region Clustering** are separate first-class pages (like segment/track/gate),

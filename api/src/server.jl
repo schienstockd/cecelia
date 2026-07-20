@@ -221,6 +221,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_analysis_behaviour(req)
         elseif path == "/api/analysis/clusters"
             api_analysis_clusters(req)
+        elseif path == "/api/analysis/spatial"
+            api_analysis_spatial(req)
         elseif path == "/api/analysis/chains"
             api_analysis_chains(req)
         elseif path == "/api/repl/api"
@@ -285,6 +287,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_plot_populations(req)
         elseif path == "/api/plots/attrs"
             api_plot_attrs(req)
+        elseif path == "/api/plots/contact_matrix"
+            api_plot_contact_matrix(req)
         elseif path == "/api/tracking/motion-dims"
             api_motion_dims(req)
         elseif path == "/api/storage/summary"

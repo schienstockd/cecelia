@@ -18,7 +18,7 @@ mcp/
     client.py    # read-only HTTP client + the ALLOW-LIST (stdlib only; the no-mutation guarantee)
     monitor.py   # pure session monitor: 10-attempts pattern + WS frame → observation (no I/O)
     wsclient.py  # thin WS listener that feeds the monitor from ws://…/ws
-    server.py    # FastMCP server — wires the client into 8 read tools + poll_observations + append_lab_log
+    server.py    # FastMCP server — wires the client into 9 read tools + poll_observations + append_lab_log
   tests/
     test_client.py    # stdlib unittest, HTTP mocked
     test_monitor.py   # the 10-attempts pattern + frame normalization (pure, no socket)
@@ -43,6 +43,7 @@ mcp/
 | `get_measure_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/measures` | per-population phenotype (intensities+morphology) + motility summaries (median/quantiles/mean/n); gated pops else base |
 | `get_behaviour_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/behaviour` | per-image HMM state distribution (fraction per state) + transition counts |
 | `get_cluster_summary(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/clusters` | per clustering run: n clusters, sizes, largest fraction, feature list (cell=clustPops, track=clustTracks) |
+| `get_spatial_stats(project_uid, image_uid="", set_uid="")` | `GET /api/analysis/spatial` | region-clustering runs (regions.{suffix}: n regions, sizes) + pairwise cell-type contact log-odds (association/avoidance per population pair) |
 | `get_chains(project_uid)` | `GET /api/analysis/chains` | whiteboard chains: wired templates (node DAG + task fns) + recent runs with node-outcome roll-ups |
 | `get_repl_api()` | `GET /api/repl/api` | notebook/REPL data-access surface: the read accessors + their live docstrings + the `docs/REPL.md` cookbook (write rules). Read before generating `using Cecelia` code. Project-independent |
 | `get_session_briefing(project_uid)` | `GET /api/observer/briefing` | session startup context: project name + image count, flagged images (warn/fail QC), recent lab-log entries (7 days). Call first when a chat begins |

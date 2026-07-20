@@ -1118,6 +1118,10 @@ api_analysis_behaviour(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> behaviour_summary(p; image_uid = i, set_uid = s))
 api_analysis_clusters(req::HTTP.Request) =
     _observer_summary_route(req, (p, i, s) -> cluster_summary(p; image_uid = i, set_uid = s))
+# GET /api/analysis/spatial — per image, region-clustering runs (regions.{suffix}) + pairwise cell-type
+# contact log-odds (neighbourStats sidecars). Flat + interpretable for MCP.
+api_analysis_spatial(req::HTTP.Request) =
+    _observer_summary_route(req, (p, i, s) -> spatial_summary(p; image_uid = i, set_uid = s))
 # GET /api/analysis/chains — the project's whiteboard chains: wired templates (node DAG) + recent runs.
 # Project-level (ignores image/set scope). Slice E.
 api_analysis_chains(req::HTTP.Request) =

@@ -273,6 +273,25 @@ def get_cluster_summary(project_uid: str, image_uid: str = "", set_uid: str = ""
 
 
 @mcp.tool()
+def get_spatial_stats(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
+    """SPATIAL summary per image — spatial region clustering + pairwise cell-type contact statistics.
+    Scope with `image_uid` / `set_uid`; omit both for the whole project.
+
+    Per image:
+      - `regionRuns`: list, one per (segmentation × region run) —
+        `{valueName, suffix, nRegions, n, largestFrac, sizes: [{value, n, fraction}]}`. Spatial regions
+        are neighbourhood-composition niches (what cell types surround each cell); a cell has BOTH a
+        cluster label and a region label. `suffix` is the run id.
+      - `contactStats`: list, one per neighbourStats run —
+        `{suffix, basis: [populations], nCells, nEdges, pairs: [{popA, popB, observed, expected,
+        logOdds, association: associated|avoided}]}`. `logOdds` is the CODEX observed-vs-expected
+        contact log-odds ratio: > 0 = the two cell types selectively ASSOCIATE (co-localise), < 0 =
+        they AVOID each other. Use it to answer "which cell types co-localise / avoid each other?".
+    Summary-level, reads current on-disk state (region columns + spatialStats sidecars)."""
+    return _client.get_spatial_stats(project_uid, image_uid or None, set_uid or None)
+
+
+@mcp.tool()
 def get_chains(project_uid: str) -> dict:
     """The project's whiteboard CHAINS — the wired analysis pipelines and their runs. Use this to see the
     INTENDED pipeline (which task feeds which) and which chains were actually executed — the run log is a

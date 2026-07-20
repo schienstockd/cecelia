@@ -1,0 +1,54 @@
+{
+  "task": "detectAggregates",
+  "fun_name": "spatialAnalysis.detectAggregates",
+  "label": "Detect aggregates",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The segmentation whose cells are tested for spatial aggregation."
+    },
+    {
+      "key": "pops",
+      "label": "Population",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The population to detect aggregates of (e.g. T cells). Spatially-proximal groups of these cells become aggregates; the rest are non-aggregated."
+    },
+    {
+      "key": "clustDiameter",
+      "label": "Neighbourhood (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 15,
+      "tip": "DBSCAN eps in microns — cells within this distance are linked into the same aggregate."
+    },
+    {
+      "key": "minCells",
+      "label": "Min cells",
+      "type": "int",
+      "min": 2,
+      "max": 1000,
+      "step": 1,
+      "default": 5,
+      "tip": "Minimum number of cells for a group to count as an aggregate (DBSCAN minPts)."
+    },
+    {
+      "key": "perTimepoint",
+      "label": "Per timepoint",
+      "type": "bool",
+      "default": false,
+      "tip": "Live imaging: detect aggregates independently at each timepoint (aggregate IDs stay unique across time). Off = pool all timepoints."
+    }
+  ]
+}

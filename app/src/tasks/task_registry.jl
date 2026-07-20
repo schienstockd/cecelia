@@ -57,6 +57,22 @@ function _spec_path(::NeighbourStats)
     joinpath(@__DIR__, "spatialAnalysis", "neighbourStats.json")
 end
 
+function _spec_path(::DetectAggregates)
+    joinpath(@__DIR__, "spatialAnalysis", "detectAggregates.json")
+end
+
+function _spec_path(::CellContacts)
+    joinpath(@__DIR__, "spatialAnalysis", "cellContacts.json")
+end
+
+function _spec_path(::ContactsMeshes)
+    joinpath(@__DIR__, "spatialAnalysis", "contactsMeshes.json")
+end
+
+function _spec_path(::AggregatesMeshes)
+    joinpath(@__DIR__, "spatialAnalysis", "aggregatesMeshes.json")
+end
+
 function _spec_path(::ClustRegions)
     joinpath(@__DIR__, "clustRegions", "cluster.json")
 end
@@ -115,6 +131,10 @@ function _fun_name_map()::Dict{String, CciaTask}
         "clustTracks.cluster"               => ClustTracks(),
         "spatialAnalysis.cellNeighbours"    => CellNeighbours(),
         "spatialAnalysis.neighbourStats"    => NeighbourStats(),
+        "spatialAnalysis.detectAggregates"  => DetectAggregates(),
+        "spatialAnalysis.cellContacts"      => CellContacts(),
+        "spatialAnalysis.contactsMeshes"    => ContactsMeshes(),
+        "spatialAnalysis.aggregatesMeshes"  => AggregatesMeshes(),
         "clustRegions.cluster"              => ClustRegions(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),

@@ -747,6 +747,50 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
     end
 
+    @testset "Param validation — DetectAggregates" begin
+        @test _task_from_fun_name("spatialAnalysis.detectAggregates") isa DetectAggregates
+        @test task_scope(DetectAggregates()) == "image"
+        @test_throws ParamValidationError validate_params(
+            DetectAggregates(), Dict{String,Any}("minCells" => 1))       # min=2
+        @test_throws ParamValidationError validate_params(
+            DetectAggregates(), Dict{String,Any}("clustDiameter" => -3))  # min=0
+    end
+
+    @testset "aggregate DBSCAN ids (Clustering.jl)" begin
+        # two dense blobs + one far noise point → two aggregates, noise = id 0
+        coords = [0.0 0.0; 0.1 0.1; 0.2 0.0; 5.0 5.0; 5.1 5.1; 5.2 5.0; 50.0 50.0]
+        ids = Cecelia._aggregate_ids(coords, 0.5, 2)
+        @test length(unique(ids[ids .> 0])) == 2                          # two aggregates
+        @test ids[end] == 0                                               # far point is noise
+        @test count(==(0), ids) == 1                                      # exactly one noise point
+        # too-few points → all noise
+        @test all(Cecelia._aggregate_ids([0.0 0.0; 0.1 0.1], 0.5, 5) .== 0)
+    end
+
+    @testset "Param validation — ContactsMeshes" begin
+        @test _task_from_fun_name("spatialAnalysis.contactsMeshes") isa ContactsMeshes
+        @test task_scope(ContactsMeshes()) == "image"
+        @test_throws ParamValidationError validate_params(
+            ContactsMeshes(), Dict{String,Any}("maxContactDist" => -1))
+    end
+
+    @testset "Param validation — AggregatesMeshes" begin
+        @test _task_from_fun_name("spatialAnalysis.aggregatesMeshes") isa AggregatesMeshes
+        @test task_scope(AggregatesMeshes()) == "image"
+        @test_throws ParamValidationError validate_params(
+            AggregatesMeshes(), Dict{String,Any}("minCells" => 1))
+    end
+
+    @testset "Param validation — CellContacts" begin
+        @test _task_from_fun_name("spatialAnalysis.cellContacts") isa CellContacts
+        @test task_scope(CellContacts()) == "image"
+        @test_throws ParamValidationError validate_params(
+            CellContacts(), Dict{String,Any}("maxContactDist" => -1))
+        # target-name sanitisation (used for the obs column suffix)
+        @test Cecelia._contact_target("flow", ["T/qc"]) == "flow.T_qc"
+        @test Cecelia._contact_target("flow", ["B/qc", "T/qc"]) == "flow.B_qc+T_qc"
+    end
+
     @testset "Param validation — NeighbourStats" begin
         @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
         @test task_scope(NeighbourStats()) == "image"
@@ -2888,6 +2932,27 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._cluster_matrix_suffix("matrix", "clusters.default") == "default"
     end
 
+    @testset "contact_matrix — CODEX log-odds heatmap matrix" begin
+        # sidecar spatialStats/{suffix}.json → symmetric pop×pop log-odds matrix for the plot renderer
+        td = mktempdir(); mkpath(joinpath(td, "spatialStats"))
+        open(joinpath(td, "spatialStats", "default.json"), "w") do f
+            write(f, """{"basis":["B/qc","T/qc"],"nCells":100,"nEdges":200,"records":[""" *
+                     """{"popA":"B/qc","popB":"B/qc","observed":10,"expected":5,"logOdds":0.7,"association":"associated"},""" *
+                     """{"popA":"B/qc","popB":"T/qc","observed":1,"expected":5,"logOdds":-1.1,"association":"avoided"},""" *
+                     """{"popA":"T/qc","popB":"T/qc","observed":8,"expected":4,"logOdds":0.6,"association":"associated"}]}""")
+        end
+        m = contact_matrix(CciaImage(; dir=td))
+        @test m.suffixes == ["default"] && m.suffix == "default"
+        @test Set(m.basis) == Set(["B/qc", "T/qc"]) && m.nCells == 100 && m.nEdges == 200
+        val(x, y) = only(c.value for c in m.cells if c.x == x && c.y == y)
+        @test val("B/qc", "T/qc") ≈ -1.1 && val("T/qc", "B/qc") ≈ -1.1   # symmetric fill
+        @test val("B/qc", "B/qc") ≈ 0.7 && val("T/qc", "T/qc") ≈ 0.6
+        @test length(m.cells) == 4                                       # 2×2 fully filled
+        # no sidecar → empty (route returns empty, UI shows "run contact stats first")
+        m0 = contact_matrix(CciaImage(; dir=mktempdir()))
+        @test isempty(m0.cells) && isempty(m0.suffixes)
+    end
+
     @testset "region pop auto-share (co-clustered value_names, cell granularity)" begin
         # regions are a per-run column shared across co-clustered segmentations — the identical
         # auto-share/expand machinery as clust, exercised via the `regions.` prefix + cell granularity.
@@ -3127,6 +3192,101 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         trk_nc = population_scope_groups([:img1], names_for, load, "tracks"; include_clusters=false)
         tncpaths = Set(p.path for p in trk_nc[1].populations)
         @test !("/clusterA" in tncpaths) && "/TEST" in tncpaths
+    end
+
+    # ── pop_category + population_accept_groups (Decision 14, accepts allow-list) ────────────────
+    @testset "population accepts allow-list + category tags" begin
+        # pop_category: gated / clustered / region / tracked / aggregated from (pop_type, leaf).
+        @test pop_category("live", "/qc")               == "gated"
+        @test pop_category("track", "/TEST")             == "gated"
+        @test pop_category("clust", "/myeloid")          == "clustered"
+        @test pop_category("trackclust", "/clusterA")    == "clustered"
+        @test pop_category("region", "/r0")              == "region"
+        @test pop_category("live", "/qc/_tracked")       == "tracked"
+        @test pop_category("live", "/qc/" * Cecelia.AGGREGATED_POP_NAME) == "aggregated"
+
+        # same fixtures as the popScope testset above, plus a region map and an aggregated cell pop.
+        fm = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
+        add_pop!(fm, Cecelia.AGGREGATED_POP_NAME; parent="/qc", filter_measure="live.cell.is.aggregate",
+                 filter_fun="gt", filter_values=0, reserved_ok=true)   # auto-created aggregate pop
+        tm = PopulationMap(pop_type="track", value_name="C")
+        add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5)
+        cm = PopulationMap(pop_type="clust", value_name="C")
+        add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2])
+        tcm = PopulationMap(pop_type="trackclust", value_name="C")
+        add_pop!(tcm, "clusterA"; filter_measure="clusters.tracks", filter_fun="in", filter_values=[0])
+        rm_ = PopulationMap(pop_type="region", value_name="C")
+        add_pop!(rm_, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0])
+        names_for = _ -> ["C"]
+        load = (_, vn, pt) -> vn != "C" ? nothing :
+            pt == "live" ? fm : pt == "track" ? tm : pt == "clust" ? cm :
+            pt == "trackclust" ? tcm : pt == "region" ? rm_ : nothing
+
+        # accepts=["live"] → all-cells root + cell gate + the aggregated cell pop; NO tracked sets,
+        # NO clusters/regions. Each population carries granularity/category tags.
+        g = population_accept_groups([:img1], names_for, load, ["live"])[1].populations
+        @test [p.path for p in g] == ["/", "/qc", "/qc/" * Cecelia.AGGREGATED_POP_NAME]
+        @test all(p.granularity == "cell" for p in g)
+        @test only(p for p in g if p.path == "/qc").category == "gated"
+        @test only(p for p in g if endswith(p.path, Cecelia.AGGREGATED_POP_NAME)).category == "aggregated"
+
+        # "flow" is an alias for "live".
+        @test [p.path for p in population_accept_groups([:img1], names_for, load, ["flow"])[1].populations] ==
+              [p.path for p in g]
+
+        # region basis: cells (gated+clustered+region) AND tracks (gated+clustered). One picker, both
+        # granularities — the case popScope could not express.
+        basis = population_accept_groups([:img1], names_for, load,
+                    ["live", "clust", "region", "track", "trackclust"])[1].populations
+        bcats = Set((p.granularity, p.category) for p in basis)
+        @test ("cell", "gated") in bcats && ("cell", "clustered") in bcats && ("cell", "region") in bcats
+        @test ("track", "tracked") in bcats && ("track", "gated") in bcats && ("track", "clustered") in bcats
+        @test "/r0" in [p.path for p in basis] && "/myeloid" in [p.path for p in basis]
+        @test "/clusterA" in [p.path for p in basis] && "/TEST" in [p.path for p in basis]
+
+        # accepts=["clust"] alone → only cell clusters, no all-cells root (live not accepted).
+        cl = population_accept_groups([:img1], names_for, load, ["clust"])[1].populations
+        @test [p.path for p in cl] == ["/myeloid"]
+
+        # popScope shim must still produce identical paths to the direct accept call.
+        @test [p.path for p in population_scope_groups([:img1], names_for, load, "cells")[1].populations] ==
+              [p.path for p in population_accept_groups([:img1], names_for, load,
+                                    ["live", "clust", "region"])[1].populations]
+
+        # unknown token / empty list throw loudly.
+        @test_throws ErrorException population_accept_groups([:img1], names_for, load, ["bogus"])
+        @test_throws ErrorException population_accept_groups([:img1], names_for, load, String[])
+    end
+
+    # ── ensure_filter_pop! — a cutoff materialised as a reusable filter pop (Decision 14) ────────
+    @testset "ensure_filter_pop! auto-created population" begin
+        td = mktempdir()
+        img = CciaImage(; dir=td)
+        m = PopulationMap(; pop_type="flow", value_name="B")
+        add_pop!(m, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        save_pop_map!(m, img)
+
+        # a 0/1 flag column → aggregated pop under /qc (the generalisable `> 0`, not a baked TRUE/FALSE)
+        created = ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
+        @test created == ["/qc/" * AGGREGATED_POP_NAME]
+        p = pop_at(load_pop_map(img; value_name="B", pop_type="flow"), "/qc/" * AGGREGATED_POP_NAME)
+        @test p.filter_measure == "flow.cell.is.aggregate" && p.filter_fun == "gt" && p.filter_values == 0
+        @test pop_category(p.pop_type, p.path) == "aggregated" && !is_track_pop(p.pop_type, p.path)
+
+        # idempotent: re-running REDEFINES (a probability cutoff — measure-agnostic), never duplicates
+        ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.aggregate.score", filter_fun="gte", filter_values=0.5)
+        m3 = load_pop_map(img; value_name="B", pop_type="flow")
+        @test count(pp -> endswith(pp, AGGREGATED_POP_NAME), pop_paths(m3)) == 1
+        @test pop_at(m3, "/qc/" * AGGREGATED_POP_NAME).filter_fun == "gte"
+
+        # a parent absent from the map is skipped; the all-cells root ("/") maps to ROOT and is created
+        created2 = ensure_filter_pop!(img, "flow", "B", ["/nonexistent", "/"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
+        @test created2 == ["/" * AGGREGATED_POP_NAME]
+        rm(td; recursive=true)
     end
 
     # ── Cluster-pop auto-share across co-clustered segmentations (CLUSTER_POOLING_PLAN.md) ─────

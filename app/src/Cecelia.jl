@@ -61,7 +61,8 @@ export add_pop!, set_gate!, rename_pop!, del_pop!
 export is_reserved_pop_name, DERIVED_POP_PREFIX, derived_pop_paths, has_ungated_tracks
 export GATING_POP_TYPES, is_gating_pop_type
 export flatten_pop_tree, plot_pop_types, plot_population_groups
-export is_track_pop, scope_pop_types, population_scope_groups
+export is_track_pop, pop_category, scope_pop_types, population_scope_groups, population_accept_groups
+export AGGREGATED_POP_NAME, ensure_filter_pop!
 export pop_at, has_pop, pop_paths, direct_children, descendants, topo_order
 export to_tree, from_tree, save_pop_map!, load_pop_map, gating_dir, gating_path
 export co_clustered_value_names
@@ -86,7 +87,8 @@ export CellposeSegment
 export MeasureLabels
 export BayesianTracking, TrackMeasures
 export ClustPops, ClustTracks
-export CellNeighbours, ClustRegions, NeighbourStats
+export CellNeighbours, ClustRegions, NeighbourStats, DetectAggregates, CellContacts, ContactsMeshes
+export AggregatesMeshes
 export detect_motion_dims, MotionDims
 export AfCorrect, DriftCorrect, CompositeTask
 export CropImage
@@ -160,6 +162,10 @@ include("tasks/clustPops/cluster.jl")
 include("tasks/clustTracks/cluster.jl")
 include("tasks/spatialAnalysis/cellNeighbours.jl")
 include("tasks/spatialAnalysis/neighbourStats.jl")
+include("tasks/spatialAnalysis/detectAggregates.jl")
+include("tasks/spatialAnalysis/cellContacts.jl")
+include("tasks/spatialAnalysis/contactsMeshes.jl")
+include("tasks/spatialAnalysis/aggregatesMeshes.jl")
 include("tasks/clustRegions/cluster.jl")
 include("storage.jl")
 include("tasks/task_registry.jl")
@@ -179,12 +185,14 @@ include("ai/lineage.jl")
 include("ai/populations.jl")
 include("ai/measures.jl")
 include("ai/behaviour_clusters.jl")
+include("ai/spatial.jl")
 include("ai/chains.jl")
 include("ai/repl_api.jl")
 include("ai/briefing.jl")
 export analysis_lineage, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
+export spatial_summary, contact_matrix
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,

@@ -759,6 +759,13 @@ const _DERIVED_POPS = Dict{String,DerivedPopSpec}(
     "_tracked" => DerivedPopSpec("live", "track_id", "gt", 0, true),
 )
 
+# Reserved leaf name for the auto-created spatial-aggregate population (Decision 14). Unlike
+# `_DERIVED_POPS` (query-time injected), this is a *persisted* filter pop written by
+# detectAggregates / aggregatesMeshes (filter on `<popType>.cell.is.aggregate > 0`, resolved lazily
+# at read by `pop_df`). The `_` prefix keeps it in the reserved namespace (protected from user
+# rename/delete, no name collision) and lets `pop_category` tag it "aggregated" for the picker.
+const AGGREGATED_POP_NAME = "_aggregated"
+
 """True if `name` is in the reserved derived-population namespace (leaf begins with `_`)."""
 is_reserved_pop_name(name::AbstractString) = startswith(String(name), DERIVED_POP_PREFIX)
 
@@ -940,6 +947,64 @@ function is_track_pop(pop_type::AbstractString, path::AbstractString)::Bool
 end
 
 """
+    pop_category(pop_type, path) -> String
+
+The DISPLAY category of an enumerated population, for the grouped population picker (Decision 14):
+one of `"gated"` (a hand-drawn flow/track gate — or the all-cells root), `"clustered"`
+(clust/trackclust), `"region"` (spatial region), `"tracked"` (the derived `_tracked` per-track
+subset) or `"aggregated"` (the auto-created spatial-aggregate pop). Pairs with `is_track_pop` (cell
+vs track granularity) to place a population under a *"<granularity> · <category>"* header. Derived
+from `pop_type` + leaf name only — the same inputs the picker already carries — so the frontend
+groups on tags the backend sends, with no second derivation (mirrors how `pop_type` is already sent).
+"""
+function pop_category(pop_type::AbstractString, path::AbstractString)::String
+    leaf = String(last(split(String(path), '/')))
+    leaf == AGGREGATED_POP_NAME && return "aggregated"
+    haskey(_DERIVED_POPS, leaf) && return "tracked"        # e.g. _tracked
+    pt = String(pop_type)
+    pt == "region" && return "region"
+    pt in ("clust", "trackclust") && return "clustered"
+    "gated"
+end
+
+"""
+    ensure_filter_pop!(img, pop_type, value_name, parents, name;
+                       filter_measure, filter_fun, filter_values, colour) -> Vector{String}
+
+Materialise a CUTOFF as a reusable, persisted FILTER population `name` under each of `parents` in the
+`pop_type` gating map of `value_name` — the generalised mechanism behind Decision 14's auto-created
+"aggregated" pop. A task that writes a per-cell flag/score (`is.aggregate`, a density, a probability…)
+also *defines the population that selects it*, so it flows into any downstream popSelection through the
+lazy predicate (`filter_measure`/`filter_fun`/`filter_values`, resolved at read by `pop_df`) rather
+than a hand-drawn gate. Deliberately measure-agnostic: the caller supplies the predicate, so a 0/1
+flag (`> 0`), a probability (`≥ 0.5`) or a category (`in […]`) all work — the legacy TRUE/FALSE
+filter is just the `> 0` case, not baked in.
+
+Idempotent: an existing `<parent>/<name>` is replaced, so re-running the producing task redefines it.
+Reserved (`_`-prefixed) names are allowed (system-created). A `parent` absent from this map is skipped
+(e.g. an all-cells `/` root maps to `ROOT`, always valid). Loads then saves the map; returns the
+created pop paths.
+"""
+function ensure_filter_pop!(img::CciaImage, pop_type::AbstractString, value_name::AbstractString,
+                            parents, name::AbstractString;
+                            filter_measure::AbstractString, filter_fun::AbstractString,
+                            filter_values, colour::AbstractString = "#7c93b8")::Vector{String}
+    m = load_pop_map(img; value_name = value_name, pop_type = pop_type)
+    created = String[]
+    for parent in parents
+        par = is_root(parent) ? ROOT : String(parent)
+        (par == ROOT || has_pop(m, par)) || continue         # skip parents not in this map
+        path = pop_path(par, name)
+        has_pop(m, path) && del_pop!(m, path)                # idempotent redefine
+        add_pop!(m, name; parent = par, filter_measure = filter_measure, filter_fun = filter_fun,
+                 filter_values = filter_values, colour = colour, reserved_ok = true)
+        push!(created, path)
+    end
+    isempty(created) || save_pop_map!(m, img)
+    created
+end
+
+"""
     scope_pop_types(scope, include_clusters) -> Vector{String}
 
 The pop_types `population_scope_groups` must load to cover a `popScope`. BOTH scopes load `live`: its
@@ -959,32 +1024,124 @@ function scope_pop_types(scope::AbstractString, include_clusters::Bool)::Vector{
     pts
 end
 
+# ── accepts allow-list: a function declares the exact pop_types its popSelection takes (Decision 14,
+#    SPATIAL_REGIONS_PLAN.md). This SUPERSEDES the coarse `popScope` (cells|tracks) — the region
+#    basis, for one, needs cells AND tracks — while the two-scope helpers below stay working as a
+#    thin shim over it. `accepts` is a list of pop_type tokens (R per-widget popType parity):
+#      live/flow — cell gates      clust — cell clusters       region — spatial regions
+#      track     — per-track gates + the derived `_tracked` sets   trackclust — track clusters
+#    "flow" is an alias for "live" (both read the same flow gate map). Each surviving population is
+#    tagged (granularity, category) via `is_track_pop`/`pop_category` so the picker groups it. ──────
+
+const ACCEPT_TOKENS = ("live", "flow", "clust", "trackclust", "region", "track")
+
+# canonicalise: fold "flow"→"live", dedup, preserve order.
+_normalise_accepts(accepts) = unique(String[String(a) == "flow" ? "live" : String(a) for a in accepts])
+
+# Which (granularity, category) pairs a normalised accept token admits. Aggregated pops ride with
+# their cell/track input (an aggregate is a spatial grouping of the accepted cells), so a gated
+# token also admits its own granularity's aggregated pop.
+function _accept_permits(accepts::Vector{String}, granularity::AbstractString, category::AbstractString)::Bool
+    g = String(granularity); c = String(category)
+    for a in accepts
+        if a == "live"
+            (g == "cell"  && c in ("gated", "aggregated")) && return true
+        elseif a == "clust"
+            (g == "cell"  && c == "clustered")             && return true
+        elseif a == "region"
+            (g == "cell"  && c == "region")                && return true
+        elseif a == "track"
+            (g == "track" && c in ("gated", "tracked", "aggregated")) && return true
+        elseif a == "trackclust"
+            (g == "track" && c == "clustered")             && return true
+        end
+    end
+    false
+end
+
+# The pop_types `plot_population_groups` must LOAD to cover `accepts`. `track` also pulls in `live`:
+# the derived `_tracked` per-track sets are enumerated as children of the (cell) `live` gates.
+function _accept_pop_types(accepts::Vector{String})::Vector{String}
+    pts = String[]
+    ("track" in accepts || "live" in accepts) && push!(pts, "live")
+    ("track" in accepts)      && push!(pts, "track")
+    ("clust" in accepts)      && push!(pts, "clust")
+    ("trackclust" in accepts) && push!(pts, "trackclust")
+    ("region" in accepts)     && push!(pts, "region")
+    unique(pts)
+end
+
+"""
+    population_accept_groups(imgs, value_names_for, load_map, accepts; kwargs...) -> Vector{NamedTuple}
+
+The MODULE-FUNCTION population picker (Decision 14): `plot_population_groups` restricted to the
+pop_types a function's popSelection declares it `accepts`, with every surviving population tagged
+`granularity` (`"cell"`|`"track"`) and `category` (`"gated"`|`"clustered"`|`"region"`|`"tracked"`|
+`"aggregated"`) so the frontend groups it under a *"<granularity> · <category>"* header. When cell
+gates are accepted (`live`/`flow`) an all-cells root (`/`, always real — the segmentation has label
+props) is prepended per segmentation. The all-TRACKS root is the derived `/_tracked` root
+`plot_population_groups` already produces, guarded by `root_derived_ok` so a bogus "all tracks" never
+appears with no tracking. Same injected closures as `plot_population_groups`. Unknown token → throws
+(a spec typo should fail loudly, not silently empty the picker).
+
+Returns `[(value_name, populations=[(path, name, colour, pop_type, granularity, category)])]`.
+"""
+function population_accept_groups(imgs, value_names_for::Function, load_map::Function,
+                                  accepts::AbstractVector; include_all_cells::Bool = true,
+                                  root_derived_ok::Function = (_v, _pt, _dpath) -> true)
+    acc = _normalise_accepts(accepts)
+    isempty(acc) && error("accepts is empty — a popSelection must declare at least one pop_type")
+    bad = setdiff(acc, ("live", "clust", "trackclust", "region", "track"))
+    isempty(bad) || error("unknown accepts token(s): $(join(bad, ", ")) " *
+                          "(expected any of live/flow, clust, trackclust, region, track)")
+    groups = plot_population_groups(imgs, value_names_for, load_map, _accept_pop_types(acc);
+                                    root_derived_ok = root_derived_ok)
+    want_all_cells = include_all_cells && ("live" in acc)
+    [(value_name = g.value_name,
+      populations = begin
+          kept = NamedTuple[]
+          want_all_cells && push!(kept, (path = "/", name = "all", colour = "#7c93b8",
+                                         pop_type = "live", granularity = "cell", category = "gated"))
+          for p in g.populations
+              gran = is_track_pop(p.pop_type, p.path) ? "track" : "cell"
+              cat  = pop_category(p.pop_type, p.path)
+              _accept_permits(acc, gran, cat) || continue
+              push!(kept, (path = p.path, name = p.name, colour = p.colour,
+                           pop_type = p.pop_type, granularity = gran, category = cat))
+          end
+          kept
+      end)
+     for g in groups]
+end
+
+# scope → accepts tokens, for the back-compatible `popScope` shim.
+function _scope_accepts(scope::AbstractString, include_clusters::Bool)::Vector{String}
+    if String(scope) == "tracks"
+        acc = ["track"]; include_clusters && push!(acc, "trackclust")
+    elseif String(scope) == "cells"
+        acc = ["live"]; include_clusters && append!(acc, ("clust", "region"))
+    else
+        error("unknown popScope: $scope (expected \"cells\" or \"tracks\")")
+    end
+    acc
+end
+
 """
     population_scope_groups(imgs, value_names_for, load_map, scope; kwargs...) -> Vector{NamedTuple}
 
-The MODULE-FUNCTION population picker (a task's popSelection param): `plot_population_groups` filtered
-to one `popScope`. Loads `scope_pop_types(scope, include_clusters)`, keeps only pops whose
-`is_track_pop` matches the scope — so `tracks` drops plain cell gates (`/qc`) while keeping their
-tracked subset (`/qc/_tracked`), and `cells` drops the derived `/_tracked` sets. For `cells` it
-prepends an all-cells root (`/`) per segmentation (always real — the segmentation has label props).
-The all-TRACKS root is the derived `/_tracked` root already produced by `plot_population_groups` and
-guarded by `root_derived_ok` (only offered when the segmentation has ungated tracks), so a bogus "all
-tracks" never appears when there are none. Same injected closures as `plot_population_groups`.
+Back-compatible two-scope picker (`popScope` = `"cells"`|`"tracks"`), now a thin shim over
+`population_accept_groups`: `cells` = `["live", "clust", "region"]` (+ all-cells root), `tracks` =
+`["track", "trackclust"]` (no all-cells root; `track` pulls in `live` for the derived `_tracked`
+sets). `include_clusters=false` drops the cluster token. Output carries the same `granularity`/
+`category` tags. Superseded by `accepts` for new specs — kept so existing `popScope` JSONs keep working.
 """
 function population_scope_groups(imgs, value_names_for::Function, load_map::Function,
                                  scope::AbstractString; include_clusters::Bool = true,
                                  root_derived_ok::Function = (_v, _pt, _dpath) -> true)
-    want_track = String(scope) == "tracks"
-    groups = plot_population_groups(imgs, value_names_for, load_map,
-                                    scope_pop_types(scope, include_clusters);
-                                    root_derived_ok = root_derived_ok)
-    [(value_name = g.value_name,
-      populations = begin
-          kept = [p for p in g.populations if is_track_pop(p.pop_type, p.path) == want_track]
-          want_track ? kept :
-              vcat([(path = "/", name = "all", colour = "#7c93b8", pop_type = "live")], kept)
-      end)
-     for g in groups]
+    population_accept_groups(imgs, value_names_for, load_map,
+                             _scope_accepts(scope, include_clusters);
+                             include_all_cells = (String(scope) == "cells"),
+                             root_derived_ok = root_derived_ok)
 end
 
 # Inject the derived pop(s) for the requested paths into a (flow) map, transiently. A path whose

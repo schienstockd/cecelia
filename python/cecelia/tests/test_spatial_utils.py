@@ -85,5 +85,64 @@ class TestPairwiseContactLogOdds(unittest.TestCase):
         self.assertGreater(lor[0, 1], 0); self.assertLess(lor[0, 0], 0)
 
 
+class TestMeshUtils(unittest.TestCase):
+    def _vol(self):
+        v = np.zeros((6, 6, 20), dtype=np.int32)
+        v[1:5, 1:5, 0:5] = 1        # cube A
+        v[1:5, 1:5, 10:15] = 2      # cube far from A
+        v[1:5, 1:5, 5:9] = 3        # cube adjacent to A
+        return v
+
+    def test_build_and_nearest_surface(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface
+        meshes = build_label_meshes(self._vol(), [1, 2, 3], [1.0, 1.0, 1.0], min_voxels=8)
+        self.assertEqual(sorted(meshes), [1, 2, 3])
+        # nearest B to A is the adjacent cube 3, ~0 µm
+        d, nb = nearest_surface({1: meshes[1]}, {2: meshes[2], 3: meshes[3]})[1]
+        self.assertEqual(nb, 3)
+        self.assertLess(d, 1.0)
+        # only the far cube → ~5 µm gap
+        self.assertAlmostEqual(nearest_surface({1: meshes[1]}, {2: meshes[2]})[1][0], 5.0, delta=1.0)
+
+    def test_empty_b(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface
+        meshes = build_label_meshes(self._vol(), [1], [1.0, 1.0, 1.0], min_voxels=8)
+        self.assertEqual(nearest_surface({1: meshes[1]}, {})[1], (float("inf"), None))
+
+    def test_mesh_aggregates(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, mesh_aggregates
+        # labels 1 & 3 are adjacent (one aggregate); label 2 is far (alone)
+        meshes = build_label_meshes(self._vol(), [1, 2, 3], [1.0, 1.0, 1.0], min_voxels=8)
+        # 1 & 3 are face-adjacent (surface dist ~0); 2 sits ~1µm from 3. max_dist=0.5 links only 1–3.
+        agg = mesh_aggregates(meshes, max_dist=0.5, min_cells=2)
+        self.assertEqual(agg[1], agg[3])          # 1 & 3 in the same aggregate
+        self.assertNotEqual(agg[1], 0)            # and it's a real aggregate
+        self.assertEqual(agg[2], 0)               # 2 not close enough → not aggregated (min_cells=2)
+
+
+class TestBlockDiagonalGraph(unittest.TestCase):
+    """Per-timepoint (behaviour-region) graph: edges must never cross timepoints, even when frames
+    are interleaved in row order (exercises the inverse-permutation scatter-back). Needs squidpy."""
+    def test_no_cross_timepoint_edges_contiguous(self):
+        from cecelia.utils.spatial_utils import build_block_diagonal_graph
+        coords = np.array([[0., 0.], [1., 0.], [0., 1.],          # t=0 triangle
+                           [0.1, 0.1], [1.1, 0.0], [0.0, 1.1]])   # t=1 triangle, spatially overlapping
+        times = np.array([0, 0, 0, 1, 1, 1])
+        conn = build_block_diagonal_graph(coords, times, method="delaunay", radius=100.0).tocoo()
+        self.assertGreater(conn.nnz, 0)                            # within-frame edges exist
+        for i, j in zip(conn.row, conn.col):
+            self.assertEqual(times[i], times[j])                  # none cross a timepoint
+
+    def test_interleaved_row_order_preserved(self):
+        from cecelia.utils.spatial_utils import build_block_diagonal_graph
+        # rows alternate t=0 (near origin) / t=1 (near (5,5)); result must stay in ORIGINAL order
+        coords = np.array([[0., 0.], [5., 5.], [0.1, 0.], [5.1, 5.], [0., 0.2], [5., 5.2]])
+        times = np.array([0, 1, 0, 1, 0, 1])
+        conn = build_block_diagonal_graph(coords, times, method="delaunay", radius=100.0).tocoo()
+        self.assertGreater(conn.nnz, 0)
+        for i, j in zip(conn.row, conn.col):
+            self.assertEqual(times[i], times[j])                  # 0/2/4 link only to each other, 1/3/5 likewise
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -80,23 +80,33 @@ function api_plot_populations(req::HTTP.Request)
     root_ok = (vn, _pt, dpath) -> dpath != "/_tracked" ? true :
         any(im -> (vn in String.(versioned_keys(im.label_props))) &&
                   has_ungated_tracks(im; value_name = vn), imgs)
-    # `popScope` (cells|tracks) is the module-function picker: a defined scope resolved across sources,
-    # cell-vs-track filtered. Absent → legacy summary-canvas path (raw popType + granularity).
-    groups = if !isempty(scope)
-        include_clusters = get(q, "includeClusters", "true") != "false"
-        try
+    # `accepts` (comma-sep pop_type allow-list, Decision 14) is the module-function picker: the exact
+    # pop_types a task's popSelection declares (supersedes `popScope`, which stays as a shim). Then
+    # `popScope` (cells|tracks). Absent both → legacy summary-canvas path (raw popType + granularity).
+    accepts_raw = get(q, "accepts", "")
+    groups = try
+        if !isempty(accepts_raw)
+            population_accept_groups(imgs, names_for, load_map,
+                                     split(accepts_raw, ","; keepempty = false);
+                                     root_derived_ok = root_ok)
+        elseif !isempty(scope)
+            include_clusters = get(q, "includeClusters", "true") != "false"
             population_scope_groups(imgs, names_for, load_map, scope;
                                     include_clusters = include_clusters, root_derived_ok = root_ok)
-        catch e
-            return _gerr(400, sprint(showerror, e))
+        else
+            plot_population_groups(imgs, names_for, load_map,
+                                   plot_pop_types(pop_type, granularity); root_derived_ok = root_ok)
         end
-    else
-        plot_population_groups(imgs, names_for, load_map,
-                               plot_pop_types(pop_type, granularity); root_derived_ok = root_ok)
+    catch e
+        return _gerr(400, sprint(showerror, e))
     end
+    # `granularity`/`category` are derived here from (popType, path) — the single canonical derivation
+    # (`is_track_pop`/`pop_category`) — so every path (accepts / popScope / legacy) emits them uniformly.
     result = [Dict("valueName" => g.value_name,
                    "populations" => [Dict("path" => p.path, "name" => p.name,
-                                          "colour" => p.colour, "popType" => p.pop_type)
+                                          "colour" => p.colour, "popType" => p.pop_type,
+                                          "granularity" => is_track_pop(p.pop_type, p.path) ? "track" : "cell",
+                                          "category" => pop_category(p.pop_type, p.path))
                                      for p in g.populations])
               for g in groups]
     200, JSON3.write(result)
@@ -127,6 +137,28 @@ function api_plot_attrs(req::HTTP.Request)
         end
     end
     200, JSON3.write(Dict("attrs" => [Dict("name" => n, "values" => sort(vals[n])) for n in names]))
+end
+
+# ── GET /api/plots/contact_matrix — CODEX pairwise contact log-odds as a heatmap matrix ────────────
+# Query: projectUid, imageUid, suffix? (a neighbourStats run; default = first). Returns the pop × pop
+# log-odds matrix for the shared matrix renderer (PlotChart): `{ suffixes, suffix, basis, cells, ... }`
+# where cells = [{x, y, value}] over basis × basis. Read-only sidecar read (spatialStats/{suffix}.json)
+# via the package `contact_matrix` — the same reader MCP uses, no second copy. (Decision 16.)
+function api_plot_contact_matrix(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    proj = get(q, "projectUid", "")
+    isempty(proj) && return _gerr(400, "projectUid required")
+    img, err = _gating_image(proj, get(q, "imageUid", ""))
+    err === nothing || return err
+    m = try
+        contact_matrix(img; suffix = get(q, "suffix", ""))
+    catch e
+        return _gerr(400, sprint(showerror, e))
+    end
+    200, JSON3.write(Dict(
+        "suffixes" => collect(m.suffixes), "suffix" => m.suffix, "basis" => collect(m.basis),
+        "nCells" => m.nCells, "nEdges" => m.nEdges,
+        "cells" => [Dict("x" => c.x, "y" => c.y, "value" => c.value) for c in m.cells]))
 end
 
 # ── POST /api/plot_data — server-side aggregation for one summary panel ────────────

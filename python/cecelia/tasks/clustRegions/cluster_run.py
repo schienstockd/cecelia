@@ -37,6 +37,7 @@ def run(params):
     method   = script_utils.get_param(params, "neighbourMethod", default="delaunay")
     radius   = float(script_utils.get_param(params, "neighbourRadius", default=30.0))
     k        = int(script_utils.get_param(params, "nNeighbours", default=6))
+    per_t    = bool(script_utils.get_param(params, "perTimepoint", default=False))
     n_basis  = len(basis)
 
     if len(segments) == 0 or n_basis < 2:
@@ -53,7 +54,8 @@ def run(params):
     comp_blocks, obs_blocks = [], []
     for uid, segs in by_uid.items():
         a, codes_all, obs_all = spatial_utils.build_pooled_image_graph(
-            segs, phys.get(uid, [1.0, 1.0, 1.0]), method=method, radius=radius, n_neighs=k)
+            segs, phys.get(uid, [1.0, 1.0, 1.0]), method=method, radius=radius, n_neighs=k,
+            per_timepoint=per_t)
         if a is None:
             continue
         obs_all.insert(0, "uID", uid)
@@ -95,15 +97,26 @@ def run(params):
             sc.pp.neighbors(adata, use_rep="X")
             sc.tl.umap(adata, random_state=rs)   # obsm['X_umap']
     else:
-        # Leiden on the composition graph — no normalisation (vectors are already fractions in [0,1])
+        # Leiden on the composition graph — no normalisation (vectors are already fractions in [0,1]).
+        # integrateBatch → Harmony-integrate on uID so region IDs are comparable across the cohort
+        # rather than confounded by per-sample batch effects (NicheCompass cohort-integration idea).
+        batch_key = "uID" if bool(script_utils.get_param(params, "integrateBatch", default=False)) else None
         clustering_utils.find_populations(
             adata,
             resolution=float(script_utils.get_param(params, "resolution", default=1.0)),
             axis="NONE", transformation="NONE",
-            create_umap=create_umap, backend="auto", random_state=rs, log=log.log)
+            create_umap=create_umap, backend="auto", random_state=rs, batch_key=batch_key, log=log.log)
+
+    # ── persist the composition vectors as continuous per-cell measures (spatial.comp.{basis}.{suffix})
+    # so the region-composition heatmap reuses the cluster-heatmap (region × measures) — no new plot
+    # family (SPATIAL_REGIONS_PLAN Decision 16). "/" in a basis name → "_" for a clean column/label. ──
+    def _san(b):
+        return str(b).replace("/", "_").replace(" ", "_")
+    comp_obs = {f"spatial.comp.{_san(basis[j])}.{suffix}": X[:, j] for j in range(n_basis)}
 
     # ── write regions.{suffix} back per segmentation (shared writer, region column family) ──
-    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log, col_prefix="regions")
+    qc = clustering_utils.split_back_and_write(adata, segments, suffix, log=log.log,
+                                               col_prefix="regions", extra_obs=comp_obs)
 
     qc_out_path = params.get("qcOutPath")
     if qc_out_path is not None:

@@ -1,0 +1,54 @@
+{
+  "task": "contactsMeshes",
+  "fun_name": "spatialAnalysis.contactsMeshes",
+  "label": "Cell contacts (meshes)",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation (A)",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The segmentation whose cells (population A) get the contact annotations."
+    },
+    {
+      "key": "popsA",
+      "label": "Population A",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The A cells to annotate — for each, the nearest B cell by SURFACE distance."
+    },
+    {
+      "key": "valueNameB",
+      "label": "Segmentation (B)",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The target segmentation (B). One segmentation (label ids collide across segmentations)."
+    },
+    {
+      "key": "popsB",
+      "label": "Population B (target)",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The target population within segmentation B."
+    },
+    {
+      "key": "maxContactDist",
+      "label": "Contact distance (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 5,
+      "tip": "Surface-to-surface distance (microns) at or below which an A cell counts as in contact with B. Mesh route — accurate for large/live cells; slower than the points route (meshes built on the fly per timepoint)."
+    }
+  ]
+}
