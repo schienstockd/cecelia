@@ -1,0 +1,47 @@
+{
+  "task": "cellContacts",
+  "fun_name": "spatialAnalysis.cellContacts",
+  "label": "Cell contacts (points)",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation (A)",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The segmentation whose cells (population A) get the contact annotations."
+    },
+    {
+      "key": "popsA",
+      "label": "Population A",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The cells to annotate — for each, the nearest B cell and whether it is in contact."
+    },
+    {
+      "key": "popsB",
+      "label": "Population B (target)",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": true,
+      "default": [],
+      "tip": "The target population. May span segmentations (e.g. a different cell type). Contact = an A cell within the distance threshold of any B cell."
+    },
+    {
+      "key": "maxContactDist",
+      "label": "Contact distance (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 10,
+      "tip": "Centroid distance (microns) at or below which an A cell counts as in contact with B. Points route — for surface-level contact on large/live cells use the mesh route."
+    }
+  ]
+}

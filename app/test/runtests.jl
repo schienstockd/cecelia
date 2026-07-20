@@ -767,6 +767,16 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test all(Cecelia._aggregate_ids([0.0 0.0; 0.1 0.1], 0.5, 5) .== 0)
     end
 
+    @testset "Param validation — CellContacts" begin
+        @test _task_from_fun_name("spatialAnalysis.cellContacts") isa CellContacts
+        @test task_scope(CellContacts()) == "image"
+        @test_throws ParamValidationError validate_params(
+            CellContacts(), Dict{String,Any}("maxContactDist" => -1))
+        # target-name sanitisation (used for the obs column suffix)
+        @test Cecelia._contact_target("flow", ["T/qc"]) == "flow.T_qc"
+        @test Cecelia._contact_target("flow", ["B/qc", "T/qc"]) == "flow.B_qc+T_qc"
+    end
+
     @testset "Param validation — NeighbourStats" begin
         @test _task_from_fun_name("spatialAnalysis.neighbourStats") isa NeighbourStats
         @test task_scope(NeighbourStats()) == "image"
