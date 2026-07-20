@@ -450,12 +450,17 @@ end
 #  2. Require the companion suffix to be `_` + EXACTLY five digits, so a sibling image like
 #     `Img_processed.oir` / `Img_v2.oir` isn't mistaken for a companion of `Img.oir`.
 function _companion_files(names::AbstractVector{<:AbstractString}, main::AbstractString)
-    stem = first(splitext(main))
-    ext  = last(splitext(main))
+    stem   = first(splitext(main))       # main name WITHOUT extension, e.g. "…-res_0001"
+    prefix = stem * "_"
     filter(names) do n
         n == main && return true
-        startswith(n, stem * "_") &&
-            occursin(r"^_[0-9]{5}$", chop(n; head = length(stem), tail = length(ext)))
+        # Olympus OIR companions are `<main-stem>_<digits>` and are typically EXTENSIONLESS, e.g.
+        # `…-res_0001.oir` (main) + `…-res_0001_00001`, `…-res_0001_00002`, … . So match a numeric
+        # run after `<stem>_` (with an optional extension), not a fixed 5-digit + same-extension shape
+        # — the earlier rule matched none of these, so only the main file staged and bioformats saw a
+        # fraction of the timepoints. Literal stem prefix still avoids grabbing a sibling `…-res_0002`.
+        startswith(n, prefix) || return false
+        occursin(r"^[0-9]+(\.[^.]+)?$", chop(n; head = length(prefix), tail = 0))
     end
 end
 
@@ -466,19 +471,41 @@ per-read network latency (bioformats does many small random seeks); a bulk seque
 throughput-bound and far faster — this automates the manual copy-to-tmp workaround. See
 docs/todo/IMPORT_RESCALE_PLAN.md.
 """
+# Copy one file in chunks, yielding between blocks. Julia's `cp` is a single NON-yielding blocking
+# call (`jl_fs_sendfile`); when the pool worker running it is scheduled onto the event-loop thread, a
+# multi-GB copy freezes the WS server (and the whole GUI) until it finishes. A chunked loop with an
+# explicit `yield()` keeps the scheduler/event loop responsive, and lets us report progress.
+function _copy_file_yielding(src::AbstractString, dst::AbstractString;
+                             chunk::Int = 8 * 1024 * 1024, on_bytes::Function = _ -> nothing)
+    buf = Vector{UInt8}(undef, chunk)
+    open(src, "r") do s
+        open(dst, "w") do d
+            while !eof(s)
+                n = readbytes!(s, buf, chunk)
+                write(d, view(buf, 1:n))
+                on_bytes(n)
+                yield()   # let the WS event loop + other tasks run between chunks
+            end
+        end
+    end
+end
+
 function _stage_source!(src_path::AbstractString, stage_dir::AbstractString;
-                        on_log::Function = _ -> nothing)
+                        on_log::Function = _ -> nothing, on_progress::Function = (_, _) -> nothing)
     src_dir = dirname(src_path)
     files   = _companion_files(readdir(src_dir), basename(src_path))
     isempty(files) && (files = [basename(src_path)])
     mkpath(stage_dir)
-    total = 0
-    on_log("[INFO] Staging $(length(files)) source file(s) to local scratch …")
+
+    grand_total = sum(f -> filesize(joinpath(src_dir, f)), files; init = 0)
+    on_log("[INFO] Staging $(length(files)) source file(s), $(round(grand_total / 1e9; digits = 1)) GB, to local scratch …")
+
+    copied = 0
     for f in files
-        cp(joinpath(src_dir, f), joinpath(stage_dir, f); force = true)
-        total += filesize(joinpath(stage_dir, f))
+        _copy_file_yielding(joinpath(src_dir, f), joinpath(stage_dir, f);
+                            on_bytes = n -> (copied += n; grand_total > 0 && on_progress(copied, grand_total)))
     end
-    on_log("[INFO] Staged $(length(files)) file(s) ($(round(total / 1e9; digits = 1)) GB).")
+    on_log("[INFO] Staged $(length(files)) file(s) ($(round(copied / 1e9; digits = 1)) GB).")
     joinpath(stage_dir, basename(src_path))
 end
 
@@ -537,7 +564,7 @@ function _run_task(task::ImportOmezarr, img::CciaImage, params::Dict{String,Any}
     eff_src     = src_path
     if stage_local
         try
-            eff_src = _stage_source!(src_path, stage_dir; on_log = on_log)
+            eff_src = _stage_source!(src_path, stage_dir; on_log = on_log, on_progress = on_progress)
         catch e
             on_log("[ERROR] Failed to stage source locally: $e")
             rm(stage_dir; recursive = true, force = true)

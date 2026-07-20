@@ -58,13 +58,21 @@ bioformats2raw at the local copy, delete after the source read finishes. Indepen
 
 **Why it's needed (not a nicety):** a multi-file format like Olympus OIR is read with many small
 random seeks; over SMB each seek is a network round-trip, so the read is latency-bound and glacial.
-A bulk `cp` of the whole set is one sequential, throughput-bound transfer — the same copy-to-tmp
-trick done by hand, now automated. No bioformats flag changes its access pattern; staging is the fix.
-`_companion_files` (ported from the old R `prepFilelistToSync` in `cciaHelpers.R`) matches the main
-file + `_<5 digits>` parts by LITERAL stem prefix; bioformats auto-discovers them once co-located. Two
-lessons carried over from that code's comments: (1) match the stem literally, never interpolated into
-a regex — a filename with metacharacters (`basal+NECA`) breaks an interpolated `"<stem>_[0-9]+"`;
-(2) require exactly 5 trailing digits so a sibling like `Img_processed.oir`/`Img2.oir` isn't grabbed.
+Copying the whole set locally first is one sequential, throughput-bound transfer — the copy-to-tmp
+trick, automated. No bioformats flag changes its access pattern; staging is the fix.
+
+`_companion_files` matches the main file + its companions by LITERAL stem prefix (never interpolate
+the stem into a regex — `basal+NECA` would break it). **Real Olympus naming** (fixed 2026-07 after it
+shipped broken): the registered file already ends in `_NNNN.oir` and the companions are
+EXTENSIONLESS — `M1a-…-res_0001.oir` (main) + `M1a-…-res_0001_00001`, `_00002`, … . So the match is
+`<main-stem>_<digits>` (optional extension), NOT a fixed `_<5 digits><same-ext>`; the first version
+matched none of the extensionless parts, so only the main staged and bioformats saw ~4 of 181
+timepoints. The literal-stem prefix still excludes a sibling acquisition (`…-res_0002.oir`).
+
+**Non-blocking copy:** the copy is chunked with an explicit `yield()` per block (`_copy_file_yielding`),
+NOT Julia's `cp`. `cp` is a single non-yielding blocking call (`jl_fs_sendfile`); when the pool worker
+running it is scheduled onto the event-loop thread, a multi-GB copy froze the whole GUI until done.
+Chunking + yielding keeps the WS server responsive and reports staging progress via `on_progress`.
 
 **Peak disk:** with staging + 8-bit, the stage copy and the 16-bit transient briefly coexist during
 conversion (≈ 2× the source), plus the 8-bit output. The stage copy is deleted the moment
