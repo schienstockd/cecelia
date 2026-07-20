@@ -327,7 +327,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test capped[end]["fun"] == "x.$(Cecelia.RUN_LOG_CAP + 10)"   # newest kept
 
         # params trail: entry carries the sanitised task params; internal `_…` keys and the redundant
-        # `valueName` are dropped, real tuning knobs kept (Observer Phase 2 §1 — see OBSERVER_PHASE2_PLAN).
+        # `valueName` are dropped, real tuning knobs kept (Observer Phase 2 §1 — see docs/ai-assist/OBSERVER.md).
         img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path" => "/tmp/fake2.tif"))
         append_run_log!(img2, "tracking.bayesian_tracking", "default", "done",
                         Dict{String,Any}("search_radius" => 5.0, "max_lost" => 3,
