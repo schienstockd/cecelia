@@ -2,10 +2,12 @@
 
 Every request goes through an explicit ALLOW-LIST of (method, path) pairs. That list IS the
 observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/lablog/append``
-(append-only) and ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
-overwrites). Both are ADDITIVE / non-destructive: no allow-listed route can edit or delete project
-data. Any attempt to call a route not on the list raises ``DisallowedRoute`` — so if a future tool
-ever wires in a mutating route it fails loudly in tests rather than silently mutating a project.
+(append-only), ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
+overwrites), and ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in
+the registry sidecar — not its cells, not analysis data). All three are non-destructive to project &
+analysis data: no allow-listed route can touch cell data, images, gates, QC, or a notebook's content.
+Any attempt to call a route not on the list raises ``DisallowedRoute`` — so if a future tool ever
+wires in a mutating route it fails loudly in tests rather than silently mutating a project.
 
 Uses only the Python standard library (urllib) so this module — and its tests — carry no third-party
 dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these calls into tools.
@@ -19,9 +21,8 @@ import urllib.request
 
 DEFAULT_BASE_URL = "http://127.0.0.1:8080"
 
-# (method, path) → the ONLY routes the observer may ever call. Read-only except the append route.
-# Keep this in sync with the backing routes in api/src/routes.jl; the test asserts append is the
-# sole write.
+# (method, path) → the ONLY routes the observer may ever call. Read-only except the three writes below.
+# Keep this in sync with the backing routes in api/src/routes.jl; the test pins the exact write set.
 ALLOWED_ROUTES = frozenset(
     {
         ("GET", "/api/projects"),
@@ -42,8 +43,9 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/observer/briefing"),  # session startup context: name/count + flagged images + recent lab log
         ("GET", "/api/logs/recent"),     # the backend console ring (server @info/@warn/@error)
         ("GET", "/api/lablog"),
-        ("POST", "/api/lablog/append"),  # write 1/2 — append-only, server-guarded
-        ("POST", "/api/notebooks/write"),  # write 2/2 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/lablog/append"),  # write 1/3 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/3 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/notebooks/describe"),  # write 3/3 — edits ONLY a notebook's description string (registry sidecar); not its content
     }
 )
 
@@ -218,7 +220,7 @@ class CeceliaClient:
         # project (it's the process-wide console).
         return self._request("GET", "/api/logs/recent")
 
-    # ── the two writes (both additive / non-destructive) ─────────────────────────────
+    # ── the three writes (all non-destructive to project & analysis data) ────────────
     def append_lab_log(self, project_uid: str, author: str, lines: list[str]):
         return self._request(
             "POST",
@@ -233,4 +235,14 @@ class CeceliaClient:
             "POST",
             "/api/notebooks/write",
             body={"projectUid": project_uid, "name": name, "cells": cells, "description": description},
+        )
+
+    def set_notebook_description(self, project_uid: str, file: str, description: str):
+        # Edits ONLY the notebook's description text in the registry sidecar — never its cells. `file`
+        # is the notebook filename as returned by create_notebook (e.g. "speed.jl"); a bare name works
+        # too (the server appends .jl). 404 if the notebook doesn't exist.
+        return self._request(
+            "POST",
+            "/api/notebooks/describe",
+            body={"projectUid": project_uid, "file": file, "description": description},
         )

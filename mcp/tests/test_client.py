@@ -44,11 +44,16 @@ class ClientTest(unittest.TestCase):
         with self.assertRaises(DisallowedRoute):
             self.c._request("GET", "/api/gating/save")
 
-    def test_writes_are_only_the_two_additive_routes(self):
-        # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only) and
-        # notebook write (create-only). Both additive; nothing can edit/delete project data.
+    def test_writes_are_only_the_three_non_destructive_routes(self):
+        # The no-mutation guarantee: the only non-GET routes are lab-log append (append-only), notebook
+        # write (create-only), and notebook describe (description text only). None can edit/delete cell
+        # data, images, gates, QC, or a notebook's content.
         writes = sorted((m, p) for (m, p) in ALLOWED_ROUTES if m != "GET")
-        self.assertEqual(writes, [("POST", "/api/lablog/append"), ("POST", "/api/notebooks/write")])
+        self.assertEqual(writes, [
+            ("POST", "/api/lablog/append"),
+            ("POST", "/api/notebooks/describe"),
+            ("POST", "/api/notebooks/write"),
+        ])
 
     def test_create_notebook_posts_cells(self):
         with _patch_urlopen({"ok": True, "file": "speed.jl"}) as u:
@@ -59,6 +64,17 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(
             json.loads(req.data.decode()),
             {"projectUid": "p", "name": "speed", "cells": ["using Cecelia", "df = 1"], "description": "d"},
+        )
+
+    def test_set_notebook_description_posts(self):
+        with _patch_urlopen({"ok": True}) as u:
+            self.c.set_notebook_description("p", "speed.jl", "shorter blurb")
+        req = u.call_args[0][0]
+        self.assertEqual(req.method, "POST")
+        self.assertTrue(req.full_url.endswith("/api/notebooks/describe"))
+        self.assertEqual(
+            json.loads(req.data.decode()),
+            {"projectUid": "p", "file": "speed.jl", "description": "shorter blurb"},
         )
 
     def test_list_images_builds_url(self):
