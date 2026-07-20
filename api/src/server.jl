@@ -24,6 +24,7 @@ include("update_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
 include("app_api.jl")
+include("storage_api.jl")
 include("setup_api.jl")
 
 # ── WS broadcast ──────────────────────────────────────────────────────────────
@@ -284,6 +285,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_plot_attrs(req)
         elseif path == "/api/tracking/motion-dims"
             api_motion_dims(req)
+        elseif path == "/api/storage/summary"
+            api_storage_summary(req)
         else
             404, JSON3.write((; error="Not found: $path"))
         end
@@ -464,6 +467,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_repl_config(body_bytes)
         elseif path == "/api/update/apply"
             api_update_apply(body_bytes)
+        elseif path == "/api/storage/reclaim"
+            api_storage_reclaim(body_bytes)
         else
             404, JSON3.write((; error="Not found: $path"))
         end

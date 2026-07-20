@@ -1075,6 +1075,65 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
+    # ── Storage reclaim — free the original import once a corrected variant is active ────
+    @testset "Storage reclaim" begin
+        # pure reclaimable-default policy
+        @test Cecelia.reclaimable_default(Dict{String,Any}(
+            "default" => "a.zarr", "driftCorrected" => "b.zarr", "_active" => "driftCorrected"))
+        @test !Cecelia.reclaimable_default(Dict{String,Any}(  # active is still the original
+            "default" => "a.zarr", "_active" => "default"))
+        @test !Cecelia.reclaimable_default(Dict{String,Any}(  # no default entry left
+            "driftCorrected" => "b.zarr", "_active" => "driftCorrected"))
+
+        _mk_ver!(img, fn) = (d = joinpath(img_zero_dir(img), fn); mkpath(d);
+                             write(joinpath(d, "chunk"), rand(UInt8, 2048)); fn)
+
+        proj = create_project!(name="stor-test-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+
+        # imgA: original + drift-corrected, drift active → the reclaim case
+        a = add_image!(s; name="a")
+        _mk_ver!(a, "import.ome.zarr"); _mk_ver!(a, "drift.ome.zarr")
+        a.filepath = Dict("default"=>"import.ome.zarr", "driftCorrected"=>"drift.ome.zarr", "_active"=>"driftCorrected")
+        a.im_channel_names = Dict{String,Any}("default"=>["ch0","ch1"], "_active"=>"default")
+        a.meta = Dict{String,Any}("SizeC"=>2, "SizeT"=>1, "SizeZ"=>5)
+        a.status = "done"; save!(a)
+
+        # imgB: original only, active default → NOT reclaimable (would be an un-import)
+        b = add_image!(s; name="b")
+        _mk_ver!(b, "import.ome.zarr")
+        b.filepath = Dict("default"=>"import.ome.zarr", "_active"=>"default")
+        b.status = "done"; save!(b)
+
+        # safe-primary rule: removing default while drift remains active must NOT un-import
+        freed, cleared = remove_image_version!(a, "default", "driftCorrected")
+        @test freed > 0
+        @test cleared == false                                        # other version survives
+        @test !isdir(joinpath(img_zero_dir(a), "import.ome.zarr"))    # original gone
+        @test  isdir(joinpath(img_zero_dir(a), "drift.ome.zarr"))     # corrected kept
+
+        ra = init_object(proj.uid, a.uid)
+        @test ra.status == "done"                                     # NOT reset to pending
+        @test ra.filepath["_active"] == "driftCorrected"
+        @test !haskey(ra.filepath, "default")
+        @test ra.meta["SizeC"] == 2                                   # dims kept
+        @test Cecelia.versioned_get(ra.im_channel_names, "default") == ["ch0","ch1"]  # channel names kept
+
+        # reclaim_defaults! over both: only imgB is skipped (active==default), imgA already freed above
+        # → re-run on a fresh reclaimable image to assert the batch path + skip
+        c = add_image!(s; name="c")
+        _mk_ver!(c, "import.ome.zarr"); _mk_ver!(c, "af.ome.zarr")
+        c.filepath = Dict("default"=>"import.ome.zarr", "afCorrected"=>"af.ome.zarr", "_active"=>"afCorrected")
+        c.status = "done"; save!(c)
+
+        tot, reclaimed = reclaim_defaults!(proj.uid, [c.uid, b.uid])
+        @test reclaimed == [c.uid]                                    # b skipped (not reclaimable)
+        @test tot > 0
+        @test !isdir(joinpath(img_zero_dir(c), "import.ome.zarr"))
+        @test  isdir(joinpath(img_zero_dir(b), "import.ome.zarr"))    # b untouched
+        rm(proj.root; recursive=true)
+    end
+
     # ── A task crash is recorded in the per-image log, not just the console ──────
     # Regression: a Julia-side failure (caught in _execute_job!) used to only @warn to the console —
     # it never reached {img._dir}/logs/{fun}.log, so a crashed task looked like it just stopped

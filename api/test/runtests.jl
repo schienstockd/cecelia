@@ -1037,3 +1037,16 @@ end
     @test occursin("using Cecelia", d.doc)
     @test occursin("figures", d.doc) && occursin("CSV", d.doc)
 end
+
+@testset "API: storage" begin
+    # summary requires projectUid
+    st, body = api_storage_summary(HTTP.Request("GET", "/api/storage/summary"))
+    @test st == 400 && haskey(JSON3.read(body), :error)
+
+    # reclaim requires projectUid + a non-empty imageUids list (a stale/empty request is rejected,
+    # never allowed to touch disk)
+    st, _ = _post(api_storage_reclaim, Dict("projectUid" => ""))
+    @test st == 400
+    st, _ = _post(api_storage_reclaim, Dict("projectUid" => "p", "imageUids" => String[]))
+    @test st == 400
+end

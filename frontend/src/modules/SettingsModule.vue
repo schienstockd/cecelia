@@ -8,8 +8,41 @@ import { napariState, notebooksState, stateInfo, formatUptime, type ServiceState
 import { notebooksApi, napariApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
+import { fetchStorageSummary, reclaimStorage, formatBytes, type StorageSummary } from '../utils/storage'
 
 const showPackages = ref(false)
+
+// ── Storage ─────────────────────────────────────────────────────────────────
+// On-demand scan (walking every image store is expensive — never auto-run on open). Surfaces
+// reclaimable ORIGINAL imports of images whose drift/AF/cellpose-corrected variant is now active,
+// and frees them in one click (backend keeps the corrected variant working). See utils/storage.ts.
+const storage      = ref<StorageSummary | null>(null)
+const storageScan  = ref(false)
+const storageBusy  = ref(false)
+const storageError = ref('')
+
+async function scanStorage() {
+  const uid = projectMeta.current?.uid
+  if (!uid) return
+  storageScan.value = true; storageError.value = ''
+  try { storage.value = await fetchStorageSummary(uid) }
+  catch (e: any) { storageError.value = e?.message ?? 'Scan failed' }
+  finally { storageScan.value = false }
+}
+
+async function reclaimAll() {
+  const uid = projectMeta.current?.uid
+  if (!uid || !storage.value?.reclaimable.length) return
+  storageBusy.value = true; storageError.value = ''
+  try {
+    await reclaimStorage(uid, storage.value.reclaimable.map(r => r.imageUid))
+    await scanStorage()   // re-scan so the numbers reflect what was freed
+  } catch (e: any) {
+    storageError.value = e?.message ?? 'Reclaim failed'
+  } finally {
+    storageBusy.value = false
+  }
+}
 
 const projectMeta = useProjectMetaStore()
 const settings    = useSettingsStore()
@@ -320,6 +353,61 @@ async function switchWt(path: string) {
     </section>
 
     <!-- ── Custom modules ──────────────────────────────────────────────── -->
+    <!-- ── Storage ──────────────────────────────────────────────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Storage</h2>
+
+      <div class="field">
+        <div class="field-row">
+          <button class="save-btn" :disabled="storageScan || !projectMeta.current" @click="scanStorage"
+                  v-tooltip.top="'Scan this project on disk (may take a moment for large projects)'">
+            <i :class="['pi', storageScan ? 'pi-spin pi-cog' : 'pi-search']" />
+            {{ storage ? 'Re-scan' : 'Scan storage' }}
+          </button>
+        </div>
+        <span v-if="!storage && !storageScan" class="field-hint">
+          Scan to see disk usage and originals that can be freed once a corrected variant is active.
+        </span>
+        <span v-if="storageError" class="field-hint" style="color: var(--cc-sev-fail, #c0392b);">{{ storageError }}</span>
+      </div>
+
+      <template v-if="storage">
+        <div class="stor-line">
+          <span v-tooltip.top="'Total size of the image OME-ZARRs in this project (not labels or other analysis data)'">Images in project</span>
+          <strong>{{ formatBytes(storage.imageBytes) }}</strong>
+          <span>Disk free</span><strong>{{ formatBytes(storage.diskAvailable) }} / {{ formatBytes(storage.diskTotal) }}</strong>
+        </div>
+
+        <div v-if="storage.reclaimable.length" class="stor-reclaim">
+          <div class="stor-reclaim-head">
+            Reclaimable <strong>{{ formatBytes(storage.reclaimableBytes) }}</strong>
+            <span class="field-hint">({{ storage.reclaimable.length }} original{{ storage.reclaimable.length > 1 ? 's' : '' }}, corrected variant active)</span>
+          </div>
+          <ul class="stor-list">
+            <li v-for="r in storage.reclaimable.slice(0, 8)" :key="r.imageUid">
+              <span class="stor-name">{{ r.name || r.imageUid }}</span>
+              <span class="stor-size">{{ formatBytes(r.bytes) }}</span>
+              <span class="field-hint">→ {{ r.activeVersion }} active</span>
+            </li>
+            <li v-if="storage.reclaimable.length > 8" class="field-hint">…{{ storage.reclaimable.length - 8 }} more</li>
+          </ul>
+          <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
+            <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
+                    v-tooltip.top="'Delete the original imports; the active corrected variant is kept'">
+              <i :class="['pi', storageBusy ? 'pi-spin pi-cog' : 'pi-trash']" /> Free up space
+            </button>
+            <template v-else>
+              <button class="save-btn danger" @click="confirm">
+                <i class="pi pi-trash" /> Delete {{ storage.reclaimable.length }} original{{ storage.reclaimable.length > 1 ? 's' : '' }} ({{ formatBytes(storage.reclaimableBytes) }})
+              </button>
+              <button class="save-btn ghost" @click="cancel">Cancel</button>
+            </template>
+          </ConfirmButton>
+        </div>
+        <span v-else class="field-hint">Nothing to reclaim — no originals with an active corrected variant.</span>
+      </template>
+    </section>
+
     <section class="settings-section">
       <h2 class="section-title">Custom modules</h2>
       <div class="field">
@@ -631,6 +719,36 @@ async function switchWt(path: string) {
   color: var(--cc-text-dim);
   margin-top: 0.25rem;
 }
+
+/* Storage box */
+.stor-line {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  margin: 0.4rem 0 0.6rem;
+}
+.stor-line strong { justify-self: end; }
+.stor-reclaim { margin-top: 0.5rem; }
+.stor-reclaim-head { font-size: 0.82rem; margin-bottom: 0.35rem; }
+.stor-reclaim-head .field-hint { display: inline; margin-left: 0.35rem; }
+.stor-list {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+.stor-list li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.76rem;
+  padding: 0.1rem 0;
+}
+.stor-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stor-size { font-variant-numeric: tabular-nums; color: var(--cc-text); }
+.stor-list .field-hint { display: inline; margin: 0; }
 
 .save-btn {
   display: flex;
