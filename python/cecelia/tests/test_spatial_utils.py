@@ -85,5 +85,30 @@ class TestPairwiseContactLogOdds(unittest.TestCase):
         self.assertGreater(lor[0, 1], 0); self.assertLess(lor[0, 0], 0)
 
 
+class TestMeshUtils(unittest.TestCase):
+    def _vol(self):
+        v = np.zeros((6, 6, 20), dtype=np.int32)
+        v[1:5, 1:5, 0:5] = 1        # cube A
+        v[1:5, 1:5, 10:15] = 2      # cube far from A
+        v[1:5, 1:5, 5:9] = 3        # cube adjacent to A
+        return v
+
+    def test_build_and_nearest_surface(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface
+        meshes = build_label_meshes(self._vol(), [1, 2, 3], [1.0, 1.0, 1.0], min_voxels=8)
+        self.assertEqual(sorted(meshes), [1, 2, 3])
+        # nearest B to A is the adjacent cube 3, ~0 µm
+        d, nb = nearest_surface({1: meshes[1]}, {2: meshes[2], 3: meshes[3]})[1]
+        self.assertEqual(nb, 3)
+        self.assertLess(d, 1.0)
+        # only the far cube → ~5 µm gap
+        self.assertAlmostEqual(nearest_surface({1: meshes[1]}, {2: meshes[2]})[1][0], 5.0, delta=1.0)
+
+    def test_empty_b(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, nearest_surface
+        meshes = build_label_meshes(self._vol(), [1], [1.0, 1.0, 1.0], min_voxels=8)
+        self.assertEqual(nearest_surface({1: meshes[1]}, {})[1], (float("inf"), None))
+
+
 if __name__ == "__main__":
     unittest.main()
