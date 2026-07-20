@@ -49,6 +49,10 @@ function _spec_path(::ClustTracks)
     joinpath(@__DIR__, "clustTracks", "cluster.json")
 end
 
+function _spec_path(::CellNeighbours)
+    joinpath(@__DIR__, "spatialAnalysis", "cellNeighbours.json")
+end
+
 function _spec_path(::AfCorrect)
     joinpath(@__DIR__, "cleanupImages", "af_correct.json")
 end
@@ -101,6 +105,7 @@ function _fun_name_map()::Dict{String, CciaTask}
         "behaviour.hmm"                     => CompositeTask("behaviour.hmm"),
         "clustPops.cluster"                 => ClustPops(),
         "clustTracks.cluster"               => ClustTracks(),
+        "spatialAnalysis.cellNeighbours"    => CellNeighbours(),
         "segment.cellposeMeasure"           => CompositeTask("segment.cellposeMeasure"),
         "cleanupImages.afCorrect"           => AfCorrect(),
         "cleanupImages.driftCorrect"        => DriftCorrect(),

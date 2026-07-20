@@ -195,12 +195,29 @@ Functions `detect_aggregates` / `aggregate_size`; obs `<popType>.cell.is.aggrega
 Detection: DBSCAN on centroids (`sklearn.cluster.DBSCAN`, legacy `cellClusters`) + a mesh-proximity
 variant (trimesh surface distance → connected components) for large objects (legacy `cellClustersMeshes`).
 
-### Decision 11 — mesh contact keeps trimesh; no ImplicitBVH.jl
+### Decision 11 — mesh contact keeps trimesh; generate on the fly; pre-filter with the neighbour graph
 
 Mesh contact/containment (legacy `cell_contacts_mesh.py`, `cell_clusters_mesh.py`) stays on **trimesh**
-(present, proven, bbox-derived meshes via `morpho_utils.df_to_meshes`) + connected components. Do **not**
-add `ImplicitBVH.jl` — a new Julia geometry dep against the Python-owns-heavy-geometry boundary, for no
-demonstrated speed need. Revisit only if mesh contact becomes a measured bottleneck (→ `docs/FUTURE.md`).
+— consistency with the existing 3D object-measurement step (same mesh objects), and geometry stays in
+Python (the architecture boundary). The legacy's two pain points (slow collision sweep, required saving
+meshes) are addressed by *how* it's used, not by switching engines (Dominik raised this 2026-07-20):
+
+1. **Do not persist meshes at segmentation.** Generate on the fly. Two tiers:
+   - *Fast/default:* bbox / convex-hull approx meshes from the measure step's existing `bbox_*` columns
+     (`morpho_utils.df_to_meshes`) — cheap, no disk.
+   - *Accurate/opt-in:* true surface meshes (marching-cubes on the label submask) built **only for the
+     candidate cells**, cached in the task-run dir (never the permanent object) if reused.
+   Drop the legacy `saveMeshes` path — persisted per-cell surfaces are storage-heavy and go stale on
+   re-segmentation.
+2. **Candidate pre-filter is the real speedup.** Contacts need exact mesh distance only for pairs that
+   are already spatial neighbours. Reuse the Phase 2 neighbour graph (or a centroid kNN) to get candidate
+   pairs → O(edges), not O(N²) collision. This is orthogonal to trimesh-vs-Julia and does most of the work.
+3. **Parallelise across timepoints** for live imaging (each frame independent; trimesh/fcl releases the
+   GIL) — the second lever if the pre-filter isn't enough.
+
+**ImplicitBVH.jl stays parked** (→ `docs/FUTURE.md`): a new Julia geometry dep against the
+Python-owns-geometry boundary, justified only if — *after* the pre-filter — mesh distance is still the
+measured bottleneck on large PhenoCycler volumes. Measure first.
 
 ### Decision 12 — two module pages, both REPL-runnable
 
@@ -285,9 +302,16 @@ Frontend literals (`ClusterPlots.vue`, `clusterHeatmapBody.ts`, `overlayLayers.t
 that render region plots/napari (4/5/7). No central pop-type enum needed extending; gating engine filter
 membership is already column-generic.
 
-**Phase 2 — Neighbour graph (shared substrate).** `spatialAnalysis.cellNeighbours` task (Julia handler +
-`_run.py` via `run_py` + JSON): squidpy graph (radius/kNN/Delaunay) → `{vn}.spatial.h5ad` obsp. QC +
-COHORT_METRICS (edge count, mean degree). This graph feeds everything downstream.
+**Phase 2 — Neighbour graph (shared substrate). ✅ DONE backend (2026-07-20); Python runner unverified
+end-to-end.** `spatialAnalysis.cellNeighbours` (image-scope): Julia handler `cellNeighbours.jl` (resolves
+value_name + optional pop subset via `pop_df` + physical sizes) + `cell_neighbours_run.py` via `run_py`
+(squidpy `spatial_neighbors` delaunay/knn/radius; scales pixel centroids → µm; writes `{vn}.spatial.h5ad`)
++ `cellNeighbours.json`. Registered (`Cecelia.jl` include, `task_registry.jl` `_spec_path`+`_fun_name_map`,
+exported). QC: pure `_neighbours_qc_findings` (no-cells / no-edges / >50%-isolated) + metrics
+(nCells/nEdges/meanDegree) + `COHORT_METRICS`. Reuses `_str_list` from clustPops (module-visible, not
+re-defined). Tests: param validation (range enforcement — note `int` enforces min/max, `integer` does
+NOT) + QC-helper unit tests; suite green (1278 pass). **Not yet run against real image data** (needs a
+live squidpy run + fixture); frontend module page is Phase 5.
 
 **Phase 3 — Composition vector (Julia).** Julia reads graph edges + resolves neighbour pop labels via
 `pop_df` + computes per-cell composition (clustTracks inline-matrix pattern). `perTimepoint` (Decision 7).

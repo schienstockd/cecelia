@@ -40,6 +40,9 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     # that collapsed to one state / a very different dominant-state fraction is an outlier.
     "behaviour.hmm_states"       => ["nDecoded", "nStates", "dominantStateFrac"],
     "behaviour.hmm_transitions"  => ["nTransitions", "nDistinctTransitions"],
+    # spatial neighbour graph (per image): edge count + mean degree flag an image whose graph is far
+    # sparser/denser than its peers (a radius/density outlier). See spatialAnalysis/cellNeighbours.jl.
+    "spatialAnalysis.cellNeighbours" => ["nCells", "nEdges", "meanDegree"],
 )
 
 """

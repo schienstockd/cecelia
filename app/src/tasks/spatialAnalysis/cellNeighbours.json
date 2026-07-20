@@ -1,0 +1,59 @@
+{
+  "task": "cellNeighbours",
+  "fun_name": "spatialAnalysis.cellNeighbours",
+  "label": "Neighbour graph",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The segmentation whose cells are connected into a spatial neighbour graph. The graph is saved as <segmentation>.spatial.h5ad next to its label properties."
+    },
+    {
+      "key": "pops",
+      "label": "Populations",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "Restrict the graph to these populations — leave empty to connect every cell of the segmentation. Any cell poptype (flow / live / clust / region)."
+    },
+    {
+      "key": "neighbourMethod",
+      "label": "Graph type",
+      "type": "select",
+      "default": "delaunay",
+      "options": [
+        { "value": "delaunay", "label": "Delaunay (radius-pruned)" },
+        { "value": "knn",      "label": "k nearest neighbours" },
+        { "value": "radius",   "label": "Fixed radius" }
+      ],
+      "tip": "Delaunay triangulation (pruned by radius), k nearest neighbours, or a fixed-radius graph — squidpy sq.gr.spatial_neighbors."
+    },
+    {
+      "key": "neighbourRadius",
+      "label": "Radius (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 30,
+      "tip": "Neighbourhood radius in microns. Used by the fixed-radius graph and to prune Delaunay edges. Centroids are scaled to physical units before building the graph."
+    },
+    {
+      "key": "nNeighbours",
+      "label": "k (neighbours)",
+      "type": "int",
+      "min": 1,
+      "max": 100,
+      "step": 1,
+      "default": 6,
+      "tip": "Number of nearest neighbours for the kNN graph."
+    }
+  ]
+}

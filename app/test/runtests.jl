@@ -637,6 +637,30 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             ClustPops(), Dict{String,Any}("resolution" => "not-a-number"))
     end
 
+    @testset "Param validation — CellNeighbours" begin
+        @test _task_from_fun_name("spatialAnalysis.cellNeighbours") isa CellNeighbours
+        @test task_scope(CellNeighbours()) == "image"          # per-image graph (no "scope" in spec)
+        # neighbourRadius is float min=0/max=1000 — out of range must be rejected
+        @test_throws ParamValidationError validate_params(
+            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 5000))
+        # nNeighbours is int min=1 — below the floor must be rejected
+        @test_throws ParamValidationError validate_params(
+            CellNeighbours(), Dict{String,Any}("nNeighbours" => 0))
+        # a valid param set passes
+        @test validate_params(
+            CellNeighbours(), Dict{String,Any}("neighbourRadius" => 30, "nNeighbours" => 6,
+                                               "neighbourMethod" => "knn")) === nothing
+    end
+
+    @testset "cellNeighbours QC findings (pure helper)" begin
+        # objective graph metrics → advisory findings; only the unambiguous problems flag
+        @test isempty(Cecelia._neighbours_qc_findings(100, 500, 0.1))        # healthy graph → no finding
+        @test only(Cecelia._neighbours_qc_findings(0, 0, 0.0))["code"]   == "spatial.no_cells"
+        @test only(Cecelia._neighbours_qc_findings(100, 0, 0.0))["code"] == "spatial.no_edges"
+        @test only(Cecelia._neighbours_qc_findings(100, 40, 0.7))["code"] == "spatial.many_isolated"
+        @test isempty(Cecelia._neighbours_qc_findings(100, 40, 0.3))         # some isolated, under half → fine
+    end
+
     @testset "Param validation — CropImage" begin
         @test _task_from_fun_name("editImages.cropImage") isa CropImage
         # x0/x1/y0/y1 are int min=0 — negative must be rejected
