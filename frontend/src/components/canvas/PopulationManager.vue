@@ -160,6 +160,7 @@ async function addClusterPopulation() {
 interface FpCond { measure: string; fun: string; values: string }
 const FILTER_FUNS = ['gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'in']
 const showFilterForm = ref(false)
+const fpEditPath = ref<string | null>(null)   // null → creating; a path → editing that filter pop
 const fpName = ref('')
 const fpParent = ref('root')
 const fpColour = ref(POP_PALETTE[0])
@@ -171,13 +172,40 @@ const parentOptions = computed(() => ['root', ...visiblePops.value.map(p => p.pa
 function addFpCond() { fpConds.value.push({ measure: filterMeasures.value[0] ?? '', fun: 'gt', values: '' }) }
 function removeFpCond(i: number) { fpConds.value.splice(i, 1) }
 
+function resetFilterForm() {
+  fpEditPath.value = null; fpName.value = ''; fpParent.value = 'root'
+  fpColour.value = POP_PALETTE[0]; fpConds.value = [{ measure: '', fun: 'gt', values: '' }]
+}
+function openCreateFilter() { resetFilterForm(); showFilterForm.value = true }
+// EDIT reuses the same form (nothing special about editing): pre-fill from the pop's stored filter.
+function beginEditFilter(p: FlatPop) {
+  const f = p.filter
+  const conds = f?.conditions?.length ? f.conditions
+    : (f ? [{ measure: f.measure, fun: f.fun, values: f.values }] : [])
+  fpEditPath.value = p.path; fpName.value = p.name; fpParent.value = p.parent; fpColour.value = p.colour
+  fpConds.value = conds.length
+    ? conds.map(c => ({ measure: String(c.measure ?? ''), fun: String(c.fun ?? 'gt'),
+        values: Array.isArray(c.values) ? c.values.join(', ') : (c.values == null ? '' : String(c.values)) }))
+    : [{ measure: '', fun: 'gt', values: '' }]
+  showFilterForm.value = true
+}
+
 async function submitFilterPop() {
   const name = fpName.value.trim()
   const conds = fpConds.value.filter(c => c.measure)
     .map(c => ({ measure: c.measure, fun: c.fun, values: parseFilterValues(c.fun, c.values) }))
-  if (!name || !conds.length) return
-  await g.addFilterPop(name, fpParent.value, fpColour.value, conds)
-  fpName.value = ''; fpConds.value = [{ measure: '', fun: 'gt', values: '' }]; showFilterForm.value = false
+  if (!conds.length) return
+  if (fpEditPath.value) {
+    const path = fpEditPath.value
+    const cur = visiblePops.value.find(p => p.path === path)
+    await g.updateFilterPop(path, conds)                                   // conditions
+    if (cur && cur.colour !== fpColour.value) await g.updatePop(path, { colour: fpColour.value })  // colour
+    if (name && cur && name !== cur.name && !isReservedPopName(name)) await g.renamePop(path, name) // rename LAST (path changes)
+  } else {
+    if (!name) return
+    await g.addFilterPop(name, fpParent.value, fpColour.value, conds)
+  }
+  resetFilterForm(); showFilterForm.value = false
 }
 
 // a hand-drawn gate vs a declarative filter pop (badge in the list)
@@ -197,20 +225,22 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </button>
       </div>
 
-      <!-- filter-population form (Decision 15): a pop defined by an AND-ed filter on any obs measure -->
+      <!-- filter-population form (Decision 15): a pop defined by an AND-ed filter on any obs measure.
+           Same form creates AND edits (fpEditPath) — editing is not a special path. -->
       <div v-if="!readonly && !clusterMode" class="pm-add">
-        <button class="pm-add-btn" @click="showFilterForm = !showFilterForm"
+        <button class="pm-add-btn" @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
                 v-tooltip.bottom="'Define a population by filtering on obs measures (region, cluster, aggregate, intensity, speed…)'">
           <i class="pi pi-filter" /> New filter population
         </button>
       </div>
       <div v-if="showFilterForm && !readonly && !clusterMode" class="pm-ff">
+        <div class="pm-ff-title">{{ fpEditPath ? 'Edit filter population' : 'New filter population' }}</div>
         <div class="pm-ff-head">
           <input v-model="fpName" class="pm-ff-name" placeholder="Population name" />
           <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
         </div>
         <label class="pm-ff-row">Under
-          <select v-model="fpParent">
+          <select v-model="fpParent" :disabled="!!fpEditPath" v-tooltip.top="fpEditPath ? 'Parent is fixed when editing — delete & recreate to move' : ''">
             <option v-for="o in parentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
           </select>
         </label>
@@ -229,8 +259,10 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
         </div>
         <div class="pm-ff-actions">
           <button class="pm-ff-cond-add" @click="addFpCond"><i class="pi pi-plus" /> AND condition</button>
+          <span class="pm-ff-spacer" />
+          <button class="pm-ff-cancel" @click="showFilterForm = false; resetFilterForm()">Cancel</button>
           <button class="pm-add-btn" :disabled="!fpName.trim() || !fpConds.some(c => c.measure)"
-                  @click="submitFilterPop">Create</button>
+                  @click="submitFilterPop">{{ fpEditPath ? 'Save' : 'Create' }}</button>
         </div>
       </div>
 
@@ -253,8 +285,12 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           <input v-else class="pm-rename" v-model="editName" autofocus
                  @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
 
-          <!-- distinguish a declarative filter pop from a hand-drawn gate; tooltip shows the predicate -->
-          <i v-if="isFilterPop(p)" class="pi pi-filter pm-filter-badge"
+          <!-- filter pops are badged (vs hand-drawn gates); the badge is the EDIT affordance (click →
+               open the same form pre-filled). Read-only surfaces show a static badge. Tooltip = predicate. -->
+          <button v-if="isFilterPop(p) && !readonly && !p.transient" type="button"
+                  class="pm-icon pm-filter-badge" v-tooltip.top="`Edit: ${popFilterSummary(p)}`"
+                  @click.stop="beginEditFilter(p)"><i class="pi pi-filter" /></button>
+          <i v-else-if="isFilterPop(p)" class="pi pi-filter pm-filter-badge"
              v-tooltip.top="popFilterSummary(p)" />
 
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
@@ -427,7 +463,13 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 .pm-ff-actions { display: flex; justify-content: space-between; align-items: center; }
 .pm-ff-cond-add { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 2px; }
 .pm-ff-cond-add:hover { color: var(--cc-text); }
+.pm-ff-title { font-size: 11px; font-weight: 600; color: var(--cc-text); }
+.pm-ff-spacer { flex: 1; }
+.pm-ff-cancel { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 4px 6px; }
+.pm-ff-cancel:hover { color: var(--cc-text); }
 .pm-filter-badge { font-size: 10px; color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
+button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
+button.pm-filter-badge:hover { opacity: 1; }
 .pm-clusters { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
 .pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: 11px; line-height: 1;
   border: 1px solid var(--cc-border); border-radius: 3px; background: var(--cc-surface-1);
