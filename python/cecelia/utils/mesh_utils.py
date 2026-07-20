@@ -84,3 +84,55 @@ def nearest_surface(a_meshes, b_meshes):
 # how far past the touching-reach to still consider a candidate (µm), so a near-but-not-touching
 # nearest neighbour is still found for the min_distance readout, not just contacts.
 _SURFACE_SEARCH_PAD = 50.0
+
+
+def mesh_proximity_edges(meshes, max_dist):
+    """Undirected edges between meshes whose SURFACE distance ≤ max_dist. Candidate pairs pre-filtered
+    by centroid KDTree (Decision 11), so O(edges) not O(N²). Returns list of (labelA, labelB)."""
+    from scipy.spatial import cKDTree
+
+    labels = list(meshes.keys())
+    if len(labels) < 2:
+        return []
+    cent = np.array([meshes[l].centroid for l in labels])
+    rad = {l: _radius(meshes[l]) for l in labels}
+    max_rad = max(rad.values())
+    tree = cKDTree(cent)
+    edges = []
+    for i, li in enumerate(labels):
+        reach = max_dist + rad[li] + max_rad
+        for j in tree.query_ball_point(cent[i], reach):
+            if j <= i:
+                continue
+            if _surface_distance(meshes[li], meshes[labels[j]]) <= max_dist:
+                edges.append((li, labels[j]))
+    return edges
+
+
+def mesh_aggregates(meshes, max_dist, min_cells):
+    """Aggregate ids by mesh-proximity connected components: cells whose meshes are within `max_dist`
+    (surface) are linked; a component with ≥ `min_cells` meshes is an aggregate (legacy
+    cellClustersMeshes). Returns `{label: aggregate_id}` (0 = not aggregated). Union-find, no extra deps."""
+    labels = list(meshes.keys())
+    parent = {l: l for l in labels}
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for a, b in mesh_proximity_edges(meshes, max_dist):
+        parent[find(a)] = find(b)
+
+    comps = {}
+    for l in labels:
+        comps.setdefault(find(l), []).append(l)
+    out = {l: 0 for l in labels}
+    aid = 0
+    for members in comps.values():
+        if len(members) >= min_cells:
+            aid += 1
+            for m in members:
+                out[m] = aid
+    return out

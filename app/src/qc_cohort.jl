@@ -47,6 +47,7 @@ const COHORT_METRICS = Dict{String,Vector{String}}(
     "spatialAnalysis.detectAggregates" => ["nCells", "nAggregates", "fracAggregated"],
     "spatialAnalysis.cellContacts"     => ["nCellsA", "nContacts", "fracInContact"],
     "spatialAnalysis.contactsMeshes"   => ["nCellsA", "nContacts", "fracInContact"],
+    "spatialAnalysis.aggregatesMeshes" => ["nCells", "nAggregates", "fracAggregated"],
     # region clustering (set-scope, one run): per-image region distribution — an image collapsed to
     # one region / a very different dominant-region fraction is an outlier. See clustRegions/cluster.jl.
     "clustRegions.cluster"           => ["nCells", "nClusters", "largestClusterFrac"],

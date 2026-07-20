@@ -109,6 +109,16 @@ class TestMeshUtils(unittest.TestCase):
         meshes = build_label_meshes(self._vol(), [1], [1.0, 1.0, 1.0], min_voxels=8)
         self.assertEqual(nearest_surface({1: meshes[1]}, {})[1], (float("inf"), None))
 
+    def test_mesh_aggregates(self):
+        from cecelia.utils.mesh_utils import build_label_meshes, mesh_aggregates
+        # labels 1 & 3 are adjacent (one aggregate); label 2 is far (alone)
+        meshes = build_label_meshes(self._vol(), [1, 2, 3], [1.0, 1.0, 1.0], min_voxels=8)
+        # 1 & 3 are face-adjacent (surface dist ~0); 2 sits ~1µm from 3. max_dist=0.5 links only 1–3.
+        agg = mesh_aggregates(meshes, max_dist=0.5, min_cells=2)
+        self.assertEqual(agg[1], agg[3])          # 1 & 3 in the same aggregate
+        self.assertNotEqual(agg[1], 0)            # and it's a real aggregate
+        self.assertEqual(agg[2], 0)               # 2 not close enough → not aggregated (min_cells=2)
+
 
 if __name__ == "__main__":
     unittest.main()

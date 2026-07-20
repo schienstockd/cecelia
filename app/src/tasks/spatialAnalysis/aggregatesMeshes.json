@@ -1,0 +1,47 @@
+{
+  "task": "aggregatesMeshes",
+  "fun_name": "spatialAnalysis.aggregatesMeshes",
+  "label": "Detect aggregates (meshes)",
+  "category": "Spatial analysis",
+  "env": ["local"],
+  "resource_pool": "default",
+  "params": [
+    {
+      "key": "valueName",
+      "label": "Segmentation",
+      "type": "valueNameSelection",
+      "default": "default",
+      "tip": "The segmentation whose cells are tested for aggregation by mesh surface proximity."
+    },
+    {
+      "key": "pops",
+      "label": "Population",
+      "type": "popSelection",
+      "popScope": "cells",
+      "multiple": true,
+      "acrossSegmentations": false,
+      "default": [],
+      "tip": "The population to detect aggregates of. Cells whose surfaces are within the threshold are linked into aggregates."
+    },
+    {
+      "key": "maxClusterDist",
+      "label": "Surface distance (µm)",
+      "type": "float",
+      "min": 0,
+      "max": 1000,
+      "step": 1,
+      "default": 5,
+      "tip": "Surface-to-surface distance (microns) within which two cells are linked into the same aggregate."
+    },
+    {
+      "key": "minCells",
+      "label": "Min cells",
+      "type": "int",
+      "min": 2,
+      "max": 1000,
+      "step": 1,
+      "default": 5,
+      "tip": "Minimum number of connected cells for a group to count as an aggregate."
+    }
+  ]
+}

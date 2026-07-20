@@ -774,6 +774,13 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             ContactsMeshes(), Dict{String,Any}("maxContactDist" => -1))
     end
 
+    @testset "Param validation — AggregatesMeshes" begin
+        @test _task_from_fun_name("spatialAnalysis.aggregatesMeshes") isa AggregatesMeshes
+        @test task_scope(AggregatesMeshes()) == "image"
+        @test_throws ParamValidationError validate_params(
+            AggregatesMeshes(), Dict{String,Any}("minCells" => 1))
+    end
+
     @testset "Param validation — CellContacts" begin
         @test _task_from_fun_name("spatialAnalysis.cellContacts") isa CellContacts
         @test task_scope(CellContacts()) == "image"
