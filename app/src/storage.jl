@@ -5,19 +5,20 @@
 # ── Reclaimable-version policy (pure) ─────────────────────────────────────────
 
 """
-    reclaimable_default(filepath_dict) -> Bool
+    reclaimable_versions(filepath_dict) -> Vector{String}
 
-True when an image's original `default` import zarr can be freed: a NON-default version is active
-(a drift/AF/cellpose-corrected variant), and `default` still has a registered entry. Pure over the
-ccid `filepath` versioned dict → unit-tested.
+Every image version that can be freed: all registered versions EXCEPT the active one. Keeping only
+the active version is safe — the active store is what viewing/analysis use; channel names/dims
+(inherited from `default` via versioned fallback) and every derived label/measurement/gating file
+live in the `1/` metadata dir, untouched. Pure over the ccid `filepath` versioned dict → unit-tested.
 
-Deliberately conservative — only the original import, the case that matches the long-standing "delete
-the imported OME-ZARR once drift/AF-corrected" advice. Arbitrary non-active variants are NOT offered:
-they may be inputs to other steps, and the original is both the biggest and the safe one to drop.
+Includes the original `default` import when a corrected variant is active. Freeing `default` is
+irreversible (re-import to get it back) and freeing an intermediate means it can't be re-derived
+without redoing that correction — that's the point of the reclaim tool; the active version is kept.
 """
-function reclaimable_default(fp::AbstractDict)::Bool
-    versioned_active(fp) == VERSIONED_DEFAULT_VAL && return false
-    !isnothing(versioned_get(fp, VERSIONED_DEFAULT_VAL))
+function reclaimable_versions(fp::AbstractDict)::Vector{String}
+    active = versioned_active(fp)
+    [vn for vn in versioned_keys(fp) if vn != active && !isnothing(versioned_get(fp, vn))]
 end
 
 # Size of one version's on-disk store (zarr dir or a plain file), 0 if missing.
@@ -33,15 +34,16 @@ end
     image_storage(img) -> NamedTuple
 
 `(; active, versions, reclaimable, reclaimableBytes)` for one image. `versions` is a vector of
-`(; valueName, bytes, active)`. Walks each version's store with `_dir_bytes` — this is the expensive
-part (invoked on demand by the storage scan, not on every Settings open).
+`(; valueName, bytes, active)`; `reclaimable` is the list of non-active version names (see
+`reclaimable_versions`) and `reclaimableBytes` their total size. Walks each version's store with
+`_dir_bytes` — the expensive part (invoked on demand by the storage scan, not on every Settings open).
 """
 function image_storage(img::CciaImage)
     ccid = joinpath(img._dir, "ccid.json")
-    isfile(ccid) || return (; active = "", versions = NamedTuple[], reclaimable = false, reclaimableBytes = 0)
+    isfile(ccid) || return (; active = "", versions = NamedTuple[], reclaimable = String[], reclaimableBytes = 0)
     raw = read_ccid_raw(ccid)
     fp  = get(raw, "filepath", nothing)
-    fp isa AbstractDict || return (; active = "", versions = NamedTuple[], reclaimable = false, reclaimableBytes = 0)
+    fp isa AbstractDict || return (; active = "", versions = NamedTuple[], reclaimable = String[], reclaimableBytes = 0)
 
     active   = versioned_active(fp)
     versions = NamedTuple[]
@@ -51,8 +53,8 @@ function image_storage(img::CciaImage)
         push!(versions, (; valueName = vn, bytes = _version_bytes(img, fn), active = (vn == active)))
     end
 
-    reclaimable = reclaimable_default(fp)
-    rbytes      = reclaimable ? _version_bytes(img, versioned_get(fp, VERSIONED_DEFAULT_VAL)) : 0
+    reclaimable = reclaimable_versions(fp)
+    rbytes      = sum((v.bytes for v in versions if v.valueName in reclaimable); init = 0)
     (; active, versions, reclaimable, reclaimableBytes = rbytes)
 end
 
@@ -62,9 +64,9 @@ end
     project_storage_summary(proj_uid) -> Dict
 
 Disk total/available (via `diskstat`, a cheap statvfs) plus a walked breakdown of the project's image
-stores and the reclaimable originals. The `reclaimable` list carries one entry per image whose
-original `default` import can be freed (a corrected variant is active), each with the bytes freed and
-the version that would remain active. Shape mirrors what the frontend renders + posts back to reclaim.
+stores and the reclaimable (non-active) versions. The `reclaimable` list carries one entry per image
+that has at least one freeable version — the total bytes freed, the version kept active, and the list
+of versions that would be removed. Shape mirrors what the frontend renders + posts back to reclaim.
 """
 function project_storage_summary(proj_uid::String)::Dict{String,Any}
     proj = load_project(proj_uid)
@@ -75,13 +77,15 @@ function project_storage_summary(proj_uid::String)::Dict{String,Any}
     for s in proj._sets, img in s._images
         st = image_storage(img)
         image_bytes += sum(v.bytes for v in st.versions; init = 0)
-        if st.reclaimable && st.reclaimableBytes > 0
+        if !isempty(st.reclaimable) && st.reclaimableBytes > 0
             push!(reclaimable, Dict{String,Any}(
                 "imageUid"      => img.uid,
                 "name"          => img.name,
                 "setUid"        => s.uid,
                 "bytes"         => st.reclaimableBytes,
                 "activeVersion" => st.active,
+                "versions"      => [Dict{String,Any}("valueName" => v.valueName, "bytes" => v.bytes)
+                                    for v in st.versions if v.valueName in st.reclaimable],
             ))
             total_reclaim += st.reclaimableBytes
         end
@@ -163,13 +167,14 @@ function remove_image_version!(img::CciaImage, value_name::String, new_default::
 end
 
 """
-    reclaim_defaults!(proj_uid, image_uids; on_log) -> (freedBytes, reclaimed::Vector)
+    reclaim_inactive!(proj_uid, image_uids; on_log) -> (freedBytes, reclaimed::Vector)
 
-Free the original `default` import of each given image, keeping the active corrected variant working
-(via `remove_image_version!`'s safe-primary rule). Skips any image that isn't genuinely reclaimable
-(active is already `default`, or no default entry) so a stale request can't un-import a live image.
+Free EVERY non-active version of each given image, keeping only the active one. The active version is
+never touched, so its channel names/dims (inherited from `default` via versioned fallback) survive —
+`remove_image_version!`'s safe-primary un-import never triggers because a version always remains.
+Skips any image with nothing to reclaim.
 """
-function reclaim_defaults!(proj_uid::String, image_uids::AbstractVector;
+function reclaim_inactive!(proj_uid::String, image_uids::AbstractVector;
                            on_log::Function = _ -> nothing)
     freed     = 0
     reclaimed = String[]
@@ -177,12 +182,17 @@ function reclaim_defaults!(proj_uid::String, image_uids::AbstractVector;
         img = init_object(proj_uid, string(uid))
         raw = read_ccid_raw(joinpath(img._dir, "ccid.json"))
         fp  = get(raw, "filepath", nothing)
-        (fp isa AbstractDict && reclaimable_default(fp)) || continue
-        active = versioned_active(fp)              # stays active after we drop `default`
-        res    = remove_image_version!(img, VERSIONED_DEFAULT_VAL, active; on_log = on_log)
-        isnothing(res) && continue
-        freed += res[1]
-        push!(reclaimed, string(uid))
+        fp isa AbstractDict || continue
+        active  = versioned_active(fp)            # the one version we keep (new_default for each drop)
+        targets = reclaimable_versions(fp)
+        isempty(targets) && continue
+        removed_any = false
+        for vn in targets
+            res = remove_image_version!(img, vn, active; on_log = on_log)   # re-reads ccid each call
+            isnothing(res) && continue
+            freed += res[1]; removed_any = true
+        end
+        removed_any && push!(reclaimed, string(uid))
     end
     (freed, reclaimed)
 end

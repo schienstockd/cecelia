@@ -69,7 +69,7 @@ Last audited: 2026-07-16 (full six-area ground-truth read; against `main` @ c1ce
 - **Behaviour / plotting**: `behaviour/hmm.jl` (Gaussian HMM), `plotting/plot_data.jl` (`plot_summary_data` server-side aggregation).
 - **Napari client**: `napari.jl` — `NapariViewer` package-level bridge client (WS :7655, `launch!`/`close!`/`restart!`).
 - **Utils / config / logs**: `utils.jl` (`gen_uid`, `_dir_bytes` — the one directory-size helper), `config.jl` (`init_cecelia!`, `.env` reader, `bioformats2raw_bin()`, `python_bin_path()`), `qc.jl`, `run_log.jl`, `lab_log.jl`/`lab_log_context.jl`.
-- **storage.jl**: disk/reclaimable accounting for the Settings storage box (`project_storage_summary`, `reclaimable_default`) + `remove_image_version!` — the ONE image-version deletion path (shared by the `RemoveImage` task and the reclaim API; safe-primary rule keeps a still-active corrected variant working).
+- **storage.jl**: disk/reclaimable accounting for the Settings storage box (`project_storage_summary`, `reclaimable_versions` = every version except the active, `reclaim_inactive!`) + `remove_image_version!` — the ONE image-version deletion path (shared by the `RemoveImage` task and the reclaim API; safe-primary rule keeps a still-active variant working).
 
 ## Julia API (`api/src/`)
 

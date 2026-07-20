@@ -366,7 +366,7 @@ async function switchWt(path: string) {
           </button>
         </div>
         <span v-if="!storage && !storageScan" class="field-hint">
-          Scan to see disk usage and originals that can be freed once a corrected variant is active.
+          Scan to see disk usage and superseded image versions that can be freed (everything except the active one).
         </span>
         <span v-if="storageError" class="field-hint" style="color: var(--cc-sev-fail, #c0392b);">{{ storageError }}</span>
       </div>
@@ -381,30 +381,33 @@ async function switchWt(path: string) {
         <div v-if="storage.reclaimable.length" class="stor-reclaim">
           <div class="stor-reclaim-head">
             Reclaimable <strong>{{ formatBytes(storage.reclaimableBytes) }}</strong>
-            <span class="field-hint">({{ storage.reclaimable.length }} original{{ storage.reclaimable.length > 1 ? 's' : '' }}, corrected variant active)</span>
+            <span class="field-hint">({{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }} with superseded versions; the active version is kept)</span>
           </div>
           <ul class="stor-list">
             <li v-for="r in storage.reclaimable.slice(0, 8)" :key="r.imageUid">
               <span class="stor-name">{{ r.name || r.imageUid }}</span>
               <span class="stor-size">{{ formatBytes(r.bytes) }}</span>
-              <span class="field-hint">→ {{ r.activeVersion }} active</span>
+              <span class="field-hint"
+                    v-tooltip.top="'Frees: ' + (r.versions?.map(v => v.valueName).join(', ') ?? '') + ' — keeps ' + r.activeVersion">
+                → keeps {{ r.activeVersion }}
+              </span>
             </li>
             <li v-if="storage.reclaimable.length > 8" class="field-hint">…{{ storage.reclaimable.length - 8 }} more</li>
           </ul>
           <ConfirmButton @confirm="reclaimAll" v-slot="{ armed, arm, confirm, cancel }">
             <button v-if="!armed" class="save-btn danger" :disabled="storageBusy" @click="arm"
-                    v-tooltip.top="'Delete the original imports; the active corrected variant is kept'">
+                    v-tooltip.top="'Delete every non-active image version (incl. the original import); the active version is kept'">
               <i :class="['pi', storageBusy ? 'pi-spin pi-cog' : 'pi-trash']" /> Free up space
             </button>
             <template v-else>
               <button class="save-btn danger" @click="confirm">
-                <i class="pi pi-trash" /> Delete {{ storage.reclaimable.length }} original{{ storage.reclaimable.length > 1 ? 's' : '' }} ({{ formatBytes(storage.reclaimableBytes) }})
+                <i class="pi pi-trash" /> Free {{ formatBytes(storage.reclaimableBytes) }} across {{ storage.reclaimable.length }} image{{ storage.reclaimable.length > 1 ? 's' : '' }}
               </button>
               <button class="save-btn ghost" @click="cancel">Cancel</button>
             </template>
           </ConfirmButton>
         </div>
-        <span v-else class="field-hint">Nothing to reclaim — no originals with an active corrected variant.</span>
+        <span v-else class="field-hint">Nothing to reclaim — every image has only its active version.</span>
       </template>
     </section>
 

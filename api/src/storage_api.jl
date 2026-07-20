@@ -18,9 +18,9 @@ function api_storage_summary(req::HTTP.Request)
 end
 
 # POST /api/storage/reclaim  {projectUid, imageUids: [...]}
-# Frees each image's original `default` import, keeping the active corrected variant (the shared
-# safe-primary rule in remove_image_version!). Returns bytes freed + the uids actually reclaimed
-# (a stale/ineligible uid is skipped, never un-imported).
+# Frees every NON-active version of each image, keeping only the active one (the shared
+# reclaim_inactive! / remove_image_version! path). Returns bytes freed + the uids actually reclaimed
+# (an image with nothing to reclaim is skipped).
 function api_storage_reclaim(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error = "Invalid JSON body"))
@@ -31,7 +31,7 @@ function api_storage_reclaim(body_bytes::Vector{UInt8})
     (image_uids isa AbstractVector && !isempty(image_uids)) ||
         return 400, JSON3.write((; error = "imageUids (non-empty) required"))
     try
-        freed, reclaimed = reclaim_defaults!(project_uid, image_uids)
+        freed, reclaimed = reclaim_inactive!(project_uid, image_uids)
         200, JSON3.write((; ok = true, freedBytes = freed, reclaimed = reclaimed))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
