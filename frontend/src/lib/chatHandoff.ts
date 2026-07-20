@@ -17,6 +17,7 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `(get_session_briefing), its state (get_project_info, list_images, get_task_history, ` +
       `get_task_log/get_recent_logs), how the data was produced (get_analysis_lineage, get_chains), the ` +
       `analysis itself (get_populations, get_measure_summary, get_behaviour_summary, get_cluster_summary), ` +
+      `the board's plot types (get_available_plots), ` +
       `cross-set QC (get_cohort_qc), the lab log (read_lab_log), and the notebook/REPL data-access ` +
       `surface (get_repl_api). They are read-only except two additive actions, taken only when I ask: ` +
       `appending to the lab log (append_lab_log) and creating a Pluto notebook (create_notebook).`,

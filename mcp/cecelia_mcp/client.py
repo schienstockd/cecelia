@@ -30,6 +30,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
         ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
+        ("GET", "/api/plots/definitions"),  # available plot types (chart types, data needs, scope modes)
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
@@ -151,6 +152,11 @@ class CeceliaClient:
         # the suggestion-relevant fields (drops UI-widget plumbing) — see `_trim_module_params`.
         raw = self._request("GET", "/api/tasks/definitions", {"category": category})
         return _trim_module_params(raw)
+
+    def get_available_plots(self, module: str | None = None):
+        # Available plot types (chart types, data needs, scope modes), project-independent. Optional
+        # `module` narrows to one module page's plots.
+        return self._request("GET", "/api/plots/definitions", {"module": module})
 
     def get_cohort_qc(self, project_uid: str, set_uid: str, fun_name: str,
                       value_name: str | None = None, threshold: float | None = None):
