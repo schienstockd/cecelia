@@ -219,6 +219,27 @@ meshes) are addressed by *how* it's used, not by switching engines (Dominik rais
 Python-owns-geometry boundary, justified only if — *after* the pre-filter — mesh distance is still the
 measured bottleneck on large PhenoCycler volumes. Measure first.
 
+### Decision 13 — cohort batch integration via Harmony (2026-07-20)
+
+Region IDs must be comparable across a cohort, not confounded by per-sample batch effects — the
+cohort-integration idea from NicheCompass (Birk et al., *Nat Genet* 2025), applied to **composition
+vectors**, not their GNN (wrong modality for protein imaging + heavy deps; see the dismissal note
+below). Implemented **lightweight**: an optional `batch_key` in the shared `find_populations` engine
+runs Harmony (`harmonypy`, PCA→`run_harmony`) on the feature matrix before Leiden, clustering over the
+integrated embedding. `clustRegions` exposes it as `integrateBatch` (batch = `uID`); it also benefits
+cell/track clustering for free. Skipped (with a log) when <3 features (a ≤2-population composition is
+~1-D — integration is meaningless). NB `harmonypy` pinned `<1`: scanpy's `harmony_integrate` wrapper
+transposes `Z_corr` for the old (d,N) layout and breaks on harmonypy ≥0.2's (N,d) — so we call
+`run_harmony` directly and orient the output ourselves.
+
+**NicheCompass dismissed for direct import (2026-07-20):** its niche model is *signalling*-based
+(ligand-receptor gene programs, a graph-attention VAE) and needs spatial *transcriptomics*; not
+demonstrated on protein/antibody imaging (CODEX/IMC), which is Cecelia's core. Heavy deps (torch-geometric
++ gene-program DBs) cut against the Python-boundary stance. It benchmarks *against* the composition-based
+camp (CellCharter/GraphST) — which is what Cecelia does, and the modality-appropriate choice here. Only
+the cohort-integration idea was worth taking (this Decision). Revisit NicheCompass/CellCharter only if
+Cecelia invests in spatial-transcriptomics niches (the `stomics` vignette).
+
 ### Decision 12 — two module pages, both REPL-runnable
 
 **Spatial Analysis** and **Region Clustering** are separate first-class pages (like segment/track/gate),

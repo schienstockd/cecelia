@@ -88,6 +88,13 @@
       "tip": "Number of regions for k-means."
     },
     {
+      "key": "integrateBatch",
+      "label": "Integrate across samples",
+      "type": "bool",
+      "default": false,
+      "tip": "Batch-correct the composition across images (Harmony on the sample/uID) before clustering, so region identities are comparable across a cohort instead of confounded by per-sample batch effects. Leiden only."
+    },
+    {
       "key": "mergeUmap",
       "label": "Calculate UMAP",
       "type": "bool",

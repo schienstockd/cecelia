@@ -121,20 +121,49 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
                      transformation: str = "NONE", log_base: float = 0,
                      create_umap: bool = True, use_paga: bool = False,
                      paga_threshold: float = 0.1, backend: str = "auto",
-                     random_state: int = 0, log=None):
-    """Cluster `adata` in place: transform -> normalise -> neighbours (use_rep='X') -> Leiden
-    (`obs['clusters']`, categorical string codes) -> optional UMAP (`obsm['X_umap']`).
+                     random_state: int = 0, batch_key: str = None, log=None):
+    """Cluster `adata` in place: transform -> normalise -> [optional batch integration] -> neighbours
+    -> Leiden (`obs['clusters']`, categorical string codes) -> optional UMAP (`obsm['X_umap']`).
 
     Granularity-blind — `adata.X` is whatever feature matrix the caller built. Returns
     `(clusters, x_umap)` for convenience; the mutation on `adata` is the source of truth.
     `random_state` makes a run reproducible. `backend='auto'` uses the GPU when available and
-    silently falls back to CPU (logged)."""
+    silently falls back to CPU (logged).
+
+    `batch_key`: when set to an obs column with >1 level, cluster over a Harmony-integrated embedding
+    (PCA -> `sce.pp.harmony_integrate`) instead of raw `X`, so cluster/region IDs are comparable across
+    a cohort rather than confounded by per-sample batch effects (the cohort-integration idea from
+    NicheCompass, applied to composition rather than a GNN — docs/todo/SPATIAL_REGIONS_PLAN.md). Forces
+    the CPU path (Harmony is CPU)."""
     _log = log if callable(log) else (lambda _m: None)
 
     apply_transform(adata, transformation=transformation, log_base=log_base)
     normalise_adata(adata, axis=axis, to_median=to_median, max_fraction=max_fraction,
                     percentile=percentile, percentile_bottom=percentile_bottom)
     adata.X[np.isnan(adata.X)] = 0
+
+    # optional batch integration → cluster over the corrected embedding (`use_rep`), CPU only
+    use_rep = "X"
+    if batch_key is not None and batch_key in adata.obs and adata.obs[batch_key].nunique() > 1:
+        n_comps = min(50, adata.n_vars - 1, adata.n_obs - 1)
+        if n_comps >= 2:
+            import harmonypy
+            sc.pp.pca(adata, n_comps=n_comps, random_state=random_state)
+            # call run_harmony directly (not scanpy's harmony_integrate): the wrapper transposes
+            # Z_corr assuming the old (d, N) layout, but harmonypy ≥0.2 returns (N, d) → shape error.
+            # Orient to (n_obs, n_pcs) ourselves so it's robust across harmonypy versions.
+            ho = harmonypy.run_harmony(adata.obsm["X_pca"], adata.obs, [batch_key])
+            Z = np.asarray(ho.Z_corr)
+            if Z.shape[0] != adata.n_obs and Z.shape[1] == adata.n_obs:
+                Z = Z.T
+            adata.obsm["X_pca_harmony"] = Z
+            use_rep = "X_pca_harmony"
+            backend = "cpu"
+            _log(f">> batch-integrated on '{batch_key}' "
+                 f"({adata.obs[batch_key].nunique()} batches) via Harmony → use_rep={use_rep}")
+        else:
+            # <3 features → the embedding is ~1-D; batch integration is meaningless. Skip, don't crash.
+            _log(f">> batch integration on '{batch_key}' skipped: need ≥3 features (got {adata.n_vars})")
 
     backend = _resolve_backend(backend)
     if backend == "gpu":
@@ -147,7 +176,7 @@ def find_populations(adata, resolution: float = 1.0, axis: str = "channels",
             _log(f">> GPU clustering failed ({e}); falling back to CPU")
 
     _log(">> clustering on CPU (scanpy + leidenalg)")
-    sc.pp.neighbors(adata, use_rep="X")
+    sc.pp.neighbors(adata, use_rep=use_rep)
     # flavor='leidenalg' keeps parity with the old engine (scanpy's default flavor is migrating to
     # 'igraph', which would change labels); random_state pins reproducibility.
     sc.tl.leiden(adata, resolution=resolution, key_added="clusters",
