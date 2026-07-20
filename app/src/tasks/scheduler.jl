@@ -306,7 +306,7 @@ function _execute_job!(job::TaskJob)
             fn = _fun_name_from_task(job.task)
             vn = string(get(job.params, "valueName", ""))
             for tgt in (isnothing(job.imgs) ? [job.img] : job.imgs)
-                append_run_log!(tgt, fn, vn, string(final))
+                append_run_log!(tgt, fn, vn, string(final), job.params)
             end
         catch e
             @warn "run-log append failed" task_id = job.id exception = e
