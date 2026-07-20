@@ -143,6 +143,22 @@ def get_task_history(project_uid: str, limit: int = 100) -> list:
 
 
 @mcp.tool()
+def get_module_params(category: str = "") -> dict:
+    """Task PARAMETER SPECS — the valid range / default / type of every task's params. Read this before
+    suggesting a parameter change, so the suggestion is IN RANGE and names the real param `key`.
+
+    Returns `{category: [{fun_name, label, params: [{key, label, type, default, tip}]}]}` — trimmed to
+    the suggestion-relevant fields (UI-widget plumbing is stripped). Numeric knobs (`type` int/float)
+    also carry `min`/`max`/`step`. Pass `category` (the part before the dot in a fun_name — e.g.
+    "tracking" for "tracking.bayesian_tracking") to get just that module; omit it for all modules.
+
+    Selection-type params (valueNameSelection/popSelection/…) are UI pickers, not numeric knobs — the
+    tunable ones are the int/float params with min/max. Project-independent; static package specs (plus
+    any user drop-in modules). Suggest, cite the current value + range + QC; the user runs it — you don't."""
+    return _client.get_module_params(category or None)
+
+
+@mcp.tool()
 def get_analysis_lineage(project_uid: str, image_uid: str = "", set_uid: str = "") -> dict:
     """The synthesized ANALYSIS LINEAGE — how each image's data was produced, so you don't have to ask
     the user to re-explain the workflow. Scope with `image_uid` (one image) or `set_uid` (one set);

@@ -28,6 +28,7 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/images/meta"),
         ("GET", "/api/images/tasklog"),
         ("GET", "/api/tasks/history"),
+        ("GET", "/api/tasks/definitions"),  # task param specs (valid ranges/defaults/types) for suggestions
         ("GET", "/api/qc/cohort"),       # cohort QC: per-set mean/SD + outliers over banked metrics
         ("GET", "/api/analysis/lineage"),  # synthesized pipeline lineage (steps + seg/track/cluster/gating links)
         ("GET", "/api/analysis/populations"),  # population definitions (tree + gate/filter specs)
@@ -41,6 +42,32 @@ ALLOWED_ROUTES = frozenset(
         ("POST", "/api/lablog/append"),  # the ONLY write — append-only, server-guarded
     }
 )
+
+
+# Per-param fields worth keeping for a suggestion: the key to name it, its type, the valid range, the
+# default, and the human label/tip. Everything else in a task spec — top-level UI plumbing
+# (env/resource_pool/task/category) and per-param widget internals (option lists, field bindings,
+# visibility conditions) — is bloat Claude doesn't need, so `get_module_params` strips it at the MCP
+# boundary. The shared /api/tasks/definitions route is untouched (the frontend still gets full specs).
+_PARAM_KEEP = ("key", "label", "type", "default", "min", "max", "step", "tip")
+
+
+def _trim_module_params(raw: dict) -> dict:
+    """Reduce raw task definitions to `{category: [{fun_name, label, params: [{<kept fields>}]}]}`."""
+    out = {}
+    for category, specs in (raw or {}).items():
+        out[category] = [
+            {
+                "fun_name": spec.get("fun_name", ""),
+                "label": spec.get("label", ""),
+                "params": [
+                    {k: p[k] for k in _PARAM_KEEP if k in p}
+                    for p in spec.get("params", [])
+                ],
+            }
+            for spec in specs
+        ]
+    return out
 
 
 class DisallowedRoute(RuntimeError):
@@ -114,6 +141,13 @@ class CeceliaClient:
         return self._request(
             "GET", "/api/tasks/history", {"projectUid": project_uid, "limit": limit}
         )
+
+    def get_module_params(self, category: str | None = None):
+        # Task param SPECS (valid ranges/defaults/types), project-independent. Optional `category`
+        # narrows to one module (the part before the dot in a fun_name, e.g. "tracking"). Trimmed to
+        # the suggestion-relevant fields (drops UI-widget plumbing) — see `_trim_module_params`.
+        raw = self._request("GET", "/api/tasks/definitions", {"category": category})
+        return _trim_module_params(raw)
 
     def get_cohort_qc(self, project_uid: str, set_uid: str, fun_name: str,
                       value_name: str | None = None, threshold: float | None = None):

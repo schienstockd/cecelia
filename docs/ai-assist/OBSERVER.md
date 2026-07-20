@@ -36,6 +36,7 @@ list_images               → UIDs, names, processing status per stage, any user
 get_image_info            → one image: channels, dims, label props, task history
 get_task_log              → log content for a specific task run on a specific image
 get_task_history          → recent tasks across all images: function, status, attempt count, timestamp
+get_module_params         → task param specs (valid ranges/defaults/types) for parameter suggestions (Phase 2)
 get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage

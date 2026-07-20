@@ -70,6 +70,36 @@ class ClientTest(unittest.TestCase):
             self.c.get_task_history("p", limit=5)
         self.assertIn("limit=5", u.call_args[0][0].full_url)
 
+    def test_module_params_builds_url_and_trims_spec(self):
+        self.assertIn(("GET", "/api/tasks/definitions"), ALLOWED_ROUTES)
+        raw = {"tracking": [{
+            "task": "bayesianTracking", "fun_name": "tracking.bayesian_tracking",
+            "label": "Bayesian Tracking", "category": "Tracking",
+            "env": ["local"], "resource_pool": "default",
+            "params": [
+                {"key": "maxSearchRadius", "label": "Max search radius", "type": "int",
+                 "min": 1, "max": 200, "step": 1, "default": 20, "tip": "px/frame"},
+                {"key": "valueName", "type": "valueNameSelection", "field": "labels",
+                 "default": "default", "options": ["a", "b", "c"]},
+            ],
+        }]}
+        with _patch_urlopen(raw) as u:
+            out = self.c.get_module_params("tracking")
+        url = u.call_args[0][0].full_url
+        self.assertIn("/api/tasks/definitions?", url)
+        self.assertIn("category=tracking", url)
+        spec = out["tracking"][0]
+        self.assertEqual(spec["fun_name"], "tracking.bayesian_tracking")
+        self.assertNotIn("env", spec)               # top-level UI plumbing stripped
+        self.assertNotIn("resource_pool", spec)
+        p_knob, p_sel = spec["params"]
+        self.assertEqual((p_knob["min"], p_knob["max"], p_knob["default"]), (1, 200, 20))
+        self.assertNotIn("field", p_sel)            # per-param widget internals stripped
+        self.assertNotIn("options", p_sel)          # big option lists stripped (the payload win)
+        with _patch_urlopen({}) as u:               # no category → all modules
+            self.c.get_module_params()
+        self.assertNotIn("category", u.call_args[0][0].full_url)
+
     def test_cohort_qc_builds_url_and_drops_unset(self):
         self.assertIn(("GET", "/api/qc/cohort"), ALLOWED_ROUTES)
         with _patch_urlopen({"metrics": {}}) as u:
