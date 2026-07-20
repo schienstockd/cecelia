@@ -37,6 +37,7 @@ def run(params):
     method   = script_utils.get_param(params, "neighbourMethod", default="delaunay")
     radius   = float(script_utils.get_param(params, "neighbourRadius", default=30.0))
     k        = int(script_utils.get_param(params, "nNeighbours", default=6))
+    per_t    = bool(script_utils.get_param(params, "perTimepoint", default=False))
     n_basis  = len(basis)
 
     if len(segments) == 0 or n_basis < 2:
@@ -53,7 +54,8 @@ def run(params):
     comp_blocks, obs_blocks = [], []
     for uid, segs in by_uid.items():
         a, codes_all, obs_all = spatial_utils.build_pooled_image_graph(
-            segs, phys.get(uid, [1.0, 1.0, 1.0]), method=method, radius=radius, n_neighs=k)
+            segs, phys.get(uid, [1.0, 1.0, 1.0]), method=method, radius=radius, n_neighs=k,
+            per_timepoint=per_t)
         if a is None:
             continue
         obs_all.insert(0, "uID", uid)

@@ -120,5 +120,29 @@ class TestMeshUtils(unittest.TestCase):
         self.assertEqual(agg[2], 0)               # 2 not close enough → not aggregated (min_cells=2)
 
 
+class TestBlockDiagonalGraph(unittest.TestCase):
+    """Per-timepoint (behaviour-region) graph: edges must never cross timepoints, even when frames
+    are interleaved in row order (exercises the inverse-permutation scatter-back). Needs squidpy."""
+    def test_no_cross_timepoint_edges_contiguous(self):
+        from cecelia.utils.spatial_utils import build_block_diagonal_graph
+        coords = np.array([[0., 0.], [1., 0.], [0., 1.],          # t=0 triangle
+                           [0.1, 0.1], [1.1, 0.0], [0.0, 1.1]])   # t=1 triangle, spatially overlapping
+        times = np.array([0, 0, 0, 1, 1, 1])
+        conn = build_block_diagonal_graph(coords, times, method="delaunay", radius=100.0).tocoo()
+        self.assertGreater(conn.nnz, 0)                            # within-frame edges exist
+        for i, j in zip(conn.row, conn.col):
+            self.assertEqual(times[i], times[j])                  # none cross a timepoint
+
+    def test_interleaved_row_order_preserved(self):
+        from cecelia.utils.spatial_utils import build_block_diagonal_graph
+        # rows alternate t=0 (near origin) / t=1 (near (5,5)); result must stay in ORIGINAL order
+        coords = np.array([[0., 0.], [5., 5.], [0.1, 0.], [5.1, 5.], [0., 0.2], [5., 5.2]])
+        times = np.array([0, 1, 0, 1, 0, 1])
+        conn = build_block_diagonal_graph(coords, times, method="delaunay", radius=100.0).tocoo()
+        self.assertGreater(conn.nnz, 0)
+        for i, j in zip(conn.row, conn.col):
+            self.assertEqual(times[i], times[j])                  # 0/2/4 link only to each other, 1/3/5 likewise
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -56,6 +56,7 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
         "numClusters" => Int(get(params, "numClusters", 5)),
         "resolution" => Float64(get(params, "resolution", 1.0)),
         "integrateBatch" => Bool(get(params, "integrateBatch", false)),
+        "perTimepoint" => Bool(get(params, "perTimepoint", false)),
         "createUmap" => Bool(get(params, "mergeUmap", true)),
         "randomState" => 0, "qcOutPath" => qc_out_path)
     on_progress(3, 4)

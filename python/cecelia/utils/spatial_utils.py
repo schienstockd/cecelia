@@ -54,7 +54,41 @@ def graph_metrics(adata):
     }
 
 
-def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_neighs=6):
+def build_block_diagonal_graph(coords, times, method="delaunay", radius=30.0, n_neighs=6):
+    """Per-timepoint spatial graph for LIVE imaging: a cell is linked ONLY to cells in the SAME frame
+    (a cell at t=0 must not neighbour a spatially-close cell at t=50). Builds one graph per unique
+    `times` value and assembles them block-diagonally, returning a csr `spatial_connectivities` matrix
+    (n×n) in the SAME row order as `coords`/`times` (callers keep codes/obs aligned — no reordering).
+    A frame with too few cells for the method yields an empty (isolated) block, which
+    `neighbourhood_composition` renders as a zero row. Behaviour regions — SPATIAL_REGIONS_PLAN Phase 8."""
+    import anndata as ad
+    import pandas as pd
+
+    n = coords.shape[0]
+    times = np.asarray(times).ravel()
+    blocks, order = [], []
+    for t in pd.unique(times):                       # first-appearance order
+        idx = np.where(times == t)[0]
+        order.append(idx)
+        if idx.size < 3:                             # too few for a triangulation → isolated block
+            blocks.append(sp.csr_matrix((idx.size, idx.size)))
+            continue
+        sub = ad.AnnData(coords[idx].astype(np.float32)); sub.obsm["spatial"] = coords[idx]
+        try:
+            build_spatial_graph(sub, method=method, radius=radius, n_neighs=n_neighs)
+            blocks.append(sub.obsp["spatial_connectivities"].tocsr())
+        except Exception:
+            blocks.append(sp.csr_matrix((idx.size, idx.size)))
+    if not order:
+        return sp.csr_matrix((n, n))
+    perm = np.concatenate(order)                     # block_diag rows follow `order` (= perm)
+    bd = sp.block_diag(blocks, format="csr")
+    inv = np.empty(n, dtype=np.int64); inv[perm] = np.arange(n)   # scatter back to original order
+    return bd[inv][:, inv]
+
+
+def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_neighs=6,
+                             per_timepoint=False):
     """Pool ONE image's basis cells across its segmentations into a single spatial graph — so a cell in
     segmentation B and a nearby cell in segmentation T are neighbours (cross-segmentation). Shared by
     region clustering and neighbourhood statistics so the pooling is written once.
@@ -63,16 +97,20 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     µm/pixel (skimage order). Reads centroids through LabelPropsView (the sanctioned reader), scales to
     physical units, and builds the graph via `build_spatial_graph`. Returns (adata, codes, obs_df) where
     adata carries obsp graph + obsm['spatial'], codes is the per-cell basis code, and obs_df has
-    valueName + label per row (row order matches adata / codes). Returns (None, None, None) if empty."""
+    valueName + label per row (row order matches adata / codes). Returns (None, None, None) if empty.
+
+    `per_timepoint=True` (LIVE imaging): build the graph FRAME BY FRAME (block-diagonal over the
+    temporal column) so neighbourhoods — and hence regions — are per-timepoint and can change over time
+    (behaviour regions). Falls back to a single pooled graph if no temporal column is present."""
     import anndata as ad
     import pandas as pd
     from cecelia.utils.label_props_utils import LabelPropsView
 
     phys = np.asarray(phys_uid, dtype=float)
-    coords_list, code_list, obs_list = [], [], []
+    coords_list, code_list, obs_list, time_list = [], [], [], []
     for seg in segs:
         view = LabelPropsView(seg["propsPath"]).only_centroid_cols().filter_by_label(seg["labels"])
-        d = view.as_df(); ccols = view.centroid_columns(); view.close()
+        d = view.as_df(); ccols = view.centroid_columns(); tcols = view.temporal_columns(); view.close()
         if d.shape[0] == 0:
             continue
         code_map = {int(l): int(c) for l, c in zip(seg["labels"], seg["popCodes"])}
@@ -81,6 +119,8 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
         coords_list.append(coords)
         code_list.append(codes)
         obs_list.append(pd.DataFrame({"valueName": seg["valueName"], "label": d["label"].to_numpy()}))
+        if per_timepoint and tcols and tcols[0] in d.columns:
+            time_list.append(d[tcols[0]].to_numpy())
     if not coords_list:
         return None, None, None
 
@@ -89,7 +129,11 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     obs_all = pd.concat(obs_list, ignore_index=True)
     a = ad.AnnData(coords_all.astype(np.float32))
     a.obsm["spatial"] = coords_all
-    build_spatial_graph(a, method=method, radius=radius, n_neighs=n_neighs)
+    if per_timepoint and len(time_list) == len(coords_list):   # every segment had a temporal column
+        a.obsp["spatial_connectivities"] = build_block_diagonal_graph(
+            coords_all, np.concatenate(time_list), method=method, radius=radius, n_neighs=n_neighs)
+    else:
+        build_spatial_graph(a, method=method, radius=radius, n_neighs=n_neighs)
     return a, codes_all, obs_all
 
 
