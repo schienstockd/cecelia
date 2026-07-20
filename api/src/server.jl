@@ -257,6 +257,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_gpu_get(req)
         elseif path == "/api/notebooks"
             api_notebooks_list(req)
+        elseif path == "/api/notebooks/content"
+            api_notebooks_content(req)
         elseif path == "/api/notebooks/status"
             api_notebooks_status(req)
         elseif path == "/api/notebooks/snapshots"

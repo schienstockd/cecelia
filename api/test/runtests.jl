@@ -279,6 +279,17 @@ end
         @test g.version == 1 && g.description == "speed over time"
         # create-only: never clobbers
         @test w(Dict("projectUid"=>uid, "name"=>"gen", "cells"=>["y=2"]))[1] == 409
+
+        # content read (the "have a look" flow): returns the notebook's current source
+        cget(q) = api_notebooks_content(HTTP.Request("GET", "/api/notebooks/content?$q"))
+        st2, cbody = cget("projectUid=$uid&file=gen.jl")
+        @test st2 == 200
+        cd = JSON3.read(cbody)
+        @test cd.file == "gen.jl" && cd.scope == "project" && occursin("df = 1", cd.content)
+        @test cget("projectUid=$uid&file=nope.jl")[1] == 404      # missing notebook
+        @test cget("projectUid=$uid")[1] == 400                    # file required
+        @test cget("projectUid=NOPE&file=gen.jl")[1] == 404        # missing project
+        @test cget("projectUid=$uid&file=../secret")[1] == 400     # path traversal rejected
     finally
         lock(_ws_clients_lock) do; delete!(_ws_clients, key); end
         had ? (dirs["projects"] = old) : delete!(dirs, "projects")
