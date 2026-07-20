@@ -47,27 +47,27 @@ defineEmits<{ (e: 'close'): void }>()
 </template>
 
 <style scoped>
-.co-entries { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+.co-entries { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
 .co-entry {
-  border: 1px solid var(--cc-border); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--cc-border); border-radius: 8px; padding: 14px 16px;
   background: var(--cc-surface-2);
 }
 .co-entry-head { font-weight: 600; color: var(--cc-text); display: flex; align-items: center; gap: 6px; }
 .co-entry-head .pi { color: var(--cc-accent); }
-.co-entry-what { margin: 6px 0 8px; color: var(--cc-text-dim); font-size: 0.85rem; line-height: 1.35; }
-.co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: 0.82rem; line-height: 1.5; }
+.co-entry-what { margin: 8px 0 10px; color: var(--cc-text-dim); font-size: 0.85rem; line-height: 1.4; }
+.co-steps { margin: 0; padding-left: 18px; color: var(--cc-text); font-size: 0.82rem; line-height: 1.55; }
 
-.co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.co-cell { border: 1px solid var(--cc-border); border-radius: 8px; padding: 8px 12px; }
-.co-cell-head { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-.co-cell ul { margin: 0; padding-left: 18px; font-size: 0.8rem; line-height: 1.5; color: var(--cc-text); }
+.co-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.co-cell { border: 1px solid var(--cc-border); border-radius: 8px; padding: 12px 14px; }
+.co-cell-head { font-weight: 600; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.co-cell ul { margin: 0; padding-left: 18px; font-size: 0.8rem; line-height: 1.55; color: var(--cc-text); }
 .co-cell.tone-good .co-cell-head { color: #56d364; }
 .co-cell.tone-good .co-cell-head .pi { color: #56d364; }
 .co-cell.tone-neutral .co-cell-head .pi { color: var(--cc-accent); }
 .co-cell.tone-muted { opacity: 0.85; }
 .co-cell.tone-muted .co-cell-head { color: var(--cc-text-dim); }
 
-.co-examples { margin-top: 14px; }
+.co-examples { margin-top: 18px; }
 .co-examples-label { display: block; font-size: 0.78rem; color: var(--cc-text-dim); margin-bottom: 6px; }
 .co-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .co-chip {
