@@ -226,9 +226,12 @@ end
         @test JSON3.read(_post(api_notebooks_duplicate, Dict("projectUid"=>uid,"file"=>"nb1.jl","scope"=>"project"))[2]).file == "nb1-copy.jl"
         @test find("nb1-copy.jl") !== nothing
 
-        # delete (server not running in tests → guard doesn't require force)
+        # delete — pass force=true so this is deterministic regardless of whether a Pluto server is
+        # running locally. The guard 409s on a live server without force (a dev machine with the
+        # notebook server up would otherwise fail this + the two asserts below); force is what the
+        # UI's confirm supplies anyway.
         @test !isempty(snaps())    # nb1 has snapshots on disk before delete
-        @test _post(api_notebooks_delete, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[1] == 200
+        @test _post(api_notebooks_delete, Dict("projectUid"=>uid,"file"=>"nb1.jl","force"=>true))[1] == 200
         @test find("nb1.jl") === nothing
         @test isempty(snaps())     # delete also removes the notebook's snapshot history
 
