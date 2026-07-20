@@ -81,6 +81,13 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
                     "$(pop_type).cell.aggregate.id" => Float64.(ids))
     label_props(props) |> add_obs(out) |> save!
 
+    # Auto-create the reusable "aggregated" population (Decision 14): a filter pop under each input pop
+    # selecting the aggregated cells (`<popType>.cell.is.aggregate > 0`), resolved lazily by pop_df — so
+    # the aggregate flows into any downstream popSelection like a normal pop, no hand-drawn gate needed.
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, pops, AGGREGATED_POP_NAME;
+                                   filter_measure = "$(pop_type).cell.is.aggregate",
+                                   filter_fun = "gt", filter_values = 0)
+
     n_agg = length(unique(ids[ids .> 0]))
     frac  = sum(is_agg) / nrow(cdf)
     write_qc(img, "spatialAnalysis.detectAggregates", value_name,
@@ -88,6 +95,7 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
              metrics = Dict{String,Any}("nCells" => nrow(cdf), "nAggregates" => n_agg,
                                         "fracAggregated" => frac))
     on_log("[INFO] detectAggregates: $(n_agg) aggregate(s), $(round(Int, frac*100))% of cells aggregated.")
+    isempty(agg_paths) || on_log("[INFO] detectAggregates: aggregated population → $(join(agg_paths, ", "))")
     on_progress(3, 3)
 
     Dict{String,Any}("valueName" => value_name, "nAggregates" => n_agg, "fracAggregated" => frac)

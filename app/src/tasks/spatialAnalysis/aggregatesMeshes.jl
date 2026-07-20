@@ -43,6 +43,13 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
                 on_log = on_log, on_process = on_process)
     ok || (on_log("[ERROR] aggregatesMeshes: Python runner failed"); return nothing)
 
+    # Auto-create the reusable "aggregated" population (Decision 14) — same as the points route
+    # (detectAggregates): a filter pop under each input pop on `<popType>.cell.is.aggregate > 0`.
+    agg_paths = ensure_filter_pop!(img, pop_type, value_name, pops, AGGREGATED_POP_NAME;
+                                   filter_measure = "$(pop_type).cell.is.aggregate",
+                                   filter_fun = "gt", filter_values = 0)
+    isempty(agg_paths) || on_log("[INFO] aggregatesMeshes: aggregated population → $(join(agg_paths, ", "))")
+
     try
         qc = JSON3.read(read(qc_out_path, String), Dict{String,Any})
         n_cells = Int(get(qc, "nCells", 0)); n_agg = Int(get(qc, "nAggregates", 0))

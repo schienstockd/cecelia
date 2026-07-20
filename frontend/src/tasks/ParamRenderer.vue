@@ -8,6 +8,7 @@ import { computed, ref, watch } from 'vue'
 import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY, type Severity } from '../lib/severity'
+import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -100,7 +101,10 @@ const availableChannels = computed(() => {
 //    alongside the stored gates. The flat popmap endpoint would miss `_tracked`.
 interface PopNode { name: string; children?: PopNode[] }
 const popOptions = ref<{ label: string; value: string }[]>([{ label: 'NONE (whole segmentation)', value: 'NONE' }])
-const popMultiOptions = ref<{ label: string; value: string }[]>([])
+// grouped chip list (Decision 14): [{ title: "Cells · Gated", opts: [...] }]. Legacy/ungrouped
+// callers get a single untitled group. `popMultiOptions` is the flat union, for the count guard.
+const popMultiGroups = ref<PopGroupDef[]>([])
+const popMultiOptions = computed(() => popMultiGroups.value.flatMap(g => g.opts))
 
 const popAcross = computed(() => props.param.type === 'popSelection'
   && (props.param.multiple === true || props.param.acrossSegmentations === true))
@@ -125,7 +129,7 @@ async function fetchPopPaths(img: CciaImage, projectUid: string, vn: string, pop
   } catch { return [] }
 }
 
-interface PopGroup { valueName: string; populations: { path: string; name: string }[] }
+interface PopGroup { valueName: string; populations: { path: string; name: string; colour?: string; popType?: string; granularity?: string; category?: string }[] }
 
 async function loadPops() {
   if (props.param.type !== 'popSelection') return
@@ -133,36 +137,43 @@ async function loadPops() {
   const projectUid = props.context?.projectUid
   // popScope (cells|tracks) is the defined module-function scope; the backend resolves sources +
   // cell/track filtering + existence-checked roots. Falls back to the raw popType picker when absent.
+  // accepts (explicit pop_type allow-list, Decision 14) supersedes popScope; both resolve the
+  // sources + cell/track tagging server-side. popType is the legacy raw path.
+  const accepts = props.param.accepts
   const popScope = props.param.popScope
   const popType = props.param.popType ?? (popScope === 'cells' ? 'flow' : popScope === 'tracks' ? 'live' : 'flow')
   if (popAcross.value) {
-    // populations across every segmentation, value_name-prefixed (incl. the derived /_tracked)
-    popMultiOptions.value = []
+    // populations across every segmentation, value_name-prefixed (incl. the derived /_tracked),
+    // grouped by "<granularity> · <category>" (the tags the backend now sends).
+    popMultiGroups.value = []
     if (!img || !projectUid) return
     try {
       let q = `projectUid=${projectUid}&imageUid=${img.uid}`
-      if (popScope) {
+      let structured = true
+      if (accepts && accepts.length) {
+        q += `&accepts=${encodeURIComponent(accepts.join(','))}`
+      } else if (popScope) {
         q += `&popScope=${popScope}`
         if (props.param.includeClusters === false) q += `&includeClusters=false`
       } else {
-        q += `&popType=${popType}`
+        q += `&popType=${popType}`; structured = false
       }
       const res = await fetch(`/api/plots/populations?${q}`)
       if (!res.ok) return
       const groups = await res.json() as PopGroup[]
-      const opts: { label: string; value: string }[] = []
-      for (const g of groups) {
-        // legacy popType path: fabricate the whole-segmentation root client-side. popScope returns
-        // roots from the backend (existence-checked: an all-cells "/" for cells, the guarded
-        // "/_tracked" for tracks), so no bogus "<seg> · all" when the segmentation has no tracks.
-        if (!popScope && props.param.includeRoot) opts.push({ label: `${g.valueName} · all`, value: `${g.valueName}/` })
-        for (const p of g.populations) {
-          const value = `${g.valueName}${p.path}`                     // "A" + "/_tracked" → "A/_tracked"
-          const label = p.path === '/' ? `${g.valueName} · all` : value   // backend all-cells root
-          opts.push({ label, value })
+      if (structured) {
+        // accepts / popScope: backend tags each pop (granularity/category) AND returns existence-checked
+        // roots (all-cells "/" for cells, the guarded "/_tracked" for tracks) — group them under headers.
+        popMultiGroups.value = groupPopulations(groups as RawGroup[])
+      } else {
+        // legacy popType path: fabricate the whole-segmentation root client-side, one untitled group.
+        const opts: { label: string; value: string }[] = []
+        for (const g of groups) {
+          if (props.param.includeRoot) opts.push({ label: `${g.valueName} · all`, value: `${g.valueName}/` })
+          for (const p of g.populations) opts.push({ label: `${g.valueName}${p.path}`, value: `${g.valueName}${p.path}` })
         }
+        popMultiGroups.value = opts.length ? [{ title: '', opts }] : []
       }
-      popMultiOptions.value = opts
     } catch { /* gating may not exist yet */ }
     return
   }
@@ -518,15 +529,18 @@ const pct = computed(() => {
       <div v-if="popMultiOptions.length === 0" class="channel-empty">
         No populations — select an image first.
       </div>
-      <div v-else class="channel-chips">
-        <button
-          v-for="opt in popMultiOptions"
-          :key="opt.value"
-          class="channel-chip"
-          :class="{ active: isPopSelected(opt.value) }"
-          @click="togglePop(opt.value)"
-          type="button"
-        >{{ opt.label }}</button>
+      <div v-for="grp in popMultiGroups" v-else :key="grp.title" class="col-group">
+        <div v-if="grp.title" class="col-group-title">{{ grp.title }}</div>
+        <div class="channel-chips">
+          <button
+            v-for="opt in grp.opts"
+            :key="opt.value"
+            class="channel-chip"
+            :class="{ active: isPopSelected(opt.value) }"
+            @click="togglePop(opt.value)"
+            type="button"
+          >{{ opt.label }}</button>
+        </div>
       </div>
     </div>
 

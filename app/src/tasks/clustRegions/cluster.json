@@ -18,7 +18,7 @@
       "key": "basisPops",
       "label": "Population basis",
       "type": "popSelection",
-      "popScope": "cells",
+      "accepts": ["live", "clust", "region"],
       "multiple": true,
       "acrossSegmentations": true,
       "default": [],

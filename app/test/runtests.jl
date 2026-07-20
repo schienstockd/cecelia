@@ -3174,6 +3174,101 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test !("/clusterA" in tncpaths) && "/TEST" in tncpaths
     end
 
+    # ── pop_category + population_accept_groups (Decision 14, accepts allow-list) ────────────────
+    @testset "population accepts allow-list + category tags" begin
+        # pop_category: gated / clustered / region / tracked / aggregated from (pop_type, leaf).
+        @test pop_category("live", "/qc")               == "gated"
+        @test pop_category("track", "/TEST")             == "gated"
+        @test pop_category("clust", "/myeloid")          == "clustered"
+        @test pop_category("trackclust", "/clusterA")    == "clustered"
+        @test pop_category("region", "/r0")              == "region"
+        @test pop_category("live", "/qc/_tracked")       == "tracked"
+        @test pop_category("live", "/qc/" * Cecelia.AGGREGATED_POP_NAME) == "aggregated"
+
+        # same fixtures as the popScope testset above, plus a region map and an aggregated cell pop.
+        fm = PopulationMap(pop_type="flow", value_name="C")
+        add_pop!(fm, "qc"; gate=RectangleGate("x", "y", 0, 1, 0, 1), colour="#ef4444")
+        add_pop!(fm, Cecelia.AGGREGATED_POP_NAME; parent="/qc", filter_measure="live.cell.is.aggregate",
+                 filter_fun="gt", filter_values=0, reserved_ok=true)   # auto-created aggregate pop
+        tm = PopulationMap(pop_type="track", value_name="C")
+        add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5)
+        cm = PopulationMap(pop_type="clust", value_name="C")
+        add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2])
+        tcm = PopulationMap(pop_type="trackclust", value_name="C")
+        add_pop!(tcm, "clusterA"; filter_measure="clusters.tracks", filter_fun="in", filter_values=[0])
+        rm_ = PopulationMap(pop_type="region", value_name="C")
+        add_pop!(rm_, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0])
+        names_for = _ -> ["C"]
+        load = (_, vn, pt) -> vn != "C" ? nothing :
+            pt == "live" ? fm : pt == "track" ? tm : pt == "clust" ? cm :
+            pt == "trackclust" ? tcm : pt == "region" ? rm_ : nothing
+
+        # accepts=["live"] → all-cells root + cell gate + the aggregated cell pop; NO tracked sets,
+        # NO clusters/regions. Each population carries granularity/category tags.
+        g = population_accept_groups([:img1], names_for, load, ["live"])[1].populations
+        @test [p.path for p in g] == ["/", "/qc", "/qc/" * Cecelia.AGGREGATED_POP_NAME]
+        @test all(p.granularity == "cell" for p in g)
+        @test only(p for p in g if p.path == "/qc").category == "gated"
+        @test only(p for p in g if endswith(p.path, Cecelia.AGGREGATED_POP_NAME)).category == "aggregated"
+
+        # "flow" is an alias for "live".
+        @test [p.path for p in population_accept_groups([:img1], names_for, load, ["flow"])[1].populations] ==
+              [p.path for p in g]
+
+        # region basis: cells (gated+clustered+region) AND tracks (gated+clustered). One picker, both
+        # granularities — the case popScope could not express.
+        basis = population_accept_groups([:img1], names_for, load,
+                    ["live", "clust", "region", "track", "trackclust"])[1].populations
+        bcats = Set((p.granularity, p.category) for p in basis)
+        @test ("cell", "gated") in bcats && ("cell", "clustered") in bcats && ("cell", "region") in bcats
+        @test ("track", "tracked") in bcats && ("track", "gated") in bcats && ("track", "clustered") in bcats
+        @test "/r0" in [p.path for p in basis] && "/myeloid" in [p.path for p in basis]
+        @test "/clusterA" in [p.path for p in basis] && "/TEST" in [p.path for p in basis]
+
+        # accepts=["clust"] alone → only cell clusters, no all-cells root (live not accepted).
+        cl = population_accept_groups([:img1], names_for, load, ["clust"])[1].populations
+        @test [p.path for p in cl] == ["/myeloid"]
+
+        # popScope shim must still produce identical paths to the direct accept call.
+        @test [p.path for p in population_scope_groups([:img1], names_for, load, "cells")[1].populations] ==
+              [p.path for p in population_accept_groups([:img1], names_for, load,
+                                    ["live", "clust", "region"])[1].populations]
+
+        # unknown token / empty list throw loudly.
+        @test_throws ErrorException population_accept_groups([:img1], names_for, load, ["bogus"])
+        @test_throws ErrorException population_accept_groups([:img1], names_for, load, String[])
+    end
+
+    # ── ensure_filter_pop! — a cutoff materialised as a reusable filter pop (Decision 14) ────────
+    @testset "ensure_filter_pop! auto-created population" begin
+        td = mktempdir()
+        img = CciaImage(; dir=td)
+        m = PopulationMap(; pop_type="flow", value_name="B")
+        add_pop!(m, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
+        save_pop_map!(m, img)
+
+        # a 0/1 flag column → aggregated pop under /qc (the generalisable `> 0`, not a baked TRUE/FALSE)
+        created = ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
+        @test created == ["/qc/" * AGGREGATED_POP_NAME]
+        p = pop_at(load_pop_map(img; value_name="B", pop_type="flow"), "/qc/" * AGGREGATED_POP_NAME)
+        @test p.filter_measure == "flow.cell.is.aggregate" && p.filter_fun == "gt" && p.filter_values == 0
+        @test pop_category(p.pop_type, p.path) == "aggregated" && !is_track_pop(p.pop_type, p.path)
+
+        # idempotent: re-running REDEFINES (a probability cutoff — measure-agnostic), never duplicates
+        ensure_filter_pop!(img, "flow", "B", ["/qc"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.aggregate.score", filter_fun="gte", filter_values=0.5)
+        m3 = load_pop_map(img; value_name="B", pop_type="flow")
+        @test count(pp -> endswith(pp, AGGREGATED_POP_NAME), pop_paths(m3)) == 1
+        @test pop_at(m3, "/qc/" * AGGREGATED_POP_NAME).filter_fun == "gte"
+
+        # a parent absent from the map is skipped; the all-cells root ("/") maps to ROOT and is created
+        created2 = ensure_filter_pop!(img, "flow", "B", ["/nonexistent", "/"], AGGREGATED_POP_NAME;
+                     filter_measure="flow.cell.is.aggregate", filter_fun="gt", filter_values=0)
+        @test created2 == ["/" * AGGREGATED_POP_NAME]
+        rm(td; recursive=true)
+    end
+
     # ── Cluster-pop auto-share across co-clustered segmentations (CLUSTER_POOLING_PLAN.md) ─────
     @testset "cluster pop auto-share (co-clustered value_names)" begin
         td = mktempdir()
