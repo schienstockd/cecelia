@@ -29,6 +29,21 @@ vns     = img_value_names(img)           # the segmentation / value_names on thi
 is_tracked(img)                          # does this image have tracks?
 ```
 
+## Access routes — one accessor per job
+
+| You want… | Use | Notes |
+|---|---|---|
+| gated / derived population cells or tracks | `pop_df` | THE main accessor — pools across pops, value_names **and** images in one call (see *Common idioms*) |
+| raw label props (measures / centroids / channels), your own column set | `label_props(img) \|> … \|> as_df` | lazy view; push the column/row selectors *in*, never read-all-then-filter |
+| per-track motility table (speed, straightness, displacement, …) | `track_props(img)` | one row per track |
+| the numbers behind an analysis-board summary plot | `plot_summary_data` | plot-ready series, not a figure |
+
+**Project-specific names are NOT in this doc — get them from the observer, don't guess.** Population
+paths/types come from `get_populations`; the column/measure names available on a pop from
+`get_measure_summary` (or a one-row `pop_df` — read `names(df)`); segmentation value_names from
+`img_value_names(img)`. Guessing a column name with a candidate-list fallback in the notebook is an
+anti-pattern — confirm the real names first, then use them directly.
+
 ### Cell / population data — `pop_df`
 
 `pop_df` is the one unified accessor for population + cell/track tables (the same data the gating and
@@ -73,6 +88,54 @@ pd = plot_summary_data(img, …)            # the data behind an analysis-board 
 
 ---
 
+## Common idioms — and the anti-patterns
+
+The API is built to do the pooling and column selection for you. The most common mistake is
+reimplementing that in user code — a nest of loops, per-image/per-value_name calls, and a final
+`vcat`. Reach for the built-in first.
+
+### Pool in ONE `pop_df` call — don't loop-and-vcat
+
+`pop_df` pools across **populations**, across **value_names**, and (vector form) across **images** in
+a single call, tagging every row with `pop`, `value_name`, and `uID`. Let it do the work.
+
+```julia
+# ✅ one call: two segmentations × many images, pooled and tagged
+raw = pop_df(imgs, image_uids, "live", ["T/_tracked", "B/_tracked"];
+             pop_cols = ["live.cell.speed", "live.cell.angle", "centroid_t", "track_id"])
+# `raw` already carries :value_name (T / B) and :uID (source image) to group / colour by
+```
+
+```julia
+# ❌ reinventing pop_df's pooling in user code
+frames = DataFrame[]
+for vn in value_names, img in imgs
+    push!(frames, pop_df(img, "live", ["$(vn)/_tracked"]; value_name = vn))  # + redundant value_name=
+end
+raw = vcat(frames...; cols = :union)   # the :union vcat is the tell you split what pop_df already unions
+```
+
+The per-image / per-value_name loop and the `vcat(...; cols = :union)` are the smell: `pop_df`
+already returns one unioned, tagged frame.
+
+### The path prefix *is* the value_name selector
+
+`"T/_tracked"` selects value_name `T`; a leading slash (`"/_tracked"`) stays within the active/given
+value_name. Don't pass both a `"T/…"` prefix **and** `value_name = "T"` — pick one.
+
+### Push selection into the view; request only the columns you need
+
+`label_props(img) |> select_cols([...]) |> as_df`, and pass `pop_cols` to `pop_df`. Never read the
+whole table and filter in memory — the view reads only the columns/rows you ask for.
+
+### Confirm project-specifics, don't auto-detect
+
+Pop paths and column names are project-specific. Read them from `get_populations` /
+`get_measure_summary` (or a one-row `pop_df`) **up front** and name them directly. A `pickcol`-style
+candidate-list guesser in the notebook is a sign the names were never confirmed — confirm instead.
+
+---
+
 ## Notebook write rules — figures and CSV ONLY
 
 A notebook is exploration, not a data mutation. It may write **figures (PNG/SVG/PDF) and CSV**, and
@@ -108,8 +171,10 @@ cells to paste) → once happy, they run it without you.
   `using Cecelia, DataFrames, AlgebraOfGraphics, CairoMakie, CSV` (+ `CeceliaNb` for plot shortcuts),
   then `Cecelia.init_cecelia!()`, then the analysis.
 - Load with `load_project` / `image_by_uid` / `pop_df` / `track_props` / `label_props |> as_df`
-  (see the API reference below — read it first; don't guess names). Plot with AlgebraOfGraphics +
-  CairoMakie; export with `CSV.write`. Obey the **write rules above** (figures/CSV only).
+  (see the API reference below — read it first; don't guess names). **Follow the *Common idioms*
+  above**: pool in one `pop_df` call rather than looping+`vcat`, and confirm pop paths/column names
+  via `get_populations` / `get_measure_summary` instead of a candidate-list guesser. Plot with
+  AlgebraOfGraphics + CairoMakie; export with `CSV.write`. Obey the **write rules above** (figures/CSV only).
 - **Create-only**: a name that already exists returns 409 — it never overwrites a notebook the user
   may have edited. Pick a new name, or suggest cell edits for them to apply in Pluto.
 - Suggest first, create on the user's ask — don't spam notebooks.
