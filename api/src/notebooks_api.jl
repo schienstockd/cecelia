@@ -385,10 +385,29 @@ function _cell_uuid()::String
     string(h[1:8], "-", h[9:12], "-", h[13:16], "-", h[17:20], "-", h[21:32])
 end
 
+# Pluto allows only ONE top-level expression per cell — a cell with several statements fails to load
+# ("Multiple expressions in one cell"). Wrap any such cell in `begin … end` (Pluto's own remedy, and
+# what the activation cell already uses) so a generated notebook loads and runs as-is. A single
+# expression (incl. a `md"…"` block or a lone assignment) is left bare; code that doesn't parse is
+# left untouched — don't mask the caller's syntax error behind a wrapper. Pure/testable.
+function _wrap_multi_expr(code::AbstractString)::String
+    s = rstrip(String(code))
+    try
+        ex = Meta.parseall(s)   # → Expr(:toplevel, LineNumberNode, expr, …); comments already stripped
+        if ex isa Expr && ex.head === :toplevel &&
+           count(a -> !(a isa LineNumberNode), ex.args) > 1
+            return string("begin\n", s, "\nend")   # verbatim body — don't indent (would corrupt heredocs)
+        end
+    catch
+        # unparseable → leave as the caller wrote it
+    end
+    s
+end
+
 # Serialise a list of Julia cell sources into a valid Pluto notebook `.jl` (the format
 # notebook_template.jl uses: a header, one `# ╔═╡ <uuid>` marker per cell, then a `# ╔═╡ Cell order:`
 # block). The activation cell is prepended and pinned to the template's fixed id; caller cells get
-# fresh uuids. Pure — unit-tested in api/test.
+# fresh uuids. Each cell is normalised so multi-statement cells load in Pluto. Pure — unit-tested in api/test.
 function _pluto_notebook_source(cells::AbstractVector)::String
     all_cells = vcat(Any[_NB_ACTIVATION_CELL], collect(cells))
     ids  = String[]
@@ -396,7 +415,7 @@ function _pluto_notebook_source(cells::AbstractVector)::String
     for (i, code) in enumerate(all_cells)
         id = i == 1 ? "10000000-0000-0000-0000-000000000001" : _cell_uuid()
         push!(ids, id)
-        print(body, "# ╔═╡ ", id, "\n", rstrip(String(code)), "\n\n")
+        print(body, "# ╔═╡ ", id, "\n", _wrap_multi_expr(String(code)), "\n\n")
     end
     io = IOBuffer()
     print(io, "### A Pluto.jl notebook ###\n# v1.0.3\n\n")
