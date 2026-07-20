@@ -10,7 +10,8 @@
 # snapshotted here: a re-run overwrites the h5ad, so a superseded run's metrics are gone, and real
 # projects produce only a few confounded re-runs (the user nudges params *because* the last result was
 # off) — not a fittable dataset. Readers (incl. Claude) must treat `params` as "what was tried", never
-# as a relationship to extrapolate from. See docs/todo/OBSERVER_PHASE2_PLAN.md §1 + the tier-3 note.
+# as a relationship to extrapolate from. See docs/ai-assist/OBSERVER.md → Phase 2 (param-suggestion
+# boundary + the deferred tier-3 per-run QC snapshot).
 const RUN_LOG_CAP = 200
 
 run_log_path(img::CciaImage) = joinpath(img._dir, "runlog.json")

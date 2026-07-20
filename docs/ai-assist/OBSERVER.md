@@ -209,3 +209,41 @@ Implement the configurable per-session cap in the MCP server: after N surfaced o
 - Append to lab log via MCP — entry appears with correct [Claude] tag and date
 - Confirm no mutations possible beyond lab log append
 - Confirm token usage is reported per session and throttle fires correctly
+
+---
+
+## Phase 2 — actionable assist (shipped)
+
+Phase 1 was read + flag. Phase 2 makes the assist *actionable* and gives Claude a way to produce
+verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (the parked plan
+`docs/todo/OBSERVER_PHASE2_PLAN.md` has been retired). Full tool list: the table above + `mcp/README.md`.
+
+**What landed**
+- **Tuning trail** — the per-image run log now records each run's `params` (`run_log.jl`); surfaced in
+  `get_task_history`.
+- **`get_module_params`** — task param specs (valid ranges/defaults/types) via the existing
+  `/api/tasks/definitions`, trimmed at the MCP boundary.
+- **§1 parameter suggestions** — on a cohort outlier, Claude reads the trail + `get_module_params` range
+  and suggests an in-range direction (`observer_prompt.jl`), framed suggestion-not-instruction.
+- **`get_session_briefing`** — chat startup context (name/count + flagged images + recent lab log);
+  `buildChatPrompt` calls it first. Flagged uses the one canonical `all_qc_docs` (shared with the image
+  table).
+- **REPL knowledge (`get_repl_api` + `docs/REPL.md`)** — the notebook-safe accessor allow-list
+  (`NOTEBOOK_API`) with live docstrings; a golden test keeps REPL.md from drifting.
+- **`create_notebook`** — generates a runnable Pluto notebook from cells (`/api/notebooks/write`).
+- **`get_available_plots`** — the board's plot types, for viz suggestions.
+- **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
+
+**Durable boundaries (why, so they aren't relitigated)**
+- **Two additive writes only.** The MCP allow-list permits exactly `POST /api/lablog/append`
+  (append-only) and `POST /api/notebooks/write` (create-only, 409 on existing). Neither edits/deletes;
+  the invariant test asserts the set. No task-run, gate, h5ad, or config write.
+- **Param suggestions are current-state, not a correlation.** The run log stores params but QC is NOT
+  snapshotted per run, so there is no fittable params→outcome curve — Claude cites what was tried + the
+  valid range and suggests a direction; it does not predict. A per-run QC snapshot was considered and
+  deferred (low statistical yield on a few confounded re-runs; touches the QC store). See `run_log.jl`.
+- **Notebooks: Claude bootstraps, the user owns.** `create_notebook` is create-only + snapshots v1;
+  iteration happens in Pluto by the user (Claude guiding via chat). Notebook code writes figures/CSV
+  only — never h5ad/QC/lab-log/ccid (`docs/REPL.md`).
+- **REPL.md can't drift.** `docs/REPL.md`'s API section is generated from the live docstrings of
+  `NOTEBOOK_API` and golden-tested; changing a listed function's docstring without regenerating fails CI.
