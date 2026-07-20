@@ -192,7 +192,7 @@ include("ai/briefing.jl")
 export analysis_lineage, populations_summary, measure_summary, behaviour_summary, cluster_summary
 export chains_summary, session_briefing
 export NOTEBOOK_API, repl_api_reference, repl_api_section, write_repl_doc
-export spatial_summary
+export spatial_summary, contact_matrix
 export ClaudeAgent, agent_available, run_observer_turn, observer_mcp_config,
        observer_feedback_prompt, observer_prompt_display, observer_agent_bin,
        OBSERVER_MODELS, observer_default_model, observer_valid_model,

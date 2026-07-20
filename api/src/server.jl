@@ -285,6 +285,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_plot_populations(req)
         elseif path == "/api/plots/attrs"
             api_plot_attrs(req)
+        elseif path == "/api/plots/contact_matrix"
+            api_plot_contact_matrix(req)
         elseif path == "/api/tracking/motion-dims"
             api_motion_dims(req)
         elseif path == "/api/storage/summary"

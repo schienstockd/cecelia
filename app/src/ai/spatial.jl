@@ -37,6 +37,36 @@ function _collect_contact_stats(img::CciaImage)
     out
 end
 
+"""
+    contact_matrix(img; suffix="") -> NamedTuple
+
+The pairwise cell-type contact LOG-ODDS as a heatmap-ready matrix for one image + one neighbourStats
+run (CODEX Goltsev 2018; Decision 16). Reuses `_collect_contact_stats` (the `spatialStats/{suffix}.json`
+reader) — no second reader. Returns `(; suffixes, suffix, basis, cells, nCells, nEdges)` where `cells`
+is `[(x=popA, y=popB, value=logOdds)]` symmetric-filled over `basis × basis`, ready for the shared
+matrix renderer (PlotChart). `suffix=""` picks the first run; `suffixes` lists all runs so the UI can
+switch. Empty everything when the image has no contact stats.
+"""
+function contact_matrix(img::CciaImage; suffix::AbstractString = "")
+    stats = _collect_contact_stats(img)
+    isempty(stats) && return (; suffixes = String[], suffix = "", basis = String[],
+                                cells = NamedTuple[], nCells = 0, nEdges = 0)
+    suffixes = String[s.suffix for s in stats]
+    idx = suffix == "" ? 1 : something(findfirst(==(String(suffix)), suffixes), 1)
+    e = stats[idx]
+    lo = Dict{Tuple{String,String},Float64}()
+    for p in e.pairs                                   # symmetric fill (records may be upper-triangle)
+        lo[(p.popA, p.popB)] = p.logOdds
+        lo[(p.popB, p.popA)] = p.logOdds
+    end
+    cells = NamedTuple[]
+    for a in e.basis, b in e.basis
+        v = get(lo, (a, b), nothing)
+        v === nothing || push!(cells, (; x = a, y = b, value = v))
+    end
+    (; suffixes, suffix = e.suffix, basis = e.basis, cells, nCells = e.nCells, nEdges = e.nEdges)
+end
+
 function _spatial_image(img::CciaImage)
     regions = Any[]
     for vn in sort(img_value_names(img))

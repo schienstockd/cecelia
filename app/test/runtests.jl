@@ -2933,6 +2933,27 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._cluster_matrix_suffix("matrix", "clusters.default") == "default"
     end
 
+    @testset "contact_matrix — CODEX log-odds heatmap matrix" begin
+        # sidecar spatialStats/{suffix}.json → symmetric pop×pop log-odds matrix for the plot renderer
+        td = mktempdir(); mkpath(joinpath(td, "spatialStats"))
+        open(joinpath(td, "spatialStats", "default.json"), "w") do f
+            write(f, """{"basis":["B/qc","T/qc"],"nCells":100,"nEdges":200,"records":[""" *
+                     """{"popA":"B/qc","popB":"B/qc","observed":10,"expected":5,"logOdds":0.7,"association":"associated"},""" *
+                     """{"popA":"B/qc","popB":"T/qc","observed":1,"expected":5,"logOdds":-1.1,"association":"avoided"},""" *
+                     """{"popA":"T/qc","popB":"T/qc","observed":8,"expected":4,"logOdds":0.6,"association":"associated"}]}""")
+        end
+        m = contact_matrix(CciaImage(; dir=td))
+        @test m.suffixes == ["default"] && m.suffix == "default"
+        @test Set(m.basis) == Set(["B/qc", "T/qc"]) && m.nCells == 100 && m.nEdges == 200
+        val(x, y) = only(c.value for c in m.cells if c.x == x && c.y == y)
+        @test val("B/qc", "T/qc") ≈ -1.1 && val("T/qc", "B/qc") ≈ -1.1   # symmetric fill
+        @test val("B/qc", "B/qc") ≈ 0.7 && val("T/qc", "T/qc") ≈ 0.6
+        @test length(m.cells) == 4                                       # 2×2 fully filled
+        # no sidecar → empty (route returns empty, UI shows "run contact stats first")
+        m0 = contact_matrix(CciaImage(; dir=mktempdir()))
+        @test isempty(m0.cells) && isempty(m0.suffixes)
+    end
+
     @testset "region pop auto-share (co-clustered value_names, cell granularity)" begin
         # regions are a per-run column shared across co-clustered segmentations — the identical
         # auto-share/expand machinery as clust, exercised via the `regions.` prefix + cell granularity.

@@ -139,6 +139,28 @@ function api_plot_attrs(req::HTTP.Request)
     200, JSON3.write(Dict("attrs" => [Dict("name" => n, "values" => sort(vals[n])) for n in names]))
 end
 
+# ── GET /api/plots/contact_matrix — CODEX pairwise contact log-odds as a heatmap matrix ────────────
+# Query: projectUid, imageUid, suffix? (a neighbourStats run; default = first). Returns the pop × pop
+# log-odds matrix for the shared matrix renderer (PlotChart): `{ suffixes, suffix, basis, cells, ... }`
+# where cells = [{x, y, value}] over basis × basis. Read-only sidecar read (spatialStats/{suffix}.json)
+# via the package `contact_matrix` — the same reader MCP uses, no second copy. (Decision 16.)
+function api_plot_contact_matrix(req::HTTP.Request)
+    q    = HTTP.queryparams(HTTP.URI(req.target))
+    proj = get(q, "projectUid", "")
+    isempty(proj) && return _gerr(400, "projectUid required")
+    img, err = _gating_image(proj, get(q, "imageUid", ""))
+    err === nothing || return err
+    m = try
+        contact_matrix(img; suffix = get(q, "suffix", ""))
+    catch e
+        return _gerr(400, sprint(showerror, e))
+    end
+    200, JSON3.write(Dict(
+        "suffixes" => collect(m.suffixes), "suffix" => m.suffix, "basis" => collect(m.basis),
+        "nCells" => m.nCells, "nEdges" => m.nEdges,
+        "cells" => [Dict("x" => c.x, "y" => c.y, "value" => c.value) for c in m.cells]))
+end
+
 # ── POST /api/plot_data — server-side aggregation for one summary panel ────────────
 # Body: { projectUid, popType, granularity ("cell"|"track"),
 #         chartType ("histogram"|"frequency"|"bar"|"boxplot"), measure, bins?, normalize?,

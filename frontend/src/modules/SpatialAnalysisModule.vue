@@ -17,6 +17,8 @@
 import ModuleLayout from '../components/ModuleLayout.vue'
 import TaskRunner from '../tasks/TaskRunner.vue'
 import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
+import CollapsibleSection from '../components/CollapsibleSection.vue'
+import SpatialContactHeatmap from './spatial/SpatialContactHeatmap.vue'
 import { useTaskDefs } from '../composables/useTaskDefs'
 
 const { defs: spatialDefs, reload: reloadDefs } = useTaskDefs('spatialAnalysis')
@@ -35,6 +37,12 @@ const { defs: spatialDefs, reload: reloadDefs } = useTaskDefs('spatialAnalysis')
     </template>
     <template #plots="{ selectedUids }">
       <SummaryCanvas :image-uids="selectedUids" module="spatialAnalysis" />
+    </template>
+    <template #below-table="{ selectedUids }">
+      <CollapsibleSection label="Cell-type contacts (log-odds)" max-height="none"
+        :storage-key="'cc-contact-open:spatialAnalysis'">
+        <SpatialContactHeatmap :image-uids="selectedUids" />
+      </CollapsibleSection>
     </template>
   </ModuleLayout>
 </template>
