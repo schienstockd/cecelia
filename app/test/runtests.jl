@@ -261,8 +261,40 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test loaded.name == "img-1"
         @test get(loaded.meta, "ori_path", "") == "/tmp/fake.tif"
 
+        # image_by_uid(...; uid) convenience accessor (REPL/notebook lookup)
+        @test image_by_uid(proj; uid = img.uid) === img
+        @test image_by_uid(s; uid = img.uid) === img
+        @test image_by_uid(proj; uid = "nope") === nothing
+        @test image_by_uid(s; uid = "nope") === nothing
+
         # Cleanup
         rm(proj.root; recursive=true)
+    end
+
+    # ── REPL / notebook data-access surface (Observer Phase 2 foundation) ─────────
+    @testset "REPL API surface + generated doc" begin
+        # every allow-listed accessor is defined, exported, and documented — the notebook-facing
+        # surface must be complete (a rename/removal or a missing docstring fails here).
+        ref = repl_api_reference()
+        @test !isempty(ref)
+        for e in ref
+            @test isdefined(Cecelia, Symbol(e.name))
+            @test e.exported
+            @test e.documented          # has a real docstring (undocumented accessors are a bug)
+            @test !occursin("value*name", e.doc)   # raw docstring, not the mangled re-render
+        end
+
+        # GOLDEN: docs/REPL.md's generated section is in sync with the live docstrings. If this fails,
+        # someone changed a listed function's docstring (or the list) without regenerating — run
+        # `Cecelia.write_repl_doc()`. This is the drift-guard that keeps REPL.md honest.
+        p = Cecelia.repl_doc_path()
+        if isfile(p)
+            committed = read(p, String)
+            @test committed == Cecelia.render_repl_doc(committed)
+            @test occursin(Cecelia.REPL_DOC_BEGIN, committed)
+        else
+            @test_skip "docs/REPL.md not found at $p"
+        end
     end
 
     # ── Run log (automatic per-image provenance) ─────────────────────────────────

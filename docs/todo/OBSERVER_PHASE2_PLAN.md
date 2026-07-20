@@ -78,9 +78,10 @@ notebooks exist.
 
 Foundation first (everything leans on the REPL layer), then the features, panel last.
 
-1. **REPL knowledge foundation** — `NOTEBOOK_API` const + `repl_api_reference()` +
-   `docs/REPL.md` (cookbook + generated section) + golden test + MCP resource/`get_repl_api`
-   tool + a tiny `image(proj; uid=)` convenience. *(app/ + mcp/ + docs/ + test-pkg)*
+1. **REPL knowledge foundation** — ✅ **done**: `NOTEBOOK_API` const + `repl_api_reference()`
+   (live docstring introspection) + `docs/REPL.md` (cookbook + generated section, golden-tested) +
+   `image_by_uid(proj/s; uid=)` convenience + `GET /api/repl/api` → `get_repl_api` MCP tool.
+   *(app/ + api/ + mcp/ + docs/ + test-pkg/api/mcp)*
 2. **`get_module_params` MCP tool** — expose the existing task-definition specs (valid
    ranges/defaults/types) to Claude. Route already exists; add the allow-list entry + client
    method + server tool. *(mcp/ + allow-list; possibly a thin `/api` shim if the current one

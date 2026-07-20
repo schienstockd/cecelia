@@ -39,6 +39,7 @@ get_task_history          → recent tasks across all images: function, status, 
 get_image_notes           → user-written notes for a specific image
 read_lab_log              → full lab log content
 get_qc_metrics            → per-image QC flags for a given stage
+get_repl_api              → notebook/REPL data-access surface: read accessors + live docstrings + cookbook (Phase 2)
 ```
 
 **Write (Phase 1 — lab log only):**

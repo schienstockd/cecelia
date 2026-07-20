@@ -1083,6 +1083,22 @@ api_analysis_clusters(req::HTTP.Request) =
 api_analysis_chains(req::HTTP.Request) =
     _observer_summary_route(req, (p, _i, _s) -> chains_summary(p))
 
+# GET /api/repl/api — the notebook/REPL data-access surface (Observer Phase 2 foundation): the
+# NOTEBOOK_API accessors with their live docstrings, plus the docs/REPL.md cookbook when present. Backs
+# the MCP get_repl_api tool so Claude can generate correct `using Cecelia` notebooks without guessing
+# the interface. Project-independent, read-only. `doc` is "" if REPL.md isn't shipped (installed app).
+function api_repl_api(::HTTP.Request)
+    out = try
+        api = [(; name = e.name, exported = e.exported, documented = e.documented, doc = e.doc)
+               for e in repl_api_reference()]
+        p = Cecelia.repl_doc_path()
+        (; api = api, doc = isfile(p) ? read(p, String) : "")
+    catch e
+        return 500, JSON3.write((; error = sprint(showerror, e)))
+    end
+    200, JSON3.write(out)
+end
+
 # POST /api/qc/cohort/check — the explicit "Check cohort consistency" action: recompute AND persist
 # (set sidecar + per-image `cohort.{fun}` findings so outliers surface on the image). Body:
 # {projectUid, setUid, funName, valueName?, threshold?}. This is the ONLY cohort write path.

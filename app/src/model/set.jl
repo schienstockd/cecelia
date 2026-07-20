@@ -87,6 +87,16 @@ function images(s::CciaSet)::Vector{CciaImage}
 end
 
 """
+    image_by_uid(s::CciaSet; uid) -> Union{CciaImage,Nothing}
+
+Look up one image by `uid` within the set (nothing if absent).
+"""
+function image_by_uid(s::CciaSet; uid::AbstractString)::Union{CciaImage,Nothing}
+    idx = findfirst(i -> i.uid == uid, s._images)
+    isnothing(idx) ? nothing : s._images[idx]
+end
+
+"""
 Delete an image from the set: removes its data dir ({proj}/0/{uid}) and metadata
 dir ({proj}/1/{uid}) from disk, drops it from the set manifest, and persists the set.
 """

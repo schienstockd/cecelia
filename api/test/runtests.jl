@@ -948,3 +948,17 @@ end
         rm(tmp; recursive = true, force = true)
     end
 end
+
+@testset "API: repl api surface" begin
+    # Project-independent: the notebook/REPL data-access surface backing the get_repl_api MCP tool.
+    st, body = api_repl_api(HTTP.Request("GET", "/api/repl/api"))
+    @test st == 200
+    d = JSON3.read(body)
+    @test !isempty(d.api)
+    names = Set(String(e.name) for e in d.api)
+    @test "pop_df" in names && "label_props" in names && "load_project" in names
+    @test all(e -> e.documented, d.api)                 # every listed accessor is documented
+    # the cookbook rides along (dev checkout ships docs/REPL.md) and carries the write rules
+    @test occursin("using Cecelia", d.doc)
+    @test occursin("figures", d.doc) && occursin("CSV", d.doc)
+end

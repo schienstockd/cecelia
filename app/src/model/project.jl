@@ -75,12 +75,38 @@ function add_set!(proj::CciaProject;
     s
 end
 
+"""
+    sets(proj::CciaProject) -> Vector{CciaSet}
+
+All sets (image cohorts) in the project.
+"""
 function sets(proj::CciaProject)::Vector{CciaSet}
     proj._sets
 end
 
+"""
+    images(proj::CciaProject) -> Vector{CciaImage}
+    images(s::CciaSet) -> Vector{CciaImage}
+
+Every image in the project (flattened across its sets), or the images of one set.
+"""
 function images(proj::CciaProject)::Vector{CciaImage}
     vcat(map(images, proj._sets)...)
+end
+
+"""
+    image_by_uid(proj::CciaProject; uid) -> Union{CciaImage,Nothing}
+
+Look up one image by `uid` anywhere in the project (nothing if absent). Convenience over
+`images(proj)` + filter for REPL/notebook use. (Named `image_by_uid`, not `image`, to avoid clashing
+with Makie's exported `image` in a plotting notebook — same reason we export `apply_transform`.)
+"""
+function image_by_uid(proj::CciaProject; uid::AbstractString)::Union{CciaImage,Nothing}
+    for s in proj._sets
+        img = image_by_uid(s; uid = uid)
+        img === nothing || return img
+    end
+    nothing
 end
 
 """
