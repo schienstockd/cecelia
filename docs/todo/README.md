@@ -47,6 +47,9 @@ If it fits in a paragraph and needs no design, it's a `docs/TODO.md` item, not a
 - `SERVICE_PANEL_PLAN.md` — Settings control panel: live status + start/stop/restart for backend /
   napari / notebooks, global Quit, and a separate-window "pixi console" (reuses the existing log
   console). Branch `feat/settings-service-panel`; phased (panel → console → backend restart).
+- `SPATIAL_REGIONS_PLAN.md` — spatial analysis port + region clustering + CytoMAP parity + live
+  behaviour-region extension. New `region` poptype (reuses cluster machinery), squidpy re-added,
+  per-cell neighbourhoods primary, cross-poptype query in Julia. Status: planning, no branch.
 - `PY_PACKAGING_PLAN.md` — make `app/py` an installable package (rename `py` → `cecelia`,
   `pyproject.toml` + extras, editable pixi install) so external consumers (`coastal`) can
   `import cecelia.utils.*` without a `sys.path` hack. Touches `app/src/py_runner.jl` (1 line),

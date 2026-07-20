@@ -79,8 +79,9 @@ function _category_of_fun(fun::AbstractString)::String
     uppercasefirst(String(split(fun, ".")[1]))
 end
 
+# `region` (spatial region-clustering pops) is cluster-family — grouped with Clustering in the digest.
 _category_of_pop_type(pt::AbstractString)::String =
-    String(pt) in ("clust", "trackclust") ? "Clustering" : CATEGORY_GATING
+    String(pt) in ("clust", "trackclust", "region") ? "Clustering" : CATEGORY_GATING
 
 """All digest categories the app can emit — task categories (from the registry, generic) plus the
 non-task ones. Ordered by `_CATEGORY_ORDER`, extras appended. Backs the panel's per-category mutes."""

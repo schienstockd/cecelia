@@ -610,14 +610,20 @@ end
 _cols_for(chart_type, measure, group_by, measures, category) =
     chart_type == "matrix" ? _matrix_cols(measures, measure, category) : _plot_cols(measure, group_by)
 
-# The per-CLUSTER heatmap is a matrix over a `clusters.{suffix}` column (root pop) → its frame must
-# span ALL co-clustered segmentations so the signature covers the whole run, not just the active
-# value_name (docs/todo/CLUSTER_POOLING_PLAN.md). Returns the run suffix when this applies, else
-# nothing (the normal single-value_name pop_df is used). Per-POPULATION heatmaps (category="pop", bare
-# cluster-pop paths) already pool via the bare-pop expansion in pop_df, so only the root case needs it.
-_cluster_matrix_suffix(chart_type, category)::Union{String,Nothing} =
-    (chart_type == "matrix" && category !== nothing && startswith(String(category), "clusters.")) ?
-        String(category)[ncodeunits("clusters.")+1:end] : nothing
+# The per-CLUSTER heatmap is a matrix over a `clusters.{suffix}` (or `regions.{suffix}` for spatial
+# regions) column (root pop) → its frame must span ALL co-clustered segmentations so the signature
+# covers the whole run, not just the active value_name (docs/todo/CLUSTER_POOLING_PLAN.md). Returns the
+# run suffix when this applies, else nothing (the normal single-value_name pop_df is used). Per-POPULATION
+# heatmaps (category="pop", bare cluster-pop paths) already pool via the bare-pop expansion in pop_df, so
+# only the root case needs it.
+function _cluster_matrix_suffix(chart_type, category)::Union{String,Nothing}
+    (chart_type == "matrix" && category !== nothing) || return nothing
+    c = String(category)
+    for prefix in ("clusters.", "regions.")
+        startswith(c, prefix) && return c[ncodeunits(prefix)+1:end]
+    end
+    nothing
+end
 
 # vcat pop_df across the co-clustered segmentations (`fetch_vn(vn)` returns one segment's frame).
 _pool_co_clustered(vns, fetch_vn)::DataFrame = begin

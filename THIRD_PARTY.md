@@ -11,6 +11,7 @@ license.
 |-----------|---------|--------------|
 | **cecelia** (`schienstockd/cecelia`, R) — Schienstock & Mueller, *Nature Communications* (2025) | GPL-3.0-or-later | Cecelia Pineapple is a port of this R package; the GPL-3-or-later license is inherited from it. |
 | **celltrackR** (`ingewortel/celltrackR`, R) — Wortel et al. | GPL-2.0 | `app/src/tasks/tracking/track_measures.jl` is a from-scratch reimplementation of celltrackR's track-measure functions (path length, displacement, straightness, turning/overall angle, asphericity, …), cited inline against the reference. Credit and notice carried here. |
+| **CytoMAP** (`DrStoltzfus/CytoMAP`, MATLAB) — Stoltzfus et al., *Cell Reports* 31(3):107523 (2020), [DOI 10.1016/j.celrep.2020.107523](https://doi.org/10.1016/j.celrep.2020.107523) | MIT | The spatial region-clustering / neighbourhood-composition readouts in `app/src/tasks/spatialAnalysis/` and `app/src/tasks/clustRegions/` are informed by CytoMAP's analytical outputs (raster-window composition, region SOM, density co-localization, region adjacency). Functions derived from a CytoMAP method are cited inline. Statistical tests use squidpy rather than porting CytoMAP's MATLAB code. |
 
 ## Bundled / dependencies
 
@@ -24,6 +25,7 @@ license.
 | scanpy | BSD-3-Clause |
 | anndata | BSD-3-Clause |
 | leidenalg | GPL-3.0-or-later |
+| squidpy | BSD-3-Clause |
 | scikit-image | BSD-3-Clause |
 | NumPy / SciPy | BSD-3-Clause |
 | pandas | BSD-3-Clause |

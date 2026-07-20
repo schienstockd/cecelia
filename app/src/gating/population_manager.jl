@@ -245,6 +245,7 @@ const POP_MAP_SUFFIX = Dict{String,String}(
     "track"      => TRACK_PROPS_SUFFIX,   # "__tracks"
     "clust"      => "__clust",
     "trackclust" => "__trackclust",
+    "region"     => "__region",           # spatial region pops — a filter on `regions.{suffix}`
 )
 
 # The pop types that are hand-drawn *gating* (a gate geometry per pop), as opposed to the
@@ -321,15 +322,24 @@ function co_clustered_value_names(img::CciaImage, suffix::AbstractString;
     isempty(out) ? String[String(get(img.label_props, "_active", "default"))] : out
 end
 
-_is_cluster_pop_type(pop_type)::Bool = String(pop_type) in ("clust", "trackclust")
+# The cluster-style pop types: each is a filter on a per-run `{prefix}{suffix}` obs column written by a
+# clustering-family task, with the whole co-clustered-sibling auto-share machinery below applying
+# uniformly. `clust`/`trackclust` filter `clusters.{suffix}` (clustPops/clustTracks); `region` filters
+# `regions.{suffix}` (clustRegions) — spatial regions are region-clustering output, stored + shared with
+# the identical mechanism as cell/track clusters (see docs/todo/SPATIAL_REGIONS_PLAN.md, Decision 5).
+_is_cluster_pop_type(pop_type)::Bool = String(pop_type) in ("clust", "trackclust", "region")
 
-# Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "clusters.{suffix}").
+# The obs-column family a cluster-style pop type filters over — the one place the prefix is decided.
+_cluster_measure_prefix(pop_type)::String = String(pop_type) == "region" ? "regions." : "clusters."
+
+# Suffixes a cluster pop map's filters reference (each pop's `filter_measure` = "{prefix}{suffix}").
 function _referenced_cluster_suffixes(m::PopulationMap)::Set{String}
+    prefix = _cluster_measure_prefix(m.pop_type)
     out = Set{String}()
     for p in values(m.pops)
         fm = p.filter_measure
-        (fm === nothing || !startswith(String(fm), "clusters.")) && continue
-        push!(out, String(fm)[ncodeunits("clusters.")+1:end])
+        (fm === nothing || !startswith(String(fm), prefix)) && continue
+        push!(out, String(fm)[ncodeunits(prefix)+1:end])
     end
     out
 end
@@ -475,13 +485,14 @@ function _expand_cluster_pops(img::CciaImage, pops, pop_type::AbstractString, de
         if !(startswith(p, "/") || is_root(p)); push!(out, p); continue; end   # explicit "vn/path" → keep
         is_root(p) && (push!(out, p); continue)                                # root has no cluster expansion
         # find the run this pop belongs to: a value_name whose OWN sidecar defines it as a cluster filter
+        prefix = _cluster_measure_prefix(pop_type)
         suffix = nothing
         for vn in vns
             m = load_pop_map(img._dir, String(vn); pop_type=pop_type)
             has_pop(m, p) || continue
             fm = m.pops[p].filter_measure
-            (fm !== nothing && startswith(String(fm), "clusters.")) || continue
-            suffix = String(fm)[ncodeunits("clusters.")+1:end]; break
+            (fm !== nothing && startswith(String(fm), prefix)) || continue
+            suffix = String(fm)[ncodeunits(prefix)+1:end]; break
         end
         suffix === nothing && (push!(out, p); continue)                        # unknown → leave to default_vn
         for vn in co_clustered_value_names(img, suffix; granularity=granularity)
@@ -933,14 +944,15 @@ end
 
 The pop_types `population_scope_groups` must load to cover a `popScope`. BOTH scopes load `live`: its
 stored flow gates are the cell pops AND the parents the derived `/_tracked` children hang off. `tracks`
-adds `track` (the per-track gate map) and, unless excluded, `trackclust`; `cells` adds `clust` unless
-excluded. Throws on an unknown scope (a spec typo should fail loudly, not silently empty the picker).
+adds `track` (the per-track gate map) and, unless excluded, `trackclust`; `cells` adds `clust` and
+`region` unless excluded. Throws on an unknown scope (a spec typo should fail loudly, not silently
+empty the picker).
 """
 function scope_pop_types(scope::AbstractString, include_clusters::Bool)::Vector{String}
     if String(scope) == "tracks"
         pts = ["live", "track"]; include_clusters && push!(pts, "trackclust")
     elseif String(scope) == "cells"
-        pts = ["live"]; include_clusters && push!(pts, "clust")
+        pts = ["live"]; include_clusters && append!(pts, ("clust", "region"))
     else
         error("unknown popScope: $scope (expected \"cells\" or \"tracks\")")
     end
