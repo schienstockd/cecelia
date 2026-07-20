@@ -81,6 +81,15 @@ torchvision = { version = ">=0.21", index = "https://download.pytorch.org/whl/cu
 torch       = ">=2.6"
 torchvision = ">=0.21"
 
+# Env applied to EVERY `pixi run` (server + its run_py subprocesses, napari, notebooks, tests).
+# KMP_DUPLICATE_LIB_OK: torch and numba each bundle their own OpenMP (libomp/libiomp); loaded in one
+# process — e.g. Harmony (torch) then pynndescent (numba) during clustering — macOS aborts with a
+# duplicate-libomp error → SIGSEGV (it killed test-py on the macOS-arm64 CI runner). TRUE suppresses
+# the abort so the two coexist. The old R version set this the same way as a default
+# (old-R-shiny-version/inst/app/cecelia-*.sh). Harmless on Linux/Windows (no duplicate-runtime abort).
+[activation.env]
+KMP_DUPLICATE_LIB_OK = "TRUE"
+
 # --- Run templates (replace the old scripts/*.sh|.bat launchers) ------------------------------
 # Launch everything via `pixi run <task>` so the activated env's python3 is what the Julia server's
 # subprocesses and the napari bridge pick up. These are cross-platform — julia (juliaup), npm (fnm)

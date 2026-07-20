@@ -313,6 +313,19 @@ CUDA-only and lives as a commented `[feature.gpu]` stub in `pixi.toml`; when un-
 separate env so non-CUDA platforms fall back to `leidenalg`. GPU is auto-detected at runtime, never a
 task param (`CLAUDE.md`). See `docs/todo/CLUSTERING_PLAN.md`.
 
+### `KMP_DUPLICATE_LIB_OK=TRUE` — the macOS OpenMP guard (`[activation.env]`)
+`torch` and `numba` each bundle their **own** OpenMP runtime (`libomp`/`libiomp5`). When both are
+loaded in one process — e.g. the clustering path runs Harmony (torch) and then `sc.pp.neighbors` →
+pynndescent (numba) — macOS aborts with a duplicate-`libomp` error and the process **SIGSEGVs** (it
+killed `test-py` on the macOS-arm64 CI runner). `KMP_DUPLICATE_LIB_OK=TRUE` tells the Intel/LLVM
+OpenMP runtime to permit the second load instead of aborting, so the two coexist. Set once in
+`pixi.toml` `[activation.env]`, so **every `pixi run`** inherits it — the server and its `run_py`
+subprocesses (where clustering actually runs), napari, notebooks, and the test suites — not just CI.
+Harmless on Linux/Windows (they don't hit the duplicate-runtime abort). This mirrors the old R
+version, which exported the same flag in its launcher scripts (`old-R-shiny-version/inst/app/cecelia-*.sh`).
+The related but separate fix: Harmony is pinned to CUDA-or-CPU, never MPS (`clustering_utils.py`),
+because torch's Apple MPS backend segfaults inside Harmony independently of the OpenMP issue.
+
 ### Notebook Playground sysimage (`pluto/deps.so`)
 The Notebooks feature (`docs/NOTEBOOKS.md`) runs Pluto in its own Julia env (`pluto/`, separate from
 `app`/`api` — the API server must not carry the Makie plot stack). Makie's time-to-first-plot is
