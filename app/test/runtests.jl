@@ -2985,6 +2985,33 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
               Set(["A/TumourZone", "B/TumourZone"])
     end
 
+    @testset "compound filter populations (Decision 15 — AND-ed conditions)" begin
+        # a user-defined filter pop combining two obs conditions in ONE pop: CD4>0.5 AND speed>5
+        m = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(m, "CD4hi_fast"; colour="#8b5cf6", filter_conditions=[
+            Dict("measure" => "live.cell.cd4",   "fun" => "gt", "values" => 0.5),
+            Dict("measure" => "live.cell.speed", "fun" => "gt", "values" => 5)])
+        fetch = _ -> DataFrame("label" => [1, 2, 3, 4],
+                               "live.cell.cd4"   => [0.9, 0.9, 0.1, 0.6],
+                               "live.cell.speed" => [10,  2,   10,  7])
+        recompute!(m, fetch)
+        @test Set(cells_in_pop(m, "/CD4hi_fast")) == Set([1, 4])   # BOTH hold: (0.9,10) and (0.6,7)
+
+        # single fields mirror conditions[1] so single-field readers still work
+        p = pop_at(m, "/CD4hi_fast")
+        @test p.filter_measure == "live.cell.cd4" && p.filter_fun == "gt" && length(p.filter_conditions) == 2
+
+        # round-trip through to_tree/from_tree preserves the conditions + membership
+        m2 = from_tree(to_tree(m)); recompute!(m2, fetch)
+        @test Set(cells_in_pop(m2, "/CD4hi_fast")) == Set([1, 4])
+        @test length(pop_at(m2, "/CD4hi_fast").filter_conditions) == 2
+
+        # a missing condition column → the whole pop degrades to empty (warns), never crashes
+        fetch1 = _ -> DataFrame("label" => [1, 2], "live.cell.cd4" => [0.9, 0.1])   # speed absent
+        @test_logs (:warn, r"live\.cell\.speed") match_mode=:any recompute!(m, fetch1)
+        @test isempty(cells_in_pop(m, "/CD4hi_fast"))
+    end
+
     @testset "recompute! — a missing filter/gate column degrades to empty (no crash)" begin
         # A cluster pop whose `clusters.{suffix}` column isn't in the fetched frame — e.g. evaluated
         # against a segmentation that didn't take part in that run, so `fetch_cols` silently dropped it

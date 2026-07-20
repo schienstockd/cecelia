@@ -22,6 +22,7 @@ import { useSettingsStore } from '../../stores/settings'
 import PopulationPanelShell from './PopulationPanelShell.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
 
@@ -151,6 +152,65 @@ async function addClusterPopulation() {
   const n = visiblePops.value.length
   await g.addClusterPop(`Population ${n + 1}`, props.suffix, POP_PALETTE[n % POP_PALETTE.length])
 }
+
+// ── Filter-population form (Decision 15): define a pop by an AND-ed filter on ANY obs measure, for the
+// current popType. Reuses pop/add (compound `conditions`). Aligned with the old populationUI.R dialog,
+// modernised — colour is user-picked (not random) and it's the same Population underneath (badged, not
+// a separate manager). ──
+interface FpCond { measure: string; fun: string; values: string }
+const FILTER_FUNS = ['gt', 'gte', 'lt', 'lte', 'eq', 'neq', 'in']
+const showFilterForm = ref(false)
+const fpEditPath = ref<string | null>(null)   // null → creating; a path → editing that filter pop
+const fpName = ref('')
+const fpParent = ref('root')
+const fpColour = ref(POP_PALETTE[0])
+const fpConds = ref<FpCond[]>([{ measure: '', fun: 'gt', values: '' }])
+// measures: per-cell obs (regions/clusters/aggregate/hmm/speed…) + gateable var columns (intensities)
+const filterMeasures = computed(() => [...new Set([...g.obsColumns, ...g.columns])].sort())
+const parentOptions = computed(() => ['root', ...visiblePops.value.map(p => p.path)])
+
+function addFpCond() { fpConds.value.push({ measure: filterMeasures.value[0] ?? '', fun: 'gt', values: '' }) }
+function removeFpCond(i: number) { fpConds.value.splice(i, 1) }
+
+function resetFilterForm() {
+  fpEditPath.value = null; fpName.value = ''; fpParent.value = 'root'
+  fpColour.value = POP_PALETTE[0]; fpConds.value = [{ measure: '', fun: 'gt', values: '' }]
+}
+function openCreateFilter() { resetFilterForm(); showFilterForm.value = true }
+// EDIT reuses the same form (nothing special about editing): pre-fill from the pop's stored filter.
+function beginEditFilter(p: FlatPop) {
+  const f = p.filter
+  const conds = f?.conditions?.length ? f.conditions
+    : (f ? [{ measure: f.measure, fun: f.fun, values: f.values }] : [])
+  fpEditPath.value = p.path; fpName.value = p.name; fpParent.value = p.parent; fpColour.value = p.colour
+  fpConds.value = conds.length
+    ? conds.map(c => ({ measure: String(c.measure ?? ''), fun: String(c.fun ?? 'gt'),
+        values: Array.isArray(c.values) ? c.values.join(', ') : (c.values == null ? '' : String(c.values)) }))
+    : [{ measure: '', fun: 'gt', values: '' }]
+  showFilterForm.value = true
+}
+
+async function submitFilterPop() {
+  const name = fpName.value.trim()
+  const conds = fpConds.value.filter(c => c.measure)
+    .map(c => ({ measure: c.measure, fun: c.fun, values: parseFilterValues(c.fun, c.values) }))
+  if (!conds.length) return
+  if (fpEditPath.value) {
+    const path = fpEditPath.value
+    const cur = visiblePops.value.find(p => p.path === path)
+    await g.updateFilterPop(path, conds)                                   // conditions
+    if (cur && cur.colour !== fpColour.value) await g.updatePop(path, { colour: fpColour.value })  // colour
+    if (name && cur && name !== cur.name && !isReservedPopName(name)) await g.renamePop(path, name) // rename LAST (path changes)
+  } else {
+    if (!name) return
+    await g.addFilterPop(name, fpParent.value, fpColour.value, conds)
+  }
+  resetFilterForm(); showFilterForm.value = false
+}
+
+// a hand-drawn gate vs a declarative filter pop (badge in the list)
+const isFilterPop = (p: FlatPop) => !!p.filter && !p.gate
+const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
 </script>
 
 <template>
@@ -163,6 +223,47 @@ async function addClusterPopulation() {
                 v-tooltip.bottom="'Create a population, then tick cluster IDs into it'">
           <i class="pi pi-plus" /> Add population
         </button>
+      </div>
+
+      <!-- filter-population form (Decision 15): a pop defined by an AND-ed filter on any obs measure.
+           Same form creates AND edits (fpEditPath) — editing is not a special path. -->
+      <div v-if="!readonly && !clusterMode" class="pm-add">
+        <button class="pm-add-btn" @click="showFilterForm ? (showFilterForm = false) : openCreateFilter()"
+                v-tooltip.bottom="'Define a population by filtering on obs measures (region, cluster, aggregate, intensity, speed…)'">
+          <i class="pi pi-filter" /> New filter population
+        </button>
+      </div>
+      <div v-if="showFilterForm && !readonly && !clusterMode" class="pm-ff">
+        <div class="pm-ff-title">{{ fpEditPath ? 'Edit filter population' : 'New filter population' }}</div>
+        <div class="pm-ff-head">
+          <input v-model="fpName" class="pm-ff-name" placeholder="Population name" />
+          <input v-model="fpColour" type="color" class="pm-ff-colour" v-tooltip.top="'Colour'" />
+        </div>
+        <label class="pm-ff-row">Under
+          <select v-model="fpParent" :disabled="!!fpEditPath" v-tooltip.top="fpEditPath ? 'Parent is fixed when editing — delete & recreate to move' : ''">
+            <option v-for="o in parentOptions" :key="o" :value="o">{{ o === 'root' ? '(all cells)' : o }}</option>
+          </select>
+        </label>
+        <div v-for="(c, i) in fpConds" :key="i" class="pm-ff-cond">
+          <select v-model="c.measure" class="pm-ff-measure">
+            <option value="" disabled>measure…</option>
+            <option v-for="m in filterMeasures" :key="m" :value="m">{{ g.colLabel(m) }}</option>
+          </select>
+          <select v-model="c.fun" class="pm-ff-fun">
+            <option v-for="f in FILTER_FUNS" :key="f" :value="f">{{ f }}</option>
+          </select>
+          <input v-model="c.values" class="pm-ff-vals" :placeholder="c.fun === 'in' ? 'a, b, c' : 'value'" />
+          <button v-if="fpConds.length > 1" class="pm-icon" @click="removeFpCond(i)" v-tooltip.left="'Remove condition'">
+            <i class="pi pi-times" />
+          </button>
+        </div>
+        <div class="pm-ff-actions">
+          <button class="pm-ff-cond-add" @click="addFpCond"><i class="pi pi-plus" /> AND condition</button>
+          <span class="pm-ff-spacer" />
+          <button class="pm-ff-cancel" @click="showFilterForm = false; resetFilterForm()">Cancel</button>
+          <button class="pm-add-btn" :disabled="!fpName.trim() || !fpConds.some(c => c.measure)"
+                  @click="submitFilterPop">{{ fpEditPath ? 'Save' : 'Create' }}</button>
+        </div>
       </div>
 
       <div v-if="!visiblePops.length" class="pm-empty">
@@ -183,6 +284,14 @@ async function addClusterPopulation() {
                 @dblclick.stop="!readonly && !p.transient && beginRename(p)">{{ p.name }}</span>
           <input v-else class="pm-rename" v-model="editName" autofocus
                  @keyup.enter="commitRename(p)" @blur="commitRename(p)" @click.stop />
+
+          <!-- filter pops are badged (vs hand-drawn gates); the badge is the EDIT affordance (click →
+               open the same form pre-filled). Read-only surfaces show a static badge. Tooltip = predicate. -->
+          <button v-if="isFilterPop(p) && !readonly && !p.transient" type="button"
+                  class="pm-icon pm-filter-badge" v-tooltip.top="`Edit: ${popFilterSummary(p)}`"
+                  @click.stop="beginEditFilter(p)"><i class="pi pi-filter" /></button>
+          <i v-else-if="isFilterPop(p)" class="pi pi-filter pm-filter-badge"
+             v-tooltip.top="popFilterSummary(p)" />
 
           <span class="pm-stat" v-tooltip.left="'cells · % of parent'">
             {{ g.stats[p.path]?.count ?? '–' }}
@@ -336,6 +445,31 @@ async function addClusterPopulation() {
   border: 1px solid var(--cc-border); border-radius: 4px; background: var(--cc-surface-2);
   color: var(--cc-text); cursor: pointer; }
 .pm-add-btn:hover { border-color: #7c3aed; color: #c4b5fd; }
+.pm-add-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* filter-population form (Decision 15) */
+.pm-ff { display: flex; flex-direction: column; gap: 5px; padding: 6px 8px; border-bottom: 1px solid var(--cc-border);
+  background: var(--cc-surface-1); }
+.pm-ff-head { display: flex; gap: 5px; align-items: center; }
+.pm-ff-name { flex: 1; font-size: 11px; padding: 3px 6px; border: 1px solid var(--cc-border); border-radius: 4px;
+  background: var(--cc-surface-2); color: var(--cc-text); }
+.pm-ff-colour { width: 24px; height: 24px; padding: 0; border: 1px solid var(--cc-border); border-radius: 4px;
+  background: none; cursor: pointer; }
+.pm-ff-row, .pm-ff-cond { display: flex; gap: 4px; align-items: center; font-size: 11px; color: var(--cc-text-dim); }
+.pm-ff-cond select, .pm-ff-row select, .pm-ff-vals { font-size: 11px; padding: 2px 4px; border: 1px solid var(--cc-border);
+  border-radius: 3px; background: var(--cc-surface-2); color: var(--cc-text); }
+.pm-ff-measure { flex: 1; min-width: 0; }
+.pm-ff-fun { width: 48px; }
+.pm-ff-vals { width: 64px; }
+.pm-ff-actions { display: flex; justify-content: space-between; align-items: center; }
+.pm-ff-cond-add { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 2px; }
+.pm-ff-cond-add:hover { color: var(--cc-text); }
+.pm-ff-title { font-size: 11px; font-weight: 600; color: var(--cc-text); }
+.pm-ff-spacer { flex: 1; }
+.pm-ff-cancel { background: none; border: none; color: var(--cc-text-dim); font-size: 11px; cursor: pointer; padding: 4px 6px; }
+.pm-ff-cancel:hover { color: var(--cc-text); }
+.pm-filter-badge { font-size: 10px; color: #8b5cf6; margin-left: 2px; opacity: 0.8; }
+button.pm-filter-badge { border: none; background: none; cursor: pointer; padding: 2px; }
+button.pm-filter-badge:hover { opacity: 1; }
 .pm-clusters { display: flex; flex-wrap: wrap; gap: 3px; padding: 2px 8px 6px; border-bottom: 1px solid var(--cc-border); }
 .pm-chip { min-width: 1.4rem; height: 1.4rem; padding: 0 4px; font-size: 11px; line-height: 1;
   border: 1px solid var(--cc-border); border-radius: 3px; background: var(--cc-surface-1);

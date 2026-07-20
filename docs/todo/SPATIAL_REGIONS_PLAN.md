@@ -290,6 +290,12 @@ per-poptype `PopulationManager` (reused CRUD: `pop/add`·`update`·`delete`), an
   reference not gospel"; kept measure-agnostic (`> 0` is just the flag case).
 LAST priority (task #10). See CD8→aggregate→CD69 workflow: chain composes parent∩child, no muddle.
 
+**BUILT** (branch feat/filter-pop-gui): `Population.filter_conditions` (AND-ed, back-compat) + recompute!
+eval + to_tree/from_tree round-trip; `pop/add`·`pop/update` accept `filter.conditions`; gating store
+`addFilterPop`/`updateFilterPop` + `obsColumns`; PopulationManager "New filter population" form (name,
+parent, colour, N conditions on any obs/var measure) + a filter badge distinguishing filter pops from
+hand-drawn gates. Pure form logic in `utils/filterPopForm.ts`. Julia 1478, vitest 268.
+
 ### Decision 16 — Spatial Analysis plots: CytoMAP parity for the Gerner lab
 
 Dominik: "take CytoMAP as inspiration; provide at least similar plots for Gerner people." The Spatial

@@ -40,6 +40,7 @@ function _needed_columns(m::PopulationMap)::Vector{String}
             push!(cols, p.gate.x_channel, p.gate.y_channel)
         end
         p.filter_measure !== nothing && push!(cols, p.filter_measure)
+        p.filter_conditions === nothing || append!(cols, (c.measure for c in p.filter_conditions))
     end
     unique(cols)
 end
@@ -72,6 +73,18 @@ function recompute!(m::PopulationMap, fetch_cols::Function)
             (p.gate.x_channel in cols && p.gate.y_channel in cols) ?
                 parent_mask .& inside(p.gate, df[!, p.gate.x_channel], df[!, p.gate.y_channel]) :
                 _missing_col_mask(n, path, string(p.gate.x_channel, " / ", p.gate.y_channel))
+        elseif p.filter_conditions !== nothing
+            # compound filter (Decision 15): AND every condition's mask. A missing column degrades the
+            # WHOLE pop to empty + a warning (same rationale as the single-filter case below), never a 500.
+            cmask = trues(n)
+            for c in p.filter_conditions
+                if c.measure in cols
+                    cmask .&= _filter_mask(df[!, c.measure], c.fun, c.values, false)
+                else
+                    cmask = _missing_col_mask(n, path, String(c.measure)); break
+                end
+            end
+            parent_mask .& cmask
         elseif p.filter_measure !== nothing
             # A filter's column can legitimately be absent from THIS frame — e.g. a cluster pop
             # (`clusters.{suffix}`) evaluated against a segmentation that didn't take part in that

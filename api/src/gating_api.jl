@@ -673,6 +673,7 @@ function api_gating_pop_add(body_bytes::Vector{UInt8})
                      filter_fun     = flt === nothing ? nothing : get(flt, "fun", nothing),
                      filter_values  = flt === nothing ? nothing : get(flt, "values", nothing),
                      filter_default_all = flt === nothing ? false : Bool(get(flt, "default_all", false)),
+                     filter_conditions = flt === nothing ? nothing : get(flt, "conditions", nothing),
                      is_track = Bool(get(body, "is_track", false)))
         catch e
             return _gerr(400, sprint(showerror, e))
@@ -725,6 +726,14 @@ function api_gating_pop_update(body_bytes::Vector{UInt8})
             haskey(flt, "fun")         && (p.filter_fun = get(flt, "fun", nothing))
             haskey(flt, "values")      && (p.filter_values = get(flt, "values", nothing))
             haskey(flt, "default_all") && (p.filter_default_all = Bool(get(flt, "default_all", false)))
+            # compound filter (Decision 15): replace the AND-ed conditions, mirroring conditions[1] onto
+            # the single fields (same contract as add_pop!). `conditions: []`/null clears back to single.
+            if haskey(flt, "conditions")
+                conds = Cecelia._normalise_conditions(get(flt, "conditions", nothing))
+                p.filter_conditions = conds
+                conds === nothing || (p.filter_measure = conds[1].measure;
+                                      p.filter_fun = conds[1].fun; p.filter_values = conds[1].values)
+            end
         end
         200, JSON3.write((; tree = _persist_and_broadcast!(m, img, body, vn, pt)))
     end
