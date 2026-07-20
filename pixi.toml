@@ -152,6 +152,9 @@ julia-instantiate = "julia --project=app -e 'using Pkg; Pkg.instantiate()'"
 # -sTCP:LISTEN restricts to the LISTENING server; without it lsof also returns clients CONNECTED to the
 # port — the browser on :5173 (page + Vite HMR socket) — so `kill` would crash Firefox/Chrome. Mirrors
 # the win-64 branch's `-State Listen`.
+# These (lsof) tasks are the macOS default; Linux OVERRIDES them with `ss` below — lsof walks every
+# process's /proc/<pid>/fd table and hangs indefinitely on any process stuck in D (uninterruptible)
+# sleep (e.g. a filesystem-wide search wedged on a slow mount), which stalled `pixi run stop`.
 stop           = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:5173 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; kill $(lsof -ti tcp:7660 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)'"
 stop-backend   = "kill $(lsof -ti tcp:8080 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped backend(8080)'"
 stop-napari    = "kill $(lsof -ti tcp:7655 -sTCP:LISTEN) 2>/dev/null ; echo 'stopped napari bridge(7655)'"
@@ -163,6 +166,17 @@ stop           = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPo
 stop-backend   = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 stop-napari    = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7655 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
 stop-notebooks = "powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 7660 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force }\""
+
+# Linux: kill by listening port via `ss` (iproute2) instead of lsof. `ss` reads /proc/net/tcp*
+# directly and does NOT walk each process's /proc/<pid>/fd table, so a process wedged in D state
+# can't hang it (lsof does — see the default tasks above). `-l` = listening sockets only (mirrors
+# lsof's -sTCP:LISTEN / the Windows -State Listen), so a browser client connected to :5173 is never
+# killed. Literal (single-quoted) TOML strings so the `\K` in the grep pattern isn't escape-mangled.
+[target.linux-64.tasks]
+stop           = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :5173" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)/frontend(5173)/napari(7655)/notebooks(7660)"'
+stop-backend   = 'kill $(ss -tlnpH "sport = :8080" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped backend(8080)"'
+stop-napari    = 'kill $(ss -tlnpH "sport = :7655" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped napari bridge(7655)"'
+stop-notebooks = 'kill $(ss -tlnpH "sport = :7660" | grep -oP "pid=\K[0-9]+" | sort -u) 2>/dev/null ; echo "stopped notebooks(7660)"'
 
 # --- GPU acceleration (PARKED) ----------------------------------------------------------------
 # RAPIDS-based GPU clustering is CUDA-only (Linux/Windows + NVIDIA). When un-parked, add it as a

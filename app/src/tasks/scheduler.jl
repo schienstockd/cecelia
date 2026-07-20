@@ -203,18 +203,35 @@ end
 # guarantee a clean app shutdown even for a child we only ADOPTED or that outlived a crash (no process
 # handle to `kill`) — napari :7655, notebooks :7660 — mirroring `pixi run stop`. There is no libuv API
 # for port→pid, so we shell out per-OS; this is the one sanctioned place, alongside `_kill_tree`.
+# Extract listener PIDs from `ss -tlnpH` output (the `users:(("name",pid=NNN,fd=..))` field), deduped
+# (a listener shows once for IPv4 and once for IPv6). Pure/unit-tested — the rest of
+# _kill_listeners_on_port shells out and kills, which isn't.
+_listener_pids_from_ss(raw::AbstractString) =
+    unique(parse(Int, m.captures[1]) for m in eachmatch(r"pid=(\d+)", raw))
+
 function _kill_listeners_on_port(port::Integer)
     pids = Int[]
     try
-        out = Sys.iswindows() ?
-            readchomp(`powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess"`) :
-            # -sTCP:LISTEN keeps this to the LISTENING process (as the docstring promises + the Windows
-            # `-State Listen` above): plain `lsof -ti tcp:$port` also returns clients CONNECTED to the
-            # port, so we'd kill them too. Exits non-zero (throws) when nothing is listening → caught.
-            readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`)
-        for line in split(out, '\n'; keepempty=false)
-            p = tryparse(Int, strip(line))
-            isnothing(p) || push!(pids, p)
+        # All three keep to the LISTENING process (docstring promise): plain `lsof -ti tcp:$port` (or
+        # ss without -l) also returns clients CONNECTED to the port, so we'd kill them too (e.g. the
+        # browser on :5173). Each shell-out exits non-zero / throws when nothing listens → caught.
+        if Sys.iswindows()
+            out = readchomp(`powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess"`)
+            for line in split(out, '\n'; keepempty=false)
+                p = tryparse(Int, strip(line))
+                isnothing(p) || push!(pids, p)
+            end
+        elseif Sys.islinux()
+            # `ss` reads /proc/net/tcp* directly; unlike lsof it does NOT walk each process's
+            # /proc/<pid>/fd table, so a process wedged in D (uninterruptible) sleep can't hang it
+            # (lsof does — it stalled `pixi run stop`; see pixi.toml's linux-64 stop tasks).
+            append!(pids, _listener_pids_from_ss(readchomp(`ss -tlnpH $("sport = :$port")`)))
+        else   # macOS: no ss; lsof is fine here (the D-state /proc walk hang is Linux-specific).
+            out = readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`)
+            for line in split(out, '\n'; keepempty=false)
+                p = tryparse(Int, strip(line))
+                isnothing(p) || push!(pids, p)
+            end
         end
     catch; end
     for p in unique(pids)
