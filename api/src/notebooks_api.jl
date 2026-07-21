@@ -400,6 +400,9 @@ begin
     Pkg.activate(get(ENV, \"CECELIA_PLUTO_ENV\", joinpath(@__DIR__, \"..\", \"pluto\")))
 end"""
 
+# The activation cell's id is PINNED (matches notebook_template.jl) so it's stable across every write.
+const _NB_ACTIVATION_ID = "10000000-0000-0000-0000-000000000001"
+
 # A valid v4-UUID string for a Pluto cell id — built from Base rand/bytes2hex so we don't pull the
 # UUIDs stdlib into the api env. (Pluto parses cell ids as UUIDs, so they must be well-formed.)
 function _cell_uuid()::String
@@ -408,6 +411,24 @@ function _cell_uuid()::String
     b[9] = (b[9] & 0x3f) | 0x80   # variant 10xx
     h = bytes2hex(b)
     string(h[1:8], "-", h[9:12], "-", h[13:16], "-", h[17:20], "-", h[21:32])
+end
+
+# The content-cell ids currently in a notebook file, in body order, EXCLUDING the pinned activation id
+# — the ids to REUSE when re-serialising a revised notebook. Preserving them lets Pluto's
+# `auto_reload_from_file` reconcile the change in an OPEN notebook by matching cells on their id; a
+# fresh id for every cell reads as delete-all + add-all, which auto_reload can't merge in place, so the
+# open notebook goes stale (only a manual reload / server restart would then show the new version).
+# Matches only the `# ╔═╡ <uuid>` cell-definition markers (never the `# ╠═`/`# ╟─` Cell-order list).
+# Best-effort: a missing/garbled file → no ids → revise just falls back to fresh ids (old behaviour).
+function _content_cell_ids(path::AbstractString)::Vector{String}
+    isfile(path) || return String[]
+    ids = String[]
+    for ln in eachline(path)
+        m = match(r"^# ╔═╡ ([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$", ln)
+        (m === nothing || m.captures[1] == _NB_ACTIVATION_ID) && continue
+        push!(ids, String(m.captures[1]))
+    end
+    ids
 end
 
 # Pluto allows only ONE top-level expression per cell — a cell with several statements fails to load
@@ -431,14 +452,18 @@ end
 
 # Serialise a list of Julia cell sources into a valid Pluto notebook `.jl` (the format
 # notebook_template.jl uses: a header, one `# ╔═╡ <uuid>` marker per cell, then a `# ╔═╡ Cell order:`
-# block). The activation cell is prepended and pinned to the template's fixed id; caller cells get
-# fresh uuids. Each cell is normalised so multi-statement cells load in Pluto. Pure — unit-tested in api/test.
-function _pluto_notebook_source(cells::AbstractVector)::String
+# block). The activation cell is prepended and pinned to the fixed id. `reuse_ids` supplies the prior
+# version's content-cell ids (from `_content_cell_ids`): each is reused POSITIONALLY so a revise keeps
+# stable ids where the cells line up (letting Pluto's auto_reload update an open notebook in place);
+# cells beyond the reused set get fresh uuids. Empty `reuse_ids` (a fresh create) → all fresh. Each cell
+# is normalised so multi-statement cells load in Pluto. Pure — unit-tested in api/test.
+function _pluto_notebook_source(cells::AbstractVector; reuse_ids::AbstractVector = String[])::String
     all_cells = vcat(Any[_NB_ACTIVATION_CELL], collect(cells))
     ids  = String[]
     body = IOBuffer()
     for (i, code) in enumerate(all_cells)
-        id = i == 1 ? "10000000-0000-0000-0000-000000000001" : _cell_uuid()
+        id = i == 1 ? _NB_ACTIVATION_ID :
+             (i - 1) <= length(reuse_ids) ? String(reuse_ids[i - 1]) : _cell_uuid()
         push!(ids, id)
         print(body, "# ╔═╡ ", id, "\n", _wrap_multi_expr(String(code)), "\n\n")
     end
@@ -522,7 +547,10 @@ function api_notebooks_revise(body_bytes::Vector{UInt8})
 
     # freeze the current live state first, then overwrite — nothing is lost (restorable via History)
     snap = api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
-    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells))); end
+    # Reuse the prior version's cell ids (read BEFORE we truncate) so Pluto's auto_reload_from_file can
+    # merge the change into an OPEN notebook in place instead of leaving it stale.
+    reuse = _content_cell_ids(dest)
+    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells); reuse_ids = reuse)); end
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))

@@ -292,6 +292,21 @@ end
     # end-to-end through the serialiser: a multi-statement caller cell comes out wrapped
     @test occursin("begin\nusing Cecelia\ndf = pop_df", _pluto_notebook_source(["using Cecelia\ndf = pop_df(img, \"flow\", [\"/T\"])"]))
 
+    # Cell-id preservation across a revise (so Pluto's auto_reload can update an OPEN notebook in place).
+    ids_of(src) = (p = tempname() * ".jl"; write(p, src); v = _content_cell_ids(p); rm(p; force = true); v)
+    # A fresh serialise → the activation id is pinned + excluded; content cells get distinct v4 uuids.
+    src1 = _pluto_notebook_source(["using Cecelia", "df = 1", "plot(df)"])
+    ids1 = ids_of(src1)
+    @test length(ids1) == 3 && allunique(ids1) && _NB_ACTIVATION_ID ∉ ids1
+    # Re-serialising WITH the prior ids reuses them positionally → the same ids come back out.
+    src2 = _pluto_notebook_source(["using Cecelia", "df = 2", "plot(df)"]; reuse_ids = ids1)
+    @test ids_of(src2) == ids1                                # ids stable ⇒ auto_reload matches cells
+    @test occursin("df = 2", src2)                            # …but the code did change
+    # Extra cells beyond the reused set get fresh ids; the reused prefix stays put.
+    src3 = _pluto_notebook_source(["using Cecelia", "df = 3", "plot(df)", "extra = 4"]; reuse_ids = ids1)
+    ids3 = ids_of(src3)
+    @test ids3[1:3] == ids1 && length(ids3) == 4 && ids3[4] ∉ ids1
+
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
     had  = haskey(dirs, "projects"); old = get(dirs, "projects", nothing)
     tmp  = mktempdir(); dirs["projects"] = tmp
