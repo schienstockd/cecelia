@@ -67,6 +67,17 @@ class ClientTest(unittest.TestCase):
             {"projectUid": "p", "file": "speed.jl", "cells": ["using Cecelia", "df = 2"], "description": "d2"},
         )
 
+    def test_revise_notebook_omits_empty_description(self):
+        # An empty description must NOT be sent — else the server (which updates the description only when
+        # the key is present) would blank the notebook's existing description on a plain re-version.
+        with _patch_urlopen({"ok": True, "file": "speed.jl", "snapshotVersion": 3}) as u:
+            self.c.revise_notebook("p", "speed.jl", ["using Cecelia", "df = 3"])
+        req = u.call_args[0][0]
+        self.assertEqual(
+            json.loads(req.data.decode()),
+            {"projectUid": "p", "file": "speed.jl", "cells": ["using Cecelia", "df = 3"]},
+        )
+
     def test_create_notebook_posts_cells(self):
         with _patch_urlopen({"ok": True, "file": "speed.jl"}) as u:
             self.c.create_notebook("p", "speed", ["using Cecelia", "df = 1"], description="d")
