@@ -19,13 +19,15 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    vnA        = string(get(params, "valueName", "default"))
-    vnB        = string(get(params, "valueNameB", "default"))
     popsA      = _str_list(params, "popsA")
     popsB      = _str_list(params, "popsB")
     max_dist   = Float64(get(params, "maxContactDist", 10.0))
     (isempty(popsA) || isempty(popsB)) &&
         (on_log("[ERROR] contactsMeshes: select both an A and a B population"); return nothing)
+    # A and B segmentations derived from their own populations (value_name-prefixed picks); each is ONE
+    # segmentation (label ids collide across segmentations) — no separate dropdowns (legacy parity).
+    vnA        = pops_value_name(popsA)
+    vnB        = pops_value_name(popsB)
     (haskey(img.labels, vnA) && haskey(img.labels, vnB)) ||
         (on_log("[ERROR] contactsMeshes: missing a label zarr for $(vnA) / $(vnB)"); return nothing)
     # A / B may each mix pop types — resolve across types + namespace output by cell kind (see cellContacts)

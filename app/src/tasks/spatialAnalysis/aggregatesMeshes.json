@@ -7,13 +7,6 @@
   "resource_pool": "default",
   "params": [
     {
-      "key": "valueName",
-      "label": "Segmentation",
-      "type": "valueNameSelection",
-      "default": "default",
-      "tip": "The segmentation whose cells are tested for aggregation by mesh surface proximity."
-    },
-    {
       "key": "pops",
       "label": "Population",
       "type": "popSelection",

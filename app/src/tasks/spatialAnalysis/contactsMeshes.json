@@ -7,13 +7,6 @@
   "resource_pool": "default",
   "params": [
     {
-      "key": "valueName",
-      "label": "Segmentation (A)",
-      "type": "valueNameSelection",
-      "default": "default",
-      "tip": "The segmentation whose cells (population A) get the contact annotations."
-    },
-    {
       "key": "popsA",
       "label": "Population A",
       "type": "popSelection",
@@ -21,14 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "The A cells to annotate — for each, the nearest B cell by SURFACE distance."
-    },
-    {
-      "key": "valueNameB",
-      "label": "Segmentation (B)",
-      "type": "valueNameSelection",
-      "default": "default",
-      "tip": "The target segmentation (B). One segmentation (label ids collide across segmentations)."
+      "tip": "The A cells to annotate — for each, the nearest B cell by SURFACE distance. One segmentation (its cells get the contact annotations)."
     },
     {
       "key": "popsB",

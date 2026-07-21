@@ -7,13 +7,6 @@
   "resource_pool": "default",
   "params": [
     {
-      "key": "valueName",
-      "label": "Segmentation",
-      "type": "valueNameSelection",
-      "default": "default",
-      "tip": "The segmentation whose cells are connected into a spatial neighbour graph. The graph is saved as <segmentation>.spatial.h5ad next to its label properties."
-    },
-    {
       "key": "pops",
       "label": "Populations",
       "type": "popSelection",
@@ -21,7 +14,7 @@
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
-      "tip": "Restrict the graph to these populations — leave empty to connect every cell of the segmentation. Any cell poptype (flow / live / clust / region)."
+      "tip": "The cells to connect into a spatial neighbour graph. Pick a segmentation's 'all' entry for every cell, or specific populations to restrict it. The graph is saved as <segmentation>.spatial.h5ad, named from the pick."
     },
     {
       "key": "neighbourMethod",

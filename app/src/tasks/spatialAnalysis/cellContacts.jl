@@ -33,12 +33,14 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", "default"))
     popsA      = _str_list(params, "popsA")
     popsB      = _str_list(params, "popsB")
     max_dist   = Float64(get(params, "maxContactDist", 10.0))
     (isempty(popsA) || isempty(popsB)) &&
         (on_log("[ERROR] cellContacts: select both an A population and a B population"); return nothing)
+    # segmentation = the A populations' own value_name (each picker value is value_name-prefixed); no
+    # separate dropdown (legacy parity — cellContacts never had one). A is annotated in this seg.
+    value_name = pops_value_name(popsA)
     # A / B may each be a MIX of pop types (flow gates, clusters, regions, tracked cells) — resolve
     # membership across types (pop_df_multi), then namespace the output columns by the A/B cell kind
     # (tracked → live.cell.*, else flow.cell.*). Was hardcoded to pop_type="flow", so tracked cells

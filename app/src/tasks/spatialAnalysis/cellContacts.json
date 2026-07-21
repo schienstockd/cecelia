@@ -7,13 +7,6 @@
   "resource_pool": "default",
   "params": [
     {
-      "key": "valueName",
-      "label": "Segmentation (A)",
-      "type": "valueNameSelection",
-      "default": "default",
-      "tip": "The segmentation whose cells (population A) get the contact annotations."
-    },
-    {
       "key": "popsA",
       "label": "Population A",
       "type": "popSelection",
