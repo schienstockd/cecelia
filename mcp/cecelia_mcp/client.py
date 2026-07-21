@@ -270,9 +270,10 @@ class CeceliaClient:
         # New version of an EXISTING notebook: the server snapshots the current one (restorable via the
         # Notebooks page History) then overwrites its cells — real versioning, not a "-v2" copy. `file`
         # is the existing notebook's filename (bare name works; server appends .jl). 409 if it doesn't
-        # exist (use create_notebook for a new one). `description` optional — only updates it if given.
-        return self._request(
-            "POST",
-            "/api/notebooks/revise",
-            body={"projectUid": project_uid, "file": file, "cells": cells, "description": description},
-        )
+        # exist (use create_notebook for a new one). `description` optional — OMITTED from the body when
+        # empty so the server keeps the notebook's existing description (it updates only when the key is
+        # present; sending "" would blank it, which is why a revised notebook lost its description).
+        body = {"projectUid": project_uid, "file": file, "cells": cells}
+        if description:
+            body["description"] = description
+        return self._request("POST", "/api/notebooks/revise", body=body)
