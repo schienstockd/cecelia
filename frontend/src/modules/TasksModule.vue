@@ -67,6 +67,13 @@ function rerun(t: TaskEntry) {
             params: t.params, imageUid: t.imageUid, projectUid: t.projectUid })
 }
 
+// Rerun goes through the scheduler (task:restart → handle_task_run), so it only applies to
+// scheduler-backed tasks. A data patch (module 'maintenance') is a non-scheduler producer of the same
+// task frames — it has no fun_name the scheduler knows, so it can't be rerun here (relaunch it from
+// Settings → Data patches instead).
+const canRerun = (t: TaskEntry) =>
+  (t.status === 'done' || t.status === 'failed' || t.status === 'cancelled') && t.module !== 'maintenance'
+
 async function copyLog() {
   if (!selected.value?.log.length) return
   await navigator.clipboard.writeText(selected.value.log.join('\n'))
@@ -168,7 +175,7 @@ const FILTERS = [
               v-tooltip.left="t.chainRunId ? 'Stop chain run' : 'Cancel task'">
               <i class="pi pi-times" />
             </button>
-            <button v-if="t.status === 'done' || t.status === 'failed' || t.status === 'cancelled'"
+            <button v-if="canRerun(t)"
               class="ra-btn" @click="rerun(t)" v-tooltip.left="'Rerun'">
               <i class="pi pi-replay" />
             </button>
@@ -205,7 +212,7 @@ const FILTERS = [
                 v-tooltip.left="selected.chainRunId ? 'Stop chain run' : 'Cancel task'">
                 <i class="pi pi-times" />
               </button>
-              <button v-if="selected.status === 'done' || selected.status === 'failed' || selected.status === 'cancelled'"
+              <button v-if="canRerun(selected)"
                 class="ra-btn" @click="rerun(selected)" v-tooltip.left="'Rerun'">
                 <i class="pi pi-replay" />
               </button>

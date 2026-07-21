@@ -206,3 +206,23 @@ Because that is arbitrary code execution, it is gated:
 
 Implementation: `api/src/repl_api.jl`. `redirect_stdout` is process-global, so evals are serialised
 under a lock and drained by an async pipe reader.
+
+## Data patches (Settings → Data patches)
+
+One-off data migrations the user can run from the GUI — e.g. rewriting every labelProps h5ad to a new
+on-disk convention when the format changes. Unlike a `CciaTask` (image-scoped, scheduler-run), a patch
+operates on a whole **project** and is confined to the **currently open one**. It streams over the same
+task WS rail (`task:log`/`task:progress`/`task:status`), so it shows live output + progress + a working
+Stop, and also appears in the Tasks list — like an HPC-task spin-off. The Tasks list's **Cancel** works
+on it (`task:cancel` also calls `cancel_maintenance!`, alongside the batch-movie canceller), but
+**Rerun is hidden** for `module: 'maintenance'` entries — rerun goes through the scheduler and a patch
+has no scheduler fun_name, so relaunch it from Settings → Data patches instead.
+
+**Adding a patch:** add a `MaintenancePatch` entry to `MAINTENANCE_PATCHES` in `app/src/maintenance.jl`
+(stable `id`, title, description, and the `_run.py` module path under `python/cecelia/`), and write that
+Python runner in the `run_py` style (reads `{root, apply}` from the params JSON — `root` is the project
+dir; `apply=false` is a dry run; emit `[PROGRESS] n/total` + log lines). The Settings section lists
+patches from `GET /api/maintenance/patches` and launches one via the `maintenance:run` WS message
+(cancel via `maintenance:cancel`). Registry + runner: `app/src/maintenance.jl`
+(`run_maintenance_patch`/`cancel_maintenance!`); WS handler: `api/src/sockets.jl`
+(`handle_maintenance_run`). Example patch: `centroid-axes` (the centroid-axis converter).
