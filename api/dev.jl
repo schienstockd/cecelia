@@ -25,11 +25,32 @@ const SWITCH_FILE = abspath(joinpath(@__DIR__, ".switch-worktree"))
 ENV["CECELIA_SWITCH_FILE"] = SWITCH_FILE
 isfile(SWITCH_FILE) && rm(SWITCH_FILE; force = true)     # clear a stale request left by a crash
 
-# Free a TCP port by killing whatever listens on it — mirrors `pixi run stop`. dev.jl is a standalone
+# Capture a command's stdout, but NEVER let it hang the supervisor: if it runs longer than `secs`, kill
+# it and return "". This exists because `lsof` can wedge INDEFINITELY on some Linux boxes (blocking while
+# it scans a stuck mount) — that froze the GUI-shutdown teardown here (readchomp never returned, so the
+# terminal only came back on Ctrl-C). Pure-Julia watchdog — macOS has no coreutils `timeout`.
+function _capture(cmd::Cmd; secs::Real = 4)::String
+    p = try
+        open(pipeline(ignorestatus(cmd), stderr = devnull), "r")
+    catch
+        return ""
+    end
+    wd = Timer(_ -> (process_running(p) && (try; kill(p); catch; end)), secs)
+    out = try; read(p, String); catch; ""; end
+    close(wd)
+    return out
+end
+
+# Free a TCP port by killing whatever LISTENS on it — mirrors `pixi run stop`. dev.jl is a standalone
 # supervisor with no Cecelia loaded, so it can't use api's `_kill_listeners_on_port`; inline it here,
 # OS-guarded (a sanctioned exception to the "no inline kill-by-port" rule — no package to reach into).
 # Best-effort: nothing listening is not an error. Guarantees Vite's port is free before a relaunch binds
 # it (killing the `npm` wrapper alone can orphan the underlying vite process holding the port).
+#
+# Discovery must ONLY match LISTENING sockets, never an ESTABLISHED connection to the port (the browser's
+# open tab + Vite HMR websocket) — else `kill` would reap Firefox/Chrome too. `ss -l` and `lsof
+# -sTCP:LISTEN` both enforce that. Linux uses `ss` because `lsof` can wedge there (see _capture); macOS
+# keeps `lsof` (no `ss`). Both run through _capture, so a stuck probe can't block shutdown.
 function _free_port(port::Integer)
     try
         if Sys.iswindows()
@@ -38,16 +59,15 @@ function _free_port(port::Integer)
                 run(pipeline(`taskkill /PID $(last(split(strip(ln)))) /F /T`; stdout = devnull, stderr = devnull); wait = false)
             end
         else
-            # -sTCP:LISTEN restricts to the process LISTENING on the port. Without it, `lsof -ti tcp:$port`
-            # also returns PIDs holding an ESTABLISHED connection to it — i.e. the browser (the open tab's
-            # page load + Vite HMR websocket) — so `kill` would reap Firefox/Chrome too (it crashes on a
-            # worktree switch). Mirrors the Windows branch's LISTENING filter above.
-            pids = try readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`) catch; "" end
+            find() = Sys.islinux() ?
+                unique(String(m.captures[1]) for m in eachmatch(r"pid=(\d+)", _capture(`ss -tlnpH $("sport = :$port")`))) :
+                String.(split(_capture(`lsof -ti tcp:$port -sTCP:LISTEN`)))
+            pids = find()
             if !isempty(pids)
-                run(pipeline(`kill $(split(pids))`; stdout = devnull, stderr = devnull))
+                run(pipeline(`kill $pids`; stdout = devnull, stderr = devnull))
                 sleep(0.4)                                    # give SIGTERM a moment, then force survivors
-                left = try readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`) catch; "" end
-                isempty(left) || run(pipeline(`kill -9 $(split(left))`; stdout = devnull, stderr = devnull))
+                left = find()
+                isempty(left) || run(pipeline(`kill -9 $left`; stdout = devnull, stderr = devnull))
             end
         end
     catch e
