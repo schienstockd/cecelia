@@ -15,6 +15,45 @@ stack. Per-tag notes are also on the
 
 _Changes on `main` that have not yet been tagged in a release._
 
+## [0.1.0-rc9] — 2026-07-21
+
+### Added
+- **Spatial analysis + region clustering** — squidpy neighbour graphs, neighbourhood-composition
+  region clustering with a new `region` pop type and cross-poptype region queries, cell–cell contact
+  statistics (Julia kNN points + trimesh mesh), and a CODEX-style log-odds contact heatmap on a new
+  Spatial Analysis page (with napari region colouring and per-timepoint behaviour regions).
+- **MCP observer** — read-only Claude access to a running project: session briefing, synthesized
+  analysis lineage, population definitions, per-population phenotype/motility summaries, HMM behaviour
+  + cluster summaries, spatial stats, cohort QC, whiteboard chains, task-param specs, and board plot
+  types; plus notebook tools (create / revise / describe / read) and the REPL data-access surface.
+- **In-app AI observer** — Ask/Chat-to-Claude with token readout, sessions, activity log, on-demand
+  (non-auto) operation, and a "What Claude can do here" overview.
+- **QC system** — objective per-task metrics from segmentation/measure/tracking/clustering/behaviour,
+  cohort-consistency checks (median/MAD outliers, flags at n=3) banked per-image, a colour-blind-safe
+  severity model, and `[Cecelia]` lab-log digests.
+- **Per-project lab log** — auto activity digests, mute-by-category, reactions, and stale
+  backend/napari diagnostics.
+- **Notebooks (Pluto)** — real versioning (snapshot/restore), create-from-cells, in-place revise, and
+  short descriptions.
+- **Filter populations** — compound AND-ed conditions with full add/edit/delete in the Population Manager.
+- **Custom modules** — user drop-in Julia + Python tasks with no rebuild.
+- **Import** — optional 16→8-bit rescale + local staging for large OIRs; per-image metadata dialog;
+  whole-filesystem file browser.
+- **Analysis board** — unified figure/CSV export; true-vector SVG export for dot plots.
+
+### Changed
+- **Gating transforms follow the axis** — spatial/centroid axes (`centroid_x/_y/_z/_t`) default to
+  linear and re-derive on axis/channel change; intensity columns select by channel name.
+- Storage reclaim frees every non-active version (not just the original).
+- Removed Harmony batch integration from clustering.
+
+### Fixed
+- **`pixi run dev` GUI shutdown** and **`pixi run stop`** no longer hang on Linux (use `ss`, not `lsof`).
+- Revising a notebook preserves cell ids so an open notebook reloads live; revise/describe keep the
+  existing description instead of blanking it.
+- Self-heal stale `pluto`/`api` manifests on new app deps; macOS CI pin fixes; assorted import and
+  scheduler fixes.
+
 ## [0.1.0-rc8] — 2026-07-16
 
 ### Added
@@ -138,7 +177,8 @@ _Changes on `main` that have not yet been tagged in a release._
 - **Bootstrap installer** + release workflow (`release.yml`); CI smoke-test
   workflow; README + docs.
 
-[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...HEAD
+[Unreleased]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc9...HEAD
+[0.1.0-rc9]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc8...v0.1.0-rc9
 [0.1.0-rc8]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc7...v0.1.0-rc8
 [0.1.0-rc7]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc6...v0.1.0-rc7
 [0.1.0-rc6]: https://github.com/schienstockd/cecelia/compare/v0.1.0-rc5...v0.1.0-rc6
