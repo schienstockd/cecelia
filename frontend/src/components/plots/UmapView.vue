@@ -227,9 +227,8 @@ function paintDots(c: CanvasRenderingContext2D, w: number, h: number) {
       const cell = facetCell(fi, fs.length, w, h)
       // GHOST: the whole cloud in faint grey behind each facet, so the UMAP shape stays legible and
       // facets are comparable (you see where this facet's points sit within the full embedding).
-      c.globalAlpha = 0.6; c.fillStyle = ghostColour()
-      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); dot(c, px, py, 1) }
-      c.globalAlpha = alpha
+      c.globalAlpha = alpha; c.fillStyle = ghostColour()
+      for (let i = 0; i < n; i++) { const [px, py] = mapRect(pts[2 * i], pts[2 * i + 1], cell); dot(c, px, py, dotR.value) }
       paintInto(c, fs[fi].idx, i => mapRect(pts[2 * i], pts[2 * i + 1], cell))
     }
   }
@@ -549,7 +548,7 @@ function exportSvg(): string {
       const cell = facetCell(fi, fs.length, S, S)
       const ghost: [number, number][] = []
       for (let i = 0; i < n; i++) ghost.push(mapRect(pts[2 * i], pts[2 * i + 1], cell))
-      body += svgCircles(ghost, { fill: ghostLight, opacity: 0.6, r: 1, label: 'ghost' })
+      body += svgCircles(ghost, { fill: ghostLight, opacity: alpha, r, label: 'ghost' })
       const groups: number[][] = pal.map(() => [])
       for (const i of fs[fi].idx) { const g = groups[cats[i]]; if (g) g.push(i) }
       for (let gi = 0; gi < pal.length; gi++) {
