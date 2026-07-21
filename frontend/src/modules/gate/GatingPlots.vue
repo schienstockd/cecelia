@@ -52,20 +52,23 @@ type GateKind = 'linear' | 'log' | 'asinh' | 'logicle'
 // A panel is either a single gate scatter (default, drawable) or a read-only channel-pairs matrix.
 // `channels` is the pairs plot's selected list; the single plot ignores it (and vice-versa for x/y).
 interface PlotState { kind: 'single' | 'pairs'; parent: string; hl: string[]; lineWidth: number; labels: boolean; fromZero: boolean
-  x: string; y: string; xt: GateKind; yt: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
+  x: string; y: string; xt?: GateKind; yt?: GateKind; renderMode: 'points' | 'contour' | 'outliers'; channels: string[] }
 const canvasRef = useTemplateRef<HTMLElement>('canvasRef')   // the visible viewport (zoom + fit measure it)
 const zoomRef = useTemplateRef<HTMLElement>('zoomRef')       // the scaled workspace (panels' offsetParent)
 // Per-image + segmentation: gating populations are per-value_name, so each (image, segmentation) keeps
 // its own plots/parents/highlights and the canvas rebinds when either the image or the segmentation
 // (g.valueName) changes.
 const ckey = computed(() => `gate:${props.popType}:${props.imageUid ?? 'none'}:${g.valueName}`)
-// track properties → linear by default; flow intensities → logicle (FlowJo). Channels (x/y) start
-// empty and the panel picks index-based defaults once the store's columns load (see ensureChannels).
-const defT: GateKind = props.popType === 'track' ? 'linear' : 'logicle'
+// Axis transforms (xt/yt) are intentionally LEFT UNSET here so the panels' own per-axis default
+// fires: GatePlotPanel/GatePairsPanel resolve `ui.xt ?? axisDefaultTransform(col)` (linear for
+// spatial/centroid axes via the store's isLinearAxis, logicle for flow intensities). That fallback
+// only runs while ui.xt is undefined — pre-seeding a concrete transform here would pin logicle and
+// silently defeat it. Channels (x/y) start empty; the panel picks index-based defaults once columns
+// load (see ensureChannels).
 const { panels, activeId, activePanel, shared, add, remove, arrangeGrid, arrangeCascade, contentBounds } =
   useCanvasPanels<PlotState>(zoomRef, () =>
     ({ kind: 'single', parent: 'root', hl: [], lineWidth: 1.5, labels: true, fromZero: true,
-       x: '', y: '', xt: defT, yt: defT, renderMode: 'points', channels: [] }), ckey)
+       x: '', y: '', renderMode: 'points', channels: [] }), ckey)
 // show/hide the floating population manager — persisted per canvas in the `shared` bag (default shown)
 const showManager = computed<boolean>({ get: () => (shared.value.showManager as boolean) ?? true, set: v => (shared.value.showManager = v) })
 
