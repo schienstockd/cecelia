@@ -50,7 +50,6 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
 
     pops = _str_list(params, "popsToCluster")
     isempty(pops) && (on_log("[ERROR] clustPops: select at least one population/segmentation"); return nothing)
-    pop_type = string(get(params, "popType", "flow"))
     suffix   = string(get(params, "valueNameSuffix", "default"))
     feature_cols = _str_list(params, "clusterMeasures")   # var column names (intensities + morphology)
     isempty(feature_cols) &&
@@ -63,7 +62,8 @@ function _run_task(::ClustPops, imgs::Vector{CciaImage}, params::Dict{String,Any
     uids = [img.uid for img in imgs]
 
     # ── pooled membership: one row per cell tagged with uID + value_name (the popsToCluster set) ──
-    df = pop_df(imgs, uids, pop_type, pops; pop_cols = String[], granularity = :cell)
+    # popsToCluster may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each.
+    df = pop_df_multi(imgs, uids, pops; pop_cols = String[], granularity = :cell)
     nrow(df) == 0 && (on_log("[ERROR] clustPops: no cells for pops=$(pops)"); return nothing)
     on_progress(2, 4)
 

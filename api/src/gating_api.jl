@@ -661,6 +661,15 @@ end
 function api_gating_pop_add(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     haskey(body, "name") || return _gerr(400, "name required")
+    # name-uniqueness guard: reject a name already used by a DIFFERENT pop type in this segmentation, so
+    # the mixed-type module picker (which resolves a pop by path alone) is never ambiguous.
+    _name = String(body["name"])
+    _parent = String(get(body, "parent", ROOT))
+    _intended = pop_path(is_root(_parent) ? ROOT : _parent, _name)
+    _conflict = pop_name_conflict(img, vn, _intended; pop_type = pt)
+    _conflict === nothing || return _gerr(400,
+        "A $_conflict population named \"$_name\" already exists in this segmentation — names must be " *
+        "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         gate = haskey(body, "gate") && body["gate"] !== nothing ? gate_from_spec(body["gate"]) : nothing
@@ -742,6 +751,13 @@ end
 function api_gating_pop_rename(body_bytes::Vector{UInt8})
     img, vn, pt, body, err = _gating_post(body_bytes); err === nothing || return err
     (haskey(body, "path") && haskey(body, "newName")) || return _gerr(400, "path and newName required")
+    # name-uniqueness guard: the renamed path must not collide with another pop type's population
+    _newName = String(body["newName"])
+    _newpath = pop_path(pop_parent(String(body["path"])), _newName)
+    _conflict = pop_name_conflict(img, vn, _newpath; pop_type = pt)
+    _conflict === nothing || return _gerr(400,
+        "A $_conflict population named \"$_newName\" already exists in this segmentation — names must be " *
+        "unique across population types so a population can be selected unambiguously. Choose another name.")
     _with_popmap_lock() do
         m = load_pop_map(img; value_name = vn, pop_type = pt)
         has_pop(m, body["path"]) || return _gerr(404, "Population not found: $(body["path"])")

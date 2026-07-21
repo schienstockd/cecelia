@@ -36,16 +36,18 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", "default"))
-    pop_type   = string(get(params, "popType", "flow"))
     pops       = _str_list(params, "pops")
     isempty(pops) && (on_log("[ERROR] detectAggregates: select a population to detect aggregates of"); return nothing)
+    # pops may mix types (flow gates, clusters, regions, tracked cells) — resolve across types and
+    # namespace output by cell kind (tracked → live.cell.*, else flow.cell.*). Was hardcoded to "flow".
+    pop_type   = pop_namespace(img, pops; value_name = value_name)
     eps        = Float64(get(params, "clustDiameter", 15.0))   # µm
     min_cells  = Int(get(params, "minCells", 5))
     per_t      = Bool(get(params, "perTimepoint", false))
     on_progress(1, 3)
 
     # member cells of the population, then their (physical-scaled) centroids
-    memdf = pop_df(img, pop_type, pops; value_name = value_name, granularity = :cell)
+    memdf = pop_df_multi(img, pops; value_name = value_name, granularity = :cell, restrict_to = value_name)
     nrow(memdf) == 0 && (on_log("[ERROR] detectAggregates: no cells for pops=$(pops)"); return nothing)
     labels = Int.(memdf.label)
 

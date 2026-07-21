@@ -3316,6 +3316,116 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(td; recursive=true)
     end
 
+    # ── Mixed-type pop resolution: resolve_pop_type / pop_namespace / pop_df_multi (module pickers) ──
+    @testset "resolve_pop_type + pop_namespace (mixed-type pickers)" begin
+        td = mktempdir()
+        img = CciaImage(; dir=td)
+        # one stored map per type on disk (routed by m.pop_type), all under value_name "B"
+        fm = PopulationMap(pop_type="flow", value_name="B")
+        add_pop!(fm, "qc"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0)); save_pop_map!(fm, img)
+        cm = PopulationMap(pop_type="clust", value_name="B")
+        add_pop!(cm, "myeloid"; filter_measure="clusters.default", filter_fun="in", filter_values=[1, 2]); save_pop_map!(cm, img)
+        rmp = PopulationMap(pop_type="region", value_name="B")
+        add_pop!(rmp, "r0"; filter_measure="regions.default", filter_fun="in", filter_values=[0]); save_pop_map!(rmp, img)
+        tm = PopulationMap(pop_type="track", value_name="B")
+        add_pop!(tm, "TEST"; filter_measure="live.track.speed", filter_fun="gt", filter_values=5); save_pop_map!(tm, img)
+
+        # each path resolves to the map that CONTAINS it; _tracked → live; root/unknown → flow
+        @test resolve_pop_type(img, "B", "/qc")           == "flow"
+        @test resolve_pop_type(img, "B", "/myeloid")      == "clust"
+        @test resolve_pop_type(img, "B", "/r0")           == "region"
+        @test resolve_pop_type(img, "B", "/TEST")         == "track"
+        @test resolve_pop_type(img, "B", "/qc/_tracked")  == "live"   # derived leaf, not stored
+        @test resolve_pop_type(img, "B", "/")             == "flow"   # all-cells root → cells
+        @test resolve_pop_type(img, "B", "/nonexistent")  == "flow"   # unknown → default (empty downstream)
+
+        # _split_pop_ref: prefix names the value_name; leading-slash/root stays in default
+        @test Cecelia._split_pop_ref("B/qc", "default") == ("B", "/qc")
+        @test Cecelia._split_pop_ref("/qc", "B")        == ("B", "/qc")
+        @test Cecelia._split_pop_ref("qc", "B")         == ("B", "/qc")
+
+        # grouping by discovered type preserves first-appearance order
+        grp = Cecelia._group_pops_by_type(img, ["/qc", "/myeloid", "/qc/_tracked", "/r0"], "B")
+        @test grp == ["flow" => ["/qc"], "clust" => ["/myeloid"], "live" => ["/qc/_tracked"], "region" => ["/r0"]]
+
+        # pop_namespace: any TRACKED source → live, else flow (cluster/region are just cell selections)
+        @test pop_namespace(img, ["/qc"]; value_name="B")            == "flow"
+        @test pop_namespace(img, ["/r0"]; value_name="B")            == "flow"
+        @test pop_namespace(img, ["/myeloid"]; value_name="B")       == "flow"
+        @test pop_namespace(img, ["/qc/_tracked"]; value_name="B")   == "live"
+        @test pop_namespace(img, ["/TEST"]; value_name="B")          == "live"   # track pop → live namespace
+        @test pop_namespace(img, ["/qc", "B/TEST"]; value_name="B")  == "live"   # any tracked → live
+        @test pop_namespace(img, String[])                           == "flow"
+
+        # name-uniqueness guard (cross pop_type): a name already used by ANOTHER type in the segmentation
+        @test pop_name_conflict(img, "B", "/qc"; pop_type="region")     == "flow"    # flow gate qc exists
+        @test pop_name_conflict(img, "B", "/myeloid"; pop_type="flow")  == "clust"   # clust myeloid exists
+        @test pop_name_conflict(img, "B", "/TEST"; pop_type="flow")     == "track"
+        @test pop_name_conflict(img, "B", "/qc"; pop_type="flow")       === nothing   # same type → not a conflict
+        @test pop_name_conflict(img, "B", "/qc"; pop_type="live")       === nothing   # live shares the flow map
+        @test pop_name_conflict(img, "B", "/brandnew"; pop_type="flow") === nothing   # unused name → ok
+        @test pop_name_conflict(img, "B", "/"; pop_type="clust")        === nothing   # root exempt
+
+        # same-name guard: "/qc" now exists in BOTH the flow map (a gate) and the region map — an
+        # ambiguous path. resolve by priority (flow first) AND @warn, never a silent mis-resolve.
+        add_pop!(rmp, "qc"; filter_measure="regions.default", filter_fun="in", filter_values=[1]); save_pop_map!(rmp, img)
+        @test (@test_logs (:warn,) match_mode=:any resolve_pop_type(img, "B", "/qc")) == "flow"
+        rm(td; recursive=true)
+    end
+
+    # ── pop_df_multi membership over real H5AD (equals per-type pop_df; unknown refs skip cleanly) ──
+    @testset "pop_df_multi integration (KDIeEm)" begin
+        h5 = fixture_path("testpr", "1", "KDIeEm", "labelProps", "B.h5ad")
+        if !have_fixture(h5)
+            @test_skip "pop_df_multi integration (fixture missing)"
+        else
+            td = mktempdir(); mkpath(joinpath(td, "labelProps"))
+            cp(h5, joinpath(td, "labelProps", "B.h5ad"))
+            img = CciaImage(uid="KDIeEm", dir=td)
+            img.label_props["B"] = "B.h5ad"; img.label_props["_active"] = "B"
+
+            full = label_props(img; value_name="B") |> select_cols(["mean_intensity_0"]) |> as_df
+            thr = sort(full.mean_intensity_0)[cld(nrow(full), 2)]
+            truth = sum(full.mean_intensity_0 .>= thr)
+            m = PopulationMap(pop_type="flow", value_name="B")
+            add_pop!(m, "pos"; gate=RectangleGate("mean_intensity_0", "mean_intensity_1", thr, 1e12, -1e12, 1e12))
+            save_pop_map!(m, img)
+
+            # a flow gate resolves + returns the SAME cells as an explicit pop_df("flow", …)
+            direct = pop_df(img, "flow", ["/pos"]; value_name="B", pop_cols=["area"])
+            multi  = pop_df_multi(img, ["/pos"]; value_name="B", pop_cols=["area"])
+            @test nrow(multi) == truth == nrow(direct)
+            @test unique(multi.pop) == ["/pos"]
+
+            # an unknown-type ref (no map contains it) resolves to flow and is skipped → still just /pos
+            mixed = pop_df_multi(img, ["/pos", "/nonexistent"]; value_name="B", pop_cols=["area"])
+            @test nrow(mixed) == truth
+
+            # dedup: /pos ∪ all-cells root collapses to one row per cell (root = every cell)
+            pooled = pop_df_multi(img, ["/pos", "/"]; value_name="B", pop_cols=["area"])
+            @test nrow(pooled) == nrow(full)
+            @test length(unique(pooled.label)) == nrow(pooled)   # no duplicated cell rows
+
+            # restrict_to guard: keep only the operated-on segmentation's cells (single-seg tasks)
+            @test nrow(pop_df_multi(img, ["/pos"]; value_name="B", pop_cols=["area"], restrict_to="B")) == truth
+            @test nrow(pop_df_multi(img, ["/pos"]; value_name="B", pop_cols=["area"], restrict_to="OTHER")) == 0
+
+            # END-TO-END on real tracked data (the user's ask): the TRACKED subset of a gate resolves
+            # to CELLS via the mixed picker — impossible before (cells picker hid _tracked; the consumer
+            # assumed flow and got nothing). B.h5ad carries track_id.
+            tid = label_props(img; value_name="B") |> v -> select_cols(v, ["track_id"]) |> as_df
+            tracked = Set(tid.label[[x isa Real && isfinite(x) && x > 0 for x in tid.track_id]])
+            gate = pop_df(img, "flow", ["/pos"]; value_name="B")
+            expected_tracked = count(l -> l in tracked, gate.label)
+            @test 0 < expected_tracked < nrow(gate)               # a genuine tracked subset of the gate
+            trkd = pop_df_multi(img, ["/pos/_tracked"]; value_name="B", restrict_to="B")
+            @test nrow(trkd) == expected_tracked                  # tracked cells now resolve
+            @test resolve_pop_type(img, "B", "/pos/_tracked") == "live"
+            @test pop_namespace(img, ["/pos/_tracked"]; value_name="B") == "live"
+            rm(td; recursive=true)
+        end
+    end
+
     # ── Cluster-pop auto-share across co-clustered segmentations (CLUSTER_POOLING_PLAN.md) ─────
     @testset "cluster pop auto-share (co-clustered value_names)" begin
         td = mktempdir()

@@ -30,12 +30,12 @@ function _run_task(::NeighbourStats, img::CciaImage, params::Dict{String,Any};
                    on_process::Function  = _ -> nothing)
     pops = _str_list(params, "basisPops")
     isempty(pops) && (on_log("[ERROR] neighbourStats: select ≥2 populations"); return nothing)
-    pop_type = string(get(params, "popType", "flow"))
     suffix   = string(get(params, "statsSuffix", "default"))
     on_progress(1, 3)
 
-    # single-image, but use the set-scope pop_df so the frame carries uID (shared _basis_segments)
-    df = pop_df([img], [img.uid], pop_type, pops; pop_cols = String[], granularity = :cell)
+    # basis pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each
+    # under its own type; set-scope form carries uID (shared _basis_segments).
+    df = pop_df_multi([img], [img.uid], pops; pop_cols = String[], granularity = :cell)
     nrow(df) == 0 && (on_log("[ERROR] neighbourStats: no cells for pops=$(pops)"); return nothing)
     basis, segments, phys = _basis_segments([img], df)
     length(basis) < 2 &&

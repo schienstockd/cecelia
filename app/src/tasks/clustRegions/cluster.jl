@@ -28,14 +28,14 @@ function _run_task(::ClustRegions, imgs::Vector{CciaImage}, params::Dict{String,
 
     pops     = _str_list(params, "basisPops")        # shared helper (clustPops/cluster.jl)
     isempty(pops) && (on_log("[ERROR] clustRegions: select the population basis (what defines the neighbourhood)"); return nothing)
-    pop_type = string(get(params, "popType", "flow"))
     suffix   = string(get(params, "valueNameSuffix", "default"))
     on_progress(1, 4)
 
     uids = [img.uid for img in imgs]
 
     # ── pooled basis cells: one row per cell tagged (uID, value_name, label, pop) ──
-    df = pop_df(imgs, uids, pop_type, pops; pop_cols = String[], granularity = :cell)
+    # basis pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves each.
+    df = pop_df_multi(imgs, uids, pops; pop_cols = String[], granularity = :cell)
     nrow(df) == 0 && (on_log("[ERROR] clustRegions: no cells for basis pops=$(pops)"); return nothing)
 
     # basis populations (value_name, pop) pairs + per-segment codes — shared resolver (spatial.jl)

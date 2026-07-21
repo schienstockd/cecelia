@@ -35,23 +35,28 @@ function _run_task(::CellContacts, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", "default"))
-    pop_type   = string(get(params, "popType", "flow"))
     popsA      = _str_list(params, "popsA")
-    pop_type_b = string(get(params, "popTypeB", pop_type))
     popsB      = _str_list(params, "popsB")
     max_dist   = Float64(get(params, "maxContactDist", 10.0))
     (isempty(popsA) || isempty(popsB)) &&
         (on_log("[ERROR] cellContacts: select both an A population and a B population"); return nothing)
+    # A / B may each be a MIX of pop types (flow gates, clusters, regions, tracked cells) — resolve
+    # membership across types (pop_df_multi), then namespace the output columns by the A/B cell kind
+    # (tracked → live.cell.*, else flow.cell.*). Was hardcoded to pop_type="flow", so tracked cells
+    # never resolved and always wrote flow.cell.contact.
+    pop_type   = pop_namespace(img, popsA; value_name = value_name)
+    pop_type_b = pop_namespace(img, popsB)
     on_progress(1, 3)
 
-    # A cells (this segmentation) + their centroids
-    aMem = pop_df(img, pop_type, popsA; value_name = value_name, granularity = :cell)
+    # A cells (this segmentation) + their centroids. restrict_to = value_name: A is annotated in
+    # THIS segmentation, so drop any A pop picked from another one (its labels index this seg's props).
+    aMem = pop_df_multi(img, popsA; value_name = value_name, granularity = :cell, restrict_to = value_name)
     nrow(aMem) == 0 && (on_log("[ERROR] cellContacts: no A cells for $(popsA)"); return nothing)
     aCoords, aLabels = _scaled_centroids(img, value_name, Int.(aMem.label))
     isempty(aLabels) && (on_log("[ERROR] cellContacts: no A centroids"); return nothing)
 
     # B cells (may span segmentations) → one pooled point cloud + their labels
-    bMem = pop_df([img], [img.uid], pop_type_b, popsB; granularity = :cell)
+    bMem = pop_df_multi([img], [img.uid], popsB; granularity = :cell)
     nrow(bMem) == 0 && (on_log("[ERROR] cellContacts: no B cells for $(popsB)"); return nothing)
     bCoordsList = Matrix{Float64}[]; bLabels = Int[]
     for g in groupby(bMem, :value_name)
