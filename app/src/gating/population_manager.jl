@@ -1313,6 +1313,10 @@ different value_name than the one passed.
 By default intensity columns are returned under their **channel names** (e.g.
 `mean_intensity_0` → `"CD4"`), mirroring R `popDT` / Python `change_channel_names` — pass
 `raw_channel_names=true` to keep the raw `{measure}_intensity_{i}` column names instead.
+
+`pop_cols` may name an intensity column **by its channel name** (`"CD4"`, `"nuc_CD4"`) OR by its raw
+`{measure}_intensity_{i}` name — the reader resolves a channel name to its raw column, so you can
+request the name you see. (Get the channel names from `get_gating_channels`/`get_measure_summary`.)
 """
 function pop_df(img::CciaImage, pop_type::AbstractString, pops;
                 value_name::Union{AbstractString,Nothing}=nothing, pop_cols=nothing,

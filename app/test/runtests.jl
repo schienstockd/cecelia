@@ -2425,6 +2425,22 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test centroid_columns(label_props(h5); order=[:x, :y, :z]) == ["centroid_x", "centroid_y", "centroid_z"]
             @test centroid_columns(label_props(h5); order=[:x, :y]) == ["centroid_x", "centroid_y"]
 
+            # channel-name selection: request an intensity column by its CHANNEL name and the reader
+            # resolves it to the raw {measure}_intensity_{i} column, returning it under the channel name.
+            # This is what lets pop_df(...; pop_cols=["<channel>"]) work. channel_names is positional:
+            # index i ↔ chans[i+1], so "chC" == mean_intensity_2.
+            let lpc = label_props(h5; channel_names=["chA", "chB", "chC", "chD"])
+                d = lpc |> select_cols(["chC"]) |> as_df
+                @test "chC" in names(d)                                   # returned under the requested name
+                @test !("mean_intensity_2" in names(d))                   # not the raw name
+                raw = label_props(h5) |> select_cols(["mean_intensity_2"]) |> as_df
+                @test d.chC == raw.mean_intensity_2                       # same underlying column
+            end
+            # raw names still resolve (gates/clustering pass raw) — unchanged behaviour
+            @test names(label_props(h5; channel_names=["chA","chB","chC","chD"]) |> select_cols(["mean_intensity_2"]) |> as_df) == ["label", "mean_intensity_2"]
+            # a genuinely unknown name is still ignored (not resolved to anything)
+            @test names(label_props(h5; channel_names=["chA","chB","chC","chD"]) |> select_cols(["nope"]) |> as_df) == ["label"]
+
             # full frame: label + 27 vars + 3 spatial + 1 temporal + 8 obs (track lineage +
             # live.cell.* from tracking.track_measures) = 40 cols, 1377 rows
             df = label_props(h5) |> as_df
