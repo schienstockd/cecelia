@@ -11,6 +11,7 @@ import { isExcluded, isIncluded, includedUids } from '../utils/inclusion'
 import { timelapseDuration } from '../utils/imageTable'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
+import ImageMetadataDialog from './ImageMetadataDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
@@ -34,6 +35,11 @@ const taskStore   = useTaskStore()
 
 // opens right where you are — no page navigation needed
 const physSizeDialogUid = ref<string | null>(null)
+
+// read-only "all metadata for this image" dialog (info icon on every row); resolved to the row object
+const metaDialogUid = ref<string | null>(null)
+const metaDialogImg = computed(() =>
+  metaDialogUid.value ? (images.value.find(i => i.uid === metaDialogUid.value) ?? null) : null)
 
 // Two distinct affordances, kept visually separate: the warning (any module, always visible when
 // flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
@@ -613,6 +619,10 @@ onUnmounted(stopResize)
               v-tooltip.right="pageIconFor()!.tip">
               <i class="pi pi-file-edit" />
             </button>
+            <button class="row-icon-btn" @click.stop="metaDialogUid = img.uid"
+              v-tooltip.right="'Image metadata (original file location, dimensions, channels…)'">
+              <i class="pi pi-info-circle" />
+            </button>
             <button class="row-icon-btn" @click.stop="copyUid(img.uid)"
               v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
               <i :class="copiedUid === img.uid ? 'pi pi-check' : 'pi pi-copy'" />
@@ -728,6 +738,9 @@ onUnmounted(stopResize)
   <PhysicalSizeDialog v-if="physSizeDialogUid"
     :set-uid="setUid" :focus-uid="physSizeDialogUid" :selected-uids="[...selected]"
     @close="physSizeDialogUid = null" />
+
+  <ImageMetadataDialog v-if="metaDialogImg" :image="metaDialogImg"
+    @close="metaDialogUid = null" />
 
   <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
        positions from the cog rect (was clipped by the following row) -->

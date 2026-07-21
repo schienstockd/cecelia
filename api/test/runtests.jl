@@ -552,6 +552,27 @@ end
         @test api_images_list(HTTP.Request("GET", "/api/images"))[1] == 400          # projectUid missing
         @test api_images_list(HTTP.Request("GET", "/api/images?projectUid=nope"))[1] == 404
 
+        # ── image metadata payload: original file location (oriPath) + filtered extraMeta ──
+        # The image-info dialog needs the source file path (kept in meta as ori_path) and a generic
+        # bucket for any other scalar meta — but NOT keys already surfaced as fields, nor internal
+        # bookkeeping (funParams) or nested display config (channel_colormaps).
+        img2.meta["SizeC"]            = 3                              # → sizeC field, must NOT double into extraMeta
+        img2.meta["Objective"]        = "40x/1.3"                      # arbitrary scalar → surfaced generically
+        img2.meta["funParams"]        = Dict{String,Any}("x" => 1)    # internal nested dict → excluded
+        img2.meta["channel_colormaps"] = ["red", "green"]             # nested/display → excluded
+        save!(img2)
+        let r = JSON3.read(api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid&imageUid=$(img2.uid)"))[2])
+            @test r.image.oriPath == "/tmp/b.tif"
+            @test r.image.sizeC == 3
+            @test r.image.extraMeta.Objective == "40x/1.3"
+            @test !haskey(r.image.extraMeta, :SizeC)              # already a first-class field
+            @test !haskey(r.image.extraMeta, :ori_path)           # surfaced as oriPath
+            @test !haskey(r.image.extraMeta, :funParams)          # internal nested dict
+            @test !haskey(r.image.extraMeta, :channel_colormaps)  # nested display config
+        end
+        @test api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid"))[1] == 400           # imageUid missing
+        @test api_images_meta(HTTP.Request("GET", "/api/images/meta?projectUid=$uid&imageUid=nope"))[1] == 404
+
         # ── task log ──
         tl(q) = api_images_tasklog(HTTP.Request("GET", "/api/images/tasklog?$q"))
         # no log yet → exists=false, empty content
