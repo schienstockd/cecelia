@@ -38,11 +38,15 @@ const g = useGatingStore()
 
 // track properties → linear by default; flow intensities → logicle (FlowJo) — same rule as GatePlotPanel
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v } })
 // centroid/spatial axes are raw coordinates → linear (same rule as GatePlotPanel). Pairs share ONE
-// transform across all selected channels, so default to linear only when EVERY channel is a linear axis.
-const pairsDefaultTransform = computed<Kind>(() =>
-  channels.value.length > 0 && channels.value.every(c => g.isLinearAxis(c)) ? 'linear' : defaultTransform)
+// transform across all selected channels, so it's linear only when EVERY selected channel is a linear axis.
+const pairsDefault = (chs: string[]): Kind =>
+  chs.length > 0 && chs.every(c => g.isLinearAxis(c)) ? 'linear' : defaultTransform
+// Changing the channel selection re-derives the shared transform (FlowJo-style: transform follows the
+// parameters) — else a once-set transform sticks when the selection changes to/from centroid axes. Only
+// fires on user picks via the multiselect's v-model; a restored bag sets ui.channels directly.
+const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v; props.ui.xt = pairsDefault(v) } })
+const pairsDefaultTransform = computed<Kind>(() => pairsDefault(channels.value))
 const transform = computed<Kind>({ get: () => props.ui.xt ?? pairsDefaultTransform.value, set: v => { props.ui.xt = v } })
 // ≥1 tile's transform was auto-linearised (measure range too small) → amber the control + explain
 const coerced = ref(false)

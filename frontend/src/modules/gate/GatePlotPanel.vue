@@ -51,8 +51,13 @@ const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
 // spatial/temporal + centroid axes are raw coordinates → linear by default (never logicle).
 const axisDefaultTransform = (col: string): Kind => g.isLinearAxis(col) ? 'linear' : defaultTransform
 // axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
-const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v } })
-const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v } })
+// Picking a NEW axis re-derives its transform (linear for spatial/centroid, logicle for flow) — the
+// transform follows the parameter, FlowJo-style. Without this a once-set transform sticks across axis
+// changes (e.g. logicle stays when you switch back to centroid_x). Only fires on user picks via the
+// axis <select>'s v-model setter; loading a saved gate mutates ui.x/ui.xt directly (GatingPlots
+// openPop), so a gate keeps the transform it was drawn in.
+const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v; props.ui.xt = axisDefaultTransform(v) } })
+const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v; props.ui.yt = axisDefaultTransform(v) } })
 const xt = computed<Kind>({ get: () => props.ui.xt ?? axisDefaultTransform(xChan.value), set: v => { props.ui.xt = v } })
 const yt = computed<Kind>({ get: () => props.ui.yt ?? axisDefaultTransform(yChan.value), set: v => { props.ui.yt = v } })
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
