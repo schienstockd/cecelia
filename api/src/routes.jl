@@ -1663,6 +1663,28 @@ end
 # so the table indicator and the briefing's flagged-list can never diverge.
 _image_qc_payload(img::CciaImage) = Cecelia.all_qc_docs(img)
 
+# Meta keys already surfaced as first-class payload fields (below) or internal bookkeeping — excluded
+# from `extraMeta` so the image-info dialog's "other metadata" section shows only genuinely-extra
+# keys, never a duplicate of a field we already render or noise like funParams / display colormaps.
+const _SURFACED_META_KEYS = Set([
+    "SizeC", "SizeT", "SizeZ",
+    "PhysicalSizeX", "PhysicalSizeY", "PhysicalSizeZ", "PhysicalSizeUnit", "PhysicalSizeZ_raw",
+    "TimeIncrement", "TimeIncrementUnit",
+    "ori_path", "channel_names", "channel_colormaps", "funParams",
+])
+
+# Any scalar meta key not already surfaced as a field and not internal — rendered verbatim in the
+# image-info dialog. Nested dicts/vectors are skipped (they'd be funParams-style noise, not metadata).
+function _extra_meta(meta::AbstractDict)
+    out = Dict{String,Any}()
+    for (k, v) in meta
+        ks = string(k)
+        (ks in _SURFACED_META_KEYS || v isa AbstractDict || v isa AbstractVector) && continue
+        out[ks] = v
+    end
+    out
+end
+
 # Frontend-shaped payload for one image, sourced from the model. Response shaping
 # (camelCase, field selection) is the API's job; data access goes through CciaImage
 # so ccid.json parsing has a single home.
@@ -1697,6 +1719,11 @@ function _image_payload(img::CciaImage)
         timeIncrement     = _meta_float(img.meta, "TimeIncrement"),
         timeIncrementUnit = _meta_str(img.meta, "TimeIncrementUnit"),
         channelNames    = isnothing(ch) ? String[] : ch,
+        # Original source file location (before OME-Zarr conversion), kept in meta as `ori_path`.
+        # The image-info dialog surfaces it so users can trace a converted image back to its raw file.
+        oriPath         = _meta_str(img.meta, "ori_path"),
+        # Any other meta the dialog can show generically (see _extra_meta) — empty for most images.
+        extraMeta       = _extra_meta(img.meta),
         filepath        = active_fn,
         activeValueName = active_vn,
         filepaths       = fps,

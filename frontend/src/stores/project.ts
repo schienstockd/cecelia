@@ -20,6 +20,8 @@ export interface CciaImage {
   timeIncrement?: number | null
   timeIncrementUnit?: string | null
   channelNames?: string[]
+  oriPath?: string | null                 // original source file location (before OME-Zarr conversion)
+  extraMeta?: Record<string, string | number | boolean>  // any other meta not surfaced as a field
   filepath?: string                       // active version filename (for display)
   activeValueName?: string                // active value name (the _active key from versioned dict)
   filepaths?: Record<string, string>      // valueName → filename (all versions, excludes _active)
