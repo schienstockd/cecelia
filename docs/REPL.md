@@ -61,6 +61,10 @@ df = pop_df(img, "live", ["/tcells/tracked"]; granularity = :track)
 # intensity columns come back under channel names by default (mean_intensity_0 → "CD4");
 # pass raw_channel_names=true to keep mean_intensity_i
 df = pop_df(img, "flow", ["/nonDebris/CD4"]; raw_channel_names = true)
+
+# REQUEST intensity columns by CHANNEL NAME in pop_cols — the reader resolves the name to its raw
+# column, so ask for the name you see (get names from get_gating_channels / get_measure_summary):
+df = pop_df(img, "live", ["T/_tracked"]; pop_cols = ["live.cell.speed", "Tcells-uGFP", "track_id"])
 ```
 
 ### Raw label props — the fluent view
@@ -283,6 +287,10 @@ different value_name than the one passed.
 By default intensity columns are returned under their **channel names** (e.g.
 `mean_intensity_0` → `"CD4"`), mirroring R `popDT` / Python `change_channel_names` — pass
 `raw_channel_names=true` to keep the raw `{measure}_intensity_{i}` column names instead.
+
+`pop_cols` may name an intensity column **by its channel name** (`"CD4"`, `"nuc_CD4"`) OR by its raw
+`{measure}_intensity_{i}` name — the reader resolves a channel name to its raw column, so you can
+request the name you see. (Get the channel names from `get_gating_channels`/`get_measure_summary`.)
 
 pop_df(imgs::Vector{CciaImage}, uids, pop_type, pops; kwargs...) -> DataFrame
 

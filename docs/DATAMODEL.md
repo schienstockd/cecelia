@@ -185,7 +185,7 @@ df = label_props(img; value_name="B") |> select_cols(["x","y"]) |>
 
 | Verb | Effect |
 |---|---|
-| `select_cols(lp, cols)` (alias `view_cols`) | read only these var/obs/centroid columns |
+| `select_cols(lp, cols)` (alias `view_cols`) | read only these var/obs/centroid columns; an intensity column may be named by its **channel name** (e.g. `"CD4"`, `"nuc_CD4"`) — the reader resolves it to the raw `{measure}_intensity_{i}` column and returns it under the requested name (raw names still match first, so gates/clustering are unaffected). This resolution is the one central place; `pop_df`'s `pop_cols` inherits it. Python `LabelPropsView` mirrors it (given the image's `channel_names`). |
 | `view_channel_cols(lp)` | add the per-channel intensity columns |
 | `view_centroid_cols(lp; order=…)` | add centroid columns from `obsm/spatial`+`temporal` |
 | `filter_rows(lp, ids; by=:label)` | restrict rows to these label IDs (read-time; **intersection** — IDs absent from the file are silently skipped, result is `≤ len(ids)` rows in file order, never `NaN`/error). Python: `filter_by_label(ids)`. |

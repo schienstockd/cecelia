@@ -232,6 +232,21 @@ function _channel_label(varname::String, chans::Vector{String})
     isnothing(m[:prefix]) ? chans[idx + 1] : "$(m[:prefix])_$(chans[idx + 1])"
 end
 
+# Inverse of `_channel_label`: channel display name → raw var name, so a caller can SELECT an intensity
+# column by its channel name (e.g. "CD4", "nuc_CD4") and the reader resolves it to the raw
+# `{measure}_intensity_{i}` column. Built from the var names actually present (only real columns map),
+# covering the prefixed "channel-type" variants too. This is the ONE place channel-name selection is
+# resolved — every caller inherits it through `as_df`, so no consumer converts names itself.
+function _channel_name_to_raw(var_names::Vector{String}, chans::Vector{String})::Dict{String,String}
+    m = Dict{String,String}()
+    isempty(chans) && return m
+    for v in var_names
+        d = _channel_label(v, chans)
+        d == v || (m[d] = v)   # only intensity columns that actually rename get a channel-name alias
+    end
+    m
+end
+
 # Centroids are stored in obsm and labelled explicitly: `centroid_x`/`centroid_y`/`centroid_z` (present
 # axes only) in `uns/spatial_cols`, and `centroid_t` in `uns/temporal_cols`. Names are written explicitly
 # at measurement time and by the migration (docs/todo/CENTROID_AXES_PLAN.md); the reader takes them
@@ -313,17 +328,33 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
                    _as_strings(HDF5.read_attribute(fid["obs"], "column-order")) : String[]
 
         # ── resolve which columns to read ──
-        local var_cols::Vector{String}, cent_cols::Vector{String}, ocols::Vector{String}
+        # var columns are recorded as (raw name to read, output name). A requested channel DISPLAY name
+        # (e.g. "CD4"/"nuc_CD4") resolves to its raw `{measure}_intensity_{i}` column and is returned
+        # under the requested name — the ONE central place channel-name selection happens, inherited by
+        # every caller (pop_df/gating/plots/notebooks). Raw names match FIRST, so gate eval and
+        # clustering (which pass raw `{measure}_intensity_{i}`) are unaffected.
+        chans       = something(lp.channel_names, String[])
+        chan_to_raw = _channel_name_to_raw(var_names, chans)
+        local var_reads::Vector{Tuple{String,String}}, cent_cols::Vector{String}, ocols::Vector{String}
         if isnothing(lp.sel_cols)
-            var_cols  = include_x ? var_names : String[]
+            var_reads = include_x ? [(v, lp.rename_channels ? _channel_label(v, chans) : v) for v in var_names] :
+                                    Tuple{String,String}[]
             cent_cols = all_centroid_cols
             ocols     = include_obs ? obs_cols : String[]
         else
             sel = lp.sel_cols
-            var_cols  = [c for c in sel if haskey(var_idx, c)]
-            cent_cols = [c for c in sel if haskey(cent_map, c)]
-            ocols     = [c for c in sel if c in obs_cols]
-            unknown = setdiff(sel, vcat(var_cols, cent_cols, ocols, ["label"]))
+            var_reads = Tuple{String,String}[]
+            for c in sel
+                if haskey(var_idx, c)                                   # raw name → existing behaviour
+                    push!(var_reads, (c, lp.rename_channels ? _channel_label(c, chans) : c))
+                elseif haskey(chan_to_raw, c)                            # channel name → raw, keep the name
+                    push!(var_reads, (chan_to_raw[c], c))
+                end
+            end
+            cent_cols   = [c for c in sel if haskey(cent_map, c)]
+            ocols       = [c for c in sel if c in obs_cols]
+            matched_var = Set(c for c in sel if haskey(var_idx, c) || haskey(chan_to_raw, c))
+            unknown = setdiff(sel, union(matched_var, Set(cent_cols), Set(ocols), Set(["label"])))
             isempty(unknown) || @warn "LabelProps: ignoring unknown columns $unknown"
         end
 
@@ -334,13 +365,12 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         df = DataFrame()
         df.label = keep === Colon() ? labels : labels[keep]
 
-        # var columns (lazy per-column hyperslab read from X)
-        if !isempty(var_cols)
+        # var columns (lazy per-column hyperslab read from X) — (raw name to read, output name)
+        if !isempty(var_reads)
             Xds = fid["X"]
             vax = _var_axis(Xds, n_obs, n_var)
-            for c in var_cols
-                col = _read_feature(Xds, var_idx[c], vax)
-                outname = lp.rename_channels ? _channel_label(c, something(lp.channel_names, String[])) : c
+            for (rawname, outname) in var_reads
+                col = _read_feature(Xds, var_idx[rawname], vax)
                 df[!, outname] = keep === Colon() ? col : col[keep]
             end
         end

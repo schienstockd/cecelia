@@ -72,16 +72,51 @@ def physical_size_for_axis(sizes_zyx, axis):
     return float(sizes_zyx[idx])
 
 
+# ── channel-name ↔ raw intensity column (mirror of the Julia label_props.jl helpers) ─────────────────
+# Intensity columns are stored raw as `{mean|median}_intensity_{i}` (+ optional channel-type prefix like
+# `nuc_`); they display as the image's channel names, positionally (index i ↔ chans[i], 0-based). These
+# two helpers are the ONE place channel-name selection is resolved, so a caller can request an intensity
+# column by its channel name and the reader maps it to the raw column (parity with the Julia reader).
+_CHANNEL_RE = re.compile(r"^(?:([a-z]+)_)?(?:mean|median)_intensity_(\d+)$")
+
+
+def _channel_label(varname, chans):
+    """Raw intensity var name -> channel display name. 'mean_intensity_3' -> chans[3];
+    'nuc_mean_intensity_0' -> 'nuc_<ch0>'. Non-match / out-of-range returns the name unchanged."""
+    m = _CHANNEL_RE.match(str(varname))
+    if m is None:
+        return varname
+    prefix, idx = m.group(1), int(m.group(2))
+    if idx >= len(chans):
+        return varname
+    return chans[idx] if prefix is None else f"{prefix}_{chans[idx]}"
+
+
+def _channel_name_to_raw(var_names, chans):
+    """Inverse: channel display name -> raw var name (built from the var names present, prefixed variants
+    included). Empty when no channel names are set. Mirror of the Julia `_channel_name_to_raw`."""
+    out = {}
+    if not chans:
+        return out
+    for v in var_names:
+        d = _channel_label(v, chans)
+        if d != v:
+            out[d] = v
+    return out
+
+
 class LabelPropsView:
     """A chainable, read-only view over one label-props H5AD. Methods return ``self`` so
     calls compose: ``view.view_centroid_cols().filter_by_label(ids).as_df()``."""
 
-    def __init__(self, filepath: str):
+    def __init__(self, filepath: str, channel_names=None):
         self.filepath = filepath
         self.adata = ad.read_h5ad(filepath)
+        self.channel_names = list(channel_names) if channel_names else None  # image channels, for name↔raw
         self._cols = None            # None = all feature columns; else a subset
         self._with_centroids = False
         self._only_centroids = False
+        self._rename_channels = False  # when True, intensity outputs are labelled with channel names
         self._label_ids = None       # None = all cells
         self._pending_obs = None     # staged obs columns to write; flushed by save()
         self._pending_drop = None    # staged obs column names to delete; flushed by save()
@@ -110,6 +145,16 @@ class LabelPropsView:
     def var_names(self) -> list:
         return list(self.adata.var_names)
 
+    def channel_columns(self, as_channel_names=False) -> list:
+        """Per-channel intensity var names (`{measure}_intensity_i`), or their channel display names if
+        `as_channel_names=True` (needs `channel_names`). Mirror of the Julia `channel_columns`."""
+        measure = self.adata.uns.get("intensity_measure", "mean") or "mean"
+        pat = re.compile(rf"(^|_){measure}_intensity_\d+$")
+        cols = [v for v in map(str, self.adata.var_names) if pat.search(v)]
+        if as_channel_names and self.channel_names:
+            return [_channel_label(c, self.channel_names) for c in cols]
+        return cols
+
     def obsm_keys(self) -> list:
         return list(self.adata.obsm.keys())
 
@@ -122,6 +167,16 @@ class LabelPropsView:
     def view_cols(self, cols):
         self._cols = list(cols)
         return self
+
+    def rename_channels(self, on=True):
+        """When on, intensity columns are output under their channel display names (needs
+        `channel_names`). Off by default. Mirror of the Julia `rename_channels!`."""
+        self._rename_channels = on
+        return self
+
+    def view_channel_cols(self):
+        """Select the per-channel intensity columns (raw names). Mirror of the Julia `view_channel_cols`."""
+        return self.view_cols(self.channel_columns())
 
     def view_centroid_cols(self):
         self._with_centroids = True
@@ -155,10 +210,15 @@ class LabelPropsView:
         if not self._only_centroids:
             X = np.asarray(a.X)
             var_names = list(a.var_names)
+            chans = self.channel_names or []
+            chan_to_raw = _channel_name_to_raw(var_names, chans)   # channel display name → raw column
             cols = self._cols if self._cols is not None else var_names
             for c in cols:
-                if c in var_names:
-                    data[c] = X[:, var_names.index(c)]
+                if c in var_names:                                 # raw name (existing behaviour)
+                    out = _channel_label(c, chans) if self._rename_channels else c
+                    data[out] = X[:, var_names.index(c)]
+                elif c in chan_to_raw:                             # channel name → raw, keep requested name
+                    data[c] = X[:, var_names.index(chan_to_raw[c])]
             # obs columns (e.g. track_id for live pops) — include those present/requested
             for c in a.obs.columns:
                 if self._cols is None or c in self._cols:
@@ -294,13 +354,16 @@ class LabelPropsUtils:
     """Resolves and opens label-props views for an image's task dir. Keeps the old cecelia
     ``label_props_view(value_name=...)`` entry point so `pop_utils.pop_df` is unchanged."""
 
-    def __init__(self, task_dir: str, value_name: str = "default"):
+    def __init__(self, task_dir: str, value_name: str = "default", channel_names=None):
         self.task_dir = task_dir
         self.value_name = value_name
+        # the image's channel names (from ccid.json, passed by the caller) — enables channel-name column
+        # selection in the views this opens; None ⇒ raw names only (unchanged behaviour).
+        self.channel_names = list(channel_names) if channel_names else None
 
     def label_props_filepath(self, value_name: str = None) -> str:
         vn = value_name or self.value_name
         return os.path.join(self.task_dir, "labelProps", f"{vn}.h5ad")
 
     def label_props_view(self, value_name: str = None) -> LabelPropsView:
-        return LabelPropsView(self.label_props_filepath(value_name))
+        return LabelPropsView(self.label_props_filepath(value_name), channel_names=self.channel_names)

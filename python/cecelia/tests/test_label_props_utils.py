@@ -66,5 +66,39 @@ class AddCategoricalObsTest(unittest.TestCase):
         self.assertEqual(back.obs["state"].cat.codes[back.obs.index.get_loc("10")], -1)
 
 
+class ChannelNameSelectionTest(unittest.TestCase):
+    """Parity with the Julia reader: select an intensity column by its CHANNEL name and get the raw
+    column back under that name (channel_names positional: index i ↔ chans[i])."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmp, "x.h5ad")
+        a = ad.AnnData(X=np.array([[1., 2., 3.], [4., 5., 6.]], dtype=np.float64),
+                       obs=pd.DataFrame(index=["0", "1"]))
+        a.var_names = ["mean_intensity_0", "mean_intensity_1", "mean_intensity_2"]
+        a.uns["intensity_measure"] = "mean"
+        a.write_h5ad(self.path)
+        self.chans = ["CD4", "CD8", "B220"]
+
+    def test_select_by_channel_name_resolves_to_raw(self):
+        df = LabelPropsView(self.path, channel_names=self.chans).view_cols(["CD8"]).as_df()
+        self.assertIn("CD8", df.columns)                        # returned under the requested channel name
+        self.assertNotIn("mean_intensity_1", df.columns)        # not the raw name
+        raw = LabelPropsView(self.path).view_cols(["mean_intensity_1"]).as_df()
+        np.testing.assert_array_equal(df["CD8"].to_numpy(), raw["mean_intensity_1"].to_numpy())
+
+    def test_raw_names_still_work(self):                          # gates/clustering pass raw — unchanged
+        df = LabelPropsView(self.path).view_cols(["mean_intensity_2"]).as_df()
+        self.assertIn("mean_intensity_2", df.columns)
+
+    def test_channel_columns_and_rename(self):
+        v = LabelPropsView(self.path, channel_names=self.chans)
+        self.assertEqual(v.channel_columns(), ["mean_intensity_0", "mean_intensity_1", "mean_intensity_2"])
+        self.assertEqual(v.channel_columns(as_channel_names=True), self.chans)
+        df = (LabelPropsView(self.path, channel_names=self.chans)
+              .rename_channels(True).view_cols(["mean_intensity_0"]).as_df())
+        self.assertIn("CD4", df.columns)                        # raw request, renamed output
+
+
 if __name__ == "__main__":
     unittest.main()
