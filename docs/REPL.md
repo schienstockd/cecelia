@@ -175,8 +175,12 @@ cells to paste) → once happy, they run it without you.
   above**: pool in one `pop_df` call rather than looping+`vcat`, and confirm pop paths/column names
   via `get_populations` / `get_measure_summary` instead of a candidate-list guesser. Plot with
   AlgebraOfGraphics + CairoMakie; export with `CSV.write`. Obey the **write rules above** (figures/CSV only).
-- **Create-only**: a name that already exists returns 409 — it never overwrites a notebook the user
-  may have edited. Pick a new name, or suggest cell edits for them to apply in Pluto.
+- **`description`** is ONE short line (a title-ish phrase shown in the notebook table), not a paragraph
+  — it's capped server-side. Reword later with `set_notebook_description`.
+- **Create vs revise**: `create_notebook` is create-only (409 on an existing name). To CHANGE an
+  existing notebook, use **`revise_notebook`** — it snapshots the current one (a restorable version on
+  the Notebooks page) then updates it in place. That's the real versioning; **never make a `<name>-v2`
+  copy**. For a brand-new notebook, `create_notebook` with a new name.
 - Suggest first, create on the user's ask — don't spam notebooks.
 
 ---

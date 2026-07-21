@@ -106,6 +106,13 @@ is self-contained/runnable), registers it, and snapshots v1. **Create-only** (40
 non-destructive. The user then opens it in the Notebooks page and edits/owns it in Pluto. Backed by
 the `create_notebook` MCP tool; the code-generation guidance for Claude lives in `docs/REPL.md`.
 
+To **change an existing** notebook, the observer uses `POST /api/notebooks/revise` (MCP tool
+`revise_notebook`): it **snapshots the current notebook first** (freezing whatever is live — including
+the user's un-snapshotted edits — as a restorable version) then overwrites its cells. That's the
+versioned-revision path — the observer never makes a `<name>-v2` copy, and nothing is lost (History →
+Restore brings the prior version back). Descriptions (create/describe/revise) are capped to one short
+line (`_NB_DESC_MAX`).
+
 ## Sysimage (why the first plot isn't slow)
 
 Makie compiles plotting code on first use (~20 s cold). A PackageCompiler sysimage bakes that in
@@ -152,6 +159,7 @@ Routes:
 | `POST /api/notebooks/create` | new notebook from the template |
 | `POST /api/notebooks/describe` | set a notebook's description |
 | `POST /api/notebooks/duplicate` | copy a project/example notebook into the project |
+| `POST /api/notebooks/revise` | new version of an existing notebook: snapshot then overwrite cells (the MCP's versioned-revision path) |
 | `POST /api/notebooks/delete` | delete a project notebook |
 | `POST /api/notebooks/snapshot` | freeze a version |
 | `GET  /api/notebooks/snapshots?projectUid=&file=` | list a notebook's snapshots |

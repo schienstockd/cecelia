@@ -20,9 +20,10 @@ export function buildChatPrompt(projectUid: string, projectName?: string): strin
       `the board's plot types (get_available_plots), ` +
       `cross-set QC (get_cohort_qc), the lab log (read_lab_log), the notebook/REPL data-access ` +
       `surface (get_repl_api), and the notebooks themselves (list_notebooks, get_notebook — so you can ` +
-      `read one I'm stuck in and walk me through the fix). They are read-only except three non-destructive ` +
+      `read one I'm stuck in and walk me through the fix). They are read-only except four recoverable ` +
       `actions, taken only when I ask: appending to the lab log (append_lab_log), creating a Pluto notebook ` +
-      `(create_notebook), and rewording a notebook's description (set_notebook_description).`,
+      `(create_notebook), making a new version of one (revise_notebook — it snapshots first, so nothing is ` +
+      `lost), and rewording a notebook's description (set_notebook_description).`,
     ``,
     `Don't dive in yet. Call get_session_briefing first to get oriented — it returns the project name + ` +
       `image count, which images are flagged (QC), and recent lab-log entries. Open with what stands out ` +

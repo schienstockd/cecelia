@@ -3,11 +3,14 @@
 Every request goes through an explicit ALLOW-LIST of (method, path) pairs. That list IS the
 observer's no-mutation guarantee: the only non-GET routes permitted are ``POST /api/lablog/append``
 (append-only), ``POST /api/notebooks/write`` (create-only — 409 on an existing name, so it never
-overwrites), and ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in
-the registry sidecar — not its cells, not analysis data). All three are non-destructive to project &
-analysis data: no allow-listed route can touch cell data, images, gates, QC, or a notebook's content.
-Any attempt to call a route not on the list raises ``DisallowedRoute`` — so if a future tool ever
-wires in a mutating route it fails loudly in tests rather than silently mutating a project.
+overwrites), ``POST /api/notebooks/describe`` (edits ONLY a notebook's own description string in the
+registry sidecar — not its cells), and ``POST /api/notebooks/revise`` (which SNAPSHOTS the current
+notebook first — a restorable version — then overwrites its cells; it's how a notebook gets a new
+version, never a "-v2" copy). All four are recoverable / non-destructive to project & analysis data:
+no allow-listed route can touch cell data, images, gates, or QC, and revise can't lose a notebook's
+content (the pre-revision state is always snapshotted). Any attempt to call a route not on the list
+raises ``DisallowedRoute`` — so if a future tool ever wires in a truly destructive route it fails
+loudly in tests rather than silently mutating a project.
 
 Uses only the Python standard library (urllib) so this module — and its tests — carry no third-party
 dependency; the ``mcp`` SDK is needed only by ``server.py`` which wires these calls into tools.
@@ -46,9 +49,10 @@ ALLOWED_ROUTES = frozenset(
         ("GET", "/api/lablog"),
         ("GET", "/api/notebooks"),         # list a project's notebooks (file, description, version)
         ("GET", "/api/notebooks/content"),  # read a notebook's current source (the "have a look" flow)
-        ("POST", "/api/lablog/append"),  # write 1/3 — append-only, server-guarded
-        ("POST", "/api/notebooks/write"),  # write 2/3 — create-only (409 on existing); serialises cells to a Pluto notebook
-        ("POST", "/api/notebooks/describe"),  # write 3/3 — edits ONLY a notebook's description string (registry sidecar); not its content
+        ("POST", "/api/lablog/append"),  # write 1/4 — append-only, server-guarded
+        ("POST", "/api/notebooks/write"),  # write 2/4 — create-only (409 on existing); serialises cells to a Pluto notebook
+        ("POST", "/api/notebooks/describe"),  # write 3/4 — edits ONLY a notebook's description string (registry sidecar); not its content
+        ("POST", "/api/notebooks/revise"),  # write 4/4 — SNAPSHOTS the current notebook (restorable), then overwrites its cells (real versioning, no "-v2" copies)
     }
 )
 
@@ -260,4 +264,15 @@ class CeceliaClient:
             "POST",
             "/api/notebooks/describe",
             body={"projectUid": project_uid, "file": file, "description": description},
+        )
+
+    def revise_notebook(self, project_uid: str, file: str, cells: list[str], description: str = ""):
+        # New version of an EXISTING notebook: the server snapshots the current one (restorable via the
+        # Notebooks page History) then overwrites its cells — real versioning, not a "-v2" copy. `file`
+        # is the existing notebook's filename (bare name works; server appends .jl). 409 if it doesn't
+        # exist (use create_notebook for a new one). `description` optional — only updates it if given.
+        return self._request(
+            "POST",
+            "/api/notebooks/revise",
+            body={"projectUid": project_uid, "file": file, "cells": cells, "description": description},
         )
