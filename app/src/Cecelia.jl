@@ -98,6 +98,7 @@ export CropImage
 export ResourcePool, TaskRecord
 export run_task, run_tasks
 export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks
+export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
 export resize_pool!
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
@@ -174,6 +175,9 @@ include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")
 include("napari.jl")
+# Data patches (project-scoped maintenance scripts, run from Settings). After scheduler.jl
+# (uses _kill_proc_tree) + py_runner.jl (run_py/task_run_dir).
+include("maintenance.jl")
 
 # AI observer (in-app assistant) — spawns a headless agent that reads state + appends to the lab log
 # through the cecelia-observer MCP. After scheduler.jl (uses _kill_proc_tree). See

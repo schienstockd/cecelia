@@ -9,6 +9,8 @@ import { notebooksApi, napariApi } from '../utils/serviceApi'
 import { useAppControlStore } from '../stores/appControl'
 import { useCustomModulesStore } from '../stores/customModules'
 import { fetchStorageSummary, reclaimStorage, formatBytes, type StorageSummary } from '../utils/storage'
+import { useWsStore } from '../stores/ws'
+import { useTaskStore } from '../stores/tasks'
 
 const showPackages = ref(false)
 
@@ -148,6 +150,47 @@ const notebooksRaw = ref<{ running?: boolean; starting?: boolean } | null>(null)
 const napariSt = computed<ServiceState>(() => napariState(napariRaw.value))
 const notebooksSt = computed<ServiceState>(() => notebooksState(notebooksRaw.value))
 const projectUid = computed(() => projectMeta.current?.uid ?? '')
+
+// ── Data patches (project-scoped maintenance scripts) ──────────────────────────
+// The run streams over the task WS rail (task:log/progress/status keyed by the taskStore entry id),
+// so it shows live output + progress here AND in the Tasks list, with a working Stop.
+const ws = useWsStore()
+const taskStore = useTaskStore()
+interface PatchDef { id: string; title: string; description: string }
+const patches = ref<PatchDef[]>([])
+const patchRunId = ref<Record<string, string>>({})   // patch id → active run's taskStore entry id
+
+onMounted(async () => {
+  try {
+    const res = await fetch('/api/maintenance/patches')
+    if (res.ok) patches.value = ((await res.json()).patches ?? []) as PatchDef[]
+  } catch { /* no patches surfaced */ }
+})
+
+const patchRun = (patchId: string) => {
+  const id = patchRunId.value[patchId]
+  return id ? (taskStore.tasks.find(t => t.id === id) ?? null) : null
+}
+const patchBusy = (patchId: string) => {
+  const r = patchRun(patchId)
+  return !!r && (r.status === 'running' || r.status === 'queued')
+}
+function runPatch(p: PatchDef, apply: boolean) {
+  const uid = projectMeta.current?.uid
+  if (!uid || patchBusy(p.id)) return
+  const entry = taskStore.add({
+    module: 'maintenance', label: `${p.title}${apply ? '' : ' (dry-run)'}`,
+    imageUid: '', imageName: '', status: 'queued',
+    taskName: p.id, funName: `maintenance.${p.id}`, params: { apply }, projectUid: uid,
+    startedAt: new Date(),
+  })
+  patchRunId.value = { ...patchRunId.value, [p.id]: entry.id }
+  ws.send({ type: 'maintenance:run', taskId: entry.id, patchId: p.id, projectUid: uid, apply })
+}
+function cancelPatch(patchId: string) {
+  const id = patchRunId.value[patchId]
+  if (id) ws.send({ type: 'maintenance:cancel', taskId: id })
+}
 // the port serving THIS window (Vite :5173 in dev; the backend :8080 in prod) — the GUI isn't a
 // controllable service, we just show it so the full picture of occupied ports is visible.
 const guiPort = computed(() => location.port || (location.protocol === 'https:' ? '443' : '80'))
@@ -441,6 +484,40 @@ async function switchWt(path: string) {
         </div>
       </div>
       <span v-else class="field-hint">No custom modules loaded.</span>
+    </section>
+
+    <!-- ── Data patches (project-scoped maintenance scripts) ──────────────── -->
+    <section class="settings-section">
+      <h2 class="section-title">Data patches</h2>
+      <p class="field-hint">One-off fixes applied to the currently open project's data. Dry-run first to see what would change.</p>
+      <div v-if="!projectMeta.current" class="field-hint">Open a project to run patches.</div>
+      <div v-for="p in patches" :key="p.id" class="patch-row">
+        <div class="patch-head">
+          <span class="patch-title">{{ p.title }}</span>
+          <span class="patch-actions">
+            <button class="save-btn" :disabled="!projectMeta.current || patchBusy(p.id)" @click="runPatch(p, false)"
+                    v-tooltip.top="'List what would change — writes nothing'">
+              <i :class="['pi', patchBusy(p.id) ? 'pi-spin pi-cog' : 'pi-search']" /> Dry-run
+            </button>
+            <ConfirmButton @confirm="runPatch(p, true)" v-slot="{ armed, arm, confirm, cancel }">
+              <button v-if="!armed" class="save-btn danger" :disabled="!projectMeta.current || patchBusy(p.id)" @click="arm"
+                      v-tooltip.top="'Write changes to this project\'s data'"><i class="pi pi-play" /> Apply</button>
+              <template v-else>
+                <button class="save-btn danger" @click="confirm"><i class="pi pi-play" /> Confirm apply</button>
+                <button class="save-btn ghost" @click="cancel">Cancel</button>
+              </template>
+            </ConfirmButton>
+            <button v-if="patchBusy(p.id)" class="save-btn ghost" @click="cancelPatch(p.id)"><i class="pi pi-times" /> Stop</button>
+          </span>
+        </div>
+        <span class="field-hint">{{ p.description }}</span>
+        <div v-if="patchRun(p.id)" class="patch-run">
+          <div v-if="patchRun(p.id)!.progress != null" class="patch-bar">
+            <span :style="{ width: (patchRun(p.id)!.progress! * 100) + '%' }" /></div>
+          <pre class="repl-log patch-log">{{ patchRun(p.id)!.log.join('\n') }}</pre>
+          <span class="field-hint">status: {{ patchRun(p.id)!.status }}</span>
+        </div>
+      </div>
     </section>
 
     </div>
@@ -846,6 +923,17 @@ async function switchWt(path: string) {
   background: var(--cc-surface-1);
   padding: 0.4rem 0.6rem;
 }
+/* data patches */
+.patch-row { padding: 0.5rem 0; border-bottom: 1px solid var(--cc-border); }
+.patch-row:last-child { border-bottom: none; }
+.patch-head { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.25rem; }
+.patch-title { font-size: 0.82rem; font-weight: 600; color: var(--cc-text); flex: 1; }
+.patch-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
+.patch-run { margin-top: 0.4rem; }
+.patch-bar { height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; margin-bottom: 0.35rem; }
+.patch-bar span { display: block; height: 100%; background: var(--cc-accent); transition: width 0.2s; }
+.patch-log { max-height: 200px; font-family: var(--cc-mono); font-size: 0.72rem; color: var(--cc-text); white-space: pre-wrap; }
+
 .repl-entry { padding: 0.35rem 0; border-bottom: 1px solid var(--cc-border); }
 .repl-entry:last-child { border-bottom: none; }
 .repl-code { font-family: var(--cc-mono); font-size: 0.74rem; color: var(--cc-accent); white-space: pre-wrap; }

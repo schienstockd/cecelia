@@ -21,6 +21,7 @@ include("gating_api.jl")
 include("plotting_api.jl")
 include("tracking_api.jl")
 include("update_api.jl")
+include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
 include("app_api.jl")
@@ -233,6 +234,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_lablog_read(req)
         elseif path == "/api/tasks/definitions"
             api_task_definitions(req)
+        elseif path == "/api/maintenance/patches"
+            api_maintenance_patches(req)
         elseif path == "/api/tasks/custom-modules"
             api_custom_modules_status(req)
         elseif path == "/api/tasks/funparams"

@@ -29,6 +29,17 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test haskey(d, :setupRequired) && d.setupRequired isa Bool
 end
 
+@testset "API: maintenance patches" begin
+    st, body = api_maintenance_patches(HTTP.Request("GET", "/api/maintenance/patches"))
+    @test st == 200
+    r = JSON3.read(body)
+    @test length(r.patches) >= 1
+    ids = [String(p.id) for p in r.patches]
+    @test "centroid-axes" in ids                       # the shipped centroid converter patch
+    cp = r.patches[findfirst(==("centroid-axes"), ids)]
+    @test !isempty(String(cp.title)) && !isempty(String(cp.description))
+end
+
 @testset "API: update scope" begin
     # _install_scope drives whether the in-app updater self-updates (user), defers to an admin
     # (system), or is hidden (dev checkout). Parameterised on a temp root so we don't touch _APP_ROOT.

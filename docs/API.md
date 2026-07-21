@@ -131,6 +131,11 @@ same `task:progress/log/status/result` (keyed by the client's `taskId`), so it s
 a progress bar + Cancel. `task:cancel` also flags it (`request_batch_cancel!`, stops after the current
 image) — napari is a UI-serial viewer in `api/`, not a pooled scheduler task. See `docs/NAPARI.md` →
 *Authored config + batch* and `docs/todo/ANIMATION_PLAN.md` → F1.3.
+**`maintenance:run`** `{taskId,patchId,projectUid,apply}` (`handle_maintenance_run`, `api/src/sockets.jl`)
+runs a project-scoped **data patch** (Settings → Data patches; catalogue at `GET /api/maintenance/patches`)
+via `run_maintenance_patch` → `run_py`, streaming the same `task:log/progress/status` keyed by `taskId`;
+**`maintenance:cancel`** `{taskId}` → `cancel_maintenance!`. Confined to the one named project. See
+`docs/DEV.md` → *Data patches*.
 Task events (`task:log`/`task:status`/`task:progress`/`task:result`)
 are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
 to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,

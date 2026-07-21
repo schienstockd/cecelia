@@ -41,9 +41,11 @@ function handle_message(ws, raw::AbstractString)
         handle_task_run(ws, data)
     elseif type == "task:cancel"
         task_id = String(get(data, :taskId, ""))
-        # also flag any in-flight batch-movie run with this id (it isn't a scheduler task, so
-        # cancel_task! doesn't reach it — request_batch_cancel! stops it after the current image)
-        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id))
+        # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in the
+        # scheduler's _TASKS: batch movies (request_batch_cancel!, stops after the current image) and
+        # data patches (cancel_maintenance!, kills the subprocess). So the Task-Manager Cancel button
+        # works on all three, not just scheduler tasks.
+        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_maintenance!(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)
     elseif type == "chain:run"
@@ -51,8 +53,47 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "chain:cancel"
         run_id = String(get(data, :runId, ""))
         isempty(run_id) || cancel_chain_run!(run_id)
+    elseif type == "maintenance:run"
+        handle_maintenance_run(ws, data)
+    elseif type == "maintenance:cancel"
+        task_id = String(get(data, :taskId, ""))
+        isempty(task_id) || cancel_maintenance!(task_id)
     else
         @warn "Unknown WS message type" type
+    end
+end
+
+# Data patches (project-scoped maintenance, e.g. the centroid-axis converter). Runs the patch's Python
+# via `run_maintenance_patch` and streams over the task rail (task:log/progress/status keyed by taskId)
+# so it shows live progress + a working Cancel (maintenance:cancel → cancel_maintenance!), like an HPC
+# task spin-off. Confined to the ONE project the payload names. See docs/DEV.md → "Data patches".
+function handle_maintenance_run(ws, data)
+    task_id     = String(get(data, :taskId, ""))
+    patch_id    = String(get(data, :patchId, ""))
+    project_uid = String(get(data, :projectUid, ""))
+    apply       = Bool(get(data, :apply, false))
+
+    patch = maintenance_patch(patch_id)
+    if isnothing(patch)
+        ws_log(ws, task_id, "[ERROR] Unknown data patch: $patch_id")
+        ws_status(ws, task_id, "failed"); return
+    end
+    if !isdir(joinpath(projects_dir(), project_uid))
+        ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
+        ws_status(ws, task_id, "failed"); return
+    end
+
+    Threads.@spawn begin
+        ws_status(ws, task_id, "running")
+        ok = try
+            proj = load_project(project_uid)
+            run_maintenance_patch(patch, proj; apply = apply, task_id = task_id,
+                                  on_log      = line -> ws_log(ws, task_id, line),
+                                  on_progress = (n, t) -> ws_progress(ws, task_id, n, t))
+        catch ex
+            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); false
+        end
+        ws_status(ws, task_id, ok ? "done" : "failed")
     end
 end
 
