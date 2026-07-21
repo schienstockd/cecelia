@@ -39,7 +39,11 @@ const g = useGatingStore()
 // track properties → linear by default; flow intensities → logicle (FlowJo) — same rule as GatePlotPanel
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
 const channels = computed<string[]>({ get: () => props.ui.channels ?? [], set: v => { props.ui.channels = v } })
-const transform = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
+// centroid/spatial axes are raw coordinates → linear (same rule as GatePlotPanel). Pairs share ONE
+// transform across all selected channels, so default to linear only when EVERY channel is a linear axis.
+const pairsDefaultTransform = computed<Kind>(() =>
+  channels.value.length > 0 && channels.value.every(c => g.isLinearAxis(c)) ? 'linear' : defaultTransform)
+const transform = computed<Kind>({ get: () => props.ui.xt ?? pairsDefaultTransform.value, set: v => { props.ui.xt = v } })
 // ≥1 tile's transform was auto-linearised (measure range too small) → amber the control + explain
 const coerced = ref(false)
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
