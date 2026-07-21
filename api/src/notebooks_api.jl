@@ -294,6 +294,11 @@ function _safe_nb_file(name)::Union{String,Nothing}
     n
 end
 
+# Descriptions are a one-line label shown in the notebook table — cap so a verbose generator (e.g.
+# Claude via the MCP) can't bloat the row. Applied wherever a description is stored.
+const _NB_DESC_MAX = 120
+_cap_desc(s::AbstractString)::String = (t = strip(String(s)); length(t) > _NB_DESC_MAX ? String(first(t, _NB_DESC_MAX)) : String(t))
+
 _reg_desc(e) = String(get(e, "description", ""))
 # `current` = which snapshot version the LIVE notebook currently reflects (0 = never snapshotted).
 # This is what the UI shows, so a restore to v3 reads back as "v3" (not a monotonic counter).
@@ -380,7 +385,7 @@ function api_notebooks_create(body_bytes::Vector{UInt8})
     cp(template, dest)
 
     reg = _read_registry(uid)
-    reg[file] = Dict{String,Any}("description" => String(get(body, :description, "")),
+    reg[file] = Dict{String,Any}("description" => _cap_desc(String(get(body, :description, ""))),
                                  "current" => 0, "updatedAt" => string(Dates.now()))
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, file = file))
@@ -470,7 +475,7 @@ function api_notebooks_write(body_bytes::Vector{UInt8})
     open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells))); end
 
     reg = _read_registry(uid)
-    reg[file] = Dict{String,Any}("description" => String(get(body, :description, "")),
+    reg[file] = Dict{String,Any}("description" => _cap_desc(String(get(body, :description, ""))),
                                  "current" => 0, "updatedAt" => string(Dates.now()))
     _write_registry!(uid, reg)
     # snapshot v1 — an immediate restore point before the user starts editing in Pluto
@@ -490,11 +495,44 @@ function api_notebooks_describe(body_bytes::Vector{UInt8})
 
     reg = _read_registry(uid)
     e = get(reg, file, Dict{String,Any}("current" => 0))
-    e["description"] = String(get(body, :description, ""))
+    e["description"] = _cap_desc(String(get(body, :description, "")))
     e["updatedAt"]   = string(Dates.now())
     reg[file] = e
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true))
+end
+
+# POST /api/notebooks/revise  { projectUid, file, cells, description? }  → { ok, file, snapshotVersion }
+# A safe in-place revision: SNAPSHOT the current notebook first (freezing whatever is live — including
+# the user's un-snapshotted edits — as a restorable version), THEN overwrite it with the new cells.
+# This is how a notebook gets a new version from the MCP — never a "<name>-v2" copy. 404 if the file
+# doesn't exist (use /write to create a new one). See docs/NOTEBOOKS.md → Versioning.
+function api_notebooks_revise(body_bytes::Vector{UInt8})
+    body = JSON3.read(String(body_bytes))
+    uid  = String(get(body, :projectUid, ""))
+    isempty(uid) && return 400, JSON3.write((; error = "projectUid required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+    file = _safe_nb_file(get(body, :file, ""))
+    file === nothing && return 400, JSON3.write((; error = "Invalid notebook name"))
+    cells = get(body, :cells, nothing)
+    (cells === nothing || isempty(cells)) && return 400, JSON3.write((; error = "cells required (a non-empty list of Julia cell sources)"))
+    dir  = _project_notebooks_dir(uid)
+    dest = joinpath(dir, file)
+    isfile(dest) || return 409, JSON3.write((; error = "Notebook not found: $file (use create for a new one; revise is for existing)"))
+
+    # freeze the current live state first, then overwrite — nothing is lost (restorable via History)
+    snap = api_notebooks_snapshot(Vector{UInt8}(JSON3.write((; projectUid = uid, file = file))))
+    open(dest, "w") do io; write(io, _pluto_notebook_source(collect(cells))); end
+
+    reg = _read_registry(uid)
+    e = get(reg, file, Dict{String,Any}("current" => 0))
+    haskey(body, :description) && (e["description"] = _cap_desc(String(get(body, :description, ""))))
+    e["updatedAt"] = string(Dates.now())
+    reg[file] = e
+    _write_registry!(uid, reg)
+    broadcast_ws(Dict{String,Any}("type" => "notebooks_changed", "projectUid" => uid, "file" => file))
+    v = try JSON3.read(snap[2]).version catch; nothing end
+    200, JSON3.write((; ok = true, file = file, snapshotVersion = v))
 end
 
 # POST /api/notebooks/delete  { projectUid, file }  → { ok }

@@ -51,6 +51,7 @@ get_notebook              → a notebook's current Pluto source (with the user's
 ```
 append_lab_log            → append a dated [Claude] entry. Append-only, never edits existing content.
 create_notebook           → create a Pluto notebook from cells (Phase 2). Create-only (409 on existing); the user edits/owns it.
+revise_notebook           → new version of an EXISTING notebook: snapshots it (restorable) then overwrites its cells. Real versioning, not a "-v2" copy.
 set_notebook_description  → reword a notebook's one-line description (registry sidecar). Description text only; cells untouched.
 ```
 
@@ -234,7 +235,9 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **REPL knowledge (`get_repl_api` + `docs/REPL.md`)** — the notebook-safe accessor allow-list
   (`NOTEBOOK_API`) with live docstrings; a golden test keeps REPL.md from drifting.
 - **`create_notebook`** — generates a runnable Pluto notebook from cells (`/api/notebooks/write`).
-  `set_notebook_description` rewords its blurb afterwards (`/api/notebooks/describe`, description text only).
+  **`revise_notebook`** makes a new version of an existing one (`/api/notebooks/revise` — snapshots then
+  overwrites; real versioning, not a `-v2` copy). `set_notebook_description` rewords its blurb afterwards
+  (`/api/notebooks/describe`, description text only).
 - **`get_available_plots`** — the board's plot types, for viz suggestions.
 - **In-app overview** — `ClaudeOverviewDialog` (`?` in the lab-log toolbar): a brief how-to.
 
@@ -251,10 +254,11 @@ verifiable artifacts. Shipped as PRs #250–#258; this is the durable summary (t
 - **Notebooks: Claude bootstraps, the user owns.** `create_notebook` is create-only + snapshots v1;
   iteration happens in Pluto by the user (Claude guiding via chat). Notebook code writes figures/CSV
   only — never h5ad/QC/lab-log/ccid (`docs/REPL.md`).
-- **Stuck? Read + teach, don't overwrite.** When the user is stuck in a notebook, Claude reads its
-  current source (`get_notebook`), explains the fix in plain terms and walks them through it (most
-  users are new to Julia — the goal is they learn to do it themselves). If they ask Claude to apply the
-  change, it creates a NEW notebook version via `create_notebook` (a new name) and says so first —
-  it never overwrites their file or their edits. There is deliberately no "overwrite notebook" write.
+- **Stuck? Read + teach, then version.** When the user is stuck in a notebook, Claude reads its current
+  source (`get_notebook`), explains the fix in plain terms and walks them through it (most users are new
+  to Julia — the goal is they learn to do it themselves). If they ask Claude to apply the change, it
+  calls **`revise_notebook`**, which snapshots the current notebook (a restorable version) then updates
+  it in place — real versioning, not a `<name>-v2` copy — and says so first. Nothing is lost: the
+  pre-revision state is always snapshotted, so there is no *unrecoverable* overwrite.
 - **REPL.md can't drift.** `docs/REPL.md`'s API section is generated from the live docstrings of
   `NOTEBOOK_API` and golden-tested; changing a listed function's docstring without regenerating fails CI.

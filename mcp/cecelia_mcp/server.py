@@ -390,27 +390,48 @@ def create_notebook(project_uid: str, name: str, cells: list[str], description: 
     `CSV.write` export. The env-activation cell is prepended automatically, so DON'T include it; your
     first cell is typically `using Cecelia, DataFrames, AlgebraOfGraphics, CairoMakie, CSV`.
 
-    CREATE-ONLY: 409 if `name` already exists — never overwrites (pick a new name). After creating, tell
-    the user it's ready in the **Notebooks page** — an open page auto-refreshes; if theirs was already
-    open and doesn't show it, they can hit refresh. They open it, edit/iterate in Pluto (you can guide
-    them + suggest corrected cells to paste), and once happy they run it without you. One of only three
-    writes; non-destructive. Suggest, then create on the user's ask — don't spam notebooks. To reword
-    its description afterwards, use set_notebook_description (don't recreate).
+    `description` = ONE short line (a title-ish phrase shown in the notebook table), NOT a paragraph —
+    e.g. "T/B-cell speed over time". It's capped server-side; keep it tight.
 
-    REVISIONS: when the user asks you to change an existing notebook, read it with get_notebook, then
-    create a NEW version here under a new name (e.g. "<name>-v2") — never overwrite theirs. Say so
-    first: "I'll make a new notebook version." Prefer teaching them the edit over doing it for them."""
+    CREATE-ONLY: 409 if `name` already exists — never overwrites (pick a new name, or use
+    revise_notebook to make a new version of an existing one). After creating, tell the user it's ready
+    in the **Notebooks page** — an open page auto-refreshes; if theirs was already open and doesn't show
+    it, they can hit refresh. They open it, edit/iterate in Pluto (you can guide them + suggest corrected
+    cells to paste), and once happy they run it without you. Non-destructive. Suggest, then create on the
+    user's ask — don't spam notebooks. To reword its description afterwards, use set_notebook_description.
+
+    REVISIONS: when the user asks you to change an EXISTING notebook, read it with get_notebook, then
+    call revise_notebook — do NOT create a "<name>-v2" copy. revise_notebook snapshots the current
+    notebook (a restorable version on the Notebooks page) then updates it in place, so it uses the real
+    versioning and nothing is lost. Say so first: "I'll make a new version." Prefer teaching them the
+    edit over doing it for them."""
     return _client.create_notebook(project_uid, name, cells, description)
 
 
 @mcp.tool()
 def set_notebook_description(project_uid: str, file: str, description: str) -> dict:
-    """Update a notebook's one-line description (shown in the Notebooks page). Use this to reword the
-    blurb after create_notebook — e.g. the user asks to make it briefer — instead of recreating the
-    notebook. Edits ONLY the description string in the registry sidecar; the notebook's cells are
-    untouched. `file` is the notebook filename create_notebook returned (e.g. "speed.jl"); a bare name
-    works too. 404 if it doesn't exist. One of only three writes; non-destructive."""
+    """Update a notebook's description — ONE short line (title-ish, not a paragraph; capped server-side).
+    Shown in the Notebooks page. Use this to reword the blurb after create_notebook — e.g. the user asks
+    to make it briefer — instead of recreating the notebook. Edits ONLY the description string in the
+    registry sidecar; the notebook's cells are untouched. `file` is the notebook filename create_notebook
+    returned (e.g. "speed.jl"); a bare name works too. 404 if it doesn't exist. Non-destructive."""
     return _client.set_notebook_description(project_uid, file, description)
+
+
+@mcp.tool()
+def revise_notebook(project_uid: str, file: str, cells: list[str], description: str = "") -> dict:
+    """Make a NEW VERSION of an EXISTING notebook — the correct way to change one the user already has.
+    The server SNAPSHOTS the current notebook first (a restorable version, visible under History on the
+    Notebooks page) then overwrites its cells, so it uses the real versioning and nothing is lost. Do
+    NOT create a "<name>-v2" copy — that bypasses versioning and clutters the list.
+
+    Flow: read the current notebook with get_notebook, tell the user "I'll make a new version", then call
+    this with the full new `cells` (same rules as create_notebook — env-activation cell is prepended;
+    figures/CSV only). `file` is the existing notebook's filename (bare name works; .jl appended). 409 if
+    it doesn't exist — use create_notebook for a brand-new one. `description` optional (one short line,
+    capped) — only changes it if you pass a non-empty value. Non-destructive: the pre-revision state is
+    always snapshotted, so the user can Restore it."""
+    return _client.revise_notebook(project_uid, file, cells, description)
 
 
 @mcp.tool()

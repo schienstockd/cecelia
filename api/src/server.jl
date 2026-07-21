@@ -388,6 +388,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_notebooks_delete(body_bytes)
         elseif path == "/api/notebooks/duplicate"
             api_notebooks_duplicate(body_bytes)
+        elseif path == "/api/notebooks/revise"
+            api_notebooks_revise(body_bytes)
         elseif path == "/api/notebooks/snapshot"
             api_notebooks_snapshot(body_bytes)
         elseif path == "/api/notebooks/restore"

@@ -237,6 +237,22 @@ end
         @test JSON3.read(_post(api_notebooks_duplicate, Dict("projectUid"=>uid,"file"=>"nb1.jl","scope"=>"project"))[2]).file == "nb1-copy.jl"
         @test find("nb1-copy.jl") !== nothing
 
+        # revise: SNAPSHOTS the current notebook (freezes it) then overwrites its cells — a real new
+        # version, not a "-v2" copy. 409 if the file is absent; 400 without cells.
+        let before = length(snaps())
+            r = JSON3.read(_post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nb1.jl",
+                                  "cells"=>["using Cecelia", "df = 1 + 1"], "description"=>"revised"))[2])
+            @test r.ok == true
+            @test length(snaps()) == before + 1                 # pre-revision state was frozen as a version
+            @test find("nb1.jl").description == "revised"
+        end
+        @test _post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nope.jl", "cells"=>["x"]))[1] == 409  # must exist
+        @test _post(api_notebooks_revise, Dict("projectUid"=>uid, "file"=>"nb1.jl"))[1] == 400                   # cells required
+
+        # description cap: a long blurb is truncated at _NB_DESC_MAX (create/describe/write/revise all cap)
+        @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"nbcap", "description"=>repeat("x", 300)))[1] == 200
+        @test length(find("nbcap.jl").description) == _NB_DESC_MAX
+
         # delete — pass force=true so this is deterministic regardless of whether a Pluto server is
         # running locally. The guard 409s on a live server without force (a dev machine with the
         # notebook server up would otherwise fail this + the two asserts below); force is what the
