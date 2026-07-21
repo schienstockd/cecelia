@@ -17,16 +17,17 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", "default"))
-    pop_type   = string(get(params, "popType", "flow"))
     pops       = _str_list(params, "pops")
     isempty(pops) && (on_log("[ERROR] aggregatesMeshes: select a population"); return nothing)
+    # pops may mix types — resolve across types + namespace output by cell kind (see detectAggregates)
+    pop_type   = pop_namespace(img, pops; value_name = value_name)
     haskey(img.labels, value_name) ||
         (on_log("[ERROR] aggregatesMeshes: no label zarr for $(value_name)"); return nothing)
     max_dist   = Float64(get(params, "maxClusterDist", 5.0))
     min_cells  = Int(get(params, "minCells", 5))
     on_progress(1, 3)
 
-    mem = pop_df(img, pop_type, pops; value_name = value_name, granularity = :cell)
+    mem = pop_df_multi(img, pops; value_name = value_name, granularity = :cell, restrict_to = value_name)
     nrow(mem) == 0 && (on_log("[ERROR] aggregatesMeshes: no cells for $(pops)"); return nothing)
     (sizes, _) = img_physical_sizes(img)
     qc_out_path = joinpath(task_run_dir(img._dir), "aggregates_mesh_qc.json")

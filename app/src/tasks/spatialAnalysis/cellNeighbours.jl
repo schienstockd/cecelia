@@ -43,15 +43,15 @@ function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
     value_name = string(get(params, "valueName", "default"))
-    pop_type   = string(get(params, "popType", "flow"))
     method     = string(get(params, "neighbourMethod", "delaunay"))
     pops       = _str_list(params, "pops")     # shared helper (clustPops/cluster.jl) — module-visible
     on_progress(1, 3)
 
     # ── optional population subset → member labels (else all cells) ──
+    # pops may mix types (gates, clusters, regions, tracked cells) — pop_df_multi resolves across types.
     labels = nothing
     if !_is_all_cells(pops)
-        df = pop_df(img, pop_type, pops; value_name = value_name, granularity = :cell, pop_cols = String[])
+        df = pop_df_multi(img, pops; value_name = value_name, granularity = :cell, pop_cols = String[], restrict_to = value_name)
         nrow(df) == 0 && (on_log("[ERROR] cellNeighbours: no cells for pops=$(pops)"); return nothing)
         labels = Int.(df.label)
     end

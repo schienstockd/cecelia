@@ -309,7 +309,45 @@ transient napari-selection pop is excluded (it's the selection *source*). Cell p
 (`flow`/`clust`); track pops go through the Tracks overlay.
 
 REPL contract (headless, no API/UI): `add_pop!`, `set_gate!`, `recompute!`,
-`cells_in_pop`, `pop_df`, `resolve_pops`, `save_pop_map!`/`load_pop_map`.
+`cells_in_pop`, `pop_df`, `pop_df_multi`, `resolve_pops`, `save_pop_map!`/`load_pop_map`.
+
+### `pop_df_multi` — mixed-type module-function inputs
+
+A module function's `popSelection` can offer **any** pop type at once (cell gates, `clust`, `region`,
+tracked cells, per-track gates/`trackclust`) — see `docs/MODULES.md` → *`accepts`*. But `pop_df` takes a
+**single** `pop_type`, and a selected value is only a value-name-prefixed **path** (`"A/qc/_tracked"`) —
+it does **not** carry the pop's type. So a consumer that wants "these cells, whatever type the user
+picked" cannot call `pop_df` with one `pop_type`; that assumption (hardcoded `"flow"`) is exactly why the
+spatial/cluster functions used to hide tracked cells and return empty for `region`/`clust` picks.
+
+`pop_df_multi(img[, uids], pops; granularity=:cell, kwargs...)` is the one canonical mixed-type accessor:
+
+- **`resolve_pop_type(img, value_name, path)`** discovers each pop's type from the stored maps — a
+  reserved derived leaf (`_tracked`) → `live`; the all-cells root → `flow`; otherwise the first map in
+  `("flow","clust","region","track","trackclust")` that contains the path. Unknown → `flow` (membership
+  then resolves empty rather than erroring).
+
+**Same-name guard (two layers).** Because discovery keys on the path alone, a name reused across pop
+types in ONE segmentation would be ambiguous. Guarded at both ends:
+- **Creation** — `pop_name_conflict(img, value_name, path; pop_type)` returns the conflicting pop_type
+  (or nothing) by scanning the *other* types' maps for that path. The gating API (`pop add` / `pop rename`)
+  rejects a colliding create/rename with a 400; the GUI (`utils/popName.ts` → `popNameError`) flags a
+  reserved prefix or a same-list duplicate inline as the user types (gate naming, rename, filter-pop form),
+  and surfaces the server's cross-type 400 as a toast. `flow`/`live` share one map (same type); the
+  all-cells root and reserved `_`-leaves are exempt; the check is per-segmentation (cluster/region names
+  legitimately repeat across co-clustered segmentations).
+- **Resolution backstop** — if a colliding path somehow exists anyway (e.g. sidecars authored outside the
+  API), `resolve_pop_type` picks by priority and **`@warn`s**, so it's never a silent mis-resolve.
+- Refs are grouped by discovered type, `pop_df` is called **per type** at `granularity` (track/trackclust
+  pops **expand to member cells** at `:cell`), and the frames are stacked. A cell/track that fell into
+  pops of different types is deduped to one row (first-selected type wins).
+- Set-level `pop_df_multi(imgs, uids, pops; …)` runs per image (each discovers its own pops' types, so a
+  pop absent on an image is skipped there) and adds a `uID` column.
+
+**`pop_namespace(img, pops)`** gives the output measure-namespace for a per-cell **annotation** task
+(`<ns>.cell.contact#…`, `<ns>.cell.is.aggregate`): any tracked source → `"live"` (R parity), else
+`"flow"`. Consumers: all `spatialAnalysis.*` + `clustPops`/`clustRegions` (membership) and
+`cellContacts`/`contactsMeshes`/`detectAggregates`/`aggregatesMeshes` (namespace).
 
 ## Gating engine
 

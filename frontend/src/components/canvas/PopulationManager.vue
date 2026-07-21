@@ -15,7 +15,7 @@
 -->
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useGatingStore, isReservedPopName, type FlatPop } from '../../stores/gating'
+import { useGatingStore, type FlatPop } from '../../stores/gating'
 import { useLogStore } from '../../stores/log'
 import { useProjectStore } from '../../stores/project'
 import { useSettingsStore } from '../../stores/settings'
@@ -23,6 +23,7 @@ import PopulationPanelShell from './PopulationPanelShell.vue'
 import ConfirmDeleteButton from '../ConfirmDeleteButton.vue'
 import TeleportPopover from '../TeleportPopover.vue'
 import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
+import { popNameError } from '../../utils/popName'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
 
@@ -93,12 +94,10 @@ function pick(p: FlatPop) { emit('update:selected', p.path) }
 function beginRename(p: FlatPop) { editing.value = p.path; editName.value = p.name }
 async function commitRename(p: FlatPop) {
   const name = editName.value.trim()
-  if (isReservedPopName(name)) {   // `_`-prefix is reserved for derived pops (tracked / clustering)
-    log.error(`Population names can't start with “${'_'}” (reserved for tracked / clustering)`,
-              { source: 'gating' })
-    editing.value = null
-    return
-  }
+  // reserved-prefix + same-list duplicate are caught here for instant feedback; a cross-pop-type
+  // collision is rejected by the server (pop_name_conflict) and surfaced via the store's error toast.
+  const err = popNameError(name, g.flat.map(x => x.name), { currentName: p.name })
+  if (err) { log.error(err, { source: 'gating' }); editing.value = null; return }
   editing.value = null
   if (name && name !== p.name) await g.renamePop(p.path, name)
 }
@@ -195,14 +194,16 @@ async function submitFilterPop() {
   const conds = fpConds.value.filter(c => c.measure)
     .map(c => ({ measure: c.measure, fun: c.fun, values: parseFilterValues(c.fun, c.values) }))
   if (!conds.length) return
+  const cur = fpEditPath.value ? visiblePops.value.find(p => p.path === fpEditPath.value) : undefined
+  // reserved-prefix + duplicate (same list) checked here; cross-pop-type collision → server toast
+  const nameErr = popNameError(name, g.flat.map(x => x.name), { currentName: cur?.name })
+  if (nameErr) { log.error(nameErr, { source: 'gating' }); return }
   if (fpEditPath.value) {
     const path = fpEditPath.value
-    const cur = visiblePops.value.find(p => p.path === path)
     await g.updateFilterPop(path, conds)                                   // conditions
     if (cur && cur.colour !== fpColour.value) await g.updatePop(path, { colour: fpColour.value })  // colour
-    if (name && cur && name !== cur.name && !isReservedPopName(name)) await g.renamePop(path, name) // rename LAST (path changes)
+    if (cur && name !== cur.name) await g.renamePop(path, name)            // rename LAST (path changes)
   } else {
-    if (!name) return
     await g.addFilterPop(name, fpParent.value, fpColour.value, conds)
   }
   resetFilterForm(); showFilterForm.value = false

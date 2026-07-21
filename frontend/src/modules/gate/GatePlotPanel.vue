@@ -13,7 +13,8 @@
 -->
 <script setup lang="ts">
 import { ref, computed, watch, useTemplateRef } from 'vue'
-import { useGatingStore, isReservedPopName, type GateSpec, type TransformSpec } from '../../stores/gating'
+import { useGatingStore, type GateSpec, type TransformSpec } from '../../stores/gating'
+import { popNameError } from '../../utils/popName'
 import { useLogStore } from '../../stores/log'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
@@ -218,9 +219,11 @@ function onDraw(geom: Partial<GateSpec>) {
   // gate under the cursor while armed (see its onDown/onMove); release Shift to keep drawing.
   newName.value = ''
 }
-const nameReserved = computed(() => isReservedPopName(newName.value))
+// reserved-prefix + same-list duplicate, live as the user types; a cross-pop-type collision (e.g. a
+// region already named this) is rejected by the server (pop_name_conflict) and surfaced as a toast.
+const nameError = computed(() => popNameError(newName.value, g.flat.map(p => p.name)))
 async function confirmGate() {
-  if (!pending.value || !newName.value.trim() || nameReserved.value) return
+  if (!pending.value || nameError.value) return
   const palette = ['#ef4444','#f59e0b','#10b981','#3b82f6','#a78bfa','#ec4899','#14b8a6','#eab308']
   const ok = await g.addPop(newName.value.trim(), pending.value as GateSpec, parent.value, palette[g.flat.length % palette.length])
   pending.value = null
@@ -372,11 +375,11 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <div v-if="pending" class="panel-name">
         <span>new {{ pending.kind }}</span>
         <input v-model="newName" placeholder="name…" autofocus
-               :class="{ 'name-invalid': nameReserved }"
+               :class="{ 'name-invalid': !!nameError && !!newName.trim() }"
                @keyup.enter="confirmGate" @keyup.esc="pending = null" />
-        <button class="cc-btn cc-btn-primary" :disabled="!newName.trim() || nameReserved" @click="confirmGate">Add</button>
+        <button class="cc-btn cc-btn-primary" :disabled="!!nameError" @click="confirmGate">Add</button>
         <button class="cc-btn cc-btn-ghost" @click="pending = null">×</button>
-        <span v-if="nameReserved" class="name-hint">names can't start with “_” (reserved for tracked / clustering)</span>
+        <span v-if="nameError && newName.trim()" class="name-hint">{{ nameError }}</span>
       </div>
     </GateScatterCell>
   </CanvasPanel>

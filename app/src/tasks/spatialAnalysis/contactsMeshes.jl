@@ -21,8 +21,6 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
                    on_process::Function  = _ -> nothing)
     vnA        = string(get(params, "valueName", "default"))
     vnB        = string(get(params, "valueNameB", "default"))
-    pop_type   = string(get(params, "popType", "flow"))
-    pop_type_b = string(get(params, "popTypeB", pop_type))
     popsA      = _str_list(params, "popsA")
     popsB      = _str_list(params, "popsB")
     max_dist   = Float64(get(params, "maxContactDist", 10.0))
@@ -30,10 +28,14 @@ function _run_task(::ContactsMeshes, img::CciaImage, params::Dict{String,Any};
         (on_log("[ERROR] contactsMeshes: select both an A and a B population"); return nothing)
     (haskey(img.labels, vnA) && haskey(img.labels, vnB)) ||
         (on_log("[ERROR] contactsMeshes: missing a label zarr for $(vnA) / $(vnB)"); return nothing)
+    # A / B may each mix pop types — resolve across types + namespace output by cell kind (see cellContacts)
+    pop_type   = pop_namespace(img, popsA; value_name = vnA)
+    pop_type_b = pop_namespace(img, popsB; value_name = vnB)
     on_progress(1, 3)
 
-    aMem = pop_df(img, pop_type, popsA; value_name = vnA, granularity = :cell)
-    bMem = pop_df(img, pop_type_b, popsB; value_name = vnB, granularity = :cell)
+    # A/B are each ONE segmentation (label ids collide across segmentations) → restrict each to its vn
+    aMem = pop_df_multi(img, popsA; value_name = vnA, granularity = :cell, restrict_to = vnA)
+    bMem = pop_df_multi(img, popsB; value_name = vnB, granularity = :cell, restrict_to = vnB)
     (nrow(aMem) == 0 || nrow(bMem) == 0) &&
         (on_log("[ERROR] contactsMeshes: no A ($(nrow(aMem))) or B ($(nrow(bMem))) cells"); return nothing)
 

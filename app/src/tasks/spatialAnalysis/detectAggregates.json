@@ -17,7 +17,7 @@
       "key": "pops",
       "label": "Population",
       "type": "popSelection",
-      "popScope": "cells",
+      "accepts": ["live", "clust", "region", "track", "trackclust"],
       "multiple": true,
       "acrossSegmentations": false,
       "default": [],
