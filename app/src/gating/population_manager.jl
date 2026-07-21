@@ -1599,6 +1599,25 @@ function pop_namespace(img::CciaImage, pops; value_name::Union{AbstractString,No
     "flow"
 end
 
+"""
+    pops_value_name(pops; default="default") -> String
+
+The segmentation (value_name) a single-segmentation module task operates on, DERIVED from its picked
+populations rather than a separate dropdown — every picker value is value-name-prefixed
+(`"B/pos"`, and the all-cells root `"B/"`), so the segmentation is already implied by the selection
+(legacy parity: R never had a segmentation dropdown for the point/aggregate spatial tasks, and used
+the one on `cellNeighbours` only to name the output). All refs in these pickers share one value_name
+(the params are `acrossSegmentations:false`); the first ref decides it. Distinct value_names ⇒ `@warn`
+(a mixed pick that shouldn't reach here) and the first still wins. Empty ⇒ `default`.
+"""
+function pops_value_name(pops; default::AbstractString="default")::String
+    isempty(pops) && return String(default)
+    vns = unique(String(_split_pop_ref(ref, default)[1]) for ref in pops)
+    length(vns) > 1 && @warn "populations span more than one segmentation — using the first; this \
+        picker is single-segmentation (acrossSegmentations:false)" value_names=vns chosen=first(vns) maxlog=3
+    first(vns)
+end
+
 # Pop types that hold user-named populations (the name-guard scans all of them). `live` is not stored
 # (it reads the flow gates), so `flow` covers it.
 const _NAME_GUARD_POP_TYPES = ("flow", "track", "clust", "trackclust", "region")

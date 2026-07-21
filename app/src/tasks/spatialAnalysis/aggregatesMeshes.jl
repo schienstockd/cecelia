@@ -16,9 +16,10 @@ function _run_task(::AggregatesMeshes, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", "default"))
     pops       = _str_list(params, "pops")
     isempty(pops) && (on_log("[ERROR] aggregatesMeshes: select a population"); return nothing)
+    # segmentation derived from the populations (value_name-prefixed picks) — no dropdown (legacy parity)
+    value_name = pops_value_name(pops)
     # pops may mix types — resolve across types + namespace output by cell kind (see detectAggregates)
     pop_type   = pop_namespace(img, pops; value_name = value_name)
     haskey(img.labels, value_name) ||

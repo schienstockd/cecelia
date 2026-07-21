@@ -3347,6 +3347,16 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._split_pop_ref("/qc", "B")        == ("B", "/qc")
         @test Cecelia._split_pop_ref("qc", "B")         == ("B", "/qc")
 
+        # pops_value_name: the spatial tasks derive their segmentation from the pick (no dropdown).
+        # Value_name comes from the first ref's prefix; the all-cells root "B/" carries it too.
+        @test pops_value_name(["B/qc"])              == "B"
+        @test pops_value_name(["B/qc", "B/myeloid"]) == "B"       # single-segmentation set
+        @test pops_value_name(["B/"])                == "B"       # "… all" root pick
+        @test pops_value_name(String[])              == "default" # empty → default
+        @test pops_value_name(String[]; default="C") == "C"
+        # distinct value_names shouldn't reach a single-segmentation picker → warn, first still wins
+        @test (@test_logs (:warn,) match_mode=:any pops_value_name(["B/qc", "T/qc"])) == "B"
+
         # grouping by discovered type preserves first-appearance order
         grp = Cecelia._group_pops_by_type(img, ["/qc", "/myeloid", "/qc/_tracked", "/r0"], "B")
         @test grp == ["flow" => ["/qc"], "clust" => ["/myeloid"], "live" => ["/qc/_tracked"], "region" => ["/r0"]]

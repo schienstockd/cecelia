@@ -35,16 +35,22 @@ function _neighbours_qc_findings(n_cells::Integer, n_edges::Integer, isolated_fr
     findings
 end
 
-# a bare/root pop reference means "every cell of the segmentation" (no membership filter)
-_is_all_cells(pops) = isempty(pops) || any(p -> String(p) in ("root", "/"), pops)
+# a value_name-qualified root pick (e.g. "B/", the picker's per-segmentation "all" entry) means
+# "every cell of that segmentation" — no membership filter. The accepts picker always offers this root
+# when cell gates are accepted (population_accept_groups), so it needs no includeRoot flag in the spec.
+_is_all_cells(pops) = !isempty(pops) && all(p -> is_root(_split_pop_ref(p, "default")[2]), pops)
 
 function _run_task(::CellNeighbours, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", "default"))
     method     = string(get(params, "neighbourMethod", "delaunay"))
     pops       = _str_list(params, "pops")     # shared helper (clustPops/cluster.jl) — module-visible
+    isempty(pops) && (on_log("[ERROR] cellNeighbours: select a population, or the segmentation's \
+        'all cells' root, to build the graph over"); return nothing)
+    # segmentation derived from the pick (value_name-prefixed; the "… · all" root carries it too) — no
+    # separate dropdown (legacy used one only to name the output; the graph came from the pops).
+    value_name = pops_value_name(pops)
     on_progress(1, 3)
 
     # ── optional population subset → member labels (else all cells) ──

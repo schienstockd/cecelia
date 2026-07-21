@@ -35,9 +35,10 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
                    on_log::Function      = line -> println(line),
                    on_progress::Function = (n, t) -> nothing,
                    on_process::Function  = _ -> nothing)
-    value_name = string(get(params, "valueName", "default"))
     pops       = _str_list(params, "pops")
     isempty(pops) && (on_log("[ERROR] detectAggregates: select a population to detect aggregates of"); return nothing)
+    # segmentation derived from the populations (value_name-prefixed picks) — no dropdown (legacy parity)
+    value_name = pops_value_name(pops)
     # pops may mix types (flow gates, clusters, regions, tracked cells) — resolve across types and
     # namespace output by cell kind (tracked → live.cell.*, else flow.cell.*). Was hardcoded to "flow".
     pop_type   = pop_namespace(img, pops; value_name = value_name)
