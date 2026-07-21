@@ -92,6 +92,10 @@ Provenance without git or file-watching:
   snapshot. It does **not** create a snapshot (so repeated restores don't pile up versions); a
   two-click confirm guards un-snapshotted edits — snapshot first if you want to keep the current state.
   Pluto auto-reloads the file (`auto_reload_from_file`), so an open notebook updates live.
+- **Prune** (in History, when >1 snapshot exists) deletes every snapshot EXCEPT the current version —
+  "I'm happy with this one, drop the rest". Two-click confirm. It touches only `.snapshots/` files:
+  the live notebook and the registry entry (**including the description**) are left as-is, and it
+  aborts (409) rather than wiping history if the current pointer is unset or its snapshot is missing.
 - The **Ver** column shows which snapshot the notebook currently reflects: a fresh notebook is `—`,
   Snapshot advances it to the new number, and Restore sets it to the version you restored (restore v3
   → the column reads `v3`). It is a *pointer to current state*, not a monotonic counter.
@@ -164,6 +168,7 @@ Routes:
 | `POST /api/notebooks/snapshot` | freeze a version |
 | `GET  /api/notebooks/snapshots?projectUid=&file=` | list a notebook's snapshots |
 | `POST /api/notebooks/restore` | restore a snapshot into the live notebook |
+| `POST /api/notebooks/prune` | keep only the current version's snapshot, delete the older ones (description untouched) |
 | `POST /api/notebooks/shutdown` | stop the server (only one this app spawned) |
 | `POST /api/notebooks/restart` | stop + relaunch |
 

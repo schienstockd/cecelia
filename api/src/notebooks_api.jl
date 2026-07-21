@@ -694,3 +694,35 @@ function api_notebooks_restore(body_bytes::Vector{UInt8})
     _write_registry!(uid, reg)
     200, JSON3.write((; ok = true, restoredFrom = ver, version = ver))
 end
+
+# POST /api/notebooks/prune  { projectUid, file }  → { ok, kept, removed }
+# Trim version history down to the CURRENT version: delete every snapshot on disk EXCEPT the one the
+# live notebook currently reflects (registry `current`). The live notebook (.jl) and its registry entry
+# — crucially its description — are left untouched; prune only removes older .snapshots/ files. Answers
+# "I'm happy with this version, drop the rest." No-op-safe: if `current` is 0 or its snapshot is missing,
+# it aborts rather than wiping the whole history (so an unset pointer can't nuke everything).
+function api_notebooks_prune(body_bytes::Vector{UInt8})
+    body = JSON3.read(String(body_bytes))
+    uid  = String(get(body, :projectUid, ""))
+    file = _safe_nb_file(get(body, :file, ""))
+    (isempty(uid) || file === nothing) && return 400, JSON3.write((; error = "projectUid + file required"))
+    isdir(joinpath(projects_dir(), uid)) || return 404, JSON3.write((; error = "Project not found"))
+
+    reg = _read_registry(uid)
+    cur = _reg_current(get(reg, file, Dict{String,Any}()))
+    cur == 0 && return 409, JSON3.write((; error = "No current version to keep — snapshot this notebook first, then prune."))
+
+    snapdir = joinpath(_project_notebooks_dir(uid), ".snapshots")
+    stem    = splitext(file)[1]
+    isfile(joinpath(snapdir, "$(stem)@v$(cur).jl")) ||
+        return 409, JSON3.write((; error = "Current version v$cur has no snapshot on disk — nothing pruned."))
+
+    removed = String[]
+    for v in _snapshot_versions(uid, file)
+        v == cur && continue
+        p = joinpath(snapdir, "$(stem)@v$(v).jl")
+        isfile(p) && (rm(p); push!(removed, "$(stem)@v$(v).jl"))
+    end
+    # Registry (incl. description) is deliberately NOT rewritten — prune never changes the description.
+    200, JSON3.write((; ok = true, kept = cur, removed = removed))
+end

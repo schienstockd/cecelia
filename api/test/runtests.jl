@@ -253,6 +253,23 @@ end
         @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"nbcap", "description"=>repeat("x", 300)))[1] == 200
         @test length(find("nbcap.jl").description) == _NB_DESC_MAX
 
+        # prune: keep ONLY the current version's snapshot, drop the older ones; description is untouched.
+        # State here: several snapshots on disk, current pointer set by the revise above.
+        let cur = find("nb1.jl").version
+            @test cur > 1 && length(snaps()) > 1              # precondition: history to prune
+            @test _post(api_notebooks_describe, Dict("projectUid"=>uid,"file"=>"nb1.jl","description"=>"keep me"))[1] == 200
+            pr = JSON3.read(_post(api_notebooks_prune, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[2])
+            @test pr.ok == true && pr.kept == cur
+            @test [s.version for s in snaps()] == [cur]       # only the current version survives
+            @test find("nb1.jl").version == cur               # pointer unchanged
+            @test find("nb1.jl").description == "keep me"      # description NOT pruned
+            # idempotent: pruning again removes nothing (single snapshot = the current one)
+            @test JSON3.read(_post(api_notebooks_prune, Dict("projectUid"=>uid,"file"=>"nb1.jl"))[2]).removed |> length == 0
+        end
+        # prune with no current version (never snapshotted) aborts rather than wiping — 409, history intact
+        @test _post(api_notebooks_create, Dict("projectUid"=>uid, "name"=>"nbfresh"))[1] == 200
+        @test _post(api_notebooks_prune, Dict("projectUid"=>uid,"file"=>"nbfresh.jl"))[1] == 409
+
         # delete — pass force=true so this is deterministic regardless of whether a Pluto server is
         # running locally. The guard 409s on a live server without force (a dev machine with the
         # notebook server up would otherwise fail this + the two asserts below); force is what the
