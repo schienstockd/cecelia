@@ -48,8 +48,8 @@ const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
 // track properties (motility, per-track aggregates) are plain continuous values → linear by
 // default; flow intensities default to logicle (FlowJo). User can switch either per axis.
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
-// spatial/temporal centroid axes are raw coordinates → linear by default (never logicle).
-const axisDefaultTransform = (col: string): Kind => g.isSpatialAxis(col) ? 'linear' : defaultTransform
+// spatial/temporal + centroid axes are raw coordinates → linear by default (never logicle).
+const axisDefaultTransform = (col: string): Kind => g.isLinearAxis(col) ? 'linear' : defaultTransform
 // axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
 const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v } })
 const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v } })
