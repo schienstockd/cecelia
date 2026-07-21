@@ -30,22 +30,19 @@ function _summarise_measure(name, vals)
        median = r(median(f)), q25 = r(quantile(f, 0.25)), q75 = r(quantile(f, 0.75)))
 end
 
-# The pushdown columns + a raw→pretty rename map for a (value_name, granularity), read from the var list
-# only (col_names is metadata-only). We push RAW column names and rename channels OURSELVES from the
-# label view (`mean_intensity_i` → the channel name) so naming is CONSISTENT across pop_types — pop_df's
-# own rename varies by pop_type (some pops came back `THG`, others raw `mean_intensity_0`).
-function _measure_cols(img::CciaImage, vn::AbstractString, gran::Symbol)
+# The pushdown columns for a (value_name, granularity), read from the var list (col_names is
+# metadata-only). Intensity columns are requested BY CHANNEL NAME, so the central raw↔channel resolution
+# in `label_props`/`pop_df` returns them under a consistent channel name across pop_types — no local
+# rename map (that used to be hand-rolled here because pop_df's rename once varied by pop_type).
+function _measure_cols(img::CciaImage, vn::AbstractString, gran::Symbol)::Vector{String}
     if gran === :track
-        p = img_track_props_path(img, vn); isfile(p) || return (String[], Dict{String,String}())
-        cols = String[c for c in col_names(label_props(p); data_type = :vars) if startswith(c, "live.track.")]
-        (cols, Dict{String,String}())
+        p = img_track_props_path(img, vn); isfile(p) || return String[]
+        String[c for c in col_names(label_props(p); data_type = :vars) if startswith(c, "live.track.")]
     else
-        lp = label_props(img; value_name = vn); isfile(lp.path) || return (String[], Dict{String,String}())
-        vars = Set(col_names(lp; data_type = :vars))
-        raw = channel_columns(lp; as_channel_names = false)
-        named = try channel_columns(lp; as_channel_names = true) catch; raw end  # no channel names ⇒ keep raw
-        cols = unique(vcat(raw, String[m for m in _MEASURE_MORPHOLOGY if m in vars]))
-        (cols, Dict{String,String}(zip(raw, named)))
+        lp = label_props(img; value_name = vn); isfile(lp.path) || return String[]
+        vars  = Set(col_names(lp; data_type = :vars))
+        chans = try channel_columns(lp; as_channel_names = true) catch; channel_columns(lp) end
+        unique(vcat(chans, String[m for m in _MEASURE_MORPHOLOGY if m in vars]))
     end
 end
 
@@ -87,12 +84,13 @@ end
 # doesn't resolve on this image) degrades to nothing, never fails the whole call.
 function _target_summary(img::CciaImage, vn::AbstractString, tgt, cache)
     label, pop_type, path, gran, kind = tgt
-    cols, chmap = get!(() -> _measure_cols(img, vn, gran), cache, (vn, gran))
+    cols = get!(() -> _measure_cols(img, vn, gran), cache, (vn, gran))
     isempty(cols) && return nothing
-    # raw_channel_names=true → keep raw column names, then rename via chmap so channels read consistently
+    # pop_cols are channel names — the reader resolves them to raw and returns them under the channel
+    # name, so output naming is consistent across pop_types with no local rename (the point of the
+    # central raw↔channel resolution).
     df = try
-        pop_df(img, pop_type, [path]; value_name = vn, granularity = gran, pop_cols = cols,
-               raw_channel_names = true)
+        pop_df(img, pop_type, [path]; value_name = vn, granularity = gran, pop_cols = cols)
     catch
         return nothing
     end
@@ -100,7 +98,7 @@ function _target_summary(img::CciaImage, vn::AbstractString, tgt, cache)
     ms = Any[]
     for c in names(df)
         c in _MEASURE_META_COLS && continue
-        s = _summarise_measure(get(chmap, c, c), df[!, c]); s === nothing || push!(ms, s)
+        s = _summarise_measure(c, df[!, c]); s === nothing || push!(ms, s)
     end
     isempty(ms) && return nothing
     (; population = label, valueName = vn, kind = kind, n = nrow(df), measures = ms)
@@ -109,7 +107,7 @@ end
 # Per-image builder: measure summaries across the image's meaningful populations, capped.
 function _measures_image(img::CciaImage)
     gated = _gated_by_value_name(img)
-    cache = Dict{Tuple{String,Symbol},Tuple{Vector{String},Dict{String,String}}}()
+    cache = Dict{Tuple{String,Symbol},Vector{String}}()
     out = Any[]; truncated = false
     for vn in sort(img_value_names(img))
         for tgt in _vn_targets(img, vn, get(gated, vn, Population[]))
