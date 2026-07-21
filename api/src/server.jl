@@ -394,6 +394,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_notebooks_snapshot(body_bytes)
         elseif path == "/api/notebooks/restore"
             api_notebooks_restore(body_bytes)
+        elseif path == "/api/notebooks/prune"
+            api_notebooks_prune(body_bytes)
         elseif path == "/api/notebooks/shutdown"
             api_notebooks_shutdown(body_bytes)
         elseif path == "/api/notebooks/restart"

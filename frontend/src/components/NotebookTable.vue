@@ -102,6 +102,7 @@ const restoreVersion = ref<number | null>(null)   // the version chosen in the d
 async function loadSnapshots(file: string) {
   snapsLoading.value = true
   confirmingRestore.value = null
+  confirmingPrune.value = null
   try {
     const res = await fetch(`/api/notebooks/snapshots?projectUid=${encodeURIComponent(props.projectUid)}&file=${encodeURIComponent(file)}`)
     const d = await res.json()
@@ -128,6 +129,7 @@ const confirmingRestore = ref<string | null>(null)
 async function restore(nb: Notebook) {
   const version = restoreVersion.value
   if (version == null) return
+  confirmingPrune.value = null
   if (confirmingRestore.value !== nb.file) { confirmingRestore.value = nb.file; return }
   confirmingRestore.value = null
   busy.value = true
@@ -138,6 +140,28 @@ async function restore(nb: Notebook) {
     log.info(`Restored ${nb.file} to v${version}.`, { source: 'notebooks' })
   } catch (e) {
     log.error(`Restore failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'notebooks' })
+  } finally {
+    busy.value = false
+  }
+}
+
+// Prune: keep only the current version's snapshot, delete the older ones. Two-click confirm (destructive
+// of history). Prunes to nb.version (the live/current version), independent of the restore dropdown.
+// The description is a per-notebook field and is never touched by prune.
+const confirmingPrune = ref<string | null>(null)
+async function prune(nb: Notebook) {
+  confirmingRestore.value = null
+  if (confirmingPrune.value !== nb.file) { confirmingPrune.value = nb.file; return }
+  confirmingPrune.value = null
+  busy.value = true
+  try {
+    const d = await post('/api/notebooks/prune', { projectUid: props.projectUid, file: nb.file })
+    await refresh()
+    if (expandedFile.value === nb.file) await loadSnapshots(nb.file)
+    const n = d.removed?.length ?? 0
+    log.info(`Pruned ${nb.file} — kept v${d.kept}, removed ${n} older snapshot${n !== 1 ? 's' : ''}.`, { source: 'notebooks' })
+  } catch (e) {
+    log.error(`Prune failed: ${e instanceof Error ? e.message : String(e)}`, { source: 'notebooks' })
   } finally {
     busy.value = false
   }
@@ -284,6 +308,15 @@ defineExpose({ refresh })
                           : 'Overwrites the current notebook — snapshot first if you want to keep it'">
                   <i class="pi pi-replay" /> {{ confirmingRestore === nb.file ? 'Confirm restore' : 'Restore' }}
                 </button>
+                <span class="nbt-hist-sep" />
+                <button v-if="snapshots.length > 1" class="cc-btn"
+                        :class="confirmingPrune === nb.file ? 'cc-btn-primary' : 'cc-btn-ghost'"
+                        :disabled="busy" @click="prune(nb)"
+                        v-tooltip.top="confirmingPrune === nb.file
+                          ? `Click Confirm to delete every snapshot except the current (v${nb.version})`
+                          : `Keep only the current version (v${nb.version}) — delete older snapshots`">
+                  <i class="pi pi-filter" /> {{ confirmingPrune === nb.file ? 'Confirm prune' : 'Prune' }}
+                </button>
               </template>
             </div>
           </td>
@@ -317,6 +350,7 @@ defineExpose({ refresh })
 .nbt-history-row td { background: var(--cc-surface-2, rgba(255,255,255,0.03)); }
 .nbt-history { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; font-size: .85rem; }
 .nbt-hist-label { color: var(--cc-text-muted, #888); }
+.nbt-hist-sep { flex: 1 1 auto; }   /* push Prune to the far end, away from the Restore control */
 .nbt-snap { display: inline-flex; align-items: center; gap: .25rem; border: 1px solid var(--cc-border, #333); border-radius: 6px; padding: .1rem .1rem .1rem .5rem; }
 .nbt-snap-ver { font-variant-numeric: tabular-nums; }
 .nbt-snap .cc-btn { padding: .15rem .4rem; }
