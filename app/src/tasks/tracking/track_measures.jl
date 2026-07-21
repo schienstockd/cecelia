@@ -191,18 +191,17 @@ function _load_tracks_with_labels(props_path::String,
     ("track_id" in col_names(lp; data_type=:obs)) ||
         error("TrackMeasures: no track_id column — run btrack first")
 
-    spatial_cols  = centroid_columns(lp)   # skimage order z?, y, x
+    spatial_cols  = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only, x,y,z order
     temporal_cols = temporal_columns(lp)
     isempty(temporal_cols) &&
         error("TrackMeasures: no temporal column — tracking needs a timecourse")
     t_col = first(temporal_cols)
-    n_sp  = length(spatial_cols)
 
     select_cols(lp, vcat(spatial_cols, temporal_cols, ["track_id"]))
     df = as_df(lp; include_x=false, include_obs=true)
 
-    # pixel_res is (z,y,x) skimage order; nD spatial axes are the LAST n_sp entries
-    res = pixel_res[max(1, length(pixel_res) - n_sp + 1):end]
+    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
+    res = [physical_size_for_axis(pixel_res, axis_of(c)) for c in spatial_cols]
 
     _to_int(x) = x isa Integer ? Int(x) : Int(round(Float64(x)))
 
@@ -211,7 +210,7 @@ function _load_tracks_with_labels(props_path::String,
         tid = row.track_id
         (tid isa Number && !isnan(tid)) || continue          # untracked cells: NaN/missing
         t_phys = Float64(row[t_col]) * time_step
-        coords = [Float64(row[spatial_cols[k]]) * res[k] for k in 1:n_sp]
+        coords = [Float64(row[spatial_cols[k]]) * res[k] for k in eachindex(spatial_cols)]
         push!(get!(groups, Int(tid), []), (t_phys, coords, _to_int(row.label)))
     end
 

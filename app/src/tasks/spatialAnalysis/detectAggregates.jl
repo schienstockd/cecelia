@@ -53,14 +53,13 @@ function _run_task(::DetectAggregates, img::CciaImage, params::Dict{String,Any};
 
     props = img_label_props_path(img, value_name)
     lp    = label_props(props)
-    scols = centroid_columns(lp)                 # spatial (skimage z,y,x order)
+    scols = centroid_columns(lp; order=[:x, :y, :z])   # explicit axes, present only
     tcols = temporal_columns(lp)
     cdf   = label_props(props) |> view_centroid_cols |> filter_rows(labels) |> as_df
     nrow(cdf) == 0 && (on_log("[ERROR] detectAggregates: no centroids for the population"); return nothing)
 
-    (sizes, _) = img_physical_sizes(img)         # [sz, sy, sx]
-    scale = sizes[end - length(scols) + 1:end]
-    coords = hcat((Float64.(cdf[!, c]) .* scale[j] for (j, c) in enumerate(scols))...)
+    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
+    coords = hcat((Float64.(cdf[!, c]) .* physical_size_for_axis(img, axis_of(c)) for c in scols)...)
     on_progress(2, 3)
 
     # DBSCAN — per timepoint for live (offset ids so they stay unique across t), else once

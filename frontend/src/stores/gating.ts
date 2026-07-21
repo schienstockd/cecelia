@@ -105,6 +105,9 @@ export const useGatingStore = defineStore('gating', () => {
   const obsColumns = ref<string[]>([])          // per-cell obs measures (regions.*/clusters.*/hmm.*/is.aggregate/speed…) — filter-pop measures
   const channels  = ref<string[]>([])           // intensity columns, e.g. mean_intensity_0 (ordered)
   const channelNames = ref<string[]>([])         // display names aligned to `channels`
+  // spatial/temporal centroid axes (obsm) — gateable + visualisable scatter axes (centroid_x/_y/_z, centroid_t)
+  const spatialColumns  = ref<string[]>([])
+  const temporalColumns = ref<string[]>([])
   const valueNames = ref<string[]>([])
   // track gating only (popType==='track'): cell measures aggregatable into per-track properties,
   // and the aggregate suffixes — the client builds an axis `{measure}.{agg}` (server inverts it).
@@ -114,6 +117,10 @@ export const useGatingStore = defineStore('gating', () => {
   // per-population membership version — bumped when a pop's (or an ancestor's) gate changes.
   // Panels watch the version of their displayed pop to refresh points smoothly (no full reload).
   const popVersion = ref<Record<string, number>>({})
+
+  // spatial + temporal centroid axes, offered together as a "Spatial / Time" group in the axis pickers
+  const spatialAxes = computed(() => [...spatialColumns.value, ...temporalColumns.value])
+  const isSpatialAxis = (col: string) => spatialAxes.value.includes(col)
 
   const flat = computed(() => flatten(tree.value))
   // transient pops (e.g. the napari cell selection) — auto-highlighted on the plots
@@ -198,9 +205,11 @@ export const useGatingStore = defineStore('gating', () => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const d = await res.json() as { columns: string[]; channels?: string[]; channelNames?: string[]
         valueNames: string[]; valueName?: string; cellMeasures?: string[]; trackAggregates?: string[]
-        obsColumns?: string[] }
+        obsColumns?: string[]; spatialColumns?: string[]; temporalColumns?: string[] }
       columns.value = d.columns ?? []
       obsColumns.value = d.obsColumns ?? []
+      spatialColumns.value = d.spatialColumns ?? []
+      temporalColumns.value = d.temporalColumns ?? []
       // track gating returns no intensity channels — `columns` are the (motility) track axes; flow
       // returns intensity channels + display names. cellMeasures/trackAggregates are track-only.
       channels.value = d.channels ?? []
@@ -323,6 +332,7 @@ export const useGatingStore = defineStore('gating', () => {
 
   return {
     imageUid, valueName, popType, mirrorUids, tree, columns, obsColumns, channels, channelNames, valueNames,
+    spatialColumns, temporalColumns, spatialAxes, isSpatialAxis,
     cellMeasures, trackAggregates, stats, popVersion, flat,
     transientPaths, napariZMode, napariZWindow,
     projectUid, napariSetUid, colLabel, selectImage, fetchChannels, fetchPopmap, fetchStats,

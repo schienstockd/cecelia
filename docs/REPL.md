@@ -309,7 +309,9 @@ Add the per-channel intensity columns to the selection.
 
 ### `view_centroid_cols`
 
-Add centroid columns (optionally ordered, e.g. order=["x","y","z"]).
+Add the centroid columns to the selection — the explicit spatial axes (`centroid_x`/`_y`/`_z`,
+present only) plus the temporal `centroid_t`. `order` selects the spatial axes BY AXIS
+(`order=[:x,:y,:z]`), never positionally.
 
 ### `filter_rows`
 
@@ -333,8 +335,10 @@ Per-channel intensity var names (e.g. `mean_intensity_0`). Renamed to channel na
 
 ### `centroid_columns`
 
-Spatial centroid column names from `uns/spatial_cols` (skimage order: z?, y, x),
-optionally restricted to `order` length. Mirrors the Python `LabelPropsView.centroid_columns`.
+Spatial centroid column names (`centroid_x`/`_y`/`_z`, present axes only, verbatim from
+`uns/spatial_cols`). `order` selects BY AXIS — `order=[:x,:y,:z]` returns the present axes in that
+order (z dropped for 2D), never a positional slice. Mirrors the old R `LabelPropsView.centroid_columns`.
+Errors on a pre-migration `centroid-N` file.
 
 ### `col_names`
 

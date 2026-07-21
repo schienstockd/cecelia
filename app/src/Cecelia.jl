@@ -20,7 +20,7 @@ export save!
 export load_project, init_object
 export create_project!, add_image!, add_set!, images, image_by_uid, sets
 export delete_image!, delete_set!
-export img_filepath, img_zero_dir, img_physical_sizes, image_included
+export img_filepath, img_zero_dir, img_physical_sizes, physical_size_for_axis, image_included
 export img_label_props_dir, img_label_props_path, img_track_props_path, img_value_names, img_has_value_name
 export read_module_fun_params, write_module_fun_params!
 export TRACK_PROPS_SUFFIX, is_reserved_value_name
@@ -43,7 +43,7 @@ export with_transaction
 export LabelProps, label_props, as_df, as_matrix, add_obs, drop_obs, write_categorical_obs, n_obs
 export select_cols, view_cols, view_channel_cols, view_centroid_cols, view_label_col
 export filter_rows, sort_by, rename_channels!
-export col_names, channel_columns, centroid_columns, temporal_columns
+export col_names, channel_columns, centroid_columns, temporal_columns, axis_of
 export obsm, obsm_keys
 
 # ── Gating engine: transforms, gates, density ─────────────────────────────────

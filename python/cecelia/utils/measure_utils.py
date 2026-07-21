@@ -24,6 +24,8 @@ import skimage.measure as skmeas
 import skimage.filters as skfilt
 import anndata as ad
 
+from cecelia.utils.label_props_utils import skimage_centroid_axis_names
+
 try:
     import trimesh as _trimesh
     _HAS_TRIMESH = True
@@ -355,15 +357,19 @@ class MeasureUtils:
     # ── AnnData output ────────────────────────────────────────────────────────
 
     def _to_anndata(self, df: pd.DataFrame, is_3d: bool, n_t: int) -> str:
-        spatial_cols   = [c for c in df.columns if c.startswith('centroid-')]
-        temporal_cols  = ['t'] if 't' in df.columns else []
+        # skimage names its centroid columns positionally (`centroid-0..N`, z,y,x order) — rename to
+        # explicit axis names on the way into obsm so `centroid-N` never lands on disk (the readers
+        # reject it; see docs/todo/CENTROID_AXES_PLAN.md). Sort by index to fix z,y,x order.
+        spatial_src   = sorted((c for c in df.columns if c.startswith('centroid-')),
+                               key=lambda c: int(c.split('-')[1]))
+        temporal_src  = ['t'] if 't' in df.columns else []
 
         # separate spatial/temporal into obsm; keep everything else in X
-        obsm_spatial  = df[spatial_cols].values.astype(np.float32) if spatial_cols  else None
-        obsm_temporal = df[temporal_cols].values.astype(np.float32) if temporal_cols else None
+        obsm_spatial  = df[spatial_src].values.astype(np.float32) if spatial_src  else None
+        obsm_temporal = df[temporal_src].values.astype(np.float32) if temporal_src else None
 
         feature_cols = [c for c in df.columns
-                        if c not in spatial_cols and c not in temporal_cols]
+                        if c not in spatial_src and c not in temporal_src]
         X = df[feature_cols].values.astype(np.float32)
 
         adata = ad.AnnData(
@@ -373,10 +379,10 @@ class MeasureUtils:
         )
         if obsm_spatial is not None:
             adata.obsm['spatial']  = obsm_spatial
-            adata.uns['spatial_cols'] = spatial_cols
+            adata.uns['spatial_cols'] = skimage_centroid_axis_names(len(spatial_src))  # centroid_z/_y/_x
         if obsm_temporal is not None:
             adata.obsm['temporal'] = obsm_temporal
-            adata.uns['temporal_cols'] = temporal_cols
+            adata.uns['temporal_cols'] = ['centroid_t']
         adata.uns['intensity_measure'] = self.intensity_measure
 
         out_dir = os.path.join(self.task_dir, 'labelProps')

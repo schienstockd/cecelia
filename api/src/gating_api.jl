@@ -337,7 +337,10 @@ function api_gating_channels(req::HTTP.Request)
         channelNameVersions = versions,
         obsColumns = col_names(lp; data_type = :obs),   # per-cell obs measures (live.cell.*, hmm.state, …) for labelPropsColsSelection
         trackColourColumns = trackColourColumns,         # track-level clusters.* — colour-by broadcasts to cells
-        temporalColumns = temporal_columns(lp),          # obsm temporal col(s) (e.g. "t") — groupable for the per-timepoint QC view
+        # spatial/temporal centroid axes (obsm) — offered as gating scatter axes you can visualise AND
+        # gate on (like the old R flow frame). Read/gate-eval already materialise them via as_df.
+        spatialColumns = centroid_columns(lp; order = [:x, :y, :z]),   # centroid_x/_y[/_z], present axes
+        temporalColumns = temporal_columns(lp),          # ["centroid_t"] — groupable + a gateable time axis
         clusterSuffixes = _cluster_suffixes(col_names(lp; data_type = :obs)),   # clust runs in the cell table
         clusterFeatures = _clust_features(img_label_props_path(img, vn)),
         clusterMembers  = _clust_members(img_label_props_path(img, vn)),        # uIDs clustered together (partOf)

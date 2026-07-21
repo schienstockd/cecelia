@@ -104,7 +104,7 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
     (behaviour regions). Falls back to a single pooled graph if no temporal column is present."""
     import anndata as ad
     import pandas as pd
-    from cecelia.utils.label_props_utils import LabelPropsView
+    from cecelia.utils.label_props_utils import LabelPropsView, axis_of, physical_size_for_axis
 
     phys = np.asarray(phys_uid, dtype=float)
     coords_list, code_list, obs_list, time_list = [], [], [], []
@@ -115,7 +115,9 @@ def build_pooled_image_graph(segs, phys_uid, method="delaunay", radius=30.0, n_n
             continue
         code_map = {int(l): int(c) for l, c in zip(seg["labels"], seg["popCodes"])}
         codes = np.array([code_map[int(l)] for l in d["label"]], dtype=np.int64)
-        coords = d[ccols].to_numpy(dtype=np.float64) * phys[-len(ccols):].reshape(1, -1)
+        # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
+        scale = np.array([physical_size_for_axis(phys, axis_of(c)) for c in ccols])
+        coords = d[ccols].to_numpy(dtype=np.float64) * scale.reshape(1, -1)
         coords_list.append(coords)
         code_list.append(codes)
         obs_list.append(pd.DataFrame({"valueName": seg["valueName"], "label": d["label"].to_numpy()}))

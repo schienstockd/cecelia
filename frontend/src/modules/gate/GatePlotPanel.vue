@@ -48,11 +48,13 @@ const TRANSFORMS: Kind[] = ['linear', 'log', 'asinh', 'logicle']
 // track properties (motility, per-track aggregates) are plain continuous values → linear by
 // default; flow intensities default to logicle (FlowJo). User can switch either per axis.
 const defaultTransform: Kind = g.popType === 'track' ? 'linear' : 'logicle'
+// spatial/temporal centroid axes are raw coordinates → linear by default (never logicle).
+const axisDefaultTransform = (col: string): Kind => g.isSpatialAxis(col) ? 'linear' : defaultTransform
 // axis config reads/writes the persisted `ui` bag (owned by GatingPlots) so it survives remount.
 const xChan = computed({ get: () => props.ui.x ?? '', set: v => { props.ui.x = v } })
 const yChan = computed({ get: () => props.ui.y ?? '', set: v => { props.ui.y = v } })
-const xt = computed<Kind>({ get: () => props.ui.xt ?? defaultTransform, set: v => { props.ui.xt = v } })
-const yt = computed<Kind>({ get: () => props.ui.yt ?? defaultTransform, set: v => { props.ui.yt = v } })
+const xt = computed<Kind>({ get: () => props.ui.xt ?? axisDefaultTransform(xChan.value), set: v => { props.ui.xt = v } })
+const yt = computed<Kind>({ get: () => props.ui.yt ?? axisDefaultTransform(yChan.value), set: v => { props.ui.yt = v } })
 const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'points', set: v => { props.ui.renderMode = v } })
 // displayed population is owned by GatingPlots (per-panel) so the manager can highlight it
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
@@ -278,8 +280,10 @@ function buildCsv(): string {
 function ensureChannels() {
   const cols = g.columns
   if (!cols.length) return
-  if (!cols.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
-  if (!cols.includes(yChan.value)) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
+  // spatial/temporal axes are valid selections too — don't reset a persisted centroid_x/… axis
+  const valid = [...cols, ...g.spatialAxes]
+  if (!valid.includes(xChan.value)) xChan.value = g.channels[(props.index * 2) % Math.max(1, g.channels.length)] ?? cols[0]
+  if (!valid.includes(yChan.value)) yChan.value = g.channels[(props.index * 2 + 1) % Math.max(1, g.channels.length)] ?? cols[Math.min(1, cols.length - 1)]
 }
 // store readiness (channels/image/segmentation): pick default axes then load. `immediate` so the
 // first appearance fetches whether the store became ready BEFORE this panel mounted (values already
@@ -333,13 +337,23 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl">
         <label class="ax-row"><span class="ax-lbl">X</span>
-          <select class="ax-chan" v-model="xChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
+          <select class="ax-chan" v-model="xChan">
+            <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
+              <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            </optgroup>
+          </select>
           <select class="tsel" :class="{ 'tsel-amber': xCoerced }" v-model="xtSel" v-tooltip.bottom="'Axis transform'">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="xCoerced" class="pi pi-exclamation-triangle ax-warn"
              v-tooltip.bottom="`${g.colLabel(xChan)}’s range is too small for ${xt} — shown linear`" /></label>
         <label class="ax-row"><span class="ax-lbl">Y</span>
-          <select class="ax-chan" v-model="yChan"><option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option></select>
+          <select class="ax-chan" v-model="yChan">
+            <option v-for="c in g.columns" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            <optgroup v-if="g.spatialAxes.length" label="Spatial / Time">
+              <option v-for="c in g.spatialAxes" :key="c" :value="c">{{ g.colLabel(c) }}</option>
+            </optgroup>
+          </select>
           <select class="tsel" :class="{ 'tsel-amber': yCoerced }" v-model="ytSel" v-tooltip.bottom="'Axis transform'">
             <option v-for="t in TRANSFORMS" :key="t" :value="t">{{ t }}</option></select>
           <i v-if="yCoerced" class="pi pi-exclamation-triangle ax-warn"

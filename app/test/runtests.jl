@@ -2419,8 +2419,11 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test length(col_names(label_props(h5); data_type=:vars)) == 27
             @test channel_columns(label_props(h5)) ==
                   ["mean_intensity_0", "mean_intensity_1", "mean_intensity_2", "mean_intensity_3"]
-            @test centroid_columns(label_props(h5)) == ["centroid-0", "centroid-1", "centroid-2"]
-            @test temporal_columns(label_props(h5)) == ["t"]
+            @test centroid_columns(label_props(h5)) == ["centroid_z", "centroid_y", "centroid_x"]
+            @test temporal_columns(label_props(h5)) == ["centroid_t"]
+            # order= selects BY AXIS (present only), never positionally
+            @test centroid_columns(label_props(h5); order=[:x, :y, :z]) == ["centroid_x", "centroid_y", "centroid_z"]
+            @test centroid_columns(label_props(h5); order=[:x, :y]) == ["centroid_x", "centroid_y"]
 
             # full frame: label + 27 vars + 3 spatial + 1 temporal + 8 obs (track lineage +
             # live.cell.* from tracking.track_measures) = 40 cols, 1377 rows
@@ -2453,7 +2456,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
 
             # centroid + intensity selection
             @test Set(names(label_props(h5) |> select_cols(["mean_intensity_0"]) |> view_centroid_cols |> as_df)) ==
-                  Set(["label", "mean_intensity_0", "centroid-0", "centroid-1", "centroid-2", "t"])
+                  Set(["label", "mean_intensity_0", "centroid_z", "centroid_y", "centroid_x", "centroid_t"])
 
             # row filter by label
             d4 = label_props(h5) |> filter_rows([0, 1, 2]; by=:label) |> as_df
@@ -2571,7 +2574,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 "n_obs":          int(len(v.labels())),
                 "labels5":        [int(x) for x in df["label"].to_numpy()[:5]],
                 "mean_int0_5":    [float(x) for x in df["mean_intensity_0"].to_numpy()[:5]],
-                "centroid0_5":    [float(x) for x in cv["centroid-0"].to_numpy()[:5]],
+                "centroid0_5":    [float(x) for x in cv["centroid_z"].to_numpy()[:5]],
             }))
             """
             # python/ on PYTHONPATH so `import cecelia.utils...` resolves (matches run_py's PYTHONPATH).
@@ -2591,7 +2594,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test dj.label[1:5] == collect(Int, py.labels5)
             @test dj[1:5, "mean_intensity_0"] ≈ Float64.(py.mean_int0_5)
             cj = label_props(h5) |> view_centroid_cols |> sort_by("label") |> as_df
-            @test cj[1:5, "centroid-0"] ≈ Float64.(py.centroid0_5)
+            @test cj[1:5, "centroid_z"] ≈ Float64.(py.centroid0_5)
         end
     end
 
@@ -3766,14 +3769,14 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
             @test whole["series"][1]["value"] == Float64(nrow(all))
 
             # count per timepoint (group_by the temporal column) → counts partition the total.
-            byT = plot_summary_data(img, "labels", String[], "count"; value_name="B", group_by="t")
-            @test byT["groupBy"] == "t"
+            byT = plot_summary_data(img, "labels", String[], "count"; value_name="B", group_by="centroid_t")
+            @test byT["groupBy"] == "centroid_t"
             @test length(byT["series"]) > 1
             @test sum(s["value"] for s in byT["series"]) == Float64(nrow(all))
 
             # a morphology distribution over labels, per timepoint
             area = plot_summary_data(img, "labels", String[], "boxplot"; value_name="B",
-                                     measure="area", group_by="t")
+                                     measure="area", group_by="centroid_t")
             @test area["measure"] == "area"
             @test length(area["series"]) == length(byT["series"])
 

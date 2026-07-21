@@ -82,11 +82,13 @@ function clearChannels() { channels.value = [] }
 // returns a new array each time → would loop). Flow → intensity channels; track → gateable columns.
 function syncChannels() {
   const defaults = g.channels.length ? g.channels : g.columns
-  const next = reconcileChannels(channels.value, g.columns, defaults)
+  // spatial/temporal centroid axes are selectable too (kept out of the defaults — opt-in per user)
+  const valid = [...g.columns, ...g.spatialAxes]
+  const next = reconcileChannels(channels.value, valid, defaults)
   const changed = next.length !== channels.value.length || next.some((c, i) => c !== channels.value[i])
   if (changed) channels.value = next
 }
-watch([() => g.columns, () => g.imageUid, () => g.valueName], syncChannels, { immediate: true })
+watch([() => g.columns, () => g.spatialAxes, () => g.imageUid, () => g.valueName], syncChannels, { immediate: true })
 
 // ── heavy-matrix warning ────────────────────────────────────────────────────────────────────────
 // N×N grows fast, and every off-diagonal pair fetches the population's cells. Warn (before loading)
@@ -143,7 +145,7 @@ function exportAs(kind: string) {
                 <button class="chan-clear" :disabled="!channels.length" @click="clearChannels">clear</button>
               </div>
               <div class="chan-list">
-                <label v-for="c in g.columns" :key="c" class="chan-item"
+                <label v-for="c in [...g.columns, ...g.spatialAxes]" :key="c" class="chan-item"
                        :class="{ disabled: !channels.includes(c) && atCap }">
                   <input type="checkbox" :checked="channels.includes(c)"
                          :disabled="!channels.includes(c) && atCap" @change="toggleChannel(c)" />
