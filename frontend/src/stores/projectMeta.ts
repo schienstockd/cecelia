@@ -41,6 +41,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
 
   async function createProject(name: string, type: ProjectType): Promise<boolean> {
     loading.value = true
+    let newUid = ''
     try {
       const res = await fetch('/api/projects/create', {
         method: 'POST',
@@ -49,16 +50,19 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       })
       const body = await res.json().catch(() => ({})) as { project?: ProjectRecord; error?: string }
       if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
-      current.value = body.project!
-      await fetchRecent()
+      newUid = body.project!.uid
       log.info(`Created project "${name}".`, { source: 'project' })
-      return true
     } catch (e) {
       log.error(`Failed to create project: ${e instanceof Error ? e.message : String(e)}`, { source: 'project' })
       return false
     } finally {
       loading.value = false
     }
+    // Switch to it through the canonical open path so ALL per-project state resets (sets/images, and
+    // the analysis boards / module canvases / animations). Previously createProject only set `current`
+    // and never loaded the new project's sets, so the image table kept showing the PREVIOUS project's
+    // images (and its boards/animations) until a browser reload.
+    return openProject(newUid)
   }
 
   async function openProject(uid: string): Promise<boolean> {
