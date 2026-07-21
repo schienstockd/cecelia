@@ -21,8 +21,17 @@ Each measured label set produces one AnnData file:
 | `X` | Float32 feature matrix (cells × features). Contains all morphology and intensity columns. |
 | `obsm["spatial"]` | Float32 `(n_cells, n_spatial_dims)` — centroid coordinates in array order (Z, Y, X for 3D; Y, X for 2D). |
 | `obsm["temporal"]` | Float32 `(n_cells, 1)` — timepoint index (0-based). Present only for timecourse images. |
-| `uns["spatial_cols"]` | List of feature names that appear in `obsm["spatial"]` (e.g. `["centroid-0","centroid-1","centroid-2"]`). |
-| `uns["temporal_cols"]` | List of feature names that appear in `obsm["temporal"]` (always `["t"]`). |
+| `uns["spatial_cols"]` | Explicit axis names for `obsm["spatial"]` columns — `["centroid_z","centroid_y","centroid_x"]` (3D) or `["centroid_y","centroid_x"]` (2D). NOT skimage's positional `centroid-N` (see below). |
+| `uns["temporal_cols"]` | Name for `obsm["temporal"]` (always `["centroid_t"]`). |
+
+> **Centroid axis names are explicit and read by name, never by position.** Columns are
+> `centroid_x`/`centroid_y`/`centroid_z` (present axes only) + `centroid_t` — matching the old R
+> convention. Consumers select the axis they want via `centroid_columns(lp; order=[:x,:y,:z])` and map
+> physical resolution per axis (`physical_size_for_axis(img, axis_of(col))`); the positional
+> `centroid-N` names skimage produces are renamed at measurement time and are **rejected on read**
+> (the reader errors — run the converter, see `docs/todo/CENTROID_AXES_PLAN.md`). This avoids the
+> silent 2D mis-scaling that trailing-position alignment invites (celltrackR wants x,y,z; skimage
+> stores z,y,x).
 | `uns["intensity_measure"]` | `"mean"` or `"median"` — which statistic was used for channel intensities. |
 
 ### Companion per-track table — `{value_name}__tracks.h5ad`
@@ -81,7 +90,7 @@ The Leiden clustering tasks write their result back through the `LabelProps` wri
 | `aspect_ratio` | minor / major axis |
 | `perimeter_to_area` | Compactness proxy |
 | `oblate` | Circularity: 4π·area / perimeter² |
-| `centroid-0`, `centroid-1` | Y, X centroids |
+| `centroid_y`, `centroid_x` | Y, X centroids (lifted to `obsm["spatial"]`, not in `X`) |
 | `bbox-0` … `bbox-3` | Bounding box rows/columns |
 
 **Morphology (3D basic)**
@@ -95,7 +104,7 @@ The Leiden clustering tasks write their result back through the `LabelProps` wri
 | `euler_number` | Topological Euler number |
 | `feret_diameter_max` | Maximum Feret diameter |
 | `major_axis_length`, `interm_axis_length`, `minor_axis_length` | Derived from inertia tensor eigenvalues |
-| `centroid-0` … `centroid-2` | Z, Y, X centroids |
+| `centroid_z`, `centroid_y`, `centroid_x` | Z, Y, X centroids (lifted to `obsm["spatial"]`, not in `X`) |
 | `bbox-0` … `bbox-5` | Bounding box |
 
 **Morphology (3D extended, `extendedMeasures=true`)**
@@ -207,7 +216,7 @@ a human (it is not a *dispatch* ambiguity — `Bool` and `LabelProps` are disjoi
 one); use the lambda form: `… |> v -> rename_channels!(v, !raw_channel_names)`.
 
 Output is a `DataFrame` with a `label` column (obs `_index`, parsed to `Int`), plus the selected
-var columns, centroid columns (`centroid-0..2`, `t`), and obs columns. The reader dispatches on
+var columns, centroid columns (`centroid_x`/`_y`/`_z`, `centroid_t`), and obs columns. The reader dispatches on
 the AnnData `encoding-type` attribute: dense `array` + `string`/`string-array` (+ `categorical`
 for obs) are handled; sparse (`csr/csc`) raises rather than misreads.
 

@@ -394,27 +394,27 @@ class NapariState:
 
     def _centroid_matrix(self, value_name: str):
         """Return (labels, C, axes): per-cell centroid coordinates as an (n, n_display_dim)
-        array in display-axis order, read once from the H5AD and cached. Maps the H5AD's
-        `centroid-i` (skimage z,y,x order) + temporal `t` onto the image's display axes."""
+        array in display-axis order, read once from the H5AD and cached. Maps the H5AD's explicit
+        `centroid_{x,y,z}` + `centroid_t` columns onto the image's display axes BY NAME."""
         if value_name in self._centroid_cache:
             return self._centroid_cache[value_name]
         from cecelia.utils.label_props_utils import LabelPropsView
         path = os.path.join(self._task_dir, "labelProps", f"{value_name}.h5ad")
         view = LabelPropsView(path)
-        centroid_cols = view.centroid_columns()
-        temporal_cols = view.temporal_columns()
+        centroid_cols = view.centroid_columns()       # explicit centroid_x/_y/_z (present axes)
+        temporal_cols = view.temporal_columns()        # ['centroid_t'] or []
         df = view.only_centroid_cols().as_df()
         view.close()
 
         labels = df["label"].to_numpy().astype(int)
         display_axes = self._display_axes()
-        spatial_axes = [a for a in display_axes if a in ("z", "y", "x")]   # z,y,x order
-        temporal_axes = [a for a in display_axes if a == "t"]
+        # map each display axis to its centroid column BY NAME (never positionally) — 2D-safe
         axis_to_col = {}
-        for ax, col in zip(spatial_axes, centroid_cols):
-            axis_to_col[ax] = col
-        for ax, col in zip(temporal_axes, temporal_cols):
-            axis_to_col[ax] = col
+        for ax in display_axes:
+            if ax in ("z", "y", "x") and f"centroid_{ax}" in centroid_cols:
+                axis_to_col[ax] = f"centroid_{ax}"
+            elif ax == "t" and temporal_cols:
+                axis_to_col[ax] = temporal_cols[0]
         axes = [a for a in display_axes if a in axis_to_col]
         C = (df[[axis_to_col[a] for a in axes]].to_numpy(dtype=float)
              if axes else np.empty((len(df), 0)))

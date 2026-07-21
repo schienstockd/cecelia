@@ -105,6 +105,8 @@ def migrate_h5ad(src: str, dst: str) -> dict:
     import pandas as pd
     import anndata as ad
 
+    from cecelia.utils.centroid_migrate import normalise_centroids
+
     a = ad.read_h5ad(src)
     summary: dict = {"n_obs": int(a.n_obs)}
 
@@ -116,24 +118,10 @@ def migrate_h5ad(src: str, dst: str) -> dict:
     else:
         summary["index_set_from_label"] = False
 
-    # 2. centroids -> obsm, only if not already there
-    if "spatial" not in a.obsm:
-        var_names = list(map(str, a.var_names))
-        spatial_src = [c for c in ("centroid_z", "centroid_y", "centroid_x") if c in var_names]
-        temporal_src = [c for c in ("centroid_t", "t") if c in var_names]
-        if spatial_src:
-            X = a.to_df()
-            a.obsm["spatial"] = X[spatial_src].to_numpy(dtype=np.float32)
-            a.uns["spatial_cols"] = np.array([f"centroid-{i}" for i in range(len(spatial_src))], dtype=object)
-            if temporal_src:
-                a.obsm["temporal"] = X[temporal_src[:1]].to_numpy(dtype=np.float32)
-                a.uns["temporal_cols"] = np.array(["t"], dtype=object)
-            a = a[:, [c for c in var_names if c not in spatial_src + temporal_src]].copy()
-            summary["centroids_lifted"] = spatial_src + temporal_src
-        else:
-            summary["centroids_lifted"] = None
-    else:
-        summary["centroids_lifted"] = "already_obsm"
+    # 2. centroids -> explicit-obsm (lift flat R var columns, relabel any legacy names). ONE home for
+    #    the conversion, shared with the standalone converter (see centroid_migrate.normalise_centroids).
+    a, cent_changes = normalise_centroids(a)
+    summary["centroids_lifted"] = cent_changes or None
 
     # 3/4. drop excluded (HMM / clustering) obs columns; keep track_id + measures
     dropped = [c for c in a.obs.columns if _is_excluded(str(c))]

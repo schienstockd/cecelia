@@ -49,17 +49,17 @@ class TestMigrateH5ad(unittest.TestCase):
             self.assertEqual(list(out.obs_names), ["1", "2", "3"])      # index = label
             self.assertNotIn("label", out.obs.columns)
             self.assertIn("spatial", out.obsm)                          # centroids lifted
-            self.assertEqual(list(out.uns["spatial_cols"]), ["centroid-0", "centroid-1", "centroid-2"])
+            self.assertEqual(list(out.uns["spatial_cols"]), ["centroid_z", "centroid_y", "centroid_x"])
             self.assertIn("temporal", out.obsm)
-            self.assertEqual(list(out.uns["temporal_cols"]), ["t"])
+            self.assertEqual(list(out.uns["temporal_cols"]), ["centroid_t"])
             self.assertNotIn("centroid_z", list(out.var_names))         # removed from matrix
             self.assertIn("track_id", out.obs.columns)                  # tracking kept
             self.assertIn("live.cell.speed", out.obs.columns)
             self.assertNotIn("live.cell.hmm.state.movement", out.obs.columns)   # hmm dropped
             self.assertNotIn("live.cell.track.clusters.x", out.obs.columns)     # clust dropped
 
-    def test_already_obsm_left_untouched(self):
-        # legacy "newer" file: already has obsm spatial/temporal; migrate must NOT re-lift.
+    def test_legacy_obsm_names_relabelled(self):
+        # legacy "newer" file: already obsm, but skimage positional labels — matrix stays, uns relabels.
         with tempfile.TemporaryDirectory() as tmp:
             a = ad.AnnData(
                 X=np.array([[1.0], [2.0]], dtype=np.float32),
@@ -72,9 +72,11 @@ class TestMigrateH5ad(unittest.TestCase):
             summary = migrate_h5ad(_write(tmp, a), dst)
             out = ad.read_h5ad(dst)
 
-            self.assertEqual(summary["centroids_lifted"], "already_obsm")
             self.assertEqual(list(out.obs_names), ["7", "9"])           # index = label
-            self.assertEqual(out.obsm["spatial"].shape, (2, 3))         # untouched
+            self.assertEqual(out.obsm["spatial"].shape, (2, 3))         # matrix untouched
+            self.assertEqual(list(out.uns["spatial_cols"]),
+                             ["centroid_z", "centroid_y", "centroid_x"])   # relabelled to explicit
+            self.assertTrue(summary["centroids_lifted"])                # recorded the relabel
 
 
 if __name__ == "__main__":

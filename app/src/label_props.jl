@@ -90,7 +90,9 @@ const view_cols = select_cols
 """Add the per-channel intensity columns to the selection."""
 view_channel_cols(lp::LabelProps) = _add_cols!(lp, channel_columns(lp))
 
-"""Add centroid columns (optionally ordered, e.g. order=["x","y","z"])."""
+"""Add the centroid columns to the selection — the explicit spatial axes (`centroid_x`/`_y`/`_z`,
+present only) plus the temporal `centroid_t`. `order` selects the spatial axes BY AXIS
+(`order=[:x,:y,:z]`), never positionally."""
 view_centroid_cols(lp::LabelProps; order=nothing) =
     _add_cols!(lp, vcat(centroid_columns(lp; order=order), temporal_columns(lp)))
 
@@ -230,24 +232,50 @@ function _channel_label(varname::String, chans::Vector{String})
     isnothing(m[:prefix]) ? chans[idx + 1] : "$(m[:prefix])_$(chans[idx + 1])"
 end
 
-"""Spatial centroid column names from `uns/spatial_cols` (skimage order: z?, y, x),
-optionally restricted to `order` length. Mirrors the Python `LabelPropsView.centroid_columns`."""
-function centroid_columns(lp::LabelProps; order=nothing)::Vector{String}
-    _with_h5(lp.path, "r") do fid
-        cols = haskey(fid, "uns/spatial_cols") ? _as_strings(read(fid["uns/spatial_cols"])) : String[]
-        if !isnothing(order)
-            want = ["centroid-$(i)" for i in 0:(length(order)-1)]   # array-order names
-            cols = filter(c -> c in cols, want)
-        end
-        return cols
+# Centroids are stored in obsm and labelled explicitly: `centroid_x`/`centroid_y`/`centroid_z` (present
+# axes only) in `uns/spatial_cols`, and `centroid_t` in `uns/temporal_cols`. Names are written explicitly
+# at measurement time and by the migration (docs/todo/CENTROID_AXES_PLAN.md); the reader takes them
+# verbatim — there is NO positional `centroid-N` fallback (run the migration on pre-existing data).
+# Every consumer selects by axis name, never by position (the celltrackR x,y,z-vs-skimage z,y,x mismatch
+# makes positional reads a silent 2D bug). `axis_of` is the one place that parses an axis from a name.
+axis_of(col::AbstractString)::Symbol = Symbol(match(r"^centroid_([xyzt])$", col)[1])
+
+_read_uns_strings(fid, key) = haskey(fid, key) ? _as_strings(read(fid[key])) : String[]
+
+# `centroid-N` (skimage's positional names) and a bare `t` are NOT acceptable anywhere — measurement
+# and the migration write explicit axis names. Fail loudly the moment a stale/un-migrated file is read,
+# rather than silently mis-mapping axes (docs/todo/CENTROID_AXES_PLAN.md).
+function _check_centroid_names(names::Vector{String}, kind::Symbol)::Vector{String}
+    pat = kind === :spatial ? r"^centroid_[xyz]$" : r"^centroid_t$"
+    for n in names
+        occursin(pat, n) || error(
+            "LabelProps: non-explicit $kind centroid name '$n' — expected " *
+            (kind === :spatial ? "centroid_x/_y/_z" : "centroid_t") *
+            ". This file predates the centroid-axis rename; run the migration " *
+            "(docs/todo/CENTROID_AXES_PLAN.md).")
     end
+    names
+end
+_spatial_uns(fid)  = _check_centroid_names(_read_uns_strings(fid, "uns/spatial_cols"), :spatial)
+_temporal_uns(fid) = _check_centroid_names(_read_uns_strings(fid, "uns/temporal_cols"), :temporal)
+
+"""Spatial centroid column names (`centroid_x`/`_y`/`_z`, present axes only, verbatim from
+`uns/spatial_cols`). `order` selects BY AXIS — `order=[:x,:y,:z]` returns the present axes in that
+order (z dropped for 2D), never a positional slice. Mirrors the old R `LabelPropsView.centroid_columns`.
+Errors on a pre-migration `centroid-N` file."""
+function centroid_columns(lp::LabelProps; order=nothing)::Vector{String}
+    cols = _with_h5(lp.path, "r") do fid
+        _spatial_uns(fid)
+    end
+    isnothing(order) && return cols
+    want = ["centroid_$(lowercase(string(a)))" for a in order]
+    filter(in(cols), want)
 end
 
-"""Temporal column names from `uns/temporal_cols` (e.g. `["t"]`; empty for non-timecourse).
-Mirrors the Python `LabelPropsView.temporal_columns`."""
+"""Temporal column name (`["centroid_t"]`; empty for non-timecourse) — verbatim from `uns/temporal_cols`."""
 function temporal_columns(lp::LabelProps)::Vector{String}
     _with_h5(lp.path, "r") do fid
-        haskey(fid, "uns/temporal_cols") ? _as_strings(read(fid["uns/temporal_cols"])) : String[]
+        _temporal_uns(fid)
     end
 end
 
@@ -268,18 +296,19 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         n_var = length(var_names)
         var_idx = Dict(v => i for (i, v) in enumerate(var_names))
 
-        # centroid name → (group, position)
-        cent_map = Dict{String,Tuple{String,Int}}()
-        if haskey(fid, "uns/spatial_cols")
-            for (i, c) in enumerate(_as_strings(read(fid["uns/spatial_cols"])))
-                cent_map[c] = ("spatial", i)
-            end
-        end
-        if haskey(fid, "uns/temporal_cols")
-            for (i, c) in enumerate(_as_strings(read(fid["uns/temporal_cols"])))
-                cent_map[c] = ("temporal", i)
-            end
-        end
+        # centroid name → (group, position, ndim). Map BOTH the on-disk name and its explicit
+        # `centroid_{axis}` alias to the same obsm column, so a consumer can select "centroid_x" even
+        # on a legacy file that stores "centroid-0" (normalisation lives in _explicit_*_names). This is
+        # the legacy bridge that lets the code deploy before the data migration (CENTROID_AXES_PLAN.md).
+        # Guard on read: a file carrying `centroid-N`/bare-`t` is rejected outright (errors), so those
+        # names can NEVER reach a returned DataFrame. Convert the file first (CENTROID_AXES_PLAN.md).
+        cent_map = Dict{String,Tuple{String,Int,Int}}()
+        raw_spatial  = _spatial_uns(fid)
+        raw_temporal = _temporal_uns(fid)
+        n_sp = length(raw_spatial); n_tp = length(raw_temporal)
+        for (i, c) in enumerate(raw_spatial);  cent_map[c] = ("spatial", i, n_sp);  end
+        for (i, c) in enumerate(raw_temporal); cent_map[c] = ("temporal", i, n_tp); end
+        all_centroid_cols = vcat(raw_spatial, raw_temporal)   # set returned when no explicit selection
         obs_cols = haskey(HDF5.attrs(fid["obs"]), "column-order") ?
                    _as_strings(HDF5.read_attribute(fid["obs"], "column-order")) : String[]
 
@@ -287,7 +316,7 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
         local var_cols::Vector{String}, cent_cols::Vector{String}, ocols::Vector{String}
         if isnothing(lp.sel_cols)
             var_cols  = include_x ? var_names : String[]
-            cent_cols = collect(keys(cent_map))
+            cent_cols = all_centroid_cols
             ocols     = include_obs ? obs_cols : String[]
         else
             sel = lp.sel_cols
@@ -318,9 +347,7 @@ function as_df(lp::LabelProps; include_x::Bool=lp.include_x, include_obs::Bool=l
 
         # centroid columns (from obsm)
         for c in cent_cols
-            grp, pos = cent_map[c]
-            n_dim = grp == "spatial" ? length(filter(p -> p[2][1] == "spatial", collect(cent_map))) :
-                                       length(filter(p -> p[2][1] == "temporal", collect(cent_map)))
+            grp, pos, n_dim = cent_map[c]
             col = _read_obsm_col(fid, grp, pos, n_obs, n_dim)
             df[!, c] = keep === Colon() ? col : col[keep]
         end

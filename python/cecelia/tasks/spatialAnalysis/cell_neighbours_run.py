@@ -23,7 +23,7 @@ import json
 import numpy as np
 
 # `cecelia.*` resolves via PYTHONPATH=python/, set by the Julia launcher (app/src/py_runner.jl::run_py).
-from cecelia.utils.label_props_utils import LabelPropsView
+from cecelia.utils.label_props_utils import LabelPropsView, axis_of, physical_size_for_axis
 import cecelia.utils.script_utils as script_utils
 import cecelia.utils.spatial_utils as spatial_utils
 
@@ -59,8 +59,9 @@ def run(params):
         return
 
     # ── scale pixel centroids → physical µm (the radius is in µm) ──
+    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
     coords = df[ccols].to_numpy(dtype=np.float64)
-    scale = phys[-coords.shape[1]:]           # align to the number of spatial dims (drops z for 2D)
+    scale = np.array([physical_size_for_axis(phys, axis_of(c)) for c in ccols])
     coords = coords * scale.reshape(1, -1)
 
     import anndata as ad

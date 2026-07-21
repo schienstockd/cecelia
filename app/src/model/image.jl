@@ -238,6 +238,22 @@ function img_physical_sizes(img::CciaImage)::Tuple{Vector{Float64}, Float64}
     ([sz, sy, sx], ts)   # skimage order: z, y, x
 end
 
+"""
+    physical_size_for_axis(img_or_sizes, axis::Symbol) -> Float64
+
+Physical pixel size (µm/px) for ONE spatial axis (`:x`/`:y`/`:z`). Explicit per-axis lookup so a
+consumer maps a `centroid_{axis}` column to its resolution BY NAME, never by tail position — the fix
+for the silent 2D mis-scaling (docs/todo/CENTROID_AXES_PLAN.md). `img_or_sizes` is a `CciaImage` or the
+`[sz, sy, sx]` vector from `img_physical_sizes`. Absent metadata → 1.0 (pixel space)."""
+function physical_size_for_axis(sizes::AbstractVector{<:Real}, axis::Symbol)::Float64
+    axis === :z ? Float64(sizes[1]) :
+    axis === :y ? Float64(sizes[2]) :
+    axis === :x ? Float64(sizes[3]) :
+        error("physical_size_for_axis: axis must be :x/:y/:z (got :$axis)")
+end
+physical_size_for_axis(img::CciaImage, axis::Symbol)::Float64 =
+    physical_size_for_axis(first(img_physical_sizes(img)), axis)
+
 tryparse_f64(v::Real) = Float64(v)
 tryparse_f64(v::AbstractString) = tryparse(Float64, v)
 tryparse_f64(::Any) = nothing

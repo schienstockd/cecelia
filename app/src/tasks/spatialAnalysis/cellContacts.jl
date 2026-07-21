@@ -18,12 +18,11 @@ struct CellContacts <: CciaTask end
 # physical-scaled centroids (rows = points, cols = spatial dims) + labels for member labels of a seg
 function _scaled_centroids(img::CciaImage, vn::AbstractString, labels::AbstractVector{<:Integer})
     props = img_label_props_path(img, vn)
-    scols = centroid_columns(label_props(props))
+    scols = centroid_columns(label_props(props); order=[:x, :y, :z])   # explicit axes, present only
     cdf = label_props(props) |> view_centroid_cols |> filter_rows(collect(Int, labels)) |> as_df
     nrow(cdf) == 0 && return (zeros(Float64, 0, length(scols)), Int[])
-    (sizes, _) = img_physical_sizes(img)
-    scale = sizes[end - length(scols) + 1:end]
-    coords = hcat((Float64.(cdf[!, c]) .* scale[j] for (j, c) in enumerate(scols))...)
+    # each centroid column scaled by ITS OWN axis resolution (by name, never by position) — 2D-safe
+    coords = hcat((Float64.(cdf[!, c]) .* physical_size_for_axis(img, axis_of(c)) for c in scols)...)
     (coords, Int.(cdf.label))
 end
 

@@ -8,8 +8,8 @@ same H5AD `obs`, following our AnnData convention (docs/DATAMODEL.md):
 
   - `obs.index`      = integer cell label (preserved; we align on it)
   - `X` / `var`      = feature matrix (preserved untouched)
-  - `obsm['spatial']` + `uns['spatial_cols']` = centroids (skimage `centroid-0..N` order)
-  - `obsm['temporal']` + `uns['temporal_cols']` = time (`t`)
+  - `obsm['spatial']` + `uns['spatial_cols']` = centroids (`centroid_x`/`_y`/`_z`, present axes)
+  - `obsm['temporal']` + `uns['temporal_cols']` = time (`centroid_t`)
 
 Track lineage is identity, not a measurement, so it goes into `obs` (NOT `X`):
 `track_id, track_parent, track_root, track_state, track_generation, cell_id`. Cells not in
@@ -110,27 +110,22 @@ class BayesianTrackingUtils:
 
     # ── centroids → btrack input frame (x, y, z, t, label_id) ──────────────────────
     def _centroids_from_view(self, view) -> pd.DataFrame:
-        spatial_cols  = view.centroid_columns()
-        temporal_cols = view.temporal_columns()
-        if "t" not in temporal_cols:
+        temporal_cols = view.temporal_columns()      # ['centroid_t'] or [] (guarded → explicit)
+        if not temporal_cols:
             raise SystemExit(
                 "[ERROR] No temporal axis in label props — tracking needs a timecourse "
                 f"segmentation (value_name='{self.value_name}')")
 
-        df = view.view_centroid_cols().as_df()    # centroid-0..N + t + label (label-filtered)
+        df = view.view_centroid_cols().as_df()    # centroid_x/_y[/_z] + centroid_t + label (label-filtered)
         labels = df["label"].to_numpy(dtype=np.int64)
-        t = df["t"].to_numpy(dtype=np.float64)
+        t = df[temporal_cols[0]].to_numpy(dtype=np.float64)
 
-        # spatial_cols are skimage centroid axes: 2D = (y, x); 3D = (z, y, x)
-        sp = df[spatial_cols].to_numpy(dtype=np.float64)
-        n_sp = sp.shape[1]
-        if n_sp >= 3:
-            z, y, x = sp[:, 0], sp[:, 1], sp[:, 2]
-        elif n_sp == 2:
-            z = np.zeros_like(labels, dtype=np.float64)
-            y, x = sp[:, 0], sp[:, 1]
-        else:
-            raise SystemExit(f"[ERROR] Unexpected spatial dimensionality: {n_sp}")
+        # select each axis BY NAME (never positionally) — z is absent for 2D; btrack still wants a z
+        # column, so fill zeros. (btrack's own frame schema is t,x,y,z,label_id.)
+        x = df["centroid_x"].to_numpy(dtype=np.float64)
+        y = df["centroid_y"].to_numpy(dtype=np.float64)
+        z = (df["centroid_z"].to_numpy(dtype=np.float64)
+             if "centroid_z" in df.columns else np.zeros_like(labels, dtype=np.float64))
 
         return pd.DataFrame({"t": t, "x": x, "y": y, "z": z, "label_id": labels})
 

@@ -9,14 +9,67 @@ bridge (centroid lookup for population overlays + spatial cell selection).
 
 H5AD layout (written by `measure_run.py`): `X` = feature matrix (var_names = feature cols);
 `obs.index` = integer cell label; `obsm['spatial']` + `uns['spatial_cols']` = centroids
-(`centroid-0..N`, skimage order: z?, y, x); `obsm['temporal']` + `uns['temporal_cols']` =
-time (`t`). Files are small (hundreds of KB), so a plain in-memory read is fine.
+(`centroid_x`/`_y`/`_z`, present axes only); `obsm['temporal']` + `uns['temporal_cols']` =
+time (`centroid_t`). Pre-migration files used skimage's positional `centroid-0..N` / `t`; those are NOT
+accepted — the reader fails loudly (run the generic converter). Files are small (hundreds of KB), so a
+plain in-memory read is fine.
 """
 import os
+import re
 
 import anndata as ad
 import numpy as np
 import pandas as pd
+
+# The ONE home for the centroid axis convention (mirror of app/src/label_props.jl; see
+# docs/todo/CENTROID_AXES_PLAN.md). Centroids are labelled explicitly centroid_x/_y/_z (present axes
+# only) in uns['spatial_cols'] + centroid_t in uns['temporal_cols']. Consumers select by axis, never by
+# position. `centroid-N` (skimage's positional names) / bare `t` are NOT acceptable anywhere: the reader
+# fails loudly on them (run the generic converter). `skimage_centroid_axis_names` is the writer/converter
+# namer that turns skimage's centroid-0..N (z,y,x order) into the explicit names.
+_SKIMAGE_SPATIAL_AXES = ("z", "y", "x")   # the trailing n are used for n spatial dims
+
+
+def skimage_centroid_axis_names(n_spatial):
+    """Explicit spatial names for `n_spatial` skimage centroid columns (`centroid-0..N`, z,y,x order):
+    3 -> [centroid_z, centroid_y, centroid_x]; 2 -> [centroid_y, centroid_x]. Writer/converter only."""
+    if n_spatial > len(_SKIMAGE_SPATIAL_AXES):
+        raise ValueError(f"{n_spatial} spatial dims > 3")
+    return [f"centroid_{a}" for a in _SKIMAGE_SPATIAL_AXES[-n_spatial:]] if n_spatial else []
+
+
+def _check_centroid_names(names, kind):
+    """Fail loudly if `names` are not the explicit axis form. `kind` is 'spatial' (centroid_x/_y/_z) or
+    'temporal' (centroid_t). Guards every read so a pre-migration `centroid-N`/`t` file can't silently
+    mis-map axes — run the generic converter (docs/todo/CENTROID_AXES_PLAN.md)."""
+    pat = r"^centroid_[xyz]$" if kind == "spatial" else r"^centroid_t$"
+    want = "centroid_x/_y/_z" if kind == "spatial" else "centroid_t"
+    for n in names:
+        if not re.match(pat, str(n)):
+            raise ValueError(
+                f"LabelPropsView: non-explicit {kind} centroid name '{n}' — expected {want}. "
+                "This file predates the centroid-axis rename; run the migration "
+                "(docs/todo/CENTROID_AXES_PLAN.md).")
+    return [str(n) for n in names]
+
+
+def axis_of(col):
+    """'centroid_x' -> 'x', etc."""
+    m = re.match(r"^centroid_([xyzt])$", str(col))
+    if not m:
+        raise ValueError(f"not a centroid axis column: {col}")
+    return m.group(1)
+
+
+def physical_size_for_axis(sizes_zyx, axis):
+    """Physical pixel size (µm/px) for one spatial axis ('x'/'y'/'z') given the `[sz, sy, sx]` vector
+    that Julia's `img_physical_sizes` produces (fixed z,y,x order). Mirror of the Julia
+    `physical_size_for_axis` — lets a consumer map a `centroid_{axis}` column to its resolution by name,
+    never by tail position (2D-safe)."""
+    idx = {"z": 0, "y": 1, "x": 2}.get(axis)
+    if idx is None:
+        raise ValueError(f"physical_size_for_axis: axis must be x/y/z (got {axis})")
+    return float(sizes_zyx[idx])
 
 
 class LabelPropsView:
@@ -40,11 +93,19 @@ class LabelPropsView:
         """Integer cell label IDs (the obs index)."""
         return self.adata.obs.index.astype(np.int64).to_numpy()
 
-    def centroid_columns(self) -> list:
-        return list(self.adata.uns.get("spatial_cols", []))
+    def centroid_columns(self, order=None) -> list:
+        """Explicit spatial centroid names (centroid_x/_y/_z, present axes only). ``order`` selects
+        BY AXIS — ``order=['x','y','z']`` returns present axes in that order (z dropped for 2D), never
+        a positional slice. Mirrors the old R ``LabelPropsView.centroid_columns``."""
+        cols = _check_centroid_names(self.adata.uns.get("spatial_cols", []), "spatial")
+        if order is None:
+            return cols
+        want = [f"centroid_{str(a).lower()}" for a in order]
+        return [c for c in want if c in cols]
 
     def temporal_columns(self) -> list:
-        return list(self.adata.uns.get("temporal_cols", []))
+        """Temporal column name (['centroid_t']; empty for non-timecourse)."""
+        return _check_centroid_names(self.adata.uns.get("temporal_cols", []), "temporal")
 
     def var_names(self) -> list:
         return list(self.adata.var_names)
@@ -82,6 +143,12 @@ class LabelPropsView:
     # ── materialise ───────────────────────────────────────────────────────────────
     def as_df(self) -> pd.DataFrame:
         a = self.adata
+        # strict: reject a stale centroid-N / bare-t file on ANY read, so those names can never reach a
+        # returned DataFrame — convert the file first (docs/todo/CENTROID_AXES_PLAN.md).
+        if "spatial" in a.obsm:
+            _check_centroid_names(a.uns.get("spatial_cols", []), "spatial")
+        if "temporal" in a.obsm:
+            _check_centroid_names(a.uns.get("temporal_cols", []), "temporal")
         labels = a.obs.index.astype(np.int64).to_numpy()
         data = {}
 
@@ -99,11 +166,11 @@ class LabelPropsView:
 
         if self._with_centroids and "spatial" in a.obsm:
             sp = np.asarray(a.obsm["spatial"])
-            for i, name in enumerate(self.centroid_columns()):
+            for i, name in enumerate(_check_centroid_names(a.uns.get("spatial_cols", []), "spatial")):
                 data[name] = sp[:, i]
             if "temporal" in a.obsm:
                 tp = np.asarray(a.obsm["temporal"])
-                for i, name in enumerate(self.temporal_columns()):
+                for i, name in enumerate(_check_centroid_names(a.uns.get("temporal_cols", []), "temporal")):
                     data[name] = tp[:, i]
 
         df = pd.DataFrame(data)
