@@ -330,6 +330,22 @@ Needs #00071. (Phase F2 + Decision 2.)
 
 ## Low priority
 
+**#00085** — **Per-notebook reload on the Notebooks page (ONLY if a revised open notebook still goes stale)**
+Contingent on a live check. #291 made `revise` preserve cell ids so Pluto's `auto_reload_from_file`
+should merge a revision into an **open** notebook in place — removing the need to restart the whole
+notebook server. First verify that in the running app: open a notebook in Pluto, have the observer
+`revise` it, confirm it updates **without** a server restart. If it does, this item is moot — delete it.
+If Pluto's autosave still races and the open notebook stays stale, add a way to reset **one** notebook
+instead of the whole server (`NotebooksModule.vue` today exposes only server-wide restart/shutdown):
+- **Backend:** an endpoint to drop/reload a single Pluto session. Needs the notebook's Pluto
+  `notebook_id` — the API server opens by path and doesn't track it, so query Pluto's notebook list
+  (with the secret) then its shutdown-by-id. Unknown: exactly what Pluto's HTTP API exposes — scope that first.
+- **Frontend:** a per-row "Reload" action in `NotebookTable` (drop + reopen the session from disk).
+- **Cheaper fallback** if the endpoint is fiddly: give `revise` the same open-session guard
+  `restore`/`delete` already use (warn "close the tab first"), so the behaviour is at least consistent
+  and explained rather than silently stale.
+🔹 needs-input (D): the live-test verdict on whether #291 alone fixes the open-notebook reload.
+
 **#00003** — **Re-enable interactive pan/zoom on gating plots**
 Gating plots currently lock the regl camera (`cameraIsFixed: true`, no x/y scales) so the WebGL
 points align exactly with the canvas2D overlays (contours, gates) — providing scales made regl
