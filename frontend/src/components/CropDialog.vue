@@ -19,7 +19,7 @@ const projectMeta = useProjectMetaStore()
 <template>
   <BaseModal width="640px" @close="$emit('close')">
     <template #title>
-      <i class="pi pi-clone" /> Crop — {{ image.name }}
+      <i class="pi pi-image" /> Crop — {{ image.name }}
     </template>
     <!-- crop the ACTIVE version (drift/AF/cellpose-corrected variants are the norm, not 'default');
          empty → the backend falls back to 'default' -->
