@@ -12,6 +12,7 @@ import { timelapseDuration } from '../utils/imageTable'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
+import CropDialog from './CropDialog.vue'
 import TeleportPopover from './TeleportPopover.vue'
 
 const props = defineProps<{
@@ -40,6 +41,11 @@ const physSizeDialogUid = ref<string | null>(null)
 const metaDialogUid = ref<string | null>(null)
 const metaDialogImg = computed(() =>
   metaDialogUid.value ? (images.value.find(i => i.uid === metaDialogUid.value) ?? null) : null)
+
+// crop dialog (per-image, napari-free) — draw a rectangle on the coloured MIP, set z/t, save a new image
+const cropDialogUid = ref<string | null>(null)
+const cropDialogImg = computed(() =>
+  cropDialogUid.value ? (images.value.find(i => i.uid === cropDialogUid.value) ?? null) : null)
 
 // Two distinct affordances, kept visually separate: the warning (any module, always visible when
 // flagged) sits in front of the name where it's impossible to miss; the neutral "open editor" icon
@@ -623,6 +629,10 @@ onUnmounted(stopResize)
               v-tooltip.right="'Image metadata (original file location, dimensions, channels…)'">
               <i class="pi pi-info-circle" />
             </button>
+            <button class="row-icon-btn" @click.stop="cropDialogUid = img.uid"
+              v-tooltip.right="'Crop to a sub-region → new image (draw a rectangle on the projection, set z/t)'">
+              <i class="pi pi-clone" />
+            </button>
             <button class="row-icon-btn" @click.stop="copyUid(img.uid)"
               v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
               <i :class="copiedUid === img.uid ? 'pi pi-check' : 'pi pi-copy'" />
@@ -741,6 +751,9 @@ onUnmounted(stopResize)
 
   <ImageMetadataDialog v-if="metaDialogImg" :image="metaDialogImg"
     @close="metaDialogUid = null" />
+
+  <CropDialog v-if="cropDialogImg" :image="cropDialogImg" :set-uid="setUid"
+    @close="cropDialogUid = null" />
 
   <!-- run-history popover — shared TeleportPopover escapes the table's scroll/transform clip and
        positions from the cog rect (was clipped by the following row) -->

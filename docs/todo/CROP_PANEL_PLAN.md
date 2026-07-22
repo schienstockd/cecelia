@@ -68,8 +68,11 @@ viewer process + GPU/display + 2D/3D toggling). A headless in-app render removes
   canvas overlay + world-coordinate inversion). Map displayed-thumbnail px → full-res px exactly like the
   bridge's old `crop_box` (coarse µm/px → level-0 µm/px), so the saved box matches what you drew.
 - **Reuse, don't rebuild:** `crop3d.ts` (`normalizeRange`/`fracToIndexRange`/`fracRangeLabel`) and the
-  `editImages.cropImage` task carry over unchanged. The panel lives on the **Viewer page**, replacing the
-  current "3D crop" section (so it stays where users look for it).
+  `editImages.cropImage` task carry over unchanged. The panel opens from a **per-image "Crop" action in
+  the image table** (`ImageTable` → `CropDialog` wrapping `CropPanel`) — napari-free and discoverable,
+  matching the metadata/physical-size per-image dialogs. (Initially trialled in the napari Viewer panel;
+  moved out because gating it on an open napari image hid it and defied the napari-free goal.) The z
+  slider **re-projects the preview MIP** to just the kept slices, so you see what you'll keep.
 
 ## Phases
 

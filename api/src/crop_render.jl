@@ -118,7 +118,8 @@ end
 # to ~≤`z_keep` planes for speed) and the frame is downsampled so its long side ≤ `max_px` (a crop
 # footprint needs no more). Colours from `props_path` (JSON) if present. Returns the PNG as a byte vector.
 function render_crop_frame(zarr_path::AbstractString, props_path::AbstractString, t::Int;
-                           max_px::Int = 512, z_keep::Int = 12)
+                           max_px::Int = 512, z_keep::Int = 12,
+                           z_lo_frac::Real = 0.0, z_hi_frac::Real = 1.0)
     arr, caxes = _crop_open_level0(zarr_path)
     nd = ndims(arr)
     dims = _crop_axis_dims(caxes, nd)
@@ -126,11 +127,16 @@ function render_crop_frame(zarr_path::AbstractString, props_path::AbstractString
     jz = get(dims, "z", 0); jc = get(dims, "c", 0); jt = get(dims, "t", 0)
     sz = size(arr)
 
-    # z-subsample at READ time (z chunks are size 1, so this cuts IO ~proportionally)
-    zr = jz == 0 ? nothing : 1:max(1, cld(sz[jz], z_keep)):sz[jz]
     idx = Any[Colon() for _ in 1:nd]
     jt != 0 && (idx[jt] = t + 1)                 # 0-based t → 1-based
-    zr !== nothing && (idx[jz] = zr)
+    if jz != 0
+        # Project only over the KEPT z-range (so the slider previews what you'll keep), z-subsampled for
+        # speed. Full range (0..1) ⇒ the whole stack. z chunks are size 1, so this also cuts IO.
+        nz = sz[jz]
+        lo = clamp(floor(Int, clamp(z_lo_frac, 0, 1) * nz) + 1, 1, nz)
+        hi = clamp(ceil(Int,  clamp(z_hi_frac, 0, 1) * nz),     lo, nz)
+        idx[jz] = lo:max(1, cld(hi - lo + 1, z_keep)):hi
+    end
     sub = arr[idx...]                            # reads; the scalar t-dim is dropped
 
     # names of the REMAINING Julia dims (t dropped), so we can permute to canonical (c, y, x)
@@ -236,10 +242,12 @@ function api_crop_frame(req::HTTP.Request)
     err === nothing || return 404, JSON3.write((; error = err))
     t = something(tryparse(Int, get(q, "t", "0")), 0)
     max_px = something(tryparse(Int, get(q, "maxPx", "512")), 512)
+    zlo = clamp(something(tryparse(Float64, get(q, "zLo", "0")), 0.0), 0.0, 1.0)   # z-range fractions:
+    zhi = clamp(something(tryparse(Float64, get(q, "zHi", "1")), 1.0), 0.0, 1.0)   # project only these z
     props = _props_path(td, zp)                       # JSON layer props (napari_api._props_path)
-    key = string(zp, "|", vn, "|", t, "|", max_px, "|", isfile(props) ? mtime(props) : 0.0)
+    key = string(zp, "|", vn, "|", t, "|", max_px, "|", zlo, "|", zhi, "|", isfile(props) ? mtime(props) : 0.0)
     try
-        200, _crop_cache!(key, () -> render_crop_frame(zp, props, t; max_px = max_px))
+        200, _crop_cache!(key, () -> render_crop_frame(zp, props, t; max_px = max_px, z_lo_frac = zlo, z_hi_frac = zhi))
     catch e
         500, JSON3.write((; error = sprint(showerror, e)))
     end

@@ -7,7 +7,7 @@ import { useTaskStore } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import { useLogStore } from '../stores/log'
-import { cropBoxFromRect, fracRangeLabel, type CropInfo, type NormRect } from '../utils/crop3d'
+import { cropBoxFromRect, fracRangeLabel, normalizeRange, type CropInfo, type NormRect } from '../utils/crop3d'
 import RangeSlider from './RangeSlider.vue'
 
 const props = defineProps<{ projectUid: string; imageUid: string; imageName: string; valueName: string; setUid: string }>()
@@ -22,7 +22,7 @@ const t        = ref(0)
 const frameUrl = ref<string | null>(null)
 const loading  = ref(false)
 const err      = ref('')
-const urlCache = new Map<number, string>()
+const urlCache = new Map<string, string>()   // key `${t}|${zLo}|${zHi}` → object URL (z affects the MIP)
 
 const qs = () =>
   `projectUid=${encodeURIComponent(props.projectUid)}&imageUid=${encodeURIComponent(props.imageUid)}` +
@@ -77,23 +77,27 @@ async function loadInfo() {
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
 }
 
+// The displayed MIP projects only over the KEPT z-range, so the z slider previews what you'll keep.
+const frameKey = () => { const z = normalizeRange(zLo.value, zHi.value); return `${t.value}|${z.lo.toFixed(4)}|${z.hi.toFixed(4)}` }
 async function loadFrame() {
-  const ti = t.value
-  const cached = urlCache.get(ti)
+  const key = frameKey()
+  const cached = urlCache.get(key)
   if (cached) { frameUrl.value = cached; return }
   loading.value = true
   try {
-    const r = await fetch(`/api/crop/frame?${qs()}&t=${ti}`)
+    const z = normalizeRange(zLo.value, zHi.value)
+    const r = await fetch(`/api/crop/frame?${qs()}&t=${t.value}&zLo=${z.lo}&zHi=${z.hi}`)
     if (!r.ok) throw new Error(((await r.json().catch(() => ({}))) as { error?: string }).error ?? `HTTP ${r.status}`)
     const url = URL.createObjectURL(new Blob([await r.arrayBuffer()], { type: 'image/png' }))
-    urlCache.set(ti, url)
-    if (t.value === ti) frameUrl.value = url
+    urlCache.set(key, url)
+    if (frameKey() === key) frameUrl.value = url    // ignore a stale response if the user moved on
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { loading.value = false }
 }
 
 let deb: ReturnType<typeof setTimeout> | null = null
-watch(t, () => { if (deb) clearTimeout(deb); deb = setTimeout(loadFrame, 120) })
+const debFrame = () => { if (deb) clearTimeout(deb); deb = setTimeout(loadFrame, 130) }
+watch([t, zLo, zHi], debFrame)   // t OR the z-range → re-render the MIP
 watch(() => [props.projectUid, props.imageUid, props.valueName], loadInfo, { immediate: true })
 onUnmounted(() => { if (deb) clearTimeout(deb); clearCache() })
 
@@ -133,7 +137,7 @@ function save() {
         <span class="crop-tval">{{ t + 1 }}/{{ info.nT }}</span>
       </div>
       <div v-if="info.nZ > 1" class="crop-row">
-        <span class="crop-lbl" v-tooltip.top="'Keep this z-range'">z</span>
+        <span class="crop-lbl" v-tooltip.top="'Keep this z-range — also re-projects the preview to just these slices'">z</span>
         <RangeSlider v-model:lo="zLo" v-model:hi="zHi" />
         <span class="crop-tval">{{ zLabel }}</span>
       </div>
