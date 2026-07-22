@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeRange, rangeCrops } from './crop3d'
+import { normalizeRange, rangeCrops, fracToIndexRange, fracRangeLabel } from './crop3d'
 
 describe('normalizeRange', () => {
   it('converts percentages to [0,1] fractions', () => {
@@ -35,5 +35,31 @@ describe('rangeCrops', () => {
   })
   it('tolerates float noise around the full range', () => {
     expect(rangeCrops({ lo: 1e-5, hi: 1 - 1e-5 })).toBe(false)
+  })
+})
+
+describe('fracToIndexRange (mirrors the bridge _frac_bounds)', () => {
+  it('full range keeps every slice (half-open [0, n))', () => {
+    expect(fracToIndexRange(0, 100, 20)).toEqual({ i0: 0, i1: 20 })
+  })
+  it('floor(lo·n) → ceil(hi·n)', () => {
+    expect(fracToIndexRange(20, 80, 20)).toEqual({ i0: 4, i1: 16 })
+    expect(fracToIndexRange(25, 75, 20)).toEqual({ i0: 5, i1: 15 })
+  })
+  it('is always at least 1 wide (zero-width slider → single slice)', () => {
+    expect(fracToIndexRange(50, 50, 20)).toEqual({ i0: 10, i1: 11 })
+    expect(fracToIndexRange(100, 100, 20)).toEqual({ i0: 19, i1: 20 })
+  })
+})
+
+describe('fracRangeLabel', () => {
+  it('formats a 1-based inclusive count "start–end/n"', () => {
+    expect(fracRangeLabel(0, 100, 20)).toBe('1–20/20')
+    expect(fracRangeLabel(20, 80, 20)).toBe('5–16/20')
+  })
+  it('is empty when the axis is absent or single (nothing to trim)', () => {
+    expect(fracRangeLabel(20, 80, undefined)).toBe('')
+    expect(fracRangeLabel(20, 80, null)).toBe('')
+    expect(fracRangeLabel(20, 80, 1)).toBe('')
   })
 })
