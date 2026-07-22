@@ -24,6 +24,7 @@ include("update_api.jl")
 include("maintenance_api.jl")
 include("repl_api.jl")
 include("notebooks_api.jl")
+include("crop_render.jl")
 include("app_api.jl")
 include("storage_api.jl")
 include("setup_api.jl")
@@ -286,6 +287,10 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_gating_plotdata(req)
         elseif path == "/api/gating/density"
             api_gating_density(req)
+        elseif path == "/api/crop/info"
+            api_crop_info(req)
+        elseif path == "/api/crop/frame"
+            api_crop_frame(req)
         elseif path == "/api/plots/umap"
             api_plots_umap(req)
         elseif path == "/api/plots/definitions"
@@ -452,14 +457,6 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_napari_selection_scope(body_bytes)
         elseif path == "/api/napari/stop-selection"
             api_napari_stop_selection(body_bytes)
-        elseif path == "/api/napari/crop-start"
-            api_napari_crop_start(body_bytes)
-        elseif path == "/api/napari/crop-apply"
-            api_napari_crop_apply(body_bytes)
-        elseif path == "/api/napari/crop-box"
-            api_napari_crop_box(body_bytes)
-        elseif path == "/api/napari/crop-clear"
-            api_napari_crop_clear(body_bytes)
         elseif path == "/api/napari/event"
             api_napari_event(body_bytes)
         elseif path == "/api/gating/pop/add"

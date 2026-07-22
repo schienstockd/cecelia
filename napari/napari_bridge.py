@@ -9,7 +9,6 @@ import asyncio
 import datetime
 import json
 import os
-import pickle
 import queue
 import sys
 import threading
@@ -39,10 +38,6 @@ _STARTED_AT = time.time()
 
 # name of the Shapes layer used for spatial cell selection (linked brushing → flow plots)
 SELECTION_LAYER = "Cell selection"
-
-# transient helper layers for the 3D crop (drawn over a Z max-projection, removed once applied)
-CROP_LAYER = "Crop region"        # editable rectangle → the XY crop footprint
-CROP_MIP_LAYER = "Crop MIP"       # Z max-intensity projection you draw the rectangle over
 
 # qualitative palette for colouring labels/tracks by a CATEGORICAL obs column (e.g. HMM state).
 # Okabe–Ito (colourblind-safe), as RGBA floats in 0..1 — matches the web canvas 'okabe-ito' palette.
@@ -88,13 +83,12 @@ class NapariState:
         self._labels_orig_cmap = {}   # labels layer name → original colormap, to restore on reset
         self._colcol_cache = {}       # (value_name, column) → (labels, vals, is_cat) obs column read
         self._ts_handler = None       # timestamp slider callback, disconnected before reconnecting
-        self._crop_prev_visible = None  # {layer name → visible} saved while drawing a 3D crop, restored on apply/clear
 
         # ── layer-props autosave (debounced, atomic) ────────────────────────────
         # Save brightness/contrast/colormap + the T/Z slider position the moment the user changes
         # them (coalesced ~500ms), so the view survives navigation AND a crash/hard-kill — the file
         # is only ever written atomically. Off unless the app enables it per open (configure_autosave).
-        self._autosave_path = None     # target .pkl for the currently open image, or None
+        self._autosave_path = None     # target .json props file for the currently open image, or None
         self._autosave_enabled = False
         self._autosave_loading = False # True while applying loaded props → suppress the write-back
         self._autosave_conns = []      # [(emitter, cb)] connected for the current image; dropped on reconnect
@@ -120,7 +114,6 @@ class NapariState:
         self._labels_orig_cmap = {}
         self._colcol_cache = {}
         self._sel_ctx = None
-        self._crop_prev_visible = None   # any in-progress crop draw is void once a new image loads
 
         # open the store + read its geometry through the shared cecelia readers (the same code the
         # analysis pipeline uses) — one implementation of "open an OME-ZARR, read its axes/scale".
@@ -946,215 +939,6 @@ class NapariState:
             self._sel_ctx["z_window"] = int(z_window)
         self._on_selection_changed()   # re-run point-in-polygon (+ z filter) on the drawn shape
 
-    # ── 3D crop (Imaris-style slicing via clipping planes) ─────────────────────
-    # Flow: `start_crop` drops to 2-D, hides the data layers and shows a Z max-projection with an EMPTY
-    # rectangle layer in draw mode — you draw the XY footprint over the WHOLE structure, not one slice
-    # (napari only edits Shapes in 2-D). `apply_crop` reads the rectangle + a z-range and sets
-    # axis-aligned `experimental_clipping_planes` on the image + overlays, then returns to 3-D.
-    # `crop_box` resolves it to pixels for the save task. `clear_crop` removes the planes.
-    # See docs/NAPARI.md → "3D crop". The box readers use the LAST-drawn rectangle (a redraw wins).
-
-    def start_crop(self):
-        """Enter crop-draw mode (see class-level flow note)."""
-        if self._im_data is None:
-            raise RuntimeError("no image open")
-        self._clear_clip_planes()                 # start from the full volume so the MIP shows everything
-        _remove_layer(self._viewer, CROP_LAYER)
-        _remove_layer(self._viewer, CROP_MIP_LAYER)
-        if self._viewer.dims.ndisplay != 2:
-            self._viewer.dims.ndisplay = 2
-        # hide the data layers (we draw over the MIP), remembering their visibility to restore on exit
-        self._crop_prev_visible = {lyr.name: bool(lyr.visible) for lyr in self._viewer.layers}
-        for lyr in self._viewer.layers:
-            lyr.visible = False
-
-        mip, mip_scale, mip_units, (h, w) = self._z_mip()   # (t?,y,x) lazy dask + matching scale/units
-        mip_layer = self._viewer.add_image(mip, name=CROP_MIP_LAYER, colormap="gray",
-                                           blending="translucent", scale=mip_scale, units=mip_units)
-        napari_utils.set_contrast_from_sample(mip_layer)   # percentile contrast → the MIP isn't washed out
-
-        # EMPTY rectangle layer (2-D y,x) in draw mode — the user draws ONE rectangle (like cell
-        # selection's add_polygon). Deliberately NOT prefilled full-extent: a prefilled rect the user
-        # draws OVER leaves two shapes, and the box would span their union (= the full image → no crop).
-        sy, sx = mip_scale[-2], mip_scale[-1]
-        yx_unit = (mip_units[-2], mip_units[-1]) if (mip_units and mip_units[-1] is not None) else None
-        shp_kwargs = dict(name=CROP_LAYER, edge_color="yellow", face_color="transparent",
-                          edge_width=max(1.0, 0.004 * max(h, w)), ndim=2, scale=(sy, sx))
-        if yx_unit is not None:
-            shp_kwargs["units"] = yx_unit
-        layer = self._viewer.add_shapes(**shp_kwargs)
-        layer.mode = "add_rectangle"
-        self._viewer.layers.selection.active = layer
-        self._viewer.reset_view()
-
-    def _pick_mip_level(self, iy, ix, max_px=1024):
-        """Finest pyramid level whose longest in-plane side is <= ``max_px`` (coarsest if none). A MIP
-        just for drawing a rough box needs no full resolution, and a full-res z-max would stall."""
-        for lvl in range(len(self._im_data)):
-            s = self._im_data[lvl].shape
-            if max(int(s[iy]), int(s[ix])) <= max_px:
-                return lvl
-        return len(self._im_data) - 1
-
-    def _z_mip(self):
-        """LAZY projection for the crop backdrop. Max over CHANNELS (dropped) and over Z **with
-        keepdims** — so the layer keeps the SAME display axes as the data (``t, z=1, y, x``) and stays
-        aligned to the viewer's t/z sliders. This is the crux: a z-DROPPED (t,y,x) layer right-aligns
-        its first axis onto the viewer's Z (the hidden 4-D data layers keep the viewer 4-D), so the real
-        T slider wouldn't move it — "the MIP has no time". Keeping z as a singleton fixes the alignment.
-        t is kept so you can scrub timepoints; each frame computes on demand (dask). Returns
-        ``(mip, scale, units, (H, W))`` over the display axes. Coarse pyramid level (XY ~≤ max_px)."""
-        axes = [a.lower() for a in self._axes]
-        iy, ix = axes.index("y"), axes.index("x")
-        iz = axes.index("z") if "z" in axes else None
-        ic = self._channel_axis
-        level = self._pick_mip_level(iy, ix)
-        arr = self._im_data[level]                      # dask; lazy
-        shape0, shapeL = self._im_data[0].shape, arr.shape
-
-        a = arr
-        if ic is not None:
-            a = a.max(axis=ic)                          # drop channel → array axes = the display order
-        if iz is not None:
-            z_disp = self._display_axes().index("z")    # z index within the (channel-dropped) display axes
-            a = a.max(axis=z_disp, keepdims=True)       # collapse z to a singleton, then...
-            # ...broadcast it back across the FULL z extent so the projection shows at ANY z-slider
-            # position. The hidden full-z data layers set the viewer's z range; a size-1 z would be blank
-            # at z>0 (the "blank image"). Lazy view — every z slice references the one projection.
-            tgt = list(a.shape); tgt[z_disp] = int(shape0[iz])
-            a = da.broadcast_to(a, tuple(tgt))
-
-        disp = self._display_axes()                     # e.g. ['t','z','y','x'] — matches `a`'s axes now
-        def sc(al):
-            base = float(self._im_scale[disp.index(al)]) if (self._im_scale and al in disp) else 1.0
-            if al == "y":
-                return base * (shape0[iy] / shapeL[iy])  # coarse-level µm/px
-            if al == "x":
-                return base * (shape0[ix] / shapeL[ix])
-            return base
-        scale = tuple(sc(al) for al in disp)
-        unit  = self._im_units[0] if self._im_units else None
-        units = tuple(unit for _ in disp) if unit is not None else None
-        return a, scale, units, (int(shapeL[iy]), int(shapeL[ix]))
-
-    def apply_crop(self, z_lo_frac=0.0, z_hi_frac=1.0):
-        """Read the drawn rectangle + z-range → set axis-aligned clipping planes on the data layers,
-        drop the helper layers, restore visibility and return to 3-D. ``z_*_frac`` are fractions in
-        [0,1] of the z depth (the frontend needn't know the slice count)."""
-        if CROP_LAYER not in self._viewer.layers:
-            raise RuntimeError("no crop region drawn")
-        layer = self._viewer.layers[CROP_LAYER]
-        shapes = [np.asarray(s) for s in layer.data if np.asarray(s).shape[0] >= 3]
-        if not shapes:
-            raise RuntimeError("no crop region drawn")
-        verts = shapes[-1][:, -2:]                        # LAST-drawn rectangle, (y, x) coarse-MIP coords
-        sy, sx = float(layer.scale[-2]), float(layer.scale[-1])
-        y0, x0 = verts.min(axis=0)
-        y1, x1 = verts.max(axis=0)
-        world_box = {"y": (float(y0) * sy, float(y1) * sy),
-                     "x": (float(x0) * sx, float(x1) * sx)}
-
-        disp = self._display_axes()
-        z_len = self._z_axis_len()
-        if z_len and "z" in disp and self._im_scale is not None:
-            sz = float(self._im_scale[disp.index("z")])
-            lo = max(0.0, min(1.0, float(z_lo_frac)))
-            hi = max(0.0, min(1.0, float(z_hi_frac)))
-            if hi < lo:
-                lo, hi = hi, lo
-            world_box["z"] = (lo * z_len * sz, hi * z_len * sz)
-
-        _remove_layer(self._viewer, CROP_LAYER)
-        _remove_layer(self._viewer, CROP_MIP_LAYER)
-        self._restore_crop_visibility()
-        self._apply_clip_planes(world_box)
-        if (self._z_axis_len() or 0) > 1:
-            self._viewer.dims.ndisplay = 3
-            self._viewer.reset_view()
-        return {"world_box": world_box}
-
-    def crop_box(self, z_lo_frac=0.0, z_hi_frac=1.0, t_lo_frac=0.0, t_hi_frac=1.0):
-        """Convert the drawn rectangle + z/t ranges into a FULL-RESOLUTION pixel bounding box for the
-        `cropImage` task: ``{x0,x1,y0,y1,z0,z1?,t0?,t1?}`` (z/t only when those axes exist), half-open
-        and clamped to the image. XY come from the rectangle (coarse-MIP data coords → world µm via the
-        rectangle's own scale → full-res px via the level-0 µm/px); z/t from the fractions × axis length.
-        View-only — does not touch layers (the task does the actual write)."""
-        if CROP_LAYER not in self._viewer.layers:
-            raise RuntimeError("no crop region drawn")
-        layer = self._viewer.layers[CROP_LAYER]
-        shapes = [np.asarray(s) for s in layer.data if np.asarray(s).shape[0] >= 3]
-        if not shapes:
-            raise RuntimeError("no crop region drawn")
-        verts = shapes[-1][:, -2:]                              # LAST-drawn rectangle, (y, x) coarse coords
-        sy, sx = float(layer.scale[-2]), float(layer.scale[-1])  # coarse µm/px
-        disp = self._display_axes()
-        axes = [a.lower() for a in self._axes]
-        iy, ix = axes.index("y"), axes.index("x")
-        full_y, full_x = int(self._im_data[0].shape[iy]), int(self._im_data[0].shape[ix])
-        imsy = float(self._im_scale[disp.index("y")]) if self._im_scale else sy   # full-res µm/px
-        imsx = float(self._im_scale[disp.index("x")]) if self._im_scale else sx
-
-        def _bounds(vals, um_per_px_coarse, um_per_px_full, n):
-            lo = int(np.floor(vals.min() * um_per_px_coarse / um_per_px_full))
-            hi = int(np.ceil(vals.max() * um_per_px_coarse / um_per_px_full))
-            lo = max(0, min(lo, n - 1))
-            hi = max(lo + 1, min(hi, n))                       # half-open, at least 1 px wide
-            return lo, hi
-
-        y0, y1 = _bounds(verts[:, 0], sy, imsy, full_y)
-        x0, x1 = _bounds(verts[:, 1], sx, imsx, full_x)
-        box = {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
-
-        def _frac_bounds(lo_f, hi_f, n):
-            lo = max(0.0, min(1.0, float(lo_f)))
-            hi = max(0.0, min(1.0, float(hi_f)))
-            if hi < lo:
-                lo, hi = hi, lo
-            i0 = int(np.floor(lo * n))
-            i1 = int(np.ceil(hi * n))
-            i0 = max(0, min(i0, n - 1))
-            i1 = max(i0 + 1, min(i1, n))
-            return i0, i1
-
-        z_len = self._z_axis_len()
-        if z_len:
-            box["z0"], box["z1"] = _frac_bounds(z_lo_frac, z_hi_frac, z_len)
-        t_len = self._time_axis_len()
-        if t_len:
-            box["t0"], box["t1"] = _frac_bounds(t_lo_frac, t_hi_frac, t_len)
-        return box
-
-    def clear_crop(self):
-        """Remove the 3D crop: clear clipping planes on all layers and drop any leftover helper layers."""
-        self._clear_clip_planes()
-        _remove_layer(self._viewer, CROP_LAYER)
-        _remove_layer(self._viewer, CROP_MIP_LAYER)
-        self._restore_crop_visibility()
-
-    def _apply_clip_planes(self, world_box):
-        disp = self._display_axes()
-        for lyr in self._viewer.layers:
-            if lyr.name in (CROP_LAYER, CROP_MIP_LAYER, SELECTION_LAYER):
-                continue
-            try:
-                lyr.experimental_clipping_planes = napari_utils.axis_aligned_clip_planes(lyr, world_box, disp)
-            except Exception as e:   # not every layer type supports clipping planes — skip, don't fail the crop
-                print(f"[napari] clip planes not applied to {lyr.name!r}: {e}", flush=True)
-
-    def _clear_clip_planes(self):
-        for lyr in self._viewer.layers:
-            try:
-                lyr.experimental_clipping_planes = []
-            except Exception:
-                pass
-
-    def _restore_crop_visibility(self):
-        if self._crop_prev_visible:
-            for name, vis in self._crop_prev_visible.items():
-                if name in self._viewer.layers:
-                    self._viewer.layers[name].visible = vis
-        self._crop_prev_visible = None
-
     # ── Layer management ──────────────────────────────────────────────────────
 
     def show_layer(self, name: str):
@@ -1232,6 +1016,18 @@ class NapariState:
 
     # ── Persistence (also used for the on-switch save/load) ──────────────────────
 
+    # Layer props are stored as JSON — the single canonical format, read by the Julia in-app crop render
+    # too (docs/todo/CROP_PANEL_PLAN.md Phase 0). Every field is JSON-native, so pickle bought nothing.
+    @staticmethod
+    def _jsonable(k, v):
+        if k == "contrast_limits":
+            return [float(x) for x in v]          # numpy scalars → plain floats
+        if k in ("opacity", "gamma"):
+            return float(v)
+        if k == "visible":
+            return bool(v)
+        return v                                   # blending (str); colormap handled by the caller
+
     def save_layer_props(self, filepath: str):
         props = {"Image": []}
         _keys = [
@@ -1241,26 +1037,44 @@ class NapariState:
         for layer in self._viewer.layers:
             if type(layer).__name__ == "Image":
                 props["Image"].append({
-                    k: getattr(layer, k).name if k == "colormap" else getattr(layer, k)
+                    k: (layer.colormap.name if k == "colormap" else self._jsonable(k, getattr(layer, k)))
                     for k in _keys
                 })
         # viewer dims position (the T/Z slider) so the image reopens on the same frame/slice
         try:
-            props["dims"] = {"current_step": list(self._viewer.dims.current_step)}
+            props["dims"] = {"current_step": [int(x) for x in self._viewer.dims.current_step]}
         except Exception:
             pass
         # atomic write (tmp + os.replace) so a crash/kill never leaves a half-written props file —
         # the image always reopens in a valid remembered state.
         tmp = filepath + ".tmp"
-        with open(tmp, "wb") as f:
-            pickle.dump(props, f, pickle.HIGHEST_PROTOCOL)
+        with open(tmp, "w") as f:
+            json.dump(props, f)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, filepath)
 
     def load_layer_props(self, filepath: str):
-        with open(filepath, "rb") as f:
-            data = pickle.load(f)
+        if os.path.exists(filepath):
+            with open(filepath) as f:
+                data = json.load(f)
+        else:
+            # One-time migration of a pre-JSON pickle (same dict shape) → rewrite as JSON, then use it.
+            # `pickle` is imported lazily here ONLY for this legacy path; nothing is ever written as pickle
+            # again, so it can be removed once no `.pkl` props remain in the wild.
+            legacy = filepath[:-5] + ".pkl" if filepath.endswith(".json") else None
+            if not (legacy and os.path.exists(legacy)):
+                return
+            import pickle
+            with open(legacy, "rb") as f:
+                data = pickle.load(f)
+            try:
+                tmp = filepath + ".tmp"
+                with open(tmp, "w") as f:
+                    json.dump(data, f)
+                os.replace(tmp, filepath)
+            except Exception:
+                pass
         self._autosave_loading = True   # applying these must not trigger a write-back
         try:
             entries = list(reversed(data.get("Image", [])))
@@ -1456,21 +1270,6 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
                 z_mode=cmd.get("z_mode"),
                 z_window=cmd.get("z_window"),
             )
-
-        elif t == "crop_start":
-            state.start_crop()
-
-        elif t == "crop_apply":
-            res = state.apply_crop(z_lo_frac=cmd.get("z_lo", 0.0), z_hi_frac=cmd.get("z_hi", 1.0))
-            return {"type": "ok", "cmd": t, **(res or {})}
-
-        elif t == "crop_box":
-            box = state.crop_box(z_lo_frac=cmd.get("z_lo", 0.0), z_hi_frac=cmd.get("z_hi", 1.0),
-                                 t_lo_frac=cmd.get("t_lo", 0.0), t_hi_frac=cmd.get("t_hi", 1.0))
-            return {"type": "ok", "cmd": t, "box": box}
-
-        elif t == "crop_clear":
-            state.clear_crop()
 
         elif t == "show_layer":
             state.show_layer(cmd["name"])

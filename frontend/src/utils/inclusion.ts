@@ -5,6 +5,20 @@
 
 export interface Includable { uid: string; included?: boolean | null }
 
+// THE canonical "is this image usable yet?" predicate — one source of truth for every gate that needs
+// real image data (open in napari, crop, segment, measure, run a chain, …). Use this instead of
+// hand-rolling checks. The signal is `status === 'done'`: an image is IMPORTED once its OME-ZARR has
+// been written (the bf2raw conversion task sets status 'done'). We CANNOT key off `filepath`/`filepaths`
+// — `api_images_register` pre-populates both with a placeholder at queue time (a 'pending' row already
+// has `filepaths: { default: 'ccidImage.ome.zarr' }`), so they're truthy before any data exists. This is
+// the practical equivalent of the old R `imFilepath == null` check (there the path was null until
+// converted; here the status carries that). NB status also goes 'converting' while a LATER task runs on
+// an already-imported image — so this reads as "converted and not mid-task", which is the right gate for
+// "can I operate on it now?".
+export function isImported(img: { status?: string }): boolean {
+  return img.status === 'done'
+}
+
 /** Excluded from further processing (explicitly `included === false`). */
 export function isExcluded(img: Pick<Includable, 'included'>): boolean {
   return img.included === false

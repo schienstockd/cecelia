@@ -127,7 +127,7 @@ async function copy() {
 </template>
 
 <style scoped>
-.cg-body { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.cg-body { display: flex; flex-direction: column; gap: 0.7rem; }   /* padding from BaseModal */
 .cg-warn { display: flex; align-items: center; gap: 0.4rem; margin: 0; font-size: 0.78rem; color: #fcd34d;
   background: #7c2d1244; border: 1px solid #92400e55; border-radius: 0.3rem; padding: 0.4rem 0.55rem; line-height: 1.35; }
 .cg-empty { margin: 0; font-size: 0.8rem; color: var(--cc-text-dim); }

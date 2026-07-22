@@ -148,7 +148,7 @@ async function copy(key: string, value: string) {
 
 <style scoped>
 /* Shell (overlay/box/header/footer) lives in BaseModal; only dialog-specific styles here. */
-.md-body { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.md-body { display: flex; flex-direction: column; gap: 1rem; }   /* padding from BaseModal */
 .md-name { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--cc-text); }
 
 .md-section { display: flex; flex-direction: column; gap: 0.4rem; }

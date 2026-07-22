@@ -397,6 +397,32 @@ end
           (isfile(_sysimage_path()) && _stamp_matches(onstamp, string(VERSION), _manifest_hash()))
 end
 
+@testset "API: crop render composite" begin
+    # Pure colourise/blend for the in-app crop MIP (crop_render.jl) — no zarr/IO. (C,H,W) float +
+    # per-channel (lo,hi,cmap,visible) → H×W RGB, clip-to-contrast + additive blend.
+    r(x) = Float64(ColorTypes.red(x)); g(x) = Float64(ColorTypes.green(x)); b(x) = Float64(ColorTypes.blue(x))
+
+    # one red channel, mid intensity, full-range contrast → mid red, no green/blue
+    img = _crop_composite_rgb(fill(0.5f0, 1, 2, 2), [(0.0, 1.0, "red", true)])
+    @test size(img) == (2, 2)
+    @test isapprox(r(img[1, 1]), 0.5; atol = 0.01) && g(img[1, 1]) == 0 && b(img[1, 1]) == 0
+
+    # contrast clip: value below lo → 0, above hi → 1
+    chw = reshape(Float32[0.0 1.0; 0.2 0.8], 1, 2, 2)
+    im2 = _crop_composite_rgb(chw, [(0.2, 0.8, "green", true)])
+    @test isapprox(g(im2[1, 1]), 0.0; atol = 0.01)     # 0.0 < lo → 0
+    @test isapprox(g(im2[1, 2]), 1.0; atol = 0.01)     # 1.0 > hi → 1
+
+    # invisible channel contributes nothing
+    dark = _crop_composite_rgb(fill(1.0f0, 1, 1, 1), [(0.0, 1.0, "red", false)])
+    @test r(dark[1, 1]) == 0
+
+    # additive blend: red + green channels → yellow-ish
+    two = _crop_composite_rgb(cat(fill(1.0f0, 1, 1, 1), fill(1.0f0, 1, 1, 1); dims = 1),
+                              [(0.0, 1.0, "red", true), (0.0, 1.0, "green", true)])
+    @test r(two[1, 1]) > 0.9 && g(two[1, 1]) > 0.9 && b(two[1, 1]) == 0
+end
+
 @testset "API: module-canvas persistence" begin
     # Redirect projects_dir() → temp so we don't touch the dev projects dir.
     conf = cecelia_conf(); dirs = get!(conf, "dirs", Dict{String,Any}())
