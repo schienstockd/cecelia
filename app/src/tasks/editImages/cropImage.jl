@@ -74,6 +74,7 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     versioned_set_field!(raw2, "filepath", out_filename, VERSIONED_DEFAULT_VAL)
     ch_names = versioned_get_field(raw, "imChannelNames", VERSIONED_DEFAULT_VAL)
     isnothing(ch_names) || versioned_set_field!(raw2, "imChannelNames", ch_names, VERSIONED_DEFAULT_VAL)
+    raw2["status"] = "done"   # a crop is a complete image (zarr written) — mark it imported, not 'pending'
     open(new_ccid, "w") do io; JSON3.write(io, raw2); end
 
     on_log("[INFO] Crop complete → new image $(new_img.uid)")

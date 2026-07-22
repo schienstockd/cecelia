@@ -2,14 +2,14 @@ import { describe, it, expect } from 'vitest'
 import { isExcluded, isIncluded, includedUids, dropExcluded, isImported } from './inclusion'
 
 describe('isImported', () => {
-  it('true only once conversion is done', () => {
-    expect(isImported({ status: 'done' })).toBe(true)
+  it('true once a converted version exists (stable — independent of task status)', () => {
+    expect(isImported({ filepaths: { default: 'ccidImage.ome.zarr' } })).toBe(true)
+    expect(isImported({ filepaths: { corrected: 'x.ome.zarr' } })).toBe(true)
   })
-  it('false while pending/converting/failed (placeholder filepath is set at register, so status is the signal)', () => {
-    expect(isImported({ status: 'pending' })).toBe(false)
-    expect(isImported({ status: 'converting' })).toBe(false)
-    expect(isImported({ status: 'failed' })).toBe(false)
+  it('false for a not-yet-converted row (no versioned filepaths)', () => {
     expect(isImported({})).toBe(false)
+    expect(isImported({ filepaths: {} })).toBe(false)
+    expect(isImported({ filepaths: null })).toBe(false)
   })
 })
 

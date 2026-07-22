@@ -839,8 +839,11 @@ function api_images_register(body_bytes::Vector{UInt8})
             "name"      => img.name,
             "kind"      => img.kind,
             "status"    => "pending",
-            "filepath"  => abs_path,
-            "filepaths" => Dict{String,Any}("default" => "ccidImage.ome.zarr"),
+            "filepath"  => abs_path,            # SOURCE path, for display only (not the converted zarr)
+            # No versioned `filepaths` yet — the OME-ZARR doesn't exist until the import task converts it.
+            # (Faking `{default: …}` here made a pending row look "imported" — see isImported / the crop
+            # + open gates. The conversion task writes the real versioned filepath.)
+            "filepaths" => Dict{String,Any}(),
         ))
     end
 
