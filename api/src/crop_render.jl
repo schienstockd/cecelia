@@ -172,3 +172,75 @@ function percentile_spec(plane, cmap::String)
     hi = v[clamp(ceil(Int, 0.999 * n), 1, n)]
     (lo, hi, cmap, true)
 end
+
+# ── HTTP routes (GET) ────────────────────────────────────────────────────────────
+# Resolve (projectUid, imageUid, valueName) → (zarr_path, task_dir) using the SAME ccid.json convention
+# as napari open (`read_ccid_raw` + `versioned_get_field`). `value_name` empty ⇒ active/default.
+function _crop_resolve(project_uid::AbstractString, image_uid::AbstractString, value_name)
+    (isempty(project_uid) || isempty(image_uid)) && return (nothing, nothing, "projectUid + imageUid required")
+    proj_dir = joinpath(projects_dir(), project_uid)
+    meta = joinpath(proj_dir, "1", image_uid, "ccid.json")
+    (isdir(proj_dir) && isfile(meta)) || return (nothing, nothing, "Image not found")
+    raw = read_ccid_raw(meta)
+    fn  = versioned_get_field(raw, "filepath", value_name)
+    fn === nothing && return (nothing, nothing, "No filepath registered — run a conversion task first")
+    zp = joinpath(proj_dir, "0", image_uid, string(fn))
+    isdir(zp) || return (nothing, nothing, "Zarr not found on disk")
+    (zp, joinpath(proj_dir, "1", image_uid), nothing)
+end
+
+# GET /api/crop/info?projectUid=&imageUid=&valueName=&maxPx= → {nT,nZ,fullW,fullH,frameW,frameH,maxPx}
+# Dimensions the panel needs: the timepoint/slice counts for the scrubber + range sliders, the displayed
+# frame size, and the full-res size (Phase 2 maps a drawn rectangle back to full px from these).
+function api_crop_info(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
+    zp, _, err = _crop_resolve(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    try
+        arr, caxes = _crop_open_level0(zp)
+        d  = _crop_axis_dims(caxes, ndims(arr))
+        fx = size(arr, d["x"]); fy = size(arr, d["y"])
+        nt = haskey(d, "t") ? size(arr, d["t"]) : 1
+        nz = haskey(d, "z") ? size(arr, d["z"]) : 1
+        max_px = parse(Int, get(q, "maxPx", "512"))
+        step = max(1, cld(max(fx, fy), max_px))
+        200, JSON3.write((; nT = nt, nZ = nz, fullW = fx, fullH = fy,
+                            frameW = cld(fx, step), frameH = cld(fy, step), maxPx = max_px))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
+# Small bounded in-memory frame cache (server-lifetime). Key includes the props-file mtime so changing
+# the viewer's colours invalidates cached frames. FIFO eviction — a crop session touches few frames.
+const _CROP_CACHE       = Dict{String,Vector{UInt8}}()
+const _CROP_CACHE_ORDER = String[]
+const _CROP_CACHE_MAX   = 256
+function _crop_cache!(key::String, produce)
+    haskey(_CROP_CACHE, key) && return _CROP_CACHE[key]
+    v = produce()
+    _CROP_CACHE[key] = v; push!(_CROP_CACHE_ORDER, key)
+    if length(_CROP_CACHE_ORDER) > _CROP_CACHE_MAX
+        delete!(_CROP_CACHE, popfirst!(_CROP_CACHE_ORDER))
+    end
+    v
+end
+
+# GET /api/crop/frame?projectUid=&imageUid=&valueName=&t=&maxPx= → PNG bytes (coloured z-MIP of frame t).
+# Served as application/octet-stream (the byte-body path); the frontend wraps it in an image/png blob.
+function api_crop_frame(req::HTTP.Request)
+    q  = HTTP.queryparams(HTTP.URI(req.target))
+    vn = get(q, "valueName", ""); vnn = isempty(vn) ? nothing : vn
+    zp, td, err = _crop_resolve(get(q, "projectUid", ""), get(q, "imageUid", ""), vnn)
+    err === nothing || return 404, JSON3.write((; error = err))
+    t = something(tryparse(Int, get(q, "t", "0")), 0)
+    max_px = something(tryparse(Int, get(q, "maxPx", "512")), 512)
+    props = _props_path(td, zp)                       # JSON layer props (napari_api._props_path)
+    key = string(zp, "|", vn, "|", t, "|", max_px, "|", isfile(props) ? mtime(props) : 0.0)
+    try
+        200, _crop_cache!(key, () -> render_crop_frame(zp, props, t; max_px = max_px))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
