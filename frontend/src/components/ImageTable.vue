@@ -634,7 +634,7 @@ onUnmounted(stopResize)
             <button class="row-icon-btn" :disabled="!isImported(img)"
               @click.stop="cropDialogUid = img.uid"
               v-tooltip.right="isImported(img) ? 'Crop to a sub-region → new image (draw a rectangle on the projection, set z/t)' : 'Import this image first'">
-              <i class="pi pi-clone" />
+              <i class="pi pi-image" />
             </button>
             <button class="row-icon-btn" @click.stop="copyUid(img.uid)"
               v-tooltip.right="copiedUid === img.uid ? 'Copied!' : 'Copy UID to clipboard'">
@@ -955,6 +955,10 @@ th:hover .resize-handle::after { opacity: 1; }
 }
 .image-row:hover .row-icon-btn { opacity: 1; }
 .row-icon-btn:hover { color: var(--cc-text); background: var(--cc-surface-2); }
+/* disabled (e.g. Crop on a not-yet-imported image): visibly greyed, no hover highlight, not-allowed */
+.row-icon-btn:disabled { cursor: not-allowed; }
+.image-row:hover .row-icon-btn:disabled { opacity: 0.3; }
+.row-icon-btn:disabled:hover { color: var(--cc-text-dim); background: none; }
 
 /* editable attribute cell: click to edit; subtle hover affordance */
 .attr-cell { cursor: text; border-radius: 3px; padding: 0 2px; }

@@ -77,6 +77,17 @@ function _run_task(task::CropImage, img::CciaImage, params::Dict{String,Any};
     raw2["status"] = "done"   # a crop is a complete image (zarr written) — mark it imported, not 'pending'
     open(new_ccid, "w") do io; JSON3.write(io, raw2); end
 
+    # Carry the source's napari layer-props sidecar (per-channel colormap/contrast JSON) to the crop, so
+    # it opens in napari with the same colours the user set. The crop keeps all channels in order, so the
+    # props map 1:1. Best-effort: only if the source was opened with autosave (sidecar exists). Named to
+    # match the crop's default zarr (_props_path = {basename(zarr)}.json under the image's data/ dir).
+    src_sidecar = joinpath(img._dir, "data", basename(string(filename)) * ".json")
+    if isfile(src_sidecar)
+        dst_dir = joinpath(new_img._dir, "data"); mkpath(dst_dir)
+        cp(src_sidecar, joinpath(dst_dir, out_filename * ".json"); force = true)
+        on_log("[INFO] Carried napari colours to the crop")
+    end
+
     on_log("[INFO] Crop complete → new image $(new_img.uid)")
     Dict{String,Any}("newImageUid" => new_img.uid, "newImageName" => new_img.name, "setUid" => s.uid)
 end
