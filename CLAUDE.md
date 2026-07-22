@@ -8,6 +8,7 @@ See also:
 - [`FAQ.md`](FAQ.md) — root-level, reader-facing highlight doc: the *counterintuitive* "why" (AI-written, no Rust, browser-not-Electron, three languages). Punch lines, not prose. Keep it a highlight reel — do NOT expand it into a summary of the `docs/`; add new detail to the relevant `docs/` file and only promote a genuinely surprising one-liner up to the FAQ.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — layer boundaries, WS protocol, data model contracts, Napari lifecycle
 - [`docs/SCHEDULER.md`](docs/SCHEDULER.md) — chain executor design: per-image threading, resource pools, barriers, resume semantics, event bus, concurrency invariants
+- [`docs/JOBS.md`](docs/JOBS.md) — background jobs vs scheduler tasks: the `jobs.jl` registry (OS process-kill primitives + `track_job!`/`cancel_job!`), when to write a job vs a `CciaTask`, and how project-wide ops (data patches, project export/import) run end-to-end over the WS task rail
 - [`docs/UI.md`](docs/UI.md) — frontend conventions, component catalog, how to add module pages and plots
 - [`docs/MODULES.md`](docs/MODULES.md) — complete guide to adding task functions and module pages
 - [`docs/CUSTOM_MODULES.md`](docs/CUSTOM_MODULES.md) — user drop-in tasks: add a task by dropping `.jl`/`.json`/`_run.py` into `<config_dir>/modules/` (no rebuild), the runtime `register_task!` registry, `load_custom_modules!`, the `/api/tasks/custom-modules` routes, and the runnable example in `docs/examples/custom-modules/`
@@ -35,6 +36,7 @@ See also:
 | A design decision becomes *surprising/counterintuitive* to an outside reader | `FAQ.md` (one punchy Q&A) — but keep detail in the relevant `docs/` file |
 | Layer boundaries, contracts, hidden invariants | `docs/ARCHITECTURE.md` |
 | Scheduler, resource pools, barriers, event bus | `docs/SCHEDULER.md` |
+| Background jobs (data patches, project export/import), `jobs.jl` registry, process-kill primitives | `docs/JOBS.md` |
 | UI patterns, components, design tokens | `docs/UI.md` |
 | Analysis board: tabs/layout, plot-hosting registries, board export | `docs/ANALYSIS.md` |
 | Notebooks Playground: Pluto engine, `CeceliaNb`, registry/versioning, sysimage, `/api/notebooks/*` | `docs/NOTEBOOKS.md` |
@@ -261,7 +263,7 @@ use the named helper, don't re-derive the platform branch inline:
   `Sys.iswindows()`, never hardcode one.
 - **bioformats2raw binary name** — use `bioformats2raw_bin()` in `config.jl`, don't hardcode
   `.bat` vs no-extension.
-- **Process killing** — use `_kill_tree(pid)` in `app/src/tasks/scheduler.jl`; never write
+- **Process killing** — use `_kill_tree(pid)` in `app/src/jobs.jl`; never write
   `kill`/`pgrep`/`taskkill` inline. (`Base.Process` has no `.pid` field — `_kill_tree` already
   handles getting the OS pid via libuv.) Never `taskkill /IM julia.exe` — it kills every Julia
   process on the machine, which is why `stop`/`stop-backend`/`stop-napari` kill by **listening
@@ -397,10 +399,12 @@ touches a real user's config and the path never depends on install scope. Both t
 this one resolver — don't re-derive the path. See `docs/todo/ONBOARDING_PLAN.md`.
 
 ```bash
-pixi run dev        # Julia server (Revise hot-reload) → :8080
-pixi run frontend   # Vite → http://localhost:5173
+pixi run dev        # supervises BOTH the Revise backend (:8080) AND the frontend/Vite — ONE command
 ```
-`pixi run prod` runs the server without Revise (production). `pixi run stop` stops all three by port.
+`api/dev.jl` starts and supervises the frontend too (relaunches on Settings→System Restart / worktree
+switch), so do NOT run `pixi run frontend` alongside `dev`. The standalone `pixi run frontend` (Vite,
+`npm run dev`) is only for previewing a frontend-only branch on a spare port against an already-running
+backend. `pixi run prod` runs the server without Revise (production). `pixi run stop` stops all by port.
 Revise reloads function bodies on save. Struct/macro changes still need a restart.
 
 ---
@@ -466,7 +470,7 @@ OME-ZARR pyramids. Document any fixture you add in `test-data/README.md`.
 - Strings: double quotes only (single quotes = `Char`)
 - Multiple dispatch: separate method per type, not OOP overloading
 - `@infiltrate` = `browser()` from R
-- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/tasks/scheduler.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
+- Shell commands: always platform-safe. Use `_kill_tree` (`app/src/jobs.jl`) and `_dir_bytes` (`app/src/utils.jl`); never write `pgrep`/`kill`/`du` inline.
 - **Don't `export` generic names that collide with common deps or Base.** Exports land in any
   user's namespace; if Cecelia and another `using`'d package both export the same name, Julia
   leaves it *unbound* (ambiguous), breaking unqualified calls. In particular avoid clashing with

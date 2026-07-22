@@ -439,6 +439,15 @@ function api_projects_list(req::HTTP.Request)
     200, JSON3.write((; projects, projectsDir=projects_dir()))
 end
 
+# GET /api/projects/bundles — .ccbundle files in the default export dir, for the import picker.
+function api_projects_bundles(::HTTP.Request)
+    try
+        200, JSON3.write((; bundles = list_bundles(), exportDir = default_export_dir()))
+    catch e
+        500, JSON3.write((; error = sprint(showerror, e)))
+    end
+end
+
 function api_projects_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))

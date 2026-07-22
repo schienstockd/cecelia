@@ -99,6 +99,8 @@ export ResourcePool, TaskRecord
 export run_task, run_tasks
 export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_pools, list_tasks
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
+export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
+export export_project, import_project, default_export_dir, list_bundles
 export resize_pool!
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
@@ -123,6 +125,9 @@ export capture_view_state, apply_view_state!
 include("config.jl")
 include("utils.jl")
 include("py_runner.jl")
+# OS process control (kill primitives) + the background-job registry (track/cancel by task_id) shared
+# by data patches and project export/import. Foundational; before the scheduler + jobs that use it.
+include("jobs.jl")
 include("helpers.jl")
 include("events.jl")
 include("model/image.jl")
@@ -175,9 +180,11 @@ include("tasks/custom_modules.jl")
 include("tasks/scheduler.jl")
 include("tasks/chain.jl")
 include("napari.jl")
-# Data patches (project-scoped maintenance scripts, run from Settings). After scheduler.jl
-# (uses _kill_proc_tree) + py_runner.jl (run_py/task_run_dir).
+# Data patches (project-scoped maintenance scripts, run from Settings). After jobs.jl (track/cancel)
+# + py_runner.jl (run_py/task_run_dir).
 include("maintenance.jl")
+# Project Manager export/import — background jobs (jobs.jl) that tar each store in parallel. See docs/JOBS.md.
+include("project_io.jl")
 
 # AI observer (in-app assistant) — spawns a headless agent that reads state + appends to the lab log
 # through the cecelia-observer MCP. After scheduler.jl (uses _kill_proc_tree). See

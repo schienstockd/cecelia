@@ -43,9 +43,9 @@ function handle_message(ws, raw::AbstractString)
         task_id = String(get(data, :taskId, ""))
         # Also reach the non-scheduler producers that emit task:* frames under this id but aren't in the
         # scheduler's _TASKS: batch movies (request_batch_cancel!, stops after the current image) and
-        # data patches (cancel_maintenance!, kills the subprocess). So the Task-Manager Cancel button
-        # works on all three, not just scheduler tasks.
-        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_maintenance!(task_id))
+        # background jobs (cancel_job!, kills the subprocess(es) — data patches + project export/import).
+        # So the Task-Manager Cancel button works on all of them, not just scheduler tasks.
+        isempty(task_id) || (cancel_task!(task_id); request_batch_cancel!(task_id); cancel_job!(task_id))
     elseif type == "movie:batch"
         handle_movie_batch(ws, data)
     elseif type == "chain:run"
@@ -58,8 +58,61 @@ function handle_message(ws, raw::AbstractString)
     elseif type == "maintenance:cancel"
         task_id = String(get(data, :taskId, ""))
         isempty(task_id) || cancel_maintenance!(task_id)
+    elseif type == "project:export"
+        handle_project_export(ws, data)
+    elseif type == "project:import"
+        handle_project_import(ws, data)
     else
         @warn "Unknown WS message type" type
+    end
+end
+
+# Project Manager Export / Import — background jobs (jobs.jl / project_io.jl) that stream over the task
+# rail like a data patch, cancellable via task:cancel → cancel_job!. NEITHER needs an open project:
+# export reads a project dir off disk by uid; import creates a new one. See docs/JOBS.md.
+function handle_project_export(ws, data)
+    task_id     = String(get(data, :taskId, ""))
+    project_uid = String(get(data, :projectUid, ""))
+    out_dir     = String(get(data, :outDir, ""))
+    isempty(task_id) && return
+    if isempty(project_uid) || !isdir(joinpath(projects_dir(), project_uid))
+        ws_log(ws, task_id, "[ERROR] Project not found: $project_uid")
+        ws_status(ws, task_id, "failed"); return
+    end
+    Threads.@spawn begin
+        ws_status(ws, task_id, "running")
+        bundle = try
+            export_project(project_uid;
+                out_dir     = isempty(out_dir) ? default_export_dir() : out_dir,
+                task_id     = task_id,
+                on_log      = line -> ws_log(ws, task_id, line),
+                on_progress = (n, t) -> ws_progress(ws, task_id, n, t))
+        catch ex
+            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); ""
+        end
+        ws_status(ws, task_id, isempty(bundle) ? "failed" : "done")
+    end
+end
+
+function handle_project_import(ws, data)
+    task_id = String(get(data, :taskId, ""))
+    bundle  = String(get(data, :bundle, ""))
+    isempty(task_id) && return
+    if isempty(bundle) || !isdir(bundle)
+        ws_log(ws, task_id, "[ERROR] Bundle not found: $bundle")
+        ws_status(ws, task_id, "failed"); return
+    end
+    Threads.@spawn begin
+        ws_status(ws, task_id, "running")
+        uid = try
+            import_project(bundle;
+                task_id     = task_id,
+                on_log      = line -> ws_log(ws, task_id, line),
+                on_progress = (n, t) -> ws_progress(ws, task_id, n, t))
+        catch ex
+            ws_log(ws, task_id, "[ERROR] " * sprint(showerror, ex)); ""
+        end
+        ws_status(ws, task_id, isempty(uid) ? "failed" : "done")
     end
 end
 

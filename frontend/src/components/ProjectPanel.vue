@@ -3,14 +3,18 @@
   Opens from the project block in AppSidebar.
 -->
 <script setup lang="ts">
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
+import { useWsStore } from '../stores/ws'
+import { useTaskStore } from '../stores/tasks'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
 const projectMeta = useProjectMetaStore()
+const ws = useWsStore()
+const taskStore = useTaskStore()
 
 type Tab = 'recent' | 'new'
 const tab = ref<Tab>('recent')
@@ -52,7 +56,62 @@ async function deleteProject(uid: string) {
   if (selectedUid.value === uid) selectedUid.value = projectMeta.recent[0]?.uid ?? null
 }
 
+// ── Export / import (background jobs over the WS task rail — see docs/JOBS.md) ─────────────────
+// Neither needs an open project: export reads a project dir off disk by uid; import creates a new one.
+// One I/O op runs at a time; its progress shows inline here and in the global Tasks list.
+const ioTaskId  = ref<string | null>(null)
+const importPath = ref('')
+const ioTask = computed(() => ioTaskId.value ? taskStore.tasks.find(t => t.id === ioTaskId.value) ?? null : null)
+const ioBusy = computed(() => !!ioTask.value && (ioTask.value.status === 'running' || ioTask.value.status === 'queued'))
+
+// Bundles already sitting in the default export folder — the import picker lists these so the user can
+// pick an exported bundle instead of typing a path (a pasted path still works as a fallback).
+interface BundleInfo { uid: string; name: string; path: string; stores: number }
+const bundles = ref<BundleInfo[]>([])
+async function fetchBundles() {
+  try {
+    const res = await fetch('/api/projects/bundles')
+    if (res.ok) bundles.value = ((await res.json()).bundles ?? []) as BundleInfo[]
+  } catch { /* export dir may not exist yet */ }
+}
+function pickBundle(path: string) { if (path) importPath.value = path }
+
+function exportProject(p: { uid: string; name: string }) {
+  if (ioBusy.value) return
+  const entry = taskStore.add({
+    module: 'project', label: `Export ${p.name}`, imageUid: '', imageName: '', status: 'queued',
+    taskName: 'export', funName: 'project.export', params: {}, projectUid: p.uid, startedAt: new Date(),
+  })
+  ioTaskId.value = entry.id
+  ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid })
+}
+
+function importBundle() {
+  const bundle = importPath.value.trim()
+  if (!bundle || ioBusy.value) return
+  const entry = taskStore.add({
+    module: 'project', label: `Import ${bundle.split('/').pop()}`, imageUid: '', imageName: '',
+    status: 'queued', taskName: 'import', funName: 'project.import', params: { bundle },
+    projectUid: '', startedAt: new Date(),
+  })
+  ioTaskId.value = entry.id
+  ws.send({ type: 'project:import', taskId: entry.id, bundle })
+}
+
+function cancelIo() {
+  if (ioTaskId.value) ws.send({ type: 'task:cancel', taskId: ioTaskId.value })
+}
+
+// On completion: a finished import means a new project on disk (refresh the list); a finished export
+// means a new bundle in the export folder (refresh the picker).
+watch(() => ioTask.value?.status, (s) => {
+  if (s !== 'done') return
+  if (ioTask.value?.funName === 'project.import') { projectMeta.fetchRecent(); importPath.value = '' }
+  if (ioTask.value?.funName === 'project.export') fetchBundles()
+})
+
 onMounted(async () => {
+  fetchBundles()
   await projectMeta.fetchRecent()
   if (projectMeta.recent.length === 0) {
     tab.value = 'new'
@@ -127,7 +186,7 @@ const typeColour: Record<ProjectType, string> = {
               <th class="col-type">Type</th>
               <th class="col-path">Location</th>
               <th class="col-date">Last opened</th>
-              <th class="col-del" />
+              <th class="col-actions" />
             </tr>
           </thead>
           <tbody>
@@ -162,7 +221,12 @@ const typeColour: Record<ProjectType, string> = {
                 {{ p.path.length > 40 ? '…' + p.path.slice(-38) : p.path }}
               </td>
               <td class="col-date dim">{{ formatDate(p.lastOpenedAt) }}</td>
-              <td class="col-del">
+              <td class="col-actions">
+                <!-- export to a portable .ccbundle (allowed for any project, incl. the open one) -->
+                <button class="pp-row-btn" :disabled="ioBusy" @click.stop="exportProject(p)"
+                        v-tooltip.left="'Export this project to a portable .ccbundle'">
+                  <i class="pi pi-download" />
+                </button>
                 <!-- delete a project (not the open one) — canonical arm→confirm single button -->
                 <ConfirmDeleteButton v-if="projectMeta.current?.uid !== p.uid"
                                      title="Delete this project from disk"
@@ -172,6 +236,39 @@ const typeColour: Record<ProjectType, string> = {
             </tr>
           </tbody>
         </table>
+
+        <!-- import a bundle + live status of the active export/import -->
+        <div class="pp-io">
+          <div class="pp-io-import">
+            <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
+                    @change="pickBundle(($event.target as HTMLSelectElement).value)"
+                    v-tooltip.top="'Pick a bundle from the export folder.'">
+              <option value="">Choose an exported bundle…</option>
+              <option v-for="b in bundles" :key="b.path" :value="b.path">
+                {{ b.name || b.uid }} — {{ b.stores }} store{{ b.stores === 1 ? '' : 's' }}
+              </option>
+            </select>
+            <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
+                   :placeholder="bundles.length ? '…or paste a .ccbundle folder path' : 'Paste a .ccbundle folder path to import…'"
+                   @keyup.enter="importBundle"
+                   v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
+            <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
+                    v-tooltip.top="'Import a project from a .ccbundle folder.'">
+              <i class="pi pi-upload" /> Import
+            </button>
+          </div>
+          <div v-if="ioTask" class="pp-io-status" :class="ioTask.status">
+            <span class="pp-io-label">{{ ioTask.label }}</span>
+            <span class="pp-io-state">{{ ioTask.status }}</span>
+            <div v-if="ioBusy" class="pp-io-bar">
+              <div class="pp-io-fill" :style="{ width: Math.round((ioTask.progress ?? 0) * 100) + '%' }" />
+            </div>
+            <button v-if="ioBusy" class="pp-row-btn" @click="cancelIo" v-tooltip.top="'Cancel'">
+              <i class="pi pi-times" />
+            </button>
+            <span v-if="ioTask.log.length" class="pp-io-log">{{ ioTask.log[ioTask.log.length - 1] }}</span>
+          </div>
+        </div>
       </div>
 
       <!-- ── NEW PROJECT tab ───────────────────────────────────────────── -->
@@ -311,7 +408,39 @@ const typeColour: Record<ProjectType, string> = {
 .col-type { width: 80px; }
 .col-path { flex: 1; }
 .col-date { width: 120px; }
-.col-del  { width: 34px; text-align: center; }
+.col-actions { width: 72px; white-space: nowrap; text-align: right; }
+
+/* small square row-action button (export, cancel) — matches ConfirmDeleteButton's footprint */
+.pp-row-btn {
+  background: none; border: none; cursor: pointer;
+  color: var(--cc-text-dim); padding: 0.2rem 0.3rem; border-radius: 0.25rem;
+  transition: color 0.1s, background 0.1s;
+}
+.pp-row-btn:hover:not(:disabled) { color: var(--cc-accent); background: var(--cc-surface-2); }
+.pp-row-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* import bar + active export/import status */
+.pp-io {
+  display: flex; flex-direction: column; gap: 0.5rem;
+  padding: 0.75rem; border-top: 1px solid var(--cc-border);
+}
+.pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+.pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }
+.pp-io-path { flex: 2 1 180px; font-size: 0.78rem; }
+.pp-io-status {
+  display: flex; align-items: center; gap: 0.5rem;
+  font-size: 0.75rem; color: var(--cc-text-dim);
+}
+.pp-io-label { color: var(--cc-text); font-weight: 500; }
+.pp-io-state { text-transform: uppercase; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.05em; }
+.pp-io-status.done  .pp-io-state { color: #34d399; }
+.pp-io-status.failed .pp-io-state, .pp-io-status.cancelled .pp-io-state { color: #fca5a5; }
+.pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; }
+.pp-io-fill { height: 100%; background: var(--cc-accent); transition: width 0.2s; }
+.pp-io-log {
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.7;
+}
 
 .proj-row {
   border-bottom: 1px solid var(--cc-border);

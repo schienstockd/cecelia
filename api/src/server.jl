@@ -198,6 +198,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
             api_setup_validate(req)
         elseif path == "/api/projects"
             api_projects_list(req)
+        elseif path == "/api/projects/bundles"
+            api_projects_bundles(req)
         elseif path == "/api/fs/list"
             api_fs_list(req)
         elseif path == "/api/images"
