@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeRange, rangeCrops, fracToIndexRange, fracRangeLabel } from './crop3d'
+import { normalizeRange, rangeCrops, fracToIndexRange, fracRangeLabel, cropBoxFromRect, type CropInfo } from './crop3d'
 
 describe('normalizeRange', () => {
   it('converts percentages to [0,1] fractions', () => {
@@ -61,5 +61,37 @@ describe('fracRangeLabel', () => {
     expect(fracRangeLabel(20, 80, undefined)).toBe('')
     expect(fracRangeLabel(20, 80, null)).toBe('')
     expect(fracRangeLabel(20, 80, 1)).toBe('')
+  })
+})
+
+describe('cropBoxFromRect', () => {
+  const info: CropInfo = { nT: 100, nZ: 20, fullW: 1000, fullH: 800, frameW: 500, frameH: 400, maxPx: 512 }
+  const full = { lo: 0, hi: 100 }
+
+  it('maps a normalised rect to full-res half-open px (floor lo, ceil hi)', () => {
+    const b = cropBoxFromRect({ x0: 0.1, y0: 0.25, x1: 0.6, y1: 0.75 }, info, full, full)
+    expect([b.x0, b.x1, b.y0, b.y1]).toEqual([100, 600, 200, 600])
+  })
+
+  it('normalises a backwards-drawn rect (x1<x0)', () => {
+    const b = cropBoxFromRect({ x0: 0.6, y0: 0.75, x1: 0.1, y1: 0.25 }, info, full, full)
+    expect([b.x0, b.x1, b.y0, b.y1]).toEqual([100, 600, 200, 600])
+  })
+
+  it('z/t are -1 (keep whole axis) when the range does not trim', () => {
+    const b = cropBoxFromRect({ x0: 0, y0: 0, x1: 1, y1: 1 }, info, full, full)
+    expect([b.z0, b.z1, b.t0, b.t1]).toEqual([-1, -1, -1, -1])
+  })
+
+  it('z/t crop to slice indices when the range trims', () => {
+    const b = cropBoxFromRect({ x0: 0, y0: 0, x1: 1, y1: 1 }, info, { lo: 20, hi: 80 }, { lo: 0, hi: 50 })
+    expect([b.z0, b.z1]).toEqual([4, 16])      // 20–80% of 20 slices
+    expect([b.t0, b.t1]).toEqual([0, 50])      // 0–50% of 100 frames
+  })
+
+  it('a single-slice/-frame axis stays whole (-1) even if the slider moved', () => {
+    const flat: CropInfo = { ...info, nZ: 1, nT: 1 }
+    const b = cropBoxFromRect({ x0: 0, y0: 0, x1: 1, y1: 1 }, flat, { lo: 20, hi: 80 }, { lo: 20, hi: 80 })
+    expect([b.z0, b.z1, b.t0, b.t1]).toEqual([-1, -1, -1, -1])
   })
 })

@@ -52,3 +52,35 @@ export function fracRangeLabel(loPct: number, hiPct: number, n: number | null | 
   const { i0, i1 } = fracToIndexRange(loPct, hiPct, n)
   return `${i0 + 1}–${i1}/${n}`
 }
+
+// The /api/crop/info shape the panel needs for the scrubber + box maths.
+export interface CropInfo { nT: number; nZ: number; fullW: number; fullH: number; frameW: number; frameH: number; maxPx: number }
+// A drawn rectangle in NORMALISED image coords ([0,1] of width/height) — resolution-independent, so the
+// displayed (downsampled) frame and the full-res image share one description.
+export interface NormRect { x0: number; y0: number; x1: number; y1: number }
+
+const clampInt = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(Math.round(v), hi))
+
+/**
+ * Turn a normalised drawn rectangle + z/t % ranges into the full-resolution, half-open pixel box the
+ * `editImages.cropImage` task expects: `{x0,x1,y0,y1,z0,z1,t0,t1}`. XY map normalised→full px (floor lo,
+ * ceil hi, ≥1 wide, clamped). z/t use `fracToIndexRange` when the axis exists AND the range actually
+ * trims; otherwise `-1` (the task's "keep the whole axis" sentinel), so a full range doesn't needlessly
+ * crop. Pure — unit-tested; mirrors the bounds maths the napari `crop_box` used.
+ */
+export function cropBoxFromRect(rect: NormRect, info: CropInfo,
+                                zPct: { lo: number; hi: number },
+                                tPct: { lo: number; hi: number }): Record<string, number> {
+  const lox = Math.min(rect.x0, rect.x1), hix = Math.max(rect.x0, rect.x1)
+  const loy = Math.min(rect.y0, rect.y1), hiy = Math.max(rect.y0, rect.y1)
+  const x0 = clampInt(Math.floor(lox * info.fullW), 0, info.fullW - 1)
+  const x1 = clampInt(Math.ceil(hix * info.fullW), x0 + 1, info.fullW)
+  const y0 = clampInt(Math.floor(loy * info.fullH), 0, info.fullH - 1)
+  const y1 = clampInt(Math.ceil(hiy * info.fullH), y0 + 1, info.fullH)
+  const box: Record<string, number> = { x0, x1, y0, y1, z0: -1, z1: -1, t0: -1, t1: -1 }
+  const z = normalizeRange(zPct.lo, zPct.hi)
+  if (info.nZ > 1 && rangeCrops(z)) { const zi = fracToIndexRange(zPct.lo, zPct.hi, info.nZ); box.z0 = zi.i0; box.z1 = zi.i1 }
+  const t = normalizeRange(tPct.lo, tPct.hi)
+  if (info.nT > 1 && rangeCrops(t)) { const ti = fracToIndexRange(tPct.lo, tPct.hi, info.nT); box.t0 = ti.i0; box.t1 = ti.i1 }
+  return box
+}

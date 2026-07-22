@@ -608,7 +608,9 @@ onUnmounted(() => {
         <div class="viewer-section-title">Crop</div>
         <CropPanel :project-uid="projectMeta.current?.uid ?? ''"
                    :image-uid="projectStore.napariImageUid ?? ''"
-                   :value-name="selectedValueName" />
+                   :image-name="napariImage?.name ?? ''"
+                   :value-name="selectedValueName"
+                   :set-uid="currentSetUid ?? ''" />
       </div>
       <!-- ── Current image: what's open + its versions + segmentation label sets ── -->
       <div class="viewer-section">
