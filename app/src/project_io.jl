@@ -43,6 +43,51 @@ Where bundles land when the caller doesn't pick a destination: a `cecelia_export
 projects dir (next to — not inside — the projects tree)."""
 default_export_dir()::String = joinpath(dirname(rstrip(projects_dir(), '/')), "cecelia_exports")
 
+# Best-effort rewrite of the project uid where it's embedded as USER data we can't derive from location:
+# a notebook's hardcoded `load_project("<old>")`. Everything else that references the project — analysis
+# boards (uid-relative keys) and chain run.json (location-derived on resume) — needs no rewrite (see
+# docs/OBJECTMODEL.md → "project identity = directory name"). Notebooks are arbitrary user Julia, so this
+# only catches the literal `load_project("<old>")` form; anything fancier the user fixes themselves.
+function _reidentify_files!(root::AbstractString, old_uid::AbstractString, new_uid::AbstractString)
+    (old_uid == new_uid) && return
+    nb_dir = joinpath(root, "notebooks")
+    isdir(nb_dir) || return
+    for (dir, _, files) in walkdir(nb_dir), f in files
+        endswith(f, ".jl") || continue
+        p   = joinpath(dir, f)
+        txt = read(p, String)
+        new = replace(txt, "load_project(\"$old_uid\")" => "load_project(\"$new_uid\")")
+        new == txt || write(p, new)
+    end
+end
+
+"""
+    reidentify_project!(proj_uid, new_uid; new_name=nothing) -> String
+
+Change a project's identity in place: rename its directory (`proj_uid` → `new_uid`) and rewrite
+`project.json` (uid, and `name` if `new_name` is given). Safe because project-internal files reference
+the project by LOCATION, not a baked-in uid — analysis boards are uid-relative and chain runs derive
+from location (docs/OBJECTMODEL.md); the one embedded exception, a notebook's hardcoded
+`load_project("…")`, is best-effort rewritten. Returns the new uid. Errors if the source is missing or
+the target uid already exists. (This is the canonical re-identify used by a future project rename; the
+import "copy" path re-identifies inline as it unpacks.)"""
+function reidentify_project!(proj_uid::AbstractString, new_uid::AbstractString; new_name = nothing)::String
+    old_root = joinpath(projects_dir(), String(proj_uid))
+    new_root = joinpath(projects_dir(), String(new_uid))
+    isdir(old_root)  || error("Project not found: $proj_uid")
+    ispath(new_root) && error("A project '$new_uid' already exists")
+    mv(old_root, new_root)
+    pj = joinpath(new_root, "project.json")
+    if isfile(pj)
+        d = JSON3.read(read(pj, String), Dict{String,Any})
+        d["uid"] = String(new_uid)
+        new_name === nothing || (d["name"] = String(new_name))
+        open(pj, "w") do io; JSON3.pretty(io, d); end
+    end
+    _reidentify_files!(new_root, String(proj_uid), String(new_uid))
+    String(new_uid)
+end
+
 """
     list_bundles(dir = default_export_dir()) -> Vector
 
@@ -218,11 +263,11 @@ project's uid (or `""` on failure/cancel). No open project required. On a uid co
 `"error"` (default — refuse), `"replace"` (overwrite the existing project), or `"copy"` (import under a
 fresh uid, keeping both). With no collision, `mode` is irrelevant and the bundle's own uid is used.
 
-⚠️ `"copy"` is currently HIDDEN in the UI (not offered) and its re-identification is INCOMPLETE: only
-`project.json` is rewritten. The project uid is ALSO embedded as data in notebooks (`load_project("…")`),
-`analysisBoards.json` layout keys, and chain `run.json`, so a copied project's notebooks/boards would
-still point at the source. Kept here for an easy comeback — finish re-identifying those before
-re-exposing it. Audit + plan: docs/todo/PROJECT_IO_PLAN.md."""
+`"copy"` re-identifies the project to a fresh uid. This is now safe: analysis boards are stored
+uid-relative and chain runs derive identity from location (see docs/OBJECTMODEL.md), so only
+`project.json` (uid + name) and a notebook's *hardcoded* `load_project("<old>")` need rewriting — both
+done here (the notebook rewrite is best-effort via `_reidentify_files!`; fancier user references are
+the user's to fix)."""
 function import_project(bundle::AbstractString;
                         mode::AbstractString = "error",
                         task_id::AbstractString = "",
@@ -243,8 +288,7 @@ function import_project(bundle::AbstractString;
     if exists && mode == "error"
         on_log("[ERROR] A project '$uid' already exists — use Replace, or remove it first."); return ""
     end
-    # "copy" → NEW uid (keep both); else the bundle's own uid. NB copy is UI-hidden + its re-identify is
-    # incomplete (only project.json below) — see the docstring / audit before re-exposing it.
+    # "copy" → NEW uid (keep both); else the bundle's own uid.
     dest_uid = (exists && mode == "copy") ? gen_uid() : uid
     target   = joinpath(projects_dir(), dest_uid)
     packed   = String.(collect(get(manifest, :packedStores, String[])))
@@ -277,13 +321,15 @@ function import_project(bundle::AbstractString;
             return ""
         end
 
-        # copy: re-identify the project (new uid + suffixed name) in its project.json
+        # copy: re-identify to the new uid (project.json uid + suffixed name) + best-effort notebook
+        # rewrite. Boards/chains need nothing — they're uid-relative / location-derived.
         if dest_uid != uid
             pj = joinpath(tmp, "project.json")
             d  = JSON3.read(read(pj, String), Dict{String,Any})
             d["uid"]  = dest_uid
             d["name"] = string(get(d, "name", uid), " (imported)")
             open(pj, "w") do io; JSON3.pretty(io, d); end
+            _reidentify_files!(tmp, uid, dest_uid)
         end
 
         mkpath(projects_dir())

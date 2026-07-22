@@ -64,23 +64,22 @@ pasted path. **uid collision** → the UI peeks via `GET /api/projects/bundle-in
 (`bundle_info`): **Replace** (overwrite in place — danger-styled, blocked for the currently-open
 project) or **Cancel**. Merge is deliberately out of scope (ambiguous conflict semantics).
 
-#### `copy` (import under a new uid) — kept in the backend, HIDDEN in the UI
-`import_project` still supports `mode="copy"` (new uid + suffixed name), but it's **not exposed** — its
-re-identification is incomplete. The project uid is embedded as *data* beyond `project.json`, so a
-new-uid copy would leave stale references:
+#### `copy` (import under a new uid) — RE-ENABLED after the project-identity cleanup
+Originally hidden because the project uid was baked into project-internal files (a new-uid copy left
+stale references). The cleanup below removed that coupling, so `copy` is now exposed (Replace / Copy /
+Cancel prompt) and correct:
 
-| Where | How | Copy impact |
+| Where the uid was embedded | Fix | Result |
 |---|---|---|
-| `notebooks/*.jl` (+ `.snapshots`) | `load_project("<uid>")` | copied notebook opens the **source** project |
-| `settings/analysisBoards.json` | layout keys `"analysis:<uid>:tab:N"` | copy's boards don't load |
-| `settings/chains/runs/*/run.json` | `"project_uid":"<uid>"` | wrong historical metadata |
-| `1/*/logs/*.log`, `1/*/tasks/*.params.json` | absolute paths `.../projects/<uid>/...` | harmless (historical/transient) |
-| `ccid.json` (per image) | — (uid absent) | ✅ images are project-relative |
+| `settings/analysisBoards.json` layout keys `analysis:<uid>:tab:N` | stored **project-relative** (`tab:N`); re-keyed to the current uid on load (`frontend/src/utils/boardKeys.ts`) | boards survive a uid change |
+| `settings/chains/runs/*/run.json` `project_uid` | `load_chain_run` uses `proj.uid` (identity from **location**); stored field is advisory | runs resume against the current project |
+| `notebooks/*.jl` `load_project("<uid>")` | best-effort literal rewrite (`_reidentify_files!`) | common case handled; fancier user refs are the user's to fix |
+| `1/*/logs`, `1/*/tasks/*.params.json`, `ccid.json` | — | already path-relative / uid-absent |
 
-Only `copy` is affected — a normal import (no collision) and `replace` keep the bundle's own uid, so
-references stay correct. **Follow-up (requested):** audit *where the project uid is used and why, whether
-it's necessary, and how to generalise* project identity so copy/rename become safe; then re-expose copy
-with tests (re-identify the three semantic locations, or a scoped uid rewrite).
+The general model op is **`reidentify_project!(proj_uid, new_uid; new_name)`** (rename dir + `project.json`
++ notebook rewrite); import-copy re-identifies inline. Invariant now documented in `docs/OBJECTMODEL.md`:
+*a project-internal file must not bake in its own uid — identity comes from location.* This also unblocks
+a future in-place project **rename** (change the uid) reusing `reidentify_project!`.
 
 ### Backup — NOT a separate feature (decided against)
 No recurring/automated backup machinery. **Export _is_ the manual backup**: a `.ccbundle` is one

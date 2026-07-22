@@ -18,7 +18,7 @@ separate:
 | Store | Owns | Key |
 |---|---|---|
 | `stores/analysisTabs.ts` | the tab **list** + names + active tab | group `analysis:${projectUid}` |
-| `stores/analysisLayout.ts` | each tab's **grid layout** (plate template, slot spans, per-slot content + `shared` bag) | `analysis:${projectUid}:tab:${id}` |
+| `stores/analysisLayout.ts` | each tab's **grid layout** (plate template, slot spans, per-slot content + `shared` bag) | in memory `analysis:${projectUid}:tab:${id}`; **on disk PROJECT-RELATIVE** `tab:${id}` |
 | `stores/canvasPanels.ts` | reused only for the summary/interactive **panel machinery** under the same tab canvas key | `${groupKey}:tab:${id}` |
 
 All three are **in-memory** (survive navigation, not a full reload) and cleared on project open/close
@@ -29,6 +29,11 @@ module-canvas autosave. There is **no manual save button** (removed): everything
 on edit via its own routes, and `lastOpenedAt` is stamped on open. Restored on open from the payload's
 `boards`. **Backend restart** is needed the first time these routes are active (`api/` is not
 Revise-tracked; see `CLAUDE.md`).
+
+**Layout keys are stored project-RELATIVE** (`tab:<id>`, no uid) via `frontend/src/utils/boardKeys.ts`
+— `serialize` strips the `analysis:<uid>:` prefix on save, `load(groupKey, …)` re-applies the *current*
+uid (tolerating a legacy baked-in old-uid key). So a project's boards survive a uid change (import-as-
+copy / rename) instead of orphaning — the project-identity invariant in `docs/OBJECTMODEL.md`.
 
 **Image-strip frames are sidecar files, not inline.** A captured napari screenshot is written to
 `{proj}/…/settings/board-assets/<id>.png` and the cell keeps only `{assetId, snapshot, imageUid}` — so

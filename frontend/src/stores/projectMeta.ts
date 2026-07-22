@@ -89,7 +89,7 @@ export const useProjectMetaStore = defineStore('projectMeta', () => {
       if (body.boards) {
         const groupKey = `analysis:${body.project!.uid}`
         useAnalysisTabsStore().load(groupKey, body.boards.tabs as never)
-        useAnalysisLayoutStore().load(body.boards.layouts as never)
+        useAnalysisLayoutStore().load(groupKey, body.boards.layouts as never)
       }
       // rehydrate per-image module-page canvases (moduleCanvases.json)
       if (body.moduleCanvases) useCanvasPanelsStore().load(body.moduleCanvases as never)

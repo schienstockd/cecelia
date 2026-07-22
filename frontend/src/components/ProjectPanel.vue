@@ -439,13 +439,16 @@ const typeColour: Record<ProjectType, string> = {
              width="480px" @close="conflict = null">
     <div class="pp-conflict">
       <p>A project <strong>{{ conflict.name }}</strong> (<code>{{ conflict.uid }}</code>) already
-        exists on disk.</p>
+        exists on disk. What would you like to do?</p>
+      <ul class="pp-conflict-opts">
+        <li><strong>Import as copy</strong> — keep both; the import gets a new id and its name is suffixed.</li>
+        <li><strong>Replace</strong> — overwrite the existing project with the bundle. <em>Destructive.</em></li>
+      </ul>
       <p class="pp-danger-note"><i class="pi pi-exclamation-triangle" /> <strong>Replace</strong>
-        permanently deletes the existing project's data and cannot be undone — at your own risk. To keep
-        it, cancel and rename or remove it first.</p>
+        permanently deletes the existing project's data and cannot be undone — at your own risk.</p>
     </div>
     <template #footer>
-      <button class="btn-primary btn-sm" @click="conflict = null"
+      <button class="btn-ghost btn-sm" @click="conflict = null"
               v-tooltip.top="'Do nothing — keep the existing project.'">Cancel</button>
       <button class="btn-danger btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
               @click="doImport(conflict!.path, 'replace')"
@@ -453,6 +456,10 @@ const typeColour: Record<ProjectType, string> = {
                 ? 'Close the project first — can\'t replace the one that\'s open.'
                 : 'Overwrite the existing project — destructive, cannot be undone.'">
         <i class="pi pi-exclamation-triangle" /> Replace (at your own risk)
+      </button>
+      <button class="btn-primary btn-sm" @click="doImport(conflict!.path, 'copy')"
+              v-tooltip.top="'Import as a new project (new id) — keeps both.'">
+        <i class="pi pi-copy" /> Import as copy
       </button>
     </template>
   </BaseModal>

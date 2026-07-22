@@ -920,7 +920,10 @@ function load_chain_run(proj::CciaProject, run_id::String)::ChainRun
     ChainRun(
         string(raw[:id]),
         string(raw[:chain_name]),
-        string(raw[:project_uid]),
+        # Identity from LOCATION, not the stored field: run.json lives inside `proj`, so resume uses
+        # `proj.uid`. The persisted `project_uid` is advisory — a run.json that travelled with a project
+        # imported under a new uid then resumes against the CURRENT project, not the stale stored one.
+        proj.uid,
         image_uids,
         template,
         template_hash,
