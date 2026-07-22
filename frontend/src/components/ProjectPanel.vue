@@ -555,6 +555,7 @@ const typeColour: Record<ProjectType, string> = {
   font-family: var(--cc-mono); font-size: 0.7rem; color: var(--cc-text);
   background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: 0.2rem;
   max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  margin-right: auto;   /* push the Change button to the row's right edge (aligns with Import below) */
 }
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }
