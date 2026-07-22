@@ -188,11 +188,30 @@ function export_project(proj_uid::AbstractString;
 end
 
 """
-    import_project(bundle; task_id, on_log, on_progress, concurrency) -> String
+    bundle_info(bundle) -> (; uid, name, exists) | nothing
 
-Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the new project's
-uid (or `""` on failure/cancel). No open project required; refuses to overwrite an existing uid."""
+Peek a `.ccbundle`'s manifest (no unpacking): its project uid + name, and whether a project with that
+uid already exists on disk. `nothing` if it isn't a bundle. Lets the import UI ask the user what to do
+on a collision. See `GET /api/projects/bundle-info`."""
+function bundle_info(bundle::AbstractString)
+    bundle = rstrip(String(bundle), '/')
+    mpath = joinpath(bundle, BUNDLE_MANIFEST)
+    isfile(mpath) || return nothing
+    m = try JSON3.read(read(mpath, String)) catch; return nothing end
+    uid = String(get(m, :projectUid, ""))
+    isempty(uid) && return nothing
+    (; uid, name = String(get(m, :projectName, uid)), exists = ispath(joinpath(projects_dir(), uid)))
+end
+
+"""
+    import_project(bundle; mode, task_id, on_log, on_progress, concurrency) -> String
+
+Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the imported
+project's uid (or `""` on failure/cancel). No open project required. On a uid collision, `mode` decides:
+`"error"` (default — refuse), `"replace"` (overwrite the existing project), or `"copy"` (mint a new uid
+and suffix the name, keeping both). With no collision, `mode` is irrelevant and the bundle's own uid is used."""
 function import_project(bundle::AbstractString;
+                        mode::AbstractString = "error",
                         task_id::AbstractString = "",
                         on_log::Function      = println,
                         on_progress::Function = (n, t) -> nothing,
@@ -203,18 +222,22 @@ function import_project(bundle::AbstractString;
         on_log("[ERROR] Not a cecelia bundle: $bundle"); return ""
     end
     manifest = JSON3.read(read(manifest_path, String))
-    uid = String(manifest.projectUid)
-    target = joinpath(projects_dir(), uid)
-    if ispath(target)
-        on_log("[ERROR] A project '$uid' already exists (remove it first to re-import): $target"); return ""
+    uid    = String(manifest.projectUid)
+    exists = ispath(joinpath(projects_dir(), uid))
+    if exists && mode == "error"
+        on_log("[ERROR] A project '$uid' already exists — choose Replace or Copy (or remove it first)."); return ""
     end
-    packed = String.(collect(get(manifest, :packedStores, String[])))
+    # copy → new uid (keep both); replace/new → the bundle's own uid.
+    dest_uid = (exists && mode == "copy") ? gen_uid() : uid
+    target   = joinpath(projects_dir(), dest_uid)
+    packed   = String.(collect(get(manifest, :packedStores, String[])))
     tmp = target * ".import_tmp"
     ispath(tmp) && rm(tmp; recursive = true, force = true)
 
     start_job!(task_id)
     try
-        on_log("Importing '$(get(manifest, :projectName, uid))' ($uid): $(length(packed)) store(s) to unpack")
+        on_log("Importing '$(get(manifest, :projectName, uid))' ($uid): $(length(packed)) store(s) to unpack"
+               * (dest_uid != uid ? " → copy $dest_uid" : (exists ? " (replacing)" : "")))
         # Copy the tree (minus the manifest) into tmp, then extract each .tar in place.
         mkpath(tmp)
         for name in readdir(bundle)
@@ -237,10 +260,20 @@ function import_project(bundle::AbstractString;
             return ""
         end
 
+        # copy: re-identify the project (new uid + suffixed name) in its project.json
+        if dest_uid != uid
+            pj = joinpath(tmp, "project.json")
+            d  = JSON3.read(read(pj, String), Dict{String,Any})
+            d["uid"]  = dest_uid
+            d["name"] = string(get(d, "name", uid), " (imported)")
+            open(pj, "w") do io; JSON3.pretty(io, d); end
+        end
+
         mkpath(projects_dir())
+        mode == "replace" && ispath(target) && rm(target; recursive = true)   # overwrite in place
         mv(tmp, target)
-        on_log("Done. Imported project $uid")
-        return uid
+        on_log("Done. Imported project $dest_uid" * (dest_uid != uid ? " (copy of $uid)" : ""))
+        return dest_uid
     catch e
         rm(tmp; recursive = true, force = true)
         on_log("[ERROR] " * sprint(showerror, e)); return ""

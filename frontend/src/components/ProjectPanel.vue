@@ -102,16 +102,33 @@ function exportProject(p: { uid: string; name: string }) {
   ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid, outDir })
 }
 
-function importBundle() {
+// Import: first peek the bundle — if its project uid already exists, ask what to do; otherwise just go.
+interface Conflict { path: string; uid: string; name: string }
+const conflict = ref<Conflict | null>(null)
+
+async function importBundle() {
   const bundle = importPath.value.trim()
   if (!bundle || ioBusy.value) return
+  try {
+    const res = await fetch(`/api/projects/bundle-info?path=${encodeURIComponent(bundle)}`)
+    if (res.ok) {
+      const info = await res.json() as { uid: string; name: string; exists: boolean }
+      if (info.exists) { conflict.value = { path: bundle, uid: info.uid, name: info.name }; return }
+    }
+  } catch { /* fall through — backend still refuses on a real collision */ }
+  doImport(bundle)
+}
+
+function doImport(bundle: string, mode?: 'replace' | 'copy') {
+  if (ioBusy.value) return
+  conflict.value = null
   const entry = taskStore.add({
     module: 'project', label: `Import ${bundle.split('/').pop()}`, imageUid: '', imageName: '',
-    status: 'queued', taskName: 'import', funName: 'project.import', params: { bundle },
+    status: 'queued', taskName: 'import', funName: 'project.import', params: { bundle, mode },
     projectUid: '', startedAt: new Date(),
   })
   ioTaskId.value = entry.id
-  ws.send({ type: 'project:import', taskId: entry.id, bundle })
+  ws.send({ type: 'project:import', taskId: entry.id, bundle, mode })
 }
 
 function cancelIo() {
@@ -399,6 +416,34 @@ const typeColour: Record<ProjectType, string> = {
   <FileBrowser v-if="browserMode"
     :mode="browserMode === 'export' ? 'dir' : 'bundle'"
     @select="onBrowserSelect" @close="browserMode = null" />
+
+  <!-- import collision: the bundle's project already exists → replace / copy / cancel -->
+  <BaseModal v-if="conflict" title="Project already exists" icon="pi-exclamation-triangle"
+             width="480px" @close="conflict = null">
+    <div class="pp-conflict">
+      <p>A project <strong>{{ conflict.name }}</strong> (<code>{{ conflict.uid }}</code>) already
+        exists on disk. What would you like to do?</p>
+      <ul class="pp-conflict-opts">
+        <li><strong>Import as copy</strong> — keep both; the import gets a new id and its name is suffixed.</li>
+        <li><strong>Replace</strong> — overwrite the existing project with the bundle. <em>Destructive.</em></li>
+      </ul>
+    </div>
+    <template #footer>
+      <button class="btn-ghost btn-sm" @click="conflict = null"
+              v-tooltip.top="'Do nothing.'">Cancel</button>
+      <button class="btn-ghost btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
+              @click="doImport(conflict!.path, 'replace')"
+              v-tooltip.top="projectMeta.current?.uid === conflict.uid
+                ? 'Close the project first — can\'t replace the one that\'s open.'
+                : 'Overwrite the existing project (destructive).'">
+        <i class="pi pi-refresh" /> Replace
+      </button>
+      <button class="btn-primary btn-sm" @click="doImport(conflict!.path, 'copy')"
+              v-tooltip.top="'Import as a new project — keeps both.'">
+        <i class="pi pi-copy" /> Import as copy
+      </button>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
@@ -464,6 +509,12 @@ const typeColour: Record<ProjectType, string> = {
   display: flex; flex-direction: column; gap: 0.5rem;
   padding: 0.75rem; border-top: 1px solid var(--cc-border);
 }
+.pp-conflict { padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--cc-text); }
+.pp-conflict p { margin: 0 0 0.6rem; }
+.pp-conflict code { font-family: var(--cc-mono); font-size: 0.75rem; background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: 0.2rem; }
+.pp-conflict-opts { margin: 0; padding-left: 1.1rem; color: var(--cc-text-dim); font-size: 0.8rem; }
+.pp-conflict-opts li { margin: 0.2rem 0; }
+
 .pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem; flex-wrap: wrap; }
 .pp-io-destpath {
   font-family: var(--cc-mono); font-size: 0.7rem; color: var(--cc-text);

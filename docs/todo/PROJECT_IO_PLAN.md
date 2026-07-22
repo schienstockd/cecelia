@@ -56,9 +56,14 @@ verbatim; `.cecelia.lock` + `*.bak.ome.zarr`/temp dirs skipped. Bundle file coun
 `export_project(uid; out_dir, task_id, on_log, on_progress)` (`project_io.jl`). WS `project:export`
 (`handle_project_export`) spawns it, streams over the task rail, cancellable. Writes the bundle above.
 
-### Pathway 2 — Import a project  ✅ built (backend)
-`import_project(bundle; …)`. WS `project:import` (`handle_project_import`). Copies the tree, unpacks each
-`.zarr.tar` in parallel, refuses to clobber an existing uid, returns the new uid to refresh the list.
+### Pathway 2 — Import a project  ✅ built
+`import_project(bundle; mode)`. WS `project:import` (`handle_project_import`). Copies the tree, unpacks
+each `.zarr.tar` in parallel, returns the imported uid. **Source is any server path** — picked via the
+shared `FileBrowser` (`bundle` mode; mounts/drives reachable) or the `cecelia_exports` dropdown or a
+pasted path. **uid collision** → the UI peeks via `GET /api/projects/bundle-info` and prompts
+(`bundle_info`): `error` (default refuse) · `replace` (overwrite in place) · `copy` (mint a new uid,
+suffix the name, keep both — Replace is blocked for the currently-open project). Merge is deliberately
+out of scope (ambiguous conflict semantics).
 
 ### Backup — NOT a separate feature (decided against)
 No recurring/automated backup machinery. **Export _is_ the manual backup**: a `.ccbundle` is one

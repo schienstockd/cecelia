@@ -97,6 +97,7 @@ end
 function handle_project_import(ws, data)
     task_id = String(get(data, :taskId, ""))
     bundle  = String(get(data, :bundle, ""))
+    mode    = String(get(data, :mode, "error"))   # error (default) | replace | copy — on uid collision
     isempty(task_id) && return
     if isempty(bundle) || !isdir(bundle)
         ws_log(ws, task_id, "[ERROR] Bundle not found: $bundle")
@@ -106,6 +107,7 @@ function handle_project_import(ws, data)
         ws_status(ws, task_id, "running")
         uid = try
             import_project(bundle;
+                mode        = mode,
                 task_id     = task_id,
                 on_log      = line -> ws_log(ws, task_id, line),
                 on_progress = (n, t) -> ws_progress(ws, task_id, n, t))
