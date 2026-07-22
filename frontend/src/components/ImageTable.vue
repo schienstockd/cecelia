@@ -7,7 +7,7 @@ import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
-import { isExcluded, isIncluded, includedUids } from '../utils/inclusion'
+import { isExcluded, isIncluded, includedUids, isImported } from '../utils/inclusion'
 import { timelapseDuration } from '../utils/imageTable'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
@@ -595,11 +595,13 @@ onUnmounted(stopResize)
           <button
             class="viewer-btn"
             :class="{ 'viewer-active': project.napariImageUid === img.uid }"
-            :disabled="napariLoading.has(img.uid)"
+            :disabled="napariLoading.has(img.uid) || !isImported(img)"
             @click="openInNapari(img.uid)"
-            v-tooltip.right="project.napariImageUid === img.uid
-              ? 'Currently shown in Napari — click to reload.'
-              : 'Open this image in Napari viewer.'"
+            v-tooltip.right="!isImported(img)
+              ? 'Import this image first'
+              : project.napariImageUid === img.uid
+                ? 'Currently shown in Napari — click to reload.'
+                : 'Open this image in Napari viewer.'"
           >
             <i v-if="napariLoading.has(img.uid)" class="pi pi-spin pi-spinner" />
             <i v-else class="pi pi-eye" />
@@ -629,8 +631,9 @@ onUnmounted(stopResize)
               v-tooltip.right="'Image metadata (original file location, dimensions, channels…)'">
               <i class="pi pi-info-circle" />
             </button>
-            <button class="row-icon-btn" @click.stop="cropDialogUid = img.uid"
-              v-tooltip.right="'Crop to a sub-region → new image (draw a rectangle on the projection, set z/t)'">
+            <button class="row-icon-btn" :disabled="!isImported(img)"
+              @click.stop="cropDialogUid = img.uid"
+              v-tooltip.right="isImported(img) ? 'Crop to a sub-region → new image (draw a rectangle on the projection, set z/t)' : 'Import this image first'">
               <i class="pi pi-clone" />
             </button>
             <button class="row-icon-btn" @click.stop="copyUid(img.uid)"

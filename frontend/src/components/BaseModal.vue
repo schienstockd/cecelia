@@ -84,7 +84,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 }
 .cc-modal-close:hover { background: var(--cc-surface-2); color: var(--cc-text); }
 
-.cc-modal-body { flex: 1; overflow-y: auto; min-height: 0; }
+/* BaseModal owns body padding — dialogs should NOT re-add their own (would double up). Use the #toolbar
+   slot for a flush full-width row (search bars, tabs) that shouldn't be inset. */
+.cc-modal-body { flex: 1; overflow-y: auto; min-height: 0; padding: 1rem 1.15rem; }
 
 .cc-modal-footer {
   display: flex; align-items: center; gap: 0.4rem;

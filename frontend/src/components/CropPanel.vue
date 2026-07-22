@@ -148,12 +148,12 @@ function save() {
       </div>
 
       <div class="crop-actions">
-        <button class="opt-btn crop-save" :disabled="!rect || saving" @click="save"
+        <button class="cc-btn cc-btn-primary" :disabled="!rect || saving" @click="save"
                 v-tooltip.top="'Save the drawn region as a NEW image in the set (crops X/Y/Z/T, all channels)'">
           <i class="pi pi-save" /> Save crop
         </button>
-        <button class="opt-btn" :disabled="!rect" @click="rect = null" v-tooltip.top="'Clear the drawn rectangle'">
-          <i class="pi pi-times" />
+        <button class="cc-btn cc-btn-ghost" :disabled="!rect" @click="rect = null">
+          Cancel
         </button>
       </div>
       <span class="crop-hint">{{ rect ? 'Drag to redraw the rectangle, set z/t, then Save.' : 'Drag a rectangle over the structure to crop.' }}</span>
@@ -173,9 +173,7 @@ function save() {
 .crop-row input[type=range] { flex: 1 1 auto; }
 .crop-lbl { color: var(--cc-text-muted, #888); font-size: 0.7rem; width: 2.6rem; }
 .crop-tval { font-size: 0.62rem; color: var(--cc-text); width: 4.2rem; text-align: right; font-variant-numeric: tabular-nums; }
-.crop-actions { display: flex; gap: 0.3rem; }
-.crop-save { border-color: var(--cc-accent); color: var(--cc-accent); }
-.crop-save:hover:not(:disabled) { background: color-mix(in srgb, var(--cc-accent) 18%, transparent); }
+.crop-actions { display: flex; gap: 0.4rem; }
 .crop-hint { font-size: 0.68rem; color: var(--cc-text-muted, #888); font-style: italic; }
 .crop-err { font-size: 0.7rem; color: #f85149; }
 </style>

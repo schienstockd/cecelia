@@ -5,6 +5,16 @@
 
 export interface Includable { uid: string; included?: boolean | null }
 
+// THE canonical "is this image usable yet?" predicate — one source of truth for every gate that needs
+// real image data (open in napari, crop, segment, measure, run a chain, …). An image is IMPORTED once
+// its OME-ZARR exists, i.e. a `filepath` is registered (bf2raw conversion done); before that the row is
+// a placeholder (status 'pending'/'converting') with nothing to operate on. This mirrors the old R
+// version's `imFilepath == null` check, and matches what the backend resolves — so gating on it also
+// avoids 404s. Use this instead of hand-rolling `img.filepath` / `filepaths.length` / `status` checks.
+export function isImported(img: { filepath?: string; filepaths?: Record<string, string> | null }): boolean {
+  return !!img.filepath || Object.keys(img.filepaths ?? {}).length > 0
+}
+
 /** Excluded from further processing (explicitly `included === false`). */
 export function isExcluded(img: Pick<Includable, 'included'>): boolean {
   return img.included === false
