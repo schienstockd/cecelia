@@ -112,6 +112,13 @@ watch(() => ioTask.value?.status, (s) => {
 
 onMounted(async () => {
   fetchBundles()
+  // Re-attach to an export/import already running — users will start one, close the manager, and
+  // reopen. The job runs server-side regardless; rebind so its progress shows here again. (Newest
+  // first in the store, so the first match is the current run.)
+  const running = taskStore.tasks.find(t =>
+    (t.funName === 'project.export' || t.funName === 'project.import') &&
+    (t.status === 'running' || t.status === 'queued'))
+  if (running) ioTaskId.value = running.id
   await projectMeta.fetchRecent()
   if (projectMeta.recent.length === 0) {
     tab.value = 'new'
@@ -428,7 +435,7 @@ const typeColour: Record<ProjectType, string> = {
 .pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }
 .pp-io-path { flex: 2 1 180px; font-size: 0.78rem; }
 .pp-io-status {
-  display: flex; align-items: center; gap: 0.5rem;
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   font-size: 0.75rem; color: var(--cc-text-dim);
 }
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
@@ -438,8 +445,9 @@ const typeColour: Record<ProjectType, string> = {
 .pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; }
 .pp-io-fill { height: 100%; background: var(--cc-accent); transition: width 0.2s; }
 .pp-io-log {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.7;
+  flex: 1 1 100%; min-width: 0;
+  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.75;
+  white-space: normal; word-break: break-all; user-select: text;   /* show full path, selectable */
 }
 
 .proj-row {
