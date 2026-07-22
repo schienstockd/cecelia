@@ -21,11 +21,12 @@ const projectMeta = useProjectMetaStore()
     <template #title>
       <i class="pi pi-clone" /> Crop — {{ image.name }}
     </template>
-    <!-- valueName '' → the backend uses the image's active/default version -->
+    <!-- crop the ACTIVE version (drift/AF/cellpose-corrected variants are the norm, not 'default');
+         empty → the backend falls back to 'default' -->
     <CropPanel :project-uid="projectMeta.current?.uid ?? ''"
                :image-uid="image.uid"
                :image-name="image.name"
-               value-name=""
+               :value-name="image.activeValueName ?? ''"
                :set-uid="setUid" />
   </BaseModal>
 </template>
