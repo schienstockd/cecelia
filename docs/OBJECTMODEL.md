@@ -58,6 +58,24 @@ Image data (`0/`) and metadata (`1/`) are always parallel: `0/{uid}/` holds the 
 
 Written by `save!(proj::CciaProject)`. Runtime fields (`root`, `_sets`) are not serialised. Sets are loaded in `set_uids` order.
 
+### Project identity = the directory name (never bake the uid into internal files)
+
+A project's identity is its **directory name** under `projects_dir()`. `load_project(uid)` and
+`init_object(proj_uid, uid)` build paths as `projects_dir()/<uid>/…` — they never read the path out of
+`project.json`, so `project.json.uid` is a redundant copy that must equal the dirname. The invariant:
+
+> **A project-internal file must not bake in its own project's uid — identity comes from location.**
+
+This is what lets a project be imported under a new uid, copied, or renamed (`reidentify_project!` in
+`project_io.jl`) with no stale references. Enforced in code:
+- **Analysis boards** (`settings/analysisBoards.json`) store layout keys **project-relative**
+  (`tab:<id>`, no uid); the frontend re-applies the current uid on load (`frontend/src/utils/boardKeys.ts`).
+- **Chain runs** (`chains/runs/*/run.json`) resume against the project they're loaded from
+  (`load_chain_run` uses `proj.uid`); the persisted `project_uid` is advisory.
+- The one unavoidable exception is a **notebook's hardcoded `load_project("<uid>")`** (arbitrary user
+  Julia) — `reidentify_project!` / import-copy best-effort rewrites that literal form; fancier user
+  references are the user's to fix.
+
 ---
 
 ## ccid.json — CciaSet

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { uniform, type LayoutTemplate } from '../plots/layoutTemplates'
 import { useAnalysisTabsStore } from './analysisTabs'
+import { relBoardKey, rekeyBoards } from '../utils/boardKeys'
 
 // Per-tab grid layout for the Analysis board (docs/todo/ANALYSIS_CANVAS_PLAN.md, Phase A2). Keyed by
 // the tab's canvas key (`analysis:tab:<id>`), parallel to `canvasPanels`/`analysisTabs`. Holds the
@@ -79,11 +80,13 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
 
   function clear() { entries.value = {} }
 
-  // persistence with the project (analysisBoards.json): dump/restore the tab layouts for a project
-  // (all entries whose key starts with `analysis:<uid>:tab:`)
-  function serialize(prefix: string): Record<string, LayoutEntry> {
+  // persistence with the project (analysisBoards.json): dump the tab layouts for a project, keyed
+  // PROJECT-RELATIVE (`tab:<id>`, stripped of the `analysis:<uid>:` prefix) so the file never embeds the
+  // uid — see utils/boardKeys. `groupKey` = `analysis:<uid>` for the current project.
+  function serialize(groupKey: string): Record<string, LayoutEntry> {
     const out: Record<string, LayoutEntry> = {}
-    for (const [k, v] of Object.entries(entries.value)) if (k.startsWith(prefix)) out[k] = v
+    const prefix = `${groupKey}:tab:`
+    for (const [k, v] of Object.entries(entries.value)) if (k.startsWith(prefix)) out[relBoardKey(k)] = v
     return out
   }
   // ── Board autosave (→ analysisBoards.json) ────────────────────────────────
@@ -103,7 +106,7 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
       const groupKey = `analysis:${uid}`
       if (_boardTimer) clearTimeout(_boardTimer)
       _boardTimer = setTimeout(() => {
-        const boards = { tabs: useAnalysisTabsStore().serialize(groupKey), layouts: serialize(`${groupKey}:tab:`) }
+        const boards = { tabs: useAnalysisTabsStore().serialize(groupKey), layouts: serialize(groupKey) }
         const s = JSON.stringify(boards)
         if (_boardLastSaved[uid] === s) return   // nothing changed → no request
         _boardLastSaved[uid] = s
@@ -115,10 +118,13 @@ export const useAnalysisLayoutStore = defineStore('analysisLayout', () => {
     })
   }
 
-  function load(map: Record<string, LayoutEntry> | null | undefined) {
+  // Re-key the loaded layouts onto the CURRENT project's group (`analysis:<uid>`) — tolerating both the
+  // new relative form (`tab:<id>`) and a legacy baked-in `analysis:<oldUid>:tab:<id>` — so a project's
+  // boards survive a uid change (import-as-copy / rename) instead of orphaning. See utils/boardKeys.
+  function load(groupKey: string, map: Record<string, LayoutEntry> | null | undefined) {
     _restoring.value = true   // don't echo the just-loaded board straight back to disk
     try {
-      for (const [k, v] of Object.entries(map ?? {})) entries.value[k] = v
+      for (const [k, v] of Object.entries(rekeyBoards(groupKey, map))) entries.value[k] = v
     } finally {
       setTimeout(() => { _restoring.value = false }, 900)   // > the 800ms autosave debounce
     }

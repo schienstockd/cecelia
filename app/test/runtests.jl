@@ -5433,6 +5433,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 lp = joinpath(proj.root, "1", "img1", "labelProps"); mkpath(lp)
                 write(joinpath(lp, "base.h5ad"), "hdf-bytes")
                 write(joinpath(proj.root, ".cecelia.lock"), "")
+                # a notebook with the uid hardcoded — the one place copy/reidentify must rewrite
+                mkpath(joinpath(proj.root, "notebooks"))
+                write(joinpath(proj.root, "notebooks", "nb.jl"), "proj = load_project(\"$uid\")\n")
 
                 out    = joinpath(tmp, "exports")
                 bundle = export_project(uid; out_dir = out)
@@ -5463,11 +5466,23 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 cj = JSON3.read(read(joinpath(projroot, copy_uid, "project.json"), String))
                 @test String(cj.uid) == copy_uid && endswith(String(cj.name), "(imported)")
                 @test read(joinpath(projroot, copy_uid, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
+                # copy re-identified the notebook's hardcoded load_project (best-effort)
+                @test occursin("load_project(\"$copy_uid\")",
+                               read(joinpath(projroot, copy_uid, "notebooks", "nb.jl"), String))
 
                 # replace: overwrite the existing uid in place (mutate a file first to prove it's rewritten)
                 write(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), "STALE")
                 @test import_project(bundle; mode = "replace") == uid
                 @test read(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
+
+                # reidentify_project!: rename in place → dir + project.json + notebook re-identified
+                rid = reidentify_project!(uid, "riTEST9")
+                @test rid == "riTEST9"
+                @test !ispath(joinpath(projroot, uid)) && isdir(joinpath(projroot, "riTEST9"))
+                @test String(JSON3.read(read(joinpath(projroot, "riTEST9", "project.json"), String)).uid) == "riTEST9"
+                @test occursin("load_project(\"riTEST9\")",
+                               read(joinpath(projroot, "riTEST9", "notebooks", "nb.jl"), String))
+                @test load_project("riTEST9").uid == "riTEST9"                                   # loads under the new id
             finally
                 prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
                                        (ENV["CECELIA_DEV_DIR"] = prev_env)
