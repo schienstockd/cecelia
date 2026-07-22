@@ -20,6 +20,8 @@ import SummaryCanvas from '../components/canvas/SummaryCanvas.vue'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
 import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
+import TeleportPopover from '../components/TeleportPopover.vue'
+import PoolThrottle from '../components/PoolThrottle.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
@@ -39,6 +41,11 @@ const log         = useLogStore()
 
 // ── Tab: "edit" | "live" ─────────────────────────────────────────────────────
 const activeTab = ref<'edit' | 'live'>('edit')
+
+// live scheduler throttle — same PoolThrottle popover as the Task Manager / module pages,
+// off the live toolbar so pool limits can be nudged while a chain run is in flight
+const throttleBtn  = ref<HTMLElement | null>(null)
+const throttleOpen = ref(false)
 
 const {
   nodes, edges,
@@ -1089,7 +1096,6 @@ onActivated(async () => {
               : 'Resume: re-run failed / unfinished / changed nodes. Click a node to re-run from there instead.'"
         >
           <i class="pi pi-play" />
-          <span class="live-resume-lbl">{{ restartLabel ? `Resume from ${restartLabel}` : 'Resume' }}</span>
         </button>
         <button
           v-if="restartNodeId"
@@ -1122,6 +1128,18 @@ onActivated(async () => {
         >
           <i class="pi pi-chart-bar" />
         </button>
+        <button
+          ref="throttleBtn"
+          class="wb-btn"
+          :class="{ 'qc-on': throttleOpen }"
+          @click="throttleOpen = !throttleOpen"
+          v-tooltip.bottom="'Throttle — how many tasks of each kind run at once'"
+        >
+          <i class="pi pi-sliders-h" />
+        </button>
+        <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
+          <PoolThrottle />
+        </TeleportPopover>
         <span v-if="!runOptions.length" class="live-hint">No runs yet — start a chain run to see progress.</span>
       </div>
 
@@ -1569,17 +1587,13 @@ onActivated(async () => {
 .qc-toggle:hover:not(:disabled) { color: var(--cc-text); }
 .qc-toggle.qc-on { color: var(--cc-accent); border-color: var(--cc-accent); }
 
-/* Resume is a LABELLED action, not a 26px icon square (.wb-btn) — auto-width + padding + gap so the
-   play icon and text both show, accent-styled as the Live tab's primary action. */
+/* Resume — a square icon button (.wb-btn) accent-tinted as the Live tab's primary action.
+   The play icon carries it; the "resume from X" detail lives in the tooltip. */
 .live-resume-btn {
-  width: auto;
-  padding: 0 0.55rem;
-  gap: 0.35rem;
   color: var(--cc-accent);
   border-color: var(--cc-accent);
 }
 .live-resume-btn:hover:not(:disabled) { background: var(--cc-accent); color: #fff; }
-.live-resume-lbl { font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
 
 .qc-expand-overlay {
   position: absolute; inset: 0; z-index: 20;
