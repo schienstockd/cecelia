@@ -1,5 +1,17 @@
 import { describe, it, expect } from 'vitest'
-import { isExcluded, isIncluded, includedUids, dropExcluded } from './inclusion'
+import { isExcluded, isIncluded, includedUids, dropExcluded, isImported } from './inclusion'
+
+describe('isImported', () => {
+  it('true only once conversion is done', () => {
+    expect(isImported({ status: 'done' })).toBe(true)
+  })
+  it('false while pending/converting/failed (placeholder filepath is set at register, so status is the signal)', () => {
+    expect(isImported({ status: 'pending' })).toBe(false)
+    expect(isImported({ status: 'converting' })).toBe(false)
+    expect(isImported({ status: 'failed' })).toBe(false)
+    expect(isImported({})).toBe(false)
+  })
+})
 
 describe('inclusion', () => {
   it('treats absent/true as included, only false as excluded', () => {

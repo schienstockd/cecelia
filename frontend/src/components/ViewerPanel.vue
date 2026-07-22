@@ -7,7 +7,6 @@ import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
 import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels } from '../utils/napariOverlays'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
-import CropPanel from './CropPanel.vue'
 
 const projectStore = useProjectStore()
 const projectMeta  = useProjectMetaStore()
@@ -603,13 +602,6 @@ onUnmounted(() => {
     </div>
 
     <template v-if="napariImage">
-      <!-- ── Crop: in-app coloured MIP preview (Julia render, no napari). Draw + save land in Phase 2. ── -->
-      <div class="viewer-section">
-        <div class="viewer-section-title">Crop</div>
-        <CropPanel :project-uid="projectMeta.current?.uid ?? ''"
-                   :image-uid="projectStore.napariImageUid ?? ''"
-                   :value-name="selectedValueName" />
-      </div>
       <!-- ── Current image: what's open + its versions + segmentation label sets ── -->
       <div class="viewer-section">
         <div class="viewer-section-title">Current image</div>

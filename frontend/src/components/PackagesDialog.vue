@@ -119,8 +119,6 @@ function copyAll() {
 .mini-btn:hover:not(:disabled) { color: var(--cc-text); }
 .mini-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-.pk-body { padding: 0.5rem 1rem 1rem; }
-
 .grp-head { display: flex; align-items: baseline; gap: 0.5rem; font-size: 0.8rem; font-weight: 600; color: var(--cc-text); margin: 0.85rem 0 0.4rem; position: sticky; top: 0; background: var(--cc-surface-1); padding: 0.2rem 0; }
 .grp-head:first-child { margin-top: 0.2rem; }
 .grp-sub { font-size: 0.68rem; font-weight: 400; color: var(--cc-text-dim); }
