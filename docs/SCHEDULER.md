@@ -8,6 +8,12 @@ and (2) there was no per-stage concurrency awareness — GPU-bound denoising and
 segmentation were treated identically. This file documents every non-obvious decision made to
 fix those problems.
 
+> The scheduler is for **image/set-scoped analysis tasks** (`CciaTask`). One-off **project-/bundle-scoped**
+> operations with no image target — Settings data patches, Project Manager export/import — are NOT
+> scheduler tasks; they're **background jobs** (`app/src/jobs.jl`), which also now owns the process-kill
+> primitives (`_kill_tree`/`_kill_proc_tree`/`_kill_listeners_on_port`) this doc's `cancel_task!` uses.
+> When to use which, and how project-wide ops run end-to-end: [`docs/JOBS.md`](JOBS.md).
+
 ---
 
 ## Core rule

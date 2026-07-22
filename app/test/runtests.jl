@@ -5409,4 +5409,54 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test Cecelia._listener_pids_from_ss(two) == [10, 22]            # distinct PIDs kept, in order
     end
 
+    # Project export → import round-trip (project_io.jl / jobs.jl). Uses its own CECELIA_DEV_DIR +
+    # temp projects dir so it never touches the real dev/prod config; restores afterwards. Verifies:
+    # each .zarr store is packed to ONE .zarr.tar (no unpacked stores in the bundle), the lockfile is
+    # skipped, re-export/re-import refuse to clobber, and import restores byte-identical stores + uid.
+    @testset "project export/import" begin
+        prev_env = get(ENV, "CECELIA_DEV_DIR", nothing)
+        mktempdir() do tmp
+            ENV["CECELIA_DEV_DIR"] = tmp
+            try
+                init_cecelia!()
+                projroot = joinpath(tmp, "projects"); mkpath(projroot)
+                set_projects_dir!(projroot)
+
+                proj = create_project!(name = "io-test", kind = "static")
+                uid  = proj.uid
+                # fake stores + metadata mirroring the 0/ (data) + 1/ (metadata) layout
+                d = joinpath(proj.root, "0", "img1", "data.ome.zarr", "0"); mkpath(d)
+                write(joinpath(d, "0.0"), "chunk-bytes")
+                write(joinpath(dirname(d), ".zattrs"), "{}")
+                lab = joinpath(proj.root, "1", "img1", "labels", "labels.zarr"); mkpath(lab)
+                write(joinpath(lab, ".zgroup"), "{}")
+                lp = joinpath(proj.root, "1", "img1", "labelProps"); mkpath(lp)
+                write(joinpath(lp, "base.h5ad"), "hdf-bytes")
+                write(joinpath(proj.root, ".cecelia.lock"), "")
+
+                out    = joinpath(tmp, "exports")
+                bundle = export_project(uid; out_dir = out)
+                @test !isempty(bundle) && isdir(bundle)
+                @test isfile(joinpath(bundle, "ccbundle.json"))
+                @test isfile(joinpath(bundle, "0", "img1", "data.ome.zarr.tar"))
+                @test isfile(joinpath(bundle, "1", "img1", "labels", "labels.zarr.tar"))
+                @test !any(endswith(n, ".zarr") for (_, ds, _) in walkdir(bundle) for n in ds)  # packed, not unpacked
+                @test !ispath(joinpath(bundle, ".cecelia.lock"))                                # lock skipped
+                @test isempty(export_project(uid; out_dir = out))                               # refuses existing bundle
+
+                rm(proj.root; recursive = true)                                                 # drop, then restore from bundle
+                @test import_project(bundle) == uid
+                tgt = joinpath(projroot, uid)
+                @test read(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
+                @test read(joinpath(tgt, "1", "img1", "labelProps", "base.h5ad"), String) == "hdf-bytes"
+                @test !any(endswith(n, ".tar") for (_, _, fs) in walkdir(tgt) for n in fs)       # no leftover .tar
+                @test isempty(import_project(bundle))                                           # refuses existing project
+            finally
+                prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
+                                       (ENV["CECELIA_DEV_DIR"] = prev_env)
+                init_cecelia!()
+            end
+        end
+    end
+
 end

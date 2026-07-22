@@ -173,73 +173,9 @@ function is_cancelled(task_id::String)::Bool
     !isnothing(rec) && rec.status === :cancelled
 end
 
-# ── Process kill helpers ────────────────────────────────────────────────────────
-
-function _kill_tree(pid::Int)
-    if Sys.iswindows()
-        try; run(ignorestatus(`taskkill /F /T /PID $pid`)); catch; end
-    else
-        try
-            for line in split(readchomp(`pgrep -P $pid`), '\n'; keepempty=false)
-                child = tryparse(Int, strip(line))
-                isnothing(child) || _kill_tree(child)
-            end
-        catch; end
-        try; run(ignorestatus(`kill -9 $pid`)); catch; end
-    end
-end
-
-# Kill a live process AND its child tree, given the Julia Process handle. `Base.Process` has no
-# `.pid` field, so get the OS pid via libuv, kill the tree (subprocesses — napari/Qt, bioformats —
-# spawn children), then SIGKILL the handle itself. Best-effort; callers wrap in try/catch where a
-# dead/reused handle is possible. One place for the `uv_process_get_pid` + `_kill_tree` + `kill` dance.
-function _kill_proc_tree(proc::Base.Process)
-    pid = Int(ccall(:uv_process_get_pid, Cint, (Ptr{Cvoid},), proc.handle))
-    _kill_tree(pid)
-    kill(proc, Base.SIGKILL)
-end
-
-# Kill whatever process is LISTENING on a TCP port (+ its tree). Cross-platform, best-effort. Used to
-# guarantee a clean app shutdown even for a child we only ADOPTED or that outlived a crash (no process
-# handle to `kill`) — napari :7655, notebooks :7660 — mirroring `pixi run stop`. There is no libuv API
-# for port→pid, so we shell out per-OS; this is the one sanctioned place, alongside `_kill_tree`.
-# Extract listener PIDs from `ss -tlnpH` output (the `users:(("name",pid=NNN,fd=..))` field), deduped
-# (a listener shows once for IPv4 and once for IPv6). Pure/unit-tested — the rest of
-# _kill_listeners_on_port shells out and kills, which isn't.
-_listener_pids_from_ss(raw::AbstractString) =
-    unique(parse(Int, m.captures[1]) for m in eachmatch(r"pid=(\d+)", raw))
-
-function _kill_listeners_on_port(port::Integer)
-    pids = Int[]
-    try
-        # All three keep to the LISTENING process (docstring promise): plain `lsof -ti tcp:$port` (or
-        # ss without -l) also returns clients CONNECTED to the port, so we'd kill them too (e.g. the
-        # browser on :5173). Each shell-out exits non-zero / throws when nothing listens → caught.
-        if Sys.iswindows()
-            out = readchomp(`powershell -NoProfile -Command "(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue).OwningProcess"`)
-            for line in split(out, '\n'; keepempty=false)
-                p = tryparse(Int, strip(line))
-                isnothing(p) || push!(pids, p)
-            end
-        elseif Sys.islinux()
-            # `ss` reads /proc/net/tcp* directly; unlike lsof it does NOT walk each process's
-            # /proc/<pid>/fd table, so a process wedged in D (uninterruptible) sleep can't hang it
-            # (lsof does — it stalled `pixi run stop`; see pixi.toml's linux-64 stop tasks).
-            append!(pids, _listener_pids_from_ss(readchomp(`ss -tlnpH $("sport = :$port")`)))
-        else   # macOS: no ss; lsof is fine here (the D-state /proc walk hang is Linux-specific).
-            out = readchomp(`lsof -ti tcp:$port -sTCP:LISTEN`)
-            for line in split(out, '\n'; keepempty=false)
-                p = tryparse(Int, strip(line))
-                isnothing(p) || push!(pids, p)
-            end
-        end
-    catch; end
-    for p in unique(pids)
-        p == getpid() && continue   # never kill ourselves
-        _kill_tree(p)
-    end
-    nothing
-end
+# Process kill helpers (_kill_tree / _kill_proc_tree / _kill_listeners_on_port) moved to jobs.jl —
+# they were always general OS process control, not scheduler-specific. Still called unqualified here
+# (same Cecelia module). See jobs.jl.
 
 """
 Cancel a running task: marks it cancelled and kills any active subprocess.

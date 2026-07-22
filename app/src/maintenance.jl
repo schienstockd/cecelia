@@ -31,39 +31,26 @@ function maintenance_patch(id::AbstractString)::Union{MaintenancePatch,Nothing}
     isnothing(i) ? nothing : MAINTENANCE_PATCHES[i]
 end
 
-# task_id → running subprocess, so a maintenance run is cancellable. Mirrors the scheduler's process
-# registry but decoupled (a patch is not a scheduler task, so `cancel_task!`/`_TASKS` don't reach it).
-const _MAINT_PROCS = Dict{String,Base.Process}()
-const _MAINT_LOCK  = ReentrantLock()
-
 """
     run_maintenance_patch(patch, proj; apply, task_id, on_log, on_progress) -> Bool
 
-Run a data patch over ONE project via `run_py` — the project root is passed as `root`, `apply` toggles
-dry-run vs write. Registers the subprocess under `task_id` for `cancel_maintenance!` (cleared on exit).
-Returns clean exit. Sink-agnostic: callers wire `on_log`/`on_progress` (the WS handler sends them over
-the task rail).
+Run a data patch over ONE project — the project root is passed as `root`, `apply` toggles dry-run vs
+write. Just a `run_py` with its subprocess registered in the shared job registry (jobs.jl) so
+`cancel_job!` can kill it — the same track/cancel that project export/import use. Returns clean exit.
 """
 function run_maintenance_patch(patch::MaintenancePatch, proj::CciaProject; apply::Bool,
                                task_id::AbstractString = "",
                                on_log::Function = println,
                                on_progress::Function = (n, t) -> nothing)::Bool
+    start_job!(task_id)
     try
         run_py(patch.script, (; root = proj.root, apply = apply), task_run_dir(proj.root);
                on_log = on_log, on_progress = on_progress,
-               on_process = proc -> lock(_MAINT_LOCK) do
-                   _MAINT_PROCS[String(task_id)] = proc
-               end)
+               on_process = p -> track_job!(task_id, p))
     finally
-        lock(_MAINT_LOCK) do; delete!(_MAINT_PROCS, String(task_id)); end
+        finish_job!(task_id)
     end
 end
 
-function cancel_maintenance!(task_id::AbstractString)
-    proc = lock(_MAINT_LOCK) do; get(_MAINT_PROCS, String(task_id), nothing); end
-    isnothing(proc) || try
-        _kill_proc_tree(proc)
-    catch e
-        @warn "Error cancelling maintenance run $task_id" exception = e
-    end
-end
+# The `maintenance:cancel` WS message still targets patches by name; route it to the shared canceller.
+cancel_maintenance!(task_id::AbstractString) = cancel_job!(task_id)
