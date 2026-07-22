@@ -315,6 +315,8 @@ function handle_http(req::HTTP.Request, body_bytes::Vector{UInt8})
     if method == "POST"
         return if path == "/api/projects/list"
             api_projects_list(req)
+        elseif path == "/api/pools/set"
+            api_pool_set(body_bytes)
         elseif path == "/api/tasks/custom-modules/reload"
             api_custom_modules_reload(body_bytes)
         elseif path == "/api/projects/create"

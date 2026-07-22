@@ -101,7 +101,7 @@ export cancel_task!, is_cancelled, cancel_chain_run!, is_chain_cancelled, list_p
 export MaintenancePatch, maintenance_patches, maintenance_patch, run_maintenance_patch, cancel_maintenance!
 export start_job!, track_job!, job_cancelled, finish_job!, cancel_job!
 export export_project, import_project, default_export_dir, list_bundles, bundle_info, reidentify_project!
-export resize_pool!
+export resize_pool!, set_pool_limit!
 
 # ── Chain event bus ───────────────────────────────────────────────────────────
 export subscribe_chain_events!, unsubscribe_chain_events!

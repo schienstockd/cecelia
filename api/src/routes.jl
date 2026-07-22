@@ -332,6 +332,19 @@ function api_pools_list(_req)
     200, JSON3.write(pools)
 end
 
+# Set a pool's concurrency limit live (Settings sliders): resize now + persist to custom.toml.
+# Only already-configured pools are settable (no typo pools accumulating in custom.toml).
+function api_pool_set(body_bytes)
+    data  = JSON3.read(body_bytes)
+    name  = String(get(data, :name, ""))
+    limit = Int(get(data, :limit, 0))
+    isempty(name) && return 400, JSON3.write((; error = "name required"))
+    known = Set(p.name for p in list_pools())
+    name in known || return 400, JSON3.write((; error = "unknown pool '$name'"))
+    applied = set_pool_limit!(name, limit)
+    200, JSON3.write((; name = name, limit = applied))
+end
+
 # Point-in-time snapshot of queued/running tasks (reporting only — no control).
 # The WS `task:*` / `chain:node:*` stream is the live feed; this fills in what is
 # already in-flight when a console first connects.

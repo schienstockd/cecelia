@@ -4,7 +4,7 @@
   "label": "AF + Drift Correction",
   "category": "Cleanup",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "composite": ["cleanupImages.afCorrect", "cleanupImages.driftCorrect"],
   "outputValueName": "driftCorrected"
 }

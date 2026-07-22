@@ -44,11 +44,13 @@ discreteGpu = false
 [tasks]
 concurrentLimit = 20
 
-# Named resource pools for the task scheduler.
+# Named resource pools for the task scheduler — one per real bottleneck resource.
 # Each module function's JSON spec declares which pool it uses via "resource_pool".
-# Override in custom.toml to match your hardware (e.g. gpu=2 on a multi-GPU node).
+# These are just starting defaults: each pool's limit is adjustable live (Settings), so
+# throttle whenever you want (e.g. drop `io` to 1 when importing over a slow SMB share).
+# Override the defaults in custom.toml to match your hardware (e.g. gpu=2 on a multi-GPU node).
 [pools]
-default = 20   # general-purpose; matches tasks.concurrentLimit
-gpu       = 1    # GPU-bound tasks (cellpose): serialised by default
-gpu-light = 4    # segmentation and other GPU tasks tolerant of light concurrency
-io        = 8    # IO-bound tasks (bioformats2raw conversion)
+cpu     = 20   # general CPU compute — most tasks (was "default")
+gpu     = 1    # the GPU — cellpose family; raise for batch segmentation
+io      = 8    # local disk IO — bioformats2raw import/convert, crop
+network = 1    # remote/SMB reads — reserved for HPC/remote tasks (no tasks assigned yet)

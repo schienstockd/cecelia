@@ -2,7 +2,7 @@
   "fun_name": "testTasks.setTask",
   "task": "setTask",
   "label": "Test Set Task",
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "params": [
     {
       "key": "waitMs",

@@ -4,7 +4,7 @@
   "label": "Contact statistics",
   "category": "Spatial analysis",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "params": [
     {
       "key": "statsSuffix",

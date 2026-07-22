@@ -4,7 +4,7 @@
   "label": "Cluster regions",
   "category": "Spatial analysis",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "scope": "set",
   "params": [
     {

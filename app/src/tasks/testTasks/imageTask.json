@@ -2,7 +2,7 @@
   "fun_name": "testTasks.imageTask",
   "task": "imageTask",
   "label": "Test Image Task",
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "params": [
     {
       "key": "waitMs",

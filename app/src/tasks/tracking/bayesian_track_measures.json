@@ -4,6 +4,6 @@
   "label": "Bayesian Track + Measures",
   "category": "Tracking",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "composite": ["tracking.bayesian_tracking", "tracking.track_measures"]
 }

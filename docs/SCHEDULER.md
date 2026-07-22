@@ -72,23 +72,59 @@ all execution goes through `run_task` → `_pool(name)` → the pool's queue. De
 
 ```toml
 [pools]
-default   = 20   # general-purpose CPU work
-gpu       = 1    # GPU-bound (cellpose): serialised
-gpu-light = 4    # GPU work tolerant of light concurrency
-io        = 8    # IO-bound (bioformats2raw)
+cpu     = 20   # general CPU compute — most tasks
+gpu     = 1    # the GPU — cellpose family; raise for batch segmentation
+io      = 8    # local disk IO — bioformats2raw import/convert, crop
+network = 1    # remote/SMB reads — reserved for HPC/remote tasks (no tasks assigned yet)
 ```
 
-`_pools_init!` reads `[pools]` at first use. `default` is guaranteed to exist (falls back to
+One pool per real bottleneck resource; the name says *what* it rations, not *how much*. Each
+limit is just a starting default — adjustable live (see *Live pool limits* below), so you can
+throttle whenever you want (e.g. drop `io` to 1 while importing over a slow SMB share) without
+editing config or restarting. `network` is defined but unused today; it exists so remote/HPC
+task runners have a lane to land in later.
+
+`_pools_init!` reads `[pools]` at first use. `cpu` is guaranteed to exist (falls back to
 `tasks_concurrent_limit()` if absent). A node/task names its pool via the `resource_pool` field
 of its JSON spec (or, for a chain node, `ChainNode.resource_pool`).
 
 **Missing-pool fallback warns.** If a task requests a pool not in `[pools]`, `_pool` falls back to
-`default` and emits a one-time `@warn` (a GPU task silently landing in the 20-wide default pool was
+`cpu` and emits a one-time `@warn` (a GPU task silently landing in the wide cpu pool was
 the original "all GPU tasks run at once" bug). Add the pool to config to silence it.
 
 `resize_pool!(name, limit)` creates or resizes a pool at runtime (REPL/test path; e.g. tests
 register `slow_pool`/`par_pool` this way). `list_pools()` returns `[(; name, limit)]` for every
 initialized pool, exposed via `GET /api/pools` and shown in the pool dropdowns.
+
+**Slot-acquire model — concurrency is a resizable slot budget, not a worker count.** Each pool has a
+fixed `queue`, a mutable `limit` (= max concurrent jobs), a live `in_flight` count, and a
+`Threads.Condition`. A single **dispatcher** task per pool pulls each job, calls `_acquire_slot!`
+(blocks while `in_flight >= limit`), then runs the job on its own task which `_release_slot!`s (and
+`notify`s) when done. `resize_pool!` just sets `limit` under the condition and `notify`s:
+- **grow** → the `notify` wakes the dispatcher if it was waiting for a slot; the queued backlog fans
+  out immediately up to the new `limit`;
+- **shrink** → in-flight jobs finish and release their slots; the dispatcher stays blocked in
+  `_acquire_slot!` until enough drain, then admits the next — so it settles to the new `limit`.
+
+Because the slot is claimed **at execution time** and checked against the *current* `limit`, a pool
+never runs more than `limit` jobs at once — including the instant after a throttle-down (already-
+running jobs finish; no *new* one starts until `in_flight < limit`). This replaced an earlier design
+that swapped the queue on resize (which orphaned already-queued jobs onto the old workers at the old
+concurrency and could transiently oversubscribe).
+
+### Live pool limits (Task Manager throttle)
+
+Each pool's limit is a live throttle, not a fixed config value — the day-to-day control (the old R
+"concurrent tasks" slider, but one per resource). `set_pool_limit!(name, limit)` (`scheduler.jl`)
+does two things: `resize_pool!` to apply immediately, **and** persist the new limit to the user's
+`custom.toml` `[pools]` (merged, like `set_projects_dir!`) so it survives a restart. Clamped to
+`[1, POOL_LIMIT_MAX]`. Exposed as `POST /api/pools/set` `{name, limit}` (only already-configured
+pool names are accepted — no typo pools accumulating in `custom.toml`). The UI is the reusable
+`PoolThrottle.vue` component — a compact 2×2 slider grid (`cpu`/`gpu`, then `io`/`network`) shown
+in a `TeleportPopover` off the Task Manager toolbar (the sliders icon), not buried in Settings.
+
+`resize_pool!` closes the old queue (in-flight + buffered jobs on the old workers still drain) and
+starts fresh workers at the new limit — so shrinking is safe, it just lets current jobs finish.
 
 ### Queue visibility — :queued vs :running
 

@@ -56,6 +56,16 @@ const customModules = useCustomModulesStore()
 // edits to already-loaded modules still need a server restart. Refresh status when this panel opens.
 onMounted(() => customModules.refresh())
 
+// Display module paths relative to the drop-in root (…/modules/sources/) — the absolute prefix is
+// noise; the full path stays in the tooltip. Falls back to the configured dir, then the raw path.
+function shortModulePath(p: string): string {
+  const m = p.match(/modules[\\/]sources[\\/](.+)$/)
+  if (m) return m[1].replace(/\\/g, '/')
+  const dir = customModules.dir
+  if (dir && p.startsWith(dir)) return p.slice(dir.length).replace(/^[\\/]+/, '')
+  return p
+}
+
 const editName = ref(projectMeta.current?.name ?? '')
 const saving   = ref(false)
 const saved    = ref(false)
@@ -295,36 +305,39 @@ async function switchWt(path: string) {
       <h2 class="section-title">Project</h2>
 
       <template v-if="projectMeta.current">
-        <div class="field">
-          <label class="field-label">Name</label>
-          <div class="field-row">
-            <input
-              class="field-input"
-              v-model="editName"
-              @keydown.enter="saveName"
-              placeholder="Project name"
-            />
-            <button
-              class="save-btn"
-              :disabled="saving || !editName.trim() || editName === projectMeta.current?.name"
-              @click="saveName"
-              v-tooltip.right="'Apply the new project name'"
-            >
-              <i :class="['pi', saved ? 'pi-check' : saving ? 'pi-spin pi-cog' : 'pi-check']" />
-              {{ saved ? 'Applied' : 'Apply' }}
-            </button>
+        <!-- Name (grows) + Project ID (6 chars, narrow) on one row -->
+        <div class="field-pair">
+          <div class="field field-grow">
+            <label class="field-label">Name</label>
+            <div class="field-row">
+              <input
+                class="field-input"
+                v-model="editName"
+                @keydown.enter="saveName"
+                placeholder="Project name"
+              />
+              <button
+                class="save-btn"
+                :disabled="saving || !editName.trim() || editName === projectMeta.current?.name"
+                @click="saveName"
+                v-tooltip.right="'Apply the new project name'"
+              >
+                <i :class="['pi', saved ? 'pi-check' : saving ? 'pi-spin pi-cog' : 'pi-check']" />
+                {{ saved ? 'Applied' : 'Apply' }}
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div class="field">
-          <label class="field-label">Project ID</label>
-          <div class="field-row">
-            <input class="field-input mono" :value="projectMeta.current.uid" readonly />
-            <button class="icon-btn" @click="copyUid" v-tooltip.right="'Copy project ID'">
-              <i class="pi pi-copy" />
-            </button>
+          <div class="field field-id">
+            <label class="field-label">Project ID</label>
+            <div class="field-row">
+              <input class="field-input mono" :value="projectMeta.current.uid" readonly
+                     v-tooltip.bottom="'Read-only unique identifier used internally.'" />
+              <button class="icon-btn" @click="copyUid" v-tooltip.left="'Copy project ID'">
+                <i class="pi pi-copy" />
+              </button>
+            </div>
           </div>
-          <span class="field-hint">Read-only unique identifier used internally.</span>
         </div>
       </template>
 
@@ -480,7 +493,7 @@ async function switchWt(path: string) {
           <span class="svc-pill" :class="m.status === 'ok' ? 'ok' : 'err'">
             <span class="dot" /> {{ m.status === 'ok' ? 'loaded' : 'error' }}
           </span>
-          <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ m.path }}</span>
+          <span class="cm-path mono" v-tooltip.top="m.error || m.path">{{ shortModulePath(m.path) }}</span>
         </div>
       </div>
       <span v-else class="field-hint">No custom modules loaded.</span>
@@ -773,6 +786,13 @@ async function switchWt(path: string) {
 .field {
   margin-bottom: 1.1rem;
 }
+
+/* Name + Project ID share one row; Name grows, ID is sized to its 6-char uid */
+.field-pair { display: flex; gap: 0.75rem; align-items: flex-start; }
+.field-pair .field { margin-bottom: 1.1rem; }
+.field-grow { flex: 1; min-width: 0; }
+.field-id { flex: 0 0 auto; }
+.field-id .field-input.mono { flex: 0 0 auto; width: 7ch; }
 
 .field-label {
   display: block;

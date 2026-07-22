@@ -4,7 +4,7 @@
   "label": "HMM States",
   "category": "Behaviour",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "scope": "set",
   "params": [
     {

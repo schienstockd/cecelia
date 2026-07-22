@@ -518,7 +518,7 @@ on_log("message")
 ok = proc.exitcode == 0 && proc.termsignal == 0
 ```
 
-**`resource_pool` is required in every task JSON.** Standard values: `"gpu"` (limit 1), `"gpu-light"` (4), `"io"` (8), `"default"` (20). Defined in `app/config.toml`. The `tasksLimit` field and concurrent-task slider have been removed — use pools instead.
+**`resource_pool` is required in every task JSON.** One pool per real bottleneck resource; the name says *what* it rations. Standard values: `"cpu"` (limit 20, general compute — the default), `"gpu"` (1, cellpose family), `"io"` (8, local disk — import/convert/crop), `"network"` (1, remote/SMB — reserved for HPC, unused today). Defined in `app/config.toml [pools]`; limits are adjustable live in Settings (throttle e.g. `io` to 1 for slow-share imports). The `tasksLimit` field and old single concurrent-task slider have been removed — use pools instead.
 
 **QC is required for every result-producing task.** After the work succeeds, bank an objective
 `metrics` count + a `warn` finding for the unambiguous bad case via `write_qc` (`app/src/qc.jl`), and
