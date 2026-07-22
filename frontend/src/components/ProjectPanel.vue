@@ -91,8 +91,25 @@ function onBrowserSelect(paths: string[]) {
   browserMode.value = null
 }
 
-function exportProject(p: { uid: string; name: string }) {
+// Warn before exporting while analysis tasks are in flight — packing a store that's being written can
+// capture a torn snapshot. GET /api/tasks is a live view of in-flight scheduler tasks (empty = idle).
+const exportWarn = ref<{ p: { uid: string; name: string }; count: number } | null>(null)
+async function runningTaskCount(): Promise<number> {
+  try {
+    const r = await fetch('/api/tasks')
+    if (r.ok) { const t = await r.json(); return Array.isArray(t) ? t.length : 0 }
+  } catch { /* treat as idle if the check fails */ }
+  return 0
+}
+async function exportProject(p: { uid: string; name: string }) {
   if (ioBusy.value) return
+  const n = await runningTaskCount()
+  if (n > 0) { exportWarn.value = { p, count: n }; return }
+  doExport(p)
+}
+function doExport(p: { uid: string; name: string }) {
+  if (ioBusy.value) return
+  exportWarn.value = null
   const outDir = exportDir.value || undefined
   const entry = taskStore.add({
     module: 'project', label: `Export ${p.name}`, imageUid: '', imageName: '', status: 'queued',
@@ -427,21 +444,39 @@ const typeColour: Record<ProjectType, string> = {
         <li><strong>Import as copy</strong> — keep both; the import gets a new id and its name is suffixed.</li>
         <li><strong>Replace</strong> — overwrite the existing project with the bundle. <em>Destructive.</em></li>
       </ul>
+      <p class="pp-danger-note"><i class="pi pi-exclamation-triangle" /> Replace permanently deletes the
+        existing project's data and cannot be undone — at your own risk.</p>
     </div>
     <template #footer>
       <button class="btn-ghost btn-sm" @click="conflict = null"
               v-tooltip.top="'Do nothing.'">Cancel</button>
-      <button class="btn-ghost btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
+      <button class="btn-danger btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
               @click="doImport(conflict!.path, 'replace')"
               v-tooltip.top="projectMeta.current?.uid === conflict.uid
                 ? 'Close the project first — can\'t replace the one that\'s open.'
-                : 'Overwrite the existing project (destructive).'">
-        <i class="pi pi-refresh" /> Replace
+                : 'Overwrite the existing project — destructive, cannot be undone.'">
+        <i class="pi pi-exclamation-triangle" /> Replace (at your own risk)
       </button>
       <button class="btn-primary btn-sm" @click="doImport(conflict!.path, 'copy')"
               v-tooltip.top="'Import as a new project — keeps both.'">
         <i class="pi pi-copy" /> Import as copy
       </button>
+    </template>
+  </BaseModal>
+
+  <!-- warn: analysis tasks in flight when exporting → possible torn snapshot -->
+  <BaseModal v-if="exportWarn" title="Tasks are still running" icon="pi-exclamation-triangle"
+             width="460px" @close="exportWarn = null">
+    <div class="pp-conflict">
+      <p>You have <strong>{{ exportWarn.count }}</strong> task{{ exportWarn.count === 1 ? '' : 's' }}
+        running. Exporting <strong>{{ exportWarn.p.name }}</strong> now can capture an inconsistent
+        snapshot of a store that's being written. Best to wait until they finish.</p>
+    </div>
+    <template #footer>
+      <button class="btn-primary btn-sm" @click="exportWarn = null"
+              v-tooltip.top="'Wait for the running tasks to finish.'">Wait</button>
+      <button class="btn-ghost btn-sm" @click="doExport(exportWarn!.p)"
+              v-tooltip.top="'Export now despite the running tasks.'">Export anyway</button>
     </template>
   </BaseModal>
 </template>
@@ -624,4 +659,12 @@ const typeColour: Record<ProjectType, string> = {
 .btn-primary { background: var(--cc-accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
+.btn-danger { background: #b91c1c; color: #fff; }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
+.btn-danger:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
+.pp-danger-note {
+  color: #fca5a5; font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: flex-start;
+  margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: 0.3rem;
+  background: #b91c1c1a; border: 1px solid #b91c1c44;
+}
 </style>

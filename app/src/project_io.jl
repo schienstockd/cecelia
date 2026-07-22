@@ -82,6 +82,10 @@ function _mirror_tree!(src::String, dst::String, rel::String, stores::Vector{Tup
     end
 end
 
+# System `tar` is the archiver (like the self-updater). Present on Linux/macOS and Windows 10 1803+
+# (bsdtar as tar.exe); guard so a missing binary is a clear error, not a cryptic spawn failure.
+_tar_available()::Bool = Sys.which("tar") !== nothing
+
 # Run one `tar` (pack or unpack) as a tracked subprocess, so cancel_job! can kill it. Returns clean exit.
 function _run_tar(cmd::Cmd, task_id::AbstractString)::Bool
     proc = run(pipeline(cmd; stdout = devnull, stderr = devnull); wait = false)
@@ -140,6 +144,9 @@ function export_project(proj_uid::AbstractString;
     proj_dir = joinpath(projects_dir(), String(proj_uid))
     if !isdir(proj_dir)
         on_log("[ERROR] Project not found: $proj_uid"); return ""
+    end
+    if !_tar_available()
+        on_log("[ERROR] system 'tar' not found — it's required to pack the project."); return ""
     end
     uid    = basename(rstrip(proj_dir, '/'))
     bundle = joinpath(out_dir, uid * BUNDLE_EXT)
@@ -220,6 +227,9 @@ function import_project(bundle::AbstractString;
     manifest_path = joinpath(bundle, BUNDLE_MANIFEST)
     if !isdir(bundle) || !isfile(manifest_path)
         on_log("[ERROR] Not a cecelia bundle: $bundle"); return ""
+    end
+    if !_tar_available()
+        on_log("[ERROR] system 'tar' not found — it's required to unpack the bundle."); return ""
     end
     manifest = JSON3.read(read(manifest_path, String))
     uid    = String(manifest.projectUid)
