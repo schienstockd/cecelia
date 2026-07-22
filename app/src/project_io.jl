@@ -215,8 +215,14 @@ end
 
 Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the imported
 project's uid (or `""` on failure/cancel). No open project required. On a uid collision, `mode` decides:
-`"error"` (default — refuse), `"replace"` (overwrite the existing project), or `"copy"` (mint a new uid
-and suffix the name, keeping both). With no collision, `mode` is irrelevant and the bundle's own uid is used."""
+`"error"` (default — refuse), `"replace"` (overwrite the existing project), or `"copy"` (import under a
+fresh uid, keeping both). With no collision, `mode` is irrelevant and the bundle's own uid is used.
+
+⚠️ `"copy"` is currently HIDDEN in the UI (not offered) and its re-identification is INCOMPLETE: only
+`project.json` is rewritten. The project uid is ALSO embedded as data in notebooks (`load_project("…")`),
+`analysisBoards.json` layout keys, and chain `run.json`, so a copied project's notebooks/boards would
+still point at the source. Kept here for an easy comeback — finish re-identifying those before
+re-exposing it. Audit + plan: docs/todo/PROJECT_IO_PLAN.md."""
 function import_project(bundle::AbstractString;
                         mode::AbstractString = "error",
                         task_id::AbstractString = "",
@@ -235,9 +241,10 @@ function import_project(bundle::AbstractString;
     uid    = String(manifest.projectUid)
     exists = ispath(joinpath(projects_dir(), uid))
     if exists && mode == "error"
-        on_log("[ERROR] A project '$uid' already exists — choose Replace or Copy (or remove it first)."); return ""
+        on_log("[ERROR] A project '$uid' already exists — use Replace, or remove it first."); return ""
     end
-    # copy → new uid (keep both); replace/new → the bundle's own uid.
+    # "copy" → NEW uid (keep both); else the bundle's own uid. NB copy is UI-hidden + its re-identify is
+    # incomplete (only project.json below) — see the docstring / audit before re-exposing it.
     dest_uid = (exists && mode == "copy") ? gen_uid() : uid
     target   = joinpath(projects_dir(), dest_uid)
     packed   = String.(collect(get(manifest, :packedStores, String[])))

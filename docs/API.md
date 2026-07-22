@@ -138,7 +138,8 @@ via `run_maintenance_patch` → `run_py`, streaming the same `task:log/progress/
 `docs/DEV.md` → *Data patches*.
 **`project:export`** `{taskId,projectUid,outDir?}` (`handle_project_export`) bundles a project to a
 `.ccbundle` (each zarr store `tar`'d in parallel); **`project:import`** `{taskId,bundle,mode?}` restores
-one — `mode` (`error` default / `replace` / `copy`) resolves a uid collision. Both are background jobs
+one — `mode` (`error` default / `replace`; `copy` exists but is UI-hidden, see PROJECT_IO_PLAN.md)
+resolves a uid collision. Both are background jobs
 (`project_io.jl` on `jobs.jl`) that stream the same `task:log/progress/status` and are cancelled by
 `task:cancel` → `cancel_job!`. Neither needs an open project (export reads a dir by uid, import creates
 one). Supporting GETs: `/api/projects/bundles` (list bundles + export dir, for the picker) and
