@@ -6,6 +6,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import FileBrowser from './FileBrowser.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
@@ -68,22 +69,37 @@ const ioBusy = computed(() => !!ioTask.value && (ioTask.value.status === 'runnin
 // pick an exported bundle instead of typing a path (a pasted path still works as a fallback).
 interface BundleInfo { uid: string; name: string; path: string; stores: number }
 const bundles = ref<BundleInfo[]>([])
+const exportDir = ref('')   // destination for exports; default filled from /api/projects/bundles
 async function fetchBundles() {
   try {
     const res = await fetch('/api/projects/bundles')
-    if (res.ok) bundles.value = ((await res.json()).bundles ?? []) as BundleInfo[]
+    if (res.ok) {
+      const body = await res.json() as { bundles?: BundleInfo[]; exportDir?: string }
+      bundles.value = body.bundles ?? []
+      if (!exportDir.value && body.exportDir) exportDir.value = body.exportDir   // default, user can change
+    }
   } catch { /* export dir may not exist yet */ }
 }
 function pickBundle(path: string) { if (path) importPath.value = path }
 
+// Server-side folder/bundle browser (reused FileBrowser) — so export destination and import source can
+// be ANY server-accessible path (mounts/network drives included), not just the auto-discovered folder.
+const browserMode = ref<'export' | 'import' | null>(null)
+function onBrowserSelect(paths: string[]) {
+  const p = paths[0]
+  if (p) { if (browserMode.value === 'export') exportDir.value = p; else importPath.value = p }
+  browserMode.value = null
+}
+
 function exportProject(p: { uid: string; name: string }) {
   if (ioBusy.value) return
+  const outDir = exportDir.value || undefined
   const entry = taskStore.add({
     module: 'project', label: `Export ${p.name}`, imageUid: '', imageName: '', status: 'queued',
-    taskName: 'export', funName: 'project.export', params: {}, projectUid: p.uid, startedAt: new Date(),
+    taskName: 'export', funName: 'project.export', params: { outDir }, projectUid: p.uid, startedAt: new Date(),
   })
   ioTaskId.value = entry.id
-  ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid })
+  ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid, outDir })
 }
 
 function importBundle() {
@@ -244,8 +260,16 @@ const typeColour: Record<ProjectType, string> = {
           </tbody>
         </table>
 
-        <!-- import a bundle + live status of the active export/import -->
+        <!-- export destination + import a bundle + live status of the active export/import -->
         <div class="pp-io">
+          <div class="pp-io-dest">
+            <span class="dim">Exports to</span>
+            <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
+            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'export'"
+                    v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
+              <i class="pi pi-folder-open" /> Change
+            </button>
+          </div>
           <div class="pp-io-import">
             <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
                     @change="pickBundle(($event.target as HTMLSelectElement).value)"
@@ -256,9 +280,13 @@ const typeColour: Record<ProjectType, string> = {
               </option>
             </select>
             <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
-                   :placeholder="bundles.length ? '…or paste a .ccbundle folder path' : 'Paste a .ccbundle folder path to import…'"
+                   :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
                    @keyup.enter="importBundle"
                    v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
+            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'import'"
+                    v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
+              <i class="pi pi-folder-open" /> Browse
+            </button>
             <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
                     v-tooltip.top="'Import a project from a .ccbundle folder.'">
               <i class="pi pi-upload" /> Import
@@ -366,6 +394,11 @@ const typeColour: Record<ProjectType, string> = {
       </div>
 
   </BaseModal>
+
+  <!-- server-side picker: export destination (dir) or import source (.ccbundle) — any path, incl. mounts -->
+  <FileBrowser v-if="browserMode"
+    :mode="browserMode === 'export' ? 'dir' : 'bundle'"
+    @select="onBrowserSelect" @close="browserMode = null" />
 </template>
 
 <style scoped>
@@ -430,6 +463,12 @@ const typeColour: Record<ProjectType, string> = {
 .pp-io {
   display: flex; flex-direction: column; gap: 0.5rem;
   padding: 0.75rem; border-top: 1px solid var(--cc-border);
+}
+.pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem; flex-wrap: wrap; }
+.pp-io-destpath {
+  font-family: var(--cc-mono); font-size: 0.7rem; color: var(--cc-text);
+  background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: 0.2rem;
+  max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }

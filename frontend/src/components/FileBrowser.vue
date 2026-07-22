@@ -14,6 +14,24 @@ const emit = defineEmits<{
   (e: 'close'): void
 }>()
 
+// Selection mode: 'image' (default, multi-select image files — the image-import flow, unchanged),
+// 'dir' (pick the current folder — e.g. an export destination), or 'bundle' (single-select a
+// `.ccbundle` directory — project import). 'dir'/'bundle' reuse the same server-side browser so mounted
+// network drives / servers are reachable via the shortcuts.
+const props = withDefaults(defineProps<{ mode?: 'image' | 'dir' | 'bundle' }>(), { mode: 'image' })
+
+const title = computed(() =>
+  props.mode === 'dir'    ? 'Select a folder'
+  : props.mode === 'bundle' ? 'Select a project bundle'
+  : 'Select images')
+
+// Which entries the current mode lets you pick (dir mode picks the current folder, not an entry).
+function isSelectable(e: FsEntry): boolean {
+  if (props.mode === 'image')  return e.isimage
+  if (props.mode === 'bundle') return e.isdir && e.name.endsWith('.ccbundle')
+  return false
+}
+
 interface FsEntry {
   name: string
   path: string     // absolute path on the server
@@ -71,10 +89,21 @@ async function navigate(path: string) {
 navigate('')
 
 function toggleSelect(entry: FsEntry) {
-  if (!entry.isimage) return
-  if (selected.value.has(entry.path)) selected.value.delete(entry.path)
-  else selected.value.add(entry.path)
-  selected.value = new Set(selected.value)
+  if (!isSelectable(entry)) return
+  if (props.mode === 'image') {
+    if (selected.value.has(entry.path)) selected.value.delete(entry.path)
+    else selected.value.add(entry.path)
+    selected.value = new Set(selected.value)
+  } else {
+    // bundle: single-select
+    selected.value = selected.value.has(entry.path) ? new Set() : new Set([entry.path])
+  }
+}
+
+// Row click: pick it if selectable, otherwise (a folder) navigate in.
+function onRow(entry: FsEntry) {
+  if (isSelectable(entry)) toggleSelect(entry)
+  else if (entry.isdir) navigate(entry.path)
 }
 
 function selectAll() {
@@ -86,6 +115,10 @@ function selectAll() {
 }
 
 function confirm() {
+  if (props.mode === 'dir') {
+    if (listing.value?.current) emit('select', [listing.value.current])
+    return
+  }
   if (selected.value.size === 0) return
   emit('select', [...selected.value])
 }
@@ -102,7 +135,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 </script>
 
 <template>
-  <BaseModal title="Select images" width="680px" @close="$emit('close')">
+  <BaseModal :title="title" width="680px" @close="$emit('close')">
 
     <!-- shortcuts + breadcrumbs -->
     <template #toolbar>
@@ -140,7 +173,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
           <thead>
             <tr>
               <th class="col-chk">
-                <input type="checkbox"
+                <input v-if="mode === 'image'" type="checkbox"
                   :checked="allSelected"
                   :indeterminate="someSelected"
                   @change="selectAll"
@@ -178,16 +211,16 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
                 'row-selected': selected.has(entry.path),
                 'non-image':    !entry.isdir && !entry.isimage,
               }"
-              @click="entry.isdir ? navigate(entry.path) : toggleSelect(entry)"
-              v-tooltip.right="entry.isdir
-                ? `Open folder ${entry.name}`
-                : entry.isimage
-                  ? `Select ${entry.name}`
+              @click="onRow(entry)"
+              v-tooltip.right="isSelectable(entry)
+                ? `Select ${entry.name}`
+                : entry.isdir
+                  ? `Open folder ${entry.name}`
                   : `${entry.ext} files are not supported`"
             >
               <td class="col-chk" @click.stop>
-                <input v-if="entry.isimage"
-                  type="checkbox"
+                <input v-if="isSelectable(entry)"
+                  :type="mode === 'image' ? 'checkbox' : 'radio'"
                   :checked="selected.has(entry.path)"
                   @change="toggleSelect(entry)"
                 />
@@ -211,24 +244,30 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       </div>
 
     <template #footer>
-      <span class="sel-count" v-if="selected.size > 0">
-        {{ selected.size }} file{{ selected.size > 1 ? 's' : '' }} selected
+      <span class="sel-count" v-if="mode === 'dir'">This folder: <code>{{ listing?.current ?? '…' }}</code></span>
+      <span class="sel-count" v-else-if="selected.size > 0">
+        {{ selected.size }} {{ mode === 'bundle' ? 'bundle' : 'file' }}{{ selected.size > 1 ? 's' : '' }} selected
       </span>
-      <span class="sel-count dim" v-else>No files selected</span>
+      <span class="sel-count dim" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
 
       <div class="footer-actions">
         <button class="btn-ghost btn-sm" @click="$emit('close')"
           v-tooltip.top="'Cancel and close the file browser.'">
           Cancel
         </button>
-        <button class="btn-primary btn-sm"
-          :disabled="selected.size === 0"
-          @click="confirm"
-          v-tooltip.top="selected.size > 0
-            ? `Add ${selected.size} selected file(s) to the set.`
-            : 'Select at least one image file first.'">
-          <i class="pi pi-plus" />
-          Add {{ selected.size > 0 ? selected.size : '' }} to set
+        <!-- dir mode: pick the current folder; image/bundle: confirm the selection -->
+        <button v-if="mode === 'dir'" class="btn-primary btn-sm"
+          :disabled="!listing?.current" @click="confirm"
+          v-tooltip.top="'Use this folder.'">
+          <i class="pi pi-check" /> Use this folder
+        </button>
+        <button v-else class="btn-primary btn-sm"
+          :disabled="selected.size === 0" @click="confirm"
+          v-tooltip.top="mode === 'bundle'
+            ? 'Import the selected bundle.'
+            : (selected.size > 0 ? `Add ${selected.size} selected file(s) to the set.` : 'Select at least one image file first.')">
+          <i class="pi" :class="mode === 'bundle' ? 'pi-upload' : 'pi-plus'" />
+          {{ mode === 'bundle' ? 'Select bundle' : `Add ${selected.size > 0 ? selected.size : ''} to set` }}
         </button>
       </div>
     </template>
