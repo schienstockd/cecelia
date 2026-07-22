@@ -43,7 +43,7 @@
 import { ref, computed, watch } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
-import { isExcluded } from '../utils/inclusion'
+import { isExcluded, isImported } from '../utils/inclusion'
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
@@ -135,6 +135,16 @@ const hideExcluded = ref(localStorage.getItem(`cc-hide-excluded:${props.module ?
 watch(hideExcluded, v => { try { localStorage.setItem(hideExcludedKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 const excludedCount = computed(() => (activeSet.value?.images ?? []).filter(isExcluded).length)
 
+// ── Imported-only toggle ────────────────────────────────────────────────────────
+// A newly-added image sits un-imported (no OME-ZARR yet) until its import task runs. This toggle —
+// the counterpart to Excluded — hides the not-yet-imported ones so the list shows only images that
+// are ready to process/view. Persisted per module.
+const hideUnimportedKey = computed(() => `cc-hide-unimported:${props.module ?? 'default'}`)
+const hideUnimported = ref(localStorage.getItem(`cc-hide-unimported:${props.module ?? 'default'}`) === '1')
+watch(hideUnimported, v => { try { localStorage.setItem(hideUnimportedKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+const importedCount = computed(() => (activeSet.value?.images ?? []).filter(isImported).length)
+const unimportedCount = computed(() => (activeSet.value?.images ?? []).length - importedCount.value)
+
 const attrKeys = computed(() => {
   const imgs = activeSet.value?.images ?? []
   const keys = new Set<string>()
@@ -178,11 +188,12 @@ function resetFilters() {
 const filteredUids = computed<string[] | undefined>(() => {
   const attrActive = props.showFilter && hasApplied.value
   // Nothing narrowing the list → let ImageTable show everything (excluded still render, greyed).
-  if (!attrActive && !hideExcluded.value) return undefined
+  if (!attrActive && !hideExcluded.value && !hideUnimported.value) return undefined
   const imgs = activeSet.value?.images ?? []
   return imgs
     .filter(img => {
       if (hideExcluded.value && isExcluded(img)) return false
+      if (hideUnimported.value && !isImported(img)) return false
       if (!attrActive) return true
       const matches = Object.entries(appliedFilters.value).every(([key, vals]) =>
         vals.includes(String(img.attr?.[key] ?? ''))
@@ -300,6 +311,15 @@ const visibleUids = computed<string[]>(() =>
               v-tooltip.left="hideExcluded ? `Show ${excludedCount} excluded image(s) (greyed)` : `Hide ${excludedCount} excluded image(s)`">
               <i :class="['pi', hideExcluded ? 'pi-eye-slash' : 'pi-eye']" />
               <span class="filter-label">Excluded {{ excludedCount }}</span>
+            </button>
+
+            <!-- Imported toggle: hide images that haven't been imported yet (no OME-ZARR) -->
+            <button v-if="unimportedCount > 0"
+              class="filter-toggle" :class="{ active: hideUnimported }"
+              @click="hideUnimported = !hideUnimported"
+              v-tooltip.left="hideUnimported ? `Show all (${unimportedCount} not yet imported)` : `Show only imported images (hide ${unimportedCount} not yet imported)`">
+              <i :class="['pi', hideUnimported ? 'pi-check-circle' : 'pi-circle']" />
+              <span class="filter-label">Imported {{ importedCount }}</span>
             </button>
 
             <button v-if="showFilter && attrKeys.length > 0"
