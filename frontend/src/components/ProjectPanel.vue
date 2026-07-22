@@ -6,6 +6,7 @@
 import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
+import FileBrowser from './FileBrowser.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
@@ -68,34 +69,83 @@ const ioBusy = computed(() => !!ioTask.value && (ioTask.value.status === 'runnin
 // pick an exported bundle instead of typing a path (a pasted path still works as a fallback).
 interface BundleInfo { uid: string; name: string; path: string; stores: number }
 const bundles = ref<BundleInfo[]>([])
+const exportDir = ref('')   // destination for exports; default filled from /api/projects/bundles
 async function fetchBundles() {
   try {
     const res = await fetch('/api/projects/bundles')
-    if (res.ok) bundles.value = ((await res.json()).bundles ?? []) as BundleInfo[]
+    if (res.ok) {
+      const body = await res.json() as { bundles?: BundleInfo[]; exportDir?: string }
+      bundles.value = body.bundles ?? []
+      if (!exportDir.value && body.exportDir) exportDir.value = body.exportDir   // default, user can change
+    }
   } catch { /* export dir may not exist yet */ }
 }
 function pickBundle(path: string) { if (path) importPath.value = path }
 
-function exportProject(p: { uid: string; name: string }) {
-  if (ioBusy.value) return
-  const entry = taskStore.add({
-    module: 'project', label: `Export ${p.name}`, imageUid: '', imageName: '', status: 'queued',
-    taskName: 'export', funName: 'project.export', params: {}, projectUid: p.uid, startedAt: new Date(),
-  })
-  ioTaskId.value = entry.id
-  ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid })
+// Server-side folder/bundle browser (reused FileBrowser) — so export destination and import source can
+// be ANY server-accessible path (mounts/network drives included), not just the auto-discovered folder.
+const browserMode = ref<'export' | 'import' | null>(null)
+function onBrowserSelect(paths: string[]) {
+  const p = paths[0]
+  if (p) { if (browserMode.value === 'export') exportDir.value = p; else importPath.value = p }
+  browserMode.value = null
 }
 
-function importBundle() {
+// Warn before exporting while analysis tasks are in flight — packing a store that's being written can
+// capture a torn snapshot. GET /api/tasks is a live view of in-flight scheduler tasks (empty = idle).
+const exportWarn = ref<{ p: { uid: string; name: string }; count: number } | null>(null)
+async function runningTaskCount(): Promise<number> {
+  try {
+    const r = await fetch('/api/tasks')
+    if (r.ok) { const t = await r.json(); return Array.isArray(t) ? t.length : 0 }
+  } catch { /* treat as idle if the check fails */ }
+  return 0
+}
+async function exportProject(p: { uid: string; name: string }) {
+  if (ioBusy.value) return
+  const n = await runningTaskCount()
+  if (n > 0) { exportWarn.value = { p, count: n }; return }
+  doExport(p)
+}
+function doExport(p: { uid: string; name: string }) {
+  if (ioBusy.value) return
+  exportWarn.value = null
+  const outDir = exportDir.value || undefined
+  const entry = taskStore.add({
+    module: 'project', label: `Export ${p.name}`, imageUid: '', imageName: '', status: 'queued',
+    taskName: 'export', funName: 'project.export', params: { outDir }, projectUid: p.uid, startedAt: new Date(),
+  })
+  ioTaskId.value = entry.id
+  ws.send({ type: 'project:export', taskId: entry.id, projectUid: p.uid, outDir })
+}
+
+// Import: first peek the bundle — if its project uid already exists, ask what to do; otherwise just go.
+interface Conflict { path: string; uid: string; name: string }
+const conflict = ref<Conflict | null>(null)
+
+async function importBundle() {
   const bundle = importPath.value.trim()
   if (!bundle || ioBusy.value) return
+  try {
+    const res = await fetch(`/api/projects/bundle-info?path=${encodeURIComponent(bundle)}`)
+    if (res.ok) {
+      const info = await res.json() as { uid: string; name: string; exists: boolean }
+      if (info.exists) { conflict.value = { path: bundle, uid: info.uid, name: info.name }; return }
+    }
+  } catch { /* fall through — backend still refuses on a real collision */ }
+  doImport(bundle)
+}
+
+function doImport(bundle: string, mode?: 'replace' | 'copy') {
+  if (ioBusy.value) return
+  conflict.value = null
   const entry = taskStore.add({
     module: 'project', label: `Import ${bundle.split('/').pop()}`, imageUid: '', imageName: '',
-    status: 'queued', taskName: 'import', funName: 'project.import', params: { bundle },
+    status: 'queued', taskName: 'import', funName: 'project.import', params: { bundle, mode },
     projectUid: '', startedAt: new Date(),
   })
   ioTaskId.value = entry.id
-  ws.send({ type: 'project:import', taskId: entry.id, bundle })
+  ws.send({ type: 'project:import', taskId: entry.id, bundle, mode })
 }
 
 function cancelIo() {
@@ -112,6 +162,13 @@ watch(() => ioTask.value?.status, (s) => {
 
 onMounted(async () => {
   fetchBundles()
+  // Re-attach to an export/import already running — users will start one, close the manager, and
+  // reopen. The job runs server-side regardless; rebind so its progress shows here again. (Newest
+  // first in the store, so the first match is the current run.)
+  const running = taskStore.tasks.find(t =>
+    (t.funName === 'project.export' || t.funName === 'project.import') &&
+    (t.status === 'running' || t.status === 'queued'))
+  if (running) ioTaskId.value = running.id
   await projectMeta.fetchRecent()
   if (projectMeta.recent.length === 0) {
     tab.value = 'new'
@@ -237,8 +294,16 @@ const typeColour: Record<ProjectType, string> = {
           </tbody>
         </table>
 
-        <!-- import a bundle + live status of the active export/import -->
+        <!-- export destination + import a bundle + live status of the active export/import -->
         <div class="pp-io">
+          <div class="pp-io-dest">
+            <span class="dim">Exports to</span>
+            <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
+            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'export'"
+                    v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
+              <i class="pi pi-folder-open" /> Change
+            </button>
+          </div>
           <div class="pp-io-import">
             <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
                     @change="pickBundle(($event.target as HTMLSelectElement).value)"
@@ -249,9 +314,13 @@ const typeColour: Record<ProjectType, string> = {
               </option>
             </select>
             <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
-                   :placeholder="bundles.length ? '…or paste a .ccbundle folder path' : 'Paste a .ccbundle folder path to import…'"
+                   :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
                    @keyup.enter="importBundle"
                    v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
+            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'import'"
+                    v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
+              <i class="pi pi-folder-open" /> Browse
+            </button>
             <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
                     v-tooltip.top="'Import a project from a .ccbundle folder.'">
               <i class="pi pi-upload" /> Import
@@ -359,6 +428,50 @@ const typeColour: Record<ProjectType, string> = {
       </div>
 
   </BaseModal>
+
+  <!-- server-side picker: export destination (dir) or import source (.ccbundle) — any path, incl. mounts -->
+  <FileBrowser v-if="browserMode"
+    :mode="browserMode === 'export' ? 'dir' : 'bundle'"
+    @select="onBrowserSelect" @close="browserMode = null" />
+
+  <!-- import collision: the bundle's project already exists → replace / copy / cancel -->
+  <BaseModal v-if="conflict" title="Project already exists" icon="pi-exclamation-triangle"
+             width="480px" @close="conflict = null">
+    <div class="pp-conflict">
+      <p>A project <strong>{{ conflict.name }}</strong> (<code>{{ conflict.uid }}</code>) already
+        exists on disk.</p>
+      <p class="pp-danger-note"><i class="pi pi-exclamation-triangle" /> <strong>Replace</strong>
+        permanently deletes the existing project's data and cannot be undone — at your own risk. To keep
+        it, cancel and rename or remove it first.</p>
+    </div>
+    <template #footer>
+      <button class="btn-primary btn-sm" @click="conflict = null"
+              v-tooltip.top="'Do nothing — keep the existing project.'">Cancel</button>
+      <button class="btn-danger btn-sm" :disabled="projectMeta.current?.uid === conflict.uid"
+              @click="doImport(conflict!.path, 'replace')"
+              v-tooltip.top="projectMeta.current?.uid === conflict.uid
+                ? 'Close the project first — can\'t replace the one that\'s open.'
+                : 'Overwrite the existing project — destructive, cannot be undone.'">
+        <i class="pi pi-exclamation-triangle" /> Replace (at your own risk)
+      </button>
+    </template>
+  </BaseModal>
+
+  <!-- warn: analysis tasks in flight when exporting → possible torn snapshot -->
+  <BaseModal v-if="exportWarn" title="Tasks are still running" icon="pi-exclamation-triangle"
+             width="460px" @close="exportWarn = null">
+    <div class="pp-conflict">
+      <p>You have <strong>{{ exportWarn.count }}</strong> task{{ exportWarn.count === 1 ? '' : 's' }}
+        running. Exporting <strong>{{ exportWarn.p.name }}</strong> now can capture an inconsistent
+        snapshot of a store that's being written. Best to wait until they finish.</p>
+    </div>
+    <template #footer>
+      <button class="btn-primary btn-sm" @click="exportWarn = null"
+              v-tooltip.top="'Wait for the running tasks to finish.'">Wait</button>
+      <button class="btn-ghost btn-sm" @click="doExport(exportWarn!.p)"
+              v-tooltip.top="'Export now despite the running tasks.'">Export anyway</button>
+    </template>
+  </BaseModal>
 </template>
 
 <style scoped>
@@ -424,11 +537,23 @@ const typeColour: Record<ProjectType, string> = {
   display: flex; flex-direction: column; gap: 0.5rem;
   padding: 0.75rem; border-top: 1px solid var(--cc-border);
 }
+.pp-conflict { padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--cc-text); }
+.pp-conflict p { margin: 0 0 0.6rem; }
+.pp-conflict code { font-family: var(--cc-mono); font-size: 0.75rem; background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: 0.2rem; }
+.pp-conflict-opts { margin: 0; padding-left: 1.1rem; color: var(--cc-text-dim); font-size: 0.8rem; }
+.pp-conflict-opts li { margin: 0.2rem 0; }
+
+.pp-io-dest { display: flex; gap: 0.4rem; align-items: center; font-size: 0.75rem; flex-wrap: wrap; }
+.pp-io-destpath {
+  font-family: var(--cc-mono); font-size: 0.7rem; color: var(--cc-text);
+  background: var(--cc-surface-2); padding: 0.1rem 0.35rem; border-radius: 0.2rem;
+  max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .pp-io-import { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
 .pp-io-select { flex: 1 1 180px; font-size: 0.78rem; }
 .pp-io-path { flex: 2 1 180px; font-size: 0.78rem; }
 .pp-io-status {
-  display: flex; align-items: center; gap: 0.5rem;
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
   font-size: 0.75rem; color: var(--cc-text-dim);
 }
 .pp-io-label { color: var(--cc-text); font-weight: 500; }
@@ -438,8 +563,9 @@ const typeColour: Record<ProjectType, string> = {
 .pp-io-bar { flex: 0 0 90px; height: 4px; border-radius: 2px; background: var(--cc-surface-2); overflow: hidden; }
 .pp-io-fill { height: 100%; background: var(--cc-accent); transition: width 0.2s; }
 .pp-io-log {
-  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.7;
+  flex: 1 1 100%; min-width: 0;
+  font-family: var(--cc-mono); font-size: 0.68rem; opacity: 0.75;
+  white-space: normal; word-break: break-all; user-select: text;   /* show full path, selectable */
 }
 
 .proj-row {
@@ -526,4 +652,12 @@ const typeColour: Record<ProjectType, string> = {
 .btn-primary { background: var(--cc-accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
 .btn-primary:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
+.btn-danger { background: #b91c1c; color: #fff; }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.15); }
+.btn-danger:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); border-color: transparent; }
+.pp-danger-note {
+  color: #fca5a5; font-size: 0.78rem; display: flex; gap: 0.4rem; align-items: flex-start;
+  margin-top: 0.6rem; padding: 0.4rem 0.55rem; border-radius: 0.3rem;
+  background: #b91c1c1a; border: 1px solid #b91c1c44;
+}
 </style>

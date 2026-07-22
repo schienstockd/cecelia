@@ -137,10 +137,14 @@ via `run_maintenance_patch` → `run_py`, streaming the same `task:log/progress/
 **`maintenance:cancel`** `{taskId}` → `cancel_maintenance!`. Confined to the one named project. See
 `docs/DEV.md` → *Data patches*.
 **`project:export`** `{taskId,projectUid,outDir?}` (`handle_project_export`) bundles a project to a
-`.ccbundle` (each zarr store `tar`'d in parallel); **`project:import`** `{taskId,bundle}` restores one.
-Both are background jobs (`project_io.jl` on `jobs.jl`) that stream the same `task:log/progress/status`
-and are cancelled by `task:cancel` → `cancel_job!`. Neither needs an open project (export reads a dir by
-uid, import creates one). UI: `ProjectPanel.vue`. See `docs/JOBS.md`, `docs/todo/PROJECT_IO_PLAN.md`.
+`.ccbundle` (each zarr store `tar`'d in parallel); **`project:import`** `{taskId,bundle,mode?}` restores
+one — `mode` (`error` default / `replace`; `copy` exists but is UI-hidden, see PROJECT_IO_PLAN.md)
+resolves a uid collision. Both are background jobs
+(`project_io.jl` on `jobs.jl`) that stream the same `task:log/progress/status` and are cancelled by
+`task:cancel` → `cancel_job!`. Neither needs an open project (export reads a dir by uid, import creates
+one). Supporting GETs: `/api/projects/bundles` (list bundles + export dir, for the picker) and
+`/api/projects/bundle-info?path=` (a bundle's uid/name + whether it collides, so the UI can prompt).
+UI: `ProjectPanel.vue`. See `docs/JOBS.md`, `docs/todo/PROJECT_IO_PLAN.md`.
 Task events (`task:log`/`task:status`/`task:progress`/`task:result`)
 are **broadcast to every connected client** (`_broadcast_task` → `broadcast_ws`), not sent point-to-point
 to the launching socket — so a second GUI tab and the read-only **task console** (`api/task_console.jl`,

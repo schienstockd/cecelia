@@ -448,6 +448,16 @@ function api_projects_bundles(::HTTP.Request)
     end
 end
 
+# GET /api/projects/bundle-info?path= — peek a bundle's uid/name + whether that uid already exists,
+# so the import UI can prompt (replace / copy / cancel) BEFORE unpacking.
+function api_projects_bundle_info(req::HTTP.Request)
+    path = get(HTTP.queryparams(HTTP.URI(req.target)), "path", "")
+    isempty(path) && return 400, JSON3.write((; error = "path required"))
+    info = bundle_info(path)
+    isnothing(info) && return 400, JSON3.write((; error = "Not a cecelia bundle: $path"))
+    200, JSON3.write(info)
+end
+
 function api_projects_create(body_bytes::Vector{UInt8})
     body = try JSON3.read(String(body_bytes)) catch
         return 400, JSON3.write((; error="Invalid JSON body"))

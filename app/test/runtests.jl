@@ -5450,7 +5450,24 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                 @test read(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
                 @test read(joinpath(tgt, "1", "img1", "labelProps", "base.h5ad"), String) == "hdf-bytes"
                 @test !any(endswith(n, ".tar") for (_, _, fs) in walkdir(tgt) for n in fs)       # no leftover .tar
-                @test isempty(import_project(bundle))                                           # refuses existing project
+                @test isempty(import_project(bundle))                                           # default: refuses existing
+
+                # bundle_info reports the collision the UI prompts on
+                bi = Cecelia.bundle_info(bundle)
+                @test bi.uid == uid && bi.exists == true
+
+                # copy: new uid, both kept, name suffixed, stores intact
+                copy_uid = import_project(bundle; mode = "copy")
+                @test copy_uid != uid && !isempty(copy_uid)
+                @test isdir(joinpath(projroot, uid)) && isdir(joinpath(projroot, copy_uid))     # both present
+                cj = JSON3.read(read(joinpath(projroot, copy_uid, "project.json"), String))
+                @test String(cj.uid) == copy_uid && endswith(String(cj.name), "(imported)")
+                @test read(joinpath(projroot, copy_uid, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
+
+                # replace: overwrite the existing uid in place (mutate a file first to prove it's rewritten)
+                write(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), "STALE")
+                @test import_project(bundle; mode = "replace") == uid
+                @test read(joinpath(tgt, "0", "img1", "data.ome.zarr", "0", "0.0"), String) == "chunk-bytes"
             finally
                 prev_env === nothing ? delete!(ENV, "CECELIA_DEV_DIR") :
                                        (ENV["CECELIA_DEV_DIR"] = prev_env)

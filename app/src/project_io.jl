@@ -82,6 +82,10 @@ function _mirror_tree!(src::String, dst::String, rel::String, stores::Vector{Tup
     end
 end
 
+# System `tar` is the archiver (like the self-updater). Present on Linux/macOS and Windows 10 1803+
+# (bsdtar as tar.exe); guard so a missing binary is a clear error, not a cryptic spawn failure.
+_tar_available()::Bool = Sys.which("tar") !== nothing
+
 # Run one `tar` (pack or unpack) as a tracked subprocess, so cancel_job! can kill it. Returns clean exit.
 function _run_tar(cmd::Cmd, task_id::AbstractString)::Bool
     proc = run(pipeline(cmd; stdout = devnull, stderr = devnull); wait = false)
@@ -141,6 +145,9 @@ function export_project(proj_uid::AbstractString;
     if !isdir(proj_dir)
         on_log("[ERROR] Project not found: $proj_uid"); return ""
     end
+    if !_tar_available()
+        on_log("[ERROR] system 'tar' not found — it's required to pack the project."); return ""
+    end
     uid    = basename(rstrip(proj_dir, '/'))
     bundle = joinpath(out_dir, uid * BUNDLE_EXT)
     if ispath(bundle)
@@ -188,11 +195,36 @@ function export_project(proj_uid::AbstractString;
 end
 
 """
-    import_project(bundle; task_id, on_log, on_progress, concurrency) -> String
+    bundle_info(bundle) -> (; uid, name, exists) | nothing
 
-Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the new project's
-uid (or `""` on failure/cancel). No open project required; refuses to overwrite an existing uid."""
+Peek a `.ccbundle`'s manifest (no unpacking): its project uid + name, and whether a project with that
+uid already exists on disk. `nothing` if it isn't a bundle. Lets the import UI ask the user what to do
+on a collision. See `GET /api/projects/bundle-info`."""
+function bundle_info(bundle::AbstractString)
+    bundle = rstrip(String(bundle), '/')
+    mpath = joinpath(bundle, BUNDLE_MANIFEST)
+    isfile(mpath) || return nothing
+    m = try JSON3.read(read(mpath, String)) catch; return nothing end
+    uid = String(get(m, :projectUid, ""))
+    isempty(uid) && return nothing
+    (; uid, name = String(get(m, :projectName, uid)), exists = ispath(joinpath(projects_dir(), uid)))
+end
+
+"""
+    import_project(bundle; mode, task_id, on_log, on_progress, concurrency) -> String
+
+Restore a `.ccbundle` into the projects dir (unpacking each `.zarr.tar`) and return the imported
+project's uid (or `""` on failure/cancel). No open project required. On a uid collision, `mode` decides:
+`"error"` (default — refuse), `"replace"` (overwrite the existing project), or `"copy"` (import under a
+fresh uid, keeping both). With no collision, `mode` is irrelevant and the bundle's own uid is used.
+
+⚠️ `"copy"` is currently HIDDEN in the UI (not offered) and its re-identification is INCOMPLETE: only
+`project.json` is rewritten. The project uid is ALSO embedded as data in notebooks (`load_project("…")`),
+`analysisBoards.json` layout keys, and chain `run.json`, so a copied project's notebooks/boards would
+still point at the source. Kept here for an easy comeback — finish re-identifying those before
+re-exposing it. Audit + plan: docs/todo/PROJECT_IO_PLAN.md."""
 function import_project(bundle::AbstractString;
+                        mode::AbstractString = "error",
                         task_id::AbstractString = "",
                         on_log::Function      = println,
                         on_progress::Function = (n, t) -> nothing,
@@ -202,19 +234,27 @@ function import_project(bundle::AbstractString;
     if !isdir(bundle) || !isfile(manifest_path)
         on_log("[ERROR] Not a cecelia bundle: $bundle"); return ""
     end
-    manifest = JSON3.read(read(manifest_path, String))
-    uid = String(manifest.projectUid)
-    target = joinpath(projects_dir(), uid)
-    if ispath(target)
-        on_log("[ERROR] A project '$uid' already exists (remove it first to re-import): $target"); return ""
+    if !_tar_available()
+        on_log("[ERROR] system 'tar' not found — it's required to unpack the bundle."); return ""
     end
-    packed = String.(collect(get(manifest, :packedStores, String[])))
+    manifest = JSON3.read(read(manifest_path, String))
+    uid    = String(manifest.projectUid)
+    exists = ispath(joinpath(projects_dir(), uid))
+    if exists && mode == "error"
+        on_log("[ERROR] A project '$uid' already exists — use Replace, or remove it first."); return ""
+    end
+    # "copy" → NEW uid (keep both); else the bundle's own uid. NB copy is UI-hidden + its re-identify is
+    # incomplete (only project.json below) — see the docstring / audit before re-exposing it.
+    dest_uid = (exists && mode == "copy") ? gen_uid() : uid
+    target   = joinpath(projects_dir(), dest_uid)
+    packed   = String.(collect(get(manifest, :packedStores, String[])))
     tmp = target * ".import_tmp"
     ispath(tmp) && rm(tmp; recursive = true, force = true)
 
     start_job!(task_id)
     try
-        on_log("Importing '$(get(manifest, :projectName, uid))' ($uid): $(length(packed)) store(s) to unpack")
+        on_log("Importing '$(get(manifest, :projectName, uid))' ($uid): $(length(packed)) store(s) to unpack"
+               * (dest_uid != uid ? " → copy $dest_uid" : (exists ? " (replacing)" : "")))
         # Copy the tree (minus the manifest) into tmp, then extract each .tar in place.
         mkpath(tmp)
         for name in readdir(bundle)
@@ -237,10 +277,20 @@ function import_project(bundle::AbstractString;
             return ""
         end
 
+        # copy: re-identify the project (new uid + suffixed name) in its project.json
+        if dest_uid != uid
+            pj = joinpath(tmp, "project.json")
+            d  = JSON3.read(read(pj, String), Dict{String,Any})
+            d["uid"]  = dest_uid
+            d["name"] = string(get(d, "name", uid), " (imported)")
+            open(pj, "w") do io; JSON3.pretty(io, d); end
+        end
+
         mkpath(projects_dir())
+        mode == "replace" && ispath(target) && rm(target; recursive = true)   # overwrite in place
         mv(tmp, target)
-        on_log("Done. Imported project $uid")
-        return uid
+        on_log("Done. Imported project $dest_uid" * (dest_uid != uid ? " (copy of $uid)" : ""))
+        return dest_uid
     catch e
         rm(tmp; recursive = true, force = true)
         on_log("[ERROR] " * sprint(showerror, e)); return ""
