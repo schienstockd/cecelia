@@ -3,10 +3,16 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
+import TeleportPopover from '../components/TeleportPopover.vue'
+import PoolThrottle from '../components/PoolThrottle.vue'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
 const settings = useSettingsStore()
+
+// live scheduler throttle — a quick popover off the toolbar (not buried in Settings)
+const throttleBtn  = ref<HTMLElement | null>(null)
+const throttleOpen = ref(false)
 
 const selectedId   = ref<string | null>(null)
 const statusFilter = ref<'all' | 'active' | 'done' | 'failed' | 'cancelled'>('all')
@@ -133,6 +139,15 @@ const FILTERS = [
         <input type="checkbox" v-model="settings.taskListAutoFollow" />
         Auto-follow
       </label>
+
+      <button ref="throttleBtn" class="tm-throttle" :class="{ active: throttleOpen }"
+        @click="throttleOpen = !throttleOpen"
+        v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
+        <i class="pi pi-sliders-h" />
+      </button>
+      <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
+        <PoolThrottle />
+      </TeleportPopover>
     </div>
 
     <!-- ── Body ───────────────────────────────────────────────────────── -->
@@ -289,6 +304,23 @@ const FILTERS = [
   user-select: none;
 }
 .follow-toggle input { accent-color: var(--cc-accent); cursor: pointer; }
+
+.tm-throttle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border: 1px solid var(--cc-border);
+  border-radius: 0.3rem;
+  background: none;
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.1s, color 0.1s;
+}
+.tm-throttle:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
+.tm-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 /* ── Body ─────────────────────────────────────────────────────────────── */
 .tm-body {

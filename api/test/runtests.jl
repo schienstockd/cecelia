@@ -29,6 +29,15 @@ _repl(code) = _post(api_repl, Dict("code" => code))
     @test haskey(d, :setupRequired) && d.setupRequired isa Bool
 end
 
+@testset "API: pool limit set — guards" begin
+    # unknown pool rejected (nothing persisted); the success path is covered in app/test where the
+    # config dir can be redirected to a temp so the real custom.toml is untouched.
+    st,  _ = _post(api_pool_set, Dict("name" => "nope", "limit" => 4))
+    @test st == 400
+    st2, _ = _post(api_pool_set, Dict("limit" => 4))            # missing name
+    @test st2 == 400
+end
+
 @testset "API: maintenance patches" begin
     st, body = api_maintenance_patches(HTTP.Request("GET", "/api/maintenance/patches"))
     @test st == 200

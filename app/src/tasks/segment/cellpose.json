@@ -4,7 +4,7 @@
   "label": "Cellpose Segmentation",
   "category": "Segment",
   "env": ["local"],
-  "resource_pool": "gpu-light",
+  "resource_pool": "gpu",
   "params": [
     {
       "key": "valueName",

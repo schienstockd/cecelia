@@ -28,7 +28,7 @@ struct ChainNode
     barrier_policy::String
     # resource_pool — name of the global scheduler pool this node runs in (see scheduler.jl
     # _POOLS, sized from config.toml [pools]). "" falls back to the task JSON's resource_pool,
-    # else "default". A pool with limit 1 (e.g. "gpu") serialises that node across the process.
+    # else "cpu". A pool with limit 1 (e.g. "gpu") serialises that node across the process.
     resource_pool::String
 end
 

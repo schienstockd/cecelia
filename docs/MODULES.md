@@ -302,10 +302,13 @@ Location: `app/src/tasks/<category>/<name>.json` — served to Vue via `GET /api
 
 | Pool | Limit | Use for |
 |------|-------|---------|
-| `gpu` | 1 | GPU-accelerated tasks (Cellpose, etc.) |
-| `gpu-light` | 4 | GPU-assisted tasks that don't saturate the GPU |
-| `io` | 8 | I/O-bound tasks (OME-ZARR import, etc.) |
-| `default` | 20 | CPU tasks |
+| `cpu` | 20 | general CPU compute — most tasks (the default) |
+| `gpu` | 1 | the GPU — Cellpose family (raise for batch segmentation) |
+| `io` | 8 | local disk IO — OME-ZARR import/convert, crop |
+| `network` | 1 | remote/SMB reads — reserved for HPC/remote tasks (unused today) |
+
+Limits are starting defaults only — each is adjustable live in Settings, so throttle whenever you
+need (e.g. drop `io` to 1 when importing over a slow network share).
 
 ### Param types
 

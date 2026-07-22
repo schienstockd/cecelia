@@ -4,7 +4,7 @@
   "label": "Measure Labels",
   "category": "Segment",
   "env": ["local"],
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "qcPlot": "segmentation_qc",
   "params": [
     {

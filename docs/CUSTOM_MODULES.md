@@ -47,7 +47,7 @@ Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
   "fun_name": "behaviour.exampleNormalise",
   "label": "Example: normalise a measure (custom)",
   "category": "behaviour",
-  "resource_pool": "default",
+  "resource_pool": "cpu",
   "scope": "image",
   "params": [
     { "key": "column", "label": "Measure column", "type": "text", "required": true }
@@ -55,7 +55,7 @@ Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
 }
 ```
 
-`resource_pool` is required (`"gpu"` / `"gpu-light"` / `"io"` / `"default"`). `scope` is `"image"`
+`resource_pool` is required (`"cpu"` / `"gpu"` / `"io"` / `"network"`). `scope` is `"image"`
 (default) or `"set"`.
 
 ### 2. `sources/<category>/<name>.jl` — the code

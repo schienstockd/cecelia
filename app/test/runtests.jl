@@ -836,7 +836,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         write(spec, JSON3.write(Dict(
             "fun_name"      => "customTest.exampleTest",
             "label"         => "Example test",
-            "resource_pool" => "default",
+            "resource_pool" => "cpu",
             "scope"         => "image",
             "params"        => [Dict("key" => "n", "label" => "N", "type" => "int",
                                      "min" => 0, "max" => 10)],
@@ -864,6 +864,44 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test_throws Exception _task_from_fun_name("customTest.doesNotExist")
     end
 
+    @testset "Resource pool mapping" begin
+        # Pins the pool recategorisation (cpu/gpu/io/network). A task's pool comes from its JSON
+        # resource_pool via _task_pool_name; a spec-less task falls back to "cpu".
+        poolof(fn) = Cecelia._task_pool_name(_task_from_fun_name(fn))
+        @test poolof("segment.cellpose")              == "gpu"
+        @test poolof("segment.cellposeMeasure")       == "gpu"
+        @test poolof("cleanupImages.cellposeCorrect") == "gpu"
+        @test poolof("importImages.omezarr")          == "io"
+        @test poolof("importImages.migrateLegacy")    == "io"
+        @test poolof("editImages.cropImage")          == "io"
+        @test poolof("cleanupImages.afCorrect")       == "cpu"
+        @test poolof("tracking.bayesian_tracking")    == "cpu"
+        @test poolof("segment.measureLabels")         == "cpu"
+        # no strays: every built-in task resolves to one of the four canonical pools
+        for fn in keys(Cecelia._fun_name_map())
+            @test poolof(fn) in ("cpu", "gpu", "io", "network")
+        end
+    end
+
+    @testset "Live pool limit (set_pool_limit!)" begin
+        # resize a pool live AND persist to custom.toml. Redirect the config dir to a temp so the
+        # real custom.toml is never touched (config_dir reads CECELIA_DEV_DIR live).
+        prev = get(ENV, "CECELIA_DEV_DIR", nothing)
+        tmp  = mktempdir()
+        ENV["CECELIA_DEV_DIR"] = tmp
+        try
+            @test set_pool_limit!("io", 3) == 3
+            @test any(p -> p.name == "io" && p.limit == 3, list_pools())   # applied live
+            @test set_pool_limit!("io", 0)   == 1                           # clamped to ≥ 1
+            @test set_pool_limit!("io", 999) == Cecelia.POOL_LIMIT_MAX      # clamped to max
+            txt = read(joinpath(tmp, "custom.toml"), String)                # persisted under [pools]
+            @test occursin("[pools]", txt) && occursin("io", txt)
+        finally
+            prev === nothing ? delete!(ENV, "CECELIA_DEV_DIR") : (ENV["CECELIA_DEV_DIR"] = prev)
+            resize_pool!("io", 8)   # restore default so later tests are unaffected
+        end
+    end
+
     @testset "Custom module reload prunes deleted files" begin
         # load a module from a temp config dir, then delete its .jl and reload → the task must be
         # unregistered (no longer dispatchable) and dropped from the load report. Regression: the
@@ -874,7 +912,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         spec = joinpath(defdir, "pruneMe.json")
         write(spec, JSON3.write(Dict(
             "fun_name" => "tmpcat.pruneMe", "label" => "Prune me",
-            "resource_pool" => "default", "scope" => "image", "params" => Any[])))
+            "resource_pool" => "cpu", "scope" => "image", "params" => Any[])))
         jl = joinpath(srcdir, "pruneMe.jl")
         write(jl, """
         struct _PruneMeTask <: Cecelia.CciaTask end
@@ -2097,6 +2135,74 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         # With limit 3 and 3 images all able to run simultaneously, max should be 3
         @test max_concurrent[] == 3
 
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Dynamic resize: throttle UP re-parallelises the already-queued backlog ─────
+    # One persistent queue per pool (not a swap): grow spawns workers that pick up the backlog.
+    # Start at limit 1 (1 running, 3 queued), throttle to 4 mid-run → the 3 queued fan out, so the
+    # observed concurrency rises above 1. A queue-swap (the old bug) would leave them serial at 1.
+    @testset "Pool throttle-up parallelises the backlog" begin
+        proj = create_project!(name="pool-grow-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        imgs = map(("a", "b", "c", "d")) do nm; add_image!(s; name=nm) end
+        tpl = ChainTemplate("pool-grow-chain",
+            [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+                       params=Dict{String,Any}("waitMs" => 300), resource_pool="dyngrow")],
+            ChainEdge[])
+        save_chain_template!(proj, tpl)
+
+        max_concurrent = Threads.Atomic{Int}(0)
+        current        = Threads.Atomic{Int}(0)
+        sh = payload -> begin
+            payload.node_id == "n1" || return
+            n = Threads.atomic_add!(current, 1) + 1
+            Threads.atomic_max!(max_concurrent, n); nothing
+        end
+        dh = payload -> (payload.node_id == "n1" && Threads.atomic_sub!(current, 1); nothing)
+        subscribe_chain_events!("node:running", sh)
+        subscribe_chain_events!("node:done",    dh)
+
+        resize_pool!("dyngrow", 1)                              # throttled to 1
+        runner = Threads.@spawn run_chain(proj, [i.uid for i in imgs];
+                                          chain="pool-grow-chain", on_log=_->nothing)
+        sleep(0.12)                                             # 1 running, 3 queued
+        resize_pool!("dyngrow", 4)                              # throttle up mid-run
+        wait(runner)
+
+        unsubscribe_chain_events!("node:running", sh)
+        unsubscribe_chain_events!("node:done",    dh)
+
+        @test max_concurrent[] >= 3                             # backlog fanned out (was serial at 1)
+        rm(proj.root; recursive=true)
+    end
+
+    # ── Dynamic resize: throttle DOWN settles to the new limit (never oversubscribes) ──
+    # Start wide (4), throttle to 1 just after the first batch is admitted. The first 4 run
+    # concurrently (~150ms), then the remaining 4 serialise at limit 1 (~4×150ms) → ≳0.6s total.
+    # If the shrink hadn't taken (stayed at 4), all 8 would finish in ~2×150 = 300ms. Wall-clock
+    # (per the existing pool tests) — the slot gate is checked at execution time, so the tail
+    # serialises even though the first 4 were admitted while the limit was still 4.
+    @testset "Pool throttle-down settles to the new limit" begin
+        proj = create_project!(name="pool-shrink-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="s")
+        imgs = map(i -> add_image!(s; name="img-$i"), 1:8)
+        tpl = ChainTemplate("pool-shrink-chain",
+            [ChainNode(id="n1", fn="testTasks.imageTask", scope="image",
+                       params=Dict{String,Any}("waitMs" => 150), resource_pool="dynshrink")],
+            ChainEdge[])
+        save_chain_template!(proj, tpl)
+
+        resize_pool!("dynshrink", 4)
+        t0 = time()
+        runner = Threads.@spawn run_chain(proj, [i.uid for i in imgs];
+                                          chain="pool-shrink-chain", on_log=_->nothing)
+        sleep(0.05)                                             # first 4 admitted
+        resize_pool!("dynshrink", 1)                            # throttle down mid-run
+        wait(runner)
+        elapsed = time() - t0
+
+        @test elapsed >= 0.55                                   # tail serialised at 1 (not stuck at 4)
         rm(proj.root; recursive=true)
     end
 

@@ -13,6 +13,8 @@ import { usePanelResize } from '../composables/usePanelResize'
 import { useTaskDraftsStore, taskDraftKey, taskDraftScope } from '../stores/taskDrafts'
 import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
+import TeleportPopover from '../components/TeleportPopover.vue'
+import PoolThrottle from '../components/PoolThrottle.vue'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -51,20 +53,25 @@ const paramContext = computed<ParamContext>(() => ({
 const selectedTask = ref<string>('')
 const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.value))
 
-// resource profile — auto-selected from task def default; user can override
-interface PoolInfo { name: string; limit: number }
-const pools = ref<PoolInfo[]>([])
-const selectedPool = ref('default')
+// resource profile — auto-selected from task def default; user can override. We only need the pool
+// NAMES here (the chip labels); live limits are the throttle popover's concern, not this picker's.
+const pools = ref<string[]>([])
+const selectedPool = ref('cpu')
 
-onMounted(async () => {
+async function loadPools() {
   try {
     const res = await fetch('/api/pools')
-    if (res.ok) pools.value = await res.json() as PoolInfo[]
+    if (res.ok) pools.value = (await res.json() as { name: string }[]).map(p => p.name)
   } catch { /* backend may not be ready */ }
-})
+}
+onMounted(loadPools)
+
+// live throttle popover (same PoolThrottle component as the Task Manager)
+const throttleBtn  = ref<HTMLElement | null>(null)
+const throttleOpen = ref(false)
 
 watch(taskDef, (def) => {
-  if (def) selectedPool.value = def.resource_pool ?? 'default'
+  if (def) selectedPool.value = def.resource_pool ?? 'cpu'
 })
 
 // param values — populated from the object's remembered funParams (image → set → task-defaults),
@@ -357,11 +364,19 @@ const { width: sidebarWidth, onResizeStart } =
           v-tooltip.right="'Resource pool controls how many tasks share a concurrency slot. GPU tasks should use the gpu pool to avoid running multiple models at once.'">
           Pool
         </span>
-        <select class="pool-select" v-model="selectedPool">
-          <option v-for="p in pools" :key="p.name" :value="p.name">
-            {{ p.name }} (max {{ p.limit }})
-          </option>
-        </select>
+        <div class="pool-chips">
+          <button v-for="name in pools" :key="name" type="button"
+            class="pool-chip" :class="{ active: selectedPool === name }"
+            @click="selectedPool = name">{{ name }}</button>
+        </div>
+        <button ref="throttleBtn" class="pool-throttle" :class="{ active: throttleOpen }"
+          @click="throttleOpen = !throttleOpen"
+          v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
+          <i class="pi pi-sliders-h" />
+        </button>
+        <TeleportPopover v-model="throttleOpen" :anchor="throttleBtn" placement="bottom-end">
+          <PoolThrottle />
+        </TeleportPopover>
       </div>
     </section>
 
@@ -483,17 +498,42 @@ const { width: sidebarWidth, onResizeStart } =
   white-space: nowrap;
   flex-shrink: 0;
 }
-.pool-select {
+.pool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
   flex: 1;
-  font-size: 0.72rem;
-  background: var(--cc-surface-2);
-  color: var(--cc-text);
-  border: 1px solid var(--cc-border);
-  border-radius: 0.25rem;
-  padding: 0.2rem 0.3rem;
-  cursor: pointer;
   min-width: 0;
 }
+.pool-chip {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--cc-border);
+  background: var(--cc-surface-2);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+.pool-chip:hover  { border-color: var(--cc-accent); color: var(--cc-text); }
+.pool-chip.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
+.pool-throttle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex-shrink: 0;
+  border: 1px solid var(--cc-border);
+  border-radius: 0.25rem;
+  background: var(--cc-surface-2);
+  color: var(--cc-text-dim);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.pool-throttle:hover  { color: var(--cc-text); }
+.pool-throttle.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 .section-heading {
   font-size: 0.65rem;
