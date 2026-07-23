@@ -15,6 +15,7 @@ import ParamRenderer, { type ParamContext } from './ParamRenderer.vue'
 import TaskList from './TaskList.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
+import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { useTaskStore } from '../stores/tasks'
 import { useLogStore } from '../stores/log'
 import { useWsStore } from '../stores/ws'
@@ -57,6 +58,7 @@ const taskDef = computed(() => props.defs.find(d => d.task === selectedTask.valu
 // NAMES here (the chip labels); live limits are the throttle popover's concern, not this picker's.
 const pools = ref<string[]>([])
 const selectedPool = ref('cpu')
+const poolOptions = computed<ChipOption[]>(() => pools.value.map(name => ({ value: name, label: name })))
 
 async function loadPools() {
   try {
@@ -364,11 +366,7 @@ const { width: sidebarWidth, onResizeStart } =
           v-tooltip.right="'Resource pool controls how many tasks share a concurrency slot. GPU tasks should use the gpu pool to avoid running multiple models at once.'">
           Pool
         </span>
-        <div class="pool-chips">
-          <button v-for="name in pools" :key="name" type="button"
-            class="pool-chip" :class="{ active: selectedPool === name }"
-            @click="selectedPool = name">{{ name }}</button>
-        </div>
+        <ChipSelect class="pool-chips" v-model="selectedPool" :options="poolOptions" aria-label="Resource pool" />
         <button ref="throttleBtn" class="pool-throttle" :class="{ active: throttleOpen }"
           @click="throttleOpen = !throttleOpen"
           v-tooltip.left="'Throttle — how many tasks of each kind run at once'">
@@ -498,26 +496,7 @@ const { width: sidebarWidth, onResizeStart } =
   white-space: nowrap;
   flex-shrink: 0;
 }
-.pool-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  flex: 1;
-  min-width: 0;
-}
-.pool-chip {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-  white-space: nowrap;
-}
-.pool-chip:hover  { border-color: var(--cc-accent); color: var(--cc-text); }
-.pool-chip.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
+.pool-chips { flex: 1; min-width: 0; }
 .pool-throttle {
   display: flex;
   align-items: center;

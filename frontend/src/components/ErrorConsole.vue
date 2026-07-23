@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick } from 'vue'
 import { useLogStore, type LogLevel } from '../stores/log'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 // `fill`: render just the open panel filling its container (no docked collapse bar / toggle). Used by
 // the standalone console window (ConsoleView) so the docked bar and the window are the SAME component.
@@ -45,6 +46,23 @@ const filterCounts = computed(() => ({
   warn:  log.entries.filter(e => e.level === 'warn').length,
   error: log.entries.filter(e => e.level === 'error').length,
 }))
+
+// per-level active colour (all → default accent); mirrors the old .filter-tab.active.<lvl> text colour
+const LEVEL_ACCENT: Partial<Record<Filter, string>> = {
+  error: '#fca5a5',
+  warn:  '#fcd34d',
+  info:  '#93c5fd',
+}
+
+const filterOptions = computed<ChipOption[]>(() =>
+  (['all', 'info', 'warn', 'error'] as Filter[]).map(lvl => ({
+    value: lvl,
+    label: lvl,
+    badge: filterCounts.value[lvl],
+    accent: LEVEL_ACCENT[lvl],
+    tip: `Show ${lvl === 'all' ? 'all' : lvl} messages`,
+  }))
+)
 </script>
 
 <template>
@@ -87,18 +105,14 @@ const filterCounts = computed(() => ({
       </button>
       <span v-else class="bar-toggle"><i class="pi pi-desktop" /> Console</span>
 
-      <div class="filter-tabs">
-        <button
-          v-for="lvl in (['all', 'info', 'warn', 'error'] as Filter[])"
-          :key="lvl"
-          class="filter-tab"
-          :class="{ active: filter === lvl, [lvl]: true }"
-          @click="filter = lvl"
-          v-tooltip.top="`Show ${lvl === 'all' ? 'all' : lvl} messages`"
-        >
-          {{ lvl }} <span class="cnt">{{ filterCounts[lvl] }}</span>
-        </button>
-      </div>
+      <ChipSelect
+        class="filter-chips"
+        variant="segmented"
+        :options="filterOptions"
+        :model-value="filter"
+        @update:model-value="v => filter = v as Filter"
+        aria-label="Log level filter"
+      />
 
       <button
         class="icon-btn"
@@ -236,32 +250,8 @@ const filterCounts = computed(() => ({
   background: var(--cc-surface-1);
 }
 
-.filter-tabs {
-  display: flex;
-  gap: 0.2rem;
-  flex: 1;
-}
-.filter-tab {
-  font-size: 0.72rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 0.3rem;
-  border: 1px solid transparent;
-  background: none;
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  font-weight: 500;
-}
-.filter-tab:hover { background: var(--cc-surface-2); }
-.filter-tab.active { border-color: var(--cc-border); color: var(--cc-text); }
-.filter-tab.active.error { border-color: #7f1d1d; color: #fca5a5; }
-.filter-tab.active.warn  { border-color: #78350f; color: #fcd34d; }
-.filter-tab.active.info  { border-color: #1e3a5f; color: #93c5fd; }
-.cnt {
-  font-size: 0.65rem;
-  background: var(--cc-surface-2);
-  padding: 0.05rem 0.3rem;
-  border-radius: 999px;
-}
+/* push the trailing icon buttons to the right edge (was .filter-tabs { flex: 1 }) */
+.filter-chips { margin-right: auto; }
 
 .icon-btn {
   background: none;

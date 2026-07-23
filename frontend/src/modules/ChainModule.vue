@@ -22,6 +22,7 @@ import ParamRenderer from '../tasks/ParamRenderer.vue'
 import CollapsibleSection from '../components/CollapsibleSection.vue'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
+import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useProjectStore } from '../stores/project'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
@@ -41,6 +42,13 @@ const log         = useLogStore()
 
 // ── Tab: "edit" | "live" ─────────────────────────────────────────────────────
 const activeTab = ref<'edit' | 'live'>('edit')
+const tabOptions = computed<ChipOption[]>(() => {
+  const running = chainTasks.value.filter(t => t.status === 'running').length
+  return [
+    { value: 'edit', label: 'Edit', icon: 'pi pi-pencil' },
+    { value: 'live', label: 'Live', icon: 'pi pi-bolt', badge: running || undefined },
+  ]
+})
 
 // live scheduler throttle — same PoolThrottle popover as the Task Manager / module pages,
 // off the live toolbar so pool limits can be nudged while a chain run is in flight
@@ -1051,25 +1059,13 @@ onActivated(async () => {
 
     <!-- ── Tab bar ─────────────────────────────────────────────────────────── -->
     <div class="chain-tabs">
-      <button
-        class="chain-tab"
-        :class="{ active: activeTab === 'edit' }"
-        @click="activeTab = 'edit'"
-      >
-        <i class="pi pi-pencil" />
-        Edit
-      </button>
-      <button
-        class="chain-tab"
-        :class="{ active: activeTab === 'live' }"
-        @click="activeTab = 'live'"
-      >
-        <i class="pi pi-bolt" />
-        Live
-        <span v-if="chainTasks.filter(t => t.status === 'running').length" class="tab-badge">
-          {{ chainTasks.filter(t => t.status === 'running').length }}
-        </span>
-      </button>
+      <ChipSelect
+        variant="segmented"
+        :options="tabOptions"
+        :model-value="activeTab"
+        aria-label="Chain view"
+        @update:model-value="v => activeTab = v as 'edit' | 'live'"
+      />
     </div>
 
     <!-- ── Live view ──────────────────────────────────────────────────────── -->
@@ -1515,33 +1511,6 @@ onActivated(async () => {
   border-bottom: 1px solid var(--cc-border);
   background: var(--cc-surface-1);
   flex-shrink: 0;
-}
-
-.chain-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.5rem 1rem;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--cc-text-dim);
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  transition: color 0.12s, border-color 0.12s;
-}
-.chain-tab:hover { color: var(--cc-text); }
-.chain-tab.active { color: var(--cc-accent); border-bottom-color: var(--cc-accent); }
-.chain-tab .pi { font-size: 0.72rem; }
-
-.tab-badge {
-  background: #7c3aed;
-  color: #fff;
-  font-size: 0.6rem;
-  font-weight: 700;
-  padding: 0.05rem 0.35rem;
-  border-radius: 999px;
 }
 
 /* ── Live view ────────────────────────────────────────────────────────────── */

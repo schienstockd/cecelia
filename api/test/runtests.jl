@@ -703,6 +703,12 @@ end
     @test _movie_basename(attr, "AbC123", ["Blank", "Missing", "Day"]) == "3_AbC123.mp4"
     # unsafe characters in an attr value are sanitised to underscores
     @test _movie_basename(Dict("T" => "a/b c:d"), "u1", ["T"]) == "a_b_c_d_u1.mp4"
+    # channels token expands to the shown channel names joined by '-', positioned by its order
+    chans = ["CD3", "CD8"]
+    @test _movie_basename(attr, "AbC123", ["Day", MOVIE_CHANNELS_TOKEN], chans) == "3_CD3-CD8_AbC123.mp4"
+    @test _movie_basename(attr, "AbC123", [MOVIE_CHANNELS_TOKEN, "Treatment"], chans) == "CD3-CD8_CNO_AbC123.mp4"
+    # token with no shown channels drops out cleanly (no dangling separator)
+    @test _movie_basename(attr, "AbC123", ["Day", MOVIE_CHANNELS_TOKEN], String[]) == "3_AbC123.mp4"
 end
 
 # The single-image recorders (timelapse / animation) name by IMAGE via the shared _movies_dir +

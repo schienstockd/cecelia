@@ -21,6 +21,7 @@ import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
 import { restoreOverlays } from '../../utils/napariOverlays'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 
 const ws = useWsStore()
 const settings = useSettingsStore()
@@ -77,6 +78,18 @@ function frameTime(c: Cell): string {
 // angled separators are horizontal-only (the clip leans across the row) — snap back to straight if the
 // strip is switched to vertical.
 watch(orientation, o => { if (o === 'v' && separator.value === 'angled') separator.value = 'straight' })
+
+// segmented selectors (ChipSelect). Orientation is always available; the `angled` separator is
+// disabled while the strip is vertical (angled clips are horizontal-only), so its options recompute.
+const orientationOpts: ChipOption[] = [
+  { value: 'h', label: '', icon: 'pi pi-arrows-h' },
+  { value: 'v', label: '', icon: 'pi pi-arrows-v' },
+]
+const separatorOpts = computed<ChipOption[]>(() => [
+  { value: 'straight', label: 'straight' },
+  { value: 'angled', label: 'angled', disabled: orientation.value === 'v',
+    tip: orientation.value === 'v' ? 'Angled separators are horizontal-only' : '' },
+])
 
 // separator options (angle / width) live in a ⚙ popover (like the heatmap panel's options) so they
 // never widen the toolbar; close on an outside click.
@@ -300,15 +313,13 @@ defineExpose({ exportImage })
 <template>
   <div class="is-view">
     <div class="is-bar cc-panel-controls">
-      <div class="seg" v-tooltip.bottom="'Strip direction'">
-        <button :class="{ on: orientation === 'h' }" @click="orientation = 'h'"><i class="pi pi-arrows-h" /></button>
-        <button :class="{ on: orientation === 'v' }" @click="orientation = 'v'"><i class="pi pi-arrows-v" /></button>
+      <div v-tooltip.bottom="'Strip direction'">
+        <ChipSelect variant="segmented" aria-label="Strip direction" :options="orientationOpts"
+                    :model-value="orientation" @update:model-value="v => orientation = v as 'h' | 'v'" />
       </div>
-      <div class="seg" v-tooltip.bottom="'Separator style'">
-        <button :class="{ on: separator === 'straight' }" @click="separator = 'straight'">straight</button>
-        <button :class="{ on: separator === 'angled' }" :disabled="orientation === 'v'"
-                @click="separator = 'angled'"
-                v-tooltip.bottom="orientation === 'v' ? 'Angled separators are horizontal-only' : ''">angled</button>
+      <div v-tooltip.bottom="'Separator style'">
+        <ChipSelect variant="segmented" aria-label="Separator style" :options="separatorOpts"
+                    :model-value="separator" @update:model-value="v => separator = v as 'straight' | 'angled'" />
       </div>
       <div class="is-opts">
         <button ref="gearEl" class="is-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
@@ -430,11 +441,6 @@ defineExpose({ exportImage })
 /* while capturing for the PDF: hide the per-frame buttons (and empty-frame capture prompts) so the
    exported strip is just the images */
 .is-strip.capturing .is-mini, .is-strip.capturing .is-capture { display: none; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button.on { background: var(--cc-accent); color: #fff; }
-.seg button:disabled { opacity: 0.4; cursor: not-allowed; }
 .is-btn { display: inline-flex; align-items: center; gap: 4px; background: var(--cc-surface-2); color: var(--cc-text-dim);
   border: 1px solid var(--cc-border); border-radius: 4px; padding: 3px 8px; cursor: pointer; font-size: 11px; }
 .is-btn:hover { color: var(--cc-text); }

@@ -524,22 +524,44 @@ function _movie_named_path(img, uid::AbstractString; suffix::AbstractString = ""
     joinpath(_movies_dir(img), (isempty(safe) ? String(uid) : safe) * suffix * ".mp4")
 end
 
+# Sentinel token in `file_attrs` meaning "the shown channel names joined by '-'" — mirrors the
+# frontend MOVIE_CHANNELS_TOKEN (utils/batchMovie.ts); keep the two in sync.
+const MOVIE_CHANNELS_TOKEN = "__channels__"
+
 # Attr-named output filename: <attr1>_<attr2>_..._<uid>.mp4 (mirrors the R `paste(fileAttrs...) _ uid`).
-# Blank/missing attrs are dropped; the uid always terminates the name so batch outputs never collide.
-# Falls back to just the uid when no fileAttrs are given. Pure (attr dict + uid) → testable.
-function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Vector{String})::String
+# `file_attrs` is the ordered list of attribute keys and/or the channels token; `channel_names` are the
+# channels shown in the movie (used only where the token appears, joined by '-'). Blank/missing attrs
+# are dropped; the uid always terminates the name so batch outputs never collide. Falls back to just
+# the uid when no file_attrs are given. Pure (attr dict + uid + channels) → testable.
+function _movie_basename(attr::AbstractDict, uid::AbstractString, file_attrs::Vector{String},
+                         channel_names::Vector{String} = String[])::String
     parts = String[]
     for a in file_attrs
-        val = strip(String(get(attr, a, "")))
-        isempty(val) || push!(parts, val)
+        if a == MOVIE_CHANNELS_TOKEN
+            chans = join(filter(!isempty, strip.(channel_names)), "-")
+            isempty(chans) || push!(parts, chans)
+        else
+            val = strip(String(get(attr, a, "")))
+            isempty(val) || push!(parts, val)
+        end
     end
     push!(parts, String(uid))
     replace(join(parts, "_"), r"[^A-Za-z0-9._-]+" => "_") * ".mp4"
 end
 
+# Channels shown in the movie for `img` = the `config.channels` keys (the ones given a colormap),
+# ordered by the image's channel list so the filename is stable. `config` may be missing/empty.
+function _shown_channel_names(img, config, vn)::Vector{String}
+    chans = get(config, :channels, nothing)
+    (chans isa AbstractDict && !isempty(chans)) || return String[]
+    wanted = Set(String(k) for k in keys(chans))
+    ch_all = channel_names(img; value_name = vn)
+    ch_all === nothing ? collect(wanted) : String[c for c in ch_all if c in wanted]
+end
+
 # Full attr-named output path under {proj}/movies/.
-function _movie_out_path(img, file_attrs::Vector{String})::String
-    joinpath(_movies_dir(img), _movie_basename(img.attr, img.uid, file_attrs))
+function _movie_out_path(img, file_attrs::Vector{String}, channel_names::Vector{String} = String[])::String
+    joinpath(_movies_dir(img), _movie_basename(img.attr, img.uid, file_attrs, channel_names))
 end
 
 # Apply an authored movie config to ONE image already resolvable by uid (F1.2). Opens the image (contrast
@@ -675,7 +697,9 @@ function run_batch_movies(task_id::String, project_uid::String, image_uids::Vect
             ws_progress(nothing, task_id, i, n); continue
         end
         try
-            path = _movie_out_path(img, file_attrs)
+            vn_raw = strip(String(get(config, :valueName, "")))
+            chan_names = _shown_channel_names(img, config, isempty(vn_raw) ? nothing : vn_raw)
+            path = _movie_out_path(img, file_attrs, chan_names)
             ws_log(nothing, task_id, "[$i/$n] $(img.name) → $(basename(path))")
             _with_viewer() do
                 _apply_movie_config!(project_uid, uid, img, config)

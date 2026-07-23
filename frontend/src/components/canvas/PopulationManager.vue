@@ -26,6 +26,12 @@ import { parseFilterValues, filterSummary } from '../../utils/filterPopForm'
 import { popNameError } from '../../utils/popName'
 import { PALETTES, type VisProps } from '../../plots/plot'
 import { clusterMeasure, isClusterPopType } from '../../utils/clusterMeasure'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
+
+const AXIS_OPTIONS: ChipOption[] = [
+  { value: 'zero', label: '', icon: 'pi pi-arrows-alt',     tip: 'Whole-dataset scale (origin at 0) — axis stays fixed across populations' },
+  { value: 'auto', label: '', icon: 'pi pi-arrow-down-left', tip: 'Autoscale to the selected population' },
+]
 
 const props = withDefaults(defineProps<{
   selected: string
@@ -379,14 +385,9 @@ const popFilterSummary = (p: FlatPop) => filterSummary(p.filter, g.colLabel)
           </div>
           <div class="pm-opt-row">
             <span class="pm-opt-label">Axis</span>
-            <div class="pm-seg">
-              <button class="seg-btn" :class="{ active: axisFromZero }"
-                      v-tooltip.top="'Whole-dataset scale (origin at 0) — axis stays fixed across populations'"
-                      @click="emit('update:axisFromZero', true)"><i class="pi pi-arrows-alt" /></button>
-              <button class="seg-btn" :class="{ active: !axisFromZero }"
-                      v-tooltip.top="'Autoscale to the selected population'"
-                      @click="emit('update:axisFromZero', false)"><i class="pi pi-arrow-down-left" /></button>
-            </div>
+            <ChipSelect class="pm-seg" variant="segmented" :options="AXIS_OPTIONS"
+                        :model-value="axisFromZero ? 'zero' : 'auto'" aria-label="Axis scale"
+                        @update:model-value="v => emit('update:axisFromZero', v === 'zero')" />
           </div>
           </template>
 
@@ -484,7 +485,7 @@ button.pm-filter-badge:hover { opacity: 1; }
 .pm-chip-empty { font-size: 10px; color: var(--cc-text-dim); font-style: italic; }
 
 /* segmented toggle (axis option in the #options slot; the shell owns the footer scope toggle) */
-.pm-seg { display: inline-flex; gap: 4px; margin-left: auto; }
+.pm-seg { margin-left: auto; }
 .seg-btn {
   display: inline-flex; align-items: center; justify-content: center;
   width: 1.8rem; height: 1.8rem; border-radius: 0.3rem;

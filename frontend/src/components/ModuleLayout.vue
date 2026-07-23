@@ -53,6 +53,7 @@ import CohortCheckButton from './CohortCheckButton.vue'
 import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import HintCallout from './HintCallout.vue'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -197,10 +198,12 @@ const attrValueMap = computed(() => {
 const hasFilters = computed(() => Object.values(attrFilters.value).some(v => v.length > 0))
 const hasApplied = computed(() => Object.values(appliedFilters.value).some(v => v.length > 0))
 
-function toggleAttrFilter(key: string, val: string) {
-  const cur  = attrFilters.value[key] ?? []
-  const next = cur.includes(val) ? cur.filter(v => v !== val) : [...cur, val]
+function setAttrFilter(key: string, next: string[]) {
   attrFilters.value = { ...attrFilters.value, [key]: next }
+}
+// chips for one attribute key (value = label, tooltip = the value)
+function attrChipOpts(key: string): ChipOption[] {
+  return (attrValueMap.value[key] ?? []).map(v => ({ value: v, label: v, tip: v }))
 }
 function applyFilters() {
   appliedFilters.value = Object.fromEntries(
@@ -401,15 +404,9 @@ const visibleUids = computed<string[]>(() =>
           <div class="filter-rows">
             <div v-for="key in attrKeys" :key="key" class="filter-row">
               <span class="filter-key" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
-              <div class="filter-chips">
-                <span
-                  v-for="val in attrValueMap[key]" :key="val"
-                  class="filter-chip"
-                  :class="{ active: attrFilters[key]?.includes(val) }"
-                  @click="toggleAttrFilter(key, val)"
-                  v-tooltip.bottom="val"
-                >{{ val }}</span>
-              </div>
+              <ChipSelect class="filter-chips" multiple :options="attrChipOpts(key)"
+                :model-value="attrFilters[key] ?? []"
+                @update:model-value="v => setAttrFilter(key, v as string[])" />
             </div>
           </div>
           <div class="filter-actions">
@@ -693,22 +690,7 @@ const visibleUids = computed<string[]>(() =>
   letter-spacing: 0.04em;
 }
 
-.filter-chips  { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-
-.filter-chip {
-  font-size: 0.72rem;
-  padding: 0.15rem 0.55rem;
-  border-radius: 999px;
-  background: var(--cc-surface-1);
-  border: 1px solid var(--cc-border);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-  user-select: none;
-  white-space: nowrap;
-}
-.filter-chip:hover  { border-color: #7c3aed; color: var(--cc-text); }
-.filter-chip.active { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
+.filter-chips  { flex: 1; min-width: 0; }
 
 /* ── Scrollable panel body (image table + below-table) ────────────────────── */
 

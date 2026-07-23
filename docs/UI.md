@@ -117,6 +117,22 @@ the "old-school inputs look inconsistent" bug). Keep only layout in scoped style
 `min-width`) plus state modifiers (`.input-error`, `[readonly]`, `:disabled`, `.mono`). If a
 `<select>` sets `background:` (shorthand) it will wipe the chevron — use `background-color`.
 
+### Selection chips / segmented controls — `ChipSelect`
+
+`components/ChipSelect.vue` is the ONE canonical inline selector — use it for any pill/capsule or
+segmented button-row that picks from a set. It replaced ~a dozen hand-rolled copies (pool chips, the
+byte-for-byte-duplicated `.seg` block, param/filter chips). Two variants: `variant="pill"` (wrapping
+capsules, the default) and `variant="segmented"` (a joined control). `multiple` for multi-select
+(`modelValue` is an ordered `string[]`; single-select is a `string`); add `reorderable` (pill only)
+for drag-to-reorder. Per-option `icon` / `tip` / `disabled` / `badge` (a count) / `accent` (a
+semantic colour — rendered as a readable tint). Pure logic in `utils/chipSelect.ts` (tested).
+
+Active colour is unified to `--cc-accent` (the older bespoke `#2d1b69`/`#7c3aed` purple and the
+per-site tints were folded in). **Don't** use it for: independent-boolean toolbars that also fire
+actions or open dropdowns (e.g. `ModuleLayout`'s filter-toggle bar, gate arrange/nav clusters),
+colour-swatch grids (`PopulationManager` palette, `SwatchSelect`), the cluster-assignment matrix
+(cross-population-exclusive + integral solid colour), or reorderable tab strips (`TabbedCanvas`).
+
 ---
 
 ## Modals & dialogs — always use `BaseModal`

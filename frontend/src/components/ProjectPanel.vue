@@ -5,6 +5,7 @@
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
+import ChipSelect from './ChipSelect.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import FileBrowser from './FileBrowser.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
@@ -320,18 +321,12 @@ const typeColour: Record<ProjectType, string> = {
             v-tooltip.right="'Static: fixed-tissue microscopy. Live: time-lapse with cell tracking. Flow: flow/mass cytometry without images.'">
             Project type
           </label>
-          <div class="type-options">
-            <label
-              v-for="opt in typeOptions"
-              :key="opt.value"
-              class="type-option"
-              :class="{ chosen: newType === opt.value }"
-              v-tooltip.bottom="opt.tip"
-            >
-              <input type="radio" :value="opt.value" v-model="newType" />
-              {{ opt.label }}
-            </label>
-          </div>
+          <ChipSelect
+            :options="typeOptions"
+            :model-value="newType"
+            aria-label="Project type"
+            @update:model-value="v => newType = v as ProjectType"
+          />
         </div>
 
         <div class="form-row">
@@ -639,23 +634,6 @@ const typeColour: Record<ProjectType, string> = {
   border-radius: 0.2rem;
   color: var(--cc-text);
 }
-
-/* type radio options */
-.type-options { display: flex; gap: 0.5rem; }
-.type-option {
-  display: flex; align-items: center; gap: 0.35rem;
-  font-size: 0.8rem; font-weight: 500;
-  padding: 0.3rem 0.75rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-.type-option input { display: none; }
-.type-option:hover { background: var(--cc-surface-2); color: var(--cc-text); }
-.type-option.chosen { border-color: var(--cc-accent); color: var(--cc-accent); background: #a78bfa14; }
 
 /* footer */
 .pp-footer {

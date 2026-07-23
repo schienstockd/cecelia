@@ -9,6 +9,7 @@ import type { ParamDef, ParamValues } from './types'
 import type { CciaImage } from '../stores/project'
 import { SEVERITY, type Severity } from '../lib/severity'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
+import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -188,15 +189,16 @@ async function loadPops() {
 watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName],
   () => { loadPops() }, { immediate: true })
 
-function isPopSelected(value: string): boolean {
-  return Array.isArray(val.value) && (val.value as string[]).includes(value)
+// Multi-select chip lists (pops / measure cols / channels) all edit the same flat string[] `val`.
+// A GROUPED list edits only its own slice, so on update merge the group's new selection back with the
+// other groups' selections, reconstructed in the full option order so the array stays stable.
+function chipArr(): string[] { return Array.isArray(val.value) ? (val.value as string[]) : [] }
+function chipGroupSel(groupValues: string[]): string[] { const cur = chipArr(); return groupValues.filter(v => cur.includes(v)) }
+function chipGroupUpdate(allValues: string[], groupValues: string[], next: string[]) {
+  const keep = new Set([...chipArr().filter(v => !groupValues.includes(v)), ...next])
+  emit('update:modelValue', allValues.filter(v => keep.has(v)))
 }
-function togglePop(value: string) {
-  const cur = Array.isArray(val.value) ? [...(val.value as string[])] : []
-  const i = cur.indexOf(value)
-  if (i >= 0) cur.splice(i, 1); else cur.push(value)
-  emit('update:modelValue', cur)
-}
+const popAllValues = computed(() => popMultiOptions.value.map(o => o.value))
 
 // The value_name a measure picker reads from: the segmentation of the first SELECTED population
 // (pops carry it as a prefix, "A/_tracked" → "A"); falls back to a sibling valueName, else the
@@ -299,15 +301,7 @@ watch(() => [props.context?.images?.[0]?.uid, props.context?.values?.valueName,
              JSON.stringify(props.context?.values?.pops)],
   () => { loadCols() }, { immediate: true })
 
-function isColSelected(value: string): boolean {
-  return Array.isArray(val.value) && (val.value as string[]).includes(value)
-}
-function toggleCol(value: string) {
-  const cur = Array.isArray(val.value) ? [...(val.value as string[])] : []
-  const i = cur.indexOf(value)
-  if (i >= 0) cur.splice(i, 1); else cur.push(value)
-  emit('update:modelValue', cur)
-}
+const colAllValues = computed(() => colGroups.value.flatMap(g => g.opts).map(o => o.value))
 
 // motionDimsSelection: auto/2D/3D for track measures. In 'auto' we fetch the backend's z-assessment
 // (cached by h5ad mtime, cheap) for the selected image+segmentation and show the recommendation +
@@ -429,20 +423,15 @@ function updateGroupEntry(entryKey: string, paramKey: string, newVal: unknown) {
 }
 
 // channelSelection toggle helpers
-function isChannelSelected(ch: string): boolean {
-  const v = (val.value ?? []) as string[]
-  return v.includes(ch)
-}
-
-function toggleChannel(ch: string) {
-  const v = [...((val.value ?? []) as string[])]
-  const idx = v.indexOf(ch)
-  if (idx >= 0) {
-    v.splice(idx, 1)
-    val.value = v
+const channelOptions = computed<ChipOption[]>(() => availableChannels.value.map(ch => ({ value: ch, label: ch })))
+// channelSelection stores an array even when single (`multiple === false`) — so route through a handler
+// that keeps only the newly-added value in the single case, preserving the old replace-on-click behaviour.
+function onChannelUpdate(next: string[]) {
+  if (props.param.multiple === false) {
+    const added = next.find(v => !chipArr().includes(v))
+    val.value = added ? [added] : []
   } else {
-    // multiple=false: replace selection; multiple=true (or unset): append
-    val.value = props.param.multiple === false ? [ch] : [...v, ch]
+    val.value = next
   }
 }
 
@@ -531,16 +520,9 @@ const pct = computed(() => {
       </div>
       <div v-for="grp in popMultiGroups" v-else :key="grp.title" class="col-group">
         <div v-if="grp.title" class="col-group-title">{{ grp.title }}</div>
-        <div class="channel-chips">
-          <button
-            v-for="opt in grp.opts"
-            :key="opt.value"
-            class="channel-chip"
-            :class="{ active: isPopSelected(opt.value) }"
-            @click="togglePop(opt.value)"
-            type="button"
-          >{{ opt.label }}</button>
-        </div>
+        <ChipSelect multiple :options="grp.opts"
+          :model-value="chipGroupSel(grp.opts.map(o => o.value))"
+          @update:model-value="v => chipGroupUpdate(popAllValues, grp.opts.map(o => o.value), v as string[])" />
       </div>
     </div>
 
@@ -562,16 +544,9 @@ const pct = computed(() => {
       </div>
       <div v-for="g in colGroups" :key="g.title" class="col-group">
         <div v-if="g.title" class="col-group-title">{{ g.title }}</div>
-        <div class="channel-chips">
-          <button
-            v-for="opt in g.opts"
-            :key="opt.value"
-            class="channel-chip"
-            :class="{ active: isColSelected(opt.value) }"
-            @click="toggleCol(opt.value)"
-            type="button"
-          >{{ opt.label }}</button>
-        </div>
+        <ChipSelect multiple :options="g.opts"
+          :model-value="chipGroupSel(g.opts.map(o => o.value))"
+          @update:model-value="v => chipGroupUpdate(colAllValues, g.opts.map(o => o.value), v as string[])" />
       </div>
     </div>
 
@@ -604,16 +579,8 @@ const pct = computed(() => {
       <div v-if="availableChannels.length === 0" class="channel-empty">
         No channels — select images first.
       </div>
-      <div v-else class="channel-chips">
-        <button
-          v-for="ch in availableChannels"
-          :key="ch"
-          class="channel-chip"
-          :class="{ active: isChannelSelected(ch) }"
-          @click="toggleChannel(ch)"
-          type="button"
-        >{{ ch }}</button>
-      </div>
+      <ChipSelect v-else multiple :options="channelOptions"
+        :model-value="chipArr()" @update:model-value="v => onChannelUpdate(v as string[])" />
     </div>
 
     <!-- fallback -->
@@ -835,11 +802,6 @@ const pct = computed(() => {
   font-style: italic;
   padding: 0.2rem 0;
 }
-.channel-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-}
 /* motion-dims selector + recommendation note (gap keeps the note off the dropdown) */
 .motion-dims { display: flex; flex-direction: column; gap: 0.4rem; width: 100%; }
 .md-note { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.72rem; color: var(--cc-text-dim); }
@@ -859,24 +821,6 @@ const pct = computed(() => {
   color: var(--cc-text-dim);
   margin: 0.15rem 0 0.25rem;
 }
-.channel-chip {
-  font-size: 0.7rem;
-  padding: 0.15rem 0.45rem;
-  border-radius: 999px;
-  border: 1px solid var(--cc-border);
-  background: var(--cc-surface-2);
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-  white-space: nowrap;
-}
-.channel-chip:hover { border-color: var(--cc-accent); color: var(--cc-text); }
-.channel-chip.active {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
-  color: #fff;
-}
-
 /* group */
 .param-group {
   border-bottom: 1px solid var(--cc-border);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed } from './batchMovie'
+import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN } from './batchMovie'
 
 describe('buildBatchMovieConfig', () => {
   it('fills defaults for an empty config', () => {
@@ -50,6 +50,14 @@ describe('movieFilename', () => {
   })
   it('sanitises unsafe characters to underscores', () => {
     expect(movieFilename(['T'], { T: 'a/b c:d' }, 'u1')).toBe('a_b_c_d_u1.mp4')
+  })
+  it('expands the channels token to the shown channel names joined by "-", in token position', () => {
+    const chans = ['CD3', 'CD8']
+    expect(movieFilename(['Day', MOVIE_CHANNELS_TOKEN], attrs, 'AbC123', chans)).toBe('3_CD3-CD8_AbC123.mp4')
+    expect(movieFilename([MOVIE_CHANNELS_TOKEN, 'Treatment'], attrs, 'AbC123', chans)).toBe('CD3-CD8_CNO_AbC123.mp4')
+  })
+  it('drops the channels token cleanly when no channels are shown', () => {
+    expect(movieFilename(['Day', MOVIE_CHANNELS_TOKEN], attrs, 'AbC123', [])).toBe('3_AbC123.mp4')
   })
 })
 

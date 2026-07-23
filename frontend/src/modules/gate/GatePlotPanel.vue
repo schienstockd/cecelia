@@ -20,6 +20,7 @@ import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import GateScatterCell from '../../components/plots/GateScatterCell.vue'
 import RenderModeToggle, { type RenderMode } from '../../components/plots/RenderModeToggle.vue'
+import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import type { PopLayer } from '../../components/plots/PlotLayers.vue'
 import { downloadDataUrl, downloadText, rowsToCsv, svgSizeWarning } from '../../plots/export'
 import { childGateSignature } from '../../utils/childGateSig'
@@ -65,6 +66,12 @@ const renderMode = computed<RenderMode>({ get: () => props.ui.renderMode ?? 'poi
 const parent = computed({ get: () => props.parent, set: v => emit('update:parent', v) })
 // draw tool is transient interaction state (not persisted): reopening a plot shouldn't leave a tool armed
 const mode = ref<'off' | 'rectangle' | 'polygon'>('off')
+// draw-tool selector: 'off' maps to the ChipSelect empty selection ('' via allowEmpty — re-clicking
+// the armed tool disarms it back to 'off', preserving the old per-button toggle behaviour).
+const DRAW_MODES: ChipOption[] = [
+  { value: 'rectangle', label: '', icon: 'pi pi-stop',      tip: 'Rectangle gate' },
+  { value: 'polygon',   label: '', icon: 'pi pi-share-alt', tip: 'Polygon gate (click vertices, double-click to close)' },
+]
 // pop-colour overlay is driven by the populations checked for THIS panel in the manager
 const showPops = computed(() => (props.highlight?.length ?? 0) > 0)
 
@@ -334,11 +341,9 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
     <template #actions>
       <RenderModeToggle v-model="renderMode" />
       <span class="ctrl-sep" />
-      <button class="cc-btn cc-btn-ghost" :class="{ on: mode === 'rectangle' }" v-tooltip.bottom="'Rectangle gate'"
-              @click="mode = mode === 'rectangle' ? 'off' : 'rectangle'"><i class="pi pi-stop" /></button>
-      <button class="cc-btn cc-btn-ghost" :class="{ on: mode === 'polygon' }"
-              v-tooltip.bottom="'Polygon gate (click vertices, double-click to close)'"
-              @click="mode = mode === 'polygon' ? 'off' : 'polygon'"><i class="pi pi-share-alt" /></button>
+      <ChipSelect variant="segmented" allow-empty :options="DRAW_MODES"
+                  :model-value="mode === 'off' ? '' : mode" aria-label="Gate draw tool"
+                  @update:model-value="v => mode = (v || 'off') as typeof mode" />
       <!-- axis (X, Y) + displayed population — one row each, stacked so they don't wrap awkwardly -->
       <div class="panel-ctrl">
         <label class="ax-row"><span class="ax-lbl">X</span>
@@ -407,7 +412,7 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 <style scoped>
 /* the floating chrome (.panel / .panel-head / title / remove) lives in CanvasPanel; the styles
    below are gating-specific: the axis controls, the plot body, ticks/axes, and the header tools
-   passed into CanvasPanel's #actions slot (.seg / .ctrl-sep / .cc-btn.on — slot content keeps
+   passed into CanvasPanel's #actions slot (.ctrl-sep — slot content keeps
    this component's scoped styles). */
 /* axis controls now live in the auto-hide overlay (#actions); take a full line below the icon tools
    (flex-basis:100% within the flex-wrap overlay), one row per axis so they don't wrap awkwardly */
@@ -427,11 +432,6 @@ useDataRefresh(() => (g.imageUid ? [g.imageUid] : []), () => { fetchPlot() })
 .ax-warn { color: #f59e0b; font-size: 0.7rem; flex-shrink: 0; cursor: help; }
 .panel-ctrl select:focus { outline: none; border-color: var(--cc-accent); }
 .ctrl-sep { width: 1px; align-self: stretch; background: var(--cc-border); margin: 2px 2px; }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 3px 8px; cursor: pointer; font-size: 12px; }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button.on { background: var(--cc-accent); color: #fff; }
-.cc-btn.on { border-color: var(--cc-accent); color: var(--cc-accent); }
 .gp-export { font-size: 12px; max-width: 7rem; }
 /* the plot body (scatter/layers/gate + ticks/axes + PNG export) lives in GateScatterCell now. */
 .panel-name { position: absolute; top: 4px; left: 4px; display: flex; align-items: center; gap: 5px;
