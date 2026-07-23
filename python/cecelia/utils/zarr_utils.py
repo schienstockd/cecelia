@@ -61,6 +61,16 @@ def fortify(im_array):
     return im_array
 
 
+def native_dtype(dtype):
+    """Force NATIVE byte order for a STORED dtype. Big-endian data (e.g. `>u2` from bioformats2raw)
+    is not rendered correctly by napari/OpenGL on little-endian systems, so every image store we
+    write must be native-endian. Centralised here and applied by the writers (create_multiscales,
+    write_multiscale_pyramid, open_multiscales_for_writing, create_zarr_from_ndarray) so callers
+    don't each remember `.newbyteorder('=')`. No-op for 1-byte dtypes and already-native data;
+    values are preserved (numpy/zarr convert byte order on write)."""
+    return np.dtype(dtype).newbyteorder('=')
+
+
 def chunks(im_array):
     im_chunks = None
     if isinstance(im_array, zarr.Array):
@@ -292,7 +302,7 @@ def create_zarr_from_ndarray(im_array, dim_utils, reference_zarr=None, im_chunks
         mode='w',
         shape=im_array.shape,
         chunks=im_chunks,
-        dtype=im_array.dtype,
+        dtype=native_dtype(im_array.dtype),
         zarr_format=2,
     )
 
@@ -355,7 +365,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         # T/C axes (~128 MB chunks) and makes every napari plane access a full-timecourse read.
         pchunks = plane_chunks(im_array.shape, dim_utils)
         dest = multiscales_zarr.create_array(
-            "0", shape=im_array.shape, chunks=pchunks, dtype=im_array.dtype
+            "0", shape=im_array.shape, chunks=pchunks, dtype=native_dtype(im_array.dtype)
         )
         # Rechunk the SOURCE to the destination grid before storing. `da.store(lock=False)` is only safe
         # when each dest chunk has exactly one writer; im_array's own (auto) chunking does NOT align with
@@ -367,7 +377,7 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
         da.store(im_array.rechunk(pchunks), dest, lock=False)
         im_chunks = list(pchunks)
     elif isinstance(im_array, zarr.Array):
-        dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks, dtype=im_array.dtype)
+        dest = multiscales_zarr.create_array("0", shape=im_array.shape, chunks=im_array.chunks, dtype=native_dtype(im_array.dtype))
         dest[:] = im_array[:]
         im_chunks = chunks(im_array)
     else:
@@ -427,7 +437,7 @@ def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales,
         # a chunk larger than the axis — only the chunk layout changes, never the pixel values
         dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(im_chunks, dest_shape))
         dest = multiscales_zarr.create_array(
-            str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=level_source.dtype)
+            str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=native_dtype(level_source.dtype))
         if t_idx is None:
             dest[:] = _read(tuple(x))
         else:
@@ -462,7 +472,8 @@ def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
         axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
 
     pchunks = plane_chunks(tuple(shape), dim_utils)
-    level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks, dtype=dtype)
+    level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks,
+                                           dtype=native_dtype(dtype))
     return multiscales_zarr, level0, pchunks
 
 

@@ -64,7 +64,7 @@ def run(params):
     # channels + inverses) never lives in RAM (was the OOM on large time-lapses). Size level 0 up
     # front (channel count = C + one per inverse), fill per-channel, then build the pyramid.
     out_shape = correction_utils.af_correction_output_shape(im_dat[0], dim_utils, af_combinations)
-    out_dtype = im_dat[0].dtype.newbyteorder('=')
+    out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
     group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
         im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
     correction_utils.af_correct_image(

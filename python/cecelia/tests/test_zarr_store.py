@@ -107,6 +107,28 @@ class StreamingWritersTest(unittest.TestCase):
         du.calc_image_dimensions(tuple(shape))
         return du
 
+    def test_writer_forces_native_byteorder(self):
+        # Big-endian source (e.g. >u2 from bioformats2raw) must be stored NATIVE — big-endian
+        # mis-renders in napari/OpenGL on little-endian systems. Both writers coerce; values kept.
+        be = (np.arange(2 * 3 * 4, dtype=np.uint16).reshape(2, 3, 4)).astype(">u2")
+        self.assertFalse(np.dtype(be.dtype).isnative)   # sanity: the source really is big-endian
+        d = tempfile.mkdtemp()
+        try:
+            p1 = os.path.join(d, "stream.zarr")
+            _, level0, _ = zu.open_multiscales_for_writing(p1, be.shape, be.dtype, None, nscales=1)
+            level0[:] = be
+            g1 = zarr.open_group(p1, mode="r")["0"]
+            self.assertTrue(np.dtype(g1.dtype).isnative, "streaming writer left non-native dtype")
+            self.assertTrue(np.array_equal(g1[:], be), "byte-order coercion corrupted values")
+
+            p2 = os.path.join(d, "ms.zarr")
+            zu.create_multiscales(da.from_array(be, chunks=be.shape), p2, nscales=1)
+            g2 = zarr.open_group(p2, mode="r")["0"]
+            self.assertTrue(np.dtype(g2.dtype).isnative, "create_multiscales left non-native dtype")
+            self.assertTrue(np.array_equal(g2[:], be))
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_copy_stream_roundtrips_timeseries_and_static(self):
         for size_t in (4, 1):   # timeseries (per-frame copy) and static (whole copy)
             du = self._du(size_t=size_t, size_c=2, size_y=13, size_x=11)

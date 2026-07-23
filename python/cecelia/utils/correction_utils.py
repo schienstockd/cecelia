@@ -129,9 +129,9 @@ def drift_correct_im(
 
     drift_im_shape_round, first_im_pos = drift_correct_shape(input_array, dim_utils, shifts)
 
-    # Use native byte order — big-endian source data (e.g. >u2 from bioformats2raw)
-    # is not rendered correctly by napari/OpenGL on little-endian systems.
-    result_dtype = input_array.dtype.newbyteorder('=')
+    # The writer owns byte order (zarr_utils.native_dtype): when `out` is a pre-created native store
+    # we match it; the out=None numpy path returns source-order and create_multiscales makes it native.
+    result_dtype = out.dtype if out is not None else input_array.dtype
 
     # `out`, when given, is a pre-created on-disk zarr of `drift_im_shape_round` — each timepoint is
     # written straight to disk so the whole (expanded) corrected image never lives in RAM. When None
@@ -495,8 +495,9 @@ def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
     for d in dim_utils.spatial_axis():
         sigma[dim_utils.dim_idx(d)] = gaussian_sigma
 
-    # native byte order — big-endian source (e.g. >u2 from bioformats2raw) mis-renders in napari
-    out_dtype = input_image.dtype.newbyteorder('=')
+    # the writer owns byte order (zarr_utils.native_dtype): match the native `out` store when
+    # streaming; the out=None path returns source-order and create_multiscales makes it native.
+    out_dtype = out.dtype if out is not None else input_image.dtype
 
     # inverse channels are appended after the C corrected channels, in ascending channel order
     inverse_channels = _af_inverse_channels(af_combinations, dim_utils)

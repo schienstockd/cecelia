@@ -58,7 +58,7 @@ def run(params):
     # corrected image never lives in RAM (was the OOM on large time-lapses). Create level 0 up
     # front (shape known from the shifts), fill it per-timepoint, then build the pyramid from disk.
     out_shape, _ = correction_utils.drift_correct_shape(im_dat[0], dim_utils, shifts)
-    out_dtype = im_dat[0].dtype.newbyteorder('=')
+    out_dtype = im_dat[0].dtype   # writer forces native byte order (zarr_utils.native_dtype)
     group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
         im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
     correction_utils.drift_correct_im(
