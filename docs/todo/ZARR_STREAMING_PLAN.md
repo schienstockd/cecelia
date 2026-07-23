@@ -55,15 +55,21 @@ multiple planes/tiles per call improves GPU utilization. Low complexity, isolate
 - **Measure before/after** on a real GPU run; keep only if the speedup is real (batch size is a
   tuning knob — too large re-introduces a memory spike, defeating Phase 1). Skip if marginal.
 
-### Phase 3 — cheap cleanups (only while already in the file)
-Each is small; do opportunistically, not as a dedicated sweep.
-- **Centralize byte-order** (`newbyteorder('=')`, the napari big-endian fix) into the writer so tasks
-  stop copy-pasting it. Real dedup, ~zero risk.
-- **Two tilers → one:** `slice_utils.create_slices` vs segmentation's `_create_xy_tiles` overlap.
-  Consolidate **only if** it merges without contortion (they return different shapes today —
-  dim-ordered slice tuples vs read/write/crop triples). Evaluate; don't force it.
-- **Retire `da.store(lock=False)`+rechunk** in `create_multiscales` once crop/rescale (its last dask
-  callers) stream too. Low benefit (it works now) — do only if it removes real complexity.
+### Phase 3 — cheap cleanups
+- **3.1 Centralize byte-order** — ✅ DONE. One helper `zarr_utils.native_dtype` applied by every
+  writer that creates a zarr array (`create_multiscales`, `write_multiscale_pyramid`,
+  `open_multiscales_for_writing`, `create_zarr_from_ndarray`); tasks dropped their scattered
+  `.newbyteorder('=')`. Also fixed latent big-endian output in `cellpose_correct` + `cropImage`.
+- **3.2 Two tilers → one — PARKED (won't do).** `slice_utils.create_slices` (dim-ordered slice
+  tuples) and segmentation's `_create_xy_tiles` (read/write/crop overlap triples) return genuinely
+  different shapes for different needs; merging would contort more than it saves. No real benefit.
+- **3.3 Retire `da.store(lock=False)`+rechunk — PARKED (won't do).** It works correctly today and is
+  regression-tested (`test_zarr_store`); retiring it only pays off if it cleanly removes the branch,
+  which needs crop/rescale migrated too for little gain. Not worth the churn.
+
+**Rework status: complete.** The wins shipped — two OOM vectors (label stack + norm-params) and the
+read-frame-once speed (#315, #317), byte-order dedup (3.1). Phase 2 measured out (no benefit); Phase
+3.2/3.3 parked as churn. Reopen only if a concrete need appears.
 
 ## Explicitly NOT doing (and why)
 
