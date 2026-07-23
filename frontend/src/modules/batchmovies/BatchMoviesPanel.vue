@@ -18,8 +18,9 @@ import { useTaskStore } from '../../stores/tasks'
 import { useWsStore } from '../../stores/ws'
 import { useLogStore } from '../../stores/log'
 import { CHANNEL_COLORMAP_OPTIONS } from '../../utils/napariColormap'
-import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, type BatchMovieCfg } from '../../utils/batchMovie'
+import { buildBatchMovieConfig, movieFilename, seedConfigFromViewState, defaultChannelSeed, MOVIE_CHANNELS_TOKEN, type BatchMovieCfg } from '../../utils/batchMovie'
 import SwatchSelect, { type SwatchOption } from '../../components/SwatchSelect.vue'
+import ChipSelect, { type ChipOption } from '../../components/ChipSelect.vue'
 import TaskList from '../../tasks/TaskList.vue'
 
 const props = defineProps<{ selectedUids: string[]; selectedNames: string[] }>()
@@ -74,12 +75,37 @@ function setChannel(ch: string, cmap: string) {
   if (!cmap) delete next[ch]; else next[ch] = cmap
   patch({ channels: next })
 }
-const fileAttrs = computed<string[]>(() => cfg.value.fileAttrs ?? [])
-function toggleAttr(a: string) {
-  const set = new Set(fileAttrs.value)
-  set.has(a) ? set.delete(a) : set.add(a)
-  patch({ fileAttrs: attrKeys.value.filter(k => set.has(k)) })   // keep attr order stable
-}
+// Ordered filename tokens (attribute keys and/or the channels sentinel). The order IS the filename
+// order — the user drags the chips to reorder. Persisted per set.
+const fileAttrs = computed<string[]>({
+  get: () => cfg.value.fileAttrs ?? [],
+  set: v => patch({ fileAttrs: v }),
+})
+// Chip options: one per attribute key, plus a "channels" token (only when the images have channels).
+const attrOptions = computed<ChipOption[]>(() => {
+  const opts: ChipOption[] = attrKeys.value.map(k => ({ value: k, label: k }))
+  if (channelList.value.length)
+    opts.push({ value: MOVIE_CHANNELS_TOKEN, label: 'channels', icon: 'pi pi-palette',
+                tip: 'Insert the shown channel names (joined by -) into the filename' })
+  return opts
+})
+// Channels actually shown in the movie (have a colormap), in channel order — what the token expands to.
+const shownChannels = computed(() => channelList.value.filter(c => channels.value[c]))
+
+// Overlay toggles — five independent feature flags surfaced as one multi-select chip row.
+const OVERLAY_OPTIONS: ChipOption[] = [
+  { value: 'tracks',     label: '', icon: 'pi pi-directions',     tip: 'Tracks — all tracked segmentations' },
+  { value: 'trackclust', label: '', icon: 'pi pi-sitemap',        tip: 'Track-cluster populations' },
+  { value: 'gated',      label: '', icon: 'pi pi-filter',         tip: 'Gated track populations' },
+  { value: 'pops',       label: '', icon: 'pi pi-chart-scatter',  tip: 'Populations (points)' },
+  { value: 'labels',     label: '', icon: 'pi pi-palette',        tip: 'Colour label masks by the colour-by measure' },
+]
+const overlaysModel = computed<string[]>({
+  get: () => [showTracks.value && 'tracks', showTrackclust.value && 'trackclust', showGated.value && 'gated',
+              showPops.value && 'pops', colourLabels.value && 'labels'].filter(Boolean) as string[],
+  set: (v) => { showTracks.value = v.includes('tracks'); showTrackclust.value = v.includes('trackclust')
+                showGated.value = v.includes('gated'); showPops.value = v.includes('pops'); colourLabels.value = v.includes('labels') },
+})
 
 // ── colour-by options (obs columns of a representative segmentation) ───────────
 const obsCols = ref<string[]>([])
@@ -136,7 +162,7 @@ watch(() => props.selectedUids[0], () => { if (props.selectedUids.length) fillFr
 
 // output filename preview (mirrors the backend _movie_basename)
 const filenamePreview = computed(() =>
-  movieFilename(fileAttrs.value, imgs.value[0]?.attr ?? {}, imgs.value[0]?.uid ?? 'uid'))
+  movieFilename(fileAttrs.value, imgs.value[0]?.attr ?? {}, imgs.value[0]?.uid ?? 'uid', shownChannels.value))
 
 // ── build request + run ───────────────────────────────────────────────────────
 function buildConfig() {
@@ -211,18 +237,8 @@ async function previewOpen() {
       <!-- Overlays -->
       <section class="bm-sec">
         <h4>Overlays <span class="bm-sub">click to toggle</span></h4>
-        <div class="bm-toggles">
-          <button class="bm-tg" :class="{ on: showTracks }" @click="showTracks = !showTracks"
-                  v-tooltip.bottom="'Tracks — all tracked segmentations'"><i class="pi pi-directions" /></button>
-          <button class="bm-tg" :class="{ on: showTrackclust }" @click="showTrackclust = !showTrackclust"
-                  v-tooltip.bottom="'Track-cluster populations'"><i class="pi pi-sitemap" /></button>
-          <button class="bm-tg" :class="{ on: showGated }" @click="showGated = !showGated"
-                  v-tooltip.bottom="'Gated track populations'"><i class="pi pi-filter" /></button>
-          <button class="bm-tg" :class="{ on: showPops }" @click="showPops = !showPops"
-                  v-tooltip.bottom="'Populations (points)'"><i class="pi pi-chart-scatter" /></button>
-          <button class="bm-tg" :class="{ on: colourLabels }" @click="colourLabels = !colourLabels"
-                  v-tooltip.bottom="'Colour label masks by the colour-by measure'"><i class="pi pi-palette" /></button>
-        </div>
+        <ChipSelect class="bm-toggles" multiple :options="OVERLAY_OPTIONS" v-model="overlaysModel"
+                    aria-label="Movie overlays" />
         <div v-if="showTracks" class="bm-inset">
           <span class="bm-lbl">tail</span>
           <input type="range" min="1" max="20" step="1" v-model.number="tailWidth" />
@@ -269,11 +285,10 @@ async function previewOpen() {
           <span class="bm-val">{{ scale }}×</span>
         </div>
         <div class="bm-attrs">
-          <span class="bm-lbl">filename attrs</span>
-          <label v-for="a in attrKeys" :key="a" class="bm-chk inline">
-            <input type="checkbox" :checked="fileAttrs.includes(a)" @change="toggleAttr(a)" /> {{ a }}
-          </label>
-          <span v-if="!attrKeys.length" class="bm-hint">no attributes — files named by uid</span>
+          <span class="bm-lbl">filename attrs <span class="bm-sub">click to include · drag to reorder</span></span>
+          <ChipSelect v-if="attrOptions.length" v-model="fileAttrs" :options="attrOptions" multiple reorderable
+                      aria-label="Filename attributes" />
+          <span v-else class="bm-hint">no attributes — files named by uid</span>
         </div>
         <p class="bm-preview">→ movies/<b>{{ filenamePreview }}</b></p>
       </section>
@@ -301,14 +316,7 @@ async function previewOpen() {
   background: color-mix(in srgb, var(--cc-warn) 16%, transparent); border: 1px solid var(--cc-warn);
   color: var(--cc-text); font-size: 0.8rem; }
 .bm-sec { border: 1px solid var(--cc-border); border-radius: 6px; padding: 6px 8px; background: var(--cc-surface-1); }
-.bm-sec h4 { margin: 0 0 4px; font-size: 0.8rem; font-weight: 700; }
-/* overlay icon toggles: compact square buttons (label lives in the tooltip) */
-.bm-toggles { display: flex; gap: 5px; flex-wrap: wrap; }
-.bm-tg { display: inline-flex; align-items: center; justify-content: center; width: 1.9rem; height: 1.9rem;
-  border: 1px solid var(--cc-border); border-radius: 0.4rem; background: var(--cc-surface-2);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.85rem; }
-.bm-tg:hover { color: var(--cc-text); border-color: #484f58; }
-.bm-tg.on { color: #fff; background: var(--cc-accent); border-color: var(--cc-accent); }
+.bm-sec h4 { display: flex; align-items: baseline; margin: 0 0 4px; font-size: 0.8rem; font-weight: 700; }
 .bm-mini { min-width: 0; padding: 0.2rem 1.4rem 0.2rem 0.4rem; font-size: 0.72rem; }
 .bm-sub { font-weight: 400; color: var(--cc-text-dim); font-size: 0.72rem; margin-left: 6px; }
 .bm-link { float: right; font-size: 0.7rem; color: var(--cc-accent); background: none; border: none;
@@ -321,9 +329,12 @@ async function previewOpen() {
 .bm-chk { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin: 3px 0; cursor: pointer; }
 .bm-chk.inline { display: inline-flex; margin-right: 10px; }
 .bm-inset { display: flex; align-items: center; gap: 6px; margin: 5px 0 1px; }
+/* range inputs default to a fixed intrinsic width (~129px) and don't shrink, so two on one row
+   (fps + res) overflow the sidebar. Let them flex down to share the available width. */
+.bm-inset input[type="range"] { flex: 1; min-width: 0; }
 .bm-lbl { font-size: 0.72rem; color: var(--cc-text-dim); }
 .bm-val { font-size: 0.72rem; min-width: 1.6rem; }
-.bm-attrs { margin-top: 6px; }
+.bm-attrs { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
 .bm-preview { font-size: 0.76rem; color: var(--cc-text-dim); margin: 6px 0 0; word-break: break-all; }
 .bm-preview b { color: var(--cc-text); }
 .bm-actions { display: flex; gap: 8px; flex-wrap: wrap; }

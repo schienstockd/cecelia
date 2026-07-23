@@ -12,6 +12,7 @@ import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { metadataWarning, flaggedFields, downstreamArtifactsNote, type PhysField as WarnField } from '../lib/imageMetadataWarnings'
+import ChipSelect, { type ChipOption } from './ChipSelect.vue'
 
 const props = defineProps<{
   setUid: string
@@ -86,6 +87,17 @@ const includeX = ref(true)
 const includeY = ref(true)
 const includeZ = ref(true)
 const includeT = ref(true)
+
+// Which fields Apply/Copy/Fill write — a multi-select over x/y/z/t bridging the four include refs.
+// A flagged field (targetFlags) gets an amber `accent` so it reads as "needs attention".
+const includeModel = computed<string[]>({
+  get: () => [includeX.value && 'x', includeY.value && 'y', includeZ.value && 'z', includeT.value && 't'].filter(Boolean) as string[],
+  set: (v) => { includeX.value = v.includes('x'); includeY.value = v.includes('y'); includeZ.value = v.includes('z'); includeT.value = v.includes('t') },
+})
+const dimOptions = computed<ChipOption[]>(() => ([
+  { value: 'x', label: 'X' }, { value: 'y', label: 'Y' },
+  { value: 'z', label: 'Z' }, { value: 't', label: 'Δt' },
+] as ChipOption[]).map(o => targetFlags.value.has(o.value as WarnField) ? { ...o, accent: '#f59e0b' } : o))
 
 function reseed() {
   // Always show the FOCUSED image's own real value — never blank it out just because other
@@ -256,12 +268,8 @@ async function fillFlagged() {
           <i class="pi pi-history" /> {{ downstreamNote.short }}
         </p>
 
-        <div class="toggle-row" v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct.'">
-          <label class="toggle-chip" :class="{ on: includeX, warn: targetFlags.has('x') }"><input type="checkbox" v-model="includeX" />X</label>
-          <label class="toggle-chip" :class="{ on: includeY, warn: targetFlags.has('y') }"><input type="checkbox" v-model="includeY" />Y</label>
-          <label class="toggle-chip" :class="{ on: includeZ, warn: targetFlags.has('z') }"><input type="checkbox" v-model="includeZ" />Z</label>
-          <label class="toggle-chip" :class="{ on: includeT, warn: targetFlags.has('t') }"><input type="checkbox" v-model="includeT" />Δt</label>
-        </div>
+        <ChipSelect class="toggle-row" multiple :options="dimOptions" v-model="includeModel"
+          v-tooltip.bottom="'Which fields Apply / Copy / Fill flagged write — untick what\'s already correct.'" />
 
         <div class="dims-row" :class="{ excluded: !includeX && !includeY && !includeZ }">
           <label class="dim-label" v-tooltip.bottom="'Pixel size in X'">X</label>
@@ -339,18 +347,7 @@ async function fillFlagged() {
   border-radius: 0.3rem; padding: 0.35rem 0.55rem; cursor: help;
 }
 
-.toggle-row { display: flex; gap: 0.35rem; }
-.toggle-chip {
-  display: flex; align-items: center; gap: 0.25rem;
-  font-size: 0.72rem; font-weight: 600;
-  padding: 0.15rem 0.5rem; border-radius: 999px;
-  border: 1px solid var(--cc-border); background: var(--cc-surface-2);
-  color: var(--cc-text-dim); cursor: pointer;
-}
-.toggle-chip input { display: none; }
-.toggle-chip.on { border-color: var(--cc-accent); color: var(--cc-accent); background: #a78bfa14; }
-.toggle-chip.warn { border-color: #f59e0b88; }
-.toggle-chip.warn.on { border-color: #f59e0b; color: #fbbf24; background: #7c2d1233; }
+.toggle-row { gap: 0.35rem; }
 
 .dims-row { display: flex; align-items: center; gap: 0.4rem; transition: opacity 0.1s; }
 .dims-row.excluded { opacity: 0.4; }

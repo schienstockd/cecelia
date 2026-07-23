@@ -33,6 +33,7 @@ import { INTERACTIVE_VIEWS } from './interactiveViews'
 import SeriesPicker from './SeriesPicker.vue'
 import PopulationManager from './PopulationManager.vue'
 import TeleportPopover from '../TeleportPopover.vue'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import { CLUSTER_PANELS, isClusterPanel } from '../../modules/cluster/clusterPanels'
 
 const props = defineProps<{ imageUids: string[]; module?: string | null; canvasKey: string }>()
@@ -74,6 +75,27 @@ const optsBtn = useTemplateRef<HTMLElement>('optsBtn')
 const builderOpen = ref(false)
 const builderBtn = useTemplateRef<HTMLElement>('builderBtn')
 function applyCustomPlate(t: LayoutTemplate) { layout.applyTemplate(props.canvasKey, t); builderOpen.value = false }
+
+// ── preset + sheet selectors (shared ChipSelect) ──────────────────────────────
+const SHEET_OPTIONS: ChipOption[] = [
+  { value: 'a4-portrait', label: 'A4 ↕' }, { value: 'a4-landscape', label: 'A4 ↔' }, { value: 'free', label: 'Free' },
+]
+// A preset row is a single-select whose active chip is DERIVED from the current grid matching a preset
+// (none active when the grid is custom). Picking one applies that template.
+const uniformOptions = computed<ChipOption[]>(() => UNIFORM_PRESETS.map(t => ({ value: t.id, label: t.label })))
+const plateOptions   = computed<ChipOption[]>(() => platePresets.value.map(t => ({ value: t.id, label: t.label })))
+const uniformMatchId = computed(() => {
+  const e = entry.value; if (!e) return ''
+  return UNIFORM_PRESETS.find(t => e.cols === t.cols && e.rows === t.rows && e.slotAreas.length === t.slots.length)?.id ?? ''
+})
+const plateMatchId = computed(() => {
+  const e = entry.value; if (!e) return ''
+  return platePresets.value.find(t => e.slotAreas.join('|') === t.slots.join('|'))?.id ?? ''
+})
+function applyPreset(presets: LayoutTemplate[], id: string) {
+  const t = presets.find(p => p.id === id)
+  if (t) layout.applyTemplate(props.canvasKey, t)
+}
 // board natural (unscaled) size — height from rows×rowHeight; width from the A4 page aspect (null in
 // Free mode, where the grid fills the available width).
 const boardH = computed(() => rowHeight.value * entry.value.rows + 8 * (entry.value.rows - 1))
@@ -365,13 +387,9 @@ defineExpose({ capturePage, collectCsvs })
       <div class="lc-bar">
         <div class="lc-row">
           <span class="lc-lbl">Layout</span>
-          <div class="seg" v-tooltip.bottom="'Uniform grids'">
-            <button v-for="t in UNIFORM_PRESETS" :key="t.id"
-                    @click="layout.applyTemplate(canvasKey, t)"
-                    :class="{ on: entry.cols === t.cols && entry.rows === t.rows && entry.slotAreas.length === t.slots.length }">
-              {{ t.label }}
-            </button>
-          </div>
+          <ChipSelect variant="segmented" :options="uniformOptions" :model-value="uniformMatchId"
+                      v-tooltip.bottom="'Uniform grids'" aria-label="Uniform grid layout"
+                      @update:model-value="v => applyPreset(UNIFORM_PRESETS, v as string)" />
           <!-- custom grid size + slot height, tucked into a ⚙ popover to keep the bar tidy -->
           <div class="lc-opts">
             <button ref="optsBtn" class="lc-gear" :class="{ on: optsOpen }" @click="optsOpen = !optsOpen"
@@ -394,11 +412,9 @@ defineExpose({ capturePage, collectCsvs })
             </TeleportPopover>
           </div>
           <!-- A4 sheet lock: keep the board at page proportions (WYSIWYG with the PDF) or let it fill -->
-          <div class="seg" v-tooltip.bottom="'Sheet — A4 locks the board to page proportions (what you see is the exported page); Free fills the width'">
-            <button :class="{ on: sheet === 'a4-portrait' }" @click="sheet = 'a4-portrait'">A4 ↕</button>
-            <button :class="{ on: sheet === 'a4-landscape' }" @click="sheet = 'a4-landscape'">A4 ↔</button>
-            <button :class="{ on: sheet === 'free' }" @click="sheet = 'free'">Free</button>
-          </div>
+          <ChipSelect variant="segmented" :options="SHEET_OPTIONS" :model-value="sheet" aria-label="Sheet size"
+                      v-tooltip.bottom="'Sheet — A4 locks the board to page proportions (what you see is the exported page); Free fills the width'"
+                      @update:model-value="v => sheet = v as 'free' | 'a4-portrait' | 'a4-landscape'" />
           <!-- fit-to-view zoom (visual only; the exported page is unchanged) -->
           <CanvasZoomControl v-if="sheet !== 'free'" :zoom="zoom"
                              @update:zoom="setZoom" @fit-width="fitWidth" @fit-height="fitHeight" @reset="resetZoom" />
@@ -443,10 +459,10 @@ defineExpose({ capturePage, collectCsvs })
         </div>
         <div class="lc-row">
           <span class="lc-lbl">Plates</span>
-          <div class="seg seg-wrap" v-tooltip.bottom="'Comic plates — varied-size panels, matched to the sheet orientation'">
-            <button v-for="t in platePresets" :key="t.id" @click="layout.applyTemplate(canvasKey, t)"
-                    :class="{ on: entry.slotAreas.join('|') === t.slots.join('|') }">{{ t.label }}</button>
-          </div>
+          <ChipSelect variant="pill" :options="plateOptions" :model-value="plateMatchId"
+                      v-tooltip.bottom="'Comic plates — varied-size panels, matched to the sheet orientation'"
+                      aria-label="Comic plate layout"
+                      @update:model-value="v => applyPreset(platePresets, v as string)" />
           <!-- custom plate builder: drag cells to merge into varied-size panels -->
           <div class="lc-opts">
             <button ref="builderBtn" class="cc-btn cc-btn-ghost lc-custom" :class="{ on: builderOpen }" @click="builderOpen = !builderOpen"
@@ -578,18 +594,10 @@ defineExpose({ capturePage, collectCsvs })
 .lc-pop-row span:first-child { width: 3rem; }
 .lc-pop-row input[type="range"] { flex: 1; }
 .lc-val { min-width: 0.9rem; text-align: center; font-weight: 700; color: var(--cc-text); }
-.seg-wrap { flex-wrap: wrap; }
-/* wrapped seg buttons keep separators between rows too */
-.seg-wrap button { border-left: 1px solid var(--cc-border); border-top: 1px solid var(--cc-border); }
 .lc-compare { display: inline-flex; align-items: center; gap: 6px; color: var(--cc-text-dim);
   padding: 2px 8px; border: 1px solid var(--cc-border); border-radius: 6px; }
 .lc-x { opacity: 0.6; }
 .lc-pool { display: flex; align-items: center; gap: 6px; color: var(--cc-text-dim); }
-.seg { display: inline-flex; border: 1px solid var(--cc-border); border-radius: 5px; overflow: hidden; }
-.seg button { background: var(--cc-surface-2); color: var(--cc-text-dim); border: none; padding: 4px 8px; cursor: pointer; font-size: 11px; }
-.seg button + button { border-left: 1px solid var(--cc-border); }
-.seg button:hover { color: var(--cc-text); }
-.seg button.on { background: #2d1b69; color: #c4b5fd; }
 /* the board sizes to its grid (rowHeight × rows); the page's panel-scroll handles overflow */
 .lc-body { display: flex; align-items: flex-start; gap: 8px; }
 /* scroll viewport for the board. .lc-zoom holds the (visually scaled) footprint: fixed-size + centred

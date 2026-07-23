@@ -57,9 +57,28 @@ export function buildBatchMovieConfig(
   }
 }
 
-/** Output filename for one image — mirrors the backend `_movie_basename`. */
-export function movieFilename(fileAttrs: string[], attrValues: Record<string, string>, uid: string): string {
-  const parts = fileAttrs.map(a => (attrValues[a] ?? '').trim()).filter(Boolean)
+// Sentinel token that can appear in the ordered `fileAttrs` list to mean "the displayed channel
+// names, joined by '-'" — so channel names can be positioned in the filename like any attribute
+// (drag-reorderable). Chosen to not collide with a real user attribute key. Mirrored in the backend
+// `_movie_basename` (api/src/napari_api.jl) — keep the two in sync.
+export const MOVIE_CHANNELS_TOKEN = '__channels__'
+
+/** Output filename for one image — mirrors the backend `_movie_basename`. `fileAttrs` is the ordered
+ *  list of attribute keys and/or the `MOVIE_CHANNELS_TOKEN`; `channelNames` are the channels shown in
+ *  the movie (used only when the token is present, joined by '-'). Blanks drop, uid always terminates. */
+export function movieFilename(
+  fileAttrs: string[], attrValues: Record<string, string>, uid: string, channelNames: string[] = [],
+): string {
+  const parts: string[] = []
+  for (const a of fileAttrs) {
+    if (a === MOVIE_CHANNELS_TOKEN) {
+      const chans = channelNames.map(c => c.trim()).filter(Boolean).join('-')
+      if (chans) parts.push(chans)
+    } else {
+      const val = (attrValues[a] ?? '').trim()
+      if (val) parts.push(val)
+    }
+  }
   parts.push(uid || 'uid')
   return parts.join('_').replace(/[^A-Za-z0-9._-]+/g, '_') + '.mp4'
 }

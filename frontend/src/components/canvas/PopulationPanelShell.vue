@@ -11,7 +11,14 @@
 import { ref, onMounted, useTemplateRef } from 'vue'
 import { useFloatingPanel } from '../../composables/useFloatingPanel'
 import PlotOptions from './PlotOptions.vue'
+import ChipSelect, { type ChipOption } from '../ChipSelect.vue'
 import type { VisProps } from '../../plots/plot'
+
+// scope: global = every plot, local = active plot only (icon-only segmented control)
+const SCOPE_OPTIONS: ChipOption[] = [
+  { value: 'global', label: '', icon: 'pi pi-globe', tip: 'Global — applies to every plot' },
+  { value: 'local', label: '', icon: 'pi pi-map-marker', tip: 'Local — applies to the active plot only' },
+]
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -67,14 +74,9 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 
     <!-- scope (global = every plot / local = active plot only): icons only, at the very bottom -->
     <div v-show="!collapsed" class="pm-footer">
-      <div class="pm-seg">
-        <button class="seg-btn" :class="{ active: scope === 'global' }"
-                v-tooltip.top="'Global — applies to every plot'"
-                @click="emit('update:scope', 'global')"><i class="pi pi-globe" /></button>
-        <button class="seg-btn" :class="{ active: scope === 'local' }"
-                v-tooltip.top="'Local — applies to the active plot only'"
-                @click="emit('update:scope', 'local')"><i class="pi pi-map-marker" /></button>
-      </div>
+      <ChipSelect class="pm-seg" variant="segmented" :options="SCOPE_OPTIONS"
+                  :model-value="scope" aria-label="Scope"
+                  @update:model-value="v => emit('update:scope', v as 'global' | 'local')" />
     </div>
   </div>
 </template>
@@ -101,13 +103,5 @@ function onHeaderDown(e: MouseEvent) { if (!props.docked) startDrag(e) }
 .pm-icon:hover { color: var(--cc-text); }
 .pm-opts { border-top: 1px solid var(--cc-border); }
 .pm-footer { display: flex; align-items: center; padding: 6px 8px; border-top: 1px solid var(--cc-border); background: var(--cc-surface-2); border-radius: 0 0 6px 6px; }
-.pm-seg { display: inline-flex; gap: 4px; margin-left: auto; }
-.seg-btn {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 1.8rem; height: 1.8rem; border-radius: 0.3rem;
-  border: 1px solid var(--cc-border); background: var(--cc-surface-1);
-  color: var(--cc-text-dim); cursor: pointer; font-size: 0.8rem; transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-.seg-btn:hover { color: var(--cc-text); border-color: #484f58; }
-.seg-btn.active { background: #2d1b69; border-color: #7c3aed; color: #c4b5fd; }
+.pm-seg { margin-left: auto; }
 </style>

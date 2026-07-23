@@ -5,6 +5,7 @@ import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
+import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
 import { moduleColor } from '../utils/taskModule'
 
 const tasks    = useTaskStore()
@@ -104,13 +105,13 @@ const statusCfg: Record<TaskStatus, { cls: string; icon: string; tip: string }> 
 }
 
 
-const FILTERS = [
-  { key: 'all',       label: 'All' },
-  { key: 'active',    label: 'Active' },
-  { key: 'done',      label: 'Done' },
-  { key: 'failed',    label: 'Failed' },
-  { key: 'cancelled', label: 'Cancelled' },
-] as const
+const FILTERS: ChipOption[] = [
+  { value: 'all',       label: 'All' },
+  { value: 'active',    label: 'Active' },
+  { value: 'done',      label: 'Done' },
+  { value: 'failed',    label: 'Failed' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
 </script>
 
 <template>
@@ -120,14 +121,10 @@ const FILTERS = [
     <div class="tm-toolbar">
       <span class="tm-title">Task Manager</span>
 
-      <div class="filter-chips">
-        <button
-          v-for="f in FILTERS" :key="f.key"
-          class="chip"
-          :class="{ active: statusFilter === f.key }"
-          @click="statusFilter = f.key"
-        >{{ f.label }}</button>
-      </div>
+      <ChipSelect
+        class="filter-chips" :options="FILTERS" :model-value="statusFilter"
+        aria-label="Filter tasks by status"
+        @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
       <label class="follow-toggle" v-tooltip.left="'Automatically select the newest running task'">
         <input type="checkbox" v-model="settings.taskListAutoFollow" />
@@ -270,22 +267,8 @@ const FILTERS = [
   flex-shrink: 0;
 }
 .filter-chips {
-  display: flex;
-  gap: 0.3rem;
   flex: 1;
 }
-.chip {
-  font-size: 0.72rem;
-  padding: 0.18rem 0.55rem;
-  border-radius: 1rem;
-  border: 1px solid var(--cc-border);
-  background: none;
-  color: var(--cc-text-dim);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-.chip:hover  { background: var(--cc-surface-2); color: var(--cc-text); }
-.chip.active { background: var(--cc-accent); border-color: var(--cc-accent); color: #fff; }
 
 .follow-toggle {
   display: flex;
