@@ -48,12 +48,25 @@ original dask-tile slowness); memory unchanged (the frame is already resident fo
   per-tile over-read to remove. Read-frame-once would add slice-reindexing complexity for ~no gain.
   Revisit only if a store's chunking makes per-plane reads over-fetch in practice.
 
-### Phase 2 — cellpose eval batching  ← targeted GPU throughput, measure first
-**Benefit:** `dn.eval([tile])` is called one plane at a time. Cellpose accepts a *list*; batching
-multiple planes/tiles per call improves GPU utilization. Low complexity, isolated to the eval loop.
-- Batch the per-plane list in `cellpose_correct` and the tile list in `segment` predict per frame.
-- **Measure before/after** on a real GPU run; keep only if the speedup is real (batch size is a
-  tuning knob — too large re-introduces a memory spike, defeating Phase 1). Skip if marginal.
+### Phase 2 — cellpose eval batching  ← MEASURED, no benefit, SKIP
+The idea: raise the cellpose `batch_size` (both `CellposeModel.eval` and `DenoiseModel.eval` accept
+it, default 8) so more Z-slices/planes go to the GPU per launch — a zero-restructure knob.
+
+**Measured** on a real GPU (cuda), segmenting a 3-frame time-crop of EaMaVq (proj 4kS67f, 3D,
+512-tiled, 4 tiles/frame, cyto2), timing `predict_from_zarr` after model warm-up:
+
+| batch_size | time | cells |
+|-----------:|-----:|------:|
+| 8 (default) | 34.1s | 95 |
+| 16 | 37.5s | 95 |
+| 32 | 37.5s | 95 |
+
+Raising it does **not** help — slightly worse at 16/32. The per-tile eval already hands cellpose a
+full 512×512×Z stack, so the GPU is saturated at the default and there is no launch overhead to
+amortise; larger batches only add memory pressure. Tile-/frame-batching (eval a *list* of stacks)
+was **not** pursued: it wouldn't reduce the actual per-slice compute (the real cost here) and it
+fights the Phase-1 one-frame-in-RAM streaming. **Conclusion: no code change — GPU eval is the floor.**
+(Revisit only if a future model/hardware makes per-launch overhead dominant.)
 
 ### Phase 3 — cheap cleanups (only while already in the file)
 Each is small; do opportunistically, not as a dedicated sweep.
