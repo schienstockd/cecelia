@@ -1,6 +1,7 @@
 using Cecelia
 using Test
 using JSON3
+using Dates
 import DataFrames: DataFrame, nrow   # only the symbols the tests construct/measure with
 
 # ── Smoke tests — no API, no WebSocket, no Vue ────────────────────────────────
@@ -451,110 +452,147 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
     end
 
     # ── Lab log context (auto [Cecelia] activity digest) ────────────────────────
-    @testset "Lab log context" begin
+    # ROLLING DAILY block: one [Cecelia] block per day, regenerated from source and rewritten in place
+    # as activity accrues (append-only preserved for human entries). Dates are pinned so day rollover is
+    # deterministic; run-log `at` is stamped explicitly (the `at` kwarg) so a task lands on a given day.
+    @testset "Lab log context — rolling daily block" begin
         proj = create_project!(name="labctx-test-$(rand(1000:9999))", kind="static")
         s    = add_set!(proj; name="set-A")
         img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+        d1, d2 = Date(2026, 7, 20), Date(2026, 7, 21)
 
-        # nothing run yet → no digest
-        @test capture_context!(proj) === nothing
+        # nothing run yet → no digest, no block on disk
+        @test capture_context!(proj; date=d1) === nothing
         @test isempty(parse_lab_log(read_lab_log(proj)))
 
-        # simulate task activity (what the run logs record)
-        append_run_log!(img1, "segment.cellpose", "default")
-        append_run_log!(img2, "segment.cellpose", "default")
-        append_run_log!(img1, "tracking.bayesian_tracking")
+        # day-1 activity (run logs dated on d1) → ONE [Cecelia] block for the day
+        append_run_log!(img1, "segment.cellpose", "default"; at="2026-07-20T09:00:00")
+        append_run_log!(img2, "segment.cellpose", "default"; at="2026-07-20T09:05:00")
+        append_run_log!(img1, "tracking.bayesian_tracking", ""; at="2026-07-20T10:00:00")
 
-        block = capture_context!(proj)
+        block = capture_context!(proj; date=d1)
         @test block !== nothing
-        @test occursin("[Cecelia]", block)
-        # grouped by module category (task-manager tags), fun prefix dropped
-        @test occursin("Segment — cellpose on 2 images", block)
+        @test occursin("## 2026-07-20 [Cecelia]", block)
+        @test occursin("Segment — cellpose on 2 images", block)      # grouped by category, prefix dropped
         @test occursin("Tracking — bayesian_tracking on 1 image", block)   # singular
-        @test occursin("img-1", block) && occursin("img-2", block)
-        # all runs succeeded, no QC → each module line leads with ✅
-        @test occursin("✅ Segment", block) && occursin("✅ Tracking", block)
-
+        @test occursin("✅ Segment", block) && occursin("✅ Tracking", block)   # all ok → ✅
         entries = parse_lab_log(read_lab_log(proj))
         @test length(entries) == 1 && entries[1]["author"] == "Cecelia"
 
-        # idempotent: no new activity → no second digest
-        @test capture_context!(proj) === nothing
+        # idempotent: same day, no new activity → block unchanged → nothing, still ONE block
+        @test capture_context!(proj; date=d1) === nothing
         @test length(parse_lab_log(read_lab_log(proj))) == 1
 
-        # severity symbols (fresh project so the cutoff is empty — no same-second edge):
-        # a failed run → ❌ on its module; a warn QC finding → ⚠️
+        # MORE activity the SAME day → the day's block is rewritten IN PLACE (cumulative), not a 2nd block
+        append_run_log!(img2, "behaviour.hmm", ""; at="2026-07-20T14:00:00")
+        block1b = capture_context!(proj; date=d1)
+        @test block1b !== nothing
+        @test occursin("Behaviour — hmm on 1 image", block1b)
+        @test occursin("cellpose on 2 images", block1b)              # earlier activity still present
+        @test length(parse_lab_log(read_lab_log(proj))) == 1         # ONE block, rewritten — not appended
+
+        # NEXT day → a NEW block; the previous day's block is untouched and holds only its own activity
+        append_run_log!(img1, "segment.measureLabels", "default"; at="2026-07-21T08:00:00")
+        block2 = capture_context!(proj; date=d2)
+        @test block2 !== nothing
+        @test occursin("## 2026-07-21 [Cecelia]", block2)
+        @test occursin("measureLabels", block2)
+        @test !occursin("cellpose", block2)                          # day-2 block ≠ day-1 activity
+        @test length(parse_lab_log(read_lab_log(proj))) == 2
+        full = read_lab_log(proj)
+        @test occursin("cellpose on 2 images", full) && occursin("Behaviour — hmm", full)   # d1 intact
+
+        rm(proj.root; recursive=true)
+    end
+
+    # severity symbols + the COLLAPSED QC-detail lines (per-image and per-channel repetition folded away)
+    @testset "Lab log context — severity + collapsed QC details" begin
         projS = create_project!(name="labctx-sev-$(rand(1000:9999))", kind="static")
         sS    = add_set!(projS; name="set-S")
         iS1   = add_image!(sS; name="s-1", meta=Dict{String,Any}("ori_path"=>"/tmp/s1.tif"))
         iS2   = add_image!(sS; name="s-2", meta=Dict{String,Any}("ori_path"=>"/tmp/s2.tif"))
-        append_run_log!(iS1, "segment.measureLabels", "default", "failed")
+        iS3   = add_image!(sS; name="s-3", meta=Dict{String,Any}("ori_path"=>"/tmp/s3.tif"))
+        d = Date(2026, 7, 22)
+        append_run_log!(iS1, "segment.measureLabels", "default", "failed"; at="2026-07-22T08:00:00")
         write_qc(iS2, "tracking.track_measures", "default",
                  [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"s","long"=>"l")])
-        append_run_log!(iS2, "tracking.track_measures", "default")
-        # a fun run on 3 images with a warn banked on 2 of them → the digest reports "— 2 flagged"
-        iS3 = add_image!(sS; name="s-3", meta=Dict{String,Any}("ori_path"=>"/tmp/s3.tif"))
-        for im in (iS1, iS2, iS3); append_run_log!(im, "behaviour.hmm_states", "default"); end
-        for im in (iS1, iS2)      # only 2 of the 3 get a warn
+        append_run_log!(iS2, "tracking.track_measures", "default"; at="2026-07-22T09:00:00")
+        # a fun run on 3 images with the SAME warn banked on 2 of them
+        for im in (iS1, iS2, iS3); append_run_log!(im, "behaviour.hmm_states", "default"; at="2026-07-22T10:00:00"); end
+        for im in (iS1, iS2)
             write_qc(im, "behaviour.hmm_states", "default",
-                     [Dict{String,Any}("level"=>"warn","code"=>"c","short"=>"Collapsed to one state","long"=>"l")])
+                     [Dict{String,Any}("level"=>"warn","code"=>"hmm.collapsed","short"=>"Collapsed to one state","long"=>"l")])
         end
-        sev = capture_context!(projS)
+
+        sev = capture_context!(projS; date=d)
         @test sev !== nothing
         @test occursin("❌ Segment", sev)      # measureLabels failed → worst outcome for the module
         @test occursin("⚠️ Tracking", sev)     # track_measures produced a warn finding
-        @test occursin("hmm_states on 3 images — 2 flagged", sev)   # count of flagged images, not just "≥1"
+        @test occursin("hmm_states on 3 images — 2 flagged", sev)
         @test !occursin("(3 images)", sev)     # redundant parenthetical dropped for >2 images
-        # the ACTUAL finding text is spelled out per flagged image (↳ image — what's wrong), not just a count
-        @test occursin("↳ s-1 — Collapsed to one state", sev)
-        @test occursin("↳ s-2 — Collapsed to one state", sev)
-        @test !occursin("↳ s-3", sev)          # the un-flagged image has no detail line
+        # the SAME finding across 2 images collapses to ONE detail line (few images → named, like items)
+        @test occursin("↳ Collapsed to one state (s-1, s-2)", sev)
+        @test count("Collapsed to one state", sev) == 1     # folded to one line, not repeated per image
 
-        # new activity strictly after the cutoff → a fresh digest that doesn't repeat old activity
-        sleep(1)   # run-log timestamps are second-granular; ensure a strictly-later `at`
-        append_run_log!(img2, "behaviour.hmm")
-        block2 = capture_context!(proj)
-        @test block2 !== nothing
-        @test occursin("Behaviour — hmm on 1 image", block2)
-        @test !occursin("cellpose", block2)                    # already reported, not repeated
-        @test length(parse_lab_log(read_lab_log(proj))) == 2
+        # per-CHANNEL collapse: 4 findings differing only by channel → ONE "ch 0-3" detail line
+        iH = add_image!(sS; name="h-1", meta=Dict{String,Any}("ori_path"=>"/tmp/h.tif"))
+        append_run_log!(iH, "segment.cellpose", "seg"; at="2026-07-22T11:00:00")
+        write_qc(iH, "segment.cellpose", "seg",
+                 [Dict{String,Any}("level"=>"warn","code"=>"rescale.hot_pixel",
+                                   "short"=>"Channel $i may have a hot pixel","long"=>"l",
+                                   "detail"=>Dict{String,Any}("channel"=>i)) for i in 0:3])
+        b2 = capture_context!(projS; date=d)
+        @test occursin("↳ may have a hot pixel — ch 0-3 (h-1)", b2)
 
-        # ── gating: net change by population (snapshot-diff, not per-edit) ──
+        rm(projS.root; recursive=true)
+    end
+
+    # gating + exclusion deltas: NET over the day, diffed against a start-of-day baseline
+    @testset "Lab log context — gating & exclusions (daily net)" begin
+        proj = create_project!(name="labctx-gate-$(rand(1000:9999))", kind="static")
+        s    = add_set!(proj; name="set-A")
+        img1 = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        img2 = add_image!(s; name="img-2", meta=Dict{String,Any}("ori_path"=>"/tmp/b.tif"))
+        d1, d2 = Date(2026, 7, 23), Date(2026, 7, 24)
+
+        # nothing yet
+        @test capture_context!(proj; date=d1) === nothing
+
+        # add a gated pop on d1 → "added: CD3" (net vs the day baseline)
         m = PopulationMap(; pop_type="flow", value_name="default")
         cd3 = add_pop!(m, "CD3"; gate=RectangleGate("c1", "c2", 0.0, 1.0, 0.0, 1.0))
         save_pop_map!(m, img1)
-        bg = capture_context!(proj)
+        bg = capture_context!(proj; date=d1)
         @test bg !== nothing && occursin("Gating — ", bg) && occursin("added: CD3", bg)
 
-        # changing a gate → "gate changed: CD3" (net), never a re-add
-        set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0))
-        save_pop_map!(m, img1)
-        bg2 = capture_context!(proj)
-        @test bg2 !== nothing && occursin("gate changed: CD3", bg2) && !occursin("added: CD3", bg2)
+        # editing that gate the SAME day still nets to "added: CD3": the digest line is unchanged, so
+        # the block is a no-op rewrite (returns nothing) and the log still reads "added", never "gate changed"
+        set_gate!(m, cd3, RectangleGate("c1", "c2", 0.2, 1.0, 0.0, 1.0)); save_pop_map!(m, img1)
+        @test capture_context!(proj; date=d1) === nothing
+        ll = read_lab_log(proj)
+        @test occursin("added: CD3", ll) && !occursin("gate changed", ll)
 
-        @test capture_context!(proj) === nothing            # no gating change → nothing
+        # roll into d2: first capture seeds the new day's baseline (CD3 as-is) and reports nothing new
+        @test capture_context!(proj; date=d2) === nothing
+        # NOW change the gate on d2 → "gate changed: CD3" (CD3 is in the day baseline, so it's an edit)
+        set_gate!(m, cd3, RectangleGate("c1", "c2", 0.3, 1.0, 0.0, 1.0)); save_pop_map!(m, img1)
+        bg3 = capture_context!(proj; date=d2)
+        @test bg3 !== nothing && occursin("gate changed: CD3", bg3) && !occursin("added: CD3", bg3)
 
-        # ── filter/membership pop (e.g. cluster tracks): a DEFINITION change is captured too —
-        # generically, not just gates (this is the cluster-tracks bug fix). ──
+        # filter/membership pop (cluster tracks): a DEFINITION change is caught generically, not just gates
         mt = PopulationMap(; pop_type="trackclust", value_name="default")
-        tc = add_pop!(mt, "clust_a"; filter_measure="clusters.x", filter_values=[0, 1])
+        add_pop!(mt, "clust_a"; filter_measure="clusters.x", filter_values=[0, 1])
         save_pop_map!(mt, img1)
-        @test capture_context!(proj) !== nothing            # baseline: added clust_a
-        mt.pops[tc].filter_values = [0, 1, 2]               # change WHICH clusters define it (no gate)
-        save_pop_map!(mt, img1)
-        bd = capture_context!(proj)
-        @test bd !== nothing && occursin("Clustering — redefined: clust_a", bd)
-        @test capture_context!(proj) === nothing            # net change reverts to none
+        bd = capture_context!(proj; date=d2)
+        @test bd !== nothing && occursin("added: clust_a", bd)
 
-        # ── exclusions: net change ──
+        # exclusions: net over the day
         img2.included = false; save!(img2)
-        be = capture_context!(proj)
-        @test be !== nothing && occursin("Manage images — excluded img-2", be)
-        @test capture_context!(proj) === nothing            # no further change
+        be = capture_context!(proj; date=d2)
+        @test be !== nothing && occursin("excluded img-2", be)
 
         rm(proj.root; recursive=true)
-        rm(projS.root; recursive=true)                      # severity sub-project — also clean up (was leaking)
     end
 
     @testset "Lab log context — first capture seeds silently" begin
@@ -631,20 +669,22 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         proj = create_project!(name="muteflt-test-$(rand(1000:9999))", kind="static")
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
+        d    = Date(2026, 7, 25)
 
         set_mute!(proj, "Segment", true)                    # category of segment.cellpose
-        append_run_log!(img, "segment.cellpose", "default")
-        @test capture_context!(proj) === nothing            # Segment muted → not reported
+        append_run_log!(img, "segment.cellpose", "default"; at="2026-07-25T09:00:00")
+        @test capture_context!(proj; date=d) === nothing    # only Segment activity, muted → nothing
 
-        # unmute: the cutoff already advanced while muted, so the muted-while activity does NOT resurface
+        # activity in a non-muted category IS reported; the muted one stays out of the block
+        append_run_log!(img, "behaviour.hmm", ""; at="2026-07-25T10:00:00")
+        b = capture_context!(proj; date=d)
+        @test b !== nothing && occursin("Behaviour — hmm", b) && !occursin("Segment", b)
+
+        # unmuting reveals that day's Segment activity too — the daily block regenerates from source each
+        # capture (no cutoff to advance past), so within a day unmute brings the category back
         set_mute!(proj, "Segment", false)
-        @test capture_context!(proj) === nothing
-
-        # new activity in a non-muted category after unmute IS reported
-        sleep(1)                                            # strictly-later ISO timestamp
-        append_run_log!(img, "behaviour.hmm")
-        b = capture_context!(proj)
-        @test b !== nothing && occursin("Behaviour — hmm", b)
+        b2 = capture_context!(proj; date=d)
+        @test b2 !== nothing && occursin("Segment — cellpose", b2)
         rm(proj.root; recursive=true)
     end
 

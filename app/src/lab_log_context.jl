@@ -2,21 +2,27 @@
 # lab log as `[Cecelia]` entries so the notebook records the *what* (activity) alongside the human
 # *why*. See docs/ai-assist/LAB-LOG.md.
 #
-# Design: **snapshot-diff, not an edit log.** `capture_context!` reports the NET change since the last
-# capture — never per-edit keystrokes — so a fiddly gating session with 50 polygon nudges that ends
-# with one changed gate is ONE line, and nudges that cancel out are nothing. Sources:
-#   • tasks   — the per-image run logs (run_log.jl): every task that ran (segment/track/cluster/…),
-#               time-filtered by a stored cutoff.
-#   • gating  — a per-pop fingerprint (name + a hash of the gate spec) diffed against the last snapshot
-#               → populations added/removed and which pops' GATES changed (by name). Reads the gating
-#               JSON files directly (source of truth), so it doesn't depend on the segmentation list.
-#   • exclusions — the set of excluded image uids, diffed → newly excluded / re-included.
-# Snapshots + cutoff live in `settings/lab-log-context.json`. The FIRST capture seeds the gating/
-# exclusion baselines silently (no giant retro digest); only genuine deltas thereafter.
+# Design: **one ROLLING DAILY block, regenerated from source.** `capture_context!` maintains a single
+# `[Cecelia]` block PER DAY, rewritten in place as the day's activity accrues (see
+# `upsert_daily_context_block!` — the append-only guarantee is kept for the human record, relaxed only
+# for this derived block). This is what tames the redundancy: N long-running tasks that finish hours
+# apart on the same day fold into ONE block regardless of how often capture fires (it used to append a
+# fresh block per capture → one block per task). Sources:
+#   • tasks   — the per-image run logs (run_log.jl): every task whose `at` falls on the block's day
+#               (grouped by module category, collapsed across images; per-image/per-channel repetition
+#               of the same QC finding folds into one detail line).
+#   • gating  — a per-pop fingerprint (name + a hash of the membership definition) diffed against the
+#               START-OF-DAY snapshot → populations added/removed and which pops' definitions changed.
+#               Reads the gating JSON files directly (source of truth).
+#   • exclusions — the set of excluded image uids, diffed vs the start-of-day snapshot.
+# The day baseline (`dayDate`/`dayGating`/`dayExcluded`) lives in `settings/lab-log-context.json` and
+# resets when the day rolls over, so within a day the gating/exclusion change is cumulative-net and the
+# first capture of a day seeds silently (no retro dump); tasks need no baseline (regenerated per day).
 #
 # Not captured / to tune as we go: gate-change *magnitude* (e.g. % of cells shifted) — only that a
 # gate changed, by population. Threshold/geometry values themselves are intentionally out (that's the
-# undo-list we don't want).
+# undo-list we don't want). A day with ZERO captures is not retro-summarised (activity stays in the run
+# logs); with per-task auto-capture on, each active day gets its block.
 
 import Dates
 
@@ -119,51 +125,82 @@ _category_rank(c::AbstractString)::Int = (i = findfirst(==(String(c)), _CATEGORY
 _where(names)::String = (n = length(names); n <= 2 ? join(sort(collect(names)), ", ") : "$n images")
 
 # ── tasks (run logs) → per-module items ───────────────────────────────────────────
-# Returns (module => [item…], max_at). Only run-log entries strictly after `cutoff` (ISO timestamps
-# are fixed-width, so a lexical `>` is a correct "happened after"; second-granular + strict, so
-# same-second-as-last-capture activity is skipped — negligible). The `category.` prefix is dropped
-# from the fun (the module header carries it): `segment.cellpose` → "cellpose on 5 images".
-# True when an image's (fun, value_name) QC doc carries a `warn` finding — the ⚠️ signal for a
-# digest line. Cheap read of the sidecar the task already wrote this window.
-function _has_warn_qc(img::CciaImage, fun::AbstractString, vn::AbstractString)::Bool
+# The digest is DAY-scoped: a run-log entry belongs to the block for the local date in its `at`
+# timestamp. Both `at` (run_log.jl, `Dates.now()`) and the capture date (`Dates.today()`) are the
+# server's LOCAL time, so grouping by the `yyyy-mm-dd` prefix is internally consistent — the trap to
+# avoid is introducing a UTC clock on either side. The `category.` prefix is dropped from the fun (the
+# module header carries it): `segment.cellpose` → "cellpose on 5 images".
+
+# Each `warn` finding in an image's (fun, vn) QC doc as `(code, short, channel)` — the actual
+# "what's wrong" for the digest's detail lines. `channel` is the finding's `detail.channel` (an Int)
+# when it carries one (per-channel findings like the import hot-pixel/clip checks), else `nothing`;
+# it drives the cross-channel collapse so N per-channel findings read as one "ch a-b" line rather
+# than N near-identical lines. Empty when none.
+function _warn_findings(img::CciaImage, fun::AbstractString, vn::AbstractString)::Vector{Tuple{String,String,Union{Int,Nothing}}}
     doc = read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)
-    doc === nothing && return false
+    doc === nothing && return Tuple{String,String,Union{Int,Nothing}}[]
     fs = get(doc, :findings, nothing)
-    fs === nothing && return false
-    any(f -> String(get(f, :level, "")) == "warn", fs)
+    fs === nothing && return Tuple{String,String,Union{Int,Nothing}}[]
+    out = Tuple{String,String,Union{Int,Nothing}}[]
+    for f in fs
+        String(get(f, :level, "")) == "warn" || continue
+        short = String(get(f, :short, ""))
+        isempty(short) && continue
+        push!(out, (String(get(f, :code, "")), short, _finding_channel(f)))
+    end
+    out
 end
 
-# The SHORT text of each `warn` finding in an image's (fun, vn) QC doc — the actual "what's wrong",
-# for the digest's detail lines (so the lab log carries the finding, not just a count that sends the
-# user to hover a tag). Empty when none.
-function _warn_finding_shorts(img::CciaImage, fun::AbstractString, vn::AbstractString)::Vector{String}
-    doc = read_qc(img, fun, isempty(vn) ? VERSIONED_DEFAULT_VAL : vn)
-    doc === nothing && return String[]
-    fs = get(doc, :findings, nothing)
-    fs === nothing && return String[]
-    String[String(get(f, :short, "")) for f in fs
-           if String(get(f, :level, "")) == "warn" && !isempty(String(get(f, :short, "")))]
+# a finding's `detail.channel` as an Int, or nothing (robust to JSON3 Symbol keys + numeric coercion).
+function _finding_channel(f)::Union{Int,Nothing}
+    d = get(f, :detail, nothing)
+    d === nothing && return nothing
+    c = get(d, :channel, nothing)
+    c === nothing && return nothing
+    try Int(c) catch; nothing end
+end
+
+# strip a leading "Channel <n>" from a finding short so per-channel findings collapse by their shared
+# phrase ("Channel 0 may have a hot pixel" → "may have a hot pixel"); falls back to the short if that
+# would leave nothing.
+function _strip_channel(short::AbstractString)::String
+    base = strip(replace(String(short), r"^Channel\s+\d+\s*" => ""))
+    isempty(base) ? String(short) : base
+end
+
+# compress sorted unique ints into a compact range string: [0,1,2,3] → "0-3", [0,2,3] → "0, 2-3".
+function _int_ranges(xs::Vector{Int})::String
+    isempty(xs) && return ""
+    parts = String[]; s = xs[1]; p = xs[1]
+    for x in xs[2:end]
+        x == p + 1 ? (p = x) : (push!(parts, s == p ? "$s" : "$s-$p"); s = x; p = x)
+    end
+    push!(parts, s == p ? "$s" : "$s-$p")
+    join(parts, ", ")
 end
 
 const _SEV_RANK = Dict("ok" => 0, "warn" => 1, "fail" => 2)
 const _MAX_DIGEST_DETAILS = 8   # cap the per-module finding-detail lines so a big cohort can't flood the entry
 
-# Per-module run summary since `cutoff`. Returns `(items_by_module, severity_by_module, max_at)`:
-# severity is the worst outcome across that module's runs this window — `fail` (a run failed), else
-# `warn` (a run produced a warn QC finding), else `ok` — driving the digest line's ✅/⚠️/❌ symbol.
-function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},Dict{String,Vector{String}},String}
+# Per-module run summary for the runs whose `at` falls on `day` ("yyyy-mm-dd"). Returns
+# `(items_by_module, severity_by_module, details_by_module)`: severity is the worst outcome across
+# that module's runs that day — `fail` (a run failed), else `warn` (a run produced a warn QC finding),
+# else `ok` — driving the digest line's ✅/⚠️/❌ symbol. Regenerating from the run logs each capture
+# (rather than diffing since a cutoff) is what makes the block a stable DAILY aggregate: N tasks that
+# finished hours apart all land in the one block regardless of when capture fired.
+function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},Dict{String,Vector{String}}}
     by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
     fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
     warn_imgs  = Dict{Tuple{String,String},Set{String}}()  # (module, fun-display) => images with a warn QC finding
-    warn_det   = Dict{String,Set{String}}()                # module => {"image — finding short"} (the WHAT)
+    # module => (code, base-short) => (channels, image names) — grouped so per-channel/per-image
+    # repetition of the SAME finding collapses to one "base — ch a-b (N images)" detail line.
+    warn_det   = Dict{String,Dict{Tuple{String,String},Tuple{Set{Int},Set{String}}}}()
     mod_sev    = Dict{String,String}()                     # module => "ok"|"warn"|"fail" (worst)
     bump(mod, sev) = (get(_SEV_RANK, sev, 0) > get(_SEV_RANK, get(mod_sev, mod, "ok"), 0)) &&
                      (mod_sev[mod] = sev)
-    max_at = String(cutoff)
     for img in images(proj)
         for e in read_run_log(img)
-            at = String(get(e, "at", ""))
-            at > cutoff || continue
+            startswith(String(get(e, "at", "")), day) || continue   # this day's runs only (local date)
             fun  = String(get(e, "fun", "?"))
             disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
             mod  = _category_of_fun(fun)
@@ -174,16 +211,19 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
                 bump(mod, "fail")
             else
-                shorts = _warn_finding_shorts(img, fun, vn)
-                if !isempty(shorts)
+                findings = _warn_findings(img, fun, vn)
+                if !isempty(findings)
                     push!(get!(warn_imgs, (mod, disp), Set{String}()), img.name)   # count the flagged images
-                    for s in shorts
-                        push!(get!(warn_det, mod, Set{String}()), "$(img.name) — $s")   # …and the WHAT
+                    g = get!(warn_det, mod, Dict{Tuple{String,String},Tuple{Set{Int},Set{String}}}())
+                    for (code, short, chan) in findings
+                        base = chan === nothing ? short : _strip_channel(short)
+                        chans, imgs = get!(g, (code, base), (Set{Int}(), Set{String}()))
+                        chan === nothing || push!(chans, chan)
+                        push!(imgs, img.name)
                     end
                     bump(mod, "warn")
                 end
             end
-            at > max_at && (max_at = at)
         end
     end
     out = Dict{String,Vector{String}}()
@@ -202,16 +242,22 @@ function _task_items_by_module(proj::CciaProject, cutoff::AbstractString)::Tuple
         end
         out[mod] = items
     end
-    # per-module finding-detail lines (sorted, capped) — the actual QC text, ↳-prefixed under the line
+    # per-module finding-detail lines (the actual QC text, ↳-prefixed under the line), collapsed by
+    # finding across channels + images, sorted by phrase, capped so a big cohort can't flood the entry.
     details = Dict{String,Vector{String}}()
-    for (mod, ds) in warn_det
-        sorted = sort(collect(ds))
-        details[mod] = length(sorted) > _MAX_DIGEST_DETAILS ?
-            vcat(["↳ " * d for d in sorted[1:_MAX_DIGEST_DETAILS]],
-                 ["↳ +$(length(sorted) - _MAX_DIGEST_DETAILS) more"]) :
-            ["↳ " * d for d in sorted]
+    for (mod, g) in warn_det
+        rendered = String[]
+        for (code, base) in sort(collect(keys(g)); by = kb -> kb[2])
+            chans, imgs = g[(code, base)]
+            loc  = length(imgs) <= 2 ? join(sort(collect(imgs)), ", ") : "$(length(imgs)) images"
+            chstr = isempty(chans) ? "" : " — ch " * _int_ranges(sort(collect(chans)))
+            push!(rendered, "↳ $base$chstr ($loc)")
+        end
+        details[mod] = length(rendered) > _MAX_DIGEST_DETAILS ?
+            vcat(rendered[1:_MAX_DIGEST_DETAILS], ["↳ +$(length(rendered) - _MAX_DIGEST_DETAILS) more"]) :
+            rendered
     end
-    (out, mod_sev, details, max_at)
+    (out, mod_sev, details)
 end
 
 # ── gating fingerprint + diff ─────────────────────────────────────────────────────
@@ -317,27 +363,35 @@ function _exclusion_items(prev::Vector{String}, cur::Vector{String}, name_of)::V
 end
 
 """
-Append a dated `[Cecelia]` digest of the NET change since the last capture, grouped by module
-category (the task-manager tags), collapsed across images. Advances the stored snapshot. Returns the
-appended block, or `nothing` when there is no (unmuted) change. First capture seeds baselines silently.
+Upsert the ROLLING DAILY `[Cecelia]` digest for `date` — the day's activity grouped by module category
+(the task-manager tags), collapsed across images. Regenerated from source each call and rewritten in
+place (see `upsert_daily_context_block!`): tasks come from the run logs dated that day (so long tasks
+finishing hours apart aggregate into the one block), gating/exclusion changes are the NET change since
+the START of the day (a baseline that resets when the day rolls over). Returns the block on a real
+change, or `nothing` when there's no (unmuted) activity or the block is unchanged from disk. The first
+capture of a day seeds the gating/exclusion baseline silently (no retro dump).
 """
 function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::Union{String,Nothing}
-    state   = _read_context_state(proj)
-    cutoff  = String(get(state, "lastCapturedAt", ""))
-    name_by = Dict(img.uid => img.name for img in images(proj))
+    state    = _read_context_state(proj)
+    day_str  = Dates.format(date, "yyyy-mm-dd")
+    name_by  = Dict(img.uid => img.name for img in images(proj))
     name_of(u) = get(name_by, String(u), String(u))
 
-    task_items, mod_sev, task_details, max_at = _task_items_by_module(proj, cutoff)
+    task_items, mod_sev, task_details = _task_items_by_module(proj, day_str)
 
-    cur_gating  = _gating_fingerprint(proj)
-    prev_gating = get(state, "gating", nothing)          # absent → first capture → seed silently
-    pop_items = prev_gating === nothing ? Dict{String,Vector{String}}() :
-                _pop_items_by_module(prev_gating, cur_gating, name_of)
+    cur_gating = _gating_fingerprint(proj)
+    cur_excl   = _excluded_uids(proj)
 
-    cur_excl  = _excluded_uids(proj)
-    prev_excl = get(state, "excluded", nothing)
-    excl_items = prev_excl === nothing ? String[] :
-                 _exclusion_items(String[String(u) for u in prev_excl], cur_excl, name_of)
+    # Day baseline: the gating/exclusion snapshot as of the START of `date`. On a new day (or the first
+    # ever capture) it resets to the CURRENT world, so the day opens with no pop/exclusion deltas and
+    # only genuine same-day changes accrue thereafter; within a day it is held fixed so the reported
+    # change is cumulative-net over the whole day (matching how tasks aggregate).
+    same_day   = String(get(state, "dayDate", "")) == day_str
+    day_gating = same_day ? get(state, "dayGating", Dict{String,Any}()) : cur_gating
+    day_excl   = same_day ? String[String(u) for u in get(state, "dayExcluded", String[])] : cur_excl
+
+    pop_items  = _pop_items_by_module(day_gating, cur_gating, name_of)
+    excl_items = _exclusion_items(day_excl, cur_excl, name_of)
 
     # merge every source into per-category item lists
     by_cat = Dict{String,Vector{String}}()
@@ -345,14 +399,14 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     for (cat, its) in pop_items;  append!(get!(by_cat, cat, String[]), its); end
     isempty(excl_items) || append!(get!(by_cat, CATEGORY_IMAGES, String[]), excl_items)
 
-    # always advance the snapshot (seeds baselines on first capture, absorbs muted-while changes)
-    state["lastCapturedAt"] = max_at
-    state["gating"]   = cur_gating
-    state["excluded"] = cur_excl
+    # persist the (possibly reset) day baseline — held across same-day captures, reset on rollover
+    state["dayDate"]     = day_str
+    state["dayGating"]   = day_gating
+    state["dayExcluded"] = day_excl
     _write_context_state!(proj, state)
 
     # one bullet per category, in task-manager order, skipping muted categories. Each line leads with a
-    # traffic-light symbol (✅/⚠️/❌) from the module's worst run outcome this window — so the reader
+    # traffic-light symbol (✅/⚠️/❌) from the module's worst run outcome this day — so the reader
     # sees at a glance which entries need attention. Non-task categories (populations, exclusions) have
     # no run severity ⇒ ✅ (informational).
     muted = Set(read_mutes(proj))
@@ -361,11 +415,11 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
         (cat in muted || isempty(by_cat[cat])) && continue
         sym = severity_symbol(get(mod_sev, cat, "ok"))
         push!(lines, "$sym $cat — " * join(by_cat[cat], "; "))
-        # under a flagged category, spell out the actual QC findings (image — what's wrong) so the lab
-        # log carries the real signal, not just a "N flagged" count the user has to go hover a tag for.
+        # under a flagged category, spell out the actual QC findings (what's wrong) so the lab log
+        # carries the real signal, not just a "N flagged" count the user has to go hover a tag for.
         append!(lines, get(task_details, cat, String[]))
     end
 
     isempty(lines) && return nothing
-    append_lab_log!(proj, CONTEXT_AUTHOR, lines; date = date)
+    upsert_daily_context_block!(proj, CONTEXT_AUTHOR, lines; date = date)
 end
