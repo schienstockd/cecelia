@@ -262,41 +262,56 @@ async function dismissEntry(entry: LabLogEntry) {
       </div>
     </div>
 
-    <!-- activity capture: manual button + auto-on-open toggle -->
+    <!-- controls in two slots: Cecelia (the app's own activity digest) | Claude (the AI assistant) -->
     <div class="ll-toolbar">
-      <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
-              v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
-        <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
-      </button>
-      <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
-        <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
-      </label>
-      <button class="ll-help" @click="showClaudeOverview = true"
-              v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
-        <i class="pi pi-question-circle" />
-      </button>
-      <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
-              @click="askClaude"
-              v-tooltip.top="observerAvailable
-                ? 'Ask the assistant to review recent activity and note anything worth flagging in the lab log'
-                : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
-        <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
-      </button>
-      <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
-              v-tooltip.top="'Which model Ask Claude runs. Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
-        <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
-      </select>
-      <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
-           one-shot. Copies a starter prompt; no `claude` install needed. -->
-      <button class="ll-capture" :class="{ copied: chatCopied }" :disabled="!projectUid" @click="chatToClaude"
-              v-tooltip.top="chatCopied ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
-                : 'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
-        <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
-      </button>
-      <span v-if="observerTokens" class="ll-tokens"
-            v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
-      <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
-              v-tooltip.top="'Clear the assistant session and reset the token count'">clear</button>
+      <!-- Cecelia: manual capture + auto-on-open + the view toggle for its uid-based digest -->
+      <div class="ll-tb-group">
+        <button class="ll-capture" :disabled="!projectUid || capturing" @click="capture(false)"
+                v-tooltip.top="'Append an app-generated [Cecelia] digest of recent activity (tasks run, …)'">
+          <i class="pi pi-history" /> {{ capturing ? 'Capturing…' : 'Capture activity' }}
+        </button>
+        <label class="ll-auto" v-tooltip.top="'Auto-capture Cecelia activity digests — when this project opens and after tasks finish'">
+          <input type="checkbox" v-model="settings.labLogAutoContext" /> Auto
+        </label>
+        <!-- image refs are stored as stable UIDs; opt in to showing current names -->
+        <label v-if="projectUid && hasImageNames" class="ll-auto"
+               v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'">
+          <input type="checkbox" v-model="settings.labLogShowNames" /> Show names
+        </label>
+      </div>
+
+      <span class="ll-tb-sep" aria-hidden="true" />
+
+      <!-- Claude: the AI assistant (in-app one-shot + external chat handoff) -->
+      <div class="ll-tb-group">
+        <button class="ll-help" @click="showClaudeOverview = true"
+                v-tooltip.top="'What can Claude do here? Ask vs Chat, what it sees / suggests / creates'">
+          <i class="pi pi-question-circle" />
+        </button>
+        <button class="ll-capture" :disabled="!projectUid || observerBusy || !observerAvailable"
+                @click="askClaude"
+                v-tooltip.top="observerAvailable
+                  ? 'Ask the assistant to review recent activity and note anything worth flagging in the lab log'
+                  : 'Needs Claude Code — with it, an assistant can watch your analysis and note things in the lab log'">
+          <i class="pi pi-sparkles" /> {{ observerBusy ? 'Asking…' : 'Ask Claude' }}
+        </button>
+        <select v-if="observerAvailable" class="ll-model" v-model="settings.labLogObserverModel"
+                v-tooltip.top="'Which model Ask Claude runs. Sonnet is the default; Haiku is cheapest, Opus is overkill here.'">
+          <option v-for="m in observerModels" :key="m" :value="m">{{ m }}</option>
+        </select>
+        <!-- Chat to Claude: hand off to a FULL external session (any MCP assistant), not the in-app
+             one-shot. Copies a starter prompt; no `claude` install needed. -->
+        <button class="ll-capture" :class="{ copied: chatCopied }" :disabled="!projectUid" @click="chatToClaude"
+                v-tooltip.top="chatCopied ? 'Prompt copied — paste it into Claude (or any MCP chat bot)'
+                  : 'Copy a starter prompt to your clipboard — paste it into Claude Code (or any MCP assistant) for a full chat about this project'">
+          <i :class="['pi', chatCopied ? 'pi-check' : 'pi-comments']" /> {{ chatCopied ? 'Copied' : 'Chat to Claude' }}
+        </button>
+        <span v-if="observerTokens" class="ll-tokens"
+              v-tooltip.top="'Assistant token use for this observer session (real usage)'">{{ observerTokens }}</span>
+        <button v-if="observerTokens" class="ll-clearctx" @click="clearContext"
+                v-tooltip.top="'Clear the assistant session and reset the token count'">clear</button>
+      </div>
+
       <span v-if="captureNote" class="ll-note">{{ captureNote }}</span>
     </div>
 
@@ -330,14 +345,6 @@ async function dismissEntry(entry: LabLogEntry) {
         <div v-if="p.note" class="ll-pass-note">{{ p.note }}</div>
       </div>
     </details>
-
-    <!-- view options: image refs are stored as stable UIDs; opt in to showing current names -->
-    <div v-if="projectUid && hasImageNames" class="ll-viewbar">
-      <label class="ll-shownames"
-             v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'">
-        <input type="checkbox" v-model="settings.labLogShowNames" /> Show image names
-      </label>
-    </div>
 
     <div v-if="error" class="ll-error">{{ error }}</div>
 
@@ -408,9 +415,13 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-save:disabled { opacity: 0.5; cursor: default; }
 
 .ll-toolbar {
-  display: flex; align-items: center; gap: 0.6rem;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem;
   padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
 }
+/* two control slots (Cecelia | Claude), each an inline row; the divider sits between them and the
+   whole bar wraps as a unit when the panel is narrow (a group drops to the next line intact). */
+.ll-tb-group { display: inline-flex; align-items: center; gap: 0.5rem; }
+.ll-tb-sep { align-self: stretch; width: 1px; min-height: 1.1rem; background: var(--cc-border); }
 .ll-capture {
   display: inline-flex; align-items: center; gap: 0.3rem;
   border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text);
@@ -430,8 +441,10 @@ async function dismissEntry(entry: LabLogEntry) {
   font-size: 0.66rem; color: var(--cc-text-dim); cursor: pointer; padding: 0.05rem 0.2rem;
   background: var(--cc-surface); border: 1px solid var(--cc-border); border-radius: 3px;
 }
+/* capture status: floats to the far right of the whole bar (direct toolbar child) */
 .ll-note { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
-.ll-tokens { font-size: 0.66rem; color: var(--cc-text-dim); margin-left: auto; }
+/* token readout sits inline within the Claude group (no auto-margin — it's not a toolbar child) */
+.ll-tokens { font-size: 0.66rem; color: var(--cc-text-dim); }
 .ll-clearctx {
   border: none; background: transparent; color: var(--cc-text-dim);
   font-size: 0.66rem; cursor: pointer; text-decoration: underline; padding: 0;
@@ -466,16 +479,6 @@ async function dismissEntry(entry: LabLogEntry) {
 .ll-pass-meta { color: var(--cc-text-dim); }
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
-
-/* view-options bar: a single right-aligned "Show image names" toggle */
-.ll-viewbar {
-  display: flex; justify-content: flex-end; align-items: center;
-  padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
-}
-.ll-shownames {
-  display: inline-flex; align-items: center; gap: 0.25rem;
-  font-size: 0.68rem; color: var(--cc-text-dim); cursor: pointer;
-}
 
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 
