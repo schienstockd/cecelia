@@ -125,10 +125,14 @@ const attrFilters    = ref<Record<string, string[]>>({})
 const appliedFilters = ref<Record<string, string[]>>({})
 const filterInvert   = ref(false)
 
-// the filter is a dropdown off the action bar, COLLAPSED by default; state persists per module (UI.md)
+// Attributes and processing-history are two separate dropdowns off the action bar (Filter / Task),
+// each COLLAPSED by default with its own open-state persisted per module (UI.md).
 const filterKey = computed(() => `cc-filters-open:${props.module ?? 'default'}`)
 const filtersOpen = ref(localStorage.getItem(`cc-filters-open:${props.module ?? 'default'}`) === '1')
 watch(filtersOpen, v => { try { localStorage.setItem(filterKey.value, v ? '1' : '0') } catch { /* ignore */ } })
+const taskKey = computed(() => `cc-task-open:${props.module ?? 'default'}`)
+const taskOpen = ref(localStorage.getItem(`cc-task-open:${props.module ?? 'default'}`) === '1')
+watch(taskOpen, v => { try { localStorage.setItem(taskKey.value, v ? '1' : '0') } catch { /* ignore */ } })
 
 // ── Hide-excluded toggle ────────────────────────────────────────────────────────
 // Excluded images are shown greyed by DEFAULT (not hidden). This toggle — the button next to Filter
@@ -207,7 +211,6 @@ function resetFilters() {
   attrFilters.value    = {}
   appliedFilters.value = {}
   filterInvert.value   = false
-  procFun.value        = ''
 }
 
 const filteredUids = computed<string[] | undefined>(() => {
@@ -349,21 +352,31 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">Imported {{ importedCount }}</span>
             </button>
 
-            <button v-if="showFilter && (attrKeys.length > 0 || runFuns.length > 0)"
-              class="filter-toggle" :class="{ active: hasApplied || procActive || filtersOpen }"
+            <!-- Task: filter to images a given function has been run on (own dropdown) -->
+            <button v-if="showFilter && runFuns.length > 0"
+              class="filter-toggle" :class="{ active: procActive || taskOpen }"
+              @click="taskOpen = !taskOpen"
+              v-tooltip.left="taskOpen ? 'Hide task filter' : 'Filter images by processing history'">
+              <i class="pi pi-list-check" />
+              <span class="filter-label">Task{{ procActive ? ' •' : '' }}</span>
+              <i :class="['pi', taskOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
+            </button>
+
+            <!-- Filter: filter to images by attribute value (own dropdown) -->
+            <button v-if="showFilter && attrKeys.length > 0"
+              class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
               @click="filtersOpen = !filtersOpen"
-              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute or processing history'">
+              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute'">
               <i class="pi pi-filter" />
-              <span class="filter-label">Filter{{ (hasApplied || procActive) ? ' •' : '' }}</span>
+              <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
           </div>
         </div>
 
-        <!-- filter dropdown (attributes + processing history) — only when open -->
-        <div v-if="showFilter && activeSet && (attrKeys.length > 0 || runFuns.length > 0) && filtersOpen" class="attr-filter">
-          <!-- processed-with: filter to images a given function has been run on (ever / on last run) -->
-          <div v-if="runFuns.length > 0" class="filter-row proc-row">
+        <!-- Task dropdown: filter to images a given function has been run on (ever / on last run) -->
+        <div v-if="showFilter && activeSet && runFuns.length > 0 && taskOpen" class="attr-filter">
+          <div class="filter-row proc-row">
             <span class="filter-key" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
             <div class="proc-controls">
               <select v-model="procFun" class="proc-select"
@@ -381,6 +394,10 @@ const visibleUids = computed<string[]>(() =>
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Filter dropdown: attribute-value chips — only when open -->
+        <div v-if="showFilter && activeSet && attrKeys.length > 0 && filtersOpen" class="attr-filter">
           <div class="filter-rows">
             <div v-for="key in attrKeys" :key="key" class="filter-row">
               <span class="filter-key" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
@@ -398,8 +415,8 @@ const visibleUids = computed<string[]>(() =>
           <div class="filter-actions">
             <button class="cc-btn cc-btn-ghost" :disabled="!hasFilters" @click="applyFilters"
               v-tooltip.top="'Apply selected filters to the image list.'">Apply</button>
-            <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters && !procFun" @click="resetFilters"
-              v-tooltip.top="'Clear all filters.'">Reset</button>
+            <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters" @click="resetFilters"
+              v-tooltip.top="'Clear the attribute filters.'">Reset</button>
             <label class="filter-invert" v-tooltip.top="'Invert the filter — show images that do NOT match.'">
               <input type="checkbox" v-model="filterInvert" :disabled="!hasApplied" />
               Invert
@@ -637,8 +654,7 @@ const visibleUids = computed<string[]>(() =>
 .filter-invert input { cursor: pointer; }
 .filter-invert:has(input:disabled) { opacity: 0.4; cursor: not-allowed; }
 
-/* processed-with filter row (function picker + ever/last mode) */
-.proc-row { padding-bottom: 0.45rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--cc-border); }
+/* processed-with filter row (function picker + ever/last mode) — its own dropdown, no divider */
 .proc-row .filter-key { min-width: 104px; }
 .proc-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
 .proc-select {
