@@ -68,7 +68,7 @@ end
 # nothing has to be maintained here: a task's category is read from its spec, so new tasks/categories
 # appear automatically. Non-task activity maps to the nearest tag: gate pops → "Gating", cluster pops
 # → "Clustering" (matching the clustPops/clustTracks task category), exclusions → "Manage images".
-# Digest order + mute keys are these categories; muting is lenient (any category string).
+# Digest order follows these categories; extras (custom modules) are appended alphabetically.
 const CATEGORY_GATING = "Gating"
 const CATEGORY_IMAGES = "Manage images"
 # preferred display/mute order; categories not listed are appended alphabetically (stays general).
@@ -89,40 +89,12 @@ end
 _category_of_pop_type(pt::AbstractString)::String =
     String(pt) in ("clust", "trackclust", "region") ? "Clustering" : CATEGORY_GATING
 
-"""All digest categories the app can emit — task categories (from the registry, generic) plus the
-non-task ones. Ordered by `_CATEGORY_ORDER`, extras appended. Backs the panel's per-category mutes."""
-function lab_log_categories()::Vector{String}
-    cats = Set{String}([CATEGORY_GATING, "Clustering", CATEGORY_IMAGES])
-    # built-ins (static registry) PLUS loaded custom modules (runtime registry) — so a new task/page,
-    # or a user's custom-module category (e.g. customExamples), appears automatically with no change here.
-    for fun in vcat(collect(keys(_fun_name_map())), collect(_custom_task_keys()))
-        push!(cats, _category_of_fun(fun))
-    end
-    ordered = String[c for c in _CATEGORY_ORDER if c in cats]
-    vcat(ordered, sort(String[c for c in cats if !(c in _CATEGORY_ORDER)]))
-end
-
-# Categories that are OPERATIONS — an action, not a module page (crop lives in Edit; include/exclude in
-# Manage images). Everything else the app emits is a module page. Small + explicit; the mute bar shows
-# these as one general "Operations" group, separate from the per-module-page chips.
-const _OPERATION_CATEGORIES = ("Manage images", "Edit")
-_is_operation_category(c::AbstractString)::Bool = String(c) in _OPERATION_CATEGORIES
-
-"""Module-page digest categories — everything `lab_log_categories` can emit that ISN'T an operation —
-ordered by `_CATEGORY_ORDER`. Backs the mute bar's 'Module pages' group (all pages, always shown)."""
-lab_log_page_categories()::Vector{String} =
-    String[c for c in lab_log_categories() if !_is_operation_category(c)]
-
-"""Operation digest categories (actions with no module page of their own — Edit, Manage images),
-ordered by `_CATEGORY_ORDER`. Backs the mute bar's general 'Operations' group."""
-lab_log_operation_categories()::Vector{String} =
-    String[c for c in lab_log_categories() if _is_operation_category(c)]
-
 # rank for digest ordering (index in _CATEGORY_ORDER; unknown categories sort last, then alphabetical)
 _category_rank(c::AbstractString)::Int = (i = findfirst(==(String(c)), _CATEGORY_ORDER); i === nothing ? typemax(Int) : i)
 
-# "N images" for a big cohort, else the names — the collapse that turns per-image repetition into one.
-_where(names)::String = (n = length(names); n <= 2 ? join(sort(collect(names)), ", ") : "$n images")
+# "N images" for a big cohort, else the uids — the collapse that turns per-image repetition into one.
+# Images are referenced by stable uid (names change); the panel resolves uid→name on demand.
+_where(uids)::String = (n = length(uids); n <= 2 ? join(sort(collect(uids)), ", ") : "$n images")
 
 # ── tasks (run logs) → per-module items ───────────────────────────────────────────
 # The digest is DAY-scoped: a run-log entry belongs to the block for the local date in its `at`
@@ -189,10 +161,10 @@ const _MAX_DIGEST_DETAILS = 8   # cap the per-module finding-detail lines so a b
 # (rather than diffing since a cutoff) is what makes the block a stable DAILY aggregate: N tasks that
 # finished hours apart all land in the one block regardless of when capture fired.
 function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Dict{String,Vector{String}},Dict{String,String},Dict{String,Vector{String}}}
-    by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image names
+    by_mod_fun = Dict{String,Dict{String,Set{String}}}()   # module => fun-display => image uids
     fail_count = Dict{Tuple{String,String},Int}()          # (module, fun-display) => # failed runs
     warn_imgs  = Dict{Tuple{String,String},Set{String}}()  # (module, fun-display) => images with a warn QC finding
-    # module => (code, base-short) => (channels, image names) — grouped so per-channel/per-image
+    # module => (code, base-short) => (channels, image uids) — grouped so per-channel/per-image
     # repetition of the SAME finding collapses to one "base — ch a-b (N images)" detail line.
     warn_det   = Dict{String,Dict{Tuple{String,String},Tuple{Set{Int},Set{String}}}}()
     mod_sev    = Dict{String,String}()                     # module => "ok"|"warn"|"fail" (worst)
@@ -205,7 +177,7 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             disp = occursin(".", fun) ? String(split(fun, "."; limit = 2)[2]) : fun
             mod  = _category_of_fun(fun)
             vn   = String(get(e, "valueName", ""))
-            push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.name)
+            push!(get!(get!(by_mod_fun, mod, Dict{String,Set{String}}()), disp, Set{String}()), img.uid)
             get!(mod_sev, mod, "ok")
             if String(get(e, "status", "done")) == "failed"
                 fail_count[(mod, disp)] = get(fail_count, (mod, disp), 0) + 1   # surface failures too
@@ -213,13 +185,13 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
             else
                 findings = _warn_findings(img, fun, vn)
                 if !isempty(findings)
-                    push!(get!(warn_imgs, (mod, disp), Set{String}()), img.name)   # count the flagged images
+                    push!(get!(warn_imgs, (mod, disp), Set{String}()), img.uid)   # count the flagged images
                     g = get!(warn_det, mod, Dict{Tuple{String,String},Tuple{Set{Int},Set{String}}}())
                     for (code, short, chan) in findings
                         base = chan === nothing ? short : _strip_channel(short)
                         chans, imgs = get!(g, (code, base), (Set{Int}(), Set{String}()))
                         chan === nothing || push!(chans, chan)
-                        push!(imgs, img.name)
+                        push!(imgs, img.uid)
                     end
                     bump(mod, "warn")
                 end
@@ -230,10 +202,10 @@ function _task_items_by_module(proj::CciaProject, day::AbstractString)::Tuple{Di
     for (mod, funs) in by_mod_fun
         items = String[]
         for disp in sort(collect(keys(funs)))
-            names = funs[disp]
-            n  = length(names)
+            uids = funs[disp]
+            n  = length(uids)
             item = "$disp on $n image$(n == 1 ? "" : "s")"
-            n <= 2 && (item *= " ($(join(sort(collect(names)), ", ")))")   # name them when few; for more, the count says it
+            n <= 2 && (item *= " ($(join(sort(collect(uids)), ", ")))")   # list uids when few; for more, the count says it
             w  = length(get(warn_imgs, (mod, disp), Set{String}()))
             fc = get(fail_count, (mod, disp), 0)
             w  > 0 && (item *= " — $w flagged")   # how many banked a warn QC finding (not just that one did)
@@ -313,13 +285,13 @@ _key_pop_type(k::AbstractString)::String   = String(split(k, "|")[2])
 # Populations → per-category items. Aggregates changes ACROSS images by (category, verb, popname) →
 # image-set, then collapses pops that share an image-set into one item — so a cohort-wide edit is one
 # line ("redefined: Directed, Meandering, Scanning (8 images)"), not one line per image.
-function _pop_items_by_module(prev::AbstractDict, cur::AbstractDict, name_of)::Dict{String,Vector{String}}
-    acc = Dict{String,Dict{Symbol,Dict{String,Set{String}}}}()   # category => verb => pop => image names
+function _pop_items_by_module(prev::AbstractDict, cur::AbstractDict)::Dict{String,Vector{String}}
+    acc = Dict{String,Dict{Symbol,Dict{String,Set{String}}}}()   # category => verb => pop => image uids
     add!(cat, verb, pop, img) = push!(
         get!(get!(get!(acc, cat, Dict{Symbol,Dict{String,Set{String}}}()), verb, Dict{String,Set{String}}()),
              pop, Set{String}()), img)
     for u in union(keys(prev), keys(cur))
-        nm = name_of(u)
+        nm = String(u)   # reference images by stable uid; the panel resolves uid→name on demand
         p = get(prev, u, Dict{String,Any}())
         c = get(cur, u, Dict{String,Any}())
         for k in keys(c); haskey(p, k) || add!(_category_of_pop_type(_key_pop_type(k)), :added,   _popname_of_key(k), nm); end
@@ -352,13 +324,14 @@ end
 _excluded_uids(proj::CciaProject)::Vector{String} =
     sort(String[img.uid for img in images(proj) if !image_included(img)])
 
-function _exclusion_items(prev::Vector{String}, cur::Vector{String}, name_of)::Vector{String}
+function _exclusion_items(prev::Vector{String}, cur::Vector{String})::Vector{String}
     ps, cs = Set(prev), Set(cur)
     newly_ex = sort(String[u for u in cur if !(u in ps)])
     newly_in = sort(String[u for u in prev if !(u in cs)])
     items = String[]
-    isempty(newly_ex) || push!(items, "excluded $(_where(String[name_of(u) for u in newly_ex]))")
-    isempty(newly_in) || push!(items, "re-included $(_where(String[name_of(u) for u in newly_in]))")
+    # reference images by stable uid; the panel resolves uid→name on demand
+    isempty(newly_ex) || push!(items, "excluded $(_where(newly_ex))")
+    isempty(newly_in) || push!(items, "re-included $(_where(newly_in))")
     items
 end
 
@@ -374,8 +347,6 @@ capture of a day seeds the gating/exclusion baseline silently (no retro dump).
 function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::Union{String,Nothing}
     state    = _read_context_state(proj)
     day_str  = Dates.format(date, "yyyy-mm-dd")
-    name_by  = Dict(img.uid => img.name for img in images(proj))
-    name_of(u) = get(name_by, String(u), String(u))
 
     task_items, mod_sev, task_details = _task_items_by_module(proj, day_str)
 
@@ -390,8 +361,8 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     day_gating = same_day ? get(state, "dayGating", Dict{String,Any}()) : cur_gating
     day_excl   = same_day ? String[String(u) for u in get(state, "dayExcluded", String[])] : cur_excl
 
-    pop_items  = _pop_items_by_module(day_gating, cur_gating, name_of)
-    excl_items = _exclusion_items(day_excl, cur_excl, name_of)
+    pop_items  = _pop_items_by_module(day_gating, cur_gating)
+    excl_items = _exclusion_items(day_excl, cur_excl)
 
     # merge every source into per-category item lists
     by_cat = Dict{String,Vector{String}}()
@@ -405,14 +376,13 @@ function capture_context!(proj::CciaProject; date::Dates.Date = Dates.today())::
     state["dayExcluded"] = day_excl
     _write_context_state!(proj, state)
 
-    # one bullet per category, in task-manager order, skipping muted categories. Each line leads with a
-    # traffic-light symbol (✅/⚠️/❌) from the module's worst run outcome this day — so the reader
-    # sees at a glance which entries need attention. Non-task categories (populations, exclusions) have
-    # no run severity ⇒ ✅ (informational).
-    muted = Set(read_mutes(proj))
+    # one bullet per category, in task-manager order. Each line leads with a traffic-light symbol
+    # (✅/⚠️/❌) from the module's worst run outcome this day — so the reader sees at a glance which
+    # entries need attention. Non-task categories (populations, exclusions) have no run severity ⇒ ✅
+    # (informational).
     lines = String[]
     for cat in sort(collect(keys(by_cat)); by = c -> (_category_rank(c), c))
-        (cat in muted || isempty(by_cat[cat])) && continue
+        isempty(by_cat[cat]) && continue
         sym = severity_symbol(get(mod_sev, cat, "ok"))
         push!(lines, "$sym $cat — " * join(by_cat[cat], "; "))
         # under a flagged category, spell out the actual QC findings (what's wrong) so the lab log

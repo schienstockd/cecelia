@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   authorKind, correctionPrefill, draftToLines, unseenClaudeCount,
-  entryId, decisionPrefill, isRatable, muteGroups, muteCategoryLabel, visibleEntries,
+  entryId, decisionPrefill, isRatable, resolveImageRefs, visibleEntries,
   type LabLogEntry,
 } from './labLog'
 
@@ -37,33 +37,25 @@ describe('labLog.draftToLines', () => {
   })
 })
 
-describe('labLog.muteGroups', () => {
-  it('splits into all pages + a general operations group, keeping order', () => {
-    const g = muteGroups(['Segment', 'Gating', 'Clustering'], ['Edit', 'Manage images'], ['Gating'])
-    expect(g.pages).toEqual(['Segment', 'Gating', 'Clustering'])   // all pages, always
-    expect(g.operations).toEqual(['Edit', 'Manage images'])
+describe('labLog.resolveImageRefs', () => {
+  const map = { ab12cd: 'M1c-MERTK', ef34gh: 'M2b-WT' }
+  it('swaps known UID tokens for names, in-place', () => {
+    expect(resolveImageRefs('cellpose on 2 images (ab12cd, ef34gh)', map))
+      .toBe('cellpose on 2 images (M1c-MERTK, M2b-WT)')
   })
-  it('folds an orphaned mute (in neither list) into operations so it can be un-muted', () => {
-    const g = muteGroups(['Segment'], ['Edit'], ['OldCustom', 'Segment'])
-    expect(g.pages).toEqual(['Segment'])
-    expect(g.operations).toEqual(['Edit', 'OldCustom'])            // orphan appended to operations
+  it('resolves a UID inside a detail line', () => {
+    expect(resolveImageRefs('↳ may have a hot pixel — ch 0-3 (ab12cd)', map))
+      .toBe('↳ may have a hot pixel — ch 0-3 (M1c-MERTK)')
   })
-  it('handles empty / missing inputs', () => {
-    expect(muteGroups([], [], [])).toEqual({ pages: [], operations: [] })
-    expect(muteGroups(undefined as any, undefined as any, undefined as any))
-      .toEqual({ pages: [], operations: [] })
+  it('leaves unknown UIDs and other text untouched', () => {
+    expect(resolveImageRefs('excluded zz99xx', map)).toBe('excluded zz99xx')
+    expect(resolveImageRefs('3 images', map)).toBe('3 images')
   })
-})
-
-describe('labLog.muteCategoryLabel', () => {
-  it('capitalises the first letter so chips read uniformly', () => {
-    expect(muteCategoryLabel('import')).toBe('Import')      // task-spec lower-case tag
-    expect(muteCategoryLabel('Segment')).toBe('Segment')    // already title-case → unchanged
-    expect(muteCategoryLabel('Manage images')).toBe('Manage images')
+  it('matches whole tokens only (a UID as a substring of a longer word is left alone)', () => {
+    expect(resolveImageRefs('ab12cdef is not the image', map)).toBe('ab12cdef is not the image')
   })
-  it('handles empty / missing input', () => {
-    expect(muteCategoryLabel('')).toBe('')
-    expect(muteCategoryLabel(undefined as any)).toBe('')
+  it('returns text unchanged for an empty map', () => {
+    expect(resolveImageRefs('(ab12cd)', {})).toBe('(ab12cd)')
   })
 })
 

@@ -14,8 +14,8 @@ import { buildChatPrompt } from '../lib/chatHandoff'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import ClaudeOverviewDialog from './ClaudeOverviewDialog.vue'
 import {
-  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, muteGroups,
-  muteCategoryLabel, visibleEntries as computeVisibleEntries,
+  authorKind, correctionPrefill, draftToLines, entryId, decisionPrefill, isRatable, resolveImageRefs,
+  visibleEntries as computeVisibleEntries,
   USER_AUTHOR, CORRECTION_AUTHOR, type LabLogEntry, type Vote,
 } from '../utils/labLog'
 
@@ -33,12 +33,8 @@ const showClaudeOverview = ref(false)   // the "What can Claude do here?" how-to
 const captureNote = ref('')        // transient result of the last manual capture
 const error = ref('')
 const inputEl = ref<HTMLTextAreaElement | null>(null)
-const tuning = ref<Record<string, Vote>>({})   // entryId → tuning vote (config, NOT the log)
-const mutes = ref<string[]>([])                // muted digest categories (config, NOT the log)
-const pageCategories = ref<string[]>([])       // module-page digest categories (mute chips: Pages group)
-const operationCategories = ref<string[]>([])  // operation digest categories (mute chips: Operations group)
 const dismissed = ref<string[]>([])            // hidden entry ids (config sidecar, NOT the log — append-only)
-const mode = computed(() => settings.labLogMode)
+const imageNames = ref<Record<string, string>>({})   // uid → current name, for the "Show names" toggle
 // AI observer (in-app assistant, on-demand only). State lives in the observer STORE (survives this
 // v-if'd panel closing); the panel just drives the "Ask Claude" pass + shows its activity.
 const observer = useObserverStore()
@@ -87,12 +83,17 @@ const observerTokens = computed(() => {
   const fmt = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : `${total}`
   return `~${fmt} tokens · ${s.turns} turn${s.turns === 1 ? '' : 's'}`
 })
-// two mute groups: all module pages, and a general Operations group (orphaned mutes fold into it)
-const muteGroupsView = computed(() => muteGroups(pageCategories.value, operationCategories.value, mutes.value))
-const voteOf = (e: LabLogEntry): Vote | undefined => tuning.value[entryId(e.raw)]
 // entries shown in the panel: hidden (dismissed) ids filtered out. The log FILE still contains them —
 // hide is view-only (a config sidecar), so the append-only methodology record is preserved.
 const visibleEntries = computed(() => computeVisibleEntries(entries.value, dismissed.value))
+
+// A displayed bullet line: image references are stored as stable UIDs; when "Show names" is on, swap
+// each known UID for its current name (resolved against live project data — a rename shows through
+// with no rewrite of the log). Off (default) shows the compact, stable UIDs as stored.
+const hasImageNames = computed(() => Object.keys(imageNames.value).length > 0)
+function renderLine(line: string): string {
+  return settings.labLogShowNames ? resolveImageRefs(line, imageNames.value) : line
+}
 
 async function load() {
   error.value = ''
@@ -103,11 +104,8 @@ async function load() {
     if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
     const body = await r.json()
     entries.value = body.entries ?? []
-    tuning.value = body.tuning ?? {}
-    mutes.value = body.mutes ?? []
-    pageCategories.value = body.pageCategories ?? []
-    operationCategories.value = body.operationCategories ?? []
     dismissed.value = body.dismissed ?? []
+    imageNames.value = body.imageNames ?? {}
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
     entries.value = []
@@ -220,24 +218,6 @@ async function startComment(entry: LabLogEntry) {
   await nextTick(); inputEl.value?.focus()
 }
 
-// Tuning mode: a thumb rates the ENTRY TYPE (useful/noise) → config sidecar; clicking the active
-// vote again clears it. Never touches the log.
-async function tune(entry: LabLogEntry, vote: Vote) {
-  if (!projectUid.value) return
-  const id = entryId(entry.raw)
-  const next: '' | Vote = tuning.value[id] === vote ? '' : vote
-  try {
-    const r = await fetch('/api/lablog/tune', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, id, vote: next }),
-    })
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    tuning.value = (await r.json()).tuning ?? {}
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
 // Hide an entry from the panel. The lab-log FILE is never edited (append-only); this writes the id to
 // a config sidecar and filters it out of the view. Two-click armed via ConfirmDeleteButton.
 async function dismissEntry(entry: LabLogEntry) {
@@ -250,22 +230,6 @@ async function dismissEntry(entry: LabLogEntry) {
     })
     if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
     dismissed.value = (await r.json()).dismissed ?? dismissed.value
-  } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
-  }
-}
-
-// Mute/unmute a whole digest category from future captures (config sidecar, not the log).
-async function toggleMute(category: string) {
-  if (!projectUid.value) return
-  const muted = !mutes.value.includes(category)
-  try {
-    const r = await fetch('/api/lablog/mute', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectUid: projectUid.value, category, muted }),
-    })
-    if (!r.ok) throw new Error((await r.json()).error ?? `HTTP ${r.status}`)
-    mutes.value = (await r.json()).mutes ?? []
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   }
@@ -367,43 +331,12 @@ async function toggleMute(category: string) {
       </div>
     </details>
 
-    <!-- feedback mode: what 👍/👎 mean on the auto/AI entries -->
-    <div class="ll-modebar">
-      <span class="ll-modelabel">Rating:</span>
-      <button class="ll-modebtn" :class="{ on: mode === 'notes' }" @click="settings.labLogMode = 'notes'"
-              v-tooltip.top="'Thumbs + comment judge the DECISION → saved as a note in the log'">decisions</button>
-      <button class="ll-modebtn" :class="{ on: mode === 'tuning' }" @click="settings.labLogMode = 'tuning'"
-              v-tooltip.top="'Thumbs judge the ENTRY TYPE (useful / noise) → tunes what gets logged, not the log'">entry types</button>
-    </div>
-
-    <!-- Mute [Cecelia] auto-digest categories (Tuning mode). Two groups: every module page, and a
-         general Operations group (Edit, Manage images — actions with no page of their own). Muting a
-         category stops its [Cecelia] activity lines; your own notes + Claude entries are never muted. -->
-    <div v-if="mode === 'tuning' && projectUid" class="ll-mutebar">
-      <span class="ll-modelabel ll-mutelabel"
-            v-tooltip.top="'Categories Cecelia auto-logs. Click one to mute its [Cecelia] activity lines — only these auto-digests, never your notes or Claude entries.'">
-        <i class="pi pi-bell-slash" /> Mute Cecelia digests:
-      </span>
-      <div class="ll-mutegroup">
-        <span class="ll-mutegrouplabel">Module pages</span>
-        <div class="ll-mutechips">
-          <button v-for="c in muteGroupsView.pages" :key="c" class="ll-mutebtn"
-                  :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
-                  v-tooltip.top="mutes.includes(c) ? `Muted — click to log ${muteCategoryLabel(c)} again` : `Stop logging ${muteCategoryLabel(c)} activity`">
-            {{ muteCategoryLabel(c) }}
-          </button>
-        </div>
-      </div>
-      <div v-if="muteGroupsView.operations.length" class="ll-mutegroup">
-        <span class="ll-mutegrouplabel">Operations</span>
-        <div class="ll-mutechips">
-          <button v-for="c in muteGroupsView.operations" :key="c" class="ll-mutebtn"
-                  :class="{ muted: mutes.includes(c) }" @click="toggleMute(c)"
-                  v-tooltip.top="mutes.includes(c) ? `Muted — click to log ${muteCategoryLabel(c)} again` : `Stop logging ${muteCategoryLabel(c)} activity`">
-            {{ muteCategoryLabel(c) }}
-          </button>
-        </div>
-      </div>
+    <!-- view options: image refs are stored as stable UIDs; opt in to showing current names -->
+    <div v-if="projectUid && hasImageNames" class="ll-viewbar">
+      <label class="ll-shownames"
+             v-tooltip.top="'Image references are stored as stable IDs (names can change). Show their current names instead.'">
+        <input type="checkbox" v-model="settings.labLogShowNames" /> Show image names
+      </label>
     </div>
 
     <div v-if="error" class="ll-error">{{ error }}</div>
@@ -422,13 +355,11 @@ async function toggleMute(category: string) {
             <span class="ll-date">{{ e.date }}</span>
             <span class="ll-actions">
               <template v-if="isRatable(e.author)">
-                <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'up' }"
-                        v-tooltip.top="mode === 'notes' ? 'Good decision — add a note' : 'Useful entry type'"
-                        @click="mode === 'notes' ? rateDecision(e, 'up') : tune(e, 'up')">👍</button>
-                <button class="ll-thumb" :class="{ voted: mode === 'tuning' && voteOf(e) === 'down' }"
-                        v-tooltip.top="mode === 'notes' ? 'Bad decision — add a note' : 'Noisy entry type'"
-                        @click="mode === 'notes' ? rateDecision(e, 'down') : tune(e, 'down')">👎</button>
-                <button v-if="mode === 'notes'" class="ll-link" v-tooltip.top="'Comment (saved as a note)'"
+                <button class="ll-thumb" v-tooltip.top="'Good decision — add a note'"
+                        @click="rateDecision(e, 'up')">👍</button>
+                <button class="ll-thumb" v-tooltip.top="'Bad decision — add a note'"
+                        @click="rateDecision(e, 'down')">👎</button>
+                <button class="ll-link" v-tooltip.top="'Comment (saved as a note)'"
                         @click="startComment(e)">💬</button>
               </template>
               <button v-else class="ll-link" v-tooltip.top="'Add a correction (never edits the original)'"
@@ -440,7 +371,7 @@ async function toggleMute(category: string) {
             </span>
           </div>
           <ul class="ll-lines">
-            <li v-for="(ln, j) in e.lines" :key="j">{{ ln }}</li>
+            <li v-for="(ln, j) in e.lines" :key="j">{{ renderLine(ln) }}</li>
           </ul>
         </div>
       </template>
@@ -536,39 +467,15 @@ async function toggleMute(category: string) {
 .ll-pass-at   { margin-left: auto; color: var(--cc-text-dim); opacity: 0.8; }
 .ll-pass-note { font-size: 0.7rem; color: var(--cc-text); line-height: 1.4; white-space: pre-wrap; margin-top: 0.1rem; }
 
-.ll-modebar {
-  display: flex; align-items: center; gap: 0.35rem;
-  padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; font-size: 0.68rem;
+/* view-options bar: a single right-aligned "Show image names" toggle */
+.ll-viewbar {
+  display: flex; justify-content: flex-end; align-items: center;
+  padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0;
 }
-.ll-modelabel { color: var(--cc-text-dim); }
-.ll-modebtn {
-  border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim);
-  border-radius: 0.3rem; padding: 0.1rem 0.45rem; font-size: 0.66rem; cursor: pointer;
-}
-.ll-modebtn.on { color: var(--cc-text); border-color: #8b949e; background: rgba(139, 148, 158, 0.15); }
-
-/* label on its own line, then the chips wrap on the line below (a clean grid, not a mixed row) */
-.ll-mutebar {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem;
-  padding: 0.3rem 0.5rem; border-bottom: 1px solid var(--cc-border); flex-shrink: 0; font-size: 0.68rem;
-}
-/* each group: a small sub-label, then its wrapping chip row */
-.ll-mutegroup { display: flex; align-items: baseline; gap: 0.4rem; width: 100%; }
-.ll-mutegrouplabel {
-  flex-shrink: 0; width: 5.5rem; text-align: right;
-  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--cc-text-dim);
-}
-.ll-mutechips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.ll-mutebtn {
+.ll-shownames {
   display: inline-flex; align-items: center; gap: 0.25rem;
-  border: 1px solid var(--cc-border); background: var(--cc-surface-2); color: var(--cc-text-dim);
-  border-radius: 0.3rem; padding: 0.1rem 0.4rem; font-size: 0.64rem; cursor: pointer;
+  font-size: 0.68rem; color: var(--cc-text-dim); cursor: pointer;
 }
-.ll-mutebtn:hover { color: var(--cc-text); border-color: #8b949e; }
-/* muted state carries itself (struck + amber) — no per-chip bell needed; the one bell is on the label */
-.ll-mutebtn.muted { color: #d29922; border-color: #d29922; background: rgba(210, 153, 34, 0.12); text-decoration: line-through; }
-.ll-mutelabel { display: inline-flex; align-items: center; gap: 0.3rem; }
-.ll-mutelabel .pi { font-size: 0.66rem; }
 
 .ll-error { padding: 0.4rem 0.6rem; color: #f85149; font-size: 0.72rem; }
 
@@ -595,7 +502,7 @@ async function toggleMute(category: string) {
 .ll-entry-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.2rem; }
 .ll-author { font-weight: 700; font-size: 0.72rem; }
 .ll-date { color: var(--cc-text-dim); font-size: 0.68rem; }
-/* per-entry actions: hidden until hover; an active tuning vote stays visible so ratings show at a glance */
+/* per-entry actions: hidden until hover (thumbs prefill a note — they carry no persisted state) */
 .ll-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 0.15rem; visibility: hidden; }
 .ll-entry:hover .ll-actions { visibility: visible; }
 .ll-thumb {
@@ -603,7 +510,6 @@ async function toggleMute(category: string) {
   padding: 0 0.1rem; opacity: 0.8; filter: grayscale(0.5);
 }
 .ll-thumb:hover { opacity: 1; filter: none; }
-.ll-thumb.voted { visibility: visible; opacity: 1; filter: none; }   /* rated → always shown */
 .ll-lines { margin: 0; padding-left: 1rem; }
 .ll-lines li { margin: 0.05rem 0; line-height: 1.35; color: var(--cc-text); }
 

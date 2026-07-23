@@ -61,10 +61,10 @@ export const useSettingsStore = defineStore('settings', () => {
   // "Capture" button fires. Default ON — Cecelia is the always-on activity reporter (local-only, no
   // tokens; routine ✅ digests append silently, only ⚠️/❌ badge). Turn off to silence auto-capture.
   const labLogAutoContext = ref(localStorage.getItem('cc.labLogAutoContext') !== 'false')
-  // lab-log feedback mode: 'notes' → thumbs+comment judge the decision (recorded); 'tuning' → thumbs
-  // judge the entry type useful/noise (config). Default 'notes'. See components/LabLogPanel.vue.
-  const labLogMode = ref<'notes' | 'tuning'>(
-    localStorage.getItem('cc.labLogMode') === 'tuning' ? 'tuning' : 'notes')
+  // lab-log: show image NAMES instead of the stored UIDs. The log stores stable image UIDs (names
+  // change; UIDs don't), so this is a display-only swap resolved against live project data. Default
+  // false (show the compact, stable UIDs). See components/LabLogPanel.vue.
+  const labLogShowNames = ref(localStorage.getItem('cc.labLogShowNames') === 'true')
   // which model "Ask Claude" spawns (Claude CLI --model alias). Default Sonnet — Opus is overkill for
   // the observer's work; Haiku is the cheap option. Sent per feedback call; the backend allow-lists it.
   // See app/src/ai/agent_runner.jl OBSERVER_MODELS.
@@ -224,11 +224,11 @@ export const useSettingsStore = defineStore('settings', () => {
   watch(viewerPanelOpen,          v => localStorage.setItem('cc.viewerPanelOpen',          String(v)))
   watch(labLogPanelOpen,          v => localStorage.setItem('cc.labLogPanelOpen',          String(v)))
   watch(labLogAutoContext,        v => localStorage.setItem('cc.labLogAutoContext',        String(v)))
-  watch(labLogMode,               v => localStorage.setItem('cc.labLogMode',               String(v)))
+  watch(labLogShowNames,          v => localStorage.setItem('cc.labLogShowNames',          String(v)))
   watch(labLogObserverModel,      v => localStorage.setItem('cc.labLogObserverModel',      v))
   watch(labLogPanelOpen, open => { if (open) {          // opening clears the badge (all facets)
     labLogUnseen.value = ''; labLogUnseenKind.value = ''; labLogUnseenLevel.value = ''
   } })
 
-  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogMode, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
+  return { taskListAutoFollow, autoRefreshOnTask, napariUpdateImage, cleanCapture, napariResetOnReload, napariAutoSaveLayerProps, napariAsDask, napariDiscreteGpu, sidebarCollapsed, rightPanelCollapsed, viewerPanelOpen, labLogPanelOpen, labLogAutoContext, labLogShowNames, labLogObserverModel, labLogUnseen, labLogUnseenKind, labLogUnseenLevel, getLabelVisibility, setLabelVisibility, getTrackVisibility, setTrackVisibility, getColourBy, setColourBy, getShow3D, setShow3D, getShowGatedTracks, setShowGatedTracks, getPointSize, setPointSize, getPopVisible, setPopVisible, getColourOverrides, setColourOverride, clearColourOverrides, getMovieConfig, setMovieConfig, getCropZ, setCropZ, getCropT, setCropT, getBatchMovieConfig, setBatchMovieConfig }
 })

@@ -531,8 +531,9 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         @test occursin("⚠️ Tracking", sev)     # track_measures produced a warn finding
         @test occursin("hmm_states on 3 images — 2 flagged", sev)
         @test !occursin("(3 images)", sev)     # redundant parenthetical dropped for >2 images
-        # the SAME finding across 2 images collapses to ONE detail line (few images → named, like items)
-        @test occursin("↳ Collapsed to one state (s-1, s-2)", sev)
+        # the SAME finding across 2 images collapses to ONE detail line (few images → listed by stable
+        # uid, sorted; the panel resolves uid→name on demand)
+        @test occursin("↳ Collapsed to one state ($(join(sort([iS1.uid, iS2.uid]), ", ")))", sev)
         @test count("Collapsed to one state", sev) == 1     # folded to one line, not repeated per image
 
         # per-CHANNEL collapse: 4 findings differing only by channel → ONE "ch 0-3" detail line
@@ -543,7 +544,7 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
                                    "short"=>"Channel $i may have a hot pixel","long"=>"l",
                                    "detail"=>Dict{String,Any}("channel"=>i)) for i in 0:3])
         b2 = capture_context!(projS; date=d)
-        @test occursin("↳ may have a hot pixel — ch 0-3 (h-1)", b2)
+        @test occursin("↳ may have a hot pixel — ch 0-3 ($(iH.uid))", b2)
 
         rm(projS.root; recursive=true)
     end
@@ -587,10 +588,11 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         bd = capture_context!(proj; date=d2)
         @test bd !== nothing && occursin("added: clust_a", bd)
 
-        # exclusions: net over the day
+        # exclusions: net over the day. Images are referenced by stable uid, not name (the panel
+        # resolves uid→name on demand), so the line reads "excluded <uid>".
         img2.included = false; save!(img2)
         be = capture_context!(proj; date=d2)
-        @test be !== nothing && occursin("excluded img-2", be)
+        @test be !== nothing && occursin("excluded $(img2.uid)", be) && !occursin("img-2", be)
 
         rm(proj.root; recursive=true)
     end
@@ -617,34 +619,6 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
-    # ── Lab log tuning ratings (entry-type feedback → config sidecar) ────────────
-    @testset "Lab log tuning" begin
-        proj = create_project!(name="tuning-test-$(rand(1000:9999))", kind="static")
-        @test read_tuning(proj) == Dict{String,String}()
-        set_tuning!(proj, "e1", "up")
-        set_tuning!(proj, "e2", "down")
-        @test read_tuning(proj) == Dict("e1" => "up", "e2" => "down")
-        set_tuning!(proj, "e1", "")                       # clear/toggle-off
-        @test read_tuning(proj) == Dict("e2" => "down")
-        @test read_tuning(load_project(proj.uid)) == Dict("e2" => "down")   # persists
-        @test_throws ErrorException set_tuning!(proj, "e3", "sideways")     # invalid vote
-        rm(proj.root; recursive=true)
-    end
-
-    # ── Lab log mutes (suppress a digest category) ───────────────────────────────
-    @testset "Lab log mutes" begin
-        proj = create_project!(name="mutes-test-$(rand(1000:9999))", kind="static")
-        @test read_mutes(proj) == String[]
-        set_mute!(proj, "Gating", true)                                    # categories = task-manager tags
-        set_mute!(proj, "Segment", true)
-        @test Set(read_mutes(proj)) == Set(["Gating", "Segment"])
-        set_mute!(proj, "Gating", false)
-        @test read_mutes(proj) == ["Segment"]
-        @test read_mutes(load_project(proj.uid)) == ["Segment"]           # persists
-        @test_throws ErrorException set_mute!(proj, "  ", true)            # empty rejected (else lenient)
-        rm(proj.root; recursive=true)
-    end
-
     # ── Lab log dismiss (hide a single entry — config sidecar, log stays append-only) ──
     @testset "Lab log dismiss" begin
         proj = create_project!(name="dismiss-test-$(rand(1000:9999))", kind="static")
@@ -665,45 +639,25 @@ Cecelia._run_task(::_CrashTask, ::CciaImage, ::Dict{String,Any};
         rm(proj.root; recursive=true)
     end
 
-    @testset "Lab log mutes — capture filtering" begin
-        proj = create_project!(name="muteflt-test-$(rand(1000:9999))", kind="static")
+    # ── Lab log capture: the daily [Cecelia] digest groups activity by task category ──
+    @testset "Lab log capture — category digest" begin
+        proj = create_project!(name="capture-test-$(rand(1000:9999))", kind="static")
         s    = add_set!(proj; name="set-A")
         img  = add_image!(s; name="img-1", meta=Dict{String,Any}("ori_path"=>"/tmp/a.tif"))
         d    = Date(2026, 7, 25)
 
-        set_mute!(proj, "Segment", true)                    # category of segment.cellpose
-        append_run_log!(img, "segment.cellpose", "default"; at="2026-07-25T09:00:00")
-        @test capture_context!(proj; date=d) === nothing    # only Segment activity, muted → nothing
+        @test capture_context!(proj; date=d) === nothing    # no activity yet → nothing to digest
 
-        # activity in a non-muted category IS reported; the muted one stays out of the block
+        # run-log activity across two categories → one bullet per category, in _CATEGORY_ORDER
+        append_run_log!(img, "segment.cellpose", "default"; at="2026-07-25T09:00:00")
         append_run_log!(img, "behaviour.hmm", ""; at="2026-07-25T10:00:00")
         b = capture_context!(proj; date=d)
-        @test b !== nothing && occursin("Behaviour — hmm", b) && !occursin("Segment", b)
-
-        # unmuting reveals that day's Segment activity too — the daily block regenerates from source each
-        # capture (no cutoff to advance past), so within a day unmute brings the category back
-        set_mute!(proj, "Segment", false)
-        b2 = capture_context!(proj; date=d)
-        @test b2 !== nothing && occursin("Segment — cellpose", b2)
+        @test b !== nothing && occursin("Segment — cellpose", b) && occursin("Behaviour — hmm", b)
+        # Segment (earlier in _CATEGORY_ORDER) precedes Behaviour in the block
+        @test findfirst("Segment", b).start < findfirst("Behaviour", b).start
+        # images are referenced by stable uid, never name — the panel resolves uid→name on demand
+        @test occursin(img.uid, b) && !occursin("img-1", b)
         rm(proj.root; recursive=true)
-    end
-
-    # ── Mute-bar taxonomy: module pages vs operations (two separate groups) ──
-    @testset "Lab log mute categories — pages vs operations" begin
-        pages = lab_log_page_categories()
-        ops   = lab_log_operation_categories()
-        # the pipeline module pages are all present, in _CATEGORY_ORDER, and carry NO operation tags
-        for p in ("Segment", "Gating", "Tracking", "Clustering", "Behaviour")
-            @test p in pages
-        end
-        @test !("Edit" in pages) && !("Manage images" in pages)
-        # operations are the non-page actions, shown as one general group
-        @test Set(ops) == Set(["Edit", "Manage images"])
-        # the two groups partition the full universe (no overlap, union == all)
-        @test isempty(intersect(Set(pages), Set(ops)))
-        @test Set(vcat(pages, ops)) == Set(lab_log_categories())
-        # ordering follows _CATEGORY_ORDER (Segment before Tracking before Clustering)
-        @test findfirst(==("Segment"), pages) < findfirst(==("Tracking"), pages) < findfirst(==("Clustering"), pages)
     end
 
     # ── Param validation ──────────────────────────────────────────────────────

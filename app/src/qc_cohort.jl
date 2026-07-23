@@ -224,8 +224,9 @@ function cohort_has_outliers(doc::AbstractDict)
         values(get(doc, "metrics", Dict())))
 end
 
-# `name_of(uid)` resolves an image uid → its human name (default: the uid) so the lab-log lines read
-# with image NAMES, not opaque uids — the caller (the check route) passes the set's uid→name map.
+# Images are referenced by stable uid (the default `name_of = identity`) — names change, uids don't,
+# and the lab-log panel resolves uid→name on demand. `name_of` is kept as a hook for a caller that
+# genuinely needs a different rendering, but the stored lab-log record is uid-based.
 function cohort_qc_summary_lines(doc::AbstractDict; name_of = identity)
     fun = string(get(doc, "funName", "?")); n = get(doc, "nIncluded", 0)
     vn  = string(get(doc, "valueName", ""))
