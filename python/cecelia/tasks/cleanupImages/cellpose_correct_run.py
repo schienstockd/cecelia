@@ -100,7 +100,12 @@ def run(params):
         for sl in slices:
             corrected = dn.eval([zarr_utils.fortify(im_dat[0][sl])], channels=[0, 0],
                                 diameter=diameter / scaling_factor)[0]
-            output_image[sl] = (((corrected[..., 0] + 1) / im_max) * im_rescale_factor).astype(out_dtype)
+            val = (((corrected[..., 0] + 1) / im_max) * im_rescale_factor).astype(out_dtype)
+            # `corrected[..., 0]` is the 2-D (Y,X) denoised plane; the target block is (1,1,1,Y,X).
+            # zarr's orthogonal write (unlike numpy assignment) does NOT broadcast a lower-rank value
+            # into the selection, so reshape the plane into the block shape first.
+            block_shape = tuple(len(range(*s.indices(d))) for s, d in zip(sl, output_image.shape))
+            output_image[sl] = np.reshape(val, block_shape)
             done_slices += 1
             log.progress(done_slices, total_slices)
 

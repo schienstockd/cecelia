@@ -107,6 +107,24 @@ class StreamingWritersTest(unittest.TestCase):
         du.calc_image_dimensions(tuple(shape))
         return du
 
+    def test_per_plane_write_into_block_via_reshape(self):
+        # cellpose_correct writes a 2-D (Y,X) plane into a (1,1,1,Y,X) block of an on-disk store.
+        # zarr's orthogonal write does NOT broadcast a lower-rank value into the selection the way
+        # numpy assignment does (that was the IndexError), so the value must be reshaped to the block.
+        d = tempfile.mkdtemp()
+        try:
+            p = os.path.join(d, "pp.zarr")
+            _, level0, _ = zu.open_multiscales_for_writing(p, (2, 2, 3, 8, 6), np.uint8, None, nscales=1)
+            rng = np.random.default_rng(5)
+            plane = rng.integers(1, 255, size=(8, 6), dtype=np.uint8)          # 2-D (Y,X)
+            sl = (slice(0, 1), slice(1, 2), slice(2, 3), slice(None), slice(None))
+            block = tuple(len(range(*s.indices(dd))) for s, dd in zip(sl, level0.shape))
+            level0[sl] = np.reshape(plane, block)                              # the fix
+            back = zarr.open_group(p, mode="r")["0"][0, 1, 2]                  # the written plane
+            self.assertTrue(np.array_equal(back, plane), "per-plane block write corrupted values")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
     def test_writer_forces_native_byteorder(self):
         # Big-endian source (e.g. >u2 from bioformats2raw) must be stored NATIVE — big-endian
         # mis-renders in napari/OpenGL on little-endian systems. Both writers coerce; values kept.
