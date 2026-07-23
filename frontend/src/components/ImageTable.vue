@@ -5,10 +5,13 @@ import { useProjectStore, type CciaImage } from '../stores/project'
 import { useProjectMetaStore } from '../stores/projectMeta'
 import { useLogStore } from '../stores/log'
 import { useTaskStore, type TaskStatus } from '../stores/tasks'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import { metadataWarning } from '../lib/imageMetadataWarnings'
 import { qcSummary } from '../lib/qc'
 import { isExcluded, isIncluded, includedUids, isImported } from '../utils/inclusion'
 import { timelapseDuration } from '../utils/imageTable'
+import { lastSuccessfulRun, funModuleLabel } from '../utils/runLog'
+import { moduleColor, moduleIdFromFun } from '../utils/taskModule'
 import { useNapariOpen } from '../composables/useNapariOpen'
 import PhysicalSizeDialog from './PhysicalSizeDialog.vue'
 import ImageMetadataDialog from './ImageMetadataDialog.vue'
@@ -33,6 +36,8 @@ const log         = useLogStore()
 const route       = useRoute()
 const router      = useRouter()
 const taskStore   = useTaskStore()
+const taskDefs    = useTaskDefsStore()
+onMounted(() => { taskDefs.ensureLoaded() })   // for pretty fun/module labels in the Last-run column
 
 // opens right where you are — no page navigation needed
 const physSizeDialogUid = ref<string | null>(null)
@@ -185,6 +190,22 @@ const runLogImg = computed(() => runLogUid.value ? (images.value.find(i => i.uid
 // v-model for TeleportPopover: open when a uid is set; the component sets false on outside-click/Escape
 const runLogOpen = computed({ get: () => runLogUid.value !== null, set: v => { if (!v) runLogUid.value = null } })
 const fmtRunAt = (at: string) => (at ?? '').replace('T', ' ')
+
+// The task-manager-style tag shown next to the UID — the last SUCCESSFUL run on this image (a failed
+// run left no output, so it isn't the image's state). Lets the user see at a glance what was last
+// done (e.g. "which ones did I already denoise?") without opening the run-history popover. Coloured
+// per module via the shared palette so it reads the same as the task manager. null = no successful run.
+function lastRunTag(img: CciaImage) {
+  const e = lastSuccessfulRun(img.runLog)
+  if (!e) return null
+  const colour = moduleColor(moduleIdFromFun(e.fun))
+  return {
+    module: funModuleLabel(e.fun),           // e.g. "Cleanup"
+    fun: taskDefs.labelFor(e.fun),           // e.g. "Cellpose correct" (falls back to fun tail)
+    style: { background: colour + '22', color: colour, borderColor: colour + '55' },
+    tip: `Last run: ${e.fun}${e.valueName ? ` → ${e.valueName}` : ''} · ${fmtRunAt(e.at)}`,
+  }
+}
 function toggleRunLog(uid: string, e: MouseEvent) {
   if (runLogUid.value === uid) { runLogUid.value = null; return }
   runLogAnchor.value = e.currentTarget as HTMLElement
@@ -653,6 +674,12 @@ onUnmounted(stopResize)
           </span>
           <span class="uid-row">
             <span class="img-uid">{{ img.uid }}</span>
+            <!-- last successful run — task-manager-style module tag (see run log / taskModule palette) -->
+            <span v-if="lastRunTag(img)" class="run-tag" :style="lastRunTag(img)!.style"
+              v-tooltip.right="lastRunTag(img)!.tip">
+              <span class="run-tag-mod">{{ lastRunTag(img)!.module }}</span>
+              <span class="run-tag-fun">{{ lastRunTag(img)!.fun }}</span>
+            </span>
           </span>
           <!-- free-text note for ANY image (excluded or not) — for excluded images it doubles as the
                exclusion reason (shown in the badge tooltip + CSV) -->
@@ -994,6 +1021,18 @@ th:hover .resize-handle::after { opacity: 1; }
   flex: 1;
   min-width: 0;
 }
+
+/* last-successful-run tag — mirrors the task-manager module pill (colour from taskModule palette),
+   pushed to the right of the UID. Module id bold/uppercase, function label alongside. */
+.run-tag {
+  display: inline-flex; align-items: baseline; gap: 0.3rem; flex-shrink: 0;
+  max-width: 60%;
+  padding: 0.05rem 0.4rem; border-radius: 0.25rem;
+  border: 1px solid transparent;
+  font-size: 0.64rem; line-height: 1.5;
+}
+.run-tag-mod { font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0; }
+.run-tag-fun { opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .dim { color: var(--cc-text-dim); }
 
