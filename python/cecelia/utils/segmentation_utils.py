@@ -11,9 +11,11 @@ stardist, etc.).
 import os
 import shutil
 import numpy as np
+import dask.array as da
 import zarr
 
 import cecelia.utils.zarr_utils as zarr_utils
+import cecelia.utils.intensity_utils as intensity_utils
 
 from skimage import morphology, segmentation
 from scipy import ndimage
@@ -257,23 +259,46 @@ class SegmentationUtils:
     # ── Normalisation ─────────────────────────────────────────────────────────
 
     def _compute_norm_params(self, im_dat, model_params):
-        """Compute per-channel percentile clipping range from lowest-res level."""
-        low_res = np.asarray(im_dat[-1])
+        """Per-channel percentile clipping range for scale-to-whole normalisation.
+
+        Scale-to-whole is required — a per-tile/per-frame window would swing with local brightness
+        and give inconsistent masks — so the percentile is GLOBAL. Two ways to get it without a
+        per-tile/frame dependency:
+          • pyramided store → take it from the small lowest-res level (a cheap whole-image proxy),
+            exactly as before.
+          • single-level store (drift/AF/cellpose-corrected outputs, nscales=1) → `im_dat[-1]` IS the
+            full-res level, so materialising it OOMs on large movies. Instead stream a per-value
+            histogram (exact for integer data, ~256 KB/channel regardless of size) and read the
+            percentile off its CDF. Same statistic, bounded memory. See ZARR_STREAMING_PLAN.md.
+        Excludes background zeros in both paths (matches the historical `data[data > 0]`)."""
         c_idx = self.dim_utils.dim_idx('C')
         normalise_perc = float(model_params.get('normalise', 99.9))
+        channels = [int(c) for c in (list(model_params.get('cellChannels', [])) +
+                                     list(model_params.get('nucChannels', [])))]
         result = {}
 
-        all_channels = (list(model_params.get('cellChannels', [])) +
-                        list(model_params.get('nucChannels', [])))
-        for ch in all_channels:
+        if len(im_dat) == 1:
+            # bounded streaming histogram over the (single, full-res) level
+            level = im_dat[0]
+            darr = level if isinstance(level, da.Array) else da.from_array(level)
+            hists = intensity_utils.channel_histograms(darr, c_idx, channels=channels)
+            for ch, hist in zip(channels, hists):
+                hist = hist.copy()
+                hist[0] = 0                       # drop background zeros
+                if int(hist.sum()) > 100:
+                    result[ch] = (float(intensity_utils.hist_percentile(hist, 100 - normalise_perc)),
+                                  float(intensity_utils.hist_percentile(hist, normalise_perc)))
+            return result
+
+        low_res = np.asarray(im_dat[-1])
+        for ch in channels:
             idx = [slice(None)] * low_res.ndim
-            idx[c_idx] = int(ch)
+            idx[c_idx] = ch
             ch_data = low_res[tuple(idx)].ravel()
             valid = ch_data[ch_data > 0]
             if len(valid) > 100:
-                norm_min = float(np.percentile(valid, 100 - normalise_perc))
-                norm_max = float(np.percentile(valid, normalise_perc))
-                result[int(ch)] = (norm_min, norm_max)
+                result[ch] = (float(np.percentile(valid, 100 - normalise_perc)),
+                              float(np.percentile(valid, normalise_perc)))
         return result
 
     # ── Post-processing ───────────────────────────────────────────────────────
