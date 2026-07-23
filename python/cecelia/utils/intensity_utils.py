@@ -41,18 +41,23 @@ def _n_channels(arr, channel_axis):
     return 1 if channel_axis is None else int(arr.shape[channel_axis])
 
 
-def channel_histograms(arr, channel_axis):
+def channel_histograms(arr, channel_axis, channels=None):
     """
     One integer histogram per channel over the whole stack (all axes except `channel_axis`).
 
     Integer dtype only — the histogram is indexed by pixel value in [0, iinfo(dtype).max]. Returns a
-    list of 1-D numpy arrays (length = max value + 1), one per channel. Streams over dask chunks.
+    list of 1-D numpy arrays (length = max value + 1). Streams over dask chunks (bounded memory).
+
+    `channels`: optional list of channel indices to histogram (default: all). The returned list is
+    aligned with `channels` when given — so callers that only need a subset (e.g. segmentation
+    normalising just its cell/nuc channels) don't pay to scan every channel.
     """
     if not np.issubdtype(arr.dtype, np.integer):
         raise ValueError(f"channel_histograms requires an integer dtype, got {arr.dtype}")
     nbins = int(np.iinfo(arr.dtype).max) + 1
+    chans = range(_n_channels(arr, channel_axis)) if channels is None else channels
     hists = []
-    for c in range(_n_channels(arr, channel_axis)):
+    for c in chans:
         flat = _take_channel(arr, channel_axis, c).ravel()
         if _is_dask(flat):
             hist = da.bincount(flat, minlength=nbins).compute()

@@ -17,6 +17,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import dask.array as da
 import ome_types
 import zarr
 
@@ -112,6 +113,37 @@ class PredictFromZarrTest(unittest.TestCase):
         self.assertEqual(counts, {'base': 24, 'nuc': 24})
         self.assertEqual(_fingerprint(base), gold)
         self.assertEqual(_fingerprint(nuc), gold)
+
+
+class ComputeNormParamsStreamingTest(unittest.TestCase):
+    """Scale-to-whole normalisation on a SINGLE-LEVEL store (drift/AF/cellpose-corrected output)
+    must derive its global percentile from a streamed histogram, not by materialising the whole
+    level (the second OOM vector). For integer data that matches np.percentile over nonzero values
+    to within one intensity bin (histogram CDF vs linear interpolation)."""
+
+    def test_single_level_matches_numpy_percentile(self):
+        du = DimUtils(ome_types.from_xml(_ome_xml(1, 1, 2, 41, 29)), use_channel_axis=True)
+        du.calc_image_dimensions((2, 41, 29))          # C,Y,X (size-1 T,Z dropped)
+        c_idx = du.dim_idx('C')
+        rng = np.random.default_rng(3)
+        im0 = rng.integers(0, 5000, size=tuple(du.im_dim), dtype=np.uint16)
+        im0[im0 < 500] = 0                              # sprinkle background zeros
+
+        seg = SegmentationUtils({'taskDir': tempfile.gettempdir()}, du)
+        mp = {'cellChannels': [1], 'nucChannels': [], 'normalise': 99.9}
+        # single-level store -> streaming histogram path
+        got = seg._compute_norm_params([da.from_array(im0)], mp)
+
+        idx = [slice(None)] * im0.ndim
+        idx[c_idx] = 1
+        valid = im0[tuple(idx)].ravel()
+        valid = valid[valid > 0]
+        lo_ref = np.percentile(valid, 0.1)
+        hi_ref = np.percentile(valid, 99.9)
+
+        self.assertIn(1, got)
+        self.assertLessEqual(abs(got[1][0] - lo_ref), 1.0)
+        self.assertLessEqual(abs(got[1][1] - hi_ref), 1.0)
 
 
 if __name__ == "__main__":
