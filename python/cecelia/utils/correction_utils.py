@@ -102,10 +102,21 @@ def correction_first_im_pos(drift_im_shape, dim_utils, shifts_sum):
     )
 
 
+def drift_correct_shape(input_array, dim_utils, shifts):
+    """Output canvas shape (rounded) and first-frame position for a drift correction with the
+    given per-frame ``shifts``. Split out so a caller can create the on-disk output store BEFORE
+    filling it (``drift_correct_im`` streams each timepoint straight into that store)."""
+    shifts_sum = shifts_summary(shifts, is_3D=dim_utils.is_3D())
+    drift_im_shape, drift_im_shape_round = correction_im_shape(
+        input_array, dim_utils, shifts_sum)
+    first_im_pos = correction_first_im_pos(drift_im_shape, dim_utils, shifts_sum)
+    return drift_im_shape_round, first_im_pos
+
+
 def drift_correct_im(
         input_array, dim_utils, phase_shift_channel,
         timepoints=None, drift_corrected_path=None,
-        upsample_factor=100, shifts=None, chunk_size=None):
+        upsample_factor=100, shifts=None, chunk_size=None, out=None):
     if timepoints is None:
         timepoints = range(dim_utils.dim_val('T'))
 
@@ -116,19 +127,21 @@ def drift_correct_im(
             upsample_factor=upsample_factor,
         )
 
-    shifts_sum = shifts_summary(shifts, is_3D=dim_utils.is_3D())
-    drift_im_shape, drift_im_shape_round = correction_im_shape(
-        input_array, dim_utils, shifts_sum)
-    first_im_pos = correction_first_im_pos(drift_im_shape, dim_utils, shifts_sum)
+    drift_im_shape_round, first_im_pos = drift_correct_shape(input_array, dim_utils, shifts)
 
     # Use native byte order — big-endian source data (e.g. >u2 from bioformats2raw)
     # is not rendered correctly by napari/OpenGL on little-endian systems.
     result_dtype = input_array.dtype.newbyteorder('=')
-    result = np.zeros(drift_im_shape_round, dtype=result_dtype)
 
-    tp_slice = [slice(None)] * len(drift_im_shape_round)
-    tp_slice[dim_utils.dim_idx('T')] = slice(0, 1, 1)
-    tp_shape = result[tuple(tp_slice)].shape
+    # `out`, when given, is a pre-created on-disk zarr of `drift_im_shape_round` — each timepoint is
+    # written straight to disk so the whole (expanded) corrected image never lives in RAM. When None
+    # we allocate it in memory (legacy / small-image path). Either way the loop below is unchanged:
+    # it fills one timepoint at a time, so the streaming and in-RAM results are byte-identical.
+    result = out if out is not None else np.zeros(drift_im_shape_round, dtype=result_dtype)
+
+    tp_shape = list(drift_im_shape_round)
+    tp_shape[dim_utils.dim_idx('T')] = 1
+    tp_shape = tuple(tp_shape)
 
     slices = list(first_im_pos)
 
@@ -374,91 +387,144 @@ def af_correct_channel(
     return corrected, inverse
 
 
+def _af_inverse_channels(af_combinations, dim_utils):
+    """Channel indices (ascending) that produce an appended inverse channel — a combination with
+    both ``generateInverse`` and at least one division channel. Shared by the output-shape helper
+    and the streaming writer so both agree on the appended-channel layout."""
+    combos = {int(i): x for i, x in af_combinations.items()}
+    return sorted(i for i, x in combos.items()
+                  if x.get('generateInverse', False) and len(x.get('divisionChannels', [])) > 0)
+
+
+def af_correction_output_shape(input_array, dim_utils, af_combinations):
+    """Shape of the AF-corrected output: same as input but with the channel axis widened by one
+    channel per combination that requests an inverse (inverses are appended after the C corrected
+    channels). Lets a caller size the on-disk output store before ``af_correct_image`` fills it."""
+    n_inverse = len(_af_inverse_channels(af_combinations, dim_utils))
+    shape = list(input_array.shape)
+    shape[dim_utils.dim_idx('C')] = dim_utils.dim_val('C') + n_inverse
+    return tuple(shape)
+
+
+def _af_process_channel(input_image, i, af_combinations, dim_utils, logfile_utils,
+                        sigma, gaussian_sigma, apply_gaussian, apply_gaussian_to_others,
+                        use_dask=False):
+    """Produce the corrected data (and optional inverse) for output channel ``i``, replicating the
+    exact operation order of the original whole-image path. Channels are independent — AF division
+    always reads the ORIGINAL ``input_image``, never another output channel — so each can be
+    computed and written on its own, which is what lets the caller stream channel-by-channel.
+    Returns ``(corrected_np, inverse_np_or_None)``."""
+    x = af_combinations.get(i)
+    ch_slice = dim_utils.create_channel_slices(i)
+
+    if x is None:
+        # channel not covered by any combination
+        if apply_gaussian_to_others:
+            return scipy.ndimage.gaussian_filter(
+                zarr_utils.fortify(input_image[ch_slice]).astype(np.float64), sigma=sigma
+            ).astype(input_image.dtype), None
+        return zarr_utils.fortify(input_image[ch_slice]), None
+
+    inverse = None
+
+    # Denoise the channel's own data. NOTE: when division channels are present this result is
+    # overwritten below — af_correct_channel recomputes from the ORIGINAL input, not the denoised
+    # channel. Preserved verbatim from the original path (denoise only takes effect without division).
+    base = zarr_utils.fortify(input_image[ch_slice])
+    if x.get('denoiseFun', 'NONE') != 'NONE':
+        fn = x['denoiseFun']
+        if fn == 'wavelet':
+            dp = {'method': x.get('waveletMethod', 'BayesShrink'),
+                  'mode':   x.get('waveletMode',   'soft')}
+        elif fn == 'tv':
+            dp = {'weight': x.get('tvWeight', 0.1)}
+        else:
+            dp = {}
+        base = apply_denoise(base, dim_utils, fn, dp)
+
+    div_channels = x.get('divisionChannels', [])
+    if len(div_channels) > 0:
+        base, inverse = af_correct_channel(
+            input_image, i, div_channels, dim_utils=dim_utils,
+            channel_percentile    = x.get('channelPercentile',    80),
+            correction_percentile = x.get('correctionPercentile', 40),
+            correction_mode       = x.get('correctionMode',       'divide'),
+            summary_mode          = x.get('summaryMode',          'maximum'),
+            summary_percentile    = x.get('summaryPercentile',    75),
+            correction_range      = (x.get('correctionMin', 1),
+                                     x.get('correctionMax', 99)),
+            median_filter         = x.get('medianFilter', 0),
+            generate_inverse      = x.get('generateInverse', False),
+            gaussian_sigma        = gaussian_sigma,
+            apply_gaussian        = apply_gaussian,
+            use_dask              = use_dask,
+        )
+    elif apply_gaussian_to_others:
+        base = scipy.ndimage.gaussian_filter(
+            base.astype(np.float64), sigma=sigma).astype(input_image.dtype)
+
+    # Rolling ball (applied after correction, division or not)
+    r = x.get('rollingBallRadius', 0)
+    if r > 0:
+        base = apply_rolling_ball(base, dim_utils, logfile_utils, r, x.get('rollingBallPadding', 4))
+
+    # Top hat
+    th = x.get('topHatRadius', 0)
+    if th > 0:
+        base = apply_top_hat(base, dim_utils, th)
+        if inverse is not None:
+            inverse = apply_top_hat(inverse, dim_utils, th)
+
+    return base, inverse
+
+
 def af_correct_image(input_image, af_combinations, dim_utils, logfile_utils,
                      gaussian_sigma=1, use_dask=False,
-                     apply_gaussian=True, apply_gaussian_to_others=True):
-    """Correct autofluorescence for all channels. Returns a dask array."""
+                     apply_gaussian=True, apply_gaussian_to_others=True, out=None):
+    """Correct autofluorescence for all channels.
 
-    output_image  = [input_image[dim_utils.create_channel_slices(i)]
-                     for i in range(dim_utils.dim_val('C'))]
-    inverse_image = [None] * len(output_image)
-
-    # Ensure integer keys
+    Processes ONE CHANNEL AT A TIME (channels are independent — see ``_af_process_channel``). When
+    ``out`` is given (a pre-created on-disk zarr sized by ``af_correction_output_shape``), each
+    corrected/inverse channel is written straight to disk and freed, so the whole T×C×Z×Y×X image
+    never lives in RAM. When ``out`` is None the channels are concatenated and returned as a dask
+    array (legacy / small-image path). Both paths are byte-identical."""
+    n_channels = dim_utils.dim_val('C')
     af_combinations = {int(i): x for i, x in af_combinations.items()}
 
     sigma = [0] * len(input_image.shape)
     for d in dim_utils.spatial_axis():
         sigma[dim_utils.dim_idx(d)] = gaussian_sigma
 
-    corrected_indices = set()
+    # native byte order — big-endian source (e.g. >u2 from bioformats2raw) mis-renders in napari
+    out_dtype = input_image.dtype.newbyteorder('=')
 
-    for i, x in af_combinations.items():
-        # Denoise — materialise first only when needed
-        if x.get('denoiseFun', 'NONE') != 'NONE':
-            fn = x['denoiseFun']
-            if fn == 'wavelet':
-                dp = {'method': x.get('waveletMethod', 'BayesShrink'),
-                      'mode':   x.get('waveletMode',   'soft')}
-            elif fn == 'tv':
-                dp = {'weight': x.get('tvWeight', 0.1)}
-            else:
-                dp = {}
-            output_image[i] = zarr_utils.fortify(output_image[i])
-            output_image[i] = apply_denoise(output_image[i], dim_utils, fn, dp)
+    # inverse channels are appended after the C corrected channels, in ascending channel order
+    inverse_channels = _af_inverse_channels(af_combinations, dim_utils)
+    inv_slot = {ch: n_channels + k for k, ch in enumerate(inverse_channels)}
 
-        # AF correction
-        div_channels = x.get('divisionChannels', [])
-        if len(div_channels) > 0:
-            output_image[i], inverse_image[i] = af_correct_channel(
-                input_image, i, div_channels, dim_utils=dim_utils,
-                channel_percentile    = x.get('channelPercentile',    80),
-                correction_percentile = x.get('correctionPercentile', 40),
-                correction_mode       = x.get('correctionMode',       'divide'),
-                summary_mode          = x.get('summaryMode',          'maximum'),
-                summary_percentile    = x.get('summaryPercentile',    75),
-                correction_range      = (x.get('correctionMin', 1),
-                                         x.get('correctionMax', 99)),
-                median_filter         = x.get('medianFilter', 0),
-                generate_inverse      = x.get('generateInverse', False),
-                gaussian_sigma        = gaussian_sigma,
-                apply_gaussian        = apply_gaussian,
-                use_dask              = use_dask,
-            )
-            corrected_indices.add(i)
-        elif apply_gaussian_to_others:
-            output_image[i] = scipy.ndimage.gaussian_filter(
-                zarr_utils.fortify(output_image[i]).astype(np.float64), sigma=sigma
-            ).astype(input_image.dtype)
+    output_parts  = []   # (legacy path) corrected channels, in channel order
+    inverse_parts = []   # (legacy path) inverse channels, in ascending channel order
 
-        # Rolling ball
-        r = x.get('rollingBallRadius', 0)
-        if r > 0:
-            output_image[i] = apply_rolling_ball(
-                output_image[i], dim_utils, logfile_utils,
-                r, x.get('rollingBallPadding', 4))
+    for i in range(n_channels):
+        corrected, inverse = _af_process_channel(
+            input_image, i, af_combinations, dim_utils, logfile_utils,
+            sigma, gaussian_sigma, apply_gaussian, apply_gaussian_to_others,
+            use_dask=use_dask)
 
-        # Top hat
-        th = x.get('topHatRadius', 0)
-        if th > 0:
-            output_image[i] = apply_top_hat(output_image[i], dim_utils, th)
-            if inverse_image[i] is not None:
-                inverse_image[i] = apply_top_hat(inverse_image[i], dim_utils, th)
+        if out is not None:
+            out[dim_utils.create_channel_slices(i)] = zarr_utils.fortify(corrected).astype(out_dtype)
+            if inverse is not None:
+                out[dim_utils.create_channel_slices(inv_slot[i])] = \
+                    zarr_utils.fortify(inverse).astype(out_dtype)
+            corrected = inverse = None   # free before the next channel
+        else:
+            output_parts.append(zarr_utils.fortify(corrected))
+            if inverse is not None:
+                inverse_parts.append(zarr_utils.fortify(inverse))
 
-    # Apply gaussian to channels not listed in af_combinations at all
-    if apply_gaussian_to_others:
-        for i in range(dim_utils.dim_val('C')):
-            if i not in af_combinations:
-                output_image[i] = scipy.ndimage.gaussian_filter(
-                    zarr_utils.fortify(output_image[i]).astype(np.float64), sigma=sigma
-                ).astype(input_image.dtype)
+    if out is not None:
+        return out
 
-    # Materialise any remaining zarr slices and concatenate
-    output_parts  = [zarr_utils.fortify(ch) for ch in output_image]
-    inverse_parts = [zarr_utils.fortify(ch) for ch in inverse_image if ch is not None]
-    output_np     = np.concatenate(output_parts + inverse_parts,
-                                   axis=dim_utils.dim_idx('C'))
-    # Use native byte order — big-endian source data (e.g. >u2 from bioformats2raw)
-    # is not rendered correctly by napari/OpenGL on little-endian systems.
-    output_np = output_np.astype(input_image.dtype.newbyteorder('='))
-
+    output_np = np.concatenate(output_parts + inverse_parts, axis=dim_utils.dim_idx('C'))
+    output_np = output_np.astype(out_dtype)
     return da.from_array(output_np, chunks='auto')

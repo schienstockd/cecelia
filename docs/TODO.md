@@ -62,6 +62,16 @@ instant. It falls through to (1) wherever no prebuilt image is present, and the 
 image that predates the user's Julia/deps self-heals. Belongs with the packaging phase; not urgent —
 the on-first-run path already gives every user a fast cache after one build.
 
+**#00085** — **Zarr/dask processing rework (read-frame-once + cellpose batching)**
+The whole-image RAM fix landed (drift/AF/cellpose/segmentation stream per timepoint/channel via the
+`zarr_utils` streaming writers). The follow-up perf/consolidation work is parked in
+`docs/todo/ZARR_STREAMING_PLAN.md`: Phase 1 = read each timepoint once into a bounded frame and tile
+in RAM (kills the per-tile disk over-reads that `fortify`-to-whole-RAM originally worked around);
+Phase 2 = batch cellpose `dn.eval` (GPU throughput, measure first); Phase 3 = cheap cleanups
+(centralize the napari byte-order fix; maybe merge the two tilers). Guardrail: only changes with a
+real measured benefit — the plan explicitly rejects a grand `map_over_zarr`, an `as_dask` sweep, and
+intra-task thread pools (Julia resource pools already parallelize across images).
+
 **#00047** — **Temporal downsampling / overlapping tracklets for behaviour** (deferred)
 The old framework computed track measures on the fly, so HMM could push `skipTimesteps` /
 `subtrackOverlap` into celltrackR: a way to **downsample** tracks (e.g. treat 10s/frame data like

@@ -53,24 +53,25 @@ def run(params):
     log.log(f'shifts: {shifts}')
 
     log.progress(2, 4)
-    log.log('>> apply shifts')
-    drift_image = correction_utils.drift_correct_im(
-        im_dat[0], dim_utils, drift_channel, shifts=shifts,
-    )
+    log.log('>> apply shifts (streaming to disk)')
+    # Stream each corrected timepoint straight into the on-disk output store — the expanded
+    # corrected image never lives in RAM (was the OOM on large time-lapses). Create level 0 up
+    # front (shape known from the shifts), fill it per-timepoint, then build the pyramid from disk.
+    out_shape, _ = correction_utils.drift_correct_shape(im_dat[0], dim_utils, shifts)
+    out_dtype = im_dat[0].dtype.newbyteorder('=')
+    group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+        im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
+    correction_utils.drift_correct_im(
+        im_dat[0], dim_utils, drift_channel, shifts=shifts, out=level0)
 
     log.progress(3, 4)
-    log.log(f'>> save corrected image: {im_correction_path}')
-    zarr_utils.create_multiscales(
-        drift_image, im_correction_path,
-        dim_utils=dim_utils,
-        reference_zarr=im_dat[0],
-        nscales=len(im_dat),
-    )
+    log.log(f'>> build pyramid + save: {im_correction_path}')
+    zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
 
     log.log('>> save OME-XML metadata')
     ome_xml_utils.save_meta_in_zarr(
         im_correction_path, im_path,
-        changed_shape=drift_image.shape,
+        changed_shape=out_shape,
         dim_utils=dim_utils,
     )
 
@@ -85,7 +86,7 @@ def run(params):
             json.dump({
                 'dimOrder':    ''.join(dim_utils.im_dim_order),
                 'sourceShape': [int(x) for x in im_dat[0].shape],
-                'outputShape': [int(x) for x in drift_image.shape],
+                'outputShape': [int(x) for x in out_shape],
                 'shiftAxes':   axes,
                 'shifts':      [[float(v) for v in row] for row in shifts],
             }, f)

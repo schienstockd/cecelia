@@ -63,6 +63,7 @@ napari-animation = ">=0.0.10, <0.0.11"
 mcp          = ">=1.2"
 squidpy = ">=1.8.3, <1.9"
 rtree = ">=1.4.1, <2"
+pywavelets = ">=1.9.0, <2"
 
 # --- PyTorch: CUDA build on Linux/Windows, default (MPS/CPU) build on macOS -------------------
 # The cu124 wheel index only carries linux/win wheels, so torch/torchvision MUST be declared

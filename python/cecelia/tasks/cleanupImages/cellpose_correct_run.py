@@ -50,11 +50,14 @@ def run(params):
     use_gpu, gpu_device = torch_device()
     log.log(f'>> GPU: {gpu_device if gpu_device else "none (CPU)"}')
 
-    # Load the full resolution level into RAM (or keep as Dask for large images).
-    if use_dask:
-        output_image = zarr_utils.get_dask_copy(im_dat[0])
-    else:
-        output_image = zarr_utils.fortify(im_dat[0])
+    # Stream the output to disk instead of holding the whole level 0 in RAM (was
+    # `fortify(im_dat[0])` — a full T×C×Z×Y×X copy, the OOM on large time-lapses). Create the
+    # on-disk level 0, copy the input through one timepoint at a time (so uncorrected channels /
+    # frames carry over unchanged), then overwrite only the corrected planes in place below.
+    out_dtype = im_dat[0].dtype
+    group, output_image, pchunks = zarr_utils.open_multiscales_for_writing(
+        im_correction_path, im_dat[0].shape, out_dtype, dim_utils, nscales=len(im_dat))
+    zarr_utils.copy_stream(output_image, im_dat[0], dim_utils)
 
     # Physical pixel size (µm/px); divides the user-supplied µm diameter to get pixels.
     # Normalise to µm — DimUtils reports the stored unit ('um' after µ→u, 'mm', …).
@@ -95,19 +98,14 @@ def run(params):
         diameter = x['modelDiameter']
 
         for sl in slices:
-            corrected = dn.eval([im_dat[0][sl]], channels=[0, 0],
+            corrected = dn.eval([zarr_utils.fortify(im_dat[0][sl])], channels=[0, 0],
                                 diameter=diameter / scaling_factor)[0]
-            output_image[sl] = ((corrected[..., 0] + 1) / im_max) * im_rescale_factor
+            output_image[sl] = (((corrected[..., 0] + 1) / im_max) * im_rescale_factor).astype(out_dtype)
             done_slices += 1
             log.progress(done_slices, total_slices)
 
-    log.log(f'>> save corrected image: {im_correction_path}')
-    zarr_utils.create_multiscales(
-        output_image, im_correction_path,
-        dim_utils=dim_utils,
-        reference_zarr=im_dat[0],
-        nscales=len(im_dat),
-    )
+    log.log(f'>> build pyramid + save: {im_correction_path}')
+    zarr_utils.write_multiscale_pyramid(group, output_image, dim_utils, len(im_dat), list(pchunks))
 
     log.log('>> save OME-XML metadata')
     ome_xml_utils.save_meta_in_zarr(

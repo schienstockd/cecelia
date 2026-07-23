@@ -87,6 +87,43 @@ class CreateMultiscalesOnDiskTest(unittest.TestCase):
             shutil.rmtree(d, ignore_errors=True)
 
 
+class StreamingWritersTest(unittest.TestCase):
+    """The generic streaming helpers used by the drift / AF / cellpose correction tasks:
+    open_multiscales_for_writing (empty per-plane-chunked level 0 + metadata) and copy_stream
+    (per-timepoint carry-through — cellpose's unchanged channels/frames)."""
+
+    def _du(self, size_t, size_c, size_y, size_x):
+        import ome_types
+        from cecelia.utils.dim_utils import DimUtils
+        xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<OME xmlns="http://www.openmicroscopy.org/Schemas/OME/2016-06">
+  <Image ID="Image:0" Name="t"><Pixels ID="Pixels:0" DimensionOrder="XYZCT" Type="uint16"
+    SizeT="{size_t}" SizeZ="1" SizeC="{size_c}" SizeY="{size_y}" SizeX="{size_x}"
+    PhysicalSizeX="0.5" PhysicalSizeXUnit="µm" PhysicalSizeY="0.5" PhysicalSizeYUnit="µm">
+    {''.join(f'<Channel ID="Channel:0:{c}" SamplesPerPixel="1"/>' for c in range(size_c))}
+  </Pixels></Image></OME>"""
+        du = DimUtils(ome_types.from_xml(xml), use_channel_axis=True)
+        shape = [s for s in (size_t, size_c, size_y, size_x) if s != 1]
+        du.calc_image_dimensions(tuple(shape))
+        return du
+
+    def test_copy_stream_roundtrips_timeseries_and_static(self):
+        for size_t in (4, 1):   # timeseries (per-frame copy) and static (whole copy)
+            du = self._du(size_t=size_t, size_c=2, size_y=13, size_x=11)
+            rng = np.random.default_rng(size_t)
+            base = rng.integers(0, 65535, size=tuple(du.im_dim), dtype=np.uint16)
+            d = tempfile.mkdtemp()
+            try:
+                path = os.path.join(d, "cp.ome.zarr")
+                _, level0, _ = zu.open_multiscales_for_writing(
+                    path, base.shape, base.dtype, du, nscales=1)
+                zu.copy_stream(level0, da.from_array(base, chunks=base.shape), du)
+                back = zarr.open_group(path, mode="r")["0"][:]
+                self.assertTrue(np.array_equal(back, base), f"copy_stream mismatch (T={size_t})")
+            finally:
+                shutil.rmtree(d, ignore_errors=True)
+
+
 class MultiscalesMetadataTest(unittest.TestCase):
     """The shared NGFF metadata builder used by both the image writer (create_multiscales) and
     the label writer (segmentation_utils._write_labels_zarr)."""
