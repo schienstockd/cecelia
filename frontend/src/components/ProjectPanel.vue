@@ -7,6 +7,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import BaseModal from './BaseModal.vue'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 import FileBrowser from './FileBrowser.vue'
+import CollapsibleSection from './CollapsibleSection.vue'
 import { useProjectMetaStore, type ProjectType } from '../stores/projectMeta'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
@@ -293,51 +294,6 @@ const typeColour: Record<ProjectType, string> = {
             </tr>
           </tbody>
         </table>
-
-        <!-- export destination + import a bundle + live status of the active export/import -->
-        <div class="pp-io">
-          <div class="pp-io-dest">
-            <span class="dim">Exports to</span>
-            <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
-            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'export'"
-                    v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
-              <i class="pi pi-folder-open" /> Change
-            </button>
-          </div>
-          <div class="pp-io-import">
-            <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
-                    @change="pickBundle(($event.target as HTMLSelectElement).value)"
-                    v-tooltip.top="'Pick a bundle from the export folder.'">
-              <option value="">Choose an exported bundle…</option>
-              <option v-for="b in bundles" :key="b.path" :value="b.path">
-                {{ b.name || b.uid }} — {{ b.stores }} store{{ b.stores === 1 ? '' : 's' }}
-              </option>
-            </select>
-            <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
-                   :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
-                   @keyup.enter="importBundle"
-                   v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
-            <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'import'"
-                    v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
-              <i class="pi pi-folder-open" /> Browse
-            </button>
-            <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
-                    v-tooltip.top="'Import a project from a .ccbundle folder.'">
-              <i class="pi pi-upload" /> Import
-            </button>
-          </div>
-          <div v-if="ioTask" class="pp-io-status" :class="ioTask.status">
-            <span class="pp-io-label">{{ ioTask.label }}</span>
-            <span class="pp-io-state">{{ ioTask.status }}</span>
-            <div v-if="ioBusy" class="pp-io-bar">
-              <div class="pp-io-fill" :style="{ width: Math.round((ioTask.progress ?? 0) * 100) + '%' }" />
-            </div>
-            <button v-if="ioBusy" class="pp-row-btn" @click="cancelIo" v-tooltip.top="'Cancel'">
-              <i class="pi pi-times" />
-            </button>
-            <span v-if="ioTask.log.length" class="pp-io-log">{{ ioTask.log[ioTask.log.length - 1] }}</span>
-          </div>
-        </div>
       </div>
 
       <!-- ── NEW PROJECT tab ───────────────────────────────────────────── -->
@@ -426,6 +382,64 @@ const typeColour: Record<ProjectType, string> = {
           </button>
         </template>
       </div>
+
+      <!-- Export / import — a secondary utility, so it lives in a collapsed section BELOW the primary
+           list + Open project action (rather than wedged between them). Recent tab only. The live
+           job status sits OUTSIDE the collapsible so an in-flight export (started from a row button)
+           or import stays visible even when the controls are collapsed. -->
+      <template v-if="tab === 'recent'">
+        <div v-if="ioTask" class="pp-io pp-io-live">
+          <div class="pp-io-status" :class="ioTask.status">
+            <span class="pp-io-label">{{ ioTask.label }}</span>
+            <span class="pp-io-state">{{ ioTask.status }}</span>
+            <div v-if="ioBusy" class="pp-io-bar">
+              <div class="pp-io-fill" :style="{ width: Math.round((ioTask.progress ?? 0) * 100) + '%' }" />
+            </div>
+            <button v-if="ioBusy" class="pp-row-btn" @click="cancelIo" v-tooltip.top="'Cancel'">
+              <i class="pi pi-times" />
+            </button>
+            <span v-if="ioTask.log.length" class="pp-io-log">{{ ioTask.log[ioTask.log.length - 1] }}</span>
+          </div>
+        </div>
+
+        <CollapsibleSection label="Export / import project" :default-open="false"
+                            storage-key="cc-pm-io-open" max-height="none">
+          <div class="pp-io">
+            <div class="pp-io-dest">
+              <span class="dim">Exports to</span>
+              <code class="pp-io-destpath" v-tooltip.top="exportDir">{{ exportDir || 'cecelia_exports (default)' }}</code>
+              <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'export'"
+                      v-tooltip.top="'Choose where exported bundles are written (any folder, incl. mounted servers/drives).'">
+                <i class="pi pi-folder-open" /> Change
+              </button>
+            </div>
+            <p class="pp-io-hint dim">Export a project to a portable <code>.ccbundle</code> with the
+              <i class="pi pi-download" /> button on any row above. Import one below.</p>
+            <div class="pp-io-import">
+              <select v-if="bundles.length" class="form-input pp-io-select" :disabled="ioBusy"
+                      @change="pickBundle(($event.target as HTMLSelectElement).value)"
+                      v-tooltip.top="'Pick a bundle from the export folder.'">
+                <option value="">Choose an exported bundle…</option>
+                <option v-for="b in bundles" :key="b.path" :value="b.path">
+                  {{ b.name || b.uid }} — {{ b.stores }} store{{ b.stores === 1 ? '' : 's' }}
+                </option>
+              </select>
+              <input class="form-input pp-io-path" v-model="importPath" :disabled="ioBusy"
+                     :placeholder="bundles.length ? '…or paste / browse to a .ccbundle path' : 'Paste or browse to a .ccbundle folder…'"
+                     @keyup.enter="importBundle"
+                     v-tooltip.top="'Absolute path to a .ccbundle folder produced by Export.'" />
+              <button class="btn-ghost btn-sm" :disabled="ioBusy" @click="browserMode = 'import'"
+                      v-tooltip.top="'Browse for a .ccbundle folder anywhere (incl. mounted servers/drives).'">
+                <i class="pi pi-folder-open" /> Browse
+              </button>
+              <button class="btn-ghost btn-sm" :disabled="!importPath.trim() || ioBusy" @click="importBundle"
+                      v-tooltip.top="'Import a project from a .ccbundle folder.'">
+                <i class="pi pi-upload" /> Import
+              </button>
+            </div>
+          </div>
+        </CollapsibleSection>
+      </template>
 
   </BaseModal>
 
@@ -542,8 +556,12 @@ const typeColour: Record<ProjectType, string> = {
 /* import bar + active export/import status */
 .pp-io {
   display: flex; flex-direction: column; gap: 0.5rem;
-  padding: 0.75rem; border-top: 1px solid var(--cc-border);
+  padding: 0.75rem;
 }
+/* live export/import progress — standalone below the footer, so it needs its own top separator */
+.pp-io-live { border-top: 1px solid var(--cc-border); }
+.pp-io-hint { margin: 0; font-size: 0.72rem; }
+.pp-io-hint .pi { font-size: 0.7rem; }
 .pp-conflict { padding: 1rem 1.25rem; font-size: 0.85rem; color: var(--cc-text); }
 .pp-conflict p { margin: 0 0 0.6rem; }
 .pp-conflict code { font-family: var(--cc-mono); font-size: 0.75rem; background: var(--cc-surface-2); padding: 0.05rem 0.3rem; border-radius: 0.2rem; }
