@@ -7,12 +7,16 @@
 # Stored as `{proj.root}/lab-log.md`, at the project ROOT (not under settings/) so it is visible next
 # to the data — the first thing you see returning to a project. Full design: docs/ai-assist/LAB-LOG.md.
 #
-# Format: one `## YYYY-MM-DD [Author]` block per entry, followed by `-` bullet lines. Entries are
-# NEVER edited or deleted — a correction is a new appended `[User — correction]` block. Append-only is
-# enforced here (every write only ever appends) and guarded by the project lockfile (with_transaction)
-# so a human panel write and a Claude write cannot clobber each other. The date and author tag are
-# INJECTED on write — callers never supply the `## …` header — which keeps `[Claude]` entries
-# unforgeable and the on-disk format uniform.
+# Format: one `## YYYY-MM-DD [Author]` block per entry, followed by `-` bullet lines. The HUMAN record
+# (`[User]`/`[Claude]` methodology, corrections) is NEVER edited or deleted — a correction is a new
+# appended `[User — correction]` block (`append_lab_log!`). The ONE exception is the app's own DERIVED
+# activity digest: the rolling daily `[Cecelia]` block is regenerable from the run logs/gating/
+# exclusions, so `upsert_daily_context_block!` rewrites *that day's* `[Cecelia]` block in place as
+# activity accrues — every other block (all human entries, prior days' digests) is preserved
+# byte-for-byte, so the append-only guarantee that matters (the science record) is intact. Both writers
+# are guarded by the project lockfile (with_transaction) so a human panel write and a Claude/app write
+# cannot clobber each other. The date and author tag are INJECTED on write — callers never supply the
+# `## …` header — which keeps `[Claude]` entries unforgeable and the on-disk format uniform.
 
 import Dates   # used at method-definition time (the `date::Dates.Date` default), not only at runtime
 
@@ -69,13 +73,8 @@ the appended block text.
 """
 function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
                          date::Dates.Date = Dates.today())::String
-    lines_vec = lines isa AbstractString ? [lines] : collect(lines)
-    clean = filter!(!isempty, String[_ll_clean(l) for l in lines_vec])
-    isempty(clean) && error("lab log entry needs at least one non-empty line")
-    tag = strip(replace(_ll_clean(author), r"[\[\]]" => ""))
-    isempty(tag) && error("lab log entry needs an author")
-    body  = join(("- " * l for l in clean), "\n")
-    block = "## $(Dates.format(date, "yyyy-mm-dd")) [$(tag)]\n$(body)\n"
+    tag, clean = _ll_tag_and_lines(author, lines)
+    block = _format_lab_block(tag, clean, date)
     with_transaction(proj) do
         p   = lab_log_path(proj)
         sep = (isfile(p) && !isempty(read(p, String))) ? "\n" : ""   # blank line between blocks
@@ -84,6 +83,82 @@ function append_lab_log!(proj::CciaProject, author::AbstractString, lines;
         end
     end
     block
+end
+
+# validate + normalise an (author, lines) pair into (tag, clean_lines); shared by append + upsert.
+function _ll_tag_and_lines(author::AbstractString, lines)::Tuple{String,Vector{String}}
+    lines_vec = lines isa AbstractString ? [lines] : collect(lines)
+    clean = filter!(!isempty, String[_ll_clean(l) for l in lines_vec])
+    isempty(clean) && error("lab log entry needs at least one non-empty line")
+    tag = strip(replace(_ll_clean(author), r"[\[\]]" => ""))
+    isempty(tag) && error("lab log entry needs an author")
+    (String(tag), clean)
+end
+
+# canonical on-disk block text: `## <date> [<tag>]` header + `-` bullets, trailing newline.
+_format_lab_block(tag::AbstractString, clean::Vector{String}, date::Dates.Date)::String =
+    "## $(Dates.format(date, "yyyy-mm-dd")) [$(tag)]\n$(join(("- " * l for l in clean), "\n"))\n"
+
+# Split raw lab-log markdown into ordered segments, each the verbatim text of one block (a `## ` header
+# and every line up to — but not including — the next `## ` header). Any preamble before the first
+# header is its own leading segment. Round-trips: `join(_ll_segments(c), "\n") == c`. Used to rewrite a
+# single derived block in place while preserving every other block byte-for-byte.
+function _ll_segments(content::AbstractString)::Vector{String}
+    segs = String[]
+    cur  = String[]
+    for ln in split(content, '\n')
+        if startswith(ln, "## ") && !isempty(cur)
+            push!(segs, join(cur, "\n"))
+            cur = String[String(ln)]
+        else
+            push!(cur, String(ln))
+        end
+    end
+    isempty(cur) || push!(segs, join(cur, "\n"))
+    segs
+end
+
+# true when a segment is a `[<tag>]` block dated `date` (its first line is the matching `##` header).
+function _ll_is_dated_block(seg::AbstractString, tag::AbstractString, date::Dates.Date)::Bool
+    first_line = String(first(split(seg, '\n'; limit = 2)))
+    m = match(r"^##\s+(\S+)\s+\[(.*?)\]\s*$", first_line)
+    m !== nothing && String(m.captures[1]) == Dates.format(date, "yyyy-mm-dd") &&
+        strip(String(m.captures[2])) == strip(tag)
+end
+
+"""
+Upsert the app's rolling DAILY `[Cecelia]` activity block for `date`. The `[Cecelia]` digest is
+DERIVED, regenerable data (from run logs / gating / exclusions), so — unlike the human `[User]`/
+`[Claude]` methodology record, which stays strictly append-only — the day's block is rewritten in
+place as activity accrues: any existing `[Cecelia]` block(s) dated `date` are removed and the freshly
+regenerated one is appended at the end. Every OTHER block (all human entries, prior days' `[Cecelia]`
+blocks, version boundaries) is preserved byte-for-byte, so the append-only guarantee that matters —
+the science record is never rewritten — is intact. Lock-guarded. Returns the block text on a real
+change; `nothing` when the regenerated block is identical to the one already on disk (a no-op, so an
+open panel doesn't churn). `author` is fixed to `CONTEXT_AUTHOR` by the only caller (capture_context!).
+"""
+function upsert_daily_context_block!(proj::CciaProject, author::AbstractString, lines;
+                                     date::Dates.Date = Dates.today())::Union{String,Nothing}
+    tag, clean = _ll_tag_and_lines(author, lines)
+    block = _format_lab_block(tag, clean, date)
+    with_transaction(proj) do
+        p       = lab_log_path(proj)
+        content = (isfile(p) && !isempty(read(p, String))) ? read(p, String) : ""
+        if isempty(content)
+            open(p, "w") do io; print(io, block); end
+            return block
+        end
+        segs    = _ll_segments(content)
+        today   = [s for s in segs if _ll_is_dated_block(s, tag, date)]
+        # no-op: exactly the same single block already on disk → don't rewrite (avoids panel churn)
+        length(today) == 1 && strip(today[1]) == strip(block) && return nothing
+        kept    = String[s for s in segs if !_ll_is_dated_block(s, tag, date)]
+        joined  = join(kept, "\n")
+        joined  = rstrip(joined) == "" ? "" : joined   # kept was only blanks → treat as empty
+        sep     = isempty(joined) ? "" : (endswith(joined, "\n") ? "\n" : "\n\n")
+        open(p, "w") do io; print(io, joined, sep, block); end
+        return block
+    end
 end
 
 # ── Tuning ratings ────────────────────────────────────────────────────────────

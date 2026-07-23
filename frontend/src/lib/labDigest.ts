@@ -15,3 +15,18 @@ export function firstActionableLine(md: string): string {
   const line = md.split('\n').find(l => l.includes('❌') || l.includes('⚠️')) ?? ''
   return line.replace(/[✅⚠️❌]/gu, '').replace(/^[-*\s]+/, '').trim()
 }
+
+// The actionable lines (⚠️/❌) of a block, trimmed — the unit we diff to detect a NEW flag.
+export function flagLines(md: string): string[] {
+  return md.split('\n').map(l => l.trim()).filter(l => l.includes('❌') || l.includes('⚠️'))
+}
+
+// Flag lines in `cur` that weren't in `prev`. The rolling daily [Cecelia] block is regenerated on
+// every capture and holds ALL of the day's flags, so a later CLEAN task rewrites the block without
+// adding any new warning — badging off the block's worst level would then re-alert a standing flag on
+// every task. Diffing the flag lines fixes that: only a genuinely new/changed ⚠️/❌ badges. `prev`
+// empty (first capture, or after a reload) ⇒ every current flag counts as new (surfaced once).
+export function newFlagLines(prev: string, cur: string): string[] {
+  const before = new Set(flagLines(prev))
+  return flagLines(cur).filter(l => !before.has(l))
+}

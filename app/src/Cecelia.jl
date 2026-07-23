@@ -29,7 +29,7 @@ export cohort_qc, cohort_qc!, cohort_qc_for, cohort_qc_for!, read_cohort_qc, rea
 export cohort_value_names, cohort_runs, cohort_qc_for_all, cohort_qc_for_all!
 export cohort_qc_summary_lines, cohort_has_outliers
 export read_run_log, append_run_log!, run_log_path
-export read_lab_log, append_lab_log!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
+export read_lab_log, append_lab_log!, upsert_daily_context_block!, parse_lab_log, lab_log_path, LAB_LOG_FILENAME
 export read_tuning, set_tuning!
 export read_mutes, set_mute!, lab_log_categories, lab_log_page_categories, lab_log_operation_categories
 export read_dismissed, set_dismissed!

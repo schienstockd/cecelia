@@ -47,12 +47,13 @@ end
 # (and the AI observer reading it) can see repeated failures, not just successes. `params` is the raw
 # task params (sanitised via `_run_log_params`); pass `nothing` (default) when there are none.
 function append_run_log!(img::CciaImage, fun_name::AbstractString, value_name::AbstractString = "",
-                         status::AbstractString = "done", params = nothing)
+                         status::AbstractString = "done", params = nothing;
+                         at::AbstractString = Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS"))
     entries = read_run_log(img)
     push!(entries, Dict{String,Any}(
         "fun" => string(fun_name), "valueName" => string(value_name), "status" => string(status),
         "params" => _run_log_params(params),
-        "at" => Dates.format(Dates.now(), "yyyy-mm-ddTHH:MM:SS")))
+        "at" => String(at)))
     length(entries) > RUN_LOG_CAP && (entries = entries[(end - RUN_LOG_CAP + 1):end])
     open(run_log_path(img), "w") do io
         JSON3.write(io, entries)
