@@ -64,7 +64,7 @@ class DriftStreamingEquivalenceTest(unittest.TestCase):
             self.assertEqual(tuple(out_shape), tuple(legacy.shape))
             path = os.path.join(d, "drift.ome.zarr")
             _, level0, _ = zu.open_multiscales_for_writing(
-                path, out_shape, arr.dtype.newbyteorder('='), du, nscales=1)
+                path, out_shape, arr.dtype, du, nscales=1)   # writer forces native byte order
             cu.drift_correct_im(arr, du, 0, shifts=shifts, out=level0)
             streamed = zarr.open_group(path, mode="r")["0"][:]
         finally:
@@ -109,7 +109,7 @@ class AfStreamingEquivalenceTest(unittest.TestCase):
             self.assertEqual(tuple(out_shape), tuple(legacy.shape))
             path = os.path.join(d, "af.ome.zarr")
             _, level0, _ = zu.open_multiscales_for_writing(
-                path, out_shape, base.dtype.newbyteorder('='), du, nscales=1)
+                path, out_shape, base.dtype, du, nscales=1)   # writer forces native byte order
             cu.af_correct_image(
                 _src(), af_combinations, dim_utils=du, logfile_utils=_Log(),
                 apply_gaussian=True, apply_gaussian_to_others=True, out=level0)

@@ -54,9 +54,9 @@ def run(params):
     # `fortify(im_dat[0])` — a full T×C×Z×Y×X copy, the OOM on large time-lapses). Create the
     # on-disk level 0, copy the input through one timepoint at a time (so uncorrected channels /
     # frames carry over unchanged), then overwrite only the corrected planes in place below.
-    out_dtype = im_dat[0].dtype
     group, output_image, pchunks = zarr_utils.open_multiscales_for_writing(
-        im_correction_path, im_dat[0].shape, out_dtype, dim_utils, nscales=len(im_dat))
+        im_correction_path, im_dat[0].shape, im_dat[0].dtype, dim_utils, nscales=len(im_dat))
+    out_dtype = output_image.dtype   # native (writer forces byte order via zarr_utils.native_dtype)
     zarr_utils.copy_stream(output_image, im_dat[0], dim_utils)
 
     # Physical pixel size (µm/px); divides the user-supplied µm diameter to get pixels.
