@@ -151,6 +151,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/0c/d5/c5db1ea3394c6e1732fb3286b3bd878b59507a8f77d32a2cebda7d7b7cd4/donfig-0.8.1.post1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0d/fe/6bea5c9162869c5beba5d9c8abbed835ec85bf1ec1fba05a3822325c45f3/build-1.5.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/0e/f2/4bd8f2f419088feb3ce55f0ca91040ff902f402edfd197450b20a2e1d533/botocore-1.43.46-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/0f/34/0f54dd9c288941294898877008bcb5c07012340cc9c5db9cff1bd185d449/pywavelets-1.9.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
       - pypi: https://files.pythonhosted.org/packages/10/a1/510b0a7fadc6f43a6ce50152e69dbd86415240835868bb0bd9b5b88b1e06/aioitertools-0.13.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/10/bd/c038d7cc38edc1aa5bf91ab8068b63d4308c66c4c8bb3cbba7dfbc049f9c/pyparsing-3.3.2-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/13/37/a065dc3bd6e49423a6532c642ca7378d3f467b1ef44c2800c937af7f9739/filelock-3.29.4-py3-none-any.whl
@@ -493,6 +494,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/32/d5/f9a850d79b0851d1d4ef6456097579a9005b31fea68726a4ae5f2d82ddd9/threadpoolctl-3.6.0-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/34/78/3cc84d58e13234861adf91d2897254cd84d3d4a90534d91c960b672e67d1/roifile-2026.2.10-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/36/65/a5549325daafc3eae4b52de076798839eaf529a07218f8fb18cccefe76a1/pywavelets-1.9.0-cp312-cp312-macosx_11_0_arm64.whl
       - pypi: https://files.pythonhosted.org/packages/38/a8/258dd138ebe60c79cd8cfaa6d021599208a33f0175a5e29b01f60c9ab2c7/freetype_py-2.5.1-py3-none-macosx_10_9_universal2.whl
       - pypi: https://files.pythonhosted.org/packages/3b/06/711a4d105ad3d01d3ef351a1039bb5cc517a57dbf377d7da9a0808e34c77/in_n_out-0.2.1-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/3f/5b/15d6d6ff8697b188787609be059fe4f07f99fc00f43f68e9e1540fa8733e/dask_image-2026.5.0-py3-none-any.whl
@@ -765,6 +767,7 @@ environments:
       - pypi: https://files.pythonhosted.org/packages/2b/54/9a9edb45345bd6744da5ddfb6628e5d5185920494c6a67ec45b6381004cb/scipy-1.18.0-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/2b/5c/3c5e524ee2aa8acdd05b298dd285ef7abbbdb3333b15e29738d34e0372bc/squidpy-1.8.3-py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2c/58/ca301544e1fa93ed4f80d724bf5b194f6e4b945841c5bfd555878eea9fcb/referencing-0.37.0-py3-none-any.whl
+      - pypi: https://files.pythonhosted.org/packages/2c/a7/0d9ee3fe454d606e0f5c8e3aebf99d2ecddbfb681826a29397729538c8f1/pywavelets-1.9.0-cp312-cp312-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl
       - pypi: https://files.pythonhosted.org/packages/2f/43/d7e2b9ad768c07b5473bea3ac7db9ca4d995c09399cbea3d4df1c0bd4955/rangehttpserver-1.4.0-py2.py3-none-any.whl
       - pypi: https://files.pythonhosted.org/packages/2f/f5/d281ae0f79378a5a91f308ea9fdb9f9cc068fddd09629edc0725a5a8fde1/llvmlite-0.47.0-cp312-cp312-win_amd64.whl
@@ -5004,6 +5007,13 @@ packages:
   - urllib3>=1.25.4,!=2.2.0,<3
   - awscrt==0.32.2 ; extra == 'crt'
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/0f/34/0f54dd9c288941294898877008bcb5c07012340cc9c5db9cff1bd185d449/pywavelets-1.9.0-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl
+  name: pywavelets
+  version: 1.9.0
+  sha256: 573b650805d2f3c981a0e5ae95191c781a722022c37a0f6eba3fa7eae8e0ee17
+  requires_dist:
+  - numpy>=1.25,<3
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/10/a1/510b0a7fadc6f43a6ce50152e69dbd86415240835868bb0bd9b5b88b1e06/aioitertools-0.13.0-py3-none-any.whl
   name: aioitertools
   version: 0.13.0
@@ -5632,6 +5642,13 @@ packages:
   version: 0.5.2
   sha256: e5cbfac9f61484f7e9f3597775500cd3ebe8274e9b050c38f9525c77c97520bf
   requires_python: '>=3.10'
+- pypi: https://files.pythonhosted.org/packages/2c/a7/0d9ee3fe454d606e0f5c8e3aebf99d2ecddbfb681826a29397729538c8f1/pywavelets-1.9.0-cp312-cp312-win_amd64.whl
+  name: pywavelets
+  version: 1.9.0
+  sha256: 92bfb8a117b8c8d3b72f2757a85395346fcbf37f50598880879ae72bd8e1c4b9
+  requires_dist:
+  - numpy>=1.25,<3
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/2c/c6/fa760e12a2483469e2bf5058c5faff664acf66cadb4df2ad6205b016a73d/imageio_ffmpeg-0.6.0-py3-none-win_amd64.whl
   name: imageio-ffmpeg
   version: 0.6.0
@@ -5715,6 +5732,13 @@ packages:
   version: 3.4.7
   sha256: 5ed6ab538499c8644b8a3e18debabcd7ce684f3fa91cf867521a7a0279cab2d6
   requires_python: '>=3.7'
+- pypi: https://files.pythonhosted.org/packages/36/65/a5549325daafc3eae4b52de076798839eaf529a07218f8fb18cccefe76a1/pywavelets-1.9.0-cp312-cp312-macosx_11_0_arm64.whl
+  name: pywavelets
+  version: 1.9.0
+  sha256: df7436a728339696a7aa955c020ae65c85b0d9d2b5ff5b4cf4551f5d4c50f2c7
+  requires_dist:
+  - numpy>=1.25,<3
+  requires_python: '>=3.11'
 - pypi: https://files.pythonhosted.org/packages/37/97/5d3b222b924fa2ed4c2488925155cd0b03fd5d09ee1cfcf7c553c11c9f66/PyQt5_Qt5-5.15.2-py3-none-win_amd64.whl
   name: pyqt5-qt5
   version: 5.15.2

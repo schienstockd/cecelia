@@ -59,7 +59,14 @@ class SegmentationUtils:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     def predict_from_zarr(self, im_dat):
-        """Segment: iterate T × XY tiles for each model."""
+        """Segment: iterate T × XY tiles for each model, ONE TIMEPOINT AT A TIME.
+
+        Each timepoint is filled (tiles), seam-stitched, post-processed, nuc/base matched, and
+        streamed to its on-disk label store before the next — so peak memory is one FRAME of labels
+        per type, not the whole T×Z×Y×X stack (the previous version allocated the full stack and
+        OOM'd on large time-lapses). This is a pure reordering: every post-fill step already looped
+        per timepoint, and the only cross-frame state is the monotonic ``max_labels`` counter (which
+        the per-frame steps never touch), so the label output is byte-identical."""
         models = self.params.get('models', {})
         dim_utils = self.dim_utils
 
@@ -69,47 +76,75 @@ class SegmentationUtils:
             for key, mp in models.items():
                 all_norm_params[key] = self._compute_norm_params(im_dat, mp)
 
-        # Axis indices in image array
+        # Image label store shape derives from the full image shape (tiling now reads whole frames
+        # via zarr_utils.read_timepoint, so per-axis image indices are no longer needed here).
         im_shape = list(im_dat[0].shape)
-        t_idx = dim_utils.dim_idx('T')
-        c_idx = dim_utils.dim_idx('C')
-        y_idx = dim_utils.dim_idx('Y')
-        x_idx = dim_utils.dim_idx('X')
 
         T = dim_utils.dim_val('T') if dim_utils.is_timeseries() else 1
         H = dim_utils.dim_val('Y')
         W = dim_utils.dim_val('X')
         is_3d = dim_utils.is_3D()
 
-        # Label array shape: image shape without C
+        # On-disk label store shape/axes: image shape without C (may include T)
         label_axes = [ax for ax in dim_utils.im_dim_order if ax != 'C']
         label_shape = [im_shape[i] for i, ax in enumerate(dim_utils.im_dim_order) if ax != 'C']
+        store_la_t = label_axes.index('T') if 'T' in label_axes else None
 
-        la_t = label_axes.index('T') if 'T' in label_axes else None
-        la_y = label_axes.index('Y')
-        la_x = label_axes.index('X')
+        # Per-FRAME label buffer: label axes without T (the unit we hold in RAM and process at a time)
+        frame_axes = [ax for ax in label_axes if ax != 'T']
+        frame_shape = [label_shape[i] for i, ax in enumerate(label_axes) if ax != 'T']
+        fa_y = frame_axes.index('Y')
+        fa_x = frame_axes.index('X')
+
+        # Input-image frame axes = image axes without T — KEEPS the channel axis, so its Y/X indices
+        # differ from the (channel-less) label frame's. Used to tile the in-RAM input frame.
+        in_axes = [ax for ax in dim_utils.im_dim_order if ax != 'T']
+        ifa_y = in_axes.index('Y')
+        ifa_x = in_axes.index('X')
 
         # Collect unique matchAs labels in order; 'base' is always the primary type
         match_as_list = list(dict.fromkeys(
             mp.get('matchAs', 'base') for mp in models.values()
         ))
-
-        # In-memory label arrays (uint32 zeros)
-        label_arrs = {ma: np.zeros(label_shape, dtype=self.LABEL_DTYPE) for ma in match_as_list}
         max_labels = {ma: 0 for ma in match_as_list}
+
+        labels_dir = os.path.join(self.task_dir, 'labels')
+        os.makedirs(labels_dir, exist_ok=True)
+        nscales = len(im_dat)
+
+        def _store_path(ma):
+            # 'base' → {outputValueName}.zarr; other types → {outputValueName}_{ma}.zarr
+            name = f'{self.output_value_name}.zarr' if ma == 'base' \
+                else f'{self.output_value_name}_{ma}.zarr'
+            return os.path.join(labels_dir, name)
+
+        # Open one on-disk store per label type up front; frames are streamed into level 0 below.
+        stores = {ma: self._open_label_store(_store_path(ma), label_shape, label_axes, nscales)
+                  for ma in match_as_list}
+        counts = {ma: 0 for ma in match_as_list}
 
         xy_tiles = self._create_xy_tiles(H, W)
         total = T * len(xy_tiles)
         done = 0
 
         for t in range(T):
+            # one frame's labels per type (uint32 zeros), no time axis
+            frame = {ma: np.zeros(frame_shape, dtype=self.LABEL_DTYPE) for ma in match_as_list}
+
+            # Read this timepoint's image ONCE into RAM (time axis dropped → frame_axes layout), then
+            # tile it in memory. Reading each tile from the store instead re-fetches whole chunks per
+            # tile — the over-read the old whole-level fortify() worked around. See
+            # zarr_utils.read_timepoint / docs/todo/ZARR_STREAMING_PLAN.md (Phase 1).
+            frame_in = zarr_utils.read_timepoint(im_dat[0], dim_utils, t, drop_time=True)
+
             for read_yx, write_yx, crop_yx in xy_tiles:
                 for model_key in sorted(models.keys()):
                     model_params = models[model_key]
                     match_as = model_params.get('matchAs', 'base')
                     norm_p = all_norm_params.get(model_key)
 
-                    tile = self._extract_tile(im_dat[0], t, t_idx, y_idx, x_idx, read_yx)
+                    # tile from the in-RAM input frame (t_idx=None: no time axis; input-frame Y/X)
+                    tile = self._extract_tile(frame_in, 0, None, ifa_y, ifa_x, read_yx)
                     masks = self.predict_slice(tile, model_params, norm_p)
                     masks = self._crop_masks(masks, crop_yx, is_3d)
 
@@ -117,49 +152,45 @@ class SegmentationUtils:
                         masks[masks > 0] += max_labels[match_as]
                         max_labels[match_as] = int(masks.max())
 
+                    # la_t=None → write into the frame buffer at its Y/X (no time index)
                     self._write_tile_to_arr(
-                        label_arrs[match_as], masks,
-                        t, la_t, la_y, la_x, write_yx,
-                    )
+                        frame[match_as], masks, 0, None, fa_y, fa_x, write_yx)
 
                 done += 1
                 print(f'[PROGRESS] {done}/{total}', flush=True)
 
-        # Seam stitching: merge cell IDs split at tile boundaries
-        if self.label_overlap > 0:
-            for ma in label_arrs:
-                label_arrs[ma] = self._stitch_tile_seams(
-                    label_arrs[ma], H, W, la_t, la_y, la_x, T)
+            # Per-frame post-fill steps. Passing la_t=None, T=1 takes the whole-array branch of each
+            # helper — i.e. exactly one iteration of the loop each already ran over timepoints.
+            if self.label_overlap > 0:
+                for ma in frame:
+                    frame[ma] = self._stitch_tile_seams(frame[ma], H, W, None, fa_y, fa_x, 1)
 
-        # Post-processing per label type
-        for ma in label_arrs:
-            label_arrs[ma] = self._post_process(label_arrs[ma], label_axes, la_t, T, is_3d)
+            for ma in frame:
+                frame[ma] = self._post_process(frame[ma], frame_axes, None, 1, is_3d)
 
-        # Base-nuc matching: re-assign nuc IDs to match base IDs by IoU
-        if 'base' in label_arrs and 'nuc' in label_arrs:
-            label_arrs['base'], label_arrs['nuc'] = self._match_nuc_cyto(
-                label_arrs['base'], label_arrs['nuc'], la_t, T)
+            if 'base' in frame and 'nuc' in frame:
+                frame['base'], frame['nuc'] = self._match_nuc_cyto(
+                    frame['base'], frame['nuc'], None, 1)
 
-        labels_dir = os.path.join(self.task_dir, 'labels')
-        os.makedirs(labels_dir, exist_ok=True)
+            # Stream each type's frame to disk and tally its (globally unique) label IDs. IDs never
+            # repeat across timepoints (max_labels is monotonic), so per-frame counts sum to the
+            # whole-stack distinct-ID count the previous code returned.
+            for ma in match_as_list:
+                _, level0, _ = stores[ma]
+                if store_la_t is not None:
+                    sl = tuple(t if i == store_la_t else slice(None) for i in range(level0.ndim))
+                    level0[sl] = frame[ma]
+                else:
+                    level0[:] = frame[ma]
+                counts[ma] += count_labels(frame[ma])
 
-        nscales = len(im_dat)
-        # 'base' → {outputValueName}.zarr; other types → {outputValueName}_{ma}.zarr
-        # All written to {task_dir}/labels/
-        primary = label_arrs['base'] if 'base' in label_arrs else next(iter(label_arrs.values()))
-        self._write_labels_zarr(
-            primary,
-            os.path.join(labels_dir, f'{self.output_value_name}.zarr'),
-            label_axes, nscales)
-        for ma, arr in label_arrs.items():
-            if ma != 'base':
-                self._write_labels_zarr(
-                    arr,
-                    os.path.join(labels_dir, f'{self.output_value_name}_{ma}.zarr'),
-                    label_axes, nscales)
+        # Build the pyramids from the on-disk level 0 (bounded — one timepoint at a time)
+        for ma in match_as_list:
+            g, level0, chunks = stores[ma]
+            self._finalize_label_pyramid(g, level0, label_axes, nscales, chunks)
 
         # Objective QC count per label type (banked by the Julia handler via the qc/ sidecar).
-        return {ma: count_labels(arr) for ma, arr in label_arrs.items()}
+        return counts
 
     # ── Tile helpers ──────────────────────────────────────────────────────────
 
@@ -430,8 +461,11 @@ class SegmentationUtils:
 
     # ── Zarr output ───────────────────────────────────────────────────────────
 
-    def _write_labels_zarr(self, arr, out_path, label_axes, nscales):
-        """Write label array as multiscale OME-ZARR v2."""
+    def _open_label_store(self, out_path, label_shape, label_axes, nscales):
+        """Create the label multiscales group + an EMPTY level-0 array on disk, streamed one frame
+        at a time by predict_from_zarr. Returns ``(group, level0, chunks)``. Writes the shared NGFF
+        metadata (see zarr_utils.multiscales_metadata) — one layout for image and label stores;
+        ``label_axes`` already excludes the channel axis."""
         if os.path.exists(out_path):
             shutil.rmtree(out_path)
 
@@ -441,22 +475,24 @@ class SegmentationUtils:
         ax_to_scale = {ax: full_scale[i] for i, ax in enumerate(dim_utils.im_dim_order)}
 
         g = zarr.open_group(out_path, mode='w', zarr_format=2)
-        # Shared multiscales builder (see zarr_utils.multiscales_metadata) — one layout for
-        # image and label stores. label_axes already excludes C.
         g.attrs['multiscales'] = zarr_utils.multiscales_metadata(
             label_axes, nscales, scale_for_axis=ax_to_scale)
 
-        chunks = self._label_chunks(arr.shape, label_axes)
-        g.create_array('0', data=arr.astype(self.LABEL_DTYPE), chunks=chunks)
+        chunks = self._label_chunks(tuple(label_shape), label_axes)
+        level0 = g.create_array('0', shape=tuple(label_shape),
+                                chunks=chunks, dtype=self.LABEL_DTYPE)
+        return g, level0, chunks
 
+    def _finalize_label_pyramid(self, g, level0, label_axes, nscales, chunks):
+        """Build downsampled label pyramid levels from the on-disk level 0 (bounded per timepoint).
+        Labels have no channel axis, so pass explicit X/Y/T indices into the shared pyramid writer
+        rather than the image dim_utils."""
         la_y = label_axes.index('Y')
         la_x = label_axes.index('X')
-        for lvl in range(1, nscales):
-            ds_idx = tuple(
-                slice(None, None, 2 ** lvl) if i in (la_y, la_x) else slice(None)
-                for i in range(arr.ndim)
-            )
-            g.create_array(str(lvl), data=arr[ds_idx].astype(self.LABEL_DTYPE), chunks=chunks)
+        la_t = label_axes.index('T') if 'T' in label_axes else None
+        zarr_utils.write_multiscale_pyramid(
+            g, level0, None, nscales, list(chunks),
+            x_idx=la_x, y_idx=la_y, t_idx=la_t)
 
     def _label_chunks(self, shape, label_axes):
         return tuple(

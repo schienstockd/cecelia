@@ -59,28 +59,32 @@ def run(params):
     log.log(f'>> afCombinations: {af_combinations}')
 
     log.progress(1, 3)
-    log.log('>> correct image')
-    corrected_image = correction_utils.af_correct_image(
+    log.log('>> correct image (streaming to disk)')
+    # Stream channel-by-channel into the on-disk output store — the whole corrected image (all
+    # channels + inverses) never lives in RAM (was the OOM on large time-lapses). Size level 0 up
+    # front (channel count = C + one per inverse), fill per-channel, then build the pyramid.
+    out_shape = correction_utils.af_correction_output_shape(im_dat[0], dim_utils, af_combinations)
+    out_dtype = im_dat[0].dtype.newbyteorder('=')
+    group, level0, pchunks = zarr_utils.open_multiscales_for_writing(
+        im_correction_path, out_shape, out_dtype, dim_utils, nscales=len(im_dat))
+    correction_utils.af_correct_image(
         im_dat[0], af_combinations,
         dim_utils=dim_utils,
         logfile_utils=log,
         apply_gaussian=apply_gaussian,
         apply_gaussian_to_others=apply_gaussian_to_others,
         use_dask=False,
+        out=level0,
     )
 
     log.progress(2, 3)
-    log.log(f'>> save corrected image: {im_correction_path}')
-    zarr_utils.create_multiscales(
-        corrected_image, im_correction_path,
-        dim_utils=dim_utils,
-        nscales=len(im_dat),
-    )
+    log.log(f'>> build pyramid + save: {im_correction_path}')
+    zarr_utils.write_multiscale_pyramid(group, level0, dim_utils, len(im_dat), list(pchunks))
 
     log.log('>> save OME-XML metadata')
     ome_xml_utils.save_meta_in_zarr(
         im_correction_path, im_path,
-        changed_shape=corrected_image.shape,
+        changed_shape=out_shape,
         dim_utils=dim_utils,
     )
 

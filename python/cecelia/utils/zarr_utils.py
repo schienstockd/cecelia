@@ -379,16 +379,130 @@ def create_multiscales(im_array, filepath, dim_utils=None, im_chunks=None,
             ignore_channel=ignore_channel)
 
     if nscales > 1:
-        slices = slice_utils.create_slices_multiscales(
-            im_array.shape, dim_utils=dim_utils,
-            x_idx=x_idx, y_idx=y_idx,
-            nscales=nscales - 1, ignore_channel=ignore_channel,
-            squeeze=squeeze, idx_adjust=idx_adjust
-        )
+        write_multiscale_pyramid(
+            multiscales_zarr, im_array, dim_utils, nscales, im_chunks,
+            x_idx=x_idx, y_idx=y_idx, ignore_channel=ignore_channel,
+            squeeze=squeeze, idx_adjust=idx_adjust)
 
-        for i, x in enumerate(slices):
-            data_slice = fortify(im_array[x]) if isinstance(im_array, dask.array.core.Array) else im_array[x]
-            multiscales_zarr.create_array(str(i + 1), data=data_slice, chunks=im_chunks)
+
+_DERIVE_T = object()   # sentinel: derive the time axis from dim_utils
+
+
+def write_multiscale_pyramid(multiscales_zarr, level_source, dim_utils, nscales, im_chunks,
+                             x_idx=None, y_idx=None, t_idx=_DERIVE_T, ignore_channel=False,
+                             squeeze=False, idx_adjust=0):
+    """Write downsampled pyramid levels 1..nscales-1 into an already-created multiscales group,
+    slicing ``level_source`` (numpy / dask / an on-disk zarr level-0) with power-of-two XY strides.
+
+    Shared by ``create_multiscales``, the streaming correction/cellpose writers, and the label
+    writer. When the source is a timeseries, each level is filled ONE TIMEPOINT AT A TIME, so
+    building the pyramid from an on-disk level 0 never pulls the whole stack back into RAM. Values
+    are identical to slicing the full array in one go (levels downsample level 0, not each other).
+
+    ``t_idx`` defaults to being derived from ``dim_utils`` (the image case). Callers whose axis
+    layout differs from the image — e.g. the label store, which has no channel axis — pass an
+    explicit ``t_idx`` (an int, or None for no time axis) together with explicit ``x_idx``/``y_idx``
+    and ``dim_utils=None``."""
+    if nscales <= 1:
+        return
+
+    shape0 = tuple(level_source.shape)
+    slices = slice_utils.create_slices_multiscales(
+        shape0, dim_utils=dim_utils,
+        x_idx=x_idx, y_idx=y_idx,
+        nscales=nscales - 1, ignore_channel=ignore_channel,
+        squeeze=squeeze, idx_adjust=idx_adjust)
+
+    if t_idx is _DERIVE_T:
+        t_idx = dim_utils.dim_idx('T') if (dim_utils is not None and dim_utils.is_timeseries()) else None
+
+    def _read(src_slice):
+        return fortify(level_source[src_slice]) \
+            if isinstance(level_source, dask.array.core.Array) else level_source[src_slice]
+
+    for i, x in enumerate(slices):
+        # destination shape = length of each (strided) source slice
+        dest_shape = tuple(len(range(*x[d].indices(shape0[d]))) for d in range(len(shape0)))
+        # clamp chunks to the (downsampled) level so a deep pyramid on a small array never asks for
+        # a chunk larger than the axis — only the chunk layout changes, never the pixel values
+        dest_chunks = tuple(max(1, min(c, s)) for c, s in zip(im_chunks, dest_shape))
+        dest = multiscales_zarr.create_array(
+            str(i + 1), shape=dest_shape, chunks=dest_chunks, dtype=level_source.dtype)
+        if t_idx is None:
+            dest[:] = _read(tuple(x))
+        else:
+            for t in range(shape0[t_idx]):
+                rd = list(x);              rd[t_idx] = slice(t, t + 1, 1)
+                wr = [slice(None)] * len(dest_shape); wr[t_idx] = slice(t, t + 1, 1)
+                dest[tuple(wr)] = _read(tuple(rd))
+
+
+def open_multiscales_for_writing(filepath, shape, dtype, dim_utils,
+                                 nscales=1, keyword='datasets', mode='w'):
+    """Create a multiscales group + an EMPTY, per-plane-chunked level-0 array on disk, write the
+    NGFF ``multiscales`` metadata, and return ``(group, level0, pchunks)``.
+
+    Stream data into ``level0`` (e.g. one timepoint or one channel at a time), then call
+    ``write_multiscale_pyramid(group, level0, dim_utils, nscales, pchunks)`` to build the
+    downsampled levels from the on-disk level 0. This keeps peak memory at ~one plane instead of
+    the whole T×C×Z×Y×X image — the drift / AF / cellpose correction tasks used to allocate the
+    entire corrected image in RAM (and OOM on large time-lapses). Metadata and chunking mirror the
+    dask branch of ``create_multiscales`` exactly, so the resulting store is byte-for-byte the same
+    layout — only the fill is streamed."""
+    multiscales_zarr = zarr.open_group(filepath, mode=mode, zarr_format=2)
+
+    axes = list(dim_utils.im_dim_order) if (dim_utils is not None and dim_utils.im_dim_order) else []
+    scale_for_axis = None
+    if axes:
+        scale_for_axis = {
+            ax: (float(s) if s is not None else 1.0)
+            for ax, s in zip(axes, dim_utils.im_scale())
+        }
+    multiscales_zarr.attrs['multiscales'] = multiscales_metadata(
+        axes, nscales, scale_for_axis=scale_for_axis, keyword=keyword)
+
+    pchunks = plane_chunks(tuple(shape), dim_utils)
+    level0 = multiscales_zarr.create_array("0", shape=tuple(shape), chunks=pchunks, dtype=dtype)
+    return multiscales_zarr, level0, pchunks
+
+
+def read_timepoint(level, dim_utils, t, drop_time=True):
+    """Read a single timepoint of an opened zarr/dask level fully into a numpy array.
+
+    The generic "read one frame, then tile/slice/process it in RAM" primitive. Reading per
+    (timepoint, tile) straight from the store re-fetches whole chunks for every tile — dask's auto
+    chunks span the whole timecourse, so one tile pulls a ~128 MB block — which is why tasks used to
+    load the ENTIRE level into RAM. Reading a single frame once gives the same fast in-RAM slicing
+    with memory bounded to one timepoint. Reusable by any per-timepoint task (segmentation, cellpose,
+    measure, denoise, …).
+
+    ``drop_time`` squeezes the length-1 time axis so the frame carries the image's non-time axes in
+    their original order (what per-tile slicing and model input expect); pass False to keep a
+    length-1 T axis and the full image layout. For a non-timeseries level the whole level is returned
+    (there is only one frame)."""
+    if dim_utils is None or not dim_utils.is_timeseries():
+        return fortify(level)
+    t_idx = dim_utils.dim_idx('T')
+    sl = [slice(None)] * len(level.shape)
+    sl[t_idx] = slice(t, t + 1, 1)
+    frame = fortify(level[tuple(sl)])
+    return np.squeeze(frame, axis=t_idx) if drop_time else frame
+
+
+def copy_stream(dest, src, dim_utils=None):
+    """Copy ``src`` (zarr / dask / numpy) into an on-disk ``dest`` of the same shape, one timepoint
+    at a time so a full copy never materialises in RAM. Used when a task rewrites only some
+    channels/planes and must carry the rest through unchanged (e.g. cellpose correct)."""
+    is_ts = dim_utils is not None and dim_utils.is_timeseries()
+    if not is_ts:
+        dest[:] = fortify(src)
+        return
+    t_idx = dim_utils.dim_idx('T')
+    for t in range(src.shape[t_idx]):
+        sl = [slice(None)] * len(src.shape)
+        sl[t_idx] = slice(t, t + 1, 1)
+        sl = tuple(sl)
+        dest[sl] = fortify(src[sl])
 
 
 def apply_min(x, im_min):
