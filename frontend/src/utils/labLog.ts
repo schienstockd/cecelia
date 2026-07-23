@@ -13,11 +13,9 @@ export interface LabLogEntry {
 
 export type AuthorKind = 'claude' | 'correction' | 'cecelia' | 'user' | 'other'
 
-// A thumbs verdict, and the panel's feedback mode.
-//  - 'notes'  → thumbs+comment judge the DECISION → recorded as a [User] log note.
-//  - 'tuning' → thumbs judge the ENTRY TYPE (useful/noise) → config sidecar, not the log.
+// A thumbs verdict on a DECISION: 👍/👎 prefills a [User] note (the recorded content is the note,
+// not the thumb). See LabLogPanel.vue.
 export type Vote = 'up' | 'down'
-export type FeedbackMode = 'notes' | 'tuning'
 
 /** Only app/AI entries get thumbs — you don't rate your own notes. */
 export function isRatable(author: string): boolean {
@@ -26,9 +24,9 @@ export function isRatable(author: string): boolean {
 }
 
 /**
- * Stable content id for an entry (keys tuning ratings). FNV-1a 32-bit over the raw block, hex. Must
- * be deterministic and stable across sessions — the backend is dumb storage keyed by whatever this
- * returns, so it can't drift with a Julia hash-seed change. Entries are append-only, so `raw` (hence
+ * Stable content id for an entry (keys the dismissed-entry list). FNV-1a 32-bit over the raw block,
+ * hex. Must be deterministic and stable across sessions — the backend is dumb storage keyed by
+ * whatever this returns, so it can't drift with a Julia hash-seed change. Entries are append-only, so `raw` (hence
  * the id) never changes once written.
  */
 export function entryId(raw: string): string {
@@ -88,25 +86,24 @@ export function draftToLines(draft: string): string[] {
     .filter(l => l.length > 0)
 }
 
-/** Split the muteable digest categories into the panel's two display groups: all module-page
- *  categories (always shown), and the general Operations group. Any orphaned mute — a category no
- *  longer in either backend list (e.g. a renamed/removed custom category) — is folded into Operations
- *  so it still renders and can be un-muted. Both lists keep the backend's (pipeline) order. */
-export function muteGroups(pageCategories: string[], operationCategories: string[], mutes: string[]):
-  { pages: string[]; operations: string[] } {
-  const pages = pageCategories ?? []
-  const ops = operationCategories ?? []
-  const known = new Set<string>([...pages, ...ops])
-  const orphans = (mutes ?? []).filter(m => !known.has(m))
-  return { pages: [...pages], operations: [...ops, ...orphans] }
+/** Escape a string for literal use inside a RegExp. */
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-/** Display label for a mute chip: the category tag with a capitalised first letter, so the chips read
- *  uniformly (task specs tag some categories lower-case, e.g. "import"). The raw category stays the
- *  mute KEY — only the label is prettified. */
-export function muteCategoryLabel(category: string): string {
-  const c = category ?? ''
-  return c ? c.charAt(0).toUpperCase() + c.slice(1) : c
+/**
+ * Replace each known image UID token in `text` with its current name. The lab log stores stable image
+ * UIDs (names change, UIDs don't); the panel's "Show names" toggle swaps them to names for reading.
+ * Whole-token match (word boundaries) so a UID that happens to be a substring of a longer token is
+ * left alone; a UID not in the map — and all other text — passes through untouched. Returns `text`
+ * unchanged when the map is empty. Resolution is always against LIVE project data (the caller passes
+ * the current uid→name map), so a renamed image shows its new name with no rewrite of the stored log.
+ */
+export function resolveImageRefs(text: string, uidToName: Record<string, string>): string {
+  const uids = Object.keys(uidToName ?? {})
+  if (!uids.length || !text) return text
+  const re = new RegExp(`\\b(${uids.map(escapeRegExp).join('|')})\\b`, 'g')
+  return text.replace(re, m => uidToName[m] ?? m)
 }
 
 /** Count entries authored by Claude that are newer than the last one the user has seen (by date +

@@ -1210,11 +1210,10 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
         return 404, JSON3.write((; error = sprint(showerror, e)))
     end
     # Cecelia authors a "Cohort check" lab-log entry ONLY for docs that flagged (an all-clear would be
-    # noise). This is the cross-image analysis — image NAMES, the metric, its value vs the cohort median
-    # — the durable record the amber button points at (no toast). Best-effort; a lab-log hiccup never
-    # fails the check. Author "Cecelia — …" so the append route treats it as a Cecelia entry.
-    name_by = Dict(img.uid => img.name for img in images(set))
-    name_of(uid) = get(name_by, string(uid), string(uid))
+    # noise). This is the cross-image analysis — image UIDs (stable; the panel resolves uid→name on
+    # demand), the metric, its value vs the cohort median — the durable record the amber button points
+    # at (no toast). Best-effort; a lab-log hiccup never fails the check. Author "Cecelia — …" so the
+    # append route treats it as a Cecelia entry.
     log_flagged(docs) = begin
         flagged = [d for d in docs if d isa AbstractDict && Cecelia.cohort_has_outliers(d)]
         isempty(flagged) && return
@@ -1222,7 +1221,7 @@ function api_qc_cohort_check(body_bytes::Vector{UInt8})
             proj = load_project(project_uid)
             for d in flagged
                 Cecelia.append_lab_log!(proj, "Cecelia — Cohort check",
-                                        Cecelia.cohort_qc_summary_lines(d; name_of = name_of))
+                                        Cecelia.cohort_qc_summary_lines(d))
             end
         catch e
             @warn "cohort check: lab-log append failed" exception = e
@@ -1490,55 +1489,12 @@ function api_lablog_read(req::HTTP.Request)
     end
     content = read_lab_log(proj)
     p = lab_log_path(proj)
+    # uid→name map for the panel's "Show names" toggle: the log stores stable image UIDs; the panel
+    # swaps them to current names on demand (names change, so resolution is always against live data).
+    image_names = Dict(img.uid => img.name for img in images(proj))
     200, JSON3.write((; content, entries=parse_lab_log(content),
-                        tuning=read_tuning(proj), mutes=read_mutes(proj),
-                        pageCategories=lab_log_page_categories(), operationCategories=lab_log_operation_categories(),
-                        dismissed=read_dismissed(proj),
+                        dismissed=read_dismissed(proj), imageNames=image_names,
                         mtime=(isfile(p) ? mtime(p) : nothing)))
-end
-
-# tune → set/clear a "Tuning"-mode rating (useful/noise) for an entry id. Config sidecar, not the
-# log. Body {projectUid, id, vote} where vote ∈ "up"|"down"|"" (clear). Returns the updated map.
-function api_lablog_tune(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
-    project_uid = String(get(body, :projectUid, ""))
-    entry_id    = String(get(body, :id, ""))
-    vote        = String(get(body, :vote, ""))
-    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
-    isempty(entry_id)    && return 400, JSON3.write((; error="id required"))
-    proj = try load_project(project_uid) catch e
-        return 404, JSON3.write((; error=sprint(showerror, e)))
-    end
-    tuning = try
-        set_tuning!(proj, entry_id, vote)
-    catch e
-        return 400, JSON3.write((; error=sprint(showerror, e)))
-    end
-    200, JSON3.write((; ok=true, tuning))
-end
-
-# mute → mute/unmute a whole digest CATEGORY (tasks|populations|exclusions) from future captures.
-# Config sidecar (settings/lab-log-mutes.json), not the log. Body {projectUid, category, muted}.
-function api_lablog_mute(body_bytes::Vector{UInt8})
-    body = try JSON3.read(String(body_bytes)) catch
-        return 400, JSON3.write((; error="Invalid JSON body"))
-    end
-    project_uid = String(get(body, :projectUid, ""))
-    category    = String(get(body, :category, ""))
-    muted       = Bool(get(body, :muted, false))
-    isempty(project_uid) && return 400, JSON3.write((; error="projectUid required"))
-    isempty(category)    && return 400, JSON3.write((; error="category required"))
-    proj = try load_project(project_uid) catch e
-        return 404, JSON3.write((; error=sprint(showerror, e)))
-    end
-    mutes = try
-        set_mute!(proj, category, muted)
-    catch e
-        return 400, JSON3.write((; error=sprint(showerror, e)))
-    end
-    200, JSON3.write((; ok=true, mutes))
 end
 
 # dismiss → hide/un-hide a single entry from the PANEL (config sidecar; the log file is never edited —

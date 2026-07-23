@@ -538,42 +538,15 @@ end
             @test cap.captured == true
             @test occursin("[Cecelia]", cap.block)
             @test any(e -> e.author == "Cecelia", cap.entries)
+            @test occursin(img.uid, cap.block) && !occursin("img-1", cap.block)   # digest refs by uid
+            # read exposes the uid→name map the "Show names" toggle resolves against
+            let r = read_ll()
+                @test Symbol(img.uid) in propertynames(r.imageNames) && getproperty(r.imageNames, Symbol(img.uid)) == "img-1"
+            end
         end
         # bad requests
         @test _post(api_lablog_capture, Dict())[1] == 400              # projectUid missing
         @test _post(api_lablog_capture, Dict("projectUid"=>"nope"))[1] == 404
-
-        # ── tuning ratings (entry-type feedback → config sidecar) ──
-        let t = JSON3.read(_post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"abc123", "vote"=>"down"))[2])
-            @test t.ok == true && t.tuning.abc123 == "down"
-        end
-        # surfaced on read
-        @test JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2]).tuning.abc123 == "down"
-        # clear
-        let t = JSON3.read(_post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"abc123", "vote"=>""))[2])
-            @test !haskey(t.tuning, :abc123)
-        end
-        # bad requests
-        @test _post(api_lablog_tune, Dict("projectUid"=>uid, "id"=>"x", "vote"=>"sideways"))[1] == 400
-        @test _post(api_lablog_tune, Dict("projectUid"=>uid, "vote"=>"up"))[1] == 400   # id missing
-        @test _post(api_lablog_tune, Dict("id"=>"x", "vote"=>"up"))[1] == 400           # projectUid missing
-
-        # ── mutes (category suppression → config sidecar); categories are task-manager tags ──
-        let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>true))[2])
-            @test m.ok == true && "Segment" in m.mutes
-        end
-        # read exposes the mutes and the two category groups the panel's mute chips render (module pages
-        # vs operations) — both dynamic from task specs.
-        let r = JSON3.read(api_lablog_read(HTTP.Request("GET", "/api/lablog?projectUid=$uid"))[2])
-            @test "Segment" in r.mutes
-            @test "Segment" in r.pageCategories && "Gating" in r.pageCategories   # module pages
-            @test "Edit" in r.operationCategories                                 # operations group
-        end
-        let m = JSON3.read(_post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"Segment", "muted"=>false))[2])
-            @test !("Segment" in m.mutes)
-        end
-        @test _post(api_lablog_mute, Dict("projectUid"=>uid, "category"=>"", "muted"=>true))[1] == 400   # empty rejected
-        @test _post(api_lablog_mute, Dict("projectUid"=>uid, "muted"=>true))[1] == 400                   # category missing
 
         # ── dismiss (hide an entry → config sidecar; the log file stays append-only) ──
         let d = JSON3.read(_post(api_lablog_dismiss, Dict("projectUid"=>uid, "id"=>"ff00aa", "dismissed"=>true))[2])
