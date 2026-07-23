@@ -40,10 +40,12 @@
   See docs/UI.md for the full module page authoring guide.
 -->
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useProjectStore } from '../stores/project'
 import { useSettingsStore } from '../stores/settings'
+import { useTaskDefsStore } from '../stores/taskDefs'
 import { isExcluded, isImported } from '../utils/inclusion'
+import { funsRunAcross, wasProcessedWith, funModuleLabel, type ProcMode } from '../utils/runLog'
 import { imageTableCsvRows } from '../utils/imageTable'
 import { rowsToCsv, downloadBlob } from '../plots/export'
 import SetBar from './SetBar.vue'
@@ -103,6 +105,7 @@ function startResize(e: MouseEvent) {
 
 const project    = useProjectStore()
 const settings   = useSettingsStore()
+const taskDefs   = useTaskDefsStore()
 const activeSet  = computed(() => project.activeSet())
 // namespace remembered selections per module so they don't bleed across pages (docs/UI.md)
 const selScope   = computed(() => props.module ?? 'default')
@@ -145,6 +148,27 @@ watch(hideUnimported, v => { try { localStorage.setItem(hideUnimportedKey.value,
 const importedCount = computed(() => (activeSet.value?.images ?? []).filter(isImported).length)
 const unimportedCount = computed(() => (activeSet.value?.images ?? []).length - importedCount.value)
 
+// ── Processed-with filter ────────────────────────────────────────────────────────
+// "Which images have been processed with function X?" — derived from each image's automatic run log
+// (the single source of truth), so no separate status attribute to keep in sync. Pick a function
+// (only funs that have actually been run across the set are offered) + a mode: 'ever' (any run) or
+// 'last' (the most recent run). Persisted per module alongside the other filter toggles.
+const procFunKey  = computed(() => `cc-proc-fun:${props.module ?? 'default'}`)
+const procModeKey = computed(() => `cc-proc-mode:${props.module ?? 'default'}`)
+const procFun  = ref(localStorage.getItem(`cc-proc-fun:${props.module ?? 'default'}`) ?? '')
+const procMode = ref<ProcMode>(
+  (localStorage.getItem(`cc-proc-mode:${props.module ?? 'default'}`) as ProcMode) || 'ever')
+watch(procFun,  v => { try { localStorage.setItem(procFunKey.value, v) } catch { /* ignore */ } })
+watch(procMode, v => { try { localStorage.setItem(procModeKey.value, v) } catch { /* ignore */ } })
+onMounted(() => { taskDefs.ensureLoaded() })   // for pretty function labels in the dropdown
+
+// funs that have actually been run across the set — the candidate list for the "processed with" filter
+const runFuns = computed(() =>
+  funsRunAcross((activeSet.value?.images ?? []).map(i => i.runLog)))
+const procFunLabel = (fun: string) => `${funModuleLabel(fun)} · ${taskDefs.labelFor(fun)}`
+// the picked fun is only active as a filter while it's still a real candidate (a set switch may drop it)
+const procActive = computed(() => !!procFun.value && runFuns.value.includes(procFun.value))
+
 const attrKeys = computed(() => {
   const imgs = activeSet.value?.images ?? []
   const keys = new Set<string>()
@@ -183,17 +207,20 @@ function resetFilters() {
   attrFilters.value    = {}
   appliedFilters.value = {}
   filterInvert.value   = false
+  procFun.value        = ''
 }
 
 const filteredUids = computed<string[] | undefined>(() => {
   const attrActive = props.showFilter && hasApplied.value
+  const procOn     = props.showFilter && procActive.value
   // Nothing narrowing the list → let ImageTable show everything (excluded still render, greyed).
-  if (!attrActive && !hideExcluded.value && !hideUnimported.value) return undefined
+  if (!attrActive && !procOn && !hideExcluded.value && !hideUnimported.value) return undefined
   const imgs = activeSet.value?.images ?? []
   return imgs
     .filter(img => {
       if (hideExcluded.value && isExcluded(img)) return false
       if (hideUnimported.value && !isImported(img)) return false
+      if (procOn && !wasProcessedWith(img.runLog, procFun.value, procMode.value)) return false
       if (!attrActive) return true
       const matches = Object.entries(appliedFilters.value).every(([key, vals]) =>
         vals.includes(String(img.attr?.[key] ?? ''))
@@ -322,19 +349,38 @@ const visibleUids = computed<string[]>(() =>
               <span class="filter-label">Imported {{ importedCount }}</span>
             </button>
 
-            <button v-if="showFilter && attrKeys.length > 0"
-              class="filter-toggle" :class="{ active: hasApplied || filtersOpen }"
+            <button v-if="showFilter && (attrKeys.length > 0 || runFuns.length > 0)"
+              class="filter-toggle" :class="{ active: hasApplied || procActive || filtersOpen }"
               @click="filtersOpen = !filtersOpen"
-              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute'">
+              v-tooltip.left="filtersOpen ? 'Hide filters' : 'Filter images by attribute or processing history'">
               <i class="pi pi-filter" />
-              <span class="filter-label">Filter{{ hasApplied ? ' •' : '' }}</span>
+              <span class="filter-label">Filter{{ (hasApplied || procActive) ? ' •' : '' }}</span>
               <i :class="['pi', filtersOpen ? 'pi-chevron-up' : 'pi-chevron-down']" class="filter-caret" />
             </button>
           </div>
         </div>
 
-        <!-- attr filter dropdown — only when open -->
-        <div v-if="showFilter && activeSet && attrKeys.length > 0 && filtersOpen" class="attr-filter">
+        <!-- filter dropdown (attributes + processing history) — only when open -->
+        <div v-if="showFilter && activeSet && (attrKeys.length > 0 || runFuns.length > 0) && filtersOpen" class="attr-filter">
+          <!-- processed-with: filter to images a given function has been run on (ever / on last run) -->
+          <div v-if="runFuns.length > 0" class="filter-row proc-row">
+            <span class="filter-key" v-tooltip.right="'Filter to images processed with a function'">Processed with</span>
+            <div class="proc-controls">
+              <select v-model="procFun" class="proc-select"
+                v-tooltip.bottom="'Only show images this function has been run on'">
+                <option value="">any function…</option>
+                <option v-for="fun in runFuns" :key="fun" :value="fun">{{ procFunLabel(fun) }}</option>
+              </select>
+              <div class="proc-mode" :class="{ disabled: !procFun }">
+                <label v-tooltip.bottom="'Match images the function has EVER been run on'">
+                  <input type="radio" value="ever" v-model="procMode" :disabled="!procFun" /> ever
+                </label>
+                <label v-tooltip.bottom="'Match only images whose most recent run was this function'">
+                  <input type="radio" value="last" v-model="procMode" :disabled="!procFun" /> last run
+                </label>
+              </div>
+            </div>
+          </div>
           <div class="filter-rows">
             <div v-for="key in attrKeys" :key="key" class="filter-row">
               <span class="filter-key" v-tooltip.right="`Filter by ${key}`">{{ key }}</span>
@@ -352,7 +398,7 @@ const visibleUids = computed<string[]>(() =>
           <div class="filter-actions">
             <button class="cc-btn cc-btn-ghost" :disabled="!hasFilters" @click="applyFilters"
               v-tooltip.top="'Apply selected filters to the image list.'">Apply</button>
-            <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters" @click="resetFilters"
+            <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters && !procFun" @click="resetFilters"
               v-tooltip.top="'Clear all filters.'">Reset</button>
             <label class="filter-invert" v-tooltip.top="'Invert the filter — show images that do NOT match.'">
               <input type="checkbox" v-model="filterInvert" :disabled="!hasApplied" />
@@ -590,6 +636,24 @@ const visibleUids = computed<string[]>(() =>
 }
 .filter-invert input { cursor: pointer; }
 .filter-invert:has(input:disabled) { opacity: 0.4; cursor: not-allowed; }
+
+/* processed-with filter row (function picker + ever/last mode) */
+.proc-row { padding-bottom: 0.45rem; margin-bottom: 0.15rem; border-bottom: 1px solid var(--cc-border); }
+.proc-row .filter-key { min-width: 104px; }
+.proc-controls { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.proc-select {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 0.3rem;
+  background: var(--cc-surface-1);
+  border: 1px solid var(--cc-border);
+  color: var(--cc-text);
+  max-width: 240px;
+}
+.proc-mode { display: flex; align-items: center; gap: 0.55rem; font-size: 0.75rem; color: var(--cc-text-dim); }
+.proc-mode label { display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; }
+.proc-mode.disabled { opacity: 0.4; }
+.proc-mode input { cursor: pointer; }
 
 .filter-rows   { display: flex; flex-direction: column; gap: 0.3rem; }
 

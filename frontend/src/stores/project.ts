@@ -30,7 +30,7 @@ export interface CciaImage {
   included?: boolean                      // false ⇒ excluded from processing (default/absent = included)
   note?: string                           // optional free-text reason (e.g. why excluded)
   qc?: Record<string, import('../lib/qc').QcDoc>  // "funName/valueName" → QC doc (docs/todo/QC_PLAN.md)
-  runLog?: { fun: string; valueName?: string; at: string }[]  // automatic per-image run history (provenance)
+  runLog?: import('../utils/runLog').RunLogEntry[]  // automatic per-image run history (provenance)
 }
 
 export interface CciaSet {

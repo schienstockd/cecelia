@@ -5,6 +5,7 @@ import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
+import { moduleColor } from '../utils/taskModule'
 
 const tasks    = useTaskStore()
 const ws       = useWsStore()
@@ -102,13 +103,6 @@ const statusCfg: Record<TaskStatus, { cls: string; icon: string; tip: string }> 
   cancelled: { cls: 'st-cancelled', icon: 'pi-ban',          tip: 'Cancelled' },
 }
 
-const MODULE_COLORS: Record<string, string> = {
-  import:   '#7c3aed',
-  metadata: '#0369a1',
-  cleanup:  '#065f46',
-  segment:  '#92400e',
-}
-function moduleColor(m: string) { return MODULE_COLORS[m] ?? '#52525b' }
 
 const FILTERS = [
   { key: 'all',       label: 'All' },
