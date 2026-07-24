@@ -1,8 +1,9 @@
 # Analysis figures & movies (animation)
 
-Status (updated 2026-07-24): A–G + F1/F2 **done/merged**. **Phase H (movie title card) IN PROGRESS**
-— see the H section below. Supersedes the ad-hoc parts of the image-strip tasks (#00032 legend,
-#00036 zoom-to-source) — both now live on the shared snapshot foundation.
+Status (updated 2026-07-24): A–G + F1/F2 **done/merged**. **Phase H (movie title card) DONE** across
+all three entry points (H1 primitive, H2 batch, H3 single record, H4 animation) — see the H section
+below. Supersedes the ad-hoc parts of the image-strip tasks (#00032 legend, #00036 zoom-to-source) —
+both now live on the shared snapshot foundation.
 
 ## Goal
 
@@ -271,9 +272,13 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   are provably ONE capture-legend path (the batch path uses the same `overlay_legend_content` resolver
   server-side, since it has no live client snapshot). Movie panel gains a title toggle/duration/note
   row, persisted per set in `getMovieConfig().titleCard` (default ON).
-- **H4 — animation page** (`AnimationModule.vue` → `record_keyframes`). Card reflects the FIRST
-  keyframe's view; channels read after applying keyframe 0. Pops/colour-by derived from the first
-  keyframe's overlay layers if feasible, else title + channels + note.
+- **~~H4 — animation page~~ — DONE** (`AnimationModule.vue` → `record_keyframes`). Same live-view path
+  as single-record: the frontend builds the payload from the FIRST keyframe's snapshot via the SHARED
+  `buildTitleCard` (→ `captureViewLegend`) and sends it; `record_keyframes` re-applies keyframe 0
+  after `animate` so `_maybe_prepend_title` reads the matching Channels. Header gains a title
+  toggle/duration/note, persisted per project in `stores/animation.ts` (`titleCard`, default ON).
+  `buildTitleCard` (title + populations + colour-by) is now the ONE card-payload builder shared by
+  single-record and the animation page.
 
 ## References
 

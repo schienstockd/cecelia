@@ -5,7 +5,7 @@ import { useProjectMetaStore } from '../stores/projectMeta'
 import { useSettingsStore } from '../stores/settings'
 import { useWsStore } from '../stores/ws'
 import { useLogStore } from '../stores/log'
-import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, captureViewLegend } from '../utils/napariOverlays'
+import { pushTracks as apiPushTracks, pushPopulations as apiPushPopulations, pushColourLabels as apiPushColourLabels, buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
 import type { TitleCardCfg } from '../utils/batchMovie'
 import ConfirmDeleteButton from './ConfirmDeleteButton.vue'
 
@@ -173,11 +173,10 @@ async function recordTimelapse() {
   recording.value = true
   log.info('Recording timelapse… (this can take a moment)', { source: 'napari' })
   try {
-    // Title card (Phase H): build the non-channel sections from the CURRENT view exactly as the
-    // analysis-board strip does — capture the view state, then the SHARED captureViewLegend
-    // (parseOverlays → /api/napari/overlay-legend). Channels are added by the recorder from the live
-    // viewer, so we omit them here (consistent with batch). No bespoke legend logic in this component.
-    let titleCard: Record<string, unknown> | undefined
+    // Title card (Phase H): capture the CURRENT view state (no PNG) and build the payload via the
+    // SHARED buildTitleCard — the same path the animation page uses. Channels are added by the recorder
+    // from the live viewer, so the frontend supplies only title + non-channel sections.
+    let titleCard: TitleCardPayload | undefined
     if (titleCardOn.value) {
       const colourBy  = currentSetUid.value ? settings.getColourBy(currentSetUid.value) : ''
       const overrides = (currentSetUid.value && colourBy) ? settings.getColourOverrides(currentSetUid.value, colourBy) : {}
@@ -187,17 +186,8 @@ async function recordTimelapse() {
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ projectUid }) })
         if (vsr.ok) snapshot = ((await vsr.json()) as { viewState?: { layers?: Record<string, unknown> } }).viewState ?? null
       } catch { /* best-effort — card still renders title + channels */ }
-      const leg = await captureViewLegend(projectUid, uid, snapshot, colourBy, overrides)
-      const sections: { heading: string; items: { label: string; colour: string }[] }[] = []
-      const pops = leg.populations.map(p => ({ label: p.name, colour: p.colour }))
-      if (pops.length) sections.push({ heading: 'Populations', items: pops })
-      const cby = (leg.colourBy?.items ?? []).filter(it => it.colour).map(it => ({ label: it.label, colour: it.colour }))
-      if (cby.length) sections.push({ heading: leg.colourBy?.column || 'Colour by', items: cby })
-      // title = image name + its attribute values (sorted by key) — matches the batch card
-      const img = napariImage.value
-      const attrs = img?.attr ? Object.keys(img.attr).sort().map(k => (img.attr as Record<string, string>)[k]?.trim()).filter(Boolean) : []
-      const title = [img?.name ?? '', ...attrs].filter(Boolean).join(' — ')
-      titleCard = { enabled: true, note: titleNote.value, durationSec: titleDur.value, title, sections }
+      titleCard = await buildTitleCard(projectUid, uid, snapshot, napariImage.value,
+        { note: titleNote.value, durationSec: titleDur.value, colourBy, colourOverrides: overrides })
     }
     const res = await fetch('/api/napari/record-timelapse', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

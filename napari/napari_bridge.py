@@ -1168,12 +1168,13 @@ class NapariState:
             title_card=title_card)
         return {"frames": frames, "path": path, "n_timepoints": n_t}
 
-    def record_keyframes(self, path: str, keyframes, fps: int = 15, canvas_only: bool = True):
+    def record_keyframes(self, path: str, keyframes, fps: int = 15, canvas_only: bool = True, title_card=None):
         """Render an interpolated keyframe animation to `path` (mp4): each keyframe's saved view state is
         applied + captured with `steps` tween frames from the previous one (camera/contrast/colour/T
-        interpolation). The "connect animation steps" render — see docs/todo/ANIMATION_PLAN.md (F2).
-        Delegates to the shared `napari_utils.record_keyframes`. Needs ≥2 keyframes."""
-        frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps, canvas_only=canvas_only)
+        interpolation). The "connect animation steps" render — see docs/todo/ANIMATION_PLAN.md (F2);
+        H4 adds `title_card`. Delegates to the shared `napari_utils.record_keyframes`. Needs ≥2 keyframes."""
+        frames = napari_utils.record_keyframes(self._viewer, path, keyframes, fps=fps,
+                                               canvas_only=canvas_only, title_card=title_card)
         return {"frames": frames, "path": path, "keyframes": len(keyframes)}
 
     # ── Task dir (needed for labels / props) ──────────────────────────────────
@@ -1303,7 +1304,8 @@ def execute_command(state: NapariState, cmd: dict) -> dict:
 
         elif t == "record_keyframes":
             res = state.record_keyframes(cmd["path"], cmd.get("keyframes", []),
-                                         fps=cmd.get("fps", 15), canvas_only=cmd.get("canvas_only", True))
+                                         fps=cmd.get("fps", 15), canvas_only=cmd.get("canvas_only", True),
+                                         title_card=cmd.get("title_card"))
             return {"type": "ok", "cmd": t, **res}
 
         elif t == "save_screenshot":

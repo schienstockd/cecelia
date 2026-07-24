@@ -241,6 +241,9 @@ end
 # `keyframes` = ordered [(; viewState, steps)], each tweened `steps` frames from the previous. Returns
 # the bridge reply (frame count + path). See docs/todo/ANIMATION_PLAN.md (F2).
 record_keyframes!(v::NapariViewer, path::String, keyframes::AbstractVector; fps::Int=15,
-                  canvas_only::Bool=true)::Dict{String,Any} =
-    send(v, Dict{String,Any}("type"=>"record_keyframes", "path"=>path, "fps"=>fps,
-                             "canvas_only"=>canvas_only, "keyframes"=>keyframes))
+                  canvas_only::Bool=true, title_card=nothing)::Dict{String,Any} = begin
+    cmd = Dict{String,Any}("type"=>"record_keyframes", "path"=>path, "fps"=>fps,
+                           "canvas_only"=>canvas_only, "keyframes"=>keyframes)
+    title_card !== nothing && (cmd["title_card"] = title_card)   # Phase H4 description slide
+    send(v, cmd)
+end

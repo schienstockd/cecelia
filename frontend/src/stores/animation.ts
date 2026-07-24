@@ -6,6 +6,7 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
 import { useProjectMetaStore } from './projectMeta'
+import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
 
 export interface AnimSnapshot {
   id: string
@@ -21,13 +22,15 @@ export interface AnimSnapshot {
 export const useAnimationStore = defineStore('animation', () => {
   const snapshots = ref<AnimSnapshot[]>([])
   const fps = ref(15)                    // output frame rate (per project)
+  const titleCard = ref<TitleCardCfg>({ ...TITLE_CARD_DEFAULT })   // Phase H4 description slide (per project)
   const _restoring = ref(false)         // suppress autosave while hydrating from the project load
 
   // hydrate from the project-load response (or clear on a project with none / on switch)
-  function load(data: { snapshots?: AnimSnapshot[]; fps?: number } | null | undefined) {
+  function load(data: { snapshots?: AnimSnapshot[]; fps?: number; titleCard?: TitleCardCfg } | null | undefined) {
     _restoring.value = true
     snapshots.value = data?.snapshots ?? []
     fps.value = data?.fps ?? 15
+    titleCard.value = data?.titleCard ?? { ...TITLE_CARD_DEFAULT }
     _restoring.value = false
   }
   function add(s: AnimSnapshot) { snapshots.value = [...snapshots.value, s] }
@@ -58,12 +61,13 @@ export const useAnimationStore = defineStore('animation', () => {
     timer = setTimeout(() => {
       fetch('/api/projects/animations', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectUid: uid, animations: { snapshots: snapshots.value, fps: fps.value } }),
+        body: JSON.stringify({ projectUid: uid, animations: { snapshots: snapshots.value, fps: fps.value, titleCard: titleCard.value } }),
       }).catch(() => { /* autosave is best-effort */ })
     }, 600)
   }
   watch(snapshots, _save, { deep: true })
   watch(fps, _save)
+  watch(titleCard, _save, { deep: true })
 
   // drag-and-drop: place the dragged keyframe at the target's position (both must be the same image —
   // the timeline is per-image).
@@ -78,5 +82,5 @@ export const useAnimationStore = defineStore('animation', () => {
     snapshots.value = arr
   }
 
-  return { snapshots, fps, load, add, remove, move, reorder }
+  return { snapshots, fps, titleCard, load, add, remove, move, reorder }
 })
