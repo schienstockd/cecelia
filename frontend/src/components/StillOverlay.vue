@@ -34,21 +34,30 @@ const barY = computed(() => ey.value - my.value - barH.value)
 </script>
 
 <template>
-  <svg v-if="ok" class="still-ovl" :viewBox="`0 0 ${ex} ${ey}`" preserveAspectRatio="xMidYMid meet">
-    <!-- timestamp, top-left -->
-    <text v-if="showTimestamp && timeLabel" :x="mx" :y="my + font" :font-size="font"
-          class="ovl-text" text-anchor="start">{{ timeLabel }}</text>
-    <!-- scale bar, bottom-right: bar + label centered above it -->
-    <template v-if="showScaleBar && bar">
+  <div class="still-ovl">
+    <!-- elapsed-time timestamp, top-left: plain HTML so it draws even when the frame has NO physical
+         extent — a timestamp needs no µm scale (the scale bar below does). Previously it lived inside the
+         extent-gated <svg v-if="ok">, so ticking "timestamp" on a frame without an extent did nothing. -->
+    <div v-if="showTimestamp && timeLabel" class="ovl-ts">{{ timeLabel }}</div>
+    <!-- vector scale bar, bottom-right: an SVG whose viewBox IS the frame's physical extent (µm), so the
+         bar length is correct by construction and stays aligned to the letterboxed image. Needs the extent. -->
+    <svg v-if="ok && showScaleBar && bar" class="ovl-svg" :viewBox="`0 0 ${ex} ${ey}`" preserveAspectRatio="xMidYMid meet">
       <rect :x="barX1" :y="barY" :width="bar.um" :height="barH" class="ovl-fill" />
       <text :x="(barX1 + barX2) / 2" :y="barY - font * 0.35" :font-size="font"
             class="ovl-text" text-anchor="middle">{{ bar.label }}</text>
-    </template>
-  </svg>
+    </svg>
+  </div>
 </template>
 
 <style scoped>
-.still-ovl { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.still-ovl { position: absolute; inset: 0; pointer-events: none; }
+.ovl-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+/* timestamp: white with a dark outline (four text-shadows ≈ SVG paint-order stroke) so it reads on any
+   background, matching the channel legend's on-image styling (.is-legend). */
+.ovl-ts { position: absolute; top: 5px; left: 6px; color: #fff; font-weight: 700; line-height: 1;
+  font-family: system-ui, sans-serif; font-size: 11px;
+  text-shadow: -1px -1px 0 rgba(0,0,0,0.85), 1px -1px 0 rgba(0,0,0,0.85),
+               -1px 1px 0 rgba(0,0,0,0.85), 1px 1px 0 rgba(0,0,0,0.85); }
 /* white with a dark outline so it reads on any background (like napari's overlays) */
 .ovl-text { fill: #fff; paint-order: stroke; stroke: rgba(0,0,0,0.85); stroke-width: 0.5;
   font-weight: 700; font-family: system-ui, sans-serif; }

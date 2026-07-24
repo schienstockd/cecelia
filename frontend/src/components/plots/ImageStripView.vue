@@ -417,11 +417,16 @@ defineExpose({ exportImage })
 .is-capture { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
   border: 1px dashed var(--cc-border); background: transparent; color: var(--cc-text-dim); cursor: pointer; font-size: 12px; }
 .is-capture:hover { color: var(--cc-text); border-color: #7c3aed; }
-/* per-frame actions (recapture / remove): TOP-right. The BOTTOM band is owned by the panel footer
-   overlay (Duplicate / Export) — the actions used to collide with the Duplicate button there. The top
-   band only holds the LEFT-aligned strip toolbar, so top-right is clear; z-index 7 keeps them above
-   the auto-hide toolbar (z-index 6) so hovering never masks them (the earlier "retake masked" bug). */
-.is-actions { position: absolute; top: 4px; right: 4px; display: flex; gap: 4px; z-index: 7; }
+/* per-frame actions (zoom-to-source / recapture / remove): BOTTOM-left, revealed on cell hover.
+   They used to sit TOP-right (z-index 7) — but that's exactly where the CanvasPanel's OWN controls
+   live (pin / duplicate / ⋯ menu, z-index 6), so the always-on strip actions sat on top and blocked
+   them. Bottom-right holds the scale bar and the panel footer (Duplicate/Export), so bottom-left is
+   the free corner. Auto-hide (like the toolbar) so they never permanently obscure the frame or the
+   optional channel legend that also anchors bottom-left; z-index 8 keeps them above it while hovering,
+   and the `.is-strip.capturing` rule below drops them from the PDF export. */
+.is-actions { position: absolute; bottom: 4px; left: 4px; display: flex; gap: 4px; z-index: 8;
+  opacity: 0; transition: opacity 0.12s ease; }
+.is-cell:hover .is-actions { opacity: 1; }
 /* per-frame action buttons — match the app's icon buttons (like .is-gear / .opt-btn) rather than the
    old dark translucent pills: solid surface + border, purple accent on hover. Sit over the image, so a
    solid surface reads cleanly. */
