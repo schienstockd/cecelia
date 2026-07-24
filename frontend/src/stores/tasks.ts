@@ -30,9 +30,17 @@ export const useTaskStore = defineStore('tasks', () => {
   const tasks   = ref<TaskEntry[]>([])
   const _seqRef = ref(0)
 
+  // Signal for a UNIVERSAL "started in background" confirmation. `add()` is the client-dispatch
+  // entry point (crop, copy, project export/import, generic task:run) — incoming server events go
+  // through setStatus/setProgress by id, and chain steps through addFromChainEvent, so bumping this
+  // only on add() fires one toast per user-initiated background job. App.vue watches it (component
+  // context needed for useToast). Avoids each dialog rolling its own "it's running" feedback.
+  const lastStarted = ref<TaskEntry | null>(null)
+
   function add(t: Omit<TaskEntry, 'id' | 'log' | 'seq'>): TaskEntry {
     const entry: TaskEntry = { ...t, id: shortId(), log: [], seq: ++_seqRef.value }
     tasks.value.unshift(entry)
+    lastStarted.value = entry
     return entry
   }
 
@@ -153,5 +161,5 @@ export const useTaskStore = defineStore('tasks', () => {
     return entry
   }
 
-  return { tasks, add, addFromChainEvent, appendLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
+  return { tasks, lastStarted, add, addFromChainEvent, appendLog, setStatus, setProgress, restart, cancel, cancelChainRun, remove, clearFinished, forModule, running, jumpToId }
 })
