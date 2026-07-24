@@ -11,7 +11,7 @@ import { useProjectStore } from '../stores/project'
 import { useLogStore } from '../stores/log'
 import { useAnimationStore, type AnimSnapshot } from '../stores/animation'
 import { useSettingsStore } from '../stores/settings'
-import { buildTitleCard, type TitleCardPayload } from '../utils/napariOverlays'
+import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../utils/napariOverlays'
 import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
@@ -216,16 +216,18 @@ async function render() {
       viewState: f.snapshot,
       steps: Math.max(1, Math.round((f.duration ?? 1) * anim.fps)),
     }))
-    // Title card (Phase H4): build from the FIRST keyframe's view via the SHARED buildTitleCard (same
-    // path as single-record). The recorder re-applies keyframe 0 to add the matching Channels.
+    // Title card (Phase H4): describe everything shown "at some point" across the animation — build from
+    // a UNION of all keyframes' views (channels + overlays merged), via the SHARED buildTitleCard. It
+    // includes the Channels section itself (from the union), since the recorder can't reconstruct the
+    // union from one live view.
     let titleCard: TitleCardPayload | undefined
     if (anim.titleCard.enabled && frames.value.length) {
       const setUid   = projectStore.setUidOfImage(openImageUid.value ?? '') ?? ''
       const colourBy = setUid ? settings.getColourBy(setUid) : ''
       const overrides = (setUid && colourBy) ? settings.getColourOverrides(setUid, colourBy) : {}
-      const first = frames.value[0].snapshot as { layers?: Record<string, unknown> } | undefined
-      titleCard = await buildTitleCard(projectUid.value, openImageUid.value ?? '', first, openImage.value,
-        { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides })
+      const union = unionViewSnapshot(frames.value.map(f => f.snapshot as { layers?: Record<string, unknown> } | undefined))
+      titleCard = await buildTitleCard(projectUid.value, openImageUid.value ?? '', union, openImage.value,
+        { note: anim.titleCard.note, durationSec: anim.titleCard.durationSec, colourBy, colourOverrides: overrides, includeChannels: true })
     }
     const res = await fetch('/api/napari/record-animation', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -253,10 +255,10 @@ async function render() {
           fps <input type="range" min="1" max="40" step="1" v-model.number="anim.fps" class="anim-range" />
           <span class="anim-num">{{ anim.fps }}</span>
         </label>
-        <!-- Title card (Phase H4): prepend a description slide built from the FIRST keyframe's view -->
+        <!-- Title card (Phase H4): prepend a slide describing everything shown across the keyframes -->
         <label class="anim-title-toggle"
-               v-tooltip.bottom="'Prepend a title slide (name, attributes, channels & colours) from the first keyframe'">
-          <input type="checkbox" v-model="anim.titleCard.enabled" /> title
+               v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'">
+          <input type="checkbox" v-model="anim.titleCard.enabled" /> Title card
         </label>
         <template v-if="anim.titleCard.enabled">
           <label class="anim-fps" v-tooltip.bottom="'Title-card duration (seconds)'">
