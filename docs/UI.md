@@ -102,9 +102,21 @@ Global classes defined in `style.css` — use these everywhere instead of scoped
 <button class="cc-btn cc-btn-primary" @click="...">
   <i class="pi pi-plus" /> Add images
 </button>
+
+<!-- Destructive: solid (prominent, standalone) vs ghost (subtle, inline in a table/bar) -->
+<button class="cc-btn cc-btn-danger" @click="...">Delete project</button>
+<button class="cc-btn cc-btn-danger-ghost" @click="...">Delete</button>
 ```
 
-Both support `:disabled` (opacity 0.35, not-allowed cursor) and work with `v-tooltip`.
+`.cc-btn` is always the base; add exactly one colour modifier (`-primary` / `-ghost` / `-danger` /
+`-danger-ghost`). All support `:disabled` (opacity 0.35, not-allowed cursor) and `v-tooltip`.
+
+**Never hand-roll `.btn-sm` / `.btn-primary` / `.btn-danger` in a component's scoped `<style>`.** That
+was the old trap: a class that *looks* shared but is re-declared per file (and drifts — the danger
+colour was `#b91c1c` in one place and `#7f1d1d44` in three, disabled opacity varied 0.35/0.4/0.55), and
+a page that used the class without its own copy got a raw browser button (the Movies refresh bug). One
+source: these utilities. (Bespoke *icon-only* buttons — `.po-toggle`, viewer-green action icons, etc. —
+are a separate, intentional case, not this family.)
 
 ## Form controls
 

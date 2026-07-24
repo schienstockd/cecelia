@@ -304,19 +304,19 @@ async function fillFlagged() {
       </div>
 
     <template #footer>
-      <button class="btn-ghost btn-sm" :disabled="propagating" @click="fillFlagged"
+      <button class="cc-btn cc-btn-ghost" :disabled="propagating" @click="fillFlagged"
         v-tooltip.top="'Fill this image\'s values into the OTHER selected images that are flagged — same-session acquisitions usually match exactly.'">
         <i v-if="propagating" class="pi pi-spin pi-cog" /><i v-else class="pi pi-share-alt" />
         Fill flagged
       </button>
-      <button class="btn-ghost btn-sm" :disabled="copying" @click="copyToSelected"
+      <button class="cc-btn cc-btn-ghost" :disabled="copying" @click="copyToSelected"
         v-tooltip.top="'Copy this image\'s values to the other selected images.'">
         <i v-if="copying" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
         Copy to selected
       </button>
       <span class="footer-spacer" />
-      <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
-      <button class="btn-primary btn-sm" :disabled="saving" @click="apply"
+      <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
+      <button class="cc-btn cc-btn-primary" :disabled="saving" @click="apply"
         v-tooltip.top="`Apply to ${targetUids.length} image(s). Doesn't retroactively recompute derived measures (e.g. track speed).`">
         <i v-if="saving" class="pi pi-spin pi-cog" /><i v-else class="pi pi-check" />
         Apply
@@ -361,18 +361,5 @@ async function fillFlagged() {
 .unit-input { flex: 0 0 4.2rem; }
 
 .footer-spacer { flex: 1; }
-
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 0.35rem; border: 1px solid transparent;
-  cursor: pointer; white-space: nowrap;
-}
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover:not(:disabled) { color: var(--cc-text); }
-.btn-ghost:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>

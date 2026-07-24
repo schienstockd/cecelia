@@ -117,8 +117,8 @@ async function copy() {
     </div>
 
     <template #footer>
-      <button class="btn-ghost btn-sm" @click="emit('close')">Cancel</button>
-      <button class="btn-primary btn-sm" :disabled="busy || checking || !picked.size" @click="copy">
+      <button class="cc-btn cc-btn-ghost" @click="emit('close')">Cancel</button>
+      <button class="cc-btn cc-btn-primary" :disabled="busy || checking || !picked.size" @click="copy">
         <i v-if="busy" class="pi pi-spin pi-cog" /><i v-else class="pi pi-copy" />
         Copy to {{ picked.size }} image{{ picked.size === 1 ? '' : 's' }}
       </button>
@@ -143,11 +143,5 @@ async function copy() {
 .cg-missing-head { display: flex; align-items: center; gap: 0.35rem; color: #f59e0b; }
 .cg-missing-names { padding-left: 1.1rem; word-break: break-word; }
 
-.btn-sm { display: flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; font-weight: 500;
-  padding: 0.35rem 0.75rem; border-radius: 0.35rem; border: 1px solid transparent; cursor: pointer; white-space: nowrap; }
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover:not(:disabled) { color: var(--cc-text); }
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>

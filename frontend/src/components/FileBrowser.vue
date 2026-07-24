@@ -166,7 +166,7 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 
         <div v-else-if="error" class="fb-state error">
           <i class="pi pi-exclamation-triangle" /> {{ error }}
-          <button class="btn-ghost btn-sm" @click="navigate('')">Back to home</button>
+          <button class="cc-btn cc-btn-ghost" @click="navigate('')">Back to home</button>
         </div>
 
         <table v-else class="fb-table">
@@ -251,17 +251,17 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
       <span class="sel-count dim" v-else>{{ mode === 'bundle' ? 'No bundle selected' : 'No files selected' }}</span>
 
       <div class="footer-actions">
-        <button class="btn-ghost btn-sm" @click="$emit('close')"
+        <button class="cc-btn cc-btn-ghost" @click="$emit('close')"
           v-tooltip.top="'Cancel and close the file browser.'">
           Cancel
         </button>
         <!-- dir mode: pick the current folder; image/bundle: confirm the selection -->
-        <button v-if="mode === 'dir'" class="btn-primary btn-sm"
+        <button v-if="mode === 'dir'" class="cc-btn cc-btn-primary"
           :disabled="!listing?.current" @click="confirm"
           v-tooltip.top="'Use this folder.'">
           <i class="pi pi-check" /> Use this folder
         </button>
-        <button v-else class="btn-primary btn-sm"
+        <button v-else class="cc-btn cc-btn-primary"
           :disabled="selected.size === 0" @click="confirm"
           v-tooltip.top="mode === 'bundle'
             ? 'Import the selected bundle.'
@@ -359,17 +359,5 @@ const shortcuts   = computed(() => listing.value?.shortcuts ?? [])
 /* footer */
 .sel-count { font-size: 0.78rem; color: var(--cc-text); flex: 1; }
 .footer-actions { display: flex; gap: 0.4rem; }
-
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500;
-  padding: 0.35rem 0.75rem;
-  border-radius: 0.35rem; border: 1px solid transparent;
-  cursor: pointer;
-}
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover { color: var(--cc-text); }
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; background: var(--cc-surface-2); color: var(--cc-text-dim); }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>

@@ -126,16 +126,16 @@ async function deleteSet() {
           autofocus
           v-tooltip.bottom="'Press Enter to create, Escape to cancel.'"
         />
-        <button class="btn-primary btn-sm" @click="createSet" :disabled="creating"
+        <button class="cc-btn cc-btn-primary" @click="createSet" :disabled="creating"
           v-tooltip.bottom="'Create this image set.'">
           <i v-if="creating" class="pi pi-spin pi-cog" />
           <template v-else>Create</template>
         </button>
-        <button class="btn-ghost btn-sm" @click="showNewInput = false"
+        <button class="cc-btn cc-btn-ghost" @click="showNewInput = false"
           v-tooltip.bottom="'Cancel.'">Cancel</button>
       </template>
       <template v-else>
-        <button class="btn-ghost btn-sm" @click="showNewInput = true"
+        <button class="cc-btn cc-btn-ghost" @click="showNewInput = true"
           v-tooltip.bottom="'Create a new image set to group related images together.'">
           <i class="pi pi-plus" /> New set
         </button>
@@ -144,18 +144,18 @@ async function deleteSet() {
       <span class="spacer" />
 
       <template v-if="activeSet && !confirmDelete">
-        <button class="btn-danger btn-sm" @click="confirmDelete = true"
+        <button class="cc-btn cc-btn-danger-ghost" @click="confirmDelete = true"
           v-tooltip.bottom="`Delete set '${activeSet.name}' and all its images. This cannot be undone.`">
           <i class="pi pi-trash" /> Delete set
         </button>
       </template>
       <template v-if="confirmDelete">
         <span class="confirm-text">Delete <strong>{{ activeSet?.name }}</strong>?</span>
-        <button class="btn-danger btn-sm" @click="deleteSet"
+        <button class="cc-btn cc-btn-danger-ghost" @click="deleteSet"
           v-tooltip.bottom="'Permanently delete this set and remove all its images from disk.'">
           Confirm
         </button>
-        <button class="btn-ghost btn-sm" @click="confirmDelete = false"
+        <button class="cc-btn cc-btn-ghost" @click="confirmDelete = false"
           v-tooltip.bottom="'Cancel deletion.'">Cancel</button>
       </template>
     </template>
@@ -202,17 +202,5 @@ async function deleteSet() {
 .set-name-input { width: 180px; border-color: var(--cc-accent); }
 .spacer { flex: 1; }
 .confirm-text { font-size: 0.82rem; color: var(--cc-text-dim); }
-.btn-sm {
-  display: flex; align-items: center; gap: 0.3rem;
-  font-size: 0.78rem; font-weight: 500; padding: 0.3rem 0.65rem;
-  border-radius: 0.35rem; border: 1px solid transparent;
-  cursor: pointer; transition: background 0.12s;
-}
-.btn-primary { background: var(--cc-accent); color: #fff; }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-ghost { background: var(--cc-surface-2); border-color: var(--cc-border); color: var(--cc-text-dim); }
-.btn-ghost:hover { color: var(--cc-text); border-color: #484f58; }
-.btn-danger { background: #7f1d1d44; border-color: #7f1d1d; color: #fca5a5; }
-.btn-danger:hover { background: #7f1d1d88; }
+/* buttons use the global .cc-btn utilities (style.css) */
 </style>
