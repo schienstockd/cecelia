@@ -998,6 +998,7 @@ th:hover .resize-handle::after { opacity: 1; }
   align-items: center;
   gap: 0.25rem;
   min-width: 0;
+  margin-top: 0.3rem;
 }
 /* run-history cog + popover (fixed so it escapes the table's horizontal scroll) */
 .runlog-cell { position: relative; display: inline-flex; flex-shrink: 0; }
