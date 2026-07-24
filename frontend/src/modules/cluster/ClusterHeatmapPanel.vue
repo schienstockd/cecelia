@@ -15,6 +15,7 @@ import { useDataRefresh } from '../../composables/useDataRefresh'
 import CanvasPanel from '../../components/canvas/CanvasPanel.vue'
 import type { ArrangeCmd } from '../../composables/useFloatingPanel'
 import PlotChart from '../../components/plots/PlotChart.vue'
+import CcToggle from '../../components/CcToggle.vue'
 import { defaultVis, plotDataToCsv, type BuildOpts, type VisProps } from '../../plots/plot'
 import { downloadDataUrl, downloadBlob } from '../../plots/export'
 import type { PlotDataResponse } from '../../plots/types'
@@ -146,9 +147,8 @@ defineExpose({ exportImage, getCsv, exportSvg })
         <option value="minmax">0–1</option>
         <option value="zscore">z-score</option>
       </select>
-      <label class="hm-chk" v-tooltip.bottom="'Print the value in each cell'">
-        <input type="checkbox" v-model="heatmapValues" /> values
-      </label>
+      <CcToggle class="hm-chk" v-model="heatmapValues" label="values"
+        v-tooltip.bottom="'Print the value in each cell'" />
     </template>
     <!-- utility actions (duplicate / export) in the footer, like SummaryPanel / the HMM panels -->
     <template #footer>

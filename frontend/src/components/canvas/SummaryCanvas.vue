@@ -27,6 +27,7 @@ import CanvasZoomControl from './CanvasZoomControl.vue'
 import { tkey, parseTkey } from '../../plots/series'
 import { defaultVis, type VisProps } from '../../plots/plot'
 import type { SeriesTarget, ChartType } from '../../plots/types'
+import CcToggle from '../CcToggle.vue'
 
 // `canvasKey` OPTIONALLY overrides the persistence namespace (default `summary:{module|universal}`).
 // The tabbed Analysis board passes `analysis:{projectUid}:tab:{id}` per tab so each board persists
@@ -157,9 +158,8 @@ watch(segPops, () => {
             </template>
           </template>
         </div>
-        <label class="sc-pool" v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only (no separation by population or image)'">
-          <input type="checkbox" v-model="poolGroups" /> pool to groups
-        </label>
+        <CcToggle class="sc-pool" v-model="poolGroups" label="pool to groups"
+          v-tooltip.bottom="'Pool across populations and images so each plot shows one series per Split-by group only (no separation by population or image)'" />
         <div class="seg" v-tooltip.bottom="'Arrange windows'">
           <button v-tooltip.bottom="'Tile in a grid'" @click="arrangeGrid"><i class="pi pi-th-large" /></button>
           <button v-tooltip.bottom="'Cascade windows'" @click="arrangeCascade"><i class="pi pi-clone" /></button>

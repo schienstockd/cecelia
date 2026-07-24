@@ -6,6 +6,7 @@ import { useSettingsStore } from '../stores/settings'
 import TeleportPopover from '../components/TeleportPopover.vue'
 import PoolThrottle from '../components/PoolThrottle.vue'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import CcToggle from '../components/CcToggle.vue'
 import { moduleColor } from '../utils/taskModule'
 
 const tasks    = useTaskStore()
@@ -126,10 +127,8 @@ const FILTERS: ChipOption[] = [
         aria-label="Filter tasks by status"
         @update:model-value="v => statusFilter = v as typeof statusFilter" />
 
-      <label class="follow-toggle" v-tooltip.left="'Automatically select the newest running task'">
-        <input type="checkbox" v-model="settings.taskListAutoFollow" />
-        Auto-follow
-      </label>
+      <CcToggle class="follow-toggle" v-model="settings.taskListAutoFollow" label="Auto-follow"
+        v-tooltip.left="'Automatically select the newest running task'" />
 
       <button ref="throttleBtn" class="tm-throttle" :class="{ active: throttleOpen }"
         @click="throttleOpen = !throttleOpen"

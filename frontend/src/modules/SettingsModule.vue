@@ -11,6 +11,7 @@ import { useCustomModulesStore } from '../stores/customModules'
 import { fetchStorageSummary, reclaimStorage, formatBytes, type StorageSummary } from '../utils/storage'
 import { useWsStore } from '../stores/ws'
 import { useTaskStore } from '../stores/tasks'
+import CcToggle from '../components/CcToggle.vue'
 
 const showPackages = ref(false)
 
@@ -349,17 +350,13 @@ async function switchWt(path: string) {
       <h2 class="section-title">Interface</h2>
 
       <div class="field">
-        <label class="toggle-row" v-tooltip.right="'When a task starts running, automatically select it in the task manager log panel.'">
-          <input type="checkbox" v-model="settings.taskListAutoFollow" />
-          <span class="toggle-label">Auto-follow running tasks in task manager</span>
-        </label>
+        <CcToggle class="toggle-row" v-model="settings.taskListAutoFollow" label="Auto-follow running tasks in task manager"
+          v-tooltip.right="'When a task starts running, automatically select it in the task manager log panel.'" />
       </div>
 
       <div class="field">
-        <label class="toggle-row" v-tooltip.right="'Keep plots in sync with your data: when a task finishes, any plot or population list showing the affected image(s) reloads on its own. Turn off to keep plots steady while you work — they update next time you open or change them.'">
-          <input type="checkbox" v-model="settings.autoRefreshOnTask" />
-          <span class="toggle-label">Auto-refresh plots when tasks finish</span>
-        </label>
+        <CcToggle class="toggle-row" v-model="settings.autoRefreshOnTask" label="Auto-refresh plots when tasks finish"
+          v-tooltip.right="'Keep plots in sync with your data: when a task finishes, any plot or population list showing the affected image(s) reloads on its own. Turn off to keep plots steady while you work — they update next time you open or change them.'" />
       </div>
     </section>
 
@@ -597,14 +594,13 @@ async function switchWt(path: string) {
       <!-- discrete-GPU toggle: launches the napari bridge on the dGPU (hybrid-graphics machines).
            Linux only; disabled with a hint elsewhere. Flipping it restarts napari to apply. -->
       <div class="field" style="margin: 0.2rem 0 0.6rem;">
-        <label class="toggle-row"
-               :class="{ disabled: !gpuSupported || gpuBusy }"
+        <CcToggle class="toggle-row" :disabled="!gpuSupported || gpuBusy"
+               :model-value="settings.napariDiscreteGpu"
+               @update:model-value="settings.napariDiscreteGpu = $event; toggleGpu()"
                v-tooltip.right="'Render napari on the discrete GPU (hybrid graphics). Restarts napari to apply. Linux only.'">
-          <input type="checkbox" v-model="settings.napariDiscreteGpu"
-                 :disabled="!gpuSupported || gpuBusy" @change="toggleGpu" />
-          <span class="toggle-label">Use discrete GPU for napari</span>
+          Use discrete GPU for napari
           <i v-if="gpuBusy" class="pi pi-spin pi-cog" style="font-size:0.7rem;" />
-        </label>
+        </CcToggle>
         <span v-if="!gpuSupported" class="field-hint">
           Only configurable on Linux — on this system the GPU is selected by the OS/driver.
         </span>
@@ -690,10 +686,9 @@ async function switchWt(path: string) {
       <h2 class="section-title">Developer</h2>
 
       <div class="field">
-        <label class="toggle-row" v-tooltip.right="'Show a Julia console that evaluates code in the running server. Only works when the server is loopback-bound (127.0.0.1); a network-bound server refuses it regardless.'">
-          <input type="checkbox" v-model="replToggle" @change="toggleRepl" />
-          <span class="toggle-label">Enable debug console</span>
-        </label>
+        <CcToggle class="toggle-row" label="Enable debug console"
+          :model-value="replToggle" @update:model-value="replToggle = $event; toggleRepl()"
+          v-tooltip.right="'Show a Julia console that evaluates code in the running server. Only works when the server is loopback-bound (127.0.0.1); a network-bound server refuses it regardless.'" />
       </div>
 
       <!-- toggle is on but the server is network-bound → eval is refused server-side (loopback required) -->

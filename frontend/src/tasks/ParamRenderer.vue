@@ -10,6 +10,7 @@ import type { CciaImage } from '../stores/project'
 import { SEVERITY, type Severity } from '../lib/severity'
 import { groupPopulations, type PopGroupDef, type RawGroup } from '../utils/popGroups'
 import ChipSelect, { type ChipOption } from '../components/ChipSelect.vue'
+import CcToggle from '../components/CcToggle.vue'
 
 type GroupValues = Record<string, ParamValues>
 
@@ -469,17 +470,9 @@ const pct = computed(() => {
       <span class="slider-val">{{ val }}</span>
     </div>
 
-    <!-- bool → toggle checkbox -->
-    <label v-else-if="param.type === 'bool'" class="toggle-wrap"
-      v-tooltip.right="param.tip ?? ''">
-      <input type="checkbox" class="toggle-input"
-        :checked="val as boolean"
-        @change="val = ($event.target as HTMLInputElement).checked"
-      />
-      <span class="toggle-track">
-        <span class="toggle-thumb" />
-      </span>
-    </label>
+    <!-- bool → shared toggle switch -->
+    <CcToggle v-else-if="param.type === 'bool'" v-tooltip.right="param.tip ?? ''"
+      :model-value="val as boolean" @update:model-value="val = $event" />
 
     <!-- text -->
     <input v-else-if="param.type === 'text'"
@@ -732,30 +725,7 @@ const pct = computed(() => {
   text-align: right;
 }
 
-/* toggle */
-.toggle-wrap { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-.toggle-input { display: none; }
-.toggle-track {
-  width: 32px; height: 17px;
-  border-radius: 999px;
-  background: var(--cc-surface-2);
-  border: 1px solid var(--cc-border);
-  position: relative;
-  transition: background 0.15s, border-color 0.15s;
-}
-.toggle-input:checked ~ .toggle-track {
-  background: var(--cc-accent);
-  border-color: var(--cc-accent);
-}
-.toggle-thumb {
-  position: absolute;
-  width: 11px; height: 11px;
-  border-radius: 50%;
-  background: #fff;
-  top: 2px; left: 2px;
-  transition: left 0.15s;
-}
-.toggle-input:checked ~ .toggle-track .toggle-thumb { left: 17px; }
+/* bool → shared CcToggle switch (see components/CcToggle.vue) */
 
 /* text / select — visual styling comes from the global form base (style.css) */
 .text-input, .select-input { width: 100%; }

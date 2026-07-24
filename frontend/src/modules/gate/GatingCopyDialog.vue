@@ -13,6 +13,7 @@ import { useProjectMetaStore } from '../../stores/projectMeta'
 import { useCanvasPanelsStore } from '../../stores/canvasPanels'
 import { useLogStore } from '../../stores/log'
 import { imagesWithValueName } from '../../lib/valueNames'
+import CcToggle from '../../components/CcToggle.vue'
 
 const props = defineProps<{
   setUid: string
@@ -102,9 +103,8 @@ async function copy() {
               <span class="cg-name">{{ i.name }}</span>
             </label>
           </div>
-          <label class="cg-layout" v-tooltip.top="'Also copy the plot layout (plots, channels, parents).'">
-            <input type="checkbox" v-model="copyLayout" /> Also copy plot layout
-          </label>
+          <CcToggle class="cg-layout" v-model="copyLayout" label="Also copy plot layout"
+            v-tooltip.top="'Also copy the plot layout (plots, channels, parents).'" />
         </template>
         <p v-else-if="siblings.length" class="cg-empty">No images have the “{{ valueName }}” segmentation.</p>
 

@@ -15,6 +15,7 @@ import { buildTitleCard, unionViewSnapshot, type TitleCardPayload } from '../uti
 import { napariColormapHex } from '../utils/napariColormap'
 import { elapsedLabel } from '../utils/stillOverlay'
 import ConfirmDeleteButton from '../components/ConfirmDeleteButton.vue'
+import CcToggle from '../components/CcToggle.vue'
 
 const projectMeta = useProjectMetaStore()
 const projectStore = useProjectStore()
@@ -256,10 +257,8 @@ async function render() {
           <span class="anim-num">{{ anim.fps }}</span>
         </label>
         <!-- Title card (Phase H4): prepend a slide describing everything shown across the keyframes -->
-        <label class="anim-title-toggle"
-               v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'">
-          <input type="checkbox" v-model="anim.titleCard.enabled" /> Title card
-        </label>
+        <CcToggle class="anim-title-toggle" v-model="anim.titleCard.enabled" label="Title card"
+               v-tooltip.bottom="'Prepend a title slide — name, attributes, and every channel / population / colour-by shown at some point across the animation'" />
         <template v-if="anim.titleCard.enabled">
           <label class="anim-fps" v-tooltip.bottom="'Title-card duration (seconds)'">
             <input type="range" min="1" max="10" step="1" v-model.number="anim.titleCard.durationSec" class="anim-range" />
@@ -293,10 +292,9 @@ async function render() {
                 v-tooltip.bottom="'Replace the selected keyframe with the current napari view (re-capture)'">
           <i :class="['pi', updating ? 'pi-spin pi-spinner' : 'pi-refresh']" /> Update selected
         </button>
-        <label class="anim-sync" v-tooltip.bottom="'Show the selected keyframe in napari when you click it (so you can see / tweak it)'">
-          <input type="checkbox" :checked="syncNapari" @change="onToggleSync(($event.target as HTMLInputElement).checked)" />
-          Sync napari
-        </label>
+        <CcToggle class="anim-sync" label="Sync napari"
+          :model-value="syncNapari" @update:model-value="onToggleSync($event)"
+          v-tooltip.bottom="'Show the selected keyframe in napari when you click it (so you can see / tweak it)'" />
       </div>
 
       <p v-if="!frames.length" class="anim-empty">No keyframes yet — set up the view in napari and

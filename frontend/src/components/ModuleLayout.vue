@@ -54,6 +54,7 @@ import ImageTable from './ImageTable.vue'
 import CollapsibleSection from './CollapsibleSection.vue'
 import HintCallout from './HintCallout.vue'
 import ChipSelect, { type ChipOption } from './ChipSelect.vue'
+import CcToggle from './CcToggle.vue'
 
 const props = withDefaults(defineProps<{
   module?:      string
@@ -414,10 +415,8 @@ const visibleUids = computed<string[]>(() =>
               v-tooltip.top="'Apply selected filters to the image list.'">Apply</button>
             <button class="cc-btn cc-btn-ghost" :disabled="!hasApplied && !hasFilters" @click="resetFilters"
               v-tooltip.top="'Clear the attribute filters.'">Reset</button>
-            <label class="filter-invert" v-tooltip.top="'Invert the filter — show images that do NOT match.'">
-              <input type="checkbox" v-model="filterInvert" :disabled="!hasApplied" />
-              Invert
-            </label>
+            <CcToggle class="filter-invert" v-model="filterInvert" :disabled="!hasApplied" label="Invert"
+              v-tooltip.top="'Invert the filter — show images that do NOT match.'" />
           </div>
         </div>
 
