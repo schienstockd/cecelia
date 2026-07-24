@@ -18,6 +18,7 @@ import { useProjectStore } from '../../stores/project'
 import { channelLegend } from '../../utils/viewLegend'
 import { elapsedLabel } from '../../utils/stillOverlay'
 import { parseOverlays, overlayPushConfig } from '../../utils/overlayLayers'
+import { captureViewLegend } from '../../utils/napariOverlays'
 import { restoreOverlays } from '../../utils/napariOverlays'
 import ViewLegend from '../ViewLegend.vue'
 import StillOverlay from '../StillOverlay.vue'
@@ -129,22 +130,13 @@ async function capture(i: number) {
     // the snapshot's overlay layer names; the backend skips any that aren't a named population (e.g. the
     // whole-segmentation "/_tracked" layer), so track-cluster + gated track pops get legend entries too.
     if (c.imageUid) {
-      const overlayPops = parseOverlays(c.snapshot?.layers as Record<string, unknown>)
-        .map(o => ({ valueName: o.valueName, popType: o.popType, path: o.path }))
       // include the set's user recolours for this colour-by so the captured legend matches what's shown
       // (a recoloured category — e.g. an HMM state with no population — wins over the default colour).
       const colourOverrides = (props.setUid && c.colourBy)
         ? settings.getColourOverrides(props.setUid, c.colourBy) : {}
-      try {
-        const lr = await fetch('/api/napari/overlay-legend', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ projectUid: props.projectUid, imageUid: c.imageUid, colourBy: c.colourBy, overlayPops, colourOverrides }),
-        })
-        if (lr.ok) {
-          const j = await lr.json() as OverlaysLegend & { ok?: boolean }
-          c.overlaysLegend = { colourBy: j.colourBy, populations: j.populations }
-        }
-      } catch { /* legend is best-effort */ }
+      // shared capture-legend path (also used by the single-record movie card) — best-effort
+      const leg = await captureViewLegend(props.projectUid, c.imageUid, c.snapshot as { layers?: Record<string, unknown> }, c.colourBy ?? '', colourOverrides)
+      c.overlaysLegend = { colourBy: leg.colourBy, populations: leg.populations }
     }
   } catch (e) { err.value = e instanceof Error ? e.message : String(e) }
   finally { capturing.value = -1 }

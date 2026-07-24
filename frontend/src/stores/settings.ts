@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import { TITLE_CARD_DEFAULT, type TitleCardCfg } from '../utils/batchMovie'
 
 export const useSettingsStore = defineStore('settings', () => {
   const taskListAutoFollow = ref(
@@ -130,7 +131,7 @@ export const useSettingsStore = defineStore('settings', () => {
     colourByOverrides?: Record<string, Record<string, string>>
     // timelapse-recording params (extensible — F1.2 adds channels/pops/T-range here). fps = frame rate,
     // scale = supersample factor (2 = 2× resolution). Per-set like the other viewer prefs.
-    movie?: { fps?: number; scale?: number }
+    movie?: { fps?: number; scale?: number; titleCard?: TitleCardCfg }   // titleCard: Phase H (H3)
     // 3D-crop z-range and t-range as 0–100 % (per set — the XY crop box itself is per-session, drawn in
     // napari each time since a region is image-specific). Only the ranges persist, like other prefs.
     cropZ?: { lo?: number; hi?: number }
@@ -183,11 +184,12 @@ export const useSettingsStore = defineStore('settings', () => {
     _patchSet(setUid, { colourByOverrides: all })
   }
   // timelapse-recording params (per set); defaults match the backend (fps 15, scale 1×)
-  const getMovieConfig = (setUid: string): { fps: number; scale: number } => ({
+  const getMovieConfig = (setUid: string): { fps: number; scale: number; titleCard: TitleCardCfg } => ({
     fps: _setPrefs.value[setUid]?.movie?.fps ?? 15,
     scale: _setPrefs.value[setUid]?.movie?.scale ?? 1,
+    titleCard: _setPrefs.value[setUid]?.movie?.titleCard ?? { ...TITLE_CARD_DEFAULT },
   })
-  function setMovieConfig(setUid: string, patch: { fps?: number; scale?: number }) {
+  function setMovieConfig(setUid: string, patch: { fps?: number; scale?: number; titleCard?: TitleCardCfg }) {
     _patchSet(setUid, { movie: { ...(_setPrefs.value[setUid]?.movie ?? {}), ...patch } })
   }
   // 3D-crop z-range (per set) as 0–100 %; default full depth (0–100)

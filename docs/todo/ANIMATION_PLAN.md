@@ -256,11 +256,21 @@ separate doc. Applies to all three movie paths: single record, batch, animation 
   **Channels** section from the live viewer (`_visible_channel_legend`, colormap→hex) and prepends the
   card best-effort (`_maybe_prepend_title` — never fails the recording). Frontend toggle/note/duration
   in `BatchMoviesPanel.vue` (config + clamp in `utils/batchMovie.ts`, default ON), persisted per set.
-  **Deferred:** the explicit point-**populations** rows (deriving the exact shown-pop set from the
-  batch config robustly needs care; the colour-by section already covers the split-by-cluster case).
-  Card content so far = title + channels + colour-by + note.
-- **H3 — single record** (`ViewerPanel.vue` → `api_napari_record_timelapse`). No overlay config
-  exists on this path, so the card shows title + channels (+ note); pops/colour-by best-effort/empty.
+  **Populations section:** `_config_overlay_pops(img, config)` lists the shown pops (point pops AND
+  tracks, one list) via the SAME canonical resolvers the show-handlers use (`resolve_pops` for point
+  pops; the pop maps for track gates & clusters; `/_tracked` → a generic "tracks" row), fed through
+  `overlay_legend_content` → ONE **Populations** section (deduped by name), matching the strip /
+  single-record card. Card content (batch) = title + channels + populations + colour-by + note.
+- **~~H3 — single record~~ — DONE** (`ViewerPanel.vue` → `api_napari_record_timelapse`). Single-record
+  captures the CURRENT view, so — like the analysis-board strip — the FRONTEND builds the card's
+  non-channel sections via the **shared `captureViewLegend`** (`utils/napariOverlays.ts`): capture the
+  view state (`/api/napari/view-state`, no PNG) → `parseOverlays` → `/api/napari/overlay-legend` →
+  Populations + colour-by; title = image name + attr values. It sends the full `titleCard` (title +
+  sections); the handler passes it through unchanged and the recorder adds Channels from the live
+  viewer. `ImageStripView` was refactored onto the same `captureViewLegend`, so strip + single-record
+  are provably ONE capture-legend path (the batch path uses the same `overlay_legend_content` resolver
+  server-side, since it has no live client snapshot). Movie panel gains a title toggle/duration/note
+  row, persisted per set in `getMovieConfig().titleCard` (default ON).
 - **H4 — animation page** (`AnimationModule.vue` → `record_keyframes`). Card reflects the FIRST
   keyframe's view; channels read after applying keyframe 0. Pops/colour-by derived from the first
   keyframe's overlay layers if feasible, else title + channels + note.
