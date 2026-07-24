@@ -25,8 +25,19 @@ primitives still being extracted lives in `docs/todo/UX_PRIMITIVES_PLAN.md`.
 | Tabs | `components/canvas/TabbedCanvas.vue` | a hand-rolled tab strip |
 | Collapsible section (chevron + heading) | `components/CollapsibleSection.vue` | a per-file chevron toggle |
 | Confirm / destructive-confirm | `components/ConfirmButton.vue` / `ConfirmDeleteButton.vue` | `window.confirm` or an inline arm flag |
-| Range slider | `components/RangeSlider.vue` (dual-thumb) *(single-value `CcRange` in progress — see the tracker)* | a raw `<input type=range>` with bespoke label/value markup |
+| Range slider (min+max) | `components/RangeSlider.vue` | a hand-rolled dual-thumb range |
 | Status colour / severity | `lib/severity.ts` + `--cc-sev-*` tokens | a hand-typed traffic-light colour |
+
+**Semantic role utilities** (global classes in `style.css` — *compose* them, add only layout in scoped CSS). These generalise recurring text/surface **scenarios** rather than a component per widget:
+
+| Scenario | Use | Never |
+|------|-----|-------|
+| Secondary / muted text (hint, subtitle, caption, meta) | `.cc-muted` | a scoped `color: var(--cc-text-dim); font-size: …` |
+| Empty / "nothing here yet" state | `.cc-empty` (drop icon/title/CTA inside for the rich variant) | a new `.*-empty` class |
+| Numeric value readout beside a control | `.cc-readout` (+ `.cc-readout-strong` for a prominent count) | a bespoke `.*-val`/`.*-num` |
+| Eyebrow / section label (uppercase dim heading) | `.cc-eyebrow` | a scoped uppercase-heading rule |
+| Card / panel / surface container | `.cc-card` | a scoped `surface + 1px border + radius` block |
+| Corner radius / small text size | tokens `--cc-radius-sm/md`, `--cc-fs-xs/sm/md` | a raw `rem` radius or font-size |
 
 If what you need isn't here and isn't obviously covered by an existing component, grep first
 (`INVENTORY.md` → *Frontend*); only build new if the search is genuinely empty, and then add it here +
