@@ -57,10 +57,13 @@ Done — semantic-role vocabulary (the generalisation; adopt incrementally):
   adoptions. This scenario vocabulary replaces the would-be Phase 2/3/6/7 components — the ~23 `*-empty`
   classes, the slider readouts, the subtitles/hints, and the card chrome all compose from it.
 
-Remaining — incremental adoption + one correctness item (no forced sweeps):
-- [ ] **Status/severity colours (correctness).** Route the 56 raw traffic-light hexes + the duplicated
-  status→icon maps (`TasksModule`, `TaskList`, `ChainLiveNode`, `ParamRenderer`) through `--cc-sev-*` /
-  `lib/severity.ts`. CVD-safety relevance; already flagged in `style.css`. **Worth doing.**
+Done — the correctness item:
+- [x] **Status/severity colours.** `lib/taskStatus.ts` (`TASK_STATUS`) — the ONE 5-state status map;
+  `done`/`failed` route through the CVD-safe `--cc-sev-*`, `running` = new `--cc-active`, queued/cancelled
+  neutral. Replaced the 3 drifted per-file maps (`TasksModule`, `TaskList`, `ChainLiveNode`);
+  `ParamRenderer`'s QC flag already used `lib/severity.ts`. (PR #TBD)
+
+Remaining — incremental adoption only (no forced sweeps):
 - [ ] **Collapsible section headers.** `CollapsibleSection` exists but ~15 chevron+heading toggles
   bypass it (`PlotOptions` ×4, `MetadataPanel`, `ParamRenderer`, `PopulationManager`, …). Migrate
   opportunistically, or extract `.cc-section-toggle`.

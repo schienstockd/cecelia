@@ -1,5 +1,7 @@
-// Canonical severity model for QC / traffic-light state — the ONE place ok/warn/fail is defined, so
-// the image table, lab log, cohort summaries and badge never disagree.
+// Canonical severity model for QC / traffic-light state (ok/warn/fail) — the ONE place these are
+// defined, so the image table, lab log, cohort summaries and badge never disagree. For the FIVE-state
+// task/chain lifecycle (adds running/queued/cancelled), see the sibling lib/taskStatus.ts, which reuses
+// this palette for its done/failed lights.
 //
 // Colour-blind-safe by construction: the hues (CSS --cc-sev-*) are the dataviz status palette,
 // validated for CVD separation, but colour is NEVER the sole cue — every severity ships with a

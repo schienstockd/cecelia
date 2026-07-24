@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
+import { useTaskStore, type TaskEntry } from '../stores/tasks'
+import { TASK_STATUS } from '../lib/taskStatus'
 import { useWsStore } from '../stores/ws'
 import { useSettingsStore } from '../stores/settings'
 import TeleportPopover from '../components/TeleportPopover.vue'
@@ -97,13 +98,7 @@ function elapsed(t: TaskEntry) {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`
 }
 
-const statusCfg: Record<TaskStatus, { cls: string; icon: string; tip: string }> = {
-  queued:    { cls: 'st-queued',    icon: 'pi-clock',        tip: 'Queued' },
-  running:   { cls: 'st-running',   icon: 'pi-spin pi-cog',  tip: 'Running' },
-  done:      { cls: 'st-done',      icon: 'pi-check-circle', tip: 'Done' },
-  failed:    { cls: 'st-failed',    icon: 'pi-times-circle', tip: 'Failed' },
-  cancelled: { cls: 'st-cancelled', icon: 'pi-ban',          tip: 'Cancelled' },
-}
+// status icon/colour/label come from the ONE canonical map (lib/taskStatus.ts)
 
 
 const FILTERS: ChipOption[] = [
@@ -150,11 +145,12 @@ const FILTERS: ChipOption[] = [
         <div
           v-for="t in filtered" :key="t.id"
           class="tm-row"
-          :class="[statusCfg[t.status].cls, { selected: t.id === selectedId }]"
+          :class="{ selected: t.id === selectedId }"
           @click="select(t)"
         >
-          <i :class="['pi', statusCfg[t.status].icon, 'row-icon']"
-            v-tooltip.right="statusCfg[t.status].tip" />
+          <i :class="['pi', TASK_STATUS[t.status].icon, 'row-icon']"
+            :style="{ color: TASK_STATUS[t.status].color }"
+            v-tooltip.right="TASK_STATUS[t.status].label" />
 
           <div class="row-body">
             <div class="row-top">
@@ -196,7 +192,8 @@ const FILTERS: ChipOption[] = [
       <div class="tm-log-panel">
         <template v-if="selected">
           <div class="log-header">
-            <i :class="['pi', statusCfg[selected.status].icon, 'log-status-icon', statusCfg[selected.status].cls]" />
+            <i :class="['pi', TASK_STATUS[selected.status].icon, 'log-status-icon']"
+               :style="{ color: TASK_STATUS[selected.status].color }" />
             <div class="log-title-block">
               <div class="log-title-row">
                 <span class="log-title">#{{ selected.seq }} — {{ selected.label }}</span>
@@ -346,11 +343,7 @@ const FILTERS: ChipOption[] = [
 }
 
 .row-icon { font-size: 0.82rem; flex-shrink: 0; }
-.st-running .row-icon { color: #93c5fd; }
-.st-done    .row-icon { color: #86efac; }
-.st-failed  .row-icon { color: #fca5a5; }
-.st-queued  .row-icon { color: #71717a; }
-.st-cancelled .row-icon { color: #52525b; }
+/* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .row-body  { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
 .row-top   { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
@@ -436,11 +429,7 @@ const FILTERS: ChipOption[] = [
   background: var(--cc-surface-1);
 }
 .log-status-icon { font-size: 0.9rem; flex-shrink: 0; }
-.log-status-icon.st-running { color: #93c5fd; }
-.log-status-icon.st-done    { color: #86efac; }
-.log-status-icon.st-failed  { color: #fca5a5; }
-.log-status-icon.st-queued  { color: #71717a; }
-.log-status-icon.st-cancelled { color: #52525b; }
+/* log-status-icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .log-title-block { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .log-title { font-size: 0.82rem; font-weight: 600; color: var(--cc-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

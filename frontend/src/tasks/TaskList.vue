@@ -5,6 +5,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTaskStore, type TaskEntry, type TaskStatus } from '../stores/tasks'
+import { TASK_STATUS } from '../lib/taskStatus'
 import { useWsStore } from '../stores/ws'
 import { useProjectMetaStore } from '../stores/projectMeta'
 
@@ -28,12 +29,13 @@ function toggleLog(id: string) {
   expanded.value = new Set(expanded.value)
 }
 
-const cfg: Record<TaskStatus, { cls: string; icon: string; tip: string }> = {
-  queued:    { cls: 'st-queued',    icon: 'pi-clock',         tip: 'Waiting to run.' },
-  running:   { cls: 'st-running',   icon: 'pi-spin pi-cog',   tip: 'Task is running.' },
-  done:      { cls: 'st-done',      icon: 'pi-check-circle',  tip: 'Completed successfully.' },
-  failed:    { cls: 'st-failed',    icon: 'pi-times-circle',  tip: 'Task failed. Expand to see log.' },
-  cancelled: { cls: 'st-cancelled', icon: 'pi-ban',           tip: 'Cancelled.' },
+// icon + colour from the canonical map (lib/taskStatus.ts); tooltips stay local (more descriptive here)
+const TIP: Record<TaskStatus, string> = {
+  queued:    'Waiting to run.',
+  running:   'Task is running.',
+  done:      'Completed successfully.',
+  failed:    'Task failed. Expand to see log.',
+  cancelled: 'Cancelled.',
 }
 
 function rerun(t: TaskEntry) {
@@ -90,11 +92,12 @@ function elapsed(t: TaskEntry) {
       v-for="t in items"
       :key="t.id"
       class="task-item"
-      :class="cfg[t.status].cls"
+      :class="'st-' + t.status"
     >
       <div class="task-header">
-        <i :class="['pi', cfg[t.status].icon, 'task-icon']"
-          v-tooltip.left="cfg[t.status].tip" />
+        <i :class="['pi', TASK_STATUS[t.status].icon, 'task-icon']"
+          :style="{ color: TASK_STATUS[t.status].color }"
+          v-tooltip.left="TIP[t.status]" />
 
         <div class="task-info">
           <span class="task-label" v-tooltip.right="t.label">
@@ -210,11 +213,7 @@ function elapsed(t: TaskEntry) {
 }
 
 .task-icon { font-size: 0.85rem; flex-shrink: 0; }
-.st-running .task-icon { color: #93c5fd; }
-.st-done    .task-icon { color: #86efac; }
-.st-failed  .task-icon { color: #fca5a5; }
-.st-queued  .task-icon { color: #71717a; }
-.st-cancelled .task-icon { color: #52525b; }
+/* status icon colour is inline from TASK_STATUS (lib/taskStatus.ts) */
 
 .task-info { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .task-label {
