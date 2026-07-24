@@ -82,6 +82,17 @@ Using a hand-rolled solution when a util or component already exists is a bug, n
 this is the concrete, do-this-first version of the divergent-re-implementation warning above. When
 you add a significant new shared component, add a line to `INVENTORY.md` in the same change.
 
+**UX elements — MANDATORY lookup before you render any control.** The recurring worst case is
+frontend chrome: a fresh session hand-rolls a checkbox-as-toggle, a `.btn-sm` that renders as a raw
+browser button, a bespoke slider/dialog/empty-state — because it didn't know the canonical one
+exists. Before adding **any** button, on/off toggle, slider, dialog/modal, popover, tabs, chips,
+empty state, spinner, badge, or collapsible section, you MUST consult the **UX-primitive catalog** in
+[`docs/UI.md`](docs/UI.md) (the *"check before building"* table at the top of the components section)
+and use the canonical component/utility (`CcToggle`, `.cc-btn*`, `ChipSelect`, `SwatchSelect`,
+`BaseModal`, `TeleportPopover`, `TabbedCanvas`, `CollapsibleSection`, `ConfirmButton`, …). Rendering a
+new variant of a primitive that already has a canonical form is a bug — same rule as H5AD/zarr/`run_py`.
+Unification status + what's not-yet-extracted lives in [`docs/todo/UX_PRIMITIVES_PLAN.md`](docs/todo/UX_PRIMITIVES_PLAN.md).
+
 ## Previous prompts
 
 Completed prompt files are kept in a `previous-prompts/` folder in the **workspace root** (outside `cecelia-pineapple/`) — set aside but accessible. They are **reference only**: historical context for finished work, not instructions to be re-run.
