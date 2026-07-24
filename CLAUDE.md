@@ -285,35 +285,39 @@ rather than a separate script.
 
 ```
 cecelia-pineapple/
-  app/          Julia package — Cecelia.jl (Revise-tracked). JULIA ONLY.
+  app/          Julia package — Cecelia.jl (Revise-tracked) + each task's co-located Python
+                runner (app/src/tasks/<cat>/<name>_run.py, run by path via run_py).
   api/          Julia API server scripts — NOT a package, NOT Revise-tracked
   frontend/     Vue 3 (Vite, TypeScript, Pinia, PrimeVue)
-  python/       Installable Python package `cecelia` (pyproject.toml here) — the analysis/IO
-                helpers + Python task runners + writers. Top-level, sibling to app/.
+  python/       Installable Python package `cecelia` (pyproject.toml here) — the IO LIBRARY only:
+                analysis/IO helpers (cecelia.utils) + writers. NO task runners. Top-level, sibling
+                to app/. This is what an external consumer (coastal) `pip install`s.
   napari/       Python napari bridge (napari_bridge.py) — a runtime process, NOT the helper lib
   mcp/          Python MCP observer server (read-only Claude access to a running project) — separate infra
   pixi.toml     Python env + run templates (`pixi run dev|prod|frontend|napari|stop`)
   docs/         Extended architecture and design reference
 ```
 
-**What lives where (one language per top-level dir).** Each top-level directory is a single
-ecosystem — do not mix:
+**What lives where.** `api/`/`frontend/` are single-ecosystem. `app/` is **the app** — Julia *plus*
+each task's co-located Python runner; `python/` is the **installable IO library** (no task code):
 
 | Dir | Language | What it is |
 |---|---|---|
-| `app/` | Julia | The `Cecelia.jl` package: data model, scheduler, tasks (`app/src/tasks/*.jl` + `.json`), gating. `Project.toml`/`Manifest.toml`. **No Python here.** |
+| `app/` | Julia (+ task Python) | The `Cecelia.jl` package: data model, scheduler, gating, and tasks. Each task is **three co-located files** — `app/src/tasks/<cat>/<name>.jl` + `.json` + (optional) `<name>_run.py`. The `_run.py` is run by path via `run_py` (never imported), so it doesn't make `app/` an importable Python package. `Project.toml`/`Manifest.toml`. |
 | `api/` | Julia | HTTP/WS server scripts (`include`d, not a package). |
 | `frontend/` | Vue/TS | The browser UI. |
-| `python/` | Python | The installable **`cecelia`** package: `python/cecelia/utils/*` (zarr/OME/dim/label-props/… helpers), `python/cecelia/tasks/<cat>/<name>_run.py` (subprocess entry points), `python/cecelia/writers/*`. `python/pyproject.toml` defines it. |
+| `python/` | Python | The installable **`cecelia`** IO library — **no task runners**: `python/cecelia/utils/*` (zarr/OME/dim/label-props/tracking/… helpers) + `python/cecelia/writers/*` (h5ad write-side). `python/pyproject.toml` ships only `cecelia` + `cecelia.utils`. This is what coastal `pip install`s. |
 | `napari/` | Python | The napari bridge process. Imports the `cecelia` package; is not part of it. |
 | `mcp/` | Python | The MCP observer server (`cecelia_mcp`): read-only Claude access to a running project over stdio, talking to the Julia API. Separate infra, not part of the `cecelia` package. `pixi run mcp` / `pixi run test-mcp`. See `mcp/README.md`, `docs/ai-assist/OBSERVER.md`. |
 
-> **⚠️ Structural shift (2026-07): the Python helpers moved `app/py/` → top-level `python/cecelia/`
-> and were made a pip-installable package.** `app/` is now Julia-only. Reason: `app/` is a Julia
-> package, and the Python helpers are a *separately installable* package (import name `cecelia`) so
-> external consumers — e.g. the sibling `coastal` project — can `pip install cecelia` and
-> `import cecelia.utils.zarr_utils` with no `sys.path`/`PYTHONPATH` hack. Two ecosystems, two roots.
-> `run_py` resolves scripts under `python/cecelia/` and sets `PYTHONPATH=python/`. Dependency split:
+> **⚠️ Structural shifts.** (2026-07) The Python helpers moved `app/py/` → top-level `python/cecelia/`
+> and were made a pip-installable package (import name `cecelia`) so external consumers — e.g. the
+> sibling `coastal` project — can `pip install cecelia` and `import cecelia.utils.zarr_utils` with no
+> `sys.path`/`PYTHONPATH` hack. (Later) The **task runners moved back out** of the package into
+> `app/src/tasks/<cat>/`, co-located with their `.jl`, so `python/cecelia/` is the **IO library only**
+> — coastal never pulls task code. `run_py` resolves `"tasks/…"` under `app/src/` and everything else
+> (e.g. `"writers/…"`) under `python/cecelia/`, and sets `PYTHONPATH=python/` so runners still
+> `import cecelia.*`. Dependency split:
 > the light IO deps live in `python/pyproject.toml`; the heavy/conda/per-platform deps live in
 > `pixi.toml` (each pin in exactly one file). Full design: [`docs/todo/PY_PACKAGING_PLAN.md`](docs/todo/PY_PACKAGING_PLAN.md).
 
@@ -348,12 +352,13 @@ Miss one and it precompiles fine everywhere else but dies in that one env — wh
 - `7655` — Napari bridge WS
 
 ### Module pattern
-Every task = exactly two co-located files, **same base name**:
+Every task = **co-located files, same base name**:
 ```
-app/src/tasks/<category>/<name>.jl    # Julia: struct + _run_task implementation
-app/src/tasks/<category>/<name>.json  # Param spec — single source of truth
+app/src/tasks/<category>/<name>.jl       # Julia: struct + _run_task implementation
+app/src/tasks/<category>/<name>.json     # Param spec — single source of truth
+app/src/tasks/<category>/<name>_run.py   # OPTIONAL: Python compute, run by path via run_py
 ```
-The `.jl` and `.json` filenames must match — `remove.jl` pairs with `remove.json`, `imageTask.jl` pairs with `imageTask.json`. Never bundle multiple tasks into one `.jl` file.
+The `.jl`/`.json` (and `_run.py` if present) filenames must match — `remove.jl` pairs with `remove.json`, `cellpose.jl` with `cellpose.json` + `cellpose_run.py`. Never bundle multiple tasks into one `.jl` file. The `_run.py` sits **next to** its `.jl` (not in the `python/` package); it's run by path, so it doesn't make `app/` importable Python. This mirrors the custom-module layout (`docs/CUSTOM_MODULES.md`).
 
 The JSON spec is served to Vue via `GET /api/tasks/definitions?category=X` — Vue never maintains its own copy. Do **not** add task JSONs to `frontend/`. The `frontend/src/tasks/definitions/` directory is intentionally empty.
 

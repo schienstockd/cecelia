@@ -3,7 +3,7 @@
 # stashes the source in `meta`). The Python runner does the file work (read-only on the source; copies
 # the zarr, rewrites the labelProps h5ad onto the new schema) and returns the ccid field dict, which we
 # apply here and persist. Clustering / gating / HMM are intentionally NOT migrated. See
-# docs/todo/LEGACY_MIGRATION_PLAN.md and python/cecelia/tasks/importImages/legacy_migrate.py.
+# docs/todo/LEGACY_MIGRATION_PLAN.md and python/cecelia/utils/legacy_migrate.py.
 
 struct MigrateLegacy <: CciaTask end
 

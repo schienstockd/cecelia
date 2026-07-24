@@ -17,17 +17,20 @@ Everything lives under `modules/` inside your **config directory** (the same dir
 - Installed app: `~/.cecelia/`  →  `~/.cecelia/modules/`
 - Dev checkout: your `CECELIA_DEV_DIR` (from `.env`)  →  `<dev>/modules/`
 
-Layout (mirrors the old R version):
+Layout — **co-located**, identical to a built-in task under `app/src/tasks/`: all of a task's files
+share one `<category>/` folder and the same base name.
 
 ```
 <config_dir>/modules/
-  sources/<category>/<name>.jl            # Julia: struct <: CciaTask + _run_task + register_task!
-  inputDefinitions/<category>/<name>.json # param/UI spec (same schema as the built-in app/src/tasks/*.json)
-  python/<category>/<name>_run.py         # OPTIONAL heavy compute, launched via run_py
+  <category>/<name>.jl       # Julia: struct <: CciaTask + _run_task + register_task!
+  <category>/<name>.json     # param/UI spec (same schema as the built-in app/src/tasks/*.json)
+  <category>/<name>_run.py   # OPTIONAL heavy compute, launched via run_py
 ```
 
 `<category>` (the sub-directory name) + `<name>` (the file stem) form the `fun_name`,
-`"<category>.<name>"` — exactly like built-ins.
+`"<category>.<name>"` — exactly like built-ins. The loader scans `<config_dir>/modules/<category>/`
+for `.jl` files; the `.json` and `_run.py` are resolved next to the `.jl` (see the three files
+below).
 
 **Category = which module page it shows on.** If `<category>` matches an existing page
 (`import`, `cleanupImages`, `segment`, `tracking`, `behaviour`, `clustPops`, `clustTracks`,
@@ -37,7 +40,7 @@ task runner, no plot canvas) — nothing to wire up.
 
 ## The three files
 
-### 1. `inputDefinitions/<category>/<name>.json` — the form
+### 1. `<category>/<name>.json` — the form
 
 Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
 [`docs/MODULES.md`](MODULES.md) for the full param-type reference). Minimum:
@@ -58,7 +61,7 @@ Identical schema to the built-in specs in `app/src/tasks/*/*.json` (see
 `resource_pool` is required (`"cpu"` / `"gpu"` / `"io"` / `"network"`). `scope` is `"image"`
 (default) or `"set"`.
 
-### 2. `sources/<category>/<name>.jl` — the code
+### 2. `<category>/<name>.jl` — the code
 
 The file is `include`d **into the `Cecelia` module**, so reference package names with the `Cecelia.`
 prefix (or unqualified — both work). Define a struct, implement `Cecelia._run_task`, and finish by
@@ -75,8 +78,7 @@ function Cecelia._run_task(::ExampleNormalise, img::Cecelia.CciaImage, params::D
 end
 
 Cecelia.register_task!("behaviour.exampleNormalise", ExampleNormalise();
-                       spec = joinpath(@__DIR__, "..", "..",
-                                       "inputDefinitions", "behaviour", "exampleNormalise.json"))
+                       spec = joinpath(@__DIR__, "exampleNormalise.json"))   # co-located
 ```
 
 Follow the same invariants as built-in tasks (see [`docs/MODULES.md`](MODULES.md)):
@@ -89,28 +91,31 @@ Follow the same invariants as built-in tasks (see [`docs/MODULES.md`](MODULES.md
   `label_props |> add_obs |> save!`) — never touch the `.h5ad` directly.
 - **Open images only through `zarr_utils`**, never a bare `zarr.open`.
 
-Two runnable examples ship in [`docs/examples/custom-modules/`](examples/custom-modules/) — copy that
-tree into `<config_dir>/modules/`:
+Two runnable examples ship in [`docs/examples/custom-modules/`](examples/custom-modules/) — copy the
+category folders into `<config_dir>/modules/`:
 - `behaviour.exampleNormalise` — minimal, Julia-only, in an existing category.
 - `customExamples.trackContext` — Julia **and** Python, nested params, in a **new** category (so it
   also demonstrates the generic `/custom/:category` page).
 
-### 3. `python/<category>/<name>_run.py` — optional compute
+### 3. `<category>/<name>_run.py` — optional compute
 
-For heavy compute, add a Python runner and launch it from your `.jl` with **`run_py`** — the one
-sanctioned Python launcher (never spawn Python by hand). Pass the **absolute path** to your script:
+For heavy compute, add a Python runner **beside your `.jl`** and launch it with **`run_py`** — the one
+sanctioned Python launcher (never spawn Python by hand). Pass the **absolute path** to your script
+(co-located, so `@__DIR__`):
 
 ```julia
-script = joinpath(Cecelia.custom_modules_dir(), "python", "behaviour", "exampleThreshold_run.py")
+script = joinpath(@__DIR__, "exampleThreshold_run.py")
 ok = Cecelia.run_py(script, (; someParam = 1), Cecelia.task_run_dir(img._dir);
                     on_log = on_log, on_progress = on_progress, on_process = on_process)
 ok || return nothing
 ```
 
-`run_py` puts both `python/` (so `import cecelia.*` works) and your `<config_dir>/modules/python/`
+`run_py` puts both `python/` (so `import cecelia.*` works) and your `<config_dir>/modules/`
 on `PYTHONPATH`, writes the params JSON, streams `[PROGRESS] n/total` → `on_progress`, and checks
-clean exit. Your `_run.py` reads params via `cecelia.utils.script_utils.script_params()` — see the
-built-in runners under `python/cecelia/tasks/` for the pattern. **No `sys.path` bootstrapping.**
+clean exit. (Your runner's own category folder is also on `sys.path[0]` since it's launched by
+absolute path, so a co-located sibling `.py` imports directly.) Your `_run.py` reads params via
+`cecelia.utils.script_utils.script_params()` — see the built-in runners under `app/src/tasks/` for
+the pattern. **No `sys.path` bootstrapping.**
 
 ## QC (recommended)
 

@@ -25,6 +25,10 @@ from cecelia.utils.tracking_utils import BayesianTrackingUtils
 
 def run(params: dict):
     log = script_utils.get_logfile_utils(params)
+    # The vendored btrack config ships beside this runner (app/src/tasks/tracking/cell_config.json);
+    # hand its path to the tracking helper so the helper never reaches into cecelia's package-data.
+    params.setdefault("btrackConfig",
+                      os.path.join(os.path.dirname(os.path.abspath(__file__)), "cell_config.json"))
     BayesianTrackingUtils(params, log).track_objects()
 
 

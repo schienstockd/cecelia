@@ -4,8 +4,10 @@ Called as a subprocess by the label-props layer (`label_props.jl::write_categori
 categorical cell labels — HMM states / transitions today, cluster ids later. Julia computes the
 values and passes them here; this script writes them into the segmentation's labelProps ``.h5ad``
 via anndata's categorical encoding (Julia writes numeric obs directly, but not categoricals). It is
-a data-layer writer, NOT a scheduler task — hence it lives under ``python/cecelia/writers/``, not
-``python/cecelia/tasks/``. See ``cecelia.utils.obs_utils.write_categorical_obs`` for the parameter contract.
+a data-layer writer (the h5ad write-side counterpart to the readers), NOT a scheduler task — so it
+lives in the IO library under ``python/cecelia/writers/``. Task runners, by contrast, live beside
+their Julia ``.jl`` under ``app/src/tasks/<cat>/``. See ``cecelia.utils.obs_utils.write_categorical_obs``
+for the parameter contract.
 """
 
 import sys

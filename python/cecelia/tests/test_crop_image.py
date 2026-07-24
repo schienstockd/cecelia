@@ -1,10 +1,10 @@
-"""Unit tests for the pure crop slice-tuple helper (cecelia.tasks.editImages.cropImage_run).
+"""Unit tests for the pure crop slice-tuple helper (cecelia.utils.slice_utils).
 
 Pure/headless — no zarr, no napari. Pins that channels (and any un-cropped or absent axis) are kept
 full, and that the half-open pixel bounds land on the right array axes."""
 import unittest
 
-from cecelia.tasks.editImages.cropImage_run import crop_slice_tuple
+from cecelia.utils.slice_utils import crop_slice_tuple
 
 
 class TestCropSliceTuple(unittest.TestCase):

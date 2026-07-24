@@ -7,8 +7,8 @@ handled prior formats). Idempotent. **Dry-run by default** — pass `--apply` to
 remedy for the strict read-time guard that rejects pre-migration `centroid-N` / `t` files
 (docs/todo/CENTROID_AXES_PLAN.md).
 
-    pixi run python -m cecelia.tasks.importImages.convert_centroid_names <projects_dir>           # dry-run
-    pixi run python -m cecelia.tasks.importImages.convert_centroid_names <projects_dir> --apply   # write
+    pixi run python -m cecelia.utils.convert_centroid_names <projects_dir>           # dry-run
+    pixi run python -m cecelia.utils.convert_centroid_names <projects_dir> --apply   # write
 
 Per-track feature tables (`*__tracks.h5ad`) carry no spatial/temporal obsm and are skipped.
 """

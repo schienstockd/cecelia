@@ -1,12 +1,12 @@
 # ── custom_modules.jl — discover & load user drop-in task modules ─────────────────
 #
 # Restores the old R-version capability: a user adds a task function by dropping files into their
-# per-user config dir (beside `custom.toml`) — no package edit, no rebuild. Layout mirrors old R:
+# per-user config dir (beside `custom.toml`) — no package edit, no rebuild. Layout is CO-LOCATED,
+# identical to a built-in task under app/src/tasks/ — all three files in one category folder:
 #
-#   <config_dir>/modules/
-#     sources/<category>/<name>.jl            # Julia: struct <: CciaTask + _run_task + register_task!
-#     inputDefinitions/<category>/<name>.json # param/UI spec (same schema as app/src/tasks/*.json)
-#     python/<category>/<name>_run.py         # optional compute (run via run_py; PYTHONPATH extended)
+#   <config_dir>/modules/<category>/<name>.jl     # Julia: struct <: CciaTask + _run_task + register_task!
+#   <config_dir>/modules/<category>/<name>.json   # param/UI spec (same schema as app/src/tasks/*.json)
+#   <config_dir>/modules/<category>/<name>_run.py # optional compute (run via run_py by absolute path)
 #
 # The UI half is already directory-driven (`api_task_definitions` scans this dir too); this file is the
 # executable half — it `include`s each dropped `.jl`, whose `register_task!` call wires the task into
@@ -35,7 +35,7 @@ custom_modules_dir(dev_dir::Union{String,Nothing} = nothing)::String =
 """
     load_custom_modules!(; dev_dir=nothing) -> (; loaded, skipped, failed, removed)
 
-Reconcile the custom-module registry with `<config_dir>/modules/sources/**/*.jl`. Called once on
+Reconcile the custom-module registry with `<config_dir>/modules/<category>/*.jl`. Called once on
 server start (`api/src/server.jl`) and re-runnable to pick up changes:
 
   - **removed** — a previously-loaded file that no longer exists on disk: its registered tasks are
@@ -49,7 +49,9 @@ server start (`api/src/server.jl`) and re-runnable to pick up changes:
 Never throws: a broken module is logged and recorded in the report, never crashes the server.
 """
 function load_custom_modules!(; dev_dir::Union{String,Nothing} = nothing)
-    root    = joinpath(custom_modules_dir(dev_dir), "sources")
+    # Scan the modules root recursively for `.jl` (co-located `<category>/<name>.jl`). Only `.jl` is
+    # `include`d, so co-located `.json`/`_run.py` siblings are ignored here.
+    root    = custom_modules_dir(dev_dir)
     loaded  = String[]
     skipped = String[]
     failed  = Tuple{String,String}[]

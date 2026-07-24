@@ -1,5 +1,13 @@
 # Python-helper packaging plan
 
+> **Update (2026-07, branch `feat/py-package-boundary`):** the boundary was tightened further —
+> **task runners moved back out** of the package into `app/src/tasks/<cat>/<name>_run.py`
+> (co-located with their `.jl`, run by path via `run_py`), so `python/cecelia/` is now the **IO
+> library only** (`cecelia` + `cecelia.utils` + writers; `pyproject` ships only those). The vendored
+> btrack `cell_config.json` moved next to the tracking task (`app/src/tasks/tracking/`) and is passed
+> to `cecelia.utils.tracking_utils` by path (no more package-data reach). So the "`app/` is Julia-only"
+> statements below are historical — `app/` now also holds each task's Python runner.
+
 Status: **Phases 1+2 + top-level move — DONE, verified in-env** on branch `feat/py-packaging`.
 Package now at top-level `python/cecelia/` (import name `cecelia`); `app/` is Julia-only. Prompted by
 a sibling project (`coastal`) needing to import cecelia's stateless Python IO helpers without a

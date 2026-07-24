@@ -19,25 +19,7 @@ import cecelia.utils.zarr_utils as zarr_utils
 import cecelia.utils.ome_xml_utils as ome_xml_utils
 from cecelia.utils.dim_utils import DimUtils
 import cecelia.utils.script_utils as script_utils
-
-
-def crop_slice_tuple(ndim, axis_idx, bounds):
-    """Build a slice tuple of length ``ndim`` cropping the given axes to half-open pixel bounds.
-
-    ``bounds`` maps an axis letter ('X'/'Y'/'Z'/'T') → ``(lo, hi)`` in pixels; ``axis_idx`` maps the
-    same letters → the array axis index (or None if the image lacks that axis). An axis is left FULL
-    (``slice(None)``) when it's absent from ``axis_idx``, its bound is None, ``lo < 0``, or
-    ``hi <= lo`` — so channels and any un-cropped axis pass through unchanged. Pure/testable."""
-    slices = [slice(None)] * ndim
-    for ax, lohi in bounds.items():
-        idx = axis_idx.get(ax)
-        if idx is None or lohi is None:
-            continue
-        lo, hi = lohi
-        if lo is None or hi is None or lo < 0 or hi <= lo:
-            continue
-        slices[idx] = slice(int(lo), int(hi))
-    return tuple(slices)
+from cecelia.utils.slice_utils import crop_slice_tuple  # pure logic lives in the IO library (testable)
 
 
 def run(params):

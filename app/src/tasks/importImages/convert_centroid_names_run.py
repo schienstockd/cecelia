@@ -3,7 +3,7 @@
 labelProps h5ad under the project `root`, and streams `[PROGRESS] n/total` + per-file log lines so the
 run shows live in the UI. The conversion itself is `convert_centroid_names.convert_file`."""
 import cecelia.utils.script_utils as script_utils
-from cecelia.tasks.importImages.convert_centroid_names import _labelprops_files, convert_file
+from cecelia.utils.convert_centroid_names import _labelprops_files, convert_file
 
 
 def run(params):

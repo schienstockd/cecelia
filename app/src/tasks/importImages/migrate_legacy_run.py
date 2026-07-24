@@ -15,7 +15,7 @@ Parameter contract (JSON written by Julia):
 import json
 
 import cecelia.utils.script_utils as script_utils
-from cecelia.tasks.importImages.legacy_migrate import migrate_image
+from cecelia.utils.legacy_migrate import migrate_image
 
 
 def run(params):

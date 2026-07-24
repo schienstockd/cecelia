@@ -277,3 +277,24 @@ def create_slices_multiscales(im_dim, dim_utils = None,
   # convert to tuples
   
   return [tuple(x) for x in slices]
+
+
+def crop_slice_tuple(ndim, axis_idx, bounds):
+    """Build a slice tuple of length ``ndim`` cropping the given axes to half-open pixel bounds.
+
+    ``bounds`` maps an axis letter ('X'/'Y'/'Z'/'T') → ``(lo, hi)`` in pixels; ``axis_idx`` maps the
+    same letters → the array axis index (or None if the image lacks that axis). An axis is left FULL
+    (``slice(None)``) when it's absent from ``axis_idx``, its bound is None, ``lo < 0``, or
+    ``hi <= lo`` — so channels and any un-cropped axis pass through unchanged. Pure/testable.
+    (Used by the editImages/cropImage task runner; kept here so the pure logic stays in the IO
+    library and remains unit-testable independent of the run-by-path task script.)"""
+    slices = [slice(None)] * ndim
+    for ax, lohi in bounds.items():
+        idx = axis_idx.get(ax)
+        if idx is None or lohi is None:
+            continue
+        lo, hi = lohi
+        if lo is None or hi is None or lo < 0 or hi <= lo:
+            continue
+        slices[idx] = slice(int(lo), int(hi))
+    return tuple(slices)
